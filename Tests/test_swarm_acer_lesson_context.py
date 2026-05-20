@@ -154,6 +154,15 @@ def test_acer_screen_reflex_reports_missing_receipt(tmp_path: Path):
     assert "I do not have a fresh WordAce lesson receipt" in reply
 
 
+def test_surface_and_word_in_media_transcript_is_not_wordace_query():
+    text = (
+        "The dress was powerful because people use different words. "
+        "Do you see it as white and gold? We are trying to look under "
+        "the surface at differences in perception."
+    )
+    assert not is_acer_screen_query(text)
+
+
 def test_acer_screen_reflex_names_letter_sequence(tmp_path: Path):
     now = time.time()
     _write_focus(

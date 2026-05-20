@@ -100,7 +100,7 @@ def test_bridge_autonomous_send_silences_no_consent(monkeypatch, tmp_path: Path)
 def test_bridge_blocks_group_send_by_default(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(wa, "_ALLOW_GROUP_SEND", False)
     monkeypatch.setattr(wa, "_LEDGER", tmp_path / "bridge.jsonl")
-    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "120363408204674197@g.us")
+    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "100000000000010@g.us")
 
     result = wa.send_whatsapp("SIFTA Group", "hello group")
 
@@ -219,7 +219,7 @@ def test_target_auto_reply_setting_refuses_owner_self(monkeypatch, tmp_path: Pat
 
     try:
         settings.set_auto_enabled(
-            "122093203140754@lid",
+            "100000000000004@lid",
             display_name="George",
             chat_type="direct",
             enabled=True,
@@ -244,7 +244,7 @@ def test_target_auto_reply_setting_follows_phone_lid_alias(monkeypatch, tmp_path
             ),
             "lid": graph.enrich_contact_record(
                 {},
-                jid="110411378614437@lid",
+                jid="100000000000003@lid",
                 name="Carlton",
                 now=2,
             ),
@@ -260,4 +260,4 @@ def test_target_auto_reply_setting_follows_phone_lid_alias(monkeypatch, tmp_path
         enabled=True,
     )
 
-    assert settings.is_auto_enabled("110411378614437@lid", chat_type="direct") is True
+    assert settings.is_auto_enabled("100000000000003@lid", chat_type="direct") is True

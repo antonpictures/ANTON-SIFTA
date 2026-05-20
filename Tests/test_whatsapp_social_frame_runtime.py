@@ -20,7 +20,7 @@ def _load_alice_server_module():
 def test_inbox_row_records_owner_and_chat_frame():
     row = build_inbox_row(
         "manual owner message",
-        from_jid="120363408204674197@g.us",
+        from_jid="100000000000010@g.us",
         name="George",
         from_me=True,
         chat_type="group",
@@ -47,7 +47,7 @@ def test_python_ingest_preserves_node_social_frame(monkeypatch, tmp_path):
 
     mod._deposit_inbox(
         "owner already sent this from WhatsApp",
-        "110411378614437@lid",
+        "100000000000003@lid",
         "George",
         from_me=True,
         chat_type="direct",
@@ -77,7 +77,7 @@ def test_inbox_row_rejects_missing_social_frame():
 
 def test_whatsapp_effector_blocks_group_send_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(wa, "_ALLOW_GROUP_SEND", False)
-    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "120363408204674197@g.us")
+    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "100000000000010@g.us")
     monkeypatch.setattr(wa, "_LEDGER", Path(tmp_path) / "whatsapp_bridge_trace.jsonl")
 
     result = wa.send_whatsapp("SIFTA Group", "hello group")

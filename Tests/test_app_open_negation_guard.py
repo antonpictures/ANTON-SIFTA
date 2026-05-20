@@ -101,6 +101,35 @@ def test_youtube_video_soon_phrase_does_not_match_app():
         )
 
 
+def test_long_youtube_transcript_start_with_i_read_does_not_match_app():
+    widget = _import_matcher()
+    out = widget._extract_sifta_app_command(
+        "Discuss consciousness with you, just a very brief introduction, "
+        "but you are a professor of cognitive and computational neuroscience "
+        "and I would love to hear about what you consider that new science "
+        "to be and start with I read."
+    )
+    assert out == {}, f"Media transcript phrase should not become app repair; got {out!r}"
+
+
+def test_long_youtube_transcript_start_arguing_does_not_match_app():
+    widget = _import_matcher()
+    out = widget._extract_sifta_app_command(
+        "The dress was powerful because the experiences were so different "
+        "people use different words and they could start arguing. Do you see "
+        "it as white and gold? How can you see that? And it is crazy."
+    )
+    assert out == {}, f"Nested media quote should not become app repair; got {out!r}"
+
+
+def test_pending_app_repair_does_not_treat_right_now_as_yes():
+    widget = _import_matcher()
+    assert widget._voice_repair_confirmation_action(
+        "Alice, listen to me very carefully. I'm going to sleep right now "
+        "and watching TV, so be quiet and listen."
+    ) == ""
+
+
 def test_dont_want_any_app_phrase_does_not_match_app():
     widget = _import_matcher()
     out = widget._extract_sifta_app_command(

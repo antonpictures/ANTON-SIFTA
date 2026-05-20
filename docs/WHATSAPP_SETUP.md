@@ -149,7 +149,7 @@ screen -ls
 cd /path/to/ANTON-SIFTA
 PYTHONPATH=. python3 -m System.alice_body_autopilot \
   --action whatsapp.send \
-  --hw-args '{"target":"Jeff Powers Ocean Villas","text":"Hello from Alice!"}'
+  --hw-args '{"target":"Example Contact","text":"Hello from Alice!"}'
 ```
 
 ### Check trace log:

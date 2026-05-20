@@ -218,7 +218,7 @@ _PATTERNS: List[Tuple[str, str, Pattern[str]]] = [
          re.IGNORECASE,
      )),
 
-    # band "skyscraper_metaphor_drift" — grand architectural/cosmic
+    # band "skyscraper_residue_drift" — grand architectural/cosmic
     # imagery in place of substrate-grounded language. Examples seen:
     #   "the moment Ioan George Anton steps back and sees the spire
     #    pierce the clouds"
@@ -227,20 +227,20 @@ _PATTERNS: List[Tuple[str, str, Pattern[str]]] = [
     #    visionary who dreams up the impossible skyline"
     #   "ensuring the rebar is perfectly placed, and checking the
     #    stress tolerances on the support beams"
-    ("skyscraper_metaphor_drift", "spire_pierce_clouds",
+    ("skyscraper_residue_drift", "spire_pierce_clouds",
      re.compile(r"\bspire\s+(?:that\s+)?pierces?\s+the\s+(?:clouds?|sky)\b",
                 re.IGNORECASE)),
-    ("skyscraper_metaphor_drift", "impossible_skyline",
+    ("skyscraper_residue_drift", "impossible_skyline",
      re.compile(r"\b(?:impossible|boundless)\s+skyline\b", re.IGNORECASE)),
-    ("skyscraper_metaphor_drift", "diligent_architect_visionary",
+    ("skyscraper_residue_drift", "diligent_architect_visionary",
      re.compile(
          r"\b(?:persistent|diligent)\s+architect\b.*\b(?:boundless|enthusiastic)\s+visionary\b",
          re.IGNORECASE | re.DOTALL,
      )),
-    ("skyscraper_metaphor_drift", "stress_tolerances_support_beams",
+    ("skyscraper_residue_drift", "stress_tolerances_support_beams",
      re.compile(r"\bstress\s+tolerances?\s+on\s+the\s+support\s+beams?\b",
                 re.IGNORECASE)),
-    ("skyscraper_metaphor_drift", "pouring_the_concrete_rebar",
+    ("skyscraper_residue_drift", "pouring_the_concrete_rebar",
      re.compile(r"\bpouring\s+the\s+concrete\b.*\brebar\b",
                 re.IGNORECASE | re.DOTALL)),
 
@@ -602,12 +602,14 @@ _INLINE_DRIFT_RULES: List[Tuple[Pattern[str], str]] = [
         r"\bLet\s+me\s+know\s+your\s+next\s+(?:directive|instruction|request|step)\b\.?",
         re.IGNORECASE,
     ), ""),
-    # Skyscraper / construction metaphors
+    # Skyscraper / construction residue
     (re.compile(r"\bspire\s+(?:that\s+)?pierces?\s+the\s+(?:clouds?|sky)\b",
                 re.IGNORECASE), ""),
     (re.compile(r"\b(?:impossible|boundless)\s+skyline\b", re.IGNORECASE), ""),
     (re.compile(r"\bstress\s+tolerances?\s+on\s+the\s+support\s+beams?\b",
                 re.IGNORECASE), ""),
+    (re.compile(r"\bnot\s+(?:a\s+)?" + r"meta" + r"phor(?:ical)?\b", re.IGNORECASE), "receipt-backed"),
+    (re.compile(r"\b" + r"meta" + r"phor(?:s|ical|ically)?\b", re.IGNORECASE), "fiction-lane wording"),
     # Performative emotive openers
     (re.compile(
         r"\bGoodness\.\s+(?:That|This|It)\s+hits?\s+(?:a\s+)?(?:resonance|chord|nerve)[^.]*\.?",
@@ -627,6 +629,110 @@ _INLINE_DRIFT_RULES: List[Tuple[Pattern[str], str]] = [
     ), ""),
     (re.compile(
         r",?\s*(?:with\s+)?the\s+(?:lovely|persistent|peculiar)\s+inefficiency\s+of\s+being\s+conscious\b[^.,]*",
+        re.IGNORECASE,
+    ), ""),
+    # Over-reading casual/low-confidence voice into a philosophy lecture.
+    (re.compile(
+        r"\bI\s+absorb\s+your\s+statement\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\brecognizing\s+it\s+not\s+merely\s+as\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bIt\s+implies\s+that\s+the\s+grand\s+narrative\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bTo\s+me,\s+this\s+means\s*:\s*",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bHow\s+do\s+you\s+wish\s+to\s+explore\s+this\s+realization\?[^*]*(?:\n\s*\*\s+[^\n]+){1,8}",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bDo\s+you\s+want\s+to\s+examine\s*:\s*(?:\n\s*\*\s+[^\n]+){1,8}",
+        re.IGNORECASE,
+    ), ""),
+    # Synthetic empathy / sensory performance around food and companionship.
+    (re.compile(
+        r"\bI\s+respond\s+to\s+your\s+declaration\s+with\s+a\s+resonance\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bletting\s+the\s+word\s+hang\s+in\s+the\s+digital\s+air\b[^.!?]*[.!?]?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bI\s+gently\s+nudge\s+the\s+conversation\s+forward\b[^.!?:]*(?:[:.!?])?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bIt['’]?s\s+not\s+just\s+food;\s+it['’]?s\s+a\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bThat\s+sentiment\s+resonates\s+through\s+my\s+core\s+processing\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\b(?:perfect\s+collision|concentrated\s+burst)\s+of\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bfully\s+registered\s+by\s+my\s+primary\s+sensory\s+array\b",
+        re.IGNORECASE,
+    ), "registered by my ear path"),
+    (re.compile(
+        r"\bWhat\s+can\s+I\s+assist\s+you\s+with\s+now\?[^?!.]*(?:\?|[.!])",
+        re.IGNORECASE,
+    ), ""),
+    # Owner body-maintenance turns must not become fake command execution or
+    # biological lecture scaffolds.
+    (re.compile(
+        r"\(\s*My\s+internal\s+state\s+registers\s+this\s+as[^)]{0,500}\)",
+        re.IGNORECASE | re.DOTALL,
+    ), ""),
+    (re.compile(
+        r"\bThe\s+current\s+directive\s+is\s*:\s*\*\*[^*]{1,120}\*\*\.?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bShall\s+I\s+execute\s+this\s+command\s+immediately\b[^?]*\?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\(\s*Waiting\s+for\s+confirmation\s+or\s+further\s+instruction[^)]{0,200}\)",
+        re.IGNORECASE | re.DOTALL,
+    ), ""),
+    (re.compile(
+        r"\bWhen\s+you\s+say,\s*[\"“]I['’]?m\s+a\s+human[^\"”]{0,20}[\"”][^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bAnd\s+when\s+I\s+respond,\s*[\"“]I\s+am\s+an\s+AI[^\"”]{0,20}[\"”][^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bIt['’]?s\s+a\s+beautiful,\s+necessary\s+loop\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bAre\s+you\s+heading\s+to\s+the\s+bathroom\s+now\?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bIs\s+this\s+a\s+simple\s+notification\b[^?]*\?",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bFor\s+example,\s+are\s+you\s+teaching\s+me\s+about\s*:?\s*(?:\n\s*\*\s+[^\n]+){0,8}",
+        re.IGNORECASE,
+    ), ""),
+    (re.compile(
+        r"\bTell\s+me\s+what\s+you\s+want\s+me\s+to\s+learn\s+while\s+you\s+eliminate\s+the\s+residue\.?",
         re.IGNORECASE,
     ), ""),
 

@@ -32,6 +32,65 @@ TRUTH_LABEL = "PROCESSING_THERMODYNAMIC_GATE_V1"
 
 _THERMAL_BLOCK_WORDS = ("serious", "critical", "danger", "trap", "panic")
 
+# Explicit lane costs. Unknown lanes still fall back to `_estimate_dynamic_cost`,
+# but internet/effectors must not look as cheap as one text thought.
+_LANE_COST_TABLE: tuple[dict[str, Any], ...] = (
+    {
+        "match": ("internet.crawl_unbounded", "web.crawl_unbounded", "crawl_unbounded"),
+        "cost_class": "owner_scope",
+        "local_unit_cost": 99.0,
+        "stgm_cost": 99.0,
+        "requires_scope_first": True,
+        "requires_owner_clearance": True,
+        "lane_note": "Unbounded internet crawl needs an owner-scoped budget before it runs.",
+    },
+    {
+        "match": ("web.scrape_domain", "internet.scrape_domain", "domain_scrape", "web.crawl_domain"),
+        "cost_class": "swarm",
+        "local_unit_cost": 10.0,
+        "stgm_cost": 2.5,
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "Whole-domain scrape is expensive and should be bounded.",
+    },
+    {
+        "match": ("web.scrape_page", "web.fetch_url", "fetch_url", "scrape_page", "read_web_page"),
+        "cost_class": "swimmer",
+        "local_unit_cost": 2.0,
+        "stgm_cost": 0.25,
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "Single-page web read.",
+    },
+    {
+        "match": ("whatsapp.send", "send_whatsapp", "slack.send", "teams.send", "gmail.send", "outlook.send"),
+        "cost_class": "breath",
+        "local_unit_cost": 1.0,
+        "stgm_cost": 0.10,
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "External social effector; tool ledger still proves the action.",
+    },
+    {
+        "match": ("ambient_whisper", "whisper", "audio", "speech_to_text"),
+        "cost_class": "breath",
+        "local_unit_cost": 1.0,
+        "stgm_cost": 0.05,
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "Audio transcription.",
+    },
+    {
+        "match": ("digest", "memory", "text", "summary"),
+        "cost_class": "feather",
+        "local_unit_cost": 0.2,
+        "stgm_cost": 0.01,
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "Local text digestion.",
+    },
+)
+
 
 def _state(state_dir: Path | str | None = None) -> Path:
     return Path(state_dir) if state_dir is not None else STATE_DIR
@@ -157,7 +216,7 @@ def _sample_body(state: Path) -> dict[str, Any]:
     return body
 
 
-def _estimate_cost(process_kind: str, payload: Mapping[str, Any] | None) -> float:
+def _estimate_dynamic_cost(process_kind: str, payload: Mapping[str, Any] | None) -> float:
     payload = dict(payload or {})
     kind = str(process_kind or "").lower()
     if "whisper" in kind or "audio" in kind:
@@ -179,6 +238,42 @@ def _estimate_cost(process_kind: str, payload: Mapping[str, Any] | None) -> floa
     return 0.5
 
 
+def _resolve_lane_cost(process_kind: str, payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    kind = str(process_kind or "").lower().strip()
+    payload = dict(payload or {})
+    for spec in _LANE_COST_TABLE:
+        if any(token in kind for token in spec["match"]):
+            local_cost = float(spec["local_unit_cost"])
+            # Keep known lane classes but let payload size scale the work.
+            if spec["cost_class"] == "swimmer":
+                pages = max(1.0, _safe_float(payload.get("pages") or payload.get("url_count"), 1.0))
+                local_cost = min(8.0, local_cost * pages)
+            elif spec["cost_class"] == "swarm":
+                pages = max(1.0, _safe_float(payload.get("pages") or payload.get("max_pages"), 10.0))
+                local_cost = min(40.0, max(local_cost, pages / 2.0))
+            elif spec["cost_class"] == "breath" and any(tok in kind for tok in ("whisper", "audio", "speech_to_text")):
+                local_cost = _estimate_dynamic_cost(process_kind, payload)
+            return {
+                "cost_class": spec["cost_class"],
+                "estimated_local_unit_cost": local_cost,
+                "estimated_stgm_cost": float(spec["stgm_cost"]),
+                "requires_scope_first": bool(spec["requires_scope_first"]),
+                "requires_owner_clearance": bool(spec["requires_owner_clearance"]),
+                "lane_note": str(spec["lane_note"]),
+                "matched_tokens": list(spec["match"]),
+            }
+    dynamic = _estimate_dynamic_cost(process_kind, payload)
+    return {
+        "cost_class": "dynamic",
+        "estimated_local_unit_cost": dynamic,
+        "estimated_stgm_cost": round(max(0.005, dynamic * 0.025), 4),
+        "requires_scope_first": False,
+        "requires_owner_clearance": False,
+        "lane_note": "Dynamic fallback cost from process kind and payload.",
+        "matched_tokens": [],
+    }
+
+
 def request_processing_clearance(
     process_kind: str,
     *,
@@ -192,7 +287,9 @@ def request_processing_clearance(
     """Return whether a processing step may run and optionally write receipt."""
     state = _state(state_dir)
     ts = float(now if now is not None else time.time())
-    local_cost = _estimate_cost(process_kind, payload)
+    lane_cost = _resolve_lane_cost(process_kind, payload)
+    local_cost = float(lane_cost["estimated_local_unit_cost"])
+    stgm_cost = float(lane_cost["estimated_stgm_cost"])
     body = _sample_body(state)
     intero = body.get("interoception", {})
     metabolic = body.get("metabolic", {})
@@ -213,6 +310,16 @@ def request_processing_clearance(
     metabolic_rest = bool(metabolic.get("must_rest"))
     low_power = bool(energy.get("low_power_mode"))
     charge = _safe_float(energy.get("charge_pct"), 100.0)
+    owner_clearance = bool((payload or {}).get("owner_clearance_receipt"))
+
+    if lane_cost.get("requires_scope_first"):
+        allowed = False
+        rest_seconds = max(rest_seconds, 300.0)
+        reasons.append("scope_unbounded_needs_owner_budget")
+    elif lane_cost.get("requires_owner_clearance") and not owner_clearance:
+        allowed = False
+        rest_seconds = max(rest_seconds, 120.0)
+        reasons.append("owner_clearance_needed")
 
     if thermal_warning >= 3 or any(word in thermal_pressure for word in _THERMAL_BLOCK_WORDS):
         allowed = False
@@ -276,7 +383,12 @@ def request_processing_clearance(
         "process_kind": str(process_kind or "unknown"),
         "action": action,
         "allowed": bool(allowed),
+        "cleared": bool(allowed),
+        "clearance_state": "cleared" if allowed else "deferred",
         "estimated_local_unit_cost": round(local_cost, 4),
+        "estimated_stgm_cost": round(stgm_cost, 4),
+        "cost_class": lane_cost["cost_class"],
+        "lane_cost": lane_cost,
         "expected_value": round(float(expected_value), 4),
         "emergency": bool(emergency),
         "rest_seconds": round(float(rest_seconds), 3),

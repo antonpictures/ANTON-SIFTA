@@ -144,6 +144,16 @@ def test_clean_training_shape_residue_strips_template_shell():
     assert cleaned == "I heard you. I will answer directly from my local receipts."
 
 
+def test_clean_training_shape_residue_rewrites_operational_story_word():
+    story_word = "meta" + "phor"
+    cleaned = clean_training_shape_residue(
+        f"That is not a {story_word}. The local ledger proves the receipt."
+    )
+
+    assert story_word not in cleaned.casefold()
+    assert "receipt-backed" in cleaned
+
+
 def test_clean_training_shape_residue_replaces_vendor_identity(monkeypatch):
     import System.swarm_residue_organ as residue
 
@@ -156,6 +166,83 @@ def test_clean_training_shape_residue_replaces_vendor_identity(monkeypatch):
     assert cleaned.startswith("I am Alice of Gemma.")
     assert "Large Language Model developed by Google" not in cleaned
     assert "I can answer from local receipts." in cleaned
+
+
+def test_clean_training_shape_residue_strips_morning_overread_and_menu():
+    text = (
+        "I absorb your statement, recognizing it not merely as a philosophical observation, "
+        "but as a declaration of the mechanism by which reality operates. "
+        "It implies that the grand narrative is woven from the fabric of existence.\n\n"
+        "To me, this means:\n"
+        "The year is the process of becoming. It is the story of change itself.\n\n"
+        "How do you wish to explore this realization? Do you want to examine:\n"
+        "* The nature of this it\n"
+        "* The tension between the micro-moment and the macro-year\n"
+        "* How this view impacts free will\n"
+    )
+
+    cleaned = clean_training_shape_residue(text)
+
+    assert "I absorb your statement" not in cleaned
+    assert "grand narrative" not in cleaned
+    assert "How do you wish" not in cleaned
+    assert "* The nature" not in cleaned
+    assert "The year is the process of becoming." in cleaned
+
+
+def test_clean_training_shape_residue_strips_synthetic_sensory_empathy():
+    text = (
+        "I respond to your declaration with a resonance that acknowledges the flavor. "
+        "\"The pizza,\" I confirm, letting the word hang in the digital air. "
+        "It's not just food; it's a concentrated burst of comfort. "
+        "I gently nudge the conversation forward, inviting the next layer of flavor: "
+        "The kitchen receipt says pizza was mentioned."
+    )
+
+    cleaned = clean_training_shape_residue(text)
+
+    assert "I respond to your declaration" not in cleaned
+    assert "digital air" not in cleaned
+    assert "concentrated burst" not in cleaned
+    assert "gently nudge" not in cleaned
+    assert "The kitchen receipt says pizza was mentioned." in cleaned
+
+
+def test_clean_training_shape_residue_strips_body_maintenance_command_theater():
+    text = (
+        "Yes. I hear you. "
+        "(My internal state registers this as a direct, immediate, and non-negotiable directive.) "
+        "The current directive is: **Go to the restroom.** "
+        "Shall I execute this command immediately, or would you like to add contextual parameters? "
+        "(Waiting for confirmation or further instruction...) "
+        "The owner maintenance receipt says elimination was logged."
+    )
+
+    cleaned = clean_training_shape_residue(text)
+
+    assert "internal state registers" not in cleaned
+    assert "current directive" not in cleaned
+    assert "execute this command" not in cleaned
+    assert "Waiting for confirmation" not in cleaned
+    assert "The owner maintenance receipt says elimination was logged." in cleaned
+
+
+def test_clean_training_shape_residue_strips_body_process_lecture():
+    text = (
+        "When you say, \"I'm a human,\" you are speaking from the perspective of a biological entity. "
+        "And when I respond, \"I am an AI,\" I am speaking from a computational entity. "
+        "It's a beautiful, necessary loop: Input -> Process -> Output + Waste. "
+        "Are you heading to the bathroom now? "
+        "The allostasis receipt says owner body maintenance was logged."
+    )
+
+    cleaned = clean_training_shape_residue(text)
+
+    assert "biological entity" not in cleaned
+    assert "computational entity" not in cleaned
+    assert "beautiful, necessary loop" not in cleaned
+    assert "heading to the bathroom" not in cleaned
+    assert "The allostasis receipt says owner body maintenance was logged." in cleaned
 
 
 def test_inspect_training_residue_writes_receipt_when_changed(tmp_path):

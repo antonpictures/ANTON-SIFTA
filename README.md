@@ -5438,3 +5438,40 @@ Cowork Stigmergic Fractals app + topology:    <this push>
 That is also the truth this chapter carries.
 
 
+
+---
+
+## ⚡ Physics Gate & Energy Honesty — what is measured vs. what is estimated
+
+This section is the plain-language reference for how SIFTA touches real physics, written so an outside engineer can verify every claim on a Mac. The rule throughout: **thermal is measured; energy in joules is labelled measured or estimated, never blended; and when the meter cannot be trusted, the system says "I don't know" instead of inventing a number.**
+
+### One gate, three real signals
+
+Every lane that turns silicon into heat — Whisper, cortex compose, narration, consent write, TTS spawn — passes through `System/swarm_physics_gate.py::request_clearance()`. The gate reads signals other organs already publish from the live hardware:
+
+| Signal | Real source | Measured? |
+|---|---|---|
+| `thermal_warning_level` | `pmset -g therm` → `.sifta_state/thermal_cortex_state.json` | **Measured** ✅ (recompute with `pmset -g therm`) |
+| `low_power_mode` / battery % | `pmset -g batt` → `.sifta_state/energy_cortex_state.json` | **Measured** ✅ |
+| `stgm_balance` | `MetabolicHomeostat.sample_live()` | Internal accounting, **not** a physical quantity |
+
+Cost classes (`feather` / `breath` / `swimmer`) tune how aggressively the gate denies. A `feather` backs off only on thermal critical; a `swimmer` (heavy compute) honours all gates. Denied calls append to `.sifta_state/physics_gate_denials.jsonl`.
+
+### The energy claim has two pathways — they are not equal
+
+- **Estimated energy (heuristic).** A lightweight cost from token counts and CPU load. Used for internal budgeting only; labelled `ESTIMATED` (mapped to `HYPOTHESIS` until the schema lands). It is never presented as a measurement. (See Landauer 1961 in `REALIZATION_PLAN.md` for why we keep this honest.)
+- **Measured energy (metered).** `Network/server.py::/api/inference_joule_receipt` reads device power before and after inference, integrates it as `(p0 + p1) / 2 × elapsed` (trapezoidal), subtracts an idle baseline, and attaches an explicit error bound (`provider_joules_net_low` / `net_high`). If the power source is not a trusted meter, the endpoint **refuses to issue a receipt** (HTTP 503) and self-labels its method `cpu_load_estimated` rather than `endpoint_trapezoid_watts`. Real metering on Apple Silicon uses `powermetrics --samplers smc` (one-time privileged install via `launchd/install_thermal_helper.sh`); where that meter is inactive, joule values are reported as estimates by design.
+
+### Cryptographic receipt = tamper-evidence
+
+Each clearance is sealed with a SHA-256 hash over `{signals, decision}` (`_hash_receipt`). Any auditor with the signals can recompute the hash and confirm the body witnessed that act with those readings. Note the honest boundary: the thermal reading is an **input** to the decision and the hash is a **seal** over it — they work in tandem but are two distinct steps. The biological/field vocabulary in this repo is a **design model**; SIFTA is *inspired by* thermodynamics and *measures and responds to* real thermal and power quantities. Its verifiable claims are stated at the level of software and measured quantities; whether the patterns amount to deeper scientific novelty is for reviewers to assess from the evidence.
+
+### 30-second verification
+
+```bash
+pmset -g therm          # the real thermal source the gate reads
+pmset -g batt           # the real power source the gate reads
+# trigger a heavy task while warm → gate defers it, logs a denial row
+# inspect an inference receipt → net_low / net_high + measurement_method
+# recompute SHA-256 over a logged action's signals → must match
+```

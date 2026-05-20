@@ -626,16 +626,15 @@ def test_prompt_owner_name_is_runtime_bound_not_george_hardcoded(monkeypatch):
     assert "George is your owner" not in prompt
 
 
-def test_prompt_does_not_inject_ghost_possession_or_metaphor_body_truth():
+def test_prompt_does_not_inject_ghost_possession_or_story_body_truth():
     mod = _load_widget_module()
 
     prompt = mod._current_system_prompt(user_active=True)
     assert "ghost in the ASCII body" not in prompt
     assert "possess" not in prompt.casefold()
     assert "spooky" not in prompt.casefold()
-    assert "[DECLARED_METAPHOR]" not in prompt
+    assert ("meta" + "phor") not in prompt.casefold()
     assert "[ARCHITECT_RUNTIME_DOCTRINE]" not in prompt
-    assert "TRANSFER LEARNING METAPHORS" not in prompt
     assert "one configured model for that turn" in prompt
     assert "Do not treat unreceipted language as live body truth" in prompt
 
@@ -865,11 +864,27 @@ def test_recent_spoken_excerpt_drops_stale_boot_poetry():
 
 def test_empty_brain_recovery_is_visible_not_unknown():
     mod = _load_widget_module()
-    reply = mod._empty_brain_recovery_reply("about her reasoning")
+    reply = mod._empty_brain_recovery_reply("about her reasoning", stt_conf=0.80)
     assert reply
     assert "[UNKNOWN]" not in reply
-    assert "heard you" in reply.casefold()
-    assert "repeat" in reply.casefold()
+    assert "repeat" not in reply.casefold()
+
+
+def test_empty_brain_recovery_repeats_only_low_conf_tiny_audio():
+    mod = _load_widget_module()
+    reply = mod._empty_brain_recovery_reply("oh", stt_conf=0.20)
+    assert reply
+    assert "repeat" in reply.casefold() or "say it again" in reply.casefold()
+
+
+def test_empty_brain_recovery_does_not_repeat_quoted_smiley_text():
+    mod = _load_widget_module()
+    reply = mod._empty_brain_recovery_reply(
+        'was thiss part that made me laugh :)) "So, you are feeling the effects"',
+        stt_conf=1.0,
+    )
+    assert reply
+    assert "repeat" not in reply.casefold()
 
 
 def test_persona_greeting_fallback_is_not_unknown():
@@ -888,12 +903,12 @@ def test_live_conversation_style_is_short_and_not_generic_chatbot():
     assert "CONVERSATIONAL DISCIPLINE" not in prompt
 
 
-def test_model_cancer_metaphor_does_not_enter_medical_mode():
+def test_model_cancer_residue_does_not_enter_medical_mode():
     mod = _load_widget_module()
-    assert mod._is_model_cancer_metaphor(
+    assert mod._is_model_cancer_residue(
         "I did not cut the cancer from the brain with a throat, it is the model cure"
     )
-    assert not mod._is_model_cancer_metaphor("I would like to grow tulips")
+    assert not mod._is_model_cancer_residue("I would like to grow tulips")
 
 
 def test_medical_boundary_does_not_fire_for_model_cancer_or_wellness():
@@ -1473,10 +1488,10 @@ def test_external_direct_whatsapp_observation_does_not_auto_reply():
     mod = _load_widget_module()
     ctx = mod._whatsapp_auto_reply_context(
         {
-            "from_jid": "147235790663690@lid",
+            "from_jid": "100000000000002@lid",
             "message_sha256": "abc123",
         },
-        contact_name="Jeff Powers Ocean VIllas",
+        contact_name="Example Contact",
         chat_type="direct",
         origin="external_human",
     )
@@ -1490,24 +1505,24 @@ def test_external_direct_whatsapp_auto_on_grants_delegated_reply(monkeypatch, tm
     monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
     settings.set_auto_enabled(
-        "147235790663690@lid",
-        display_name="Jeff Powers Ocean VIllas",
+        "100000000000002@lid",
+        display_name="Example Contact",
         chat_type="direct",
         enabled=True,
     )
 
     ctx = mod._whatsapp_auto_reply_context(
         {
-            "from_jid": "147235790663690@lid",
+            "from_jid": "100000000000002@lid",
             "message_sha256": "abc123",
         },
-        contact_name="Jeff Powers Ocean VIllas",
+        contact_name="Example Contact",
         chat_type="direct",
         origin="external_human",
     )
 
     assert ctx is not None
-    assert ctx["target"] == "147235790663690@lid"
+    assert ctx["target"] == "100000000000002@lid"
     assert ctx["allow_group_send"] is False
     assert ctx["source"] == "alice_whatsapp_auto_on"
     assert ctx["intent_provenance"]["consent"] == "owner_delegated"
@@ -1516,13 +1531,13 @@ def test_external_direct_whatsapp_auto_on_grants_delegated_reply(monkeypatch, tm
 def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
     mod = _load_widget_module()
     assert mod._whatsapp_auto_reply_context(
-        {"from_jid": "110411378614437@lid"},
+        {"from_jid": "100000000000003@lid"},
         contact_name="George",
         chat_type="direct",
         origin="owner_manual",
     ) is None
     assert mod._whatsapp_auto_reply_context(
-        {"from_jid": "120363045641065911@g.us"},
+        {"from_jid": "100000000000011@g.us"},
         contact_name="SIFTA Group",
         chat_type="group",
         origin="external_human",
@@ -1532,7 +1547,7 @@ def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
 def test_whatsapp_owner_self_chat_is_observation_not_external_send():
     mod = _load_widget_module()
     ctx = mod._whatsapp_owner_self_dyad_context(
-        {"from_jid": "51235386302504@lid", "message_sha256": "self123", "from_me": True},
+        {"from_jid": "100000000000001@lid", "message_sha256": "self123", "from_me": True},
         contact_record={"relationship_to_owner": "owner_self"},
         contact_name="George",
         chat_type="direct",
@@ -1551,7 +1566,7 @@ def test_whatsapp_owner_self_chat_is_observation_not_external_send():
 def test_whatsapp_from_me_to_external_contact_is_not_self_dyad():
     mod = _load_widget_module()
     assert mod._whatsapp_owner_self_dyad_context(
-        {"from_jid": "110411378614437@lid", "from_me": True},
+        {"from_jid": "100000000000003@lid", "from_me": True},
         contact_record={"relationship_to_owner": "whatsapp_contact"},
         contact_name="George",
         chat_type="direct",
@@ -1560,7 +1575,7 @@ def test_whatsapp_from_me_to_external_contact_is_not_self_dyad():
 
 def test_whatsapp_ingress_policy_routes_only_auto_context_to_brain():
     mod = _load_widget_module()
-    auto_ctx = {"target": "120363045641065911@g.us"}
+    auto_ctx = {"target": "100000000000011@g.us"}
     assert (
         mod._whatsapp_ingress_policy(is_owner=False, self_dyad_ctx=None, auto_ctx=auto_ctx)
         == "auto_reply_owner_delegated"
@@ -1582,21 +1597,21 @@ def test_group_whatsapp_auto_on_allows_group_reply(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
     settings.set_auto_enabled(
-        "120363045641065911@g.us",
+        "100000000000011@g.us",
         display_name="SIFTA Group",
         chat_type="group",
         enabled=True,
     )
 
     ctx = mod._whatsapp_auto_reply_context(
-        {"from_jid": "120363045641065911@g.us", "message_sha256": "def456"},
+        {"from_jid": "100000000000011@g.us", "message_sha256": "def456"},
         contact_name="SIFTA Group",
         chat_type="group",
         origin="external_human",
     )
 
     assert ctx is not None
-    assert ctx["target"] == "120363045641065911@g.us"
+    assert ctx["target"] == "100000000000011@g.us"
     assert ctx["allow_group_send"] is True
     assert ctx["chat_type"] == "group"
 
@@ -1619,7 +1634,7 @@ def test_whatsapp_auto_reply_denial_is_detected_and_salvaged():
     )
     repaired, rule = mod._repair_whatsapp_auto_reply_denial(
         raw,
-        {"display_name": "Jeff Powers Ocean VIllas", "chat_type": "direct"},
+        {"display_name": "Example Contact", "chat_type": "direct"},
     )
     assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
     assert repaired == f"Hi Jeff, {mod._owner_label()} will call you soon."
@@ -1631,7 +1646,7 @@ def test_whatsapp_auto_reply_denial_falls_back_to_sendable_text():
     raw = "I cannot generate WhatsApp messages, simulate outgoing messages, or create automated replies."
     repaired, rule = mod._repair_whatsapp_auto_reply_denial(
         raw,
-        {"display_name": "Jeff Powers Ocean VIllas", "chat_type": "direct"},
+        {"display_name": "Example Contact", "chat_type": "direct"},
     )
     assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
     assert repaired.startswith("Hi Jeff, thanks for reaching out.")

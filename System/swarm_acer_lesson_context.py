@@ -157,7 +157,7 @@ def is_acer_screen_query(text: str) -> bool:
     if _ACER_SCREEN_QUERY.search(text):
         return True
     lower = text.lower()
-    has_acer = "ace" in lower or "acer" in lower or "wordace" in lower
+    has_acer = bool(re.search(r"\b(?:ace|acer|word\s*ace|wordace)\b", lower))
     has_card_word = any(word in lower for word in ("letter", "word", "card", "cue", "screen"))
     return bool(has_acer and has_card_word and "?" in text)
 

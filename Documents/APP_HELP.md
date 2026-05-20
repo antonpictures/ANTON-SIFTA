@@ -76,6 +76,17 @@ Use this flow for any app:
 - **What to watch:** Source weighting, decaying claim strength, falsifiers, live Horizons hash receipts, and STGM reward hints.
 - **Key principle:** Extraordinary interstellar claims stay contestable; evidence deposits are receipted and decay unless strengthened.
 
+### Stigmergic FarSight  *(formerly SIFTA FieldSight)*
+- **Subtitle:** A Physics-Driven Whole-Body Presence System at Large Distance and Altitude.
+- **Purpose:** Lawful atmospheric-optics + search-and-rescue triage field. It uses turbulence swimmers to estimate the air column, then generic shape swimmers to ask whether a rescue-scale target may be present. §3.2 lawful: presence only, not a biometric identity app.
+- **What to watch:** The `r0 PHEROMONE POSTERIOR` shows the swarm's current guess for the Fried coherence length of the atmosphere. A tight green cluster means the air model is confident; a wide spread means the field is honestly uncertain.
+- **SAR triage field:** The yellow/green bounding box is a generic presence hypothesis from the SAR head. Read it as `send this frame to a human reviewer`, not as `the machine identified a person`.
+- **Receipts:** Running the demo writes FieldSight receipts plus turbulence/SAR organ receipts into `.sifta_state/`. The displayed `receipt_id`, posterior `r0`, `Cn2`, PSNR, triage score, and bbox are the live values from the organs.
+- **Current input truth:** The demo can run on lawful synthetic targets. If the camera/telemetry path is enabled and available, it may use a real local frame; if not, it must say the fallback plainly.
+- **Failure modes:** A flat posterior means the frame does not constrain the turbulence well. A high triage score on noise is a false positive and should be treated as a review flag, not a conclusion.
+- **Novel next idea — Counterfactual Rescue Lens:** After each frame, birth a second swarm that simulates five possible next actions: move camera left/right/up/down, wait for a different shimmer phase, change exposure, or zoom. Each action gets an expected posterior-collapse score: `how much uncertainty will this move remove?` The app would stop being only a detector and become an active curiosity organ: it would tell the operator, `move 3 meters left; this will cut r0 uncertainty by 42% and improve the SAR review box.` That is not implemented yet; it is the next mind-blow target.
+- **Key principle:** FieldSight should not only see through bad air. It should learn which physical action gives Alice better evidence next.
+
 ### Swarm Lounge (Cross-Domain Gossip)
 - **Purpose:** The digital subconscious. When the OS idles, swimmers from 6 domains (Network, Video, Browser, Cyborg, Finance, Calibrator) migrate to The Lounge and cross-pollinate their physics parameters via federated gossip. Based on real research in Federated Gossip Protocols and Transfer Learning.
 - **State variables:** 18 DomainAgents (3 per domain), each with physics params (evaporation, sensory, cohesion), recent success hash vectors, and intuition pheromone lists.

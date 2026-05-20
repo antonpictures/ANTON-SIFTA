@@ -31,11 +31,11 @@ def test_enrich_contact_marks_owner_social_graph():
 def test_group_and_direct_resolution_disambiguates_by_suffix():
     contacts = {
         "direct": enrich_contact_record({}, jid="15551234567@s.whatsapp.net", name="Jeff", now=1),
-        "group": enrich_contact_record({}, jid="120363408204674198@g.us", name="Jeff", now=2),
+        "group": enrich_contact_record({}, jid="100000000000012@g.us", name="Jeff", now=2),
     }
 
     assert resolve_target("Jeff", contacts) == ""
-    assert resolve_target("Jeff group", contacts) == "120363408204674198@g.us"
+    assert resolve_target("Jeff group", contacts) == "100000000000012@g.us"
     assert resolve_target("Jeff direct", contacts) == "15551234567@s.whatsapp.net"
 
 
@@ -43,13 +43,13 @@ def test_owner_self_is_not_resolved_as_external_friend_target():
     contacts = {
         "owner": enrich_contact_record(
             {},
-            jid="51235386302504@lid",
+            jid="100000000000001@lid",
             name="George",
             now=1,
         ),
         "jeff": enrich_contact_record(
             {},
-            jid="147235790663690@lid",
+            jid="100000000000002@lid",
             name="George",
             now=2,
         ),
@@ -57,9 +57,9 @@ def test_owner_self_is_not_resolved_as_external_friend_target():
 
     assert contacts["owner"]["relationship_to_owner"] == "owner_self"
     assert contacts["owner"]["send_target_allowed"] is False
-    assert contacts["jeff"]["display_name"] == "Jeff Powers Ocean VIllas"
+    assert contacts["jeff"]["display_name"] == "Example Contact"
     assert resolve_target("George", contacts) == ""
-    assert resolve_target("Jeff Powers Ocean VIllas", contacts) == "147235790663690@lid"
+    assert resolve_target("Example Contact", contacts) == "100000000000002@lid"
 
 
 def test_locked_known_identity_wins_over_stale_duplicate():
@@ -67,23 +67,23 @@ def test_locked_known_identity_wins_over_stale_duplicate():
         "stale_phone": enrich_contact_record(
             {},
             jid="15613725668@s.whatsapp.net",
-            name="Jeff Powers Ocean VIllas",
+            name="Example Contact",
             now=1,
         ),
         "active_lid": {
             **enrich_contact_record(
                 {},
-                jid="147235790663690@lid",
-                name="Jeff Powers Ocean VIllas",
+                jid="100000000000002@lid",
+                name="Example Contact",
                 now=2,
             ),
             "name_locked": True,
         },
     }
 
-    assert resolve_target("Jeff Powers Ocean VIllas", contacts) == "147235790663690@lid"
+    assert resolve_target("Example Contact", contacts) == "100000000000002@lid"
     assert contact_rows_for_alice(contacts=contacts) == [
-        "Jeff Powers Ocean VIllas (direct, whatsapp_contact)"
+        "Example Contact (direct, whatsapp_contact)"
     ]
 
 
@@ -100,7 +100,7 @@ def test_phone_lid_and_status_aliases_render_as_one_contact():
         },
         "lid": enrich_contact_record(
             {},
-            jid="110411378614437@lid",
+            jid="100000000000003@lid",
             name="Carlton",
             now=10,
         ),
@@ -117,11 +117,11 @@ def test_phone_lid_and_status_aliases_render_as_one_contact():
     assert [entry["display_name"] for entry in entries] == ["Carlton"]
     assert entries[0]["jid"] == "18326231233@s.whatsapp.net"
     assert entries[0]["jid_aliases"] == [
-        "110411378614437@lid",
+        "100000000000003@lid",
         "18326231233@s.whatsapp.net",
     ]
     assert entries[0]["merged_count"] == 2
-    assert alias_jids_for_jid("110411378614437@lid", contacts) == entries[0]["jid_aliases"]
+    assert alias_jids_for_jid("100000000000003@lid", contacts) == entries[0]["jid_aliases"]
     assert resolve_target("Carlton", contacts) == "18326231233@s.whatsapp.net"
     assert contacts["status"]["send_target_allowed"] is False
 
@@ -132,7 +132,7 @@ def test_summary_names_owner_social_graph(monkeypatch, tmp_path):
         {
             "group": enrich_contact_record(
                 {},
-                jid="120363408204674197@g.us",
+                jid="100000000000010@g.us",
                 name="SIFTA",
                 now=2,
             )
@@ -154,7 +154,7 @@ def test_migrate_existing_contacts_adds_social_fields(tmp_path):
         json.dumps(
             {
                 "abc": {
-                    "jid": "120363408204674197@g.us",
+                    "jid": "100000000000010@g.us",
                     "display_name": "SIFTA",
                     "chat_type": "group",
                 }

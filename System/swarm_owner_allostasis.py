@@ -39,7 +39,16 @@ DUAL_LOOP_TRUTH = "DUAL_EMBODIMENT_LOOP_V1"
 BODY_DOMAINS = {"dental", "medical", "sleep", "food", "movement", "hygiene", "body"}
 MONEY_DOMAINS = {"money", "budget", "ai_credits", "debt"}
 OPEN_STATUSES = {"open", "planned", "deferred", "unknown"}
-MAINTENANCE_CATEGORIES = {"hydration", "sleep", "food", "care_appointment"}
+MAINTENANCE_CATEGORIES = {
+    "hydration",
+    "sleep",
+    "food",
+    "care_appointment",
+    "elimination",
+    "hygiene",
+    "coffee",
+    "body_signal",
+}
 _FALSE_OWNER_STATE_LABELS = (
     "tr" + "ance",
     "fl" + "ow state",
@@ -235,14 +244,18 @@ def record_owner_maintenance_event(
     completed: bool = True,
     source: str = "owner_statement",
     notes: str = "",
+    body_signal: str = "",
+    relief: float | None = None,
+    metadata: dict[str, Any] | None = None,
     state_dir: Path | None = None,
     now: float | None = None,
 ) -> dict[str, Any]:
     """Append a concrete body-maintenance event receipt.
 
-    Categories are hydration, sleep, food, and care_appointment. This is a
-    metric event, not advice: it records what happened so Alice can compare
-    body maintenance against baseline.
+    Categories include hydration, sleep, food, care_appointment, elimination,
+    hygiene, coffee, and body_signal. This is a metric event, not advice: it
+    records what happened so Alice can compare body maintenance against
+    baseline without inventing medical facts.
     """
     state = _state_dir(state_dir)
     state.mkdir(parents=True, exist_ok=True)
@@ -264,6 +277,9 @@ def record_owner_maintenance_event(
         "completed": bool(completed),
         "source": clean_source,
         "notes": clean_notes,
+        "body_signal": _clean_text(body_signal, max_chars=160),
+        "relief": round(_clamp01(relief), 4) if relief is not None else None,
+        "metadata": dict(metadata or {}),
         "rule": "Body maintenance metrics are observed receipts; no diagnosis, no shame, no invented completion.",
     }
     append_line_locked(_ledger(state), json.dumps(row, sort_keys=True) + "\n")
@@ -404,6 +420,11 @@ def owner_body_maintenance_metrics(
         if r.get("category") == "food" and r.get("quality") is not None and r.get("completed", True)
     ]
     care_completed = sum(1 for r in events if r.get("category") == "care_appointment" and r.get("completed", True))
+    elimination_count = sum(1 for r in events if r.get("category") == "elimination" and r.get("completed", True))
+    hygiene_count = sum(1 for r in events if r.get("category") == "hygiene" and r.get("completed", True))
+    coffee_count = sum(1 for r in events if r.get("category") == "coffee" and r.get("completed", True))
+    body_signal_count = sum(1 for r in events if r.get("category") == "body_signal" and r.get("completed", True))
+    relief_events = sum(1 for r in events if r.get("relief") is not None and r.get("completed", True))
 
     component_scores = {
         "hydration": round(min(1.0, hydration_count / (4.0 * days)), 4),
@@ -459,6 +480,11 @@ def owner_body_maintenance_metrics(
             "sleep_hours": round(sleep_hours, 4),
             "food_events": len(food_scores),
             "care_completed": care_completed,
+            "elimination_count": elimination_count,
+            "hygiene_count": hygiene_count,
+            "coffee_count": coffee_count,
+            "body_signal_count": body_signal_count,
+            "relief_events": relief_events,
         },
         "next_receipt": next_receipt,
         "rule": "This is the product test: body maintenance receipts must improve versus baseline or the hypothesis is failing.",
@@ -676,6 +702,7 @@ def format_owner_body_maintenance_for_prompt(*, state_dir: Path | None = None) -
         f"- truth_label={metrics.get('truth_label')} score={metrics.get('body_maintenance_score')} status={metrics.get('metric_status')} delta={metrics.get('delta_vs_baseline')}",
         f"- window_days={metrics.get('window_days')} event_count={metrics.get('event_count')} next_receipt={metrics.get('next_receipt')}",
         f"- components={json.dumps(metrics.get('component_scores', {}), sort_keys=True)}",
+        f"- raw_counts={json.dumps(metrics.get('raw_counts', {}), sort_keys=True)}",
         "- rule=use this to move hydration, sleep, food quality, and care appointment receipts; do not narrate improvement without receipts.",
     ]
     return "\n".join(lines)

@@ -128,6 +128,55 @@ def test_farfield_replay_during_youtube_is_observed_media_context():
     assert decision["confidence"] >= 0.84
 
 
+def test_recent_media_receipt_keeps_next_low_conf_abstract_line_out_of_cortex():
+    gate.LEDGER.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "route": "observed_media",
+                "reason": "fictional_media_dialogue_with_media_focus",
+                "text_preview": "They decided for me to despair towards the attack.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "The year is in it. This is the biology of metaphysics.",
+        stt_conf=0.36,
+        focus_context="",
+        acoustic_fingerprint={},
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "recent_media_plus_low_conf_abstract_dialogue"
+
+
+def test_clear_owner_voice_confirmation_still_bypasses_recent_media_receipt():
+    gate.LEDGER.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "route": "observed_media",
+                "reason": "fictional_media_dialogue_with_media_focus",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "Alice can you hear me?",
+        stt_conf=0.46,
+        focus_context="",
+        acoustic_fingerprint={},
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "direct_address_or_request"
+
+
 def test_nearfield_owner_source_correction_reaches_cortex_during_media_focus():
     decision = classify_spoken_ingress(
         "the video is interesting but I am talking to you now",
@@ -307,7 +356,62 @@ def test_owner_declared_background_media_youtube_is_ambient():
     )
 
     assert decision["route"] == "ambient_media"
-    assert decision["reason"] == "owner_declared_background_media_youtube"
+    assert decision["reason"] in {
+        "owner_declared_background_media_youtube",
+        "owner_declared_background_media_long_unaddressed_narration",
+    }
+
+
+def test_declared_background_media_do_you_see_quote_is_not_sensor_command():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "Screen media (e.g. YouTube/Movie) is playing; voices are ambient.",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "The dress was powerful because people could start arguing. "
+        "Do you see it as white and gold? How can you see that?",
+        stt_conf=0.78,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] in {
+        "owner_declared_background_media_youtube",
+        "owner_declared_background_media_long_unaddressed_narration",
+    }
+
+
+def test_declared_background_media_we_you_perception_sentence_stays_ambient():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "Screen media (e.g. YouTube/Movie) is playing; voices are ambient.",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "The dress was powerful because people use different words. "
+        "Do you see it as white and gold? We are trying to look under "
+        "the surface at differences in perception.",
+        stt_conf=0.78,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_background_media_long_unaddressed_narration"
 
 
 def test_declared_phone_background_is_silent_unless_alice_is_addressed():

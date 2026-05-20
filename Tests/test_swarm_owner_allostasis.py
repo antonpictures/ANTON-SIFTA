@@ -137,6 +137,43 @@ def test_record_owner_maintenance_event_writes_metric_receipt(tmp_path):
     assert _rows(state / "owner_allostatic_balance.jsonl")[-1]["event_id"] == row["event_id"]
 
 
+def test_record_owner_maintenance_event_accepts_elimination_hygiene_and_coffee(tmp_path):
+    state = tmp_path / ".sifta_state"
+    record_owner_maintenance_event("elimination", source="owner_voice", state_dir=state, now=1000.0)
+    record_owner_maintenance_event("hygiene", source="owner_voice", state_dir=state, now=1001.0)
+    record_owner_maintenance_event("coffee", source="owner_voice", state_dir=state, now=1002.0)
+
+    metrics = owner_body_maintenance_metrics(state_dir=state, now=1010.0, write_ledger=True)
+
+    assert metrics["raw_counts"]["elimination_count"] == 1
+    assert metrics["raw_counts"]["hygiene_count"] == 1
+    assert metrics["raw_counts"]["coffee_count"] == 1
+
+
+def test_record_owner_maintenance_event_accepts_body_signal_metadata(tmp_path):
+    state = tmp_path / ".sifta_state"
+    row = record_owner_maintenance_event(
+        "body_signal",
+        source="philosophy_router_owner_body_claim",
+        notes="my stomach hurts",
+        body_signal="digestive_signal",
+        relief=0.8,
+        metadata={"router_lane": "OWNER_BODY"},
+        state_dir=state,
+        now=1000.0,
+    )
+
+    metrics = owner_body_maintenance_metrics(state_dir=state, now=1010.0, write_ledger=True)
+    prompt = format_owner_body_maintenance_for_prompt(state_dir=state)
+
+    assert row["body_signal"] == "digestive_signal"
+    assert row["relief"] == 0.8
+    assert row["metadata"]["router_lane"] == "OWNER_BODY"
+    assert metrics["raw_counts"]["body_signal_count"] == 1
+    assert metrics["raw_counts"]["relief_events"] == 1
+    assert "body_signal_count" in prompt
+
+
 def test_body_maintenance_metrics_compare_against_baseline(tmp_path):
     state = tmp_path / ".sifta_state"
     day = 24 * 3600

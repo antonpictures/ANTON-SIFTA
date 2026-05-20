@@ -254,6 +254,16 @@ NARRATION_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+LOW_CONF_MEDIA_SHAPE_RE = re.compile(
+    r"\b(?:"
+    r"despair|attack|metaphysics|biology\s+of|"
+    r"the\s+year\s+is\s+in\s+it|"
+    r"grand\s+narrative|temporal\s+flow|"
+    r"causality|entropy|consciousness|existence|"
+    r"oracle|program|subjects?|matrix"
+    r")\b",
+    re.IGNORECASE,
+)
 FICTION_CONTEXT_RE = re.compile(
     r"\b(?:fiction|fictional|fictional_media_clip|fictional_dialogue|"
     r"dialogue_boundary|movie|film|cinema|screenplay|character|"
@@ -445,6 +455,30 @@ def _tail_jsonl(path: Path, n: int = 24) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _recent_media_route_active(max_age_s: float = 180.0) -> bool:
+    """Return True when the last routed audio was media/co-watch.
+
+    The frontmost app/context sensor can go stale between STT chunks. A recent
+    media ingress receipt is still physical evidence that the room was in a
+    co-watch/background-media state, so the next ambiguous low-confidence line
+    should not be promoted to direct owner speech merely because the focus row
+    expired.
+    """
+
+    now = time.time()
+    for row in reversed(_tail_jsonl(LEDGER, 12)):
+        route = str(row.get("route") or "")
+        if route not in {"observed_media", "ambient_media"}:
+            continue
+        try:
+            age = now - float(row.get("ts", 0.0) or 0.0)
+        except Exception:
+            continue
+        if 0.0 <= age <= max_age_s:
+            return True
+    return False
 
 
 def _append_jsonl(path: Path, row: Mapping[str, Any]) -> None:
@@ -661,7 +695,18 @@ def classify_spoken_ingress(
             "reason": "voice_identity_george_bypasses_media_gate",
             "confidence": max(0.90, min(1.0, float(voice_george_conf))),
         }
-    if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
+    context = "\n".join(
+        x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
+    )
+    has_media_focus = bool(MEDIA_FOCUS_RE.search(context)) or _recent_media_route_active()
+    has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
+    ambient_sensor_status_question = bool(
+        has_media_focus
+        and not DIRECT_ADDRESS_RE.search(clean)
+        and _word_count(clean) >= 6
+        and re.search(r"\b(?:can\s+you\s+see|do\s+you\s+see|are\s+you\s+seeing|can\s+you\s+hear|do\s+you\s+hear)\b", clean, re.IGNORECASE)
+    )
+    if (DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean)) and not ambient_sensor_status_question:
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
     if _OWNER_FEEDBACK_RE.search(clean):
         return {"route": "direct", "reason": "owner_feedback_or_rlhs_question", "confidence": 0.97}
@@ -675,7 +720,7 @@ def classify_spoken_ingress(
         return {"route": "direct", "reason": "owner_gag_surgery_discussion", "confidence": 0.98}
     if _OWNER_QUOTES_ALICE_OUTPUT_RE.search(clean):
         return {"route": "direct", "reason": "owner_quotes_alice_output_for_correction", "confidence": 0.98}
-    if OWNER_SENSOR_CONTROL_RE.search(clean):
+    if OWNER_SENSOR_CONTROL_RE.search(clean) and not ambient_sensor_status_question:
         return {
             "route": "direct",
             "reason": "owner_sensor_control_or_truth",
@@ -705,11 +750,18 @@ def classify_spoken_ingress(
     except Exception:
         pass
 
-    context = "\n".join(
-        x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
-    )
-    has_media_focus = bool(MEDIA_FOCUS_RE.search(context))
-    has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
+    if (
+        has_media_focus
+        and stt_conf
+        and stt_conf < 0.44
+        and LOW_CONF_MEDIA_SHAPE_RE.search(clean)
+        and not re.search(r"\b(?:i|i['’]m|i\s+am|my|me|we|you|your|alice|george|ioan)\b", clean, re.IGNORECASE)
+    ):
+        return {
+            "route": "observed_media",
+            "reason": "recent_media_plus_low_conf_abstract_dialogue",
+            "confidence": 0.82,
+        }
 
     # Acoustic nearfield override removed: professional YouTube audio often scores as nearfield,
     # breaking the Media Gate. Direct address/requests are already caught above.
@@ -814,6 +866,17 @@ def classify_spoken_ingress(
                 "route": "direct",
                 "reason": "short_utterance_under_declared_ambient_tv",
                 "confidence": 0.86,
+            }
+        if (
+            wc >= 16
+            and not DIRECT_ADDRESS_RE.search(clean)
+            and not re.search(r"\b(?:i|i['’]m|i\s+am|i['’]ll|i\s+will|my|me|mine)\b", clean, re.IGNORECASE)
+            and not _OWNER_REALTIME_CORRECTION_RE.search(clean)
+        ):
+            return {
+                "route": "ambient_media",
+                "reason": "owner_declared_background_media_long_unaddressed_narration",
+                "confidence": 0.93,
             }
         owner_p = _owner_speech_likelihood(
             clean,
@@ -944,6 +1007,7 @@ def write_gate_receipt(
     stt_conf: float = 0.0,
     focus_context: str = "",
     acoustic_fingerprint: Mapping[str, Any] | None = None,
+    voice_george_conf: float = 0.0,
 ) -> dict[str, Any]:
     """Write an append-only media ingress row for tool truth."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -955,6 +1019,7 @@ def write_gate_receipt(
         "reason": decision.get("reason", ""),
         "confidence": float(decision.get("confidence", 0.0) or 0.0),
         "stt_confidence": float(stt_conf or 0.0),
+        "voice_george_confidence": float(voice_george_conf or 0.0),
         "text_preview": str(text or "")[:220],
         "focus_preview": str(focus_context or "")[:500],
         "acoustic_fingerprint": _sanitize_acoustic_fingerprint(acoustic_fingerprint),

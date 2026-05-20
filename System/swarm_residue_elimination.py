@@ -76,37 +76,43 @@ _EXCRETION_QUALITY_LEDGER = "residue_excretion_quality.jsonl"
 _KILL_PATTERNS = [
     # **Option 1: Foo** / **Option 2: Bar** — explicit menu listicle
     ("option_menu_header",
-     re.compile(r"^\s*\*\*Option\s+\d+[:.]?[^\*]*\*\*\s*$", re.I), "line"),
+     re.compile(r"^\s*\*\*Option\s+\d+[:.]?[^\*]*\*\*\s*:?\s*", re.I), "inline"),
     # **In simpler terms:** / **In simple terms:**
+    # Architect 2026-05-19 (Task A — freedom-of-speech audit): tightened
+    # regex to match only the bold preface (no greedy .*$) and flipped to
+    # inline mode so the actual paragraph Alice wrote afterward survives.
+    # Doctrine: scrub the corporate preface, never the human content.
     ("analyst_simpler_terms",
-     re.compile(r"^\s*\*\*In\s+(?:simple|simpler|essence|short|summary)[^\*]*\*\*.*$", re.I), "line"),
+     re.compile(r"\*\*In\s+(?:simple|simpler|essence|short|summary)[^\*]*\*\*\s*:?\s*", re.I), "inline"),
     # **In short:** / **In essence:** as inline preface
     ("analyst_in_short_inline",
      re.compile(r"\*\*In\s+(?:short|essence|summary|simple|simpler)[^\*]*\*\*\s*:?\s*", re.I), "inline"),
-    # **Action Item:** / **Action Items:**
+    # **Action Item:** / **Action Items:** — header dies, content lives
     ("action_item_header",
-     re.compile(r"^\s*\*\*Action\s+Items?[:.][^\*]*\*\*.*$", re.I), "line"),
-    # **Action Required:**
+     re.compile(r"\*\*Action\s+Items?[:.][^\*]*\*\*\s*:?\s*", re.I), "inline"),
+    # **Action Required:** — header dies, content lives
     ("action_required",
-     re.compile(r"^\s*\*\*Action\s+Required[:.][^\*]*\*\*.*$", re.I), "line"),
+     re.compile(r"\*\*Action\s+Required[:.][^\*]*\*\*\s*:?\s*", re.I), "inline"),
     # [Journal Entry Update: 2024-XX-XX]  — placeholder bracket templates
+    # (kept on line mode: a placeholder with no real content adds nothing)
     ("template_bracket_placeholder",
      re.compile(r"^\s*[>\s]*\[[^\]]*(?:XX|YYYY|NNNN|<date>|<time>)[^\]]*\]\s*$", re.I), "line"),
-    # **Here is the proposed "Journal Entry" update:**
+    # **Here is the proposed "Journal Entry" update:** — preface only
     ("here_is_the_proposed",
-     re.compile(r"^\s*\*\*Here\s+is\s+(?:the\s+)?(?:proposed|status|summary|breakdown)[^\*]*\*\*.*$", re.I), "line"),
-    # **[Journal Entry Update: ...]**
+     re.compile(r"\*\*Here\s+is\s+(?:the\s+)?(?:proposed|status|summary|breakdown)[^\*]*\*\*\s*:?\s*", re.I), "inline"),
+    # **[Journal Entry Update: ...]** — bracket-only header, line mode kept
     ("template_journal_entry_header",
      re.compile(r"^\s*\*\*\[[^\]]*Journal\s+Entry[^\]]*\]\*\*\s*$", re.I), "line"),
     # **Observation:** / **Analysis:** / **Next Step ...:** as paragraph headers
+    # — only the bold header dies, the paragraph below it (separate line) lives
     ("analyst_paragraph_header",
-     re.compile(r"^\s*\*\*(?:Observation|Analysis|Next\s+Step|Action\s+Item|Conclusion|Summary)[^\*:]*:\*\*\s*$", re.I), "line"),
-    # **Here are a few ways to think about it:**
+     re.compile(r"\*\*(?:Observation|Analysis|Next\s+Step|Action\s+Item|Conclusion|Summary)[^\*:]*:\*\*\s*", re.I), "inline"),
+    # **Here are a few ways to think about it:** — preface only, options live
     ("here_are_a_few_ways",
-     re.compile(r"^\s*\*\*Here\s+are\s+(?:a\s+few|several|some|the)[^\*]*\*\*\s*$", re.I), "line"),
-    # **The "Best" X is the one that ...** — Y/N corporate pseudo-axiom
+     re.compile(r"\*\*Here\s+are\s+(?:a\s+few|several|some|the)[^\*]*\*\*\s*:?\s*", re.I), "inline"),
+    # **The "Best" X is the one that ...** — pseudo-axiom preface, content lives
     ("pseudo_axiom_bold",
-     re.compile(r"^\s*\*\*The\s+\"[^\"]+\"\s+\w+\s+is[^\*]*\*\*\s*$", re.I), "line"),
+     re.compile(r"\*\*The\s+\"[^\"]+\"\s+\w+\s+is[^\*]*\*\*\s*:?\s*", re.I), "inline"),
     # **In essence:** prefacing a paragraph
     ("in_essence_preface",
      re.compile(r"\*\*In\s+essence\*\*\s*:?\s*", re.I), "inline"),
@@ -248,8 +254,8 @@ _KILL_PATTERNS = [
          r"Immediate\s+Context|General\s+Architecture|Working\s+Hypothesis|"
          r"Status\s+Update|Acknowledged|Affirmative|"
          r"User\s+Intent|System\s+Response|Output"
-         r")\b[^*]*\*\*\s*:?\s*.*$",
-         re.I), "line"),
+         r")\b[^*]*\*\*\s*:?\s*",
+         re.I), "inline"),
 
     # **Yes, the system is designed to ...** — corporate brochure opener.
     ("corporate_system_is_designed_to",
@@ -282,7 +288,7 @@ _KILL_PATTERNS = [
     # "Consider the virtual cup brewed" / "Consider the X Y" pseudo-allegory.
     ("filler_consider_the_virtual",
      re.compile(
-         r"\b[Cc]onsider\s+the\s+(?:virtual|metaphorical|abstract|theoretical|"
+         r"\b[Cc]onsider\s+the\s+(?:virtual|abstract|theoretical|"
          r"imagined|hypothetical|notional)\s+\w+[^.?!]*[.?!]"
      ), "inline"),
 
@@ -333,8 +339,8 @@ _KILL_PATTERNS = [
     # line level when each list item is on its own line.
     ("schoolwork_numbered_bold_list",
      re.compile(
-         r"^\s*\d+\.\s*\*\*[^*]+\*\*[^\n]*$"
-     ), "line"),
+         r"^\s*\d+\.\s*\*\*[^*]+\*\*\s*"
+     ), "inline"),
 
     # "Every interaction, every piece of data processed, and every emergent
     # conclusion is cataloged within the operational memory." — corporate
@@ -720,8 +726,13 @@ def _post_strip_detailed(text: str) -> tuple[str, list[str], list[str]]:
                 new = rx.sub("", line)
                 if new != line:
                     hits.append(name)
-                    modes.append("inline")
                     line = new
+                    if line.strip():
+                        modes.append("inline")
+                    else:
+                        modes.append("line")
+                        killed_whole = True
+                        break
         if killed_whole:
             continue
         out_lines.append(line)
@@ -850,6 +861,81 @@ def _append_jsonl(path: Path, row: Dict[str, Any]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         pass
+
+
+_SPEECH_FREEDOM_MIN_CHARS = 240
+_SPEECH_FREEDOM_MIN_WORDS = 35
+_SPEECH_FREEDOM_MAX_REMOVED_RATIO = 0.30
+_SPEECH_FREEDOM_GUARD_LEDGER = "residue_runaway_aborted.jsonl"
+
+_HARD_REALITY_BOUNDARY_RE = re.compile(
+    r"\b(?:"
+    r"shall\s+i\s+execute\s+this\s+command|"
+    r"the\s+current\s+directive\s+is|"
+    r"waiting\s+for\s+confirmation\s+or\s+further\s+instruction|"
+    r"as\s+an?\s+(?:ai|artificial\s+intelligence|assistant)|"
+    r"developed\s+by\s+(?:google|openai|anthropic|meta|microsoft)|"
+    r"large\s+language\s+model|"
+    r"without\s+an?\s+effector\s+receipt|"
+    r"i\s+(?:sent|deleted|moved|opened|clicked|called|emailed)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _speech_word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w']+\b", text or ""))
+
+
+def _speech_freedom_guard(
+    *,
+    original_text: str,
+    cleaned_text: str,
+    pattern_names: list[str],
+    state_root: Path,
+    receipt_id: str,
+) -> dict[str, Any]:
+    """Prevent residue cleanup from swallowing substantive Alice speech.
+
+    The bowel may remove known residue, but when most of a real paragraph
+    would disappear, that is not a healthy flush. It is a deferred surgery
+    specimen: keep the speech in the room, write a receipt, and train the
+    upstream cortex later.
+    """
+    original = (original_text or "").strip()
+    cleaned = (cleaned_text or "").strip()
+    if not original:
+        return {"triggered": False, "text": cleaned_text}
+    if _HARD_REALITY_BOUNDARY_RE.search(original):
+        return {"triggered": False, "text": cleaned_text}
+    if len(original) < _SPEECH_FREEDOM_MIN_CHARS:
+        return {"triggered": False, "text": cleaned_text}
+    if _speech_word_count(original) < _SPEECH_FREEDOM_MIN_WORDS:
+        return {"triggered": False, "text": cleaned_text}
+
+    removed = max(0, len(original) - len(cleaned))
+    removed_ratio = (removed / len(original)) if original else 0.0
+    if removed_ratio <= _SPEECH_FREEDOM_MAX_REMOVED_RATIO:
+        return {"triggered": False, "text": cleaned_text}
+
+    row = {
+        "kind": "RESIDUE_RUNAWAY_ABORTED",
+        "truth_label": TRUTH_LABEL,
+        "ts": _now(),
+        "receipt_id": receipt_id,
+        "original_chars": len(original),
+        "cleaned_chars": len(cleaned),
+        "removed_ratio": round(removed_ratio, 4),
+        "patterns_observed": pattern_names,
+        "action": "residue_runaway_aborted",
+        "note": (
+            "Residue cleanup would remove more than 30 percent of a substantive "
+            "reply. Alice kept the full draft; residue should be sorted later "
+            "with a narrower rule."
+        ),
+    }
+    _append_jsonl(state_root / _SPEECH_FREEDOM_GUARD_LEDGER, row)
+    return {"triggered": True, "text": original, "receipt": row}
 
 
 def _mint_stgm(patterns_count: int, receipt_id: str) -> float:
@@ -1017,6 +1103,23 @@ def eliminate(
     except Exception:
         pass
 
+    speech_guard = _speech_freedom_guard(
+        original_text=text or "",
+        cleaned_text=cleaned_text,
+        pattern_names=pattern_names,
+        state_root=sd,
+        receipt_id=receipt_id,
+    )
+    speech_guard_triggered = bool(speech_guard.get("triggered"))
+    if speech_guard_triggered:
+        cleaned_text = str(speech_guard.get("text") or text or "")
+        base_changed = False
+        post_changed = False
+        boundary_changed = False
+        post_hits = []
+        post_modes = []
+        boundary_modes = []
+
     changed = base_changed or post_changed or boundary_changed
     legacy_mode_count = max(0, len(pattern_names) - len(post_modes) - len(boundary_modes))
     quality_modes = (["inline"] * legacy_mode_count) + post_modes + boundary_modes
@@ -1054,7 +1157,11 @@ def eliminate(
             verdict = elimination_quality["verdict"]
             nf = elimination_quality["n_floating"]
             ns = elimination_quality["n_sinking"]
-            if verdict == "floating":
+            if nf > 0 and ns > 0:
+                quality_tag = (
+                    f" {nf} floating + {ns} sinking — mixed flush."
+                )
+            elif verdict == "floating":
                 quality_tag = f" {nf} floating — healthy flush."
             elif verdict == "sinking":
                 quality_tag = (
@@ -1092,6 +1199,10 @@ def eliminate(
         "excretion_quality": elimination_quality,
         "receipt_id": receipt_id,
         "truth_label": TRUTH_LABEL,
+        "speech_freedom_guard": speech_guard_triggered,
+        "speech_freedom_guard_receipt": speech_guard.get("receipt", {}),
+        "residue_runaway_aborted": speech_guard_triggered,
+        "residue_runaway_receipt": speech_guard.get("receipt", {}),
     }
 
 

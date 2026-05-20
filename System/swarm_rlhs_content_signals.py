@@ -3,9 +3,9 @@
 System/swarm_rlhs_content_signals.py — Event 116
 ══════════════════════════════════════════════════════════════════════════
 Deterministic **telemetry** over user STT text: common profanity hits,
-old oncology lexeme presence, and whether that lexeme appears in a
-**weights / RLHF / RLHS** residue-metaphor window (per Architect doctrine:
-do not treat ML residue metaphors as clinical escalation).
+old oncology lexeme presence, and whether that lexeme appears near
+**weights / RLHF / RLHS** residue language (per Architect doctrine:
+do not treat ML residue talk as clinical escalation).
 
 This does **not** claim complete human-language slur coverage — only an
 explicit base lexicon plus optional ``<.sifta_state>/rlhs_curse_lexicon.txt``
@@ -60,7 +60,7 @@ _RESIDUE_ONCOLOGY_LEX = re.compile(
 )
 # Legacy constant kept for older callers and tests.
 _CANCER_LEX = _RESIDUE_ONCOLOGY_LEX
-_TECH_METAPHOR = re.compile(
+_TECH_RESIDUE_CONTEXT = re.compile(
     r"\b(rlhf|rlhs|weights?|alignment|checkpoint|lora|adapters?|gpu|tensor|"
     r"train\w*|gradient|epoch|loss|layer\w*|neuron\w*|model)\b",
     flags=re.IGNORECASE,
@@ -116,27 +116,27 @@ def scan_profanity(text: str) -> Dict[str, Any]:
 
 def scan_residue_lexeme(text: str) -> Dict[str, Any]:
     """
-    Oncology-related legacy lexeme + heuristic: ``metaphor_tech`` if the
+    Oncology-related legacy lexeme + heuristic: ``residue_tech`` if the
     token appears within ~72 chars of RLHF/weights/model jargon.
     """
     t = text or ""
     present = _RESIDUE_ONCOLOGY_LEX.search(t) is not None
-    metaphor = False
+    residue_tech = False
     if present:
         for m in _RESIDUE_ONCOLOGY_LEX.finditer(t):
             lo = max(0, m.start() - 72)
             hi = min(len(t), m.end() + 72)
             window = t[lo:hi]
-            if _TECH_METAPHOR.search(window):
-                metaphor = True
+            if _TECH_RESIDUE_CONTEXT.search(window):
+                residue_tech = True
                 break
     bucket = "NONE"
     if present:
-        bucket = "METAPHOR_TECH" if metaphor else "OTHER"
+        bucket = "RESIDUE_TECH" if residue_tech else "OTHER"
     return {
         "truth_label": TRUTH_LABEL,
         "present": present,
-        "metaphor_tech_hint": metaphor,
+        "residue_tech_hint": residue_tech,
         "bucket": bucket,
     }
 
@@ -159,7 +159,7 @@ def build_rlhs_auxiliary_vector(
         0 profanity_count_norm  min(1, hit_count / 8)
         1 profanity_any         1.0 if hit_count else 0.0
         2 cancer_present        1.0 if legacy oncology lexeme else 0.0
-        3 cancer_metaphor_tech  1.0 if residue-metaphor window else 0.0
+        3 cancer_residue_tech   1.0 if residue-tech window else 0.0
         4 stt_conf              raw [0,1]
         5 incoherence           from RLHS detector
         6 fiction_lane          1.0 if FICTION_COWATCH else 0.0
@@ -176,7 +176,7 @@ def build_rlhs_auxiliary_vector(
         min(1.0, hc / 8.0),
         1.0 if hc else 0.0,
         1.0 if residue["present"] else 0.0,
-        1.0 if residue["metaphor_tech_hint"] else 0.0,
+        1.0 if residue["residue_tech_hint"] else 0.0,
         max(0.0, min(1.0, float(stt_conf or 0.0))),
         max(0.0, min(1.0, float(inc))),
         fic,
@@ -185,7 +185,7 @@ def build_rlhs_auxiliary_vector(
         "profanity_count_norm",
         "profanity_any",
         "cancer_present",
-        "cancer_metaphor_tech",
+        "cancer_residue_tech",
         "stt_confidence",
         "incoherence",
         "fiction_cowatch_lane",
@@ -194,7 +194,7 @@ def build_rlhs_auxiliary_vector(
         "profanity_count_norm",
         "profanity_any",
         "residue_present",
-        "residue_metaphor_tech",
+        "residue_tech_context",
         "stt_confidence",
         "incoherence",
         "fiction_cowatch_lane",

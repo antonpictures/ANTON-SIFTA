@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
 from System.swarm_sar_triage_organ import triage
 from System.swarm_turbulence_organ import run_swarm
 from System.swarm_turbulence_substrate import TurbulenceParams, degrade, synthetic_target
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 def test_turbulence_substrate_preserves_psf_energy():
@@ -49,3 +52,60 @@ def test_fieldsight_chained_swarm_returns_finite_posterior():
     assert math.isfinite(result.posterior_mean_cn2)
     assert len(result.swimmers) == 8
     assert any(sw.pheromone > 0 for sw in result.swimmers)
+
+
+def test_fieldsight_widget_surfaces_gamma_posterior_and_swimmer_census():
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications.sifta_fieldsight_widget import SiftaFieldSightWidget
+
+    app = QApplication.instance() or QApplication([])
+    widget = SiftaFieldSightWidget()
+    try:
+        row = widget._compute_demo()
+        gamma = row.get("gamma_posterior") or {}
+
+        assert gamma
+        assert gamma.get("deferred_by_thermodynamics") is not True
+        assert gamma["posterior_mean_gamma"] > 0.0
+        assert gamma["posterior_std_gamma"] >= 0.0
+        assert gamma["thermodynamic_clearance"]["allowed"] is True
+        assert gamma["swimmer_census"]["swimmer_count"] == len(gamma["swimmers"])
+        assert gamma["swimmer_census"]["unaccounted_swimmers"] == 0
+        assert gamma["swimmer_census"]["all_swimmers_accounted"] is True
+
+        metrics = widget._format_metrics(row)
+        assert "gamma posterior:" in metrics
+        assert "gamma thermo:" in metrics
+        assert "gamma swimmers:" in metrics
+    finally:
+        widget.deleteLater()
+        app.processEvents()
+
+
+def test_fieldsight_optional_body_slit_reports_no_unaccounted_swimmers():
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications.sifta_fieldsight_widget import SiftaFieldSightWidget
+
+    app = QApplication.instance() or QApplication([])
+    widget = SiftaFieldSightWidget()
+    try:
+        widget._slit_coh.setChecked(True)
+        row = widget._compute_demo()
+        slit = row.get("slit_coherence") or {}
+
+        assert slit
+        assert "error" not in slit
+        assert slit["thermodynamic_clearance"]["allowed"] is True
+        assert slit["swimmer_census"]["unaccounted_swimmers"] == 0
+        assert slit["swimmer_census"]["all_swimmers_accounted"] is True
+        assert slit["body_swimmer_census"]["unaccounted_swimmers"] == 0
+        assert slit["body_swimmer_census"]["all_swimmers_accounted"] is True
+
+        metrics = widget._format_metrics(row)
+        assert "slit swimmers:" in metrics
+        assert "unaccounted=0" in metrics
+    finally:
+        widget.deleteLater()
+        app.processEvents()

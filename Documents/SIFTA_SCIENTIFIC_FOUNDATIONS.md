@@ -317,6 +317,7 @@ Immune budget gate: `immune_budget_check(writes, budget_stgm)` blocks the immune
 | Friston et al. 2022 — *Path integrals, particular kinds, and strange things* | Formal path-integral formulation of active inference | `RESEARCH_ONLY` — deeper maths than current organ needs |
 | Hochner — full octopus peripheral reflex arc circuit | Peripheral arm reflex circuit detail for per-organ reflex spec | `RESEARCH_ONLY` |
 | Song *et al.* 2025 — entanglement entropy at SU(N) DQCPs (*Science Advances*) | Literature anchor for **criticality / hidden order**; informs **partnership narrative** with quantum matter labs; **does not** assert SIFTA simulates DQCPs | `RESEARCH_ONLY` — see §14 |
+| Google AI Edge — LiteRT-LM, FunctionGemma, Gemma 4 on-device skills (2025–2026 product posts) | **Lazy skill loading** + **sub-1B specialists** + measured function-calling accuracy | `RESEARCH_ONLY` — crosswalk `REALIZATION_PLAN.md` **§11.12**; SIFTA implementation = `swarm_skill_library.py` + future intent router |
 
 ---
 
@@ -340,6 +341,31 @@ Immune budget gate: `immune_budget_check(writes, budget_stgm)` blocks the immune
 - **Fractal / multi-scale stigmergy backlog:** Proposed modules and observables are spelled in `Documents/REALIZATION_PLAN.md` **§11.9** (scaffold list: fractal substrate, walker organ, invariant analyzer, optional sim Tab).
 
 **Boundary:** No claim that emergent **pheromone-field** statistics reproduce Song *et al.* curves until a defined simulator + benchmark program exists.
+
+---
+
+## 15. On-device GenAI — tiered skills and tiny specialists (engineering anchor)
+
+**Status:** `LITERATURE_ANCHOR` + `RESEARCH_ONLY` for Google-specific numbers; `OPERATIONAL` for SIFTA’s existing three-tier skill library.
+
+**Sources (product / engineering, not peer-reviewed physics):**
+
+- Google Developers Blog — [Gemma 4 agentic skills on edge](https://developers.googleblog.com/en/bring-state-of-the-art-agentic-skills-to-the-edge-with-gemma-4/)
+- Google Developers Blog — [LiteRT-LM on-device GenAI](https://developers.googleblog.com/blazing-fast-on-device-genai-with-litert-lm/)
+- Google — [FunctionGemma](https://blog.google/innovation-and-ai/technology/developers-tools/functiongemma/)
+- Open runtime — [google-ai-edge/LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
+
+**Mechanism (compressed):** Deploy intelligence in **two layers** — (1) **system-preloaded** models (Android AICore / Gemini Nano) for common language tasks with minimal app footprint; (2) **app-bundled** sub-1B-parameter models via LiteRT-LM for **narrow** tasks. **Agent skills** keep only **descriptions** in context and **load** full skill definitions on demand; **function-calling specialists** need **fine-tuning** on synthetic task data to reach production reliability (speaker-reported ~46% → ~90% on a fixed intent suite).
+
+**SIFTA implementation (OBSERVED today):**
+
+- `System/swarm_skill_library.py` — Tier 1 index / Tier 2 procedure / Tier 3 resources; STGM + affect lanes; `nanobot_skill_receipts.jsonl`
+- `System/swarm_skill_ingest.py`, `swarm_skill_extract.py`, `swarm_skill_validator.py` — install and verify skills as **versioned repo artifacts**
+- `Applications/sifta_hermes_parity_widget.py` — UI field for tools + skills as one capability registry
+
+**SIFTA delta (not in Google stack):** append-only **stigmergic** coordination across IDEs and nodes; **Fiction Organ** effector guards; **Ed25519 / STGM** attribution — skills are **economic acts**, not only prompt text.
+
+**Full doctrine + backlog:** `Documents/REALIZATION_PLAN.md` **§11.12**.
 
 ---
 

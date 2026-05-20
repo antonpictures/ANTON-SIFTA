@@ -13,14 +13,14 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
             handle.write(json.dumps(row) + "\n")
 
 
-def _write_kernel(state: Path, now: float, *, health: float = 1.0) -> None:
+def _write_kernel(state: Path, now: float, *, health: float = 1.0, heartbeat_age_s: float = 3.0) -> None:
     (state / "kernel_process_table.json").write_text(
         json.dumps(
             {
                 "processes": {
                     "e35_vision_001": {
                         "health": health,
-                        "last_heartbeat_ts": now - 3,
+                        "last_heartbeat_ts": now - heartbeat_age_s,
                     }
                 }
             }
@@ -91,6 +91,7 @@ def test_stale_or_missing_field_receipts_refuse_health_claim(tmp_path: Path) -> 
     assert proof.status == "NOT_PROVEN"
     assert proof.ok is False
     assert proof.camera_healthy is False
+    assert proof.connection_state == "DISCONNECTED_OR_STALE_INPUT"
     assert "not proven" in proof.summary
 
 
@@ -115,6 +116,42 @@ def test_fresh_visual_and_face_prove_owner_even_if_saved_frame_is_stale(tmp_path
 
     assert proof.status == "OWNER_RECOGNIZED"
     assert proof.camera_healthy is True
+    assert proof.connection_state == "LIVE_CAPTURE_VERIFIED"
+    assert proof.disconnect_reasons == []
+
+
+def test_stale_visual_and_stale_heartbeat_do_not_look_like_live_health(tmp_path: Path) -> None:
+    now = 1000.0
+    state = tmp_path
+    _write_jsonl(
+        state / "face_detection_events.jsonl",
+        [{"ts": now - 2, "event": "FACE_DETECTION", "faces_detected": 0, "audience": "no_face"}],
+    )
+    _write_jsonl(
+        state / "active_eye_identity_frames.jsonl",
+        [{"ts": now - 594, "event": "ACTIVE_EYE_IDENTITY_FRAME", "device": "MacBook Pro Camera", "w": 1920, "h": 1080, "sha8": "stale"}],
+    )
+    _write_jsonl(
+        state / "visual_stigmergy.jsonl",
+        [{"ts": now - 589, "sha8": "stale", "w": 1920, "h": 1080}],
+    )
+    _write_kernel(state, now, health=1.0, heartbeat_age_s=594)
+
+    proof = build_camera_unified_field_proof(state, now=now, stale_s=300)
+
+    assert proof.status == "NO_FACE_CAMERA_UNPROVEN"
+    assert proof.ok is False
+    assert proof.camera_healthy is False
+    assert proof.vision_health == 1.0
+    assert proof.vision_fresh is False
+    assert proof.connection_state == "DISCONNECTED_OR_STALE_INPUT"
+    assert "stale_visual_stigmergy" in proof.disconnect_reasons
+    assert "stale_frame" in proof.disconnect_reasons
+    assert "stale_vision_heartbeat" in proof.disconnect_reasons
+    assert "health_value_stale_without_fresh_heartbeat" in proof.disconnect_reasons
+    assert proof.evidence["kernel"]["fresh"] is False
+    assert proof.evidence["kernel"]["health_ok"] is False
+    assert "input disconnected/stale" in proof.summary
 
 
 def test_write_receipt_records_proof_row(tmp_path: Path) -> None:

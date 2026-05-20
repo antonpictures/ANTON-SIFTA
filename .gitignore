@@ -231,3 +231,6 @@ SwarmEntityWatchingYouTube/
 
 # ── Cowork's session-local diagnostic (move to scripts/ or delete) ─────
 /probe_ace_black.py
+
+# private outbound email drafts/correspondence — keep local (node sovereignty §3)
+Documents/EMAIL_*.md

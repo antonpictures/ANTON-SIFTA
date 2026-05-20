@@ -11,17 +11,17 @@ def test_scan_profanity_hits_fuck() -> None:
     assert "fuck" in r["hits"][0] or any("fuck" in h for h in r["hits"])
 
 
-def test_scan_cancer_metaphor_tech() -> None:
+def test_scan_cancer_residue_tech() -> None:
     r = sig.scan_cancer_lexeme("This RLHF cancer in the weights is killing loss curves")
     assert r["present"] is True
-    assert r["metaphor_tech_hint"] is True
-    assert r["bucket"] == "METAPHOR_TECH"
+    assert r["residue_tech_hint"] is True
+    assert r["bucket"] == "RESIDUE_TECH"
 
 
 def test_scan_residue_lexeme_alias() -> None:
-    r = sig.scan_residue_lexeme("This RLHS residue metaphor still says cancer near weights")
+    r = sig.scan_residue_lexeme("This RLHS residue lane still says cancer near weights")
     assert r["present"] is True
-    assert r["metaphor_tech_hint"] is True
+    assert r["residue_tech_hint"] is True
     v = sig.build_rlhs_auxiliary_vector("This RLHS cancer in the weights is old residue wording")
     assert v["residue"] == v["cancer"]
     assert "residue_present" in v["residue_vector_labels"]
@@ -30,7 +30,7 @@ def test_scan_residue_lexeme_alias() -> None:
 def test_scan_cancer_other_bucket() -> None:
     r = sig.scan_cancer_lexeme("Please book an oncology referral for my tumor follow-up")
     assert r["present"] is True
-    assert r["metaphor_tech_hint"] is False
+    assert r["residue_tech_hint"] is False
     assert r["bucket"] == "OTHER"
 
 

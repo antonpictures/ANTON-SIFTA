@@ -691,6 +691,26 @@ def _chat(text: str) -> Dict[str, Any]:
     text = (text or "").strip()
     if not text:
         return {"error": "empty input"}
+    # Immune edge gate (Codex points 1+2) — voice stigma repair + {lane, target, may_effector} before keyword or brain.
+    # Stigmergic: every turn classified, receipted, metrics logged. Ace/lesson attention flows through capability field.
+    try:
+        from System import swarm_edge_intent_router as er
+        dec = er.classify_intent(text)
+        if dec.get("repaired") and float(dec.get("confidence", 0.0)) > 0.65:
+            text = dec["repaired"]
+        # Always log a decision metric for the ledger
+        er.log_skill_invoke(
+            lane=dec.get("lane", "chat"),
+            target=dec.get("target", ""),
+            latency_ms=1.0,
+            ok=True,
+            model_id="edge_router",
+            stgm_cost=0.0,
+            attribution_key=er.get_last_doctor() if hasattr(er, 'get_last_doctor') else "local_alice",
+            extra={"may_effector": dec.get("may_effector")},
+        )
+    except Exception:
+        pass
     keyword = _chat_keyword(text)
     if keyword is not None:
         return keyword

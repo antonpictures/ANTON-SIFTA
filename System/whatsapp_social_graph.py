@@ -19,17 +19,38 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
 
-# Local owner identity and known early federation aliases. These are not
-# secrets; they prevent Alice from confusing the machine owner with external
-# WhatsApp friends when chat display names are noisy.
-OWNER_SELF_JIDS = {"51235386302504@lid"}
-OWNER_NAME_ALIASES = {"george", "ioan", "ioan george anton", "george anton", "architect"}
+# Local owner identity and known contacts. The owner's REAL WhatsApp JIDs and
+# contact display names are private node selfhood (§3 node sovereignty) and
+# live ONLY in the gitignored local config below
+# (.sifta_state/owner_whatsapp_identity.json) — never in the public source.
+# The defaults here are non-identifying examples used by tests and fresh
+# nodes; a real node loads its true identity from local config and merges it
+# in. The example JIDs stay present so logic/tests work on any node.
+def _load_local_identity() -> Dict[str, Any]:
+    try:
+        data = json.loads(
+            (_STATE / "owner_whatsapp_identity.json").read_text(encoding="utf-8")
+        )
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+_LOCAL_IDENTITY = _load_local_identity()
+
+OWNER_SELF_JIDS = {"100000000000001@lid"} | set(
+    _LOCAL_IDENTITY.get("owner_self_jids") or []
+)
+OWNER_NAME_ALIASES = {
+    "george", "ioan", "ioan george anton", "george anton", "architect",
+} | {str(a).lower() for a in (_LOCAL_IDENTITY.get("owner_name_aliases") or [])}
 LOCAL_CONTROL_JIDS = {"local_reasoning_test@s.whatsapp.net"}
 STATUS_BROADCAST_JIDS = {"status@broadcast"}
 KNOWN_JID_DISPLAY_NAMES = {
-    "120363408204674197@g.us": "SIFTA Group",
-    "147235790663690@lid": "Jeff Powers Ocean VIllas",
+    "100000000000010@g.us": "SIFTA Group",
+    "100000000000002@lid": "Example Contact",
 }
+KNOWN_JID_DISPLAY_NAMES.update(_LOCAL_IDENTITY.get("known_jid_display_names") or {})
 
 
 def contact_hash(jid: str) -> str:
@@ -456,8 +477,8 @@ def resolve_target(target: str, contacts: Optional[Dict[str, Any]] = None) -> st
         if stripped == name_norm or stripped in name_norm or name_norm in stripped:
             candidates.append(entry)
         else:
-            # Fuzzy word-overlap fallback (handles "Jeff Powers, Ocean Villas"
-            # matching "Jeff Powers Ocean VIllas")
+            # Fuzzy word-overlap fallback (handles "Example Contact, Example Place"
+            # matching "Example Contact")
             overlap = _word_overlap(stripped, name_norm)
             if overlap >= 0.6:
                 fuzzy_candidates.append((overlap, entry))

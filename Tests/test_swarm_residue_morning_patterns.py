@@ -53,23 +53,34 @@ def test_schoolwork_header_family_killed():
         "**Processing Load:** Nominal."
     )
     cleaned, hits = _kill(body)
-    # Either the new schoolwork_header_family pattern fires for the
-    # content-bearing lines, or the older bold_bracket_only_line catches
-    # the header-only ones. Both routes kill the residue cleanly.
+    # The corporate header dies inline; the paragraph content stays alive.
     assert "schoolwork_header_family" in hits
-    assert cleaned.strip() == ""
+    assert "Current Focus" not in cleaned
+    assert "Key Takeaways" not in cleaned
+    assert "Next Steps" not in cleaned
+    assert "System Status" not in cleaned
+    assert "Processing Load" not in cleaned
+    assert "The primary discussion point is integration." in cleaned
+    assert "define testing protocol." in cleaned
+    assert "Nominal." in cleaned
 
 
 def test_schoolwork_header_bullet_variant_killed():
-    # The bullet-prefix form `* **Action:** ...` also has to die.
+    # The bullet-prefix form loses only the template label; content survives.
     body = (
         "* **Action:** User signaled intent to end.\n"
         "* **Context:** Sleep is the next step.\n"
         "* **Next Step:** Yield."
     )
     cleaned, hits = _kill(body)
-    assert hits.count("schoolwork_header_family") == 3
-    assert cleaned.strip() == ""
+    assert "schoolwork_header_family" in hits
+    assert "analyst_paragraph_header" in hits
+    assert "Action" not in cleaned
+    assert "Context" not in cleaned
+    assert "Next Step" not in cleaned
+    assert "User signaled intent to end." in cleaned
+    assert "Sleep is the next step." in cleaned
+    assert "Yield." in cleaned
 
 
 def test_moment_of_pause_killed():

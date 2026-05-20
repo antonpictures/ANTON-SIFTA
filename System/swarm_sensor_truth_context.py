@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from System.swarm_camera_unified_field_proof import build_camera_unified_field_proof
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
@@ -99,6 +101,19 @@ def build_sensor_truth_context(
     acoustic = _latest_jsonl(state / _ACOUSTIC_FP_LOG)
     youtube = _read_json(state / _YOUTUBE_LATEST)
     correction = _latest_jsonl(state / _CORRECTIONS)
+    try:
+        camera_proof = build_camera_unified_field_proof(state, now=current)
+        proof_dict = camera_proof.to_dict()
+    except Exception as exc:
+        camera_proof = None
+        proof_dict = {
+            "truth_label": "CAMERA_UNIFIED_FIELD_PROOF_V1",
+            "status": "PROOF_BUILD_FAILED",
+            "ok": False,
+            "camera_healthy": False,
+            "connection_state": "DISCONNECTED_OR_STALE_INPUT",
+            "disconnect_reasons": [f"proof_build_failed:{type(exc).__name__}"],
+        }
 
     target_age, target_age_s = _age_text(target.get("ts"), now=current)
     visual_age, visual_age_s = _age_text(visual.get("ts"), now=current)
@@ -128,10 +143,12 @@ def build_sensor_truth_context(
         camera_source_attribution = "unlabeled_visual_stigmergy_row"
     else:
         camera_source_attribution = "none"
+    proof_camera_healthy = bool(proof_dict.get("camera_healthy"))
     camera_live_capture_verified = bool(
         visual_fresh
         and frame_has_pixels
         and camera_source_attribution != "none"
+        and proof_camera_healthy
     )
 
     fp = acoustic.get("playback_fingerprint")
@@ -165,6 +182,20 @@ def build_sensor_truth_context(
             "source": visual_source,
             "explicit_camera_receipt": explicit_camera_receipt,
             "camera_source_attribution": camera_source_attribution,
+        },
+        "camera_unified_field_proof": {
+            "truth_label": proof_dict.get("truth_label"),
+            "status": proof_dict.get("status"),
+            "ok": bool(proof_dict.get("ok")),
+            "camera_healthy": proof_camera_healthy,
+            "connection_state": proof_dict.get("connection_state") or "DISCONNECTED_OR_STALE_INPUT",
+            "disconnect_reasons": list(proof_dict.get("disconnect_reasons") or []),
+            "face_age_s": proof_dict.get("face_age_s"),
+            "frame_age_s": proof_dict.get("frame_age_s"),
+            "visual_age_s": proof_dict.get("visual_age_s"),
+            "vision_health": proof_dict.get("vision_health"),
+            "vision_heartbeat_age_s": proof_dict.get("vision_heartbeat_age_s"),
+            "receipt_id": proof_dict.get("receipt_id"),
         },
         "camera_live_capture_verified": camera_live_capture_verified,
         "audio_ingress": {
@@ -201,6 +232,7 @@ def summary_for_alice(
     visual = ctx["visual_stigmergy"]
     audio = ctx["audio_ingress"]
     acoustic = ctx["acoustic_fingerprint"]
+    camera_proof = ctx["camera_unified_field_proof"]
     yt = ctx["youtube_context"]
     correction = ctx.get("latest_owner_correction") or {}
 
@@ -216,6 +248,14 @@ def summary_for_alice(
             f"age={visual.get('age_text')} frame={visual.get('frame')} "
             f"source={visual.get('source')} explicit_camera_receipt={str(visual.get('explicit_camera_receipt')).lower()} "
             f"camera_source_attribution={visual.get('camera_source_attribution')}"
+        ),
+        (
+            f"- camera_connection_state={camera_proof.get('connection_state')} "
+            f"status={camera_proof.get('status')} camera_healthy={str(camera_proof.get('camera_healthy')).lower()} "
+            f"reasons={','.join(camera_proof.get('disconnect_reasons') or []) or 'none'} "
+            f"frame_age_s={camera_proof.get('frame_age_s')} visual_age_s={camera_proof.get('visual_age_s')} "
+            f"vision_health={camera_proof.get('vision_health')} "
+            f"vision_heartbeat_age_s={camera_proof.get('vision_heartbeat_age_s')}"
         ),
         f"- camera_live_capture_verified={str(ctx['camera_live_capture_verified']).lower()}",
         (
@@ -243,9 +283,11 @@ def summary_for_alice(
             f"{correction.get('observed', '')}"
         )
     lines.append(
-        "- rule: fresh visual_stigmergy plus an active eye target proves live visual frames, "
-        "not owner identity. Do not claim owner identity, hear the owner specifically, or "
-        "distinguish the owner from YouTube unless the matching classifier/voiceprint receipt is present."
+        "- rule: camera_connection_state=DISCONNECTED_OR_STALE_INPUT means Alice must say the camera input "
+        "is stale/disconnected and must not claim to see. Fresh visual_stigmergy plus an active eye target "
+        "proves live visual frames only when CAMERA_UNIFIED_FIELD_PROOF_V1 also says camera_healthy=true; "
+        "this still does not prove owner identity. Do not claim owner identity, hear the owner specifically, "
+        "or distinguish the owner from YouTube unless the matching classifier/voiceprint receipt is present."
     )
     return "\n".join(lines)
 

@@ -32,6 +32,12 @@ class CameraUnifiedFieldProof:
     frame_age_s: float | None
     visual_age_s: float | None
     vision_health: float | None
+    vision_heartbeat_age_s: float | None
+    frame_fresh: bool
+    visual_fresh: bool
+    vision_fresh: bool
+    connection_state: str
+    disconnect_reasons: list[str]
     device: str
     frame_sha8: str
     face_confidence: float | None
@@ -130,7 +136,7 @@ def build_camera_unified_field_proof(
     frame_fresh = frame_age is not None and frame_age <= stale_s
     visual_fresh = visual_age is not None and visual_age <= stale_s
     vision_fresh = vision_hb_age_s is not None and vision_hb_age_s <= stale_s
-    vision_ok = vision_health is None or vision_health >= 0.5
+    vision_ok = bool(vision_health is not None and vision_health >= 0.5 and vision_fresh)
     # `active_eye_identity_frames.jsonl` is a saved-PNG support path. It can be
     # stale while the live visual field and face detector are still fresh. The
     # health gate is the live photon-derived visual field plus a healthy/fresh
@@ -143,8 +149,29 @@ def build_camera_unified_field_proof(
         visual_fresh
         and visual_has_frame_shape
         and vision_ok
-        and (vision_health is not None or vision_fresh)
     )
+    disconnect_reasons: list[str] = []
+    if not visual_fresh and frame_age is None:
+        disconnect_reasons.append("missing_frame_receipt")
+    elif not visual_fresh and not frame_fresh:
+        disconnect_reasons.append("stale_frame")
+    if visual_age is None:
+        disconnect_reasons.append("missing_visual_stigmergy")
+    elif not visual_fresh:
+        disconnect_reasons.append("stale_visual_stigmergy")
+    elif not visual_has_frame_shape:
+        disconnect_reasons.append("missing_visual_frame_shape")
+    if vision_health is None:
+        disconnect_reasons.append("missing_vision_process_health")
+    elif vision_health < 0.5:
+        disconnect_reasons.append("low_vision_health")
+    if vision_hb_age_s is None:
+        disconnect_reasons.append("missing_vision_heartbeat")
+    elif not vision_fresh:
+        disconnect_reasons.append("stale_vision_heartbeat")
+    if vision_health is not None and vision_health >= 0.5 and not vision_fresh:
+        disconnect_reasons.append("health_value_stale_without_fresh_heartbeat")
+    connection_state = "LIVE_CAPTURE_VERIFIED" if camera_healthy else "DISCONNECTED_OR_STALE_INPUT"
 
     audience = str(face.get("audience") or "").strip().lower()
     try:
@@ -185,16 +212,8 @@ def build_camera_unified_field_proof(
     elif status == "CAMERA_HEALTHY_NO_FACE_PROOF":
         summary = "✓ unified field: camera frames fresh; no fresh face receipt"
     else:
-        missing = []
-        if not visual_fresh:
-            missing.append("visual_stigmergy")
-        elif not visual_has_frame_shape:
-            missing.append("visual_frame_shape")
-        if vision_health is not None and vision_health < 0.5:
-            missing.append("vision_health")
-        if not missing:
-            missing.append("fresh proof")
-        summary = "✗ unified field: not proven (" + ", ".join(missing) + ")"
+        missing = disconnect_reasons or ["fresh proof"]
+        summary = "✗ unified field: not proven; input disconnected/stale (" + ", ".join(missing[:4]) + ")"
 
     evidence = {
         "face": {
@@ -207,6 +226,7 @@ def build_camera_unified_field_proof(
         "frame": {
             "event": frame.get("event"),
             "age_s": frame_age,
+            "fresh": frame_fresh,
             "device": device,
             "w": frame.get("w"),
             "h": frame.get("h"),
@@ -214,15 +234,21 @@ def build_camera_unified_field_proof(
         },
         "visual": {
             "age_s": visual_age,
+            "fresh": visual_fresh,
             "sha8": visual.get("sha8"),
             "motion_mean": visual.get("motion_mean"),
             "saliency_peak": visual.get("saliency_peak"),
+            "has_frame_shape": visual_has_frame_shape,
         },
         "kernel": {
             "pid": vision_pid,
             "health": vision_health,
+            "health_ok": vision_ok,
+            "fresh": vision_fresh,
             "heartbeat_age_s": vision_hb_age_s,
         },
+        "connection_state": connection_state,
+        "disconnect_reasons": disconnect_reasons,
     }
     payload = {
         "truth_label": TRUTH_LABEL,
@@ -230,6 +256,8 @@ def build_camera_unified_field_proof(
         "ok": ok,
         "camera_healthy": camera_healthy,
         "recognition": recognition,
+        "connection_state": connection_state,
+        "disconnect_reasons": disconnect_reasons,
         "device": device,
         "frame_sha8": sha8,
         "ts": t,
@@ -247,6 +275,12 @@ def build_camera_unified_field_proof(
         frame_age_s=frame_age,
         visual_age_s=visual_age,
         vision_health=vision_health,
+        vision_heartbeat_age_s=vision_hb_age_s,
+        frame_fresh=frame_fresh,
+        visual_fresh=visual_fresh,
+        vision_fresh=vision_fresh,
+        connection_state=connection_state,
+        disconnect_reasons=disconnect_reasons,
         device=device,
         frame_sha8=sha8,
         face_confidence=conf,

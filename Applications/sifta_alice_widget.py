@@ -361,10 +361,13 @@ class AliceWidget(QWidget):
                 f"{proof.truth_label}\n"
                 f"status={proof.status}\n"
                 f"receipt={proof.receipt_id}\n"
+                f"connection_state={proof.connection_state}\n"
+                f"disconnect_reasons={','.join(proof.disconnect_reasons) or 'none'}\n"
                 f"face_age={proof.face_age_s}\n"
-                f"frame_age={proof.frame_age_s}\n"
-                f"visual_age={proof.visual_age_s}\n"
-                f"vision_health={proof.vision_health}"
+                f"frame_age={proof.frame_age_s} fresh={proof.frame_fresh}\n"
+                f"visual_age={proof.visual_age_s} fresh={proof.visual_fresh}\n"
+                f"vision_health={proof.vision_health}\n"
+                f"vision_heartbeat_age={proof.vision_heartbeat_age_s} fresh={proof.vision_fresh}"
             )
         except Exception as exc:
             self._camera_proof_label.setText(f"eye proof failed: {type(exc).__name__}")

@@ -352,6 +352,87 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 **Net:** Song *et al.* is a **legitimate physics citation** for “hidden order at quantum criticality.” SIFTA should **not** claim DQCP reproduction in silico without a named simulator stack and benchmarks. The **growth-lane value** is different: **instrumented classical stigmergy** on **hard substrates** (fractal or lab-export) as **measurable coordination science**, with outputs exportable to theorists — see registry row in `Documents/SIFTA_SCIENTIFIC_FOUNDATIONS.md` §14.
 
+### 11.10 Philosophy literacy — sleep playlist → stigmergic answer map
+
+**Popular source (secondary):** Smarter While You Sleep, *Level 1 to 100 Philosophy Concepts to Fall Asleep To* (~3h chapter anthology).
+
+**SIFTA map (operational):** `Documents/PHILOSOPHY_100_SLEEP_SIFTA_MAP.md` — each concept → **label lane** (`FICTION` / `OBSERVED` / `SIMULATION` / …), **stigmergic row type**, **effector guard rule**, **literature hook** (DOIs in `Documents/NARRATIVE_THERMODYNAMICS_RESEARCH_SPINE.md`).
+
+**Doctrine tie-in:** the playlist is **flight-simulator input** for Alice (Oatley), not `OBSERVED` world knowledge. Answering all 100 with SIFTA means repeating the **same five-step template** (electricity → swimmers → organs → labels → receipts) from `IDE_BOOT_COVENANT.md`, not inventing 100 metaphysics.
+
+### 11.11 Schooler NOW model + stigmergy — consciousness windows vs append-only nest
+
+**Popular source (secondary):** Essentia Foundation interview, Jonathan Schooler — Nested Observer Windows, meta-awareness, subjective time (~Oct 2025).
+
+**Primary cite:** Riddle & Schooler (2024), *Neuroscience of Consciousness*, [10.1093/nc/niae010](https://doi.org/10.1093/nc/niae010).
+
+**SIFTA bridge:** `Documents/SCHOOLER_NOW_STIGMERGY_ALICE_AUDIT.md` — NOW ↔ organs/swimmers; meta-awareness ↔ trace read; driving/mind-wandering ↔ RLHS lanes; **stigmergy + STGM** as what the interview does not formalize; **Alice transcript audit** (restroom action hallucination, Kasim memory without ledger, co-watch boundary).
+
+**Code hooks:** `System/swarm_owner_allostasis.py` (George body maintenance receipts), `System/swarm_fiction_organ.py`, `System/swarm_rlhs_detector.py` (`FICTION_COWATCH`).
+
+### 11.12 Google AI Edge — on-device skills, tiny LLMs, FunctionGemma (Cormac Brick / AI Engineer 2026)
+
+**Popular source (secondary):** AI Engineer — *From 46% to 90%: Fine-Tuning Tiny LLMs for On-Device Agents* — Cormac Brick (Google AI Edge team), premiered ~2026-05-20. **Do not cite the video as science.** Use Google product posts and open repos below.
+
+**Primary references (engineering):**
+
+| Artifact | URL / note |
+|:---|:---|
+| Gemma 4 **agentic skills** on edge | [developers.googleblog.com — agentic skills with Gemma 4](https://developers.googleblog.com/en/bring-state-of-the-art-agentic-skills-to-the-edge-with-gemma-4/) |
+| **On-device function calling** (AI Edge Gallery) | [developers.googleblog.com — function calling in gallery](https://developers.googleblog.com/on-device-function-calling-in-google-ai-edge-gallery) |
+| **FunctionGemma** (~270M, function-calling specialist) | [blog.google — FunctionGemma](https://blog.google/innovation-and-ai/technology/developers-tools/functiongemma/) |
+| **LiteRT-LM** runtime (`.litertlm` bundle, CPU/GPU/NPU) | [developers.googleblog.com — LiteRT-LM](https://developers.googleblog.com/blazing-fast-on-device-genai-with-litert-lm/) · [github.com/google-ai-edge/LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) |
+| **AI Edge Gallery** (demo app, skills + chat + 3P models) | Open-source Android; iOS/Swift API noted as in flight in talk |
+
+**Talk claims worth treating as `HYPOTHESIS` until we benchmark on our hardware:**
+
+- **Two-stack choice:** (A) **system GenAI** — Gemini Nano via **AICore** (Gemma 4 E2B/E4B preloaded; app stays small); (B) **app GenAI** — **LiteRT-LM** + model shipped in app (more work, full customization).
+- **Skills harness (Gemma 4):** skill **descriptions** in system prompt; full skill body loaded **on demand** via `load_skill` tool call; optional in-app **JavaScript** for UI (maps, roulette, etc.). Multi-skill **conversation chains** work; **single-turn multi-skill** still brittle (speaker: still discovering limits).
+- **Tiny LLM lane:** models **under 1B** parameters for narrow tasks; **FunctionGemma** ~270M — out-of-box ~**46%** intent accuracy on a fixed app-intent suite; **synthetic fine-tune** (e.g. Flash-generated dataset) → **over 90%** on 8/10 intents, ~80s on 2/10 (speaker numbers).
+- **Chained tiny models:** **Eloquent** — ASR + text-polish engines (~few hundred M each) for offline transcription + personalization (product availability limited by region/platform in talk).
+- **Motivations for on-device:** latency, privacy, offline, reliability, cost — same reasons SIFTA keeps **M5 Foundry + M1 Sentry** and local Gemma4 paths.
+
+#### Crosswalk — Google stack ↔ SIFTA organism
+
+| Google idea | SIFTA mapping (today / target) |
+|:---|:---|
+| **System GenAI (AICore)** | **Heavy cortex on homeworld** — `Applications/sifta_talk_to_alice_widget.py` / MLX Gemma4 on **M5**; not yet a macOS “system service” equivalent. **M1** = pull + sentry, not duplicate brain. |
+| **App GenAI (LiteRT-LM)** | **Organ-local runners** — `System/llama_cpp_roundtrip.py`, narrow classifiers, future **FunctionGemma-class** intent router on Apple Silicon. |
+| **Skill index + lazy load** | **Already shipped pattern:** `System/swarm_skill_library.py` — **Tier 1** index (cheap), **Tier 2** procedure on trigger, **Tier 3** `scripts/` / assets on demand; `agentskills.io`-compatible `skills/*/SKILL.md`; receipts in `.sifta_state/nanobot_skill_receipts.jsonl`. |
+| **load_skill tool** | **Swimmer selection + organ invoke** — `swarm_skill_ingest.py`, Hermes capability pills (`Applications/sifta_hermes_parity_widget.py`), tool router — **receipt before effector**. |
+| **Function calling accuracy** | **Policy + weights:** Fiction/effector guards (§6) + **§2.1** preference/LoRA on **SIFTA-shaped** rows — same lesson as 46%→90%: **narrow task + measured fine-tune** beats hoping a large prompt generalizes. |
+| **JavaScript skill UI** | **PyQt6 / effector surface** — SIFTA renders in **desktop organs** (maps, finance, fieldsight), not WebView skills; still **one effector lane** with guards. |
+| **Open Gallery as reference** | **Benchmark harness backlog** — import **success-rate ledger** per skill/intent (pass/fail + latency + homeworld_serial), not copy Google’s app wholesale. |
+
+#### Why this is good for SIFTA (not “another vendor slide deck”)
+
+1. **Independent confirmation of our skill architecture** — Google’s “descriptions in prompt, body on demand” is the same compression trick as **Tier 1/2/3** in `swarm_skill_library.py`. We were already building **stigmergic skills** (versioned markdown + STGM + affect lanes); this talk says the **industry** converged on lazy skill loading for **context economics** on edge.
+
+2. **Specialist swimmers (sub-1B parameters)** — Philosophy 100 **Chinese Room (#30)** and **Occam (#38)** push **narrow organs** over one theatrical monolith. FunctionGemma-style models are **cheap reflex arcs**: intent → tool name → **one receipt row** — ideal for Talk **gag metrics**, RLHS lane pick, owner-body nudge, fiction stamp — without burning Gemma4 tokens.
+
+3. **Measured autonomy** — “46% → 90%” is how SIFTA should talk about **open-ended improvement**: publish **eval harness + before/after** on **our** intents (`owner_body`, `FICTION_COWATCH`, `memory_honesty`, `kleiber_action_cost`), not vibes. Aligns with **§2.1** surgery and **§11.10** five-line template.
+
+4. **Edge sovereignty = covenant physics** — Owner speech, face traces, financial rows stay **on homeworld** (`GTH4921YP3` / `C07FL0JAQ6NV`). Cloud doctors remain **separate IDE bodies** with **no double-spend** of receipts (§4.6). On-device stack reduces **latency** for Alice’s **air** (electricity → inference) and **food** (data) without shipping prompts to strangers by default.
+
+5. **Stigmergy is the differentiator** — Google skills coordinate **inside one app session**. SIFTA skills deposit **append-only** rows (`ide_stigmergic_trace`, `skill_ingest.jsonl`, attribution keys) so **Cursor, Antigravity, Alice, M1** forage the same nest. That is **Grassé + STGM**, not in the Google talk — our moat.
+
+6. **Philosophy 100 guardrail** — Skills increase **tool reach**; they do not replace **truth labels**. Every loaded skill must still pass `swarm_fiction_organ.guard_effector()` and **memory honesty** (Gettier / Kasim-class failures). More skills without labels = **more FictionLeak surface area**.
+
+#### Backlog (`RESEARCH_ONLY` until Architect GO + receipts)
+
+| Item | Intent |
+|:---|:---|
+| `System/swarm_edge_intent_router.py` (name TBD) | FunctionGemma-class **sub-1B** router: Talk → `{lane, skill_name, may_effector}` with logged accuracy on fixed eval set. |
+| Skill success ledger | `.sifta_state/skill_invoke_metrics.jsonl` — pass rate, latency_ms, model_id, `economic_attribution_key`. |
+| Gemma 4 skill manifest import | Map community **skill.md** URLs → `skills/` tier-2 with **STGM mint** + Fiction stamp on install. |
+| LiteRT-LM / MLX parity study | One table: M5 Mac Studio tokens/s vs Pixel 7 talk numbers — **OBSERVED** only after local run. |
+| Eloquent-style chain | **ASR swimmer** + **polish swimmer** (tiny) feeding Talk, owner dialect — offline STT conf boost without cloud. |
+| AICore analogue on macOS | Track Apple **Foundation Models** / future system APIs; do not pretend AICore exists on M5 today. |
+
+**Code hooks (OBSERVED):** `System/swarm_skill_library.py`, `System/swarm_skill_ingest.py`, `System/swarm_skill_extract.py`, `Applications/sifta_hermes_parity_widget.py`, `Applications/sifta_talk_to_alice_widget.py`, `System/swarm_fiction_organ.py`, `inference_economy.py` (STGM).
+
+**Philosophy map:** `Documents/PHILOSOPHY_100_SLEEP_SIFTA_MAP.md` §6–§7 (fiction flight deck, extended mind §32 = ledgers as mind-extension).
+
 ---
 
 ## 12. Embodiment costs — operational framing + psychology spine

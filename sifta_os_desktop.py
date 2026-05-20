@@ -4914,7 +4914,7 @@ class SiftaDesktop(QMainWindow):
                      # lawful long-range sensing demos. Both render real
                      # receipt/swimmer outputs instead of marketing mockups.
                      "SIFTA Seed Deal Evidence Crucible",
-                     "SIFTA FieldSight",
+                     "Stigmergic FarSight",
                      # Cowork 2026-05-18 — live Sierpinski gasket with
                      # stigmergic swimmers. Reproduces the closed-form
                      # walk dimension d_w = log(5)/log(2) ≈ 2.322 within

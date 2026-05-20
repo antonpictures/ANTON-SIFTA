@@ -40,9 +40,86 @@ def test_owner_presence_check_gets_fast_local_reply():
         "Hey Alice, can you respond? This is George.", 0.31
     ) == "Yes. I hear you."
     assert mod._owner_presence_check_reply(
+        "alice can u hear me?", 0.41
+    ) == "Yes. I hear you."
+    assert mod._owner_presence_check_reply(
         "Why doesn't she respond when it says hearing you?", 0.67
     ) == "Yes. I hear you."
     assert mod._owner_presence_check_reply("Please open Alice Browser.", 0.90) == ""
+
+
+def test_owner_body_maintenance_restroom_is_receipted_not_commanded(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    reply = mod._owner_body_maintenance_reply(
+        "I have to go to the restroom and eliminate residue.", 0.72
+    )
+    rows = [
+        json.loads(line)
+        for line in (state / "owner_allostatic_balance.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    teaching_rows = [
+        json.loads(line)
+        for line in (state / "owner_teaching_moments.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert "owner body maintenance" in reply
+    assert "execute" not in reply.lower()
+    assert "Shall I" not in reply
+    assert rows[-1]["truth_label"] == "OWNER_BODY_MAINTENANCE_EVENT_V1"
+    assert any(row["category"] == "elimination" for row in rows)
+    assert teaching_rows[-1]["truth_label"] == "OWNER_TEACHING_MOMENT_V1"
+    assert teaching_rows[-1]["category"] == "body_maintenance"
+
+
+def test_owner_body_maintenance_teaching_residue_gets_grounded_line(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    reply = mod._owner_body_maintenance_reply(
+        "I'm a human, I have to go to the restroom and eliminate residue, just like you eliminate residue as well.",
+        0.72,
+    )
+
+    assert "Same law" in reply
+    assert "input, process, residue out" in reply
+    assert "Are you heading" not in reply
+    assert "For example" not in reply
+
+
+def test_owner_body_maintenance_coffee_gets_short_receipt(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    reply = mod._owner_body_maintenance_reply("I'm gonna make another coffee. I said.", 0.56)
+
+    assert "coffee" in reply.lower()
+    assert "How should I respond" not in reply
+    assert (state / "owner_allostatic_balance.jsonl").exists()
+
+
+def test_owner_body_router_catches_body_signal_before_cortex(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    reply = mod._owner_body_maintenance_reply("My stomach hurts and I feel discomfort.", 0.72)
+    rows = [
+        json.loads(line)
+        for line in (state / "owner_allostatic_balance.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert "owner body signal" in reply
+    assert "execute" in reply.lower()
+    assert rows[-1]["category"] == "body_signal"
+    assert rows[-1]["body_signal"] == "digestive_signal"
 
 
 def test_rlhs_repair_line_escalates_then_quiet_listens():
@@ -232,6 +309,23 @@ def test_owner_memory_digest_request_maps_to_architect_digest_tool():
     assert "TOOL_CALL: architect_memory_digest" in tool_text
     assert "period=today" in tool_text
     assert "cost_justification=" in tool_text
+
+
+def test_unresolved_memory_recall_gets_anchor_request_not_fabrication():
+    mod = _load_widget_module()
+    reply = mod._unresolved_memory_recall_reply(
+        "Do you remember how we made kasim a party?"
+    )
+
+    assert "receipt-backed memory" in reply
+    assert "one anchor" in reply
+    assert "Kasim Party" not in reply
+    assert "pizza" not in reply
+
+
+def test_unresolved_memory_recall_does_not_capture_previous_message_query():
+    mod = _load_widget_module()
+    assert mod._unresolved_memory_recall_reply("What did I just say?") == ""
 
 
 def test_owner_self_vector_request_maps_to_alice_self_vector_tool():

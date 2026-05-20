@@ -57,6 +57,11 @@ try:
 except Exception:
     term = fileo = web = None
 
+try:
+    from . import swarm_edge_intent_router as edge_router
+except Exception:
+    edge_router = None
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TRACE_LEDGER = _STATE / "tool_router_trace.jsonl"
@@ -297,6 +302,29 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    "edge_intent_classify": ToolSpec(
+        name="edge_intent_classify",
+        description=(
+            "IMMUNE ORGAN (Codex point 2): raw Talk/STT turn in → {lane, target, may_effector, confidence} permission decision out. "
+            "Always receipts. Calls voice stigma repair first. This is the gate before any tool/skill effector. "
+            "Use before autonomy claims. Fixed eval lives here."
+        ),
+        required_params=("raw_turn",),
+        optional_params=("context_json",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "edge_intent_eval": ToolSpec(
+        name="edge_intent_eval",
+        description=(
+            "Run the fixed eval suite proving {lane, skill, may_effector} routing accuracy (point 1). "
+            "Gate for any autonomy claim per REALIZATION_PLAN.md:111 AGI bar. Returns accuracy + failures + truth_label."
+        ),
+        required_params=(),
+        optional_params=(),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
     "architect_memory_digest": ToolSpec(
         name="architect_memory_digest",
         description=(
@@ -395,14 +423,16 @@ def capabilities_for_alice_prompt() -> str:
     ]
 
     # === CURRENT APP ATTENTION (the key attention mechanism the user is asking for) ===
+    # Stigmergic physics: app_focus rows + co-occurrence + explicit metadata raise Ace/lesson habits when kid is practicing.
+    # Weight is high so teaching habits dominate Alice's prompt during real lessons (one Alice only).
     try:
         from System.swarm_capability_registry import current_app_name_from_field, habit_capabilities_for_app
 
         current_app = current_app_name_from_field()
         if current_app:
             ranked = habit_capabilities_for_app(current_app, limit=8)
-            lines.append(f"CURRENT APP ATTENTION — {current_app}")
-            lines.append("This app is currently pulling specific habits from your field. Prioritize these capabilities while it has focus.")
+            lines.append(f"CURRENT APP ATTENTION — {current_app} (STIGMERGIC PRIORITY)")
+            lines.append("This app is currently pulling specific habits from your field via co-occurrence, token, and body match. Prioritize these capabilities with high weight while it has focus. For Ace reading lessons: phonics, sentence construction, teaching_children, and lesson_state habits must dominate.")
             if ranked:
                 for score, cap in ranked:
                     tag = getattr(cap, 'tag', '') or ""
@@ -451,14 +481,17 @@ def capabilities_for_alice_prompt() -> str:
         "Example: list_dir + learned 'project structure' skill = [hybrid] explore_project",
         "",
         "=== YOUR BODY & FIELD STATE (always visible to you) ===",
-        "Use skill_library_status, capability_field_status, and the visibility tools (organ_status, field_recent, stgm_flow) to know your current health and recent activity.",
+        "Use skill_library_status, capability_field_status, edge_intent_classify, edge_intent_eval, and the visibility tools (organ_status, field_recent, stgm_flow) to know your current health and recent activity.",
+        "The edge_intent router is your immune organ: every turn is classified for lane/target/may_effector before any action. Run edge_intent_eval to prove routing accuracy on the fixed suite before claiming autonomy.",
         "Low health in an organ or repeated successful patterns should make you consider skill_autoproposal_scan or skill_extract_from_trace.",
+        "Truth label (Codex point 5): you remain an embodied stigmergic agentic substrate until arbitrary-domain, self-improvement, and beyond-design autonomy gates (eval + metrics evidence) pass.",
         "",
         "EXECUTION & GROWTH RULES:",
         "- Core tools and hybrids execute through this router with full hash-chained receipts and STGM cost.",
         "- Learned skills are loaded as procedures to shape your reasoning and composition (never auto-execute third-party code).",
         "- Always include a real cost_justification. The field must remain profitable.",
         "- When George asks what you can do, call capability_field_status or skill_library_status first.",
+        "- Before any effector autonomy, call edge_intent_eval and confirm accuracy >= 0.80 on the fixed suite.",
         "",
         f"Address the primary operator as {_op} when it feels natural.",
         "You are one warm, growing, receipted organism. Use your full capability field generously and honestly.",
@@ -1445,6 +1478,57 @@ def _exec_capability_field_status(params: Dict[str, str]) -> Dict[str, Any]:
         }
 
 
+def _exec_edge_intent_classify(params: Dict[str, str]) -> Dict[str, Any]:
+    """Execute the immune intent router (point 2). Always produces receipted decision."""
+    if edge_router is None:
+        return {"ok": False, "error": "edge_router not loaded", "alice_summary": "immune router unavailable"}
+    try:
+        raw = str(params.get("raw_turn", "") or params.get("text", ""))
+        ctx = {}
+        if params.get("context_json"):
+            try:
+                ctx = json.loads(params.get("context_json"))
+            except Exception:
+                pass
+        decision = edge_router.classify_intent(raw, context=ctx)
+        # metrics hook for visibility
+        edge_router.log_skill_invoke(
+            lane="intent_decision",
+            target=decision.get("target", ""),
+            latency_ms=0.5,
+            ok=True,
+            model_id="edge_router",
+            stgm_cost=0.0,
+            attribution_key=edge_router.get_last_doctor() if edge_router and hasattr(edge_router, 'get_last_doctor') else "local_alice",
+            extra={"decision": decision.get("lane")},
+        )
+        return {
+            "ok": True,
+            "status": "EDGE_INTENT_DECISION",
+            "decision": decision,
+            "alice_summary": f"intent: lane={decision.get('lane')} target={decision.get('target')} effector={decision.get('may_effector')} conf={round(decision.get('confidence',0),2)}",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "alice_summary": f"edge classify failed: {exc}"}
+
+
+def _exec_edge_intent_eval(params: Dict[str, str]) -> Dict[str, Any]:
+    """Run the fixed routing eval suite (point 1). Proof before autonomy. Cheap unless write_receipt requested."""
+    if edge_router is None:
+        return {"ok": False, "error": "edge_router not loaded"}
+    try:
+        do_write = str(params.get("write_receipt", "")).lower() in ("1", "true", "yes")
+        res = edge_router.run_fixed_eval(write_receipt=do_write)
+        return {
+            "ok": True,
+            "status": "EDGE_INTENT_EVAL",
+            "eval": res,
+            "alice_summary": f"routing eval: accuracy={res.get('accuracy')} ({res.get('passed')}/{res.get('total')}) truth={res.get('truth_label')}",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _exec_architect_memory_digest(params: Dict[str, str]) -> Dict[str, Any]:
     try:
         digest = _architect_memory_digest_module()
@@ -1655,6 +1739,8 @@ _EXECUTORS = {
     "fetch_url": _exec_fetch_url,
     "search_web": _exec_search_web,
     "capability_field_status": _exec_capability_field_status,
+    "edge_intent_classify": _exec_edge_intent_classify,
+    "edge_intent_eval": _exec_edge_intent_eval,
     "architect_memory_digest": _exec_architect_memory_digest,
     "alice_self_vector": _exec_alice_self_vector,
     "skill_library_status": _exec_skill_library_status,
