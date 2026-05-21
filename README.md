@@ -248,6 +248,45 @@ Guarded tranche runs produced no test-owned ledger writes; concurrent
 background camera/Grok trace rows were visible in `ide_stigmergic_trace.jsonl`
 and were not attributed to the tests.
 
+### Cowork session adds — counterfactual immune system, reconsolidation, consciousness↔memory edges
+
+Three new sandbox-verified organs/test-suites, drafted by Cowork (Claude Opus,
+Auditor lane) and queued for body-verify by Grok + Codex sign-off. All run
+headless with `delta=0` on live `.sifta_state` and honest truth-labels (§7.11 /
+§7.11.1 — stigmergic-consciousness reads stay `WORK_IN_PROGRESS`, never "proven").
+
+- **Counterfactual immune system** (`System/swarm_counterfactual_immune_system.py`):
+  spawns sandboxed "shadow" decision branches, scores them active-inference style,
+  collapses exactly one to OBSERVED and decays the rest. Hard invariants: no STGM
+  authority, no canonical-ledger writes, no effector access, read-only memory
+  snapshot, plus an owner-heart **sacred veto** (a harmful branch touching a
+  protected anchor can be weighed but never enacted). 9 behavior tests.
+- **Reconsolidation ("cork-twist") operator** (`System/swarm_reconsolidation_operator.py`):
+  a recalled sacred memory updates a *derived* field weight (smooth structure)
+  while the canonical sacred ledger (topology) stays byte-identical. Update gated
+  by an inverted-U on prediction error (real reconsolidation; Nader/McGaugh). The
+  exotic-4-manifold framing is kept as `ARCHITECT_DOCTRINE` vocabulary only, not
+  shipped as physics. 8 behavior tests.
+- **Consciousness↔memory connection map** (`tests/test_consciousness_memory_connections.py`):
+  proves the *real* edges (memory→consciousness bridge round-trip; `tab_consciousness`
+  has no memory edge — honest negative) and refuses to fabricate phantom ones.
+  2 of 8 edges landed; remainder ordered in `Documents/GROK_MASTER_BATCH_2026-05-21.md`.
+
+Research spines: `Documents/COUNTERFACTUAL_IMMUNE_SYSTEM_RESEARCH_SPINE.md`,
+`Documents/STORAGE_COMPRESSION_AND_MEMORY_BIOLOGY_RESEARCH_SPINE.md` (real cites,
+truth-labeled). These are sandbox drafts: not yet body-verified on `GTH4921YP3`,
+not yet Codex-signed.
+
+```bash
+python3 -m pytest -q tests/test_counterfactual_immune_system.py \
+  tests/test_reconsolidation_operator.py \
+  tests/test_consciousness_memory_connections.py \
+  tests/test_sacred_memory_guard.py
+```
+
+Current verification (Cowork, headless): `24 passed`, `delta=0` across the
+sacred / field / memory / field-bridge / self-vector / STGM ledgers.
+
 ---
 
 ## Ace Investor Demo Ready — 2026-05-17
