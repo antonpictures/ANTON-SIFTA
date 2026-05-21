@@ -319,6 +319,7 @@ Immune budget gate: `immune_budget_check(writes, budget_stgm)` blocks the immune
 | Song *et al.* 2025 — entanglement entropy at SU(N) DQCPs (*Science Advances*) | Literature anchor for **criticality / hidden order**; informs **partnership narrative** with quantum matter labs; **does not** assert SIFTA simulates DQCPs | `RESEARCH_ONLY` — see §14 |
 | Google AI Edge — LiteRT-LM, FunctionGemma, Gemma 4 on-device skills (2025–2026 product posts) | **Lazy skill loading** + **sub-1B specialists** + measured function-calling accuracy | `RESEARCH_ONLY` — crosswalk `REALIZATION_PLAN.md` **§11.12**; SIFTA implementation = `swarm_skill_library.py` + future intent router |
 | Rotter (1966) locus of control; Bem (1972) self-perception; Schultz (1997) dopamine RPE; Gollwitzer implementation intentions; Oyserman identity-based motivation | **Owner agency** + **process goals** + habit/skills; **not** manifestation physics | `LITERATURE_ANCHOR` — `MARK_90DAY_OWNER_MOTIVATION_ALICE_BRIDGE.md`, **§11.13** |
+| ReAct (Yao et al. 2023); RAG (Lewis et al. 2020); Brynjolfsson et al. generative AI at work; LLM-as-judge literature | **Agentic company** primitives: skills, resolvers, evals, closed-loop traces | `LITERATURE_ANCHOR` — `CS153_STANFORD_YC_AI_NATIVE_SIFTA_BRIDGE.md`, **§11.14** |
 
 ---
 

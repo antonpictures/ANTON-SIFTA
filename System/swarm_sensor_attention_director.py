@@ -473,7 +473,51 @@ def _owner_eye_lock_active(world: WorldState) -> bool:
     )
 
 
+def _device_is_live(name: str) -> bool:
+    """True if the named camera is physically present right now.
+
+    Returns True when liveness cannot be determined (no AVFoundation/Qt in this
+    context) so the director never blinds itself in a headless thread. Returns
+    False only when we CAN enumerate devices and the named one is absent — e.g.
+    the Logitech room eye after the USB hub is unplugged."""
+    try:
+        from System.swarm_camera_target import is_device_present
+
+        return bool(is_device_present(name=name))
+    except Exception:
+        return True
+
+
 def decide_attention(
+    world: WorldState,
+    *,
+    registry: Optional[dict[str, SenseCandidate]] = None,
+    desire_field: Optional[dict[str, Any]] = None,
+) -> AttentionDecision:
+    """Choose the next active eye, then demote any pick whose device is gone.
+
+    Wraps the raw policy: if the chosen eye's camera is not physically present
+    (e.g. the Logitech room eye after unplugging the USB hub), fall back to a
+    live eye instead of leasing a dead device every loop. §7.1 Sensory Lock-On.
+    """
+    reg = registry or default_sensor_registry()
+    decision = _decide_attention_raw(world, registry=reg, desire_field=desire_field)
+
+    if _device_is_live(decision.target_name):
+        return decision
+
+    # Chosen eye is absent. Try the other registered eye if it is live.
+    for cand in reg.values():
+        if cand.name != decision.target_name and _device_is_live(cand.name):
+            return _decision(cand, world, decision.reason + "|absent_eye_demote_to_live")
+    # No registered eye is live — keep the decision but mark it; resolve_index
+    # will fall back to the built-in / live-probe at open time.
+    return _decision(
+        reg["close_owner_eye"], world, decision.reason + "|no_live_registered_eye"
+    )
+
+
+def _decide_attention_raw(
     world: WorldState,
     *,
     registry: Optional[dict[str, SenseCandidate]] = None,
@@ -558,11 +602,21 @@ def apply_attention_decision(
     written: Optional[dict[str, Any]] = None
     if write_hardware and decision.write_hardware:
         try:
-            from System.swarm_camera_target import write_target
+            from System.swarm_camera_target import write_target, unique_id_for_name
+
+            # Stamp the stable AVFoundation uniqueID when the device is live, so
+            # resolution survives hot-plug renumbering. None when absent — the
+            # liveness gate in decide_attention has already demoted in that case.
+            stable_uid = None
+            try:
+                stable_uid = unique_id_for_name(decision.target_name)
+            except Exception:
+                stable_uid = None
 
             written = write_target(
                 name=decision.target_name,
                 index=decision.target_index,
+                unique_id=stable_uid,
                 writer="swarm_sensor_attention_director",
                 priority=decision.priority,
                 lease_s=decision.lease_s,

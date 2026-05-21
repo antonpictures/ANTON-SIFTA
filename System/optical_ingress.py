@@ -27,7 +27,27 @@ BUFFER_DIR.mkdir(parents=True, exist_ok=True)
 _AVFOUNDATION_FALLBACK_IDX = 1   # MacBook Pro Camera
 
 def _resolve_camera_index() -> int:
-    """Return the best available AVFoundation index for ffmpeg -i <idx>."""
+    """Return the best available AVFoundation index for ffmpeg -i <idx>.
+
+    Resolution priority (uniqueID-first, hot-plug safe):
+      1. swarm_camera_target.resolve_index() — unique_id → name → live index
+      2. swarm_camera_target.preferred_live_index() — built-in first
+      3. swarm_iris._get_default_camera_index() — two-pass cv2 probe
+      4. hardcoded fallback = 1 (MacBook Pro Camera) only if all else fails
+    """
+    # 1+2) canonical live-topology resolver — stable across USB hot-plug.
+    try:
+        from System.swarm_camera_target import resolve_index, preferred_live_index
+
+        idx = resolve_index()
+        if idx >= 0:
+            return idx
+        pidx = preferred_live_index()
+        if pidx >= 0:
+            return pidx
+    except Exception:
+        pass
+    # 3) iris two-pass cv2 probe.
     try:
         try:
             from System.swarm_iris import _get_default_camera_index

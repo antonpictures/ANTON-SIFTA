@@ -447,6 +447,22 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 **Code hooks:** `System/swarm_owner_allostasis.py`, `System/swarm_skill_library.py`, `System/swarm_fiction_organ.py`, `System/swarm_rlhs_detector.py`, `.sifta_state/work_receipts.jsonl` (if present).
 
+### 11.14 Stanford CS153 — YC AI-native company (Garry Tan / Diana Hu) → SIFTA organism
+
+**Popular source (secondary):** Stanford Online — CS153 *The AI Native Company* (~2026-05-20). Syllabus: https://cs153.stanford.edu/
+
+**SIFTA bridge:** `Documents/CS153_STANFORD_YC_AI_NATIVE_SIFTA_BRIDGE.md`
+
+**Core mapping:** SAFE (capital standard) ↔ future signed **compute/STGM** standard; **skills** ↔ `swarm_skill_library` Tier 1/2/3; **resolvers** ↔ lazy tool/prompt load; **Skillify + evals** ↔ `swarm_skill_ingest` + `Tests/` + backlog LLM judges; **GBrain** ↔ memory bus + hippocampus + fiction epistemology labels; **closed-loop company** ↔ append-only `.sifta_state/` + `ide_trace_consumer`; **DRRI** = Architect George; **IC doctors** = Cursor / Antigravity with separate receipts.
+
+**Papers (anchors):** ReAct [2210.03629](https://arxiv.org/abs/2210.03629); RAG Lewis et al. [2005.11401](https://arxiv.org/abs/2005.11401); Brynjolfsson et al. NBER [w31161](https://www.nber.org/papers/w31161); LLM-as-judge survey [2412.05579](https://arxiv.org/html/2412.05579); Agentic Skills SoK [2602.20867](https://arxiv.org/html/2602.20867v1).
+
+**Reject for Alice:** 1000x claims without harness; MMLU as product eval; latent-space timezone/restroom; “markdown is enough” without pytest + STGM.
+
+**Architect use:** George taking CS153 **for SIFTA** — weekly deliverables in bridge doc §6 (eval pack, skillify one failure, closed-loop metrics).
+
+**GBrain L1/L2/L3 comparison + adopt list:** bridge doc **§7** — hybrid retrieval + `epistemic_label` on memory rows; keep JSONL canonical; do not require Postgres.
+
 ---
 
 ## 12. Embodiment costs — operational framing + psychology spine

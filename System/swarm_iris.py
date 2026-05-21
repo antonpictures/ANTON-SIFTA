@@ -416,6 +416,11 @@ def _discover_real_camera_index() -> int:
 # need to re-scan every blink.
 _UNSET = object()
 _DISCOVERED_CAMERA_IDX: object = _UNSET
+# Tracks the last dictated saccade target so we can re-probe the instant a
+# dictated device disappears (e.g. Logitech unplugged → resolve_index() now
+# returns -1). Without this, a stale positive cache would keep opening the
+# renumbered slot. §7.1 Sensory Lock-On.
+_LAST_SACCADE_TARGET: int = -1
 
 def _get_saccade_target() -> int:
     """Read the active saccade target injected by the Multisensory Colliculus
@@ -450,15 +455,23 @@ def _get_saccade_target() -> int:
 
 def _get_default_camera_index() -> int:
     """Return cached discovered camera index or dictated saccade target."""
-    global _DISCOVERED_CAMERA_IDX
+    global _DISCOVERED_CAMERA_IDX, _LAST_SACCADE_TARGET
     saccade_target = _get_saccade_target()
-    
+
+    # Transition guard: a dictated target just went away (>=0 → -1). The
+    # device behind it is gone (e.g. Logitech unplugged, resolve_index() now
+    # returns -1). Drop the stale cache so we live-probe instead of reopening
+    # the renumbered slot the old index now points at.
+    if saccade_target < 0 and _LAST_SACCADE_TARGET >= 0:
+        _DISCOVERED_CAMERA_IDX = _UNSET
+    _LAST_SACCADE_TARGET = saccade_target
+
     # If Colliculus specifies a target, it overrides discovery.
     if saccade_target >= 0:
         if _DISCOVERED_CAMERA_IDX != saccade_target:
             _DISCOVERED_CAMERA_IDX = saccade_target
         return _DISCOVERED_CAMERA_IDX
-        
+
     if _DISCOVERED_CAMERA_IDX is _UNSET or _DISCOVERED_CAMERA_IDX == -1:
         _DISCOVERED_CAMERA_IDX = _discover_real_camera_index()
     return _DISCOVERED_CAMERA_IDX  # type: ignore[return-value]

@@ -89,6 +89,19 @@ def autonomic_heartbeat_cycle() -> Dict[str, Any]:
         system_status["brainstem_action"] = "VAGAL_COMA_INDUCED_ABORTING_COGNITIONAL_LOOP"
         return _log_and_return(system_status)
 
+    # 1b. Camera proprioception: USB/camera attach-detach must be a body event,
+    # not just a UI refresh inside What Alice Sees. This writes device_events
+    # rows when topology changes so Alice can tell "Logitech disappeared; only
+    # MacBook eye remains" from receipts.
+    try:
+        from System.swarm_camera_target import probe_camera_topology
+
+        system_status["camera_topology"] = probe_camera_topology(write_receipt=True)
+    except Exception as _camera_topology_exc:  # pragma: no cover - brainstem must never crash
+        system_status["camera_topology"] = {
+            "error": f"{type(_camera_topology_exc).__name__}: {_camera_topology_exc}"
+        }
+
     # 2. Master Homeostasis: Hypothalamic Fleet Director (ATP Routing)
     system_status["hypothalamus"] = _try_execute("swarm_hypothalamus_director", "route_swimmer_fleet")
 

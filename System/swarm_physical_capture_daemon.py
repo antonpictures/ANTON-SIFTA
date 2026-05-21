@@ -31,6 +31,63 @@ _FACE_SLOW_S      = float(os.environ.get("SIFTA_FACE_SLOW_S",      "15.0"))  # n
 _FACE_BACKOFF_K   = float(os.environ.get("SIFTA_FACE_BACKOFF_K",   "1.6"))   # geometric growth factor when empty
 _FACE_HYSTERESIS_N = int(os.environ.get("SIFTA_FACE_HYSTERESIS_N", "2"))     # consecutive empty cycles before slowing
 
+
+def _append_event(event: dict) -> None:
+    with _LEDGER.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+
+
+def _resolve_camera_index() -> int:
+    """Resolve the current camera from live topology, not a stale integer."""
+    try:
+        from System.swarm_camera_target import probe_camera_topology, resolve_index
+
+        probe_camera_topology(write_receipt=True)
+        idx = resolve_index()
+        if idx >= 0:
+            return int(idx)
+    except Exception:
+        pass
+    try:
+        from System.swarm_iris import _discover_real_camera_index
+
+        idx = _discover_real_camera_index()
+        if idx >= 0:
+            return int(idx)
+    except Exception:
+        pass
+    return 0
+
+
+def _open_capture():
+    idx = _resolve_camera_index()
+    cap = cv2.VideoCapture(idx)
+    if cap.isOpened():
+        return cap, idx
+    try:
+        cap.release()
+    except Exception:
+        pass
+    # One immediate fallback probe per §7.1. This catches Logitech detach:
+    # the old target may be gone, but the MacBook camera is still live.
+    try:
+        from System.swarm_iris import invalidate_camera_cache, _discover_real_camera_index
+
+        invalidate_camera_cache()
+        fallback_idx = _discover_real_camera_index()
+    except Exception:
+        fallback_idx = -1
+    if fallback_idx >= 0 and fallback_idx != idx:
+        cap = cv2.VideoCapture(int(fallback_idx))
+        if cap.isOpened():
+            return cap, int(fallback_idx)
+        try:
+            cap.release()
+        except Exception:
+            pass
+    return None, idx
+
+
 def _ensure_ledger():
     _STATE.mkdir(parents=True, exist_ok=True)
     if not _LEDGER.exists():
@@ -48,9 +105,22 @@ def run_daemon(once=False):
         print("Failed to load Haar cascade.")
         return
 
-    # Try to open webcam
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
+    # Try to open webcam through the live topology resolver. Never pin a stale
+    # USB integer; cv2/AVFoundation indices renumber when devices hot-plug.
+    cap, camera_idx = _open_capture()
+    if cap is None or not cap.isOpened():
+        _append_event({
+            "ts": time.time(),
+            "event": "FACE_DETECTION",
+            "faces_detected": 0,
+            "confidence": 0.0,
+            "audience": "nobody",
+            "bounding_boxes": [],
+            "error": "open_failed",
+            "source": "swarm_physical_capture_daemon",
+            "camera_index": camera_idx,
+            "wake_reason": "camera_open_failed",
+        })
         print("Failed to open webcam.")
         return
         
@@ -68,6 +138,26 @@ def run_daemon(once=False):
         while True:
             ret, frame = cap.read()
             if not ret:
+                _append_event({
+                    "ts": time.time(),
+                    "event": "FACE_DETECTION",
+                    "faces_detected": 0,
+                    "confidence": 0.0,
+                    "audience": "nobody",
+                    "bounding_boxes": [],
+                    "error": "read_failed_reopening_camera",
+                    "source": "swarm_physical_capture_daemon",
+                    "camera_index": camera_idx,
+                    "wake_reason": "camera_read_failed",
+                })
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap, camera_idx = _open_capture()
+                if cap is None or not cap.isOpened():
+                    time.sleep(max(1.0, _FACE_SLOW_S))
+                    continue
                 time.sleep(1.0)
                 continue
 
@@ -121,10 +211,10 @@ def run_daemon(once=False):
                 "schedule_ms": int(next_sleep_s * 1000),
                 "wake_reason": wake_reason,
                 "empty_cycles": empty_cycles,
+                "camera_index": camera_idx,
             }
 
-            with _LEDGER.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(event) + "\n")
+            _append_event(event)
 
             print(f"[{time.strftime('%H:%M:%S')}] faces={len(faces)} → next in {next_sleep_s:.1f}s ({wake_reason})")
             if once:

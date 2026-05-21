@@ -54,6 +54,31 @@ def test_owner_quiet_plus_pressure_recommends_cosleep(tmp_path: Path):
     assert a.decision == cs.DECISION_COSLEEP
 
 
+def test_active_ide_surgery_keeps_her_awake(tmp_path: Path):
+    now = 1_000_000.0
+    _set_melatonin(tmp_path, 0.6)
+    _write(tmp_path, "owner_desktop_presence.json", {"last_alive_ts": now - 7200})
+    _write(tmp_path, "active_owner_activity_segment.json", {
+        "ts": now - 7200, "status": "closed",
+        "camera_presence": {"owner_present": False, "age_s": 7200.0},
+        "audio_activity": {"voice_activity": False, "voice_age_s": 7200.0},
+    })
+    trace = {
+        "ts": now - 60,
+        "doctor": "Codex desktop",
+        "action": "LLM_REGISTRATION",
+        "mode": "patch",
+        "intent": "active surgery",
+    }
+    (tmp_path / "ide_stigmergic_trace.jsonl").write_text(json.dumps(trace) + "\n", encoding="utf-8")
+
+    a = cs.assess(state_dir=tmp_path, now=now)
+    assert a.owner_quiet_likelihood >= 0.6
+    assert a.active_ide_surgery is True
+    assert a.recommend_sleep is False
+    assert a.decision == cs.DECISION_ACTIVE_SURGERY
+
+
 def test_owner_recently_active_does_not_cosleep(tmp_path: Path):
     now = 1_000_000.0
     _set_melatonin(tmp_path, 0.9)

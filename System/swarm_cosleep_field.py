@@ -65,6 +65,7 @@ TRUTH_LABEL = "OWNER_COSLEEP_FIELD_V1"
 IDLE_FLOOR_S = 20 * 60.0   # 20 min quiet = quiet starts to count
 IDLE_CEIL_S = 90 * 60.0    # 90 min quiet = strong "probably asleep"
 PRESENCE_FRESH_S = 180.0   # camera/voice evidence older than this is stale
+ACTIVE_IDE_SURGERY_FRESH_S = 30 * 60.0
 
 # Fusion weights (owner-quiet leads; her thermodynamics second; clock is a
 # soft minor cue, never the trigger).
@@ -74,6 +75,7 @@ W_NIGHT = 0.15
 
 DECISION_COSLEEP = "COSLEEP_RECOMMENDED"
 DECISION_OWNER_PRESENT = "OWNER_PRESENT_STAY_AWAKE"
+DECISION_ACTIVE_SURGERY = "ACTIVE_IDE_SURGERY_STAY_AWAKE"
 DECISION_MONITORING = "MONITORING"
 
 
@@ -96,6 +98,7 @@ class CoSleepAssessment:
     cosleep_pressure: float
     owner_quiet_likelihood: float
     owner_present: bool
+    active_ide_surgery: bool
     owner_idle_seconds: float
     melatonin: float
     night_prior: float
@@ -178,6 +181,52 @@ def _melatonin(state_dir: Path) -> float:
         return 0.0
 
 
+def _active_ide_surgery(state_dir: Path, now: float) -> tuple[bool, dict[str, Any]]:
+    """Detect recent IDE doctor work so Alice does not sleep during surgery.
+
+    This is not treated as owner presence. It is a separate operating-room
+    guard: if doctors are actively registering, intending work, or writing
+    receipts, the body should stay awake and avoid opportunistic co-sleep
+    consolidation until the lane quiets down.
+    """
+    path = state_dir / "ide_stigmergic_trace.jsonl"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-240:]
+    except Exception:
+        return False, {"trace_path": str(path), "trace_readable": False}
+
+    latest: dict[str, Any] | None = None
+    latest_age = 1e9
+    active_actions = {"LLM_REGISTRATION", "WORK_INTENT", "WORK_RECEIPT"}
+
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        ts = float(row.get("ts") or 0.0)
+        if ts <= 0:
+            continue
+        action = str(row.get("action") or row.get("kind") or "")
+        mode = str(row.get("mode") or "").lower()
+        doctor = str(row.get("doctor") or row.get("source_ide") or "")
+        age = max(0.0, now - ts)
+        if age > ACTIVE_IDE_SURGERY_FRESH_S:
+            continue
+        if action in active_actions or ("patch" in mode or "commit" in mode or "push" in mode):
+            latest = {"ts": ts, "age_s": round(age, 1), "action": action, "mode": mode, "doctor": doctor}
+            latest_age = age
+            break
+
+    return latest is not None, {
+        "trace_path": str(path),
+        "active_ide_window_s": ACTIVE_IDE_SURGERY_FRESH_S,
+        "active_ide_surgery": latest is not None,
+        "latest_active_ide_event": latest,
+        "latest_active_ide_age_s": round(latest_age, 1) if latest is not None else None,
+    }
+
+
 def _night_prior(now: float) -> float:
     """Soft local-hour cue — ONE weak signal, never the trigger.
 
@@ -202,6 +251,7 @@ def assess(*, state_dir: str | Path | None = None, now: float | None = None,
     ts = float(now if now is not None else time.time())
 
     owner_quiet, owner_present, idle_s, raw = _owner_quiet(sd, ts)
+    active_ide_surgery, ide_raw = _active_ide_surgery(sd, ts)
     melatonin = _melatonin(sd)
     night = _night_prior(ts)
 
@@ -210,11 +260,20 @@ def assess(*, state_dir: str | Path | None = None, now: float | None = None,
     )
 
     # She only co-sleeps when the OWNER is genuinely quiet — never just
-    # because her own buffers are full while he is actively here.
-    recommend = (owner_quiet >= 0.6) and (pressure >= 0.5) and (not owner_present)
+    # because her own buffers are full while he is actively here. Active IDE
+    # surgery is a separate guard: the operating room is live, so don't enter
+    # opportunistic consolidation while doctors are touching her body.
+    recommend = (
+        (owner_quiet >= 0.6)
+        and (pressure >= 0.5)
+        and (not owner_present)
+        and (not active_ide_surgery)
+    )
 
     if owner_present:
         decision = DECISION_OWNER_PRESENT
+    elif active_ide_surgery:
+        decision = DECISION_ACTIVE_SURGERY
     elif recommend:
         decision = DECISION_COSLEEP
     else:
@@ -231,6 +290,7 @@ def assess(*, state_dir: str | Path | None = None, now: float | None = None,
         "weights": {"owner_quiet": W_OWNER_QUIET, "melatonin": W_MELATONIN, "night": W_NIGHT},
         "host_local_hour": round(time.localtime(ts).tm_hour + time.localtime(ts).tm_min / 60.0, 2),
         "note": "owner_asleep is an inference from inactivity, not certainty; host timezone is a caveat.",
+        "ide_surgery_guard": ide_raw,
     }
 
     audit = CoSleepAssessment(
@@ -239,6 +299,7 @@ def assess(*, state_dir: str | Path | None = None, now: float | None = None,
         cosleep_pressure=round(pressure, 3),
         owner_quiet_likelihood=round(owner_quiet, 3),
         owner_present=bool(owner_present),
+        active_ide_surgery=bool(active_ide_surgery),
         owner_idle_seconds=round(idle_s, 1),
         melatonin=round(melatonin, 3),
         night_prior=round(night, 3),
@@ -299,7 +360,9 @@ def mark_consolidation(*, state_dir: str | Path | None = None, now: float | None
 
 __all__ = [
     "CoSleepAssessment",
+    "ACTIVE_IDE_SURGERY_FRESH_S",
     "CONSOLIDATION_COOLDOWN_S",
+    "DECISION_ACTIVE_SURGERY",
     "DECISION_COSLEEP",
     "DECISION_MONITORING",
     "DECISION_OWNER_PRESENT",

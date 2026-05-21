@@ -63,6 +63,42 @@ STGM_LOG_FILE    = LEDGER_DIR / "stgm_memory_rewards.jsonl"
 STGM_STORE_REWARD  = 0.05   # paid to swimmer for writing a memory
 STGM_RECALL_REWARD = 0.15   # paid to swimmer for successful cross-app recall
 
+# ─── Epistemic labels (Slice 1 — Memory Epistemology) ──────────────────────────
+EPISTEMIC_LABELS = frozenset({
+    "OBSERVED",           # Directly stated by George or tool receipt
+    "WORLD",              # Verified real-world fact with evidence
+    "BELIEF",             # Alice holds it, evidence-supported
+    "HYPOTHESIS",         # Inference / guess, unverified
+    "ARCHITECT_DOCTRINE", # Covenant / standing order
+    "FICTION",            # TV, cowatch, story, roleplay — never treated as fact
+})
+
+MEMORY_EPISTEMOLOGY_AUDIT = LEDGER_DIR / "memory_epistemology_audit.jsonl"
+LINK_PREFIXES = (
+    "trace_id:",
+    "receipt:",
+    "doc:",
+    "memory:",
+    "note:",  # internal downgrade notes, not evidence for reality labels
+)
+
+# ─── Slice 2 Hybrid Recall weights (tunable, local only) ───────────────────────
+HYBRID_WEIGHTS = {
+    "forager": 0.35,
+    "bm25":    0.30,
+    "decay":   0.20,
+    "stgm":    0.15,
+}
+
+EPISTEMIC_RANK_MULTIPLIER = {
+    "OBSERVED":            1.25,
+    "WORLD":               1.25,
+    "ARCHITECT_DOCTRINE":  1.20,
+    "BELIEF":              1.00,
+    "HYPOTHESIS":          0.70,
+    "FICTION":             0.00,   # excluded
+}
+
 # Semantic categories — swimmer uses these to "smell" what the memory is about
 SEMANTIC_TAGS = {
     "clothing":  ["shirt", "wearing", "clothes", "dress", "pants", "jacket", "hat",
@@ -97,6 +133,10 @@ class PheromoneTrace:
     stgm_paid:     float         # reward paid to the swimmer that stored this
     recall_count:  int = 0       # times this memory was successfully recalled
     decay_modifier: float = 1.0  # Epigenetic: < 1.0 = slower decay (trophallaxis)
+
+    # Slice 1 — Epistemic status (Memory Epistemology)
+    epistemic_label: str = "HYPOTHESIS"
+    links:             list = field(default_factory=list)  # evidence backlinks
 
     def fingerprint(self) -> str:
         """Cryptographic identity of this trace."""
@@ -185,7 +225,10 @@ class MemoryForager:
                 continue
             try:
                 raw = json.loads(line)
-                trace = PheromoneTrace(**raw)
+                # Backward compat: only pass fields the current dataclass knows
+                known_fields = {f.name for f in PheromoneTrace.__dataclass_fields__.values()}
+                safe_raw = {k: v for k, v in raw.items() if k in known_fields}
+                trace = PheromoneTrace(**safe_raw)
             except Exception:
                 continue
 
@@ -277,20 +320,56 @@ class StigmergicMemoryBus:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def remember(self, text: str, app_context: str, *, decay_modifier: float = 1.0) -> PheromoneTrace:
+    def remember(self, text: str, app_context: str, *, decay_modifier: float = 1.0,
+                 epistemic_label: str = None, links: list = None) -> PheromoneTrace:
         """
-        Store a memory from any app.
-        Called when the Architect says something worth keeping.
+        Store a memory from any app (Slice 1 — Epistemic status added).
 
-        decay_modifier < 1.0 = epigenetic / trophallaxis memory.
-        These decay slower in the Ebbinghaus curve, acting as
-        ancestral instinct rather than transient chatter.
+        epistemic_label + links[] is the unit. A bare label without evidence
+        is just an adjective — see §2 downgrade rule below.
 
         Returns the trace so the app can confirm it was written.
         """
         tags  = _extract_tags(text)
         ts    = time.time()
         tid   = hashlib.sha256(f"{self.architect_id}:{text}:{ts}".encode()).hexdigest()[:12]
+
+        # Default inference (conservative)
+        if epistemic_label is None:
+            if any(k in app_context.lower() for k in ("fiction", "cowatch", "media", "tv", "movie", "story", "roleplay")):
+                final_label = "FICTION"
+            else:
+                final_label = "HYPOTHESIS"
+        else:
+            final_label = epistemic_label if epistemic_label in EPISTEMIC_LABELS else "HYPOTHESIS"
+            if final_label != epistemic_label:
+                _write_epistemology_audit(
+                    ts=ts,
+                    trace_id=tid,
+                    requested_label=str(epistemic_label),
+                    final_label=final_label,
+                    reason="unknown_label_coerced",
+                )
+
+        final_links = _validate_memory_links(
+            links or [],
+            ts=ts,
+            trace_id=tid,
+            current_label=final_label,
+        )
+
+        # ── The load-bearing rule (Spec §2) ─────────────────────────────────────
+        # OBSERVED / WORLD without evidence auto-downgrades. No crash, honest degradation.
+        if final_label in ("OBSERVED", "WORLD") and not _has_evidence_links(final_links):
+            _write_epistemology_audit(
+                ts=ts,
+                trace_id=tid,
+                requested_label=final_label,
+                final_label="HYPOTHESIS",
+                reason="downgraded_no_evidence",
+            )
+            final_label = "HYPOTHESIS"
+            final_links = final_links + ["note:downgraded_no_evidence"]
 
         # ── Vector 14: Metabolic store fee scales with constraint pressure ──
         try:
@@ -303,14 +382,16 @@ class StigmergicMemoryBus:
             store_fee = STGM_STORE_REWARD  # fallback to flat rate
 
         trace = PheromoneTrace(
-            trace_id      = tid,
-            architect_id  = self.architect_id,
-            app_context   = app_context,
-            raw_text      = text,
-            semantic_tags = tags,
-            timestamp     = ts,
-            stgm_paid     = store_fee,
-            decay_modifier = decay_modifier,
+            trace_id        = tid,
+            architect_id    = self.architect_id,
+            app_context     = app_context,
+            raw_text        = text,
+            semantic_tags   = tags,
+            timestamp       = ts,
+            stgm_paid       = store_fee,
+            decay_modifier  = decay_modifier,
+            epistemic_label = final_label,
+            links           = final_links,
         )
 
         # Write to ledger (flock — safe concurrent IDEs / scripts)
@@ -463,21 +544,117 @@ class StigmergicMemoryBus:
             forager_report = forager.report(),
         )
 
+    def hybrid_recall(self, query: str, app_context: str, *, top_k: int = 5) -> list:
+        """
+        Slice 2 — Local hybrid recall.
+
+        Returns list of (final_score, trace, breakdown_dict) sorted best-first.
+        All scoring is local from the JSONL ledger + existing methods.
+        """
+        if not LEDGER_FILE.exists():
+            return []
+
+        query_tags = _extract_tags(query)
+
+        # Load traces
+        traces = []
+        body = read_text_locked(LEDGER_FILE, encoding="utf-8", errors="replace")
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                raw = json.loads(line)
+                known = {f.name for f in PheromoneTrace.__dataclass_fields__.values()}
+                safe = {k: v for k, v in raw.items() if k in known}
+                t = PheromoneTrace(**safe)
+                if t.architect_id != self.architect_id:
+                    continue
+                traces.append(t)
+            except Exception:
+                continue
+
+        if not traces:
+            return []
+
+        results = []
+        for t in traces:
+            label = getattr(t, "epistemic_label", "HYPOTHESIS")
+            if label == "FICTION":
+                continue
+
+            # 1. Existing forager confidence (reuse the smell logic)
+            forager_score = 0.0
+            try:
+                forager = self._spawn_forager()
+                scored = forager.forage(query, LEDGER_FILE)
+                for sc, tr in scored:
+                    if tr.trace_id == t.trace_id:
+                        forager_score = float(sc)
+                        break
+            except Exception:
+                forager_score = 0.0
+
+            # 2. BM25-lite on raw_text + tags
+            text_for_bm25 = t.raw_text + " " + " ".join(t.semantic_tags)
+            bm25_score = _bm25_score(query, text_for_bm25)
+
+            # 3. Decay (higher retention = better)
+            decay_score = float(t.retention())
+
+            # 4. STGM / reinforcement fitness
+            stgm_score = min(1.0, (getattr(t, "recall_count", 0) + 1) / 20.0)
+
+            # Blend
+            w = HYBRID_WEIGHTS
+            blended = (
+                w["forager"] * forager_score +
+                w["bm25"]    * bm25_score +
+                w["decay"]   * decay_score +
+                w["stgm"]    * stgm_score
+            )
+
+            # Epistemic multiplier (Slice 1 labels)
+            mult = EPISTEMIC_RANK_MULTIPLIER.get(label, 0.7)
+            final_score = blended * mult
+
+            breakdown = {
+                "forager": round(forager_score, 4),
+                "bm25": round(bm25_score, 4),
+                "decay": round(decay_score, 4),
+                "stgm": round(stgm_score, 4),
+                "epistemic_mult": mult,
+                "label": label,
+            }
+            results.append((final_score, t, breakdown))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+        return results[:top_k]
+
     def recall_context_block(self, query: str, app_context: str, top_k: int = 3) -> str:
         """
         Return a multi-line context block of the top K relevant memories.
         Ready to inject straight into an LLM system prompt.
-        """
-        forager    = self._spawn_forager()
-        candidates = forager.forage(query, LEDGER_FILE)
 
-        if not candidates:
+        Slice 2: Uses hybrid_recall for ranking. Output format unchanged from Slice 1.
+        """
+        ranked = self.hybrid_recall(query, app_context, top_k=top_k * 2)  # over-fetch to allow filtering
+
+        if not ranked:
             return ""
 
         lines = ["[STIGMERGIC MEMORY — retrieved from cross-app territory]"]
-        for conf, trace in candidates[:top_k]:
+        count = 0
+        for score, trace, _ in ranked:
+            label = getattr(trace, "epistemic_label", "HYPOTHESIS")
+            if label == "FICTION":
+                continue
+            if count >= top_k:
+                break
             ago = _human_time(trace.timestamp)
-            lines.append(f"- ({trace.app_context}, {ago}): \"{trace.raw_text}\"")
+            label_tag = f"[{label}]" if label != "HYPOTHESIS" else "[HYPOTHESIS·guess]"
+            lines.append(f"- {label_tag} ({trace.app_context}, {ago}): \"{trace.raw_text}\"")
+            count += 1
         lines.append("[END MEMORY]")
         return "\n".join(lines)
 
@@ -596,6 +773,90 @@ def _human_time(ts: float) -> str:
     if delta < 86400:
         return f"{int(delta // 3600)} hours ago"
     return f"{int(delta // 86400)} days ago"
+
+
+def _write_epistemology_audit(
+    *,
+    ts: float,
+    trace_id: str,
+    requested_label: str,
+    final_label: str,
+    reason: str,
+    **extra,
+) -> None:
+    """Append an epistemic correction row without breaking the write path."""
+    row = {
+        "ts": ts,
+        "trace_id": trace_id,
+        "requested_label": requested_label,
+        "final_label": final_label,
+        "reason": reason,
+    }
+    row.update(extra)
+    try:
+        MEMORY_EPISTEMOLOGY_AUDIT.parent.mkdir(parents=True, exist_ok=True)
+        append_line_locked(MEMORY_EPISTEMOLOGY_AUDIT, json.dumps(row) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _validate_memory_links(links: list, *, ts: float, trace_id: str, current_label: str) -> list:
+    """
+    Keep only evidence links with known grammar.
+
+    Unknown prefixes are residue: drop and audit, but never crash memory writes.
+    """
+    valid = []
+    dropped = []
+    for link in links:
+        if isinstance(link, str) and any(link.startswith(prefix) for prefix in LINK_PREFIXES):
+            valid.append(link)
+        else:
+            dropped.append(link)
+
+    if dropped:
+        _write_epistemology_audit(
+            ts=ts,
+            trace_id=trace_id,
+            requested_label=current_label,
+            final_label=current_label,
+            reason="dropped_unknown_link_prefix",
+            dropped_links=[str(link) for link in dropped],
+        )
+
+    return valid
+
+
+def _has_evidence_links(links: list) -> bool:
+    """Internal notes are not evidence for reality labels."""
+    return any(isinstance(link, str) and not link.startswith("note:") for link in links)
+
+
+# ─── Slice 2: BM25-lite (pure Python, dependency-free) ─────────────────────────
+def _bm25_score(query: str, text: str, k1: float = 1.5, b: float = 0.75) -> float:
+    """Lightweight BM25 for local memory ranking."""
+    if not query or not text:
+        return 0.0
+    q_tokens = query.lower().split()
+    t_tokens = text.lower().split()
+    if not q_tokens or not t_tokens:
+        return 0.0
+
+    from collections import Counter
+    tf = Counter(t_tokens)
+    doc_len = len(t_tokens)
+    avg_len = max(1, doc_len)
+
+    score = 0.0
+    for qt in q_tokens:
+        f = tf.get(qt, 0)
+        if f == 0:
+            continue
+        idf = 1.0
+        num = f * (k1 + 1)
+        den = f + k1 * (1 - b + b * (doc_len / avg_len))
+        score += idf * (num / den)
+    return score
 
 
 # ─── The Three Simulations Test ────────────────────────────────────────────────

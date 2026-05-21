@@ -99,7 +99,10 @@ def qmediadevices():
         out = []
         for d in QMediaDevices.videoInputs():
             did = d.id()
-            did = did.decode() if isinstance(did, (bytes, bytearray)) else str(did)
+            try:
+                did = bytes(did).decode() if not isinstance(did, str) else did
+            except Exception:
+                did = did.decode() if isinstance(did, (bytes, bytearray)) else str(did)
             out.append((did, d.description()))
         # do not app.exec(); we only needed enumeration
         return out, None

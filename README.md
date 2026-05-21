@@ -115,6 +115,72 @@ consciousness, not a phenomenal-qualia claim. Read
 
 ---
 
+## Verified Swarm Memory + Body Updates — 2026-05-21
+
+This release records a three-doctor memory pass: Grok built the memory
+epistemology and hybrid recall slices, Cowork audited them, and Codex verified
+and hardened the edge cases before release. The result is a stronger local
+memory system without replacing SIFTA's append-only JSONL ledgers with
+Postgres, pgvector, or cloud infrastructure.
+
+### Memory epistemology is now explicit
+
+`System/stigmergic_memory_bus.py` now writes `epistemic_label` and `links[]`
+on memory rows. Labels include `OBSERVED`, `WORLD`, `BELIEF`, `HYPOTHESIS`,
+`ARCHITECT_DOCTRINE`, and `FICTION`.
+
+The load-bearing rule is simple: a memory that claims reality must carry
+evidence. Bare `OBSERVED` or `WORLD` rows with no valid evidence links are
+automatically downgraded to `HYPOTHESIS` and logged to
+`.sifta_state/memory_epistemology_audit.jsonl`. Unknown labels are also
+coerced to `HYPOTHESIS` with an audit row. Unknown link prefixes are dropped
+and logged instead of silently becoming evidence. Internal `note:` links can
+explain a downgrade, but they do not count as evidence for reality labels.
+
+### Hybrid recall stays local and receipt-shaped
+
+`hybrid_recall()` now ranks memory using the existing forager score,
+BM25-lite text matching, Ebbinghaus decay, and STGM reinforcement fitness, then
+weights the result by epistemic label. `FICTION` is excluded from factual
+recall blocks, and surfaced memories are label-prefixed so Alice can tell fact,
+doctrine, belief, and hypothesis apart while still using the same canonical
+JSONL memory ledger.
+
+### Eval harness now ships
+
+`System/swarm_eval_harness.py` now implements the first CS153-style
+self-grading loop: read traces, label interactions, score deterministic
+pass/fail cases, write `.sifta_state/eval/skill_invoke_metrics.jsonl`, and
+receipt every eval run. The canonical 10-turn golden set is tracked at
+`data/eval/cs153_golden_turns.jsonl`; runtime metrics stay local under
+`.sifta_state/`. The LLM judge path is local-only and off by default; the
+deterministic harness is the shipping gate.
+
+### Body coupling updates
+
+Two body-level updates are part of the same release lane:
+
+- `System/swarm_cosleep_field.py` fuses owner-quiet signals with Alice's
+  thermodynamic sleep pressure so the brainstem can recommend co-sleep and
+  offline consolidation without pretending certainty about the owner's body.
+- `System/swarm_camera_target.py` and the physical capture path now probe live
+  camera topology and write attach/detach receipts so Alice does not keep
+  chasing a stale Logitech camera after a USB hub is unplugged.
+
+### Verification
+
+```bash
+python3 -m py_compile System/stigmergic_memory_bus.py
+python3 -m pytest -q tests/test_memory_epistemology.py -v
+python3 -m pytest -q tests/test_eval_harness.py
+python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
+```
+
+Current verification: memory epistemology `19 passed`; eval harness `8 passed`;
+camera/co-sleep `14 passed`.
+
+---
+
 ## Ace Investor Demo Ready — 2026-05-17
 
 **Release commit:** `23337247 feat: ship Ace investor demo`

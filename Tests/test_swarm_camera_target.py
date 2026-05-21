@@ -137,9 +137,45 @@ def test_read_target_heals_newer_legacy_txt_over_stale_json(monkeypatch, tmp_pat
     assert healed["index"] == 1
 
 
-def test_name_only_built_in_camera_resolves_to_macbook():
+def test_name_only_built_in_camera_resolves_to_macbook(monkeypatch):
+    monkeypatch.setattr(target, "_live_devices", lambda: [])
     rec = target.parse_legacy_text("Built-in Camera")
 
     assert rec is not None
     assert rec["index"] == 1
     assert target.resolve_index(rec) == 1
+
+
+def test_detached_logitech_target_falls_back_to_live_macbook(monkeypatch):
+    monkeypatch.setattr(
+        target,
+        "_live_devices",
+        lambda: [("built-in-uid", "MacBook Pro Camera")],
+    )
+    rec = {
+        "name": "USB Camera VID:1133 PID:2081",
+        "index": 0,
+        "unique_id": "detached-logitech-uid",
+    }
+
+    assert target.resolve_index(rec) == 0
+
+
+def test_probe_camera_topology_writes_attach_detach_receipts(monkeypatch, tmp_path):
+    monkeypatch.setattr(target, "_live_devices", lambda: [("usb-1", "USB Camera VID:1133 PID:2081")])
+    first = target.probe_camera_topology(state_dir=tmp_path, now=1000.0, write_receipt=True)
+    assert first["changed"] is True
+    assert first["appeared"][0]["name"] == "USB Camera VID:1133 PID:2081"
+
+    monkeypatch.setattr(target, "_live_devices", lambda: [("built-in-1", "MacBook Pro Camera")])
+    second = target.probe_camera_topology(state_dir=tmp_path, now=1010.0, write_receipt=True)
+    assert second["changed"] is True
+    assert second["vanished"][0]["name"] == "USB Camera VID:1133 PID:2081"
+    assert second["appeared"][0]["name"] == "MacBook Pro Camera"
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "device_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["kind"] for row in rows] == ["attached", "attached", "detached"]
+    assert rows[-1]["is_logitech"] is True
