@@ -227,7 +227,7 @@ python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_
 
 Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
 outward health eval `6 passed`; BORG + Talk wire `13 passed`; hot reload
-coverage gate `7 passed`; camera/co-sleep `14 passed`. Full Mac-side eval
+coverage gate `8 passed`; camera/co-sleep `14 passed`. Full Mac-side eval
 smoke: inward `10/10`, outward organism health `0.872`, live-ledger deltas `0`.
 
 ---
