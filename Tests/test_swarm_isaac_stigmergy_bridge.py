@@ -113,11 +113,10 @@ class TestArmSegment:
 
     def test_step_moves_arm(self):
         vf = VoxelField(shape=(16, 16, 16))
-        vf.drop_goal(14, 14, 14, intensity=10.0, radius=4)
+        vf.fill_goal_potential(14, 14, 14, intensity=10.0)
         arm = ArmSegment(x=1, y=1, z=1)
         arm.step(vf)
-        # Arm must have moved or stayed (gradient might round to 0 at boundaries)
-        assert (arm.x, arm.y, arm.z) != (1, 1, 1) or True  # moved or stayed at boundary
+        assert (arm.x, arm.y, arm.z) == (2, 2, 2)
 
     def test_step_records_history(self):
         vf = VoxelField(shape=(16, 16, 16))

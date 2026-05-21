@@ -165,6 +165,42 @@ then verifies the inward and outward currents agree on shared invariants.
 The LLM judge path is local-only and off by default; deterministic evals are
 the shipping gate.
 
+Latest Mac-side status: inward eval passes `10/10`, the outward organism
+health probe reports `0.872` overall with `read_only_ok=True`, and `cross_check`
+returns agreement with no findings. The measured weak layer is coverage, not
+syntax or fiction discipline: static organ health is `100%`, FICTION leakage is
+`100%` clean, receipt-chain discipline is `99.3%`, ledger integrity is `90.9%`,
+epistemic hygiene is `80.0%`, and coverage is `53.0%`.
+
+### Interaction BORG and Talk wire
+
+`System/swarm_interaction_borg.py` adds the Mehr/Stanford interaction lesson at
+the silicon layer without importing a robotics game solver into Talk. Memory
+rows now carry `interaction_mode` values such as `DYAD_GEORGE_ALICE`,
+`FICTION_COWATCH`, `OWNER_BODY_MAINTENANCE`, and yield/locale conventions.
+`NASH_SOLVER_FOR_TALK` is explicitly `False`.
+
+The Talk surface now calls a thin non-fatal helper,
+`_interaction_borg_remember_turn_nonfatal()`, which delegates to the PyQt-free
+`deposit_talk_interaction_turn()` entry point. That helper records meaningful
+George/Alice interaction turns through BORG instead of doing a plain duplicate
+`StigmergicMemoryBus.remember()` write. The BORG `state_dir` path now redirects
+the underlying memory bus globals during tests/probes, so temp runs write to
+temp ledgers and restore the live paths in `finally`.
+
+### Coverage campaign started
+
+The exterior health probe made the next weakness measurable: many organs work
+but are not directly touched by tests. `Documents/GROK_COVERAGE_CAMPAIGN_ORDER.md`
+starts the campaign most-depended-on first instead of alphabetically. The first
+new tranche test, `tests/test_swarm_hot_reload.py`, covers the hot-reload organ
+headlessly with live-ledger delta `0`, and the previous weak assertion was
+tightened so the test can fail honestly.
+
+This is the path from `0.872` toward the 90s: add headless, isolated, real
+behavior tests organ by organ, then re-run `swarm_organism_health_eval` and let
+the coverage vital move only when the tests genuinely protect the body.
+
 ### Body coupling updates
 
 Two body-level updates are part of the same release lane:
@@ -180,14 +216,19 @@ Two body-level updates are part of the same release lane:
 
 ```bash
 python3 -m py_compile System/stigmergic_memory_bus.py
+python3 -m py_compile System/swarm_interaction_borg.py Applications/sifta_talk_to_alice_widget.py
 python3 -m pytest -q tests/test_memory_epistemology.py -v
 python3 -m pytest -q tests/test_eval_harness.py
 python3 -m pytest -q tests/test_organism_health_eval.py
+python3 -m pytest -q tests/test_swarm_interaction_borg.py tests/test_talk_interaction_wire.py
+python3 -m pytest -q tests/test_swarm_hot_reload.py
 python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
 ```
 
 Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
-outward health eval `6 passed`; camera/co-sleep `14 passed`.
+outward health eval `6 passed`; BORG + Talk wire `13 passed`; hot reload
+coverage gate `7 passed`; camera/co-sleep `14 passed`. Full Mac-side eval
+smoke: inward `10/10`, outward organism health `0.872`, live-ledger deltas `0`.
 
 ---
 

@@ -463,6 +463,14 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 **GBrain L1/L2/L3 comparison + adopt list:** bridge doc **§7** — hybrid retrieval + `epistemic_label` on memory rows; keep JSONL canonical; do not require Postgres.
 
+### 11.15 Mehr — ENGR319 Interactive Autonomy vs SIFTA (orthogonal, not “behind”)
+
+**Source (secondary):** Stanford ENGR319 — Negar Mehr, ICON Lab — potential games, multi-agent IRL, diffusion coordination, LLM-as-coach for MARL (~2026-05-20).
+
+**Bridge:** `Documents/MEHR_ROBOTICS_INTERACTIVE_AUTONOMY_SIFTA_AXIS.md` — papers (potential games, QRE, IRL, diffusion policies); overlap (theory of mind, multimodal conventions, interaction demos, credit assignment, continual learning); **#SIFTA ≠ replacement for quadcopter Nash solvers**.
+
+**BORG code (2026-05-21):** `System/swarm_interaction_borg.py` — `interaction_mode` on memory bus; `remember_interaction_turn()` (George+Alice demos); `coach_decompose_task()`; `credit_assign_doctor()`; `NASH_SOLVER_FOR_TALK=False`. Tests: `tests/test_swarm_interaction_borg.py`. **Next wire:** `Applications/sifta_talk_to_alice_widget.py` → high-band turns call BORG remember.
+
 ---
 
 ## 12. Embodiment costs — operational framing + psychology spine

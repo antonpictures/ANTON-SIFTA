@@ -3065,6 +3065,33 @@ def _state_root() -> Path:
         globals()["_STATE_DIR"] = root
     return Path(root)
 
+
+def _interaction_borg_remember_turn_nonfatal(
+    text: str,
+    *,
+    conf: float = 0.0,
+    alice_model: str = "",
+    app_context: Optional[str] = None,
+    state_dir: Optional[Path] = None,
+) -> bool:
+    """Best-effort Talk-to-BORG memory deposit; never breaks a Talk turn.
+
+    Thin delegation to the PyQt6-free canonical helper in the BORG.
+    All logic and isolation contract lives in swarm_interaction_borg.deposit_talk_interaction_turn.
+    """
+    try:
+        from System.swarm_interaction_borg import deposit_talk_interaction_turn
+
+        return deposit_talk_interaction_turn(
+            text,
+            conf=conf,
+            app_context=app_context,
+            alice_model=alice_model,
+            state_dir=state_dir,
+        )
+    except Exception:
+        return False
+
 _ALICE_VOICE_SHORTLIST = (
     "Ava (Premium)",
     "Zoe (Premium)",
@@ -14842,24 +14869,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # global memory_ledger.jsonl. The app_context comes from the active
         # Predator Gaze focus, so Alice can later recall "what did George
         # say in the Pheromone Symphony?" from any widget.
-        if len(text.strip()) > 8 and conf > 0.35:
-            try:
-                from System.stigmergic_memory_bus import StigmergicMemoryBus
-                _app_ctx = "talk_to_alice"
-                try:
-                    from System.swarm_app_focus import get_focus_context
-                    _focus = get_focus_context()
-                    if _focus and isinstance(_focus, dict):
-                        _app_ctx = str(
-                            _focus.get("app_name") or _focus.get("app") or "talk_to_alice"
-                        ).strip().lower().replace(" ", "_") or "talk_to_alice"
-                except Exception:
-                    pass
-                StigmergicMemoryBus(architect_id="IOAN_M5").remember(
-                    text, app_context=_app_ctx
-                )
-            except Exception:
-                pass
+        # ── Interaction BORG wire (Grok, per GROK_TALK_INTERACTION_WIRE_ORDER) ──
+        # Real George↔Alice turns flow into the richer memory field with interaction_mode.
+        # Non-fatal, no double-write (we route through the BORG instead of plain remember for Talk).
+        _model = ""
+        try:
+            _model = getattr(self, "_current_model_id", "") or ""
+        except Exception:
+            pass
+        _interaction_borg_remember_turn_nonfatal(
+            text,
+            conf=float(conf or 0.0),
+            alice_model=_model,
+        )
 
         # Event 77: automatic TD credit assignment.
         # A reaction like "perfect" or "wrong" now reinforces/suppresses the

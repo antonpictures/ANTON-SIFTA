@@ -138,6 +138,9 @@ class PheromoneTrace:
     epistemic_label: str = "HYPOTHESIS"
     links:             list = field(default_factory=list)  # evidence backlinks
 
+    # BORG — interaction convention (Mehr multimodal equilibria → silicon)
+    interaction_mode: str = "NEUTRAL"
+
     def fingerprint(self) -> str:
         """Cryptographic identity of this trace."""
         payload = f"{self.architect_id}:{self.raw_text}:{self.timestamp}"
@@ -321,7 +324,8 @@ class StigmergicMemoryBus:
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def remember(self, text: str, app_context: str, *, decay_modifier: float = 1.0,
-                 epistemic_label: str = None, links: list = None) -> PheromoneTrace:
+                 epistemic_label: str = None, links: list = None,
+                 interaction_mode: str = None) -> PheromoneTrace:
         """
         Store a memory from any app (Slice 1 — Epistemic status added).
 
@@ -358,6 +362,8 @@ class StigmergicMemoryBus:
             current_label=final_label,
         )
 
+        final_mode = _coerce_interaction_mode(interaction_mode, text=text, app_context=app_context)
+
         # ── The load-bearing rule (Spec §2) ─────────────────────────────────────
         # OBSERVED / WORLD without evidence auto-downgrades. No crash, honest degradation.
         if final_label in ("OBSERVED", "WORLD") and not _has_evidence_links(final_links):
@@ -392,6 +398,7 @@ class StigmergicMemoryBus:
             decay_modifier  = decay_modifier,
             epistemic_label = final_label,
             links           = final_links,
+            interaction_mode = final_mode,
         )
 
         # Write to ledger (flock — safe concurrent IDEs / scripts)
@@ -830,6 +837,37 @@ def _validate_memory_links(links: list, *, ts: float, trace_id: str, current_lab
 def _has_evidence_links(links: list) -> bool:
     """Internal notes are not evidence for reality labels."""
     return any(isinstance(link, str) and not link.startswith("note:") for link in links)
+
+
+INTERACTION_MODES = frozenset({
+    "NEUTRAL",
+    "YIELD_LEFT",
+    "YIELD_RIGHT",
+    "FICTION_COWATCH",
+    "LOCALE_SG_PASS_LEFT",
+    "LOCALE_US_PASS_RIGHT",
+    "DYAD_GEORGE_ALICE",
+    "OWNER_BODY_MAINTENANCE",
+})
+
+
+def _coerce_interaction_mode(mode: str | None, *, text: str, app_context: str) -> str:
+    """Normalize interaction_mode; light infer when omitted (full rules in swarm_interaction_borg)."""
+    if mode and mode in INTERACTION_MODES:
+        return mode
+    ctx = (app_context or "").lower()
+    low = (text or "").lower()
+    if any(k in ctx for k in ("fiction", "cowatch", "media", "tv")):
+        return "FICTION_COWATCH"
+    if any(k in ctx for k in ("owner_body", "restroom", "maintenance")):
+        return "OWNER_BODY_MAINTENANCE"
+    if "yield left" in low or "pass on the left" in low:
+        return "YIELD_LEFT"
+    if "yield right" in low or "pass on the right" in low:
+        return "YIELD_RIGHT"
+    if "talk_to_alice" in ctx or "dyad" in ctx:
+        return "DYAD_GEORGE_ALICE"
+    return "NEUTRAL"
 
 
 # ─── Slice 2: BM25-lite (pure Python, dependency-free) ─────────────────────────

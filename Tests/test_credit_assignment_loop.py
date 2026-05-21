@@ -74,8 +74,9 @@ def test_silence_does_not_register(isolated_state):
     if last_action_file.exists():
         with open(last_action_file) as f:
             record = json.load(f)
-        assert record["action"] == "SILENCE" or True  # tolerate if written
-    # Main assertion: no crash, pipeline is non-blocking
+        assert record["action"] == "SILENCE"
+    else:
+        assert not last_action_file.exists()
 
 
 # ── Test 3: Full closed loop — reward automatically updates Q ─────────────────
