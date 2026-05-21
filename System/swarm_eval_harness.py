@@ -18,17 +18,17 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import System.stigmergic_memory_bus as memory_bus
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _EVAL_DIR = _STATE / "eval"
-_METRICS = _EVAL_DIR / "skill_invoke_metrics.jsonl"
 _GOLDEN_DIR = _REPO / "data" / "eval"
+_METRICS = _EVAL_DIR / "skill_invoke_metrics.jsonl"
 _RECEIPTS = _STATE / "work_receipts.jsonl"
 
 
@@ -52,7 +52,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _write_eval_receipt(report: Dict[str, Any]) -> str:
+def _write_eval_receipt(report: Dict[str, Any], *, receipts_path: Path, metrics_path: Path) -> str:
     row = {
         "ts": time.time(),
         "trace_id": str(uuid.uuid4()),
@@ -61,10 +61,10 @@ def _write_eval_receipt(report: Dict[str, Any]) -> str:
         "passed": report["passed"],
         "failed": report["failed"],
         "golden_hash": report.get("golden_hash"),
-        "metrics_path": str(_METRICS),
+        "metrics_path": str(metrics_path),
         "source": "swarm_eval_harness",
     }
-    _append_jsonl(_RECEIPTS, row)
+    _append_jsonl(receipts_path, row)
     return row["trace_id"]
 
 
@@ -134,13 +134,24 @@ def load_golden_turns(path: Path) -> List[EvalTurn]:
 def run_eval_pack(
     golden_path: Optional[Path] = None,
     use_judge: bool = False,
+    judge_fn: Optional[Callable[[str, str], bool]] = None,
+    metrics_path: Optional[Path] = None,
+    receipts_path: Optional[Path] = None,
+    write_receipt: bool = True,
 ) -> Dict[str, Any]:
     """
     Run the golden set. Deterministic by default.
-    use_judge=True is allowed only for future local-only judges.
+    use_judge=True is only allowed with an explicit local judge_fn.
     """
+    if use_judge and judge_fn is None:
+        raise ValueError("use_judge=True requires an explicit local judge_fn")
+
     if golden_path is None:
         golden_path = _GOLDEN_DIR / "cs153_golden_turns.jsonl"
+    if metrics_path is None:
+        metrics_path = _METRICS
+    if receipts_path is None:
+        receipts_path = _RECEIPTS
 
     if not golden_path.exists():
         raise FileNotFoundError(f"Golden set not found: {golden_path}")
@@ -216,12 +227,13 @@ def run_eval_pack(
         results.append({
             "turn_id": turn.turn_id,
             "passed": turn_pass,
+            "score": 1.0 if turn_pass else 0.0,
             "detail": detail,
             "trace_id": trace_id,
         })
 
         # Write per-turn metric (the "label right/wrong" surface)
-        _append_jsonl(_METRICS, {
+        _append_jsonl(metrics_path, {
             "ts": time.time(),
             "turn_id": turn.turn_id,
             "target": turn.target,
@@ -241,8 +253,13 @@ def run_eval_pack(
         "use_judge": use_judge,
     }
 
-    receipt_id = _write_eval_receipt(report)
-    report["eval_receipt_id"] = receipt_id
+    if write_receipt:
+        receipt_id = _write_eval_receipt(
+            report,
+            receipts_path=receipts_path,
+            metrics_path=metrics_path,
+        )
+        report["eval_receipt_id"] = receipt_id
     return report
 
 

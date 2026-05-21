@@ -146,15 +146,24 @@ recall blocks, and surfaced memories are label-prefixed so Alice can tell fact,
 doctrine, belief, and hypothesis apart while still using the same canonical
 JSONL memory ledger.
 
-### Eval harness now ships
+### Bidirectional eval now ships
 
-`System/swarm_eval_harness.py` now implements the first CS153-style
-self-grading loop: read traces, label interactions, score deterministic
-pass/fail cases, write `.sifta_state/eval/skill_invoke_metrics.jsonl`, and
-receipt every eval run. The canonical 10-turn golden set is tracked at
-`data/eval/cs153_golden_turns.jsonl`; runtime metrics stay local under
-`.sifta_state/`. The LLM judge path is local-only and off by default; the
-deterministic harness is the shipping gate.
+Eval swims both ways now.
+
+`System/swarm_eval_harness.py` is the inward current: it seeds isolated
+golden-turn memory fixtures, scores deterministic pass/fail cases, writes
+`skill_invoke_metrics.jsonl`, and receipts every eval run. The canonical
+10-turn golden set is tracked at `data/eval/cs153_golden_turns.jsonl`;
+runtime metrics stay local under `.sifta_state/`.
+
+`System/swarm_organism_health_eval.py` is the outward current: it starts at
+the organism boundary and scores receipt-chain discipline, JSONL ledger
+integrity, epistemic population hygiene, static organ syntax health, test
+coverage, and FICTION leakage without importing live organs. `cross_check()`
+then verifies the inward and outward currents agree on shared invariants.
+
+The LLM judge path is local-only and off by default; deterministic evals are
+the shipping gate.
 
 ### Body coupling updates
 
@@ -173,11 +182,12 @@ Two body-level updates are part of the same release lane:
 python3 -m py_compile System/stigmergic_memory_bus.py
 python3 -m pytest -q tests/test_memory_epistemology.py -v
 python3 -m pytest -q tests/test_eval_harness.py
+python3 -m pytest -q tests/test_organism_health_eval.py
 python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
 ```
 
-Current verification: memory epistemology `19 passed`; eval harness `8 passed`;
-camera/co-sleep `14 passed`.
+Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
+outward health eval `6 passed`; camera/co-sleep `14 passed`.
 
 ---
 
