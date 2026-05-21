@@ -193,9 +193,9 @@ temp ledgers and restore the live paths in `finally`.
 The exterior health probe made the next weakness measurable: many organs work
 but are not directly touched by tests. `Documents/GROK_COVERAGE_CAMPAIGN_ORDER.md`
 starts the campaign most-depended-on first instead of alphabetically. The first
-new tranche test, `tests/test_swarm_hot_reload.py`, covers the hot-reload organ
-headlessly with live-ledger delta `0`, and the previous weak assertion was
-tightened so the test can fail honestly.
+two tranche tests now cover `swarm_hot_reload` and `swarm_physics_gate`
+headlessly with live-ledger delta `0`, including the physics gate's own denial
+ledger. The previous weak assertion was tightened so the test can fail honestly.
 
 This is the path from `0.872` toward the 90s: add headless, isolated, real
 behavior tests organ by organ, then re-run `swarm_organism_health_eval` and let
@@ -221,14 +221,15 @@ python3 -m pytest -q tests/test_memory_epistemology.py -v
 python3 -m pytest -q tests/test_eval_harness.py
 python3 -m pytest -q tests/test_organism_health_eval.py
 python3 -m pytest -q tests/test_swarm_interaction_borg.py tests/test_talk_interaction_wire.py
-python3 -m pytest -q tests/test_swarm_hot_reload.py
+python3 -m pytest -q tests/test_swarm_hot_reload.py tests/test_swarm_physics_gate.py
 python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
 ```
 
 Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
 outward health eval `6 passed`; BORG + Talk wire `13 passed`; hot reload
-coverage gate `8 passed`; camera/co-sleep `14 passed`. Full Mac-side eval
-smoke: inward `10/10`, outward organism health `0.872`, live-ledger deltas `0`.
+coverage gate `8 passed`; physics gate coverage `9 passed`; camera/co-sleep
+`14 passed`. Full Mac-side eval smoke: inward `10/10`, outward organism health
+`0.872`, coverage vital `0.532`, live-ledger deltas `0`.
 
 ---
 

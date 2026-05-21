@@ -110,6 +110,10 @@ def test_bus_interaction_mode_field(tmp_path, monkeypatch):
         "System.stigmergic_memory_bus.MEMORY_EPISTEMOLOGY_AUDIT",
         state / "audit.jsonl",
     )
+    monkeypatch.setattr(
+        "System.proof_of_useful_work.issue_work_receipt",
+        lambda *args, **kwargs: None,
+    )
 
     bus = StigmergicMemoryBus(architect_id="T")
     trace = bus.remember(
