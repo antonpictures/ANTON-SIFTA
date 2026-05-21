@@ -167,3 +167,20 @@ def test_request_clearance_hash_verifiable_by_auditor(monkeypatch):
     # Auditor recomputes
     recomputed = gate._hash_receipt(receipt["signals"], decision=receipt["decision"])
     assert recomputed == receipt["clearance_hash"]
+
+
+def test_unknown_cost_class_falls_back_to_breath_policy(monkeypatch):
+    """Edge probe: unknown caller classes degrade to breath, not an undefined lane."""
+    with patch.object(gate, "_read_thermal_warning_level", return_value=0), \
+         patch.object(gate, "_read_low_power_mode", return_value=False), \
+         patch.object(gate, "_read_live_stgm_balance", return_value=10.0), \
+         patch.object(gate, "_read_owner_desire", return_value=0.5), \
+         patch.object(gate, "_get_metabolic_throttle", return_value=None):
+
+        receipt = gate.request_clearance(cost_class="unknown_class", lane="audit.edge")
+
+    assert receipt["ok"] is True
+    assert receipt["decision"] == "grant"
+    assert receipt["signals"]["cost_class"] == "breath"
+    assert receipt["signals"]["estimated_cost_stgm"] == gate._COST_POLICY["breath"]["default_stgm"]
+    assert receipt["signals"]["lane"] == "audit.edge"

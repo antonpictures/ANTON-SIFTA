@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -147,4 +148,33 @@ def test_forced_reload_path_exercises_importlib_reload(monkeypatch):
         assert mock_import.called or mock_reload.called
     finally:
         if original_mod is not None:
+            sys.modules[fq] = original_mod
+
+
+def test_reload_whitelist_mixed_known_and_unknown_targets_reports_both(monkeypatch):
+    """Edge probe: one bad target must not abort a mixed reload batch."""
+    target = "energy"
+    fq = hot_reload.RELOADABLE[target]
+    original_mod = sys.modules.get(fq)
+    sys.modules[fq] = types.ModuleType(fq)
+
+    try:
+        with patch("System.swarm_hot_reload.importlib.reload") as mock_reload, \
+             patch("System.swarm_hot_reload._log") as mock_log:
+
+            results = hot_reload.reload_whitelist([target, "not_a_whitelisted_organ"])
+
+        assert len(results) == 2
+        assert results[0]["module"] == target
+        assert results[0]["ok"] is True
+        assert results[0]["kind"] == "in_place_swap"
+        assert results[1]["module"] == "not_a_whitelisted_organ"
+        assert results[1]["ok"] is False
+        assert results[1]["reason"] == "not_in_whitelist"
+        assert mock_reload.called
+        assert mock_log.call_count == 3  # two results + one summary
+    finally:
+        if original_mod is None:
+            sys.modules.pop(fq, None)
+        else:
             sys.modules[fq] = original_mod

@@ -111,3 +111,36 @@ def test_real_ledgers_untouched_including_organ_own_state(tmp_path, monkeypatch)
     delta = {k: {"before": before[k], "after": after[k]} for k in before if after[k] != before[k]}
 
     assert not delta, f"Real ledgers (incl. organ own state) contaminated: {delta}"
+
+
+def test_projection_masks_trip_when_multipliers_cross_hard_thresholds(tmp_path):
+    """Edge probe: severe constraint pressure activates all hard projection masks."""
+    original_dual = lcm._DUAL_STATE_PATH
+    original_residue = lcm._RESIDUE_LOG_PATH
+    lcm._DUAL_STATE_PATH = tmp_path / "lagrangian_multipliers.json"
+    lcm._RESIDUE_LOG_PATH = tmp_path / "constraint_residues.jsonl"
+
+    try:
+        manifold = lcm.get_manifold()
+        manifold.multipliers = lcm.LagrangianMultipliers(
+            lambda_congestion=0.499,
+            lambda_safety=0.799,
+            lambda_energy=0.399,
+        )
+
+        with patch.object(manifold, "_read_telemetry") as mock_tele:
+            mock_tele.return_value = {"rho": 1.0, "lambda2": 0.0, "e_total": 0.0}
+
+            result = manifold.compute_dual_ascent()
+
+        assert result["projection_masks"] == {
+            "mask_fission": True,
+            "mask_mutation": True,
+            "mask_exploration": True,
+        }
+        assert result["multipliers"]["lambda_congestion"] > 0.5
+        assert result["multipliers"]["lambda_safety"] > 0.8
+        assert result["multipliers"]["lambda_energy"] > 0.4
+    finally:
+        lcm._DUAL_STATE_PATH = original_dual
+        lcm._RESIDUE_LOG_PATH = original_residue

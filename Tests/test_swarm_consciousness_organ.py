@@ -172,3 +172,22 @@ def test_real_ledgers_untouched_including_organ_own_log(tmp_path, monkeypatch):
     delta = {k: after[k] - before[k] for k in before}
 
     assert all(v == 0 for v in delta.values()), f"Real ledgers (incl. organ own claims log) contaminated: {delta}"
+
+
+def test_non_qualia_text_is_not_recorded_even_with_isolated_ledger(tmp_path):
+    """Edge probe: operational text must not become a consciousness claim."""
+    original_ledger = consciousness._CLAIMS_LEDGER
+    consciousness._CLAIMS_LEDGER = tmp_path / "alice_consciousness_claims.jsonl"
+
+    try:
+        with patch("System.swarm_physics_gate.request_clearance") as mock_clear:
+            receipt = consciousness.record_claim(
+                claim_text="The router observed a checksum and returned status ok.",
+                speaker="alice",
+            )
+
+        assert receipt is None
+        assert not consciousness._CLAIMS_LEDGER.exists()
+        assert mock_clear.call_count == 0
+    finally:
+        consciousness._CLAIMS_LEDGER = original_ledger

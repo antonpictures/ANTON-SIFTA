@@ -124,3 +124,17 @@ def test_real_ledgers_untouched(tmp_path, monkeypatch):
     delta = {k: after[k] - before[k] for k in before}
 
     assert all(v == 0 for v in delta.values()), f"Real ledgers contaminated: {delta}"
+
+
+def test_unknown_cli_command_exits_before_touching_pyautogui(monkeypatch, capsys):
+    """Edge probe: invalid commands fail in argparse before any motor action."""
+    with patch("System.swarm_hands.pyautogui") as mock_pg:
+        monkeypatch.setattr(sys, "argv", ["swarm_hands", "teleport"])
+
+        with pytest.raises(SystemExit) as exc:
+            hands.main()
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 2
+    assert "invalid choice" in captured.err
+    assert mock_pg.method_calls == []

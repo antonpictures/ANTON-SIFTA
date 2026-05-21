@@ -151,3 +151,29 @@ def test_clipboard_and_processes_are_bounded(monkeypatch):
         mock_run.return_value = (0, "12345 AliceProcess\n99999 OtherProcess", "")
         procs = body.processes()
         assert isinstance(procs, dict)
+
+
+def test_set_volume_clamps_out_of_range_levels_and_logs_clamped_values(tmp_path):
+    """Edge probe: volume writes clamp unsafe inputs before touching the OS command."""
+    original_ledger = body._TOUCH_LEDGER
+    body._TOUCH_LEDGER = tmp_path / "alice_hardware_touch.jsonl"
+
+    try:
+        with patch.object(body, "_run") as mock_run:
+            mock_run.return_value = (0, "", "")
+
+            high = body.set_volume(150)
+            low = body.set_volume(-12)
+
+        assert high["level"] == 100
+        assert low["level"] == 0
+        commands = [" ".join(call.args[0]) for call in mock_run.call_args_list]
+        assert any("set volume output volume 100" in cmd for cmd in commands)
+        assert any("set volume output volume 0" in cmd for cmd in commands)
+
+        rows = body._TOUCH_LEDGER.read_text(encoding="utf-8").splitlines()
+        assert len(rows) == 2
+        assert '"level": 100' in rows[0]
+        assert '"level": 0' in rows[1]
+    finally:
+        body._TOUCH_LEDGER = original_ledger

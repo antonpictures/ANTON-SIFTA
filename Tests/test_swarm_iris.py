@@ -142,3 +142,30 @@ def test_irisframe_to_dict_roundtrips_metadata():
     assert isinstance(d, dict)
     assert d["capture_source"] == "synthetic"
     assert "metadata" in d
+
+
+def test_blink_capture_webcam_falls_back_to_synthetic_without_disk_or_real_log(tmp_path):
+    """Edge probe: unavailable webcam still yields a frame and only logs to the redirected ledger."""
+    original_log = iris._IRIS_LOG
+    real_synthetic_frame = iris.synthetic_frame
+    iris._IRIS_LOG = tmp_path / "swarm_iris_capture.jsonl"
+
+    def synthetic_without_disk(text: str, **kwargs):
+        kwargs["save_to_disk"] = False
+        return real_synthetic_frame(text, **kwargs)
+
+    try:
+        with patch.object(iris, "webcam_frame", return_value=None), \
+             patch.object(iris, "synthetic_frame", side_effect=synthetic_without_disk):
+
+            frame = iris.SwarmIris().blink_capture(source="webcam")
+
+        assert frame.capture_source == "synthetic"
+        assert frame.metadata["text"] == "[webcam unavailable]"
+        assert frame.file_path == ""
+
+        rows = iris._IRIS_LOG.read_text(encoding="utf-8").splitlines()
+        assert len(rows) == 1
+        assert '"capture_source": "synthetic"' in rows[0]
+    finally:
+        iris._IRIS_LOG = original_log

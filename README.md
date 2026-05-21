@@ -166,11 +166,11 @@ The LLM judge path is local-only and off by default; deterministic evals are
 the shipping gate.
 
 Latest Mac-side status: inward eval passes `10/10`, the outward organism
-health probe reports `0.872` overall with `read_only_ok=True`, and `cross_check`
+health probe reports `0.874` overall with `read_only_ok=True`, and `cross_check`
 returns agreement with no findings. The measured weak layer is coverage, not
 syntax or fiction discipline: static organ health is `100%`, FICTION leakage is
-`100%` clean, receipt-chain discipline is `99.3%`, ledger integrity is `90.9%`,
-epistemic hygiene is `80.0%`, and coverage is `53.0%`.
+`100%` clean, receipt-chain discipline is `99.4%`, ledger integrity is `91.0%`,
+epistemic hygiene is `80.0%`, and coverage is `53.9%`.
 
 ### Interaction BORG and Talk wire
 
@@ -203,6 +203,13 @@ delta `0`, including each organ's own output ledger/state
 `lagrangian_multipliers`, and `constraint_residues`). The previous weak
 assertions were tightened so the tests can fail honestly.
 
+Codex verify-last added one extra edge probe per tranche-1 organ: mixed
+known/unknown hot reload targets, unknown physics cost-class fallback, webcam
+fallback without real iris logging, hardware volume clamping, non-qualia
+claim refusal, same-label health-reflex cooldown, invalid motor command
+rejection before `pyautogui`, and hard lagrangian projection masks. The full
+tranche now collects `60` tests.
+
 This is the path from `0.872` toward the 90s: add headless, isolated, real
 behavior tests organ by organ, then re-run `swarm_organism_health_eval` and let
 the coverage vital move only when the tests genuinely protect the body.
@@ -231,14 +238,15 @@ python3 -m pytest -q tests/test_swarm_hot_reload.py tests/test_swarm_physics_gat
 python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
 ```
 
-Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
-outward health eval `6 passed`; BORG + Talk wire `13 passed`; hot reload
-coverage gate `8 passed`; physics gate coverage `9 passed`; iris coverage
-`9 passed`; hardware-body coverage `7 passed`; consciousness-organ coverage
-`6 passed`; health-reflex coverage `5 passed`; hands coverage `5 passed`;
-lagrangian coverage `3 passed`; camera/co-sleep `14 passed`. Full Mac-side
-eval smoke: inward `10/10`, outward organism health `0.873`, coverage vital
-`0.537` (`540/1006`), live-ledger deltas `0`.
+Current verification: memory epistemology + inward eval + outward health eval +
+BORG + Talk wire `46 passed`; tranche-1 coverage tests `60 passed`
+(`hot_reload=9`, `physics_gate=10`, `iris=10`, `hardware_body=8`,
+`consciousness=7`, `health_reflex=6`, `hands=6`, `lagrangian=4`);
+camera/co-sleep `14 passed`. Full Mac-side eval smoke: inward `10/10`,
+outward organism health `0.874`, coverage vital `0.539` (`542/1006`).
+Guarded tranche runs produced no test-owned ledger writes; concurrent
+background camera/Grok trace rows were visible in `ide_stigmergic_trace.jsonl`
+and were not attributed to the tests.
 
 ---
 

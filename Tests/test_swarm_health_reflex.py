@@ -136,3 +136,25 @@ def test_real_ledgers_untouched_including_organ_own_logs(tmp_path, monkeypatch):
     delta = {k: {"before": before[k], "after": after[k]} for k in before if after[k] != before[k]}
 
     assert not delta, f"Real ledgers (incl. organ own logs) contaminated: {delta}"
+
+
+def test_note_observed_respects_same_label_cooldown(tmp_path):
+    """Edge probe: a repeated symptom in the cooldown window returns no second hint."""
+    original_lex = reflex._LEXICON_LOG
+    original_state = reflex._REFLEX_STATE
+    reflex._LEXICON_LOG = tmp_path / "body_event_lexicon.jsonl"
+    reflex._REFLEX_STATE = tmp_path / "body_reflex_state.json"
+
+    try:
+        learned = reflex.learn_from_text("this is a cough", speaker="architect")
+        assert any(e.label == "cough" for e in learned)
+
+        first = reflex.note_observed("that cough is back")
+        second = reflex.note_observed("the cough is still there")
+
+        assert first is not None
+        assert first.label == "cough"
+        assert second is None
+    finally:
+        reflex._LEXICON_LOG = original_lex
+        reflex._REFLEX_STATE = original_state
