@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -21,10 +22,11 @@ def _rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _line_count(path: Path) -> int:
+def _fingerprint(path: Path) -> tuple[int, str]:
     if not path.exists():
-        return 0
-    return len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+        return 0, ""
+    data = path.read_bytes()
+    return len(data.splitlines()), hashlib.sha256(data).hexdigest()
 
 
 def test_high_band_turn_persists_with_interaction_mode_via_talk_helper(tmp_path):
@@ -108,8 +110,10 @@ def test_real_ledgers_untouched_by_isolated_talk_helper(tmp_path):
         state / "memory_ledger.jsonl",
         state / "stgm_memory_rewards.jsonl",
         state / "memory_epistemology_audit.jsonl",
+        state / "lagrangian_multipliers.json",
+        state / "constraint_residues.jsonl",
     ]
-    before = {path: _line_count(path) for path in watch}
+    before = {path: _fingerprint(path) for path in watch}
 
     _talk_deposit(
         "George, this isolated Talk helper probe must not touch live memory.",
@@ -124,5 +128,5 @@ def test_real_ledgers_untouched_by_isolated_talk_helper(tmp_path):
         state_dir=tmp_path,
     )
 
-    after = {path: _line_count(path) for path in watch}
+    after = {path: _fingerprint(path) for path in watch}
     assert after == before

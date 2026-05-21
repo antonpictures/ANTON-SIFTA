@@ -24,6 +24,13 @@ def bus(tmp_path, monkeypatch):
     monkeypatch.setattr(mb, "MEMORY_EPISTEMOLOGY_AUDIT", tmp_path / "memory_epistemology_audit.jsonl")
     monkeypatch.setattr(mb, "STGM_LOG_FILE", tmp_path / "stgm_memory_rewards.jsonl")
     try:
+        import System.lagrangian_constraint_manifold as lagrangian
+
+        monkeypatch.setattr(lagrangian, "_DUAL_STATE_PATH", tmp_path / "lagrangian_multipliers.json")
+        monkeypatch.setattr(lagrangian, "_RESIDUE_LOG_PATH", tmp_path / "constraint_residues.jsonl")
+    except Exception:
+        pass
+    try:
         import System.proof_of_useful_work as proof
 
         monkeypatch.setattr(proof, "issue_work_receipt", lambda *args, **kwargs: None)

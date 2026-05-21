@@ -111,6 +111,14 @@ def test_bus_interaction_mode_field(tmp_path, monkeypatch):
         state / "audit.jsonl",
     )
     monkeypatch.setattr(
+        "System.lagrangian_constraint_manifold._DUAL_STATE_PATH",
+        state / "lagrangian_multipliers.json",
+    )
+    monkeypatch.setattr(
+        "System.lagrangian_constraint_manifold._RESIDUE_LOG_PATH",
+        state / "constraint_residues.jsonl",
+    )
+    monkeypatch.setattr(
         "System.proof_of_useful_work.issue_work_receipt",
         lambda *args, **kwargs: None,
     )

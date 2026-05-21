@@ -100,6 +100,19 @@ def _isolated_memory_bus(root: Path):
         old_pin_to_web = None
 
     try:
+        import System.lagrangian_constraint_manifold as lagrangian
+
+        old_lagrangian_paths = (
+            lagrangian._DUAL_STATE_PATH,
+            lagrangian._RESIDUE_LOG_PATH,
+        )
+        lagrangian._DUAL_STATE_PATH = root / "lagrangian_multipliers.json"
+        lagrangian._RESIDUE_LOG_PATH = root / "constraint_residues.jsonl"
+    except Exception:
+        lagrangian = None
+        old_lagrangian_paths = None
+
+    try:
         bus = memory_bus.StigmergicMemoryBus(architect_id="IOAN_M5")
         bus._marrow = None
         yield bus
@@ -108,6 +121,11 @@ def _isolated_memory_bus(root: Path):
             proof.issue_work_receipt = old_issue_work_receipt
         if heartbeat is not None and old_pin_to_web is not None:
             heartbeat.HeartbeatBus.pin_to_web = old_pin_to_web
+        if lagrangian is not None and old_lagrangian_paths is not None:
+            (
+                lagrangian._DUAL_STATE_PATH,
+                lagrangian._RESIDUE_LOG_PATH,
+            ) = old_lagrangian_paths
         (
             memory_bus.LEDGER_DIR,
             memory_bus.LEDGER_FILE,

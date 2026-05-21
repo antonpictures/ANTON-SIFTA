@@ -109,6 +109,19 @@ def _memory_bus_state(state_dir: Optional[Path]) -> Iterator[None]:
         old_issue_work_receipt = None
 
     try:
+        import System.lagrangian_constraint_manifold as lagrangian
+
+        old_lagrangian_paths = (
+            lagrangian._DUAL_STATE_PATH,
+            lagrangian._RESIDUE_LOG_PATH,
+        )
+        lagrangian._DUAL_STATE_PATH = state / "lagrangian_multipliers.json"
+        lagrangian._RESIDUE_LOG_PATH = state / "constraint_residues.jsonl"
+    except Exception:
+        lagrangian = None
+        old_lagrangian_paths = None
+
+    try:
         yield
     finally:
         (
@@ -119,6 +132,11 @@ def _memory_bus_state(state_dir: Optional[Path]) -> Iterator[None]:
         ) = old_paths
         if proof is not None and old_issue_work_receipt is not None:
             proof.issue_work_receipt = old_issue_work_receipt
+        if lagrangian is not None and old_lagrangian_paths is not None:
+            (
+                lagrangian._DUAL_STATE_PATH,
+                lagrangian._RESIDUE_LOG_PATH,
+            ) = old_lagrangian_paths
 
 
 def remember_interaction_turn(

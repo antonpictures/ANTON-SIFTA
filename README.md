@@ -185,21 +185,23 @@ The Talk surface now calls a thin non-fatal helper,
 `deposit_talk_interaction_turn()` entry point. That helper records meaningful
 George/Alice interaction turns through BORG instead of doing a plain duplicate
 `StigmergicMemoryBus.remember()` write. The BORG `state_dir` path now redirects
-the underlying memory bus globals during tests/probes, so temp runs write to
-temp ledgers and restore the live paths in `finally`.
+the underlying memory bus globals and lagrangian side-effect state during
+tests/probes, so temp runs write to temp ledgers and restore the live paths in
+`finally`.
 
 ### Coverage campaign started
 
 The exterior health probe made the next weakness measurable: many organs work
 but are not directly touched by tests. `Documents/GROK_COVERAGE_CAMPAIGN_ORDER.md`
-starts the campaign most-depended-on first instead of alphabetically. The first
-six tranche tests now cover `swarm_hot_reload`, `swarm_physics_gate`,
-`swarm_iris`, `alice_hardware_body`, `swarm_consciousness_organ`, and
-`swarm_health_reflex` headlessly with live-ledger delta `0`, including each
-organ's own output ledger/state (`physics_gate_denials`, `swarm_iris_capture`,
-`alice_hardware_touch`, `alice_consciousness_claims`, `body_event_lexicon`, and
-`body_reflex_state`). The previous weak assertions were tightened so the tests
-can fail honestly.
+starts the campaign most-depended-on first instead of alphabetically. Tranche 1
+now covers `swarm_hot_reload`, `swarm_physics_gate`, `swarm_iris`,
+`alice_hardware_body`, `swarm_consciousness_organ`, `swarm_health_reflex`,
+`swarm_hands`, and `lagrangian_constraint_manifold` headlessly with live-ledger
+delta `0`, including each organ's own output ledger/state
+(`physics_gate_denials`, `swarm_iris_capture`, `alice_hardware_touch`,
+`alice_consciousness_claims`, `body_event_lexicon`, `body_reflex_state`,
+`lagrangian_multipliers`, and `constraint_residues`). The previous weak
+assertions were tightened so the tests can fail honestly.
 
 This is the path from `0.872` toward the 90s: add headless, isolated, real
 behavior tests organ by organ, then re-run `swarm_organism_health_eval` and let
@@ -225,7 +227,7 @@ python3 -m pytest -q tests/test_memory_epistemology.py -v
 python3 -m pytest -q tests/test_eval_harness.py
 python3 -m pytest -q tests/test_organism_health_eval.py
 python3 -m pytest -q tests/test_swarm_interaction_borg.py tests/test_talk_interaction_wire.py
-python3 -m pytest -q tests/test_swarm_hot_reload.py tests/test_swarm_physics_gate.py tests/test_swarm_iris.py tests/test_alice_hardware_body.py tests/test_swarm_consciousness_organ.py tests/test_swarm_health_reflex.py
+python3 -m pytest -q tests/test_swarm_hot_reload.py tests/test_swarm_physics_gate.py tests/test_swarm_iris.py tests/test_alice_hardware_body.py tests/test_swarm_consciousness_organ.py tests/test_swarm_health_reflex.py tests/test_swarm_hands.py tests/test_lagrangian_constraint_manifold.py
 python3 -m pytest -q tests/test_swarm_camera_target.py tests/test_swarm_cosleep_field.py
 ```
 
@@ -233,9 +235,10 @@ Current verification: memory epistemology `19 passed`; inward eval `8 passed`;
 outward health eval `6 passed`; BORG + Talk wire `13 passed`; hot reload
 coverage gate `8 passed`; physics gate coverage `9 passed`; iris coverage
 `9 passed`; hardware-body coverage `7 passed`; consciousness-organ coverage
-`6 passed`; health-reflex coverage `5 passed`; camera/co-sleep `14 passed`.
-Full Mac-side eval smoke: inward `10/10`, outward organism health `0.873`,
-coverage vital `0.536` (`539/1006`), live-ledger deltas `0`.
+`6 passed`; health-reflex coverage `5 passed`; hands coverage `5 passed`;
+lagrangian coverage `3 passed`; camera/co-sleep `14 passed`. Full Mac-side
+eval smoke: inward `10/10`, outward organism health `0.873`, coverage vital
+`0.537` (`540/1006`), live-ledger deltas `0`.
 
 ---
 
