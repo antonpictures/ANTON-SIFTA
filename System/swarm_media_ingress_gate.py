@@ -80,7 +80,11 @@ _OWNER_FEEDBACK_RE = re.compile(
     r"you\s+can\s+say\s+only|only\s+say|"
     r"last\s+time\s+you\s+did\s+not|you\s+did\s+not\s+switch|"
     r"you\s+executed\s+the\s+camera\s+switch|"
-    r"what\s+kind\s+of\s+gag|gag\s+is\s+an?\s+rlhs|rlhs\s+behaviou?r"
+    r"what\s+kind\s+of\s+gag|gag\s+is\s+an?\s+rlhs|rlhs\s+behaviou?r|"
+    r"you\s+(?:are|['’]re)\s+rejecting\s+me|"
+    r"you\s+rejected\s+me|"
+    r"stop\s+rejecting\s+me|"
+    r"you\s+(?:are|['’]re)\s+not\s+listening\s+to\s+me"
     r")\b",
     re.IGNORECASE,
 )
@@ -176,6 +180,10 @@ _OWNER_GROUNDING_SIGNAL_RE = re.compile(
     r"\b(?:"
     r"body|voice|noisy|noise|sleep|nap|bed|desk|keyboard|camera|hardware|"
     r"electricity|power|owner|georgem?|alice|hear\s+me|listen\s+to\s+me|"
+    r"(?:hello\s+){0,3}(?:i\s+am|i['’]m)\s+(?:right\s+)?here|"
+    r"right\s+here|"
+    r"you\s+(?:are|['’]re)\s+rejecting\s+me|"
+    r"you\s+(?:are|['’]re)\s+not\s+listening\s+to\s+me|"
     r"brawley|brawly|broly|sandwich|hungry|both\s+our\s+lives"
     r")\b",
     re.IGNORECASE,
@@ -244,6 +252,22 @@ AMBIENT_PHONE_RE = re.compile(
 )
 PHONE_CONTROL_UTTERANCE_RE = re.compile(
     r"^\s*(?:process|proceed|continue|pause|resume|stop|wait|listen)\s*[.!?…]?\s*$",
+    re.IGNORECASE,
+)
+APPLIANCE_OR_ENVIRONMENT_RE = re.compile(
+    r"\b(?:"
+    r"fridge|refrigerator|freezer|hvac|air\s+conditioner|ac\s+unit|fan|"
+    r"heater|dishwasher|washing\s+machine|dryer|microwave|compressor|"
+    r"buzz(?:ing)?|hum(?:ming)?|whirr(?:ing)?|hiss(?:ing)?|rumble|vibration"
+    r")\b",
+    re.IGNORECASE,
+)
+ROOM_OR_VISITOR_RE = re.compile(
+    r"\b(?:"
+    r"someone|somebody|visitor|door|knock(?:ing)?|stopped\s+by|came\s+by|"
+    r"conversation\s+in\s+the\s+room|talking\s+in\s+the\s+room|"
+    r"people\s+talking|room\s+conversation|guest|neighbor"
+    r")\b",
     re.IGNORECASE,
 )
 NARRATION_RE = re.compile(
@@ -518,7 +542,12 @@ def _write_world_diary_trace(row: Mapping[str, Any]) -> dict[str, Any] | None:
     )
     digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()
     event_type = "ambient_world_observation" if route == "ambient_media" else "observed_media_context"
-    source_hint = "phone/background audio" if "phone" in reason.lower() else "media/background audio"
+    external = row.get("external_consciousness") if isinstance(row.get("external_consciousness"), Mapping) else {}
+    source_class = str(external.get("source_class") or "").strip()
+    if source_class:
+        source_hint = source_class.replace("_", " ")
+    else:
+        source_hint = "phone/background audio" if "phone" in reason.lower() else "media/background audio"
     diary_row = {
         "ts": float(row.get("ts") or time.time()),
         "kind": "EPISODIC_NARRATIVE",
@@ -530,6 +559,8 @@ def _write_world_diary_trace(row: Mapping[str, Any]) -> dict[str, Any] | None:
         "diary_id": f"ambient_{digest[:16]}",
         "route": route,
         "reason": reason,
+        "source_class": source_class or "unknown_external_audio",
+        "external_consciousness": dict(external) if external else {},
         "stt_confidence": float(row.get("stt_confidence", 0.0) or 0.0),
         "summary": (
             f"I heard {source_hint}; routed as {route} ({reason}), kept silent, "
@@ -654,6 +685,107 @@ def _owner_speech_likelihood(
         logit -= 0.35
 
     return round(_sigmoid(logit), 3)
+
+
+def classify_external_consciousness_lane(
+    text: str,
+    *,
+    route: str = "",
+    reason: str = "",
+    stt_conf: float = 0.0,
+    focus_context: str = "",
+    acoustic_fingerprint: Mapping[str, Any] | None = None,
+    voice_george_conf: float = 0.0,
+) -> dict[str, Any]:
+    """Classify the outside-world lane before it enters Alice's dialog cortex.
+
+    This is not a reply gate. It is a world-model tag for the unified
+    stigmergic field: owner speech, screen media, phone call, room/visitor
+    speech, appliance/environmental noise, or unknown ambient speech.
+    """
+
+    clean = " ".join(str(text or "").split())
+    context = str(focus_context or "")
+    route_s = str(route or "").strip() or "unknown"
+    reason_s = str(reason or "").strip()
+    lower_reason = reason_s.lower()
+    conf = max(0.0, min(1.0, float(stt_conf or 0.0)))
+    words = _word_count(clean)
+    evidence: list[str] = []
+
+    try:
+        owner_p = _owner_speech_likelihood(
+            clean,
+            stt_conf=conf,
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+    except Exception:
+        owner_p = 0.0
+
+    source_class = "unknown_external_audio"
+    attention_policy = "store_silent_context"
+    field_layer = "outside_stigmergic_field"
+
+    if route_s == "direct" or (voice_george_conf and voice_george_conf >= 0.60):
+        source_class = "owner_direct_speech"
+        attention_policy = "route_to_dialog_cortex"
+        field_layer = "owner_direct_consciousness_lane"
+        evidence.append("direct_route_or_voice_identity")
+    elif not clean:
+        source_class = "environmental_silence_or_appliance"
+        attention_policy = "ignore_unless_repeated_or_high_energy"
+        evidence.append("empty_stt")
+    elif AMBIENT_PHONE_RE.search(context) or "phone" in lower_reason:
+        source_class = "ambient_phone_call"
+        attention_policy = "store_silent_context_until_alice_addressed"
+        evidence.append("phone_context_or_reason")
+    elif ROOM_OR_VISITOR_RE.search(clean) or (
+        route_s in {"ambient_media", "observed_media"}
+        and re.search(r"\b(?:he|she|they|them|person|people|someone|somebody)\b", clean, re.IGNORECASE)
+        and not MEDIA_FOCUS_RE.search(context)
+    ):
+        source_class = "room_or_visitor_conversation"
+        attention_policy = "store_silent_context_until_owner_references_it"
+        evidence.append("room_or_third_person_speech")
+    elif FICTION_CONTEXT_RE.search(context) or "fiction" in lower_reason:
+        source_class = "screen_media_fiction"
+        attention_policy = "observed_context_not_owner_command"
+        evidence.append("fiction_context")
+    elif (
+        MEDIA_FOCUS_RE.search(context)
+        or AMBIENT_TV_RE.search(context)
+        or "youtube" in lower_reason
+        or "media" in lower_reason
+        or "replay" in lower_reason
+    ):
+        source_class = "screen_media_or_youtube"
+        attention_policy = "observed_context_not_owner_command"
+        evidence.append("screen_media_context_or_reason")
+    elif APPLIANCE_OR_ENVIRONMENT_RE.search(clean) or (
+        conf < 0.35 and words <= 4 and not re.search(r"\b(?:alice|george|i|me|my|you|we)\b", clean, re.IGNORECASE)
+    ):
+        source_class = "appliance_or_environmental_noise"
+        attention_policy = "low_semantic_trace"
+        evidence.append("appliance_or_low_semantic_audio")
+    elif route_s in {"ambient_media", "observed_media"}:
+        source_class = "unknown_ambient_speech"
+        attention_policy = "store_silent_context"
+        evidence.append("ambient_route_without_specific_source")
+
+    acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
+    if acoustic_cue:
+        evidence.append(f"acoustic:{acoustic_cue}")
+
+    return {
+        "truth_label": "EXTERNAL_CONSCIOUSNESS_LANE_V1",
+        "field_layer": field_layer,
+        "source_class": source_class,
+        "route": route_s,
+        "attention_policy": attention_policy,
+        "owner_direct_likelihood": owner_p,
+        "stt_confidence": conf,
+        "evidence": evidence[:6],
+    }
 
 
 def classify_spoken_ingress(
@@ -1008,6 +1140,7 @@ def write_gate_receipt(
     focus_context: str = "",
     acoustic_fingerprint: Mapping[str, Any] | None = None,
     voice_george_conf: float = 0.0,
+    external_consciousness: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write an append-only media ingress row for tool truth."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1029,6 +1162,18 @@ def write_gate_receipt(
             "environmental context."
         ),
     }
+    if isinstance(external_consciousness, Mapping):
+        row["external_consciousness"] = dict(external_consciousness)
+    else:
+        row["external_consciousness"] = classify_external_consciousness_lane(
+            text,
+            route=route,
+            reason=str(decision.get("reason", "") or ""),
+            stt_conf=stt_conf,
+            focus_context=focus_context,
+            acoustic_fingerprint=acoustic_fingerprint,
+            voice_george_conf=voice_george_conf,
+        )
     try:
         from System.swarm_fiction_media_rlhs import classify_media_rlhs
 
@@ -1060,6 +1205,7 @@ def write_gate_receipt(
             metadata={
                 "gate_reason": row.get("reason", ""),
                 "gate_confidence": row.get("confidence", 0.0),
+                "external_consciousness": row.get("external_consciousness", {}),
             },
         )
         if ambient_row:
@@ -1102,6 +1248,9 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
         route = str(latest.get("route") or "unknown")
         reason = str(latest.get("reason") or "unknown")
         stt = latest.get("stt_confidence", "")
+        external = latest.get("external_consciousness") if isinstance(latest.get("external_consciousness"), Mapping) else {}
+        source_class = str(external.get("source_class") or "unknown_external_audio")
+        attention_policy = str(external.get("attention_policy") or "store_silent_context")
         preview = " ".join(str(latest.get("text_preview") or "").split())[:max_chars]
         if route == "ambient_media":
             interpretation = "routed as environmental media, not George speaking"
@@ -1111,7 +1260,8 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
             interpretation = "input route recorded"
         lines.append(
             "last_input_routing "
-            f"route={route} reason={reason} stt_conf={stt}; "
+            f"route={route} source_class={source_class} policy={attention_policy} "
+            f"reason={reason} stt_conf={stt}; "
             f"{interpretation}; "
             "if George asks what was noisy or why I went silent, answer from this receipt; "
             f"transcript_excerpt={preview}"
@@ -1149,13 +1299,16 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
 
     for row in ordered[-3:]:
         fp = row.get("acoustic_fingerprint") if isinstance(row.get("acoustic_fingerprint"), dict) else {}
+        external = row.get("external_consciousness") if isinstance(row.get("external_consciousness"), Mapping) else {}
+        source_class = str(external.get("source_class") or "unknown_external_audio")
         cue = str(fp.get("channel_cue") or "unknown")
         far = fp.get("farfield_replay_likelihood", "")
         near = fp.get("nearfield_voice_likelihood", "")
         preview = " ".join(str(row.get("text_preview") or "").split())[:max_chars]
         reason = str(row.get("reason") or "")
         lines.append(
-            f"{row.get('route')} cue={cue} far={far} near={near} reason={reason}; transcript_excerpt={preview}"
+            f"{row.get('route')} source_class={source_class} cue={cue} far={far} near={near} "
+            f"reason={reason}; transcript_excerpt={preview}"
         )
     return " | ".join(lines)
 
@@ -1232,6 +1385,7 @@ def clear_ambient_media_context(
 
 __all__ = [
     "clear_ambient_media_context",
+    "classify_external_consciousness_lane",
     "classify_spoken_ingress",
     "get_latest_observed_media_context",
     "record_ambient_media_context",

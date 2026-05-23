@@ -65,6 +65,7 @@ class DreamCycleReceipt:
     rest_seconds: float
     pressure: Optional[float]
     metabolic_mode: str
+    crystallizer_weight: float
     notes: Dict[str, str]
 
     def as_dict(self) -> Dict[str, Any]:
@@ -118,11 +119,13 @@ class SwarmDreamEngine:
         rest_seconds: float = 0.0,
         pressure: Optional[float] = None,
         metabolic_mode: str = "",
+        crystallizer_weight: float = 1.0,
     ) -> DreamCycleReceipt:
         """Run one deterministic replay/downscaling cycle and write a receipt."""
 
         cycle_id = uuid.uuid4().hex
         now = time.time()
+        crystallizer_weight = max(0.0, min(1.0, _coerce_float(crystallizer_weight, 1.0)))
         text = read_text_locked(self.source_ledger)
         raw_lines = [line for line in text.splitlines() if line.strip()]
         source_hash = _sha256_text("\n".join(raw_lines)) if raw_lines else ""
@@ -160,18 +163,34 @@ class SwarmDreamEngine:
             engrams_written = len(engrams)
             if engrams_written == 0:
                 status = "no_salient_rows"
-            try:
-                from System.temporal_identity_compression import TemporalIdentityCompressionEngine
-
-                skill_stats = TemporalIdentityCompressionEngine(self.state_dir).process_body_brain_ticks(
-                    rows,
-                    source_hash=source_hash,
-                    cycle_id=cycle_id,
+            if crystallizer_weight < 0.5:
+                notes["skill_crystallization_gate"] = (
+                    f"crystallizer_weight={crystallizer_weight:.4f} below 0.5; "
+                    "skipped skill crystallization"
                 )
-                skills_crystallized = int(skill_stats.get("skills_created") or 0)
-                skills_updated = int(skill_stats.get("skills_updated") or 0)
-            except Exception as exc:
-                notes["skill_crystallization_error"] = str(exc)
+            else:
+                skill_rows = rows
+                if crystallizer_weight < 1.0:
+                    keep_n = int((len(rows) * crystallizer_weight) + 0.999999)
+                    keep_n = max(self.cfg.min_rows_for_engram, keep_n)
+                    skill_rows = rows[: min(len(rows), keep_n)]
+                    if len(skill_rows) < len(rows):
+                        notes["skill_crystallization_gate"] = (
+                            f"crystallizer_weight={crystallizer_weight:.4f}; replayed "
+                            f"{len(skill_rows)}/{len(rows)} rows into skill crystallization"
+                        )
+                try:
+                    from System.temporal_identity_compression import TemporalIdentityCompressionEngine
+
+                    skill_stats = TemporalIdentityCompressionEngine(self.state_dir).process_body_brain_ticks(
+                        skill_rows,
+                        source_hash=source_hash,
+                        cycle_id=cycle_id,
+                    )
+                    skills_crystallized = int(skill_stats.get("skills_created") or 0)
+                    skills_updated = int(skill_stats.get("skills_updated") or 0)
+                except Exception as exc:
+                    notes["skill_crystallization_error"] = str(exc)
 
         backup_path = ""
         backup_hash = ""
@@ -204,6 +223,7 @@ class SwarmDreamEngine:
             rest_seconds=float(rest_seconds),
             pressure=pressure,
             metabolic_mode=metabolic_mode,
+            crystallizer_weight=crystallizer_weight,
             notes=notes,
         )
         append_line_locked(self.cycle_ledger, _json_dumps(receipt.as_dict()) + "\n")

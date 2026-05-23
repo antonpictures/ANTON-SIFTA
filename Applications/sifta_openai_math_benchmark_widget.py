@@ -12,7 +12,7 @@ Source: https://www.youtube.com/watch?v=9-TVwv6wtGQ
 
 Truth labels (per Covenant §6/§7):
   long_context    = SIFTA uses persistent ledgers, not single 1M-token window
-  autonomous_res  = GO-gated tournament harness + corpus exporters (partial)
+  autonomous_res  = GO-gated tournament loop + corpus exporters (partial)
   error_correct   = lysosome / referee / auditor lane (deterministic re-run)
   knowledge_inter = stigmergic bus + curated DOIs (no pretend PDF reads)
   verification    = pytest + py_compile + TM-score referees; NO Lean/Isabelle
@@ -83,7 +83,7 @@ CAPABILITY_MARKERS = [
         "episode_ref": "~21:26–22:58, ~23:55–24:06",
         "openai_claim": "Systems that compress timelines on open problems; "
                         "toward publishable novelty.",
-        "sifta_anchor": "Tournament harness, corpus exporters, protein/physics "
+        "sifta_anchor": "Tournament loop, corpus exporters, protein/physics "
                         "engines — all GO-gated for promotion.",
         "sifta_status": "PARTIAL",
         "prove_it": "Define narrow problems (code-verified lemmas, regression "
@@ -1053,7 +1053,7 @@ class MathBenchmarkWidget(QWidget):
         metrics = [
             ("proof_guards", "Proof-of-Property Guards", "Deterministic invariant checks across System/"),
             ("ledger_lines", "Canonical Ledger Lines", "Rows in repair_log.jsonl (STGM quorum)"),
-            ("test_files", "Pytest Test Files", "Test modules in Tests/"),
+            ("test_files", "Pytest Test Files", "Test modules in tests/"),
             ("organs", "System Organs", "Python modules in System/"),
             ("wallet", "Alice Wallet (STGM)", "Canonical balance from ledger_balance()"),
         ]

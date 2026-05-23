@@ -1,14 +1,14 @@
 # SOLID PLAN — Swarm Coordination Substrate (April 2026)
 
-**Purpose:** One master plan to move SIFTA from “strong skeleton” to **agent ecology** with governance—not “more intelligence,” but a **better coordination substrate**.  
-**Audience:** Architect + swarm implementers.  
+**Purpose:** One master plan to move SIFTA from “strong skeleton” to **agent ecology** with governance—not “more intelligence,” but a **better coordination substrate**.
+**Audience:** Architect + swarm implementers.
 **Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_MARROW_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `Documents/PLAN_FINAL_BOSS_LAYER_MUTATION_GOVERNANCE.md` (governor ↔ fission ↔ eval closed loop), `README.md` (Recent updates).
 
 ---
 
 ## 0. Honest positioning (no cosplay)
 
-You do **not** automatically have everything industrial stacks (Manus-class harnesses, Meta-scale orchestration, Facebook-grade infra) ship in production. Those systems are **agent civilizations**: tool routing, planners, sandboxes, retries, logging, brutal eval loops, and teams tuning them full-time.
+You do **not** automatically have everything industrial stacks (Manus-class loops, Meta-scale orchestration, Facebook-grade infra) ship in production. Those systems are **agent civilizations**: tool routing, planners, sandboxes, retries, logging, brutal eval loops, and teams tuning them full-time.
 
 **What SIFTA already has that most don’t:** stigmergy-first design, hardware-bound identity, local territory, STGM economy, Neural Gate doctrine, `.scar` / SCAR kernel, **mycelial genome** (file resonance), **mutation governor** (containment), swim adapter wiring, Marrow Memory + Ebbinghaus bus.
 
@@ -58,8 +58,8 @@ Stigmergy **without** governance = chaos amplifier. Stigmergy **with** governanc
 |---|-----|-------------------|------------------------|
 | 1 | **Coordination substrate** | Shared world model—not just logs | **Swarm Blackboard 2.0** (task field + artifact graph + belief/execution traces)—*design phase* |
 | 2 | **Structured memory** | Episodic / procedural / causal—not vectors alone | StigmergicMemoryBus + Marrow layer + future **skill traces** |
-| 3 | **Closed-loop evolution** | Act → evaluate → mutate policy → redeploy | Genome + Governor + **evaluation harness** (missing) |
-| 4 | **Evaluation harness** | Replay, adversarial tasks, regression per agent class | **Not optional for “real RL”**—phase below |
+| 3 | **Closed-loop evolution** | Act → evaluate → mutate policy → redeploy | Genome + Governor + **evaluation loop** (missing) |
+| 4 | **Evaluation loop** | Replay, adversarial tasks, regression per agent class | **Not optional for “real RL”**—phase below |
 | 5 | **Skill registry** | Composable skills as genes | New module; ties to swimmers + ledger |
 | 6 | **Swarm topology** | Dynamic edges, decay, strengthen successful paths | Interference layer + territory; **topology engine** *design* |
 | 7 | **Governance / safety kernel** | Permissioned actions, rollback, audit, anomaly | Neural Gate + Governor + **future** rollback/audit bus |
@@ -68,10 +68,10 @@ Stigmergy **without** governance = chaos amplifier. Stigmergy **with** governanc
 
 ## 4. Five novel directions (research / product)
 
-1. **Pheromone-weighted planning** — plans carry pheromone mass; sampling follows strong trails.  
-2. **Causal replay learning** — replay failures; search minimal counterfactual fix.  
-3. **Entropy budget per agent** — chaos allowance caps runaway behavior (pairs with dissipation / irreducible cost).  
-4. **Agent economy** — compute credits, memory priority, scheduling by performance (STGM is a wedge).  
+1. **Pheromone-weighted planning** — plans carry pheromone mass; sampling follows strong trails.
+2. **Causal replay learning** — replay failures; search minimal counterfactual fix.
+3. **Entropy budget per agent** — chaos allowance caps runaway behavior (pairs with dissipation / irreducible cost).
+4. **Agent economy** — compute credits, memory priority, scheduling by performance (STGM is a wedge).
 5. **Dead agent resurrection** — freeze, autopsy, recompile into new agents (evolutionary pressure without silent deletion).
 
 These are **not** all scheduled in Phase 1; they inform the roadmap.
@@ -86,7 +86,7 @@ These are the **four concrete implementation tracks** that bridge “industry cr
 |---|-------|--------|------------------|
 | **A** | **Mycelial genome** — code ecology / file resonance | **Shipped** | `System/mycelial_genome.py`, wired in `territory_swim_adapter.py` |
 | **B** | **Mutation governor** — containment physics | **Shipped** | `System/mutation_governor.py`, gates SCAR `Kernel.propose` |
-| **C** | **Claw harness** — sandboxed “limbs” (tool/CLI/sandbox I/O) | **Next** | `System/claw_harness.py` — capability manifest + Crucible-only execution |
+| **C** | **Claw loop** — sandboxed “limbs” (tool/CLI/sandbox I/O) | **Next** | `System/claw_loop.py` — capability manifest + Crucible-only execution |
 | **D** | **Vigil routines** — always-on low-energy patrol | **Next** | `System/vigil_routines.py` — schedules + `homeostasis_engine` / sentinels integration |
 
 **Plus** the **four strategic pillars** that follow in Phase 2 (industrial gap closers):
@@ -125,14 +125,14 @@ The structural plan is already strong: **you do not need more strata** — you n
 | # | Mechanism | One-line role | Primary hooks |
 |---|------------|---------------|----------------|
 | 1 | **Friction layer** | Cost of **change**, not just compute — penalizes noisy mutation | Governor, genome proposals, STGM debit |
-| 2 | **Reversibility index** | Score **undoability**; low score → **human gate** | Governor, `claw_harness`, planning |
+| 2 | **Reversibility index** | Score **undoability**; low score → **human gate** | Governor, `claw_loop`, planning |
 | 3 | **Attention budget** | Hard cap on **reads / analyzes / writes** per cycle | Blackboard, vision, swimmers |
 | 4 | **Contradiction engine** | Detect **conflicting** traces; spawn **resolution** | Blackboard 2.0, `INFERRED` vs ground truth |
 | 5 | **Silence detection** | React to **missing** expected activity | Vigil, sentinels, territory zones |
 | 6 | **Temporal layering** | **Three clocks** — wall, event density, cognitive load | `temporal_spine`, swim loop, UI urgency |
 | 7 | **Shadow simulation** | **Dry-run** estimate of blackboard / risk **before** act | Crucible, Claw, governor pre-check |
 | 8 | **Identity decoupling** | **`id` / lineage / policy / permissions** separated | PKI, swimmers, genesis (no mythology in kernel) |
-| 9 | **Failure harvesting** | **Failures** as first-class, clustered, feed improvement | Logs, eval harness, PoUW receipts |
+| 9 | **Failure harvesting** | **Failures** as first-class, clustered, feed improvement | Logs, eval loop, PoUW receipts |
 | 10 | **Objective function registry** | **Explicit** weighted objectives — every policy references them | STGM, governor thresholds, eval metrics |
 
 ---
@@ -174,10 +174,10 @@ friction_cost(action, state_delta) =
 
 **Idea:** Per agent, per cycle: finite **attention tokens** spent on:
 
-- read blackboard / trace  
-- observe vision  
-- write / mutate  
-- spawn / delegate  
+- read blackboard / trace
+- observe vision
+- write / mutate
+- spawn / delegate
 
 **Example sketch** (tunable): `ATTENTION_BUDGET = 100` with costs e.g. `read_trace=5`, `analyze_event=10`, `write_trace=8`, `spawn_agent=50`.
 
@@ -231,7 +231,7 @@ friction_cost(action, state_delta) =
 
 **Why:** “Think before acting” without full RL; cuts **bad mutations** and **Claw** accidents.
 
-**Fit:** `claw_harness`, pre-governor **dry run**, blackboard diff preview.
+**Fit:** `claw_loop`, pre-governor **dry run**, blackboard diff preview.
 
 ---
 
@@ -260,7 +260,7 @@ agent = {
 
 **Why:** Evolution = **reuse of structured failure**, not only success metrics.
 
-**Fit:** Evaluation harness (Phase 3), PoUW / receipts.
+**Fit:** Evaluation loop (Phase 3), PoUW / receipts.
 
 ---
 
@@ -276,10 +276,10 @@ agent = {
 
 #### Impact ranking (suggested prioritization for implementation debate)
 
-1. **Attention budget** — fastest behavioral discipline.  
-2. **Friction layer** — stability + less stigmergic noise.  
-3. **Reversibility index** — safe exploration + rollback intelligence.  
-4. **Contradiction engine** — truth over time.  
+1. **Attention budget** — fastest behavioral discipline.
+2. **Friction layer** — stability + less stigmergic noise.
+3. **Reversibility index** — safe exploration + rollback intelligence.
+4. **Contradiction engine** — truth over time.
 5. **Objective registry** — global coherence.
 
 **Principle:** Intelligence here comes from **constraints shaping behavior over time** — not from **more agents**, **more sensors**, or **more abstract layers**.
@@ -321,7 +321,7 @@ Metaphor buckets group **concepts**; **modules** are where work actually lives.
 | Concept | SIFTA mapping | Status |
 |---------|---------------|--------|
 | **Contradiction Engine** | `contradiction_engine.py` — blocks conflicting beliefs on blackboard via `assert_belief()`. Singleton. Routes blocked contradictions to `FailureHarvester`. | **Shipped** — tested: door=open then door=closed → tension logged |
-| **Identity Decoupling** ("cryptographic phenotyping") | `identity_decoupling.py` — `IdentityFirewall` separates Genotype (hardware hash) / Lineage (narrative tag) / Phenotype (dynamic permissions). Wired into `ClawHarness`. | **Shipped** — commit `8cce234`. Alien hash + wrong phenotype both blocked. |
+| **Identity Decoupling** ("cryptographic phenotyping") | `identity_decoupling.py` — `IdentityFirewall` separates Genotype (hardware hash) / Lineage (narrative tag) / Phenotype (dynamic permissions). Wired into `ClawLoop`. | **Shipped** — commit `8cce234`. Alien hash + wrong phenotype both blocked. |
 | **Mutation Governor (12-gate)** | `mutation_governor.py` — temporal→replay→rate→cooldown→budget→risk→friction→reversibility→attention→objective→shadow→contradiction. | **Shipped** — all §5.2 leverage mechanisms wired |
 
 **The Brain (Cognition & Memory)**
@@ -329,14 +329,14 @@ Metaphor buckets group **concepts**; **modules** are where work actually lives.
 | Concept | SIFTA mapping | Status |
 |---------|---------------|--------|
 | **Shadow Simulation** | `shadow_simulator.py` — AST-based dry-run structural validation. Wired as Gate #11 in Governor. | **Shipped** |
-| **Failure Harvesting** | `failure_harvesting.py` — structured failure log → clustering → SCAR stubs when threshold reached. Routes from ClawHarness, SkillRegistry, SilenceDetector. | **Shipped** |
-| **Skill Registry** — `.gene` files, decay, STGM | `skill_registry.py` — mint (0.05 STGM) → replay (0.01 STGM) → reinforce (+0.15) / demote (-0.25) → decay (0.005/hr). Auto-minted from ClawHarness success. | **Shipped** — commit `ccf6830`. Full lifecycle tested. |
+| **Failure Harvesting** | `failure_harvesting.py` — structured failure log → clustering → SCAR stubs when threshold reached. Routes from ClawLoop, SkillRegistry, SilenceDetector. | **Shipped** |
+| **Skill Registry** — `.gene` files, decay, STGM | `skill_registry.py` — mint (0.05 STGM) → replay (0.01 STGM) → reinforce (+0.15) / demote (-0.25) → decay (0.005/hr). Auto-minted from ClawLoop success. | **Shipped** — commit `ccf6830`. Full lifecycle tested. |
 
 **The Limbs & Blood (Execution)**
 
 | Concept | SIFTA mapping | Status |
 |---------|---------------|--------|
-| **Claw Harness** | `claw_harness.py` — sandboxed limbs with Identity Firewall gate + Objective worth gate + Skill auto-promotion + replay_skill(). | **Shipped** — fully wired |
+| **Claw Loop** | `claw_loop.py` — sandboxed limbs with Identity Firewall gate + Objective worth gate + Skill auto-promotion + replay_skill(). | **Shipped** — fully wired |
 | **STGM Casino Vault** | `casino_vault.py` — STGM economy with signed mints, SVL metabolism burns, Skill Registry costs. | **Shipped** — live balance: ~1000 STGM |
 
 **Visualization note:** An **interactive organ map** is a **UI** artifact. The `json?chameleon` block from tabs is an **LLM UI prompt** (component scaffold), **not** executable backend code. A real map should use **static** edges from **this table**, not runtime LLM graph invention.
@@ -368,34 +368,34 @@ Metaphor buckets group **concepts**; **modules** are where work actually lives.
 
 ### Phase 0 — **Done (foundation)**
 
-- Territory swim adapter, interference waves, intrinsic reward normalization  
-- Mycelial genome + persistence  
-- Mutation governor + SCAR propose path  
-- Neural Gate doctrine tests (`tests/test_neural_gate_doctrine.py`)  
+- Territory swim adapter, interference waves, intrinsic reward normalization
+- Mycelial genome + persistence
+- Mutation governor + SCAR propose path
+- Neural Gate doctrine tests (`tests/test_neural_gate_doctrine.py`)
 - Marrow Memory + GCI drift (product path)
 
 ### Phase 1 — **Limbs + vigil (so the organism can act and patrol safely)**
 
-1. **`claw_harness.py`** — explicit allowed capabilities; sandbox boundary; no silent OS control.  
-2. **`vigil_routines.py`** — cron-like routines; “Vigil State” when Architect is away; STGM/ledger hygiene hooks.  
+1. **`claw_loop.py`** — explicit allowed capabilities; sandbox boundary; no silent OS control.
+2. **`vigil_routines.py`** — cron-like routines; “Vigil State” when Architect is away; STGM/ledger hygiene hooks.
 3. **Docs:** extend instructional scent files (genesis + `.scar` discipline).
 
 ### Phase 2 — **Coordination substrate (Blackboard 2.0)**
 
-- Minimal **blackboard**: append-only event graph + task nodes + artifact links (file paths + scar IDs).  
-- Single writer discipline to avoid overwrite races.  
-- **Vision track (optional parallel):** raw camera **capture** + **commodity VLM** + **stigmergic head** → pheromones / saliency (see **§5.1**); validate on **M5 24GB** with quantized weights before promising real-time HD.  
+- Minimal **blackboard**: append-only event graph + task nodes + artifact links (file paths + scar IDs).
+- Single writer discipline to avoid overwrite races.
+- **Vision track (optional parallel):** raw camera **capture** + **commodity VLM** + **stigmergic head** → pheromones / saliency (see **§5.1**); validate on **M5 24GB** with quantized weights before promising real-time HD.
 - **Leverage track (§5.2):** design **friction**, **reversibility**, and **attention** as first-class inputs to governor + blackboard API; add **contradiction** + **objective registry** when the event graph exists.
 
 ### Phase 3 — **Evaluation + replay (stop vibes-based “improvement”)**
 
-- Golden tasks + replay from logs  
+- Golden tasks + replay from logs
 - Adversarial / regression suite per app (start with `repair` swim + one app)
 
 ### Phase 4 — **Skills + topology + evolution**
 
-- Skill registry (versioned, signed)  
-- Topology engine (dynamic edges, decay)  
+- Skill registry (versioned, signed)
+- Topology engine (dynamic edges, decay)
 - Closed loop: eval → governor threshold tuning → policy update (human-gated at first)
 
 ---
@@ -412,7 +412,7 @@ To avoid conceptual fireworks only, the **next single deep design** should be on
 | **Evaluation + replay** | Highest leverage for *honest improvement* |
 | **Leverage bundle (§5.2)** | **Attention + friction + reversibility** baked into governor + blackboard — discipline without new “organs” |
 
-**Recommendation:** **Blackboard 2.0** first (substrate), then **evaluation harness** (truth), then skills (composition). In parallel, **design** §5.2 hooks so the substrate does not thrash once live.
+**Recommendation:** **Blackboard 2.0** first (substrate), then **evaluation loop** (truth), then skills (composition). In parallel, **design** §5.2 hooks so the substrate does not thrash once live.
 
 ---
 

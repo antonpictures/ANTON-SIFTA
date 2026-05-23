@@ -3,7 +3,7 @@
 System/gemma_copy_surgery_lab.py
 ================================
 
-Isolated evaluation harness for Gemma GGUF checkpoint surgery.
+Isolated evaluation loop for Gemma GGUF checkpoint surgery.
 
 It does three honest things:
 1. Resolves a reference checkpoint and an operating checkpoint.
@@ -296,7 +296,7 @@ def evaluate_candidate(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Gemma copy surgery harness")
+    parser = argparse.ArgumentParser(description="Gemma copy surgery loop")
     parser.add_argument("--reference-tag", default=DEFAULT_REFERENCE_TAG)
     parser.add_argument("--operating-tag", default=DEFAULT_OPERATING_TAG)
     parser.add_argument("--reference-gguf", type=Path)

@@ -112,7 +112,7 @@ _RESIDUE_PHRASES = [
     "in summary",
     "in conclusion",
     "ultimately,",
-    "harness the power of",
+    "loop the power of",
     "unlock the potential",
     "the power of",
     "a myriad of",

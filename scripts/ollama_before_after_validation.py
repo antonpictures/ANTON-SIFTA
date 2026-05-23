@@ -2,7 +2,7 @@
 """
 Run before/after Ollama validation for a modified checkpoint.
 
-The harness is deliberately rule-scored. It does not ask another model to judge
+The loop is deliberately rule-scored. It does not ask another model to judge
 the outputs, because the goal is to measure drift rather than generate a more
 plausible story about drift.
 """
@@ -235,7 +235,7 @@ def call_ollama_chat(
             "latency_ms": latency_ms,
             "error": exc.read().decode("utf-8", errors="replace"),
         }
-    except Exception as exc:  # noqa: BLE001 - record harness failures as data.
+    except Exception as exc:  # noqa: BLE001 - record loop failures as data.
         latency_ms = (time.perf_counter() - started) * 1000
         return {
             "ok": False,

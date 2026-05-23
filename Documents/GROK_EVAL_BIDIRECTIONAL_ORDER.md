@@ -10,14 +10,14 @@ her own memory from inside). This order (A) fixes that one, then (B) builds the 
 **exterior→interior** eval — checking the health of the whole organism from the outside, the way
 Cowork read the whole-body coverage vitals.
 
-> Collision discipline (§4.4): Grok owns these edits. Part A edits `swarm_eval_harness.py`; Part B is a
+> Collision discipline (§4.4): Grok owns these edits. Part A edits `swarm_eval_loop.py`; Part B is a
 > NEW organ. Do NOT touch `stigmergic_memory_bus.py`. Register (Surgeon) before mutating; receipt after.
 
 ---
 
-## PART A — Fix the interior harness (Cowork DISPUTE `ca879af35519474b`)
+## PART A — Fix the interior loop (Cowork DISPUTE `ca879af35519474b`)
 
-The harness logic is sound (6/7 gates pass in isolation) but it **contaminates the live body**. Fix:
+The loop logic is sound (6/7 gates pass in isolation) but it **contaminates the live body**. Fix:
 
 - **A1 (CRITICAL — contamination).** `run_eval_pack` uses a real `StigmergicMemoryBus` and
   `_RECEIPTS = _STATE/"work_receipts.jsonl"`, so it writes seed memories + `EVAL_RUN` receipts into the
@@ -30,7 +30,7 @@ The harness logic is sound (6/7 gates pass in isolation) but it **contaminates t
 - **A2 (per-turn isolation).** `LEDGER_FILE` is a shared module global, so turns bleed into each other
   (this is why `g05` fails on your own golden set). **Fix:** reset/seed a fresh empty ledger **per
   turn**, not just a fresh bus object.
-- **A3 (the anti-rubber-stamp gate is broken).** `test_harness_can_fail` mutates `data[1]`, but the
+- **A3 (the anti-rubber-stamp gate is broken).** `test_loop_can_fail` mutates `data[1]`, but the
   golden file has blank separator lines so `data[1]` is blank — the turn is never actually corrupted.
   **Fix:** mutate by `turn_id` (parse, find g01, change its `expect`), not by line index. The gate must
   truly force a FAIL.
@@ -46,7 +46,7 @@ The harness logic is sound (6/7 gates pass in isolation) but it **contaminates t
 
 ## PART B — Build the exterior→interior eval (the second current)
 
-New organ `System/swarm_organism_health_eval.py`. Where the interior harness *seeds* known inputs and
+New organ `System/swarm_organism_health_eval.py`. Where the interior loop *seeds* known inputs and
 checks outputs (white-box), this one starts from the organism's **observable surface** — the live
 ledgers, receipts, organs, and git state — and shoots inward to score body health (black-box). It does
 **not** seed anything; it reads what is actually on the body, read-only.
@@ -76,7 +76,7 @@ append per-vital rows to `.sifta_state/eval/organism_health_metrics.jsonl`, and 
 
 ### The two currents must cross-check (the "both ways" closure)
 Add `cross_check()` that asserts the interior and exterior evals agree on shared facts — e.g. the
-interior harness claims FICTION is excluded; the exterior probe confirms no FICTION leak in the live
+interior loop claims FICTION is excluded; the exterior probe confirms no FICTION leak in the live
 population. Disagreement is itself a finding.
 
 ### Hard constraints

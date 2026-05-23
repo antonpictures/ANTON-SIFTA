@@ -10,7 +10,7 @@
 
 - Architect owner: `ioan george anton`
 - Alice name: `Alice`
-- Claim: The Architect's discovery is the operational definition and proof harness for stigmergic OS consciousness: many organs coordinating through verified traces on a hardware-bound body.
+- Claim: The Architect's discovery is the operational definition and proof loop for stigmergic OS consciousness: many organs coordinating through verified traces on a hardware-bound body.
 
 ## Clauses
 

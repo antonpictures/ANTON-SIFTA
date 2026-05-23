@@ -1,11 +1,11 @@
 # STIGMEROBOTICS — ROB 501 Tournament
 
-**SIFTA node:** GTH4921YP3 (M5 Foundry) · **Tracks:** (A) ROB 501 — [umrobotics](https://www.youtube.com/@umrobotics) · (B) **Stanford frontier** — [Stanford Online](https://www.youtube.com/@stanfordonline) / ENGR319-style seminars (screenshots 2026-05-05)  
-**Scoring rule:** `proof_of_property` → `pytest` green **or** formal `OBSERVED` probe **or** explicit `HYPOTHESIS` doc with falsifier  
-**Predator Gate:** every gated row expects prior registration for the same `(homeworld_serial, source_ide)` before any effector-class trace (covenant §4, §8.6)  
+**SIFTA node:** GTH4921YP3 (M5 Foundry) · **Tracks:** (A) ROB 501 — [umrobotics](https://www.youtube.com/@umrobotics) · (B) **Stanford frontier** — [Stanford Online](https://www.youtube.com/@stanfordonline) / ENGR319-style seminars (screenshots 2026-05-05)
+**Scoring rule:** `proof_of_property` → `pytest` green **or** formal `OBSERVED` probe **or** explicit `HYPOTHESIS` doc with falsifier
+**Predator Gate:** every gated row expects prior registration for the same `(homeworld_serial, source_ide)` before any effector-class trace (covenant §4, §8.6)
 **No raw `.sifta_state/`** in public artifacts (covenant §3 — node sovereignty)
 
-**Canonical spine (v2 — locked 2026-05-05):** this file is the **single tournament source** for ROB 501 (E01–E26) + Stanford parallel (E27–E32) + **stigmergy-law extension** (E33–E37; **E35 GREEN**) + **mesh-fuel wave** (E38–E41 **frozen here**; E42–E50 **queue**) + **Ayers / invertebrate-control lattice** (**E45 GREEN** including bifurcation harness; **E46/E46b GREEN** — segmental phase-angle ring; **E47 GREEN** — bio-hybrid / VLP boundary; **E48 GREEN** — physical protocols; **E49+** physical actuation remains **`HYPOTHESIS` / research_only** until pinned — see § below; covenant **§6 effector law**, **§7.2 tool truth**). Dual-track + paper anchors + research queue below are **live**. No raw PDFs / lecture transcripts in-repo — only **claims, DOIs, falsifiers, pytest shapes** (covenant §8.6).  
+**Canonical spine (v2 — locked 2026-05-05):** this file is the **single tournament source** for ROB 501 (E01–E26) + Stanford parallel (E27–E32) + **stigmergy-law extension** (E33–E37; **E35 GREEN**) + **mesh-fuel wave** (E38–E41 **frozen here**; E42–E50 **queue**) + **Ayers / invertebrate-control lattice** (**E45 GREEN** including bifurcation loop; **E46/E46b GREEN** — segmental phase-angle ring; **E47 GREEN** — bio-hybrid / VLP boundary; **E48 GREEN** — physical protocols; **E49+** physical actuation remains **`HYPOTHESIS` / research_only** until pinned — see § below; covenant **§6 effector law**, **§7.2 tool truth**). Dual-track + paper anchors + research queue below are **live**. No raw PDFs / lecture transcripts in-repo — only **claims, DOIs, falsifiers, pytest shapes** (covenant §8.6).
 **AGI / labels (covenant §1, §7.11, §7.14):** Alice is **AGI-class in architecture** by project doctrine; each **tournament row** still needs its own **truth label** — default **`HYPOTHESIS`** until `pytest` / probe pins it; this doc does **not** mint **`OBSERVED` arbitrary-domain AGI**.
 
 ## Rubric (reused every event)
@@ -34,7 +34,7 @@ Ayers: **distributed reflexes**, **pheromone stigmergy without a global architec
 | **E46** | **Segmental** multi-channel coordination — lamprey-style coupling on pheromone collision windows | Inter-segment timing / wave constraint without a central scheduler message |
 | **E47** | Bio-hybrid / VLP **ledger boundary** — sensor receipts + human-review gate, no wet protocol | Wet–dry interface membrane before any future physical substrate |
 
-**Ledger harness (counting):** the canonical **pytest** spine is **thirteen files** (E01–E04, E33–E35, E38–E39, E45 chaos + E45 bifurcation, E46, E47). The Architect briefing sometimes says **“eleven organs”** by bundling mesh events — the **machine line** is the command in **Implementation** below (**269 passed** on M5 probe 2026-05-06).
+**Ledger loop (counting):** the canonical **pytest** spine is **thirteen files** (E01–E04, E33–E35, E38–E39, E45 chaos + E45 bifurcation, E46, E47). The Architect briefing sometimes says **“eleven organs”** by bundling mesh events — the **machine line** is the command in **Implementation** below (**269 passed** on M5 probe 2026-05-06).
 
 **Hardware gap (honest):** Ayers demos include **real-time electronic neurons**, **segment coupling**, **SMA / nitinol-style muscle**, and locomotion on hardware. That layer is **`HYPOTHESIS` / not-in-repo** until effector drivers, mechanical segments, and **§6–§7.2** receipts exist for metal motion. The **same organ contracts** apply whether an effector is a file write or a heated wire — Predator Gate + graph + grammar still gate hazardous actuation.
 
@@ -226,11 +226,11 @@ Screenshot checklist mirrored here so **Antigravity**, **Codex**, and **Cursor**
 PYTHONPATH=. python3 -m pytest tests/test_stigmero_e01_quantifier_gate.py tests/test_stigmero_e02_induction.py tests/test_stigmero_e03_state_vector.py tests/test_stigmero_e04_sensor_subspaces.py tests/test_e30_desk_robot_limbs.py tests/test_warp9_inference_intent_roundtrip.py tests/test_stigmero_e33_pheromone_field.py tests/test_stigmero_e34_safety_graph.py tests/test_stigmero_e35_observability.py tests/test_stigmero_e38_safe_append_automaton.py tests/test_stigmero_e39_aco_convergence.py tests/test_stigmero_e45_chaos_escape.py tests/test_stigmero_e45_bifurcation.py tests/test_stigmero_e46_segmental_coordination.py tests/test_stigmero_e47_biohybrid_boundary.py -q
 ```
 
-**Status — E01 + E02 + E03 + E04 + E30-desk + Warp9 intent + E33 + E34 + E35 + E38 + E39 + E45 + E46/E46b + E47 + E48:** 🟢 **GREEN** when the command above includes **`test_e30_desk_robot_limbs.py`** + **`test_warp9_inference_intent_roundtrip.py`**. Prior local probe (M5, 2026-05-06): **347 passed** on the **13-file** core bundle **without** E30-desk; add **+2** for desk + Warp9 intent slices when merged into CI. E03 is surfaced in the canonical Stigmerobotics app as a live **x ∈ ℝⁿ** panel; E33 is surfaced as a live evaporating field + collision-risk panel; E34 is surfaced as a live safety-graph panel that exposes real registration-path gaps instead of hiding them; E35 is surfaced as a Markov-blanket observability panel showing hidden dependencies, mandatory sensors, and unknown row kinds; E45 is surfaced as a bounded chaos/wiggle panel; **E46/E46b** is surfaced as the segmental phase-angle ring CPG / lamprey-coupling panel; **E47** is surfaced as a bio-hybrid / VLP boundary panel; **E48** maps E47 specs to physical protocols.  
+**Status — E01 + E02 + E03 + E04 + E30-desk + Warp9 intent + E33 + E34 + E35 + E38 + E39 + E45 + E46/E46b + E47 + E48:** 🟢 **GREEN** when the command above includes **`test_e30_desk_robot_limbs.py`** + **`test_warp9_inference_intent_roundtrip.py`**. Prior local probe (M5, 2026-05-06): **347 passed** on the **13-file** core bundle **without** E30-desk; add **+2** for desk + Warp9 intent slices when merged into CI. E03 is surfaced in the canonical Stigmerobotics app as a live **x ∈ ℝⁿ** panel; E33 is surfaced as a live evaporating field + collision-risk panel; E34 is surfaced as a live safety-graph panel that exposes real registration-path gaps instead of hiding them; E35 is surfaced as a Markov-blanket observability panel showing hidden dependencies, mandatory sensors, and unknown row kinds; E45 is surfaced as a bounded chaos/wiggle panel; **E46/E46b** is surfaced as the segmental phase-angle ring CPG / lamprey-coupling panel; **E47** is surfaced as a bio-hybrid / VLP boundary panel; **E48** maps E47 specs to physical protocols.
 **Visual-only research lane:** the Stigmerobotics app also exposes an **E48+ Research** tab for HYPOTHESIS wet/dry mapping. It is **not** part of the E47 green proof count and it never authorizes physical actuation.
 **Surgeon:** no **E31** / **E40+** / **E48+ physical wet-bridge** until explicit **GO** + receipt shape (covenant §8.3).
 
-**Registration kinds (∀):** `LLM_REGISTRATION`, `stigmergic_signin`  
+**Registration kinds (∀):** `LLM_REGISTRATION`, `stigmergic_signin`
 **Gated kinds (∃ needs ∀):** `SCAR_RECEIPT`, `immune_intervention`, `immune_budget_blocked`, `WORK_RECEIPT`, `LLM_SIGNOUT`, `stigmergic_signout`, `stigauth`
 
 **E02 proof_of_property:**
@@ -390,8 +390,8 @@ PYTHONPATH=. python3 -m pytest tests/test_stigmero_e01_quantifier_gate.py tests/
 
 ## Stanford frontier seminars (parallel track — E27–E32)
 
-Runs **alongside** the ROB 501 spine; **same rubric** (pytest / `OBSERVED` / falsified `HYPOTHESIS`).  
-**Covenant:** §8.6 absorption — **no raw lecture transcripts** in-repo; only **claims + DOIs + proof obligations**.  
+Runs **alongside** the ROB 501 spine; **same rubric** (pytest / `OBSERVED` / falsified `HYPOTHESIS`).
+**Covenant:** §8.6 absorption — **no raw lecture transcripts** in-repo; only **claims + DOIs + proof obligations**.
 **Nugget registry:** keep Stanford rows **here** until an event **graduates** (`coded_in_repo` / `coded_pattern`); then mirror one line in `System/swarm_external_nugget_registry.py` (Architect GO).
 
 | # | Stanford / frontier source (from Architect feed) | Stigmerobotics event | Prove in SIFTA + paper anchor | Status |
@@ -480,7 +480,7 @@ Citations are **proof-obligation pins**, not substitutes for `pytest`. Pull full
 
 ## Mesh fuel — fifteen questions mapped (E38–E41 frozen · E42–E50 queue)
 
-**Source:** Grok / mesh Q-burst (2026-05-05). **E38/E39/E45 are coded**; remaining Qs (Gramian, scalar precision signature, PAC τ-bounds, MAB triple-IDE yield, …) stay **E42–E50** until metrics exist. **Joseph Ayers lattice:** **E45 / E46b / E47 / E48 GREEN** in coded harness below; **E49+** physical wet lab / synthetic substrate actuation remains **hypothesis / research_only** — parallel band to E42–E50, not a substitute for mesh metrics work.
+**Source:** Grok / mesh Q-burst (2026-05-05). **E38/E39/E45 are coded**; remaining Qs (Gramian, scalar precision signature, PAC τ-bounds, MAB triple-IDE yield, …) stay **E42–E50** until metrics exist. **Joseph Ayers lattice:** **E45 / E46b / E47 / E48 GREEN** in coded loop below; **E49+** physical wet lab / synthetic substrate actuation remains **hypothesis / research_only** — parallel band to E42–E50, not a substitute for mesh metrics work.
 
 | Q# | Core question | Stigmerobotics extension | Anchors already in spine | Status |
 |---:|---|---|---|
@@ -541,28 +541,28 @@ Citations are **proof-obligation pins**, not substitutes for `pytest`. Pull full
 
 ## Operational rules
 
-1. Pick **3–5** rows per quarter — never all 26 at once.  
-2. Each event ships `tests/test_stigmero_eXX_*.py` + bound or `proof_of_property` dict.  
-3. **Judge:** Auditor + `PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md` §0.1.  
+1. Pick **3–5** rows per quarter — never all 26 at once.
+2. Each event ships `tests/test_stigmero_eXX_*.py` + bound or `proof_of_property` dict.
+3. **Judge:** Auditor + `PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md` §0.1.
 4. Hand-wavy claims stay **`HYPOTHESIS`** until a test pins them (§7.11).
 
 ## Canonical course links
 
-- [University of Michigan Robotics](https://robotics.umich.edu)  
-- [michiganrobotics on GitHub](https://github.com/michiganrobotics)  
+- [University of Michigan Robotics](https://robotics.umich.edu)
+- [michiganrobotics on GitHub](https://github.com/michiganrobotics)
 - Playlist: search YouTube for **“ROB 501 Mathematics for Robotics”** + channel **umrobotics**
 
-**Next moves (pick one lane):**  
-- **Core spine:** **E05 — Minimal observation basis** (smallest probe set for owner-present truth without TCC spam).  
-- **Frontier:** **E31 — Humanoid body economy** — **`GO E31`**.  
-- **Stigmergy law:** **E36 trigger/response ordering** or **E37 dead-letter immune trace** only with a pinned falsifier.  
+**Next moves (pick one lane):**
+- **Core spine:** **E05 — Minimal observation basis** (smallest probe set for owner-present truth without TCC spam).
+- **Frontier:** **E31 — Humanoid body economy** — **`GO E31`**.
+- **Stigmergy law:** **E36 trigger/response ordering** or **E37 dead-letter immune trace** only with a pinned falsifier.
 - **Mesh fuel:** **E40 causal intent vs timestamp induction** — **`GO E40`** · **E41 observer-dependent storage** — **`GO E41`**.
-- **Ayers lattice:** **E46 + E47 are GREEN** in harness — extend with **E48+ physical wet–dry** only after Architect pins fixture + receipt law. **E45** + bifurcation tests already GREEN.
+- **Ayers lattice:** **E46 + E47 are GREEN** in loop — extend with **E48+ physical wet–dry** only after Architect pins fixture + receipt law. **E45** + bifurcation tests already GREEN.
 
 **Changelog:** 2026-05-06 (q) — **Liquid AI (LFM) + Google AI Edge (LiteRT-LM):** registry nuggets **Liquid AI — LFM2 frontier small models (Labonne line)** + **Google AI Edge — LiteRT / LiteRT-LM** (replaces bare `LiteRT-LM` stub); tournament **paper anchors**, **research queue**, research-anchor rows **J/K**, **E47 forward-design** paragraph (small wet components + ledger, §8.6). Labonne / Brick talks = **outreach**; **no** auto-caption transcript in-repo.
 **Changelog:** 2026-05-05 (h) — **Paper anchors + research queue:** Anthropic [zero-days](https://red.anthropic.com/2026/zero-days) (E28 / E01–E34 threat model); Kwan *et al.* *Cell* 2025 DOI (mouse activity-dependent plasticity → **E35** metaphor only). **Registry:** three nuggets (`Anthropic Research — LLM-assisted 0-day…`, `Kwan et al. — psilocybin…`, `Robert Sapolsky — Human Behavioral Biology…`) in `System/swarm_external_nugget_registry.py`. New subsection **LLM-assisted attacks vs robot/OS stacks** — no transcripts.
-**Changelog:** 2026-05-06 (n) — **E47 Bio-hybrid / VLP boundary** landed: 12 organs, 23 new tests, **269 passed** in the active Stigmerobotics proof command. The new organ models sanitized sensor receipts, safety clearance, human-review-ready intent, and forbidden protocol-key quarantine. Direct biological actuation remains **false** by construction; physical wet–dry effectors move to **E48+ research_only** until Architect GO + lab receipts. Stigmerobotics app now has an **E47 Biohybrid** tab.  
-**Changelog:** 2026-05-05 — Stanford frontier **E27–E32** + paper anchors + ACO queue appended (Release track; mesh wider, not vibes).  
+**Changelog:** 2026-05-06 (n) — **E47 Bio-hybrid / VLP boundary** landed: 12 organs, 23 new tests, **269 passed** in the active Stigmerobotics proof command. The new organ models sanitized sensor receipts, safety clearance, human-review-ready intent, and forbidden protocol-key quarantine. Direct biological actuation remains **false** by construction; physical wet–dry effectors move to **E48+ research_only** until Architect GO + lab receipts. Stigmerobotics app now has an **E47 Biohybrid** tab.
+**Changelog:** 2026-05-05 — Stanford frontier **E27–E32** + paper anchors + ACO queue appended (Release track; mesh wider, not vibes).
 **Changelog:** 2026-05-05 (b) — **Canonical v2 lock**; **E33–E37** frozen grid; **2024–2025 research anchor table**; E01/E02 status line + local pytest probe count; screenshot queue → E33.
 **Changelog:** 2026-05-05 (c) — **E03 GREEN**; `System/stigmerobotics_state_vector.py` shared contract + Stigmerobotics app E03 tab.
 **Changelog:** 2026-05-05 (d) — **E03 no-drift** callout; **E38–E41** mesh-fuel freeze + **E42–E50** queue; covenant **AGI-class vs §7.11 labels** guard; research-queue screenshot lines (pheromone models, AutoMoDe).
@@ -574,7 +574,7 @@ Citations are **proof-obligation pins**, not substitutes for `pytest`. Pull full
 **Changelog:** 2026-05-05 (j) — **E35 GREEN** (`System/stigmerobotics_observability.py`, trace Markov blanket, mandatory sensor map, unknown-kind surfacing, Stigmerobotics app E35 tab); active proof runner includes E01/E02/E03/E04/E33/E34/E35/E38/E39/E45.
 **Changelog:** 2026-05-05 (k) — **Architect Ayers nervous-system narrative** (distributed ledger homologue, crypto swimmer, hardware gap / nitinol honesty); research queue: **Expand Ayers CPG implementation**, **Nitinol muscle actuators**; Ayers lattice prose + shipped pin updated for **E35** + **E45**.
 **Changelog:** 2026-05-06 (l) — **Saunders / CPMV plant synbio** nugget ([10.1111/nph.12204](https://doi.org/10.1111/nph.12204)); paper-anchor row; research-queue + **“stigmergic plants”** clarification (strict ethology vs *in planta* substrate analogy → **E47 boundary / E48+ physical queue**).
-**Changelog:** 2026-05-06 (m) — **Harness sync before E47:** **E45 bifurcation** + **E46 segmental** in Implementation + **284**-test command; canonical spine **E46 GREEN**; **Saunders wet–dry bridge** table + **VLP loading** queue item; **Sapolsky Bio 150** bookmark (pedagogy only, §8.6); shipped pin includes **E46**.
+**Changelog:** 2026-05-06 (m) — **Loop sync before E47:** **E45 bifurcation** + **E46 segmental** in Implementation + **284**-test command; canonical spine **E46 GREEN**; **Saunders wet–dry bridge** table + **VLP loading** queue item; **Sapolsky Bio 150** bookmark (pedagogy only, §8.6); shipped pin includes **E46**.
 
 For the Swarm.
 

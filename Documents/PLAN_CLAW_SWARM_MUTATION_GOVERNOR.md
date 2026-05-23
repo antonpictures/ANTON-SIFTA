@@ -25,10 +25,10 @@ Strategic notes and execution roadmap for hardening the **SWARM ENTITY** against
 - Instructional markdown as primary control surface (G-Stack style).
 - **Swarm edge:** `.scar` protocol + `ARCHITECTURE/genesis_document.md`. Extend with **instructional scent** files the swarm may read and propose updates to (via SCAR + Neural Gate), never silent self-rewrite.
 
-## 5. Autonomous developer harness (Manus-class)
+## 5. Autonomous developer loop (Manus-class)
 
 - Industry: deploy agents to code, browse, ship for advertisers.
-- **Mission:** **App-Genesis Pipeline** for **individual sovereignty** — same class of harness, different charter and gates.
+- **Mission:** **App-Genesis Pipeline** for **individual sovereignty** — same class of loop, different charter and gates.
 
 ---
 
@@ -36,7 +36,7 @@ Strategic notes and execution roadmap for hardening the **SWARM ENTITY** against
 
 | Track | Module / artifact | Purpose |
 |-------|-------------------|---------|
-| **Limbs (sandboxed)** | `System/claw_harness.py` (planned) | I/O boundary: mouse/keyboard/CLI **only** inside Crucible / sandbox; no raw OS takeover. |
+| **Limbs (sandboxed)** | `System/claw_loop.py` (planned) | I/O boundary: mouse/keyboard/CLI **only** inside Crucible / sandbox; no raw OS takeover. |
 | **Vigil** | `System/vigil_routines.py` (planned) | Always-on scheduling: patrol, ledger hygiene, low-power heartbeat when Architect is away. |
 | **Containment** | `System/mutation_governor.py` (**implemented**) | Rate limits, per-file budgets, cooldowns, replay protection, risk score — **before** SCAR proposal. |
 
@@ -70,7 +70,7 @@ Strategic notes and execution roadmap for hardening the **SWARM ENTITY** against
 ## Next steps (priority order)
 
 1. **Done:** `mutation_governor.py` + wire into `territory_swim_adapter.py` with SCAR `Kernel.propose`.
-2. **Next:** `claw_harness.py` — explicit capability surface + sandbox contract (what a swimmer may call).
+2. **Next:** `claw_loop.py` — explicit capability surface + sandbox contract (what a swimmer may call).
 3. **Next:** `vigil_routines.py` — cron-like triggers + integration with `homeostasis_engine` / sentinels.
 4. **Later:** Cross-agent interference / consensus locking (emergence without collapse) — design doc before code.
 

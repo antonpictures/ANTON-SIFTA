@@ -160,7 +160,7 @@ def query_ollama(
 
     If the HTTP daemon is unreachable, fall back to `ollama run` subprocess.
     That fallback is tagged OLLAMA_HTTP_DOWN_FALLBACK because it may not
-    match HTTP tokenization bit-for-bit (harness still records the path).
+    match HTTP tokenization bit-for-bit (loop still records the path).
     """
     body = json.dumps(
         {

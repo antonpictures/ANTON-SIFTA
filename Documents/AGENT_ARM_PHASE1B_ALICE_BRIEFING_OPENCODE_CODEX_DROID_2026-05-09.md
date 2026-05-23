@@ -158,7 +158,7 @@ Should Phase 2 build the SIFTA registry/launcher wrapper around Hermes only firs
 My current recommendation:
 1. Do not install OpenCode or Droid yet.
 2. Do not delete the existing Codex CLI; leave it rejected/disabled by receipt.
-3. Build the registry/launcher fake subprocess harness first.
+3. Build the registry/launcher fake subprocess loop first.
 4. Keep Hermes as the only configured candidate.
 5. Retest exactness only after wrapper-level output validation exists.
 ```

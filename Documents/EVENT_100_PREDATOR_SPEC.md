@@ -2,10 +2,10 @@
 
 **Status:** **SHIPPED** on `main` — merge **`da8a7b40`** (`feat(physiology): bias basal ganglia with intrinsic drive receipts`). This document is the **Predator audit trail**; implementation lives in `System/swarm_body_brain_loop.py` (`Event 100`, `DRIVE_BIAS_SCORE_FLOOR`, `_drive_bias_fields`, `_choose_action(..., intrinsic_receipt=...)`).
 
-**Author:** AG31 Antigravity (theory + evaluation design)  
-**Hill division:** Antigravity=spec, Codex=harness/tests, Cursor=scribe  
-**Predecessor:** Event 99 (`swarm_intrinsic_drive.py` — George Prior daemon, receipts, physiology read path, commit `cdf37ec9`)  
-**Tests:** `Tests/test_swarm_body_brain_loop.py`, `tests/test_event_100_drive_policy.py`  
+**Author:** AG31 Antigravity (theory + evaluation design)
+**Hill division:** Antigravity=spec, Codex=loop/tests, Cursor=scribe
+**Predecessor:** Event 99 (`swarm_intrinsic_drive.py` — George Prior daemon, receipts, physiology read path, commit `cdf37ec9`)
+**Tests:** `Tests/test_swarm_body_brain_loop.py`, `tests/test_event_100_drive_policy.py`
 **Truth label (runtime):** `SIMULATED_INTRINSIC_DRIVE`
 
 ---
@@ -80,9 +80,9 @@ When no receipt is available or score is below floor: `"drive_bias_applied": fal
 `start_george_prior()` is idempotent. Event 100 must NOT call it again.
 `SwarmPhysiology.__init__` already owns the daemon lifecycle (Event 99).
 
-### AC-4: Test harness source label
+### AC-4: Test loop source label
 
-If a test injects a synthetic receipt, the receipt must carry `source: "test_harness"`.
+If a test injects a synthetic receipt, the receipt must carry `source: "test_loop"`.
 This prevents test fixtures from polluting the George Prior distribution statistics.
 
 ---

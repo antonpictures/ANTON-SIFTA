@@ -182,7 +182,7 @@ def _persist(att: Attestation, path: Optional[Path] = None) -> None:
 
     NB: We resolve the path against the *current* module-level
     `_ATTESTATION_FILE` instead of using it as a default argument, so that
-    test harnesses (or a future user-relocated state dir) can rebind the
+    test loops (or a future user-relocated state dir) can rebind the
     module global and have it actually take effect. Default-argument
     binding happens once at module load and would silently ignore the
     rebind, leading to tests that look right but operate on live state.
@@ -441,7 +441,7 @@ def proof_of_property() -> Dict[str, bool]:
     """
     Eight invariants codifying the Architect's Proof-of-Humanity doctrine.
     All run against a SCRATCH attestation file in tmp so the user's real
-    verification state is never touched by the test harness.
+    verification state is never touched by the test loop.
     """
     import tempfile
 

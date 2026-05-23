@@ -37,7 +37,7 @@ DEFAULT_CHROMATOPHORE_SHADER = (
     / "bishop_drops_pending_review"
     / "BISHOP_drop_chromatophore_shader_v4.novel"
 )
-DEFAULT_OUTPUT_DIR = _REPO / "Tests" / "output"
+DEFAULT_OUTPUT_DIR = _REPO / "tests" / "output"
 
 TRUTH_LABEL = "OBSERVED_ENGINEERING_SUBSTRATE"
 

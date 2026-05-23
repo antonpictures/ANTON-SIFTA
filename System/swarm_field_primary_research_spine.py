@@ -967,7 +967,7 @@ VERIFIED_SPINE: tuple[FieldPrimaryAnchor, ...] = (
         category="event94_action_pathsum",
         supports=(
             "Sum-over-histories math is the correct primary source for "
-            "path-sum language. SIFTA can use a toy phase-sum harness as "
+            "path-sum language. SIFTA can use a toy phase-sum loop as "
             "a math bridge for trace-history competition."
         ),
         does_not_support=(

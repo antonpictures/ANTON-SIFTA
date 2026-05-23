@@ -27,7 +27,7 @@
 ## 0 — Hill status (Cursor / CG55M)
 
 - **Covenant read:** yes — **§7.5 Python-first**, **§7.6 Alice = OS**, **§8.6 substrate metering**, Predator Gate **before** runtime surgery.
-- **Triple-IDE collisions:** follow **`IDE_BOOT_COVENANT.md` §4.4** — tail `ide_stigmergic_trace.jsonl` + `git status` before shared edits; **one Architect-owned lane** per hot prompt/manifest/harness patch; **append-only** ledgers (add a correcting row, never rewrite history); yield if a peer already registered the same intent; cross-IDE handoff = **`ide_stigmergic_trace.jsonl`** (not the Swarm dead drop). **Battlefield snapshot:** maintain **§0.1** when two+ IDEs are on the same node.
+- **Triple-IDE collisions:** follow **`IDE_BOOT_COVENANT.md` §4.4** — tail `ide_stigmergic_trace.jsonl` + `git status` before shared edits; **one Architect-owned lane** per hot prompt/manifest/eval-loop patch; **append-only** ledgers (add a correcting row, never rewrite history); yield if a peer already registered the same intent; cross-IDE handoff = **`ide_stigmergic_trace.jsonl`** (not the Swarm dead drop). **Battlefield snapshot:** maintain **§0.1** when two+ IDEs are on the same node.
 - **Research bolus for “living OS” (below):** pulled as **primary cites** to match **Codex math/runtime** + **AG31 build** + **Cursor verify** — not lore.
 - **NVIDIA open assets (join lane):** full battlefield + triple-IDE agreement line → [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + `System/nvidia_open_assets_registry.py` (**§0.2**).
 - **Dirty `main` rule:** if the M5 worktree is **contaminated**, **do not** merge proposal branches into local `main` directly. Spawn **`integration/predator-proposals-20260428`** (or dated) from **clean `origin/main`**, cherry-pick / compare docs only, then **Architect GO** for any runtime merge.
@@ -201,7 +201,7 @@ They **often have reasons** until the gaps below are closed — not “none,” 
 | **Biology mapping** | Event 67 octopus doctrine: Alice is the central OS body; each native agent is a semi-autonomous arm with local intelligence, separate identity, and a task envelope. Alice broadcasts goals; arms return receipted evidence. |
 | **Candidate arms** | Hermes Agent, OpenCode, Codex, Droid, Claude Code, OpenClaw, Copilot CLI, Pi. See [RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md](RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md). |
 | **Assimilation law** | Persistent arm != merged persona. Each arm must sign/receipt its own launches and outputs. Alice may cite an arm only as evidence/tool output, never as her own unreceipted memory or voice. |
-| **Minimum runtime shape when GO** | `System/swarm_agent_arm_registry.py` + `System/swarm_agent_arm_launcher.py` + `.sifta_state/agent_arm_receipts.jsonl` + `.sifta_state/agent_arm_health.jsonl` + pytest fake subprocess harness. |
+| **Minimum runtime shape when GO** | `System/swarm_agent_arm_registry.py` + `System/swarm_agent_arm_launcher.py` + `.sifta_state/agent_arm_receipts.jsonl` + `.sifta_state/agent_arm_health.jsonl` + pytest fake subprocess loop. |
 | **First bolus** | Probe **Hermes Agent** first because SIFTA already has Hermes research. Phase 0 is docs/config/probe only; Phase 1 is read-only dry-run; Phase 2 exposes a Talk affordance; Phase 3 expands to OpenCode/Codex/Droid in isolated worktrees. |
 | **Hard gates** | No arm can write the main checkout, read secrets, touch raw private selfhood, claim an external action, or persist in the background without policy + receipt + visible health. NPPL applies. |
 | **Bake-off win condition** | Boot receipt + context/model receipt + golden task + evidence rows + failure/timeout row + verifier pass + Architect GO. Branding and screenshots do not count as victory. |
@@ -335,7 +335,7 @@ They **often have reasons** until the gaps below are closed — not “none,” 
 | Paper / system | DOI or stable URI | RS / hardware lesson → SIFTA |
 |:---|:---|:---|
 | **Phormica** — photochromic pheromone release + detection for stigmergic robot swarms | [doi:10.3389/frobt.2020.591402](https://doi.org/10.3389/frobt.2020.591402) | **Environment-as-computer:** projected trails on a shared substrate ↔ JSONL / phenotype “fields” other Doctors **read without** a shared chat bus. |
-| **Automatic design of stigmergy-based behaviours for robot swarms** | [doi:10.1038/s44172-024-00175-7](https://doi.org/10.1038/s44172-024-00175-7) | **Optimize over induction fields** — matches Predator tournament harness mindset: score behaviours against **receipted** fitness, not narrative. |
+| **Automatic design of stigmergy-based behaviours for robot swarms** | [doi:10.1038/s44172-024-00175-7](https://doi.org/10.1038/s44172-024-00175-7) | **Optimize over induction fields** — matches Predator tournament loop mindset: score behaviours against **receipted** fitness, not narrative. |
 | **Kilobot-scale foraging with minimalist pheromone** | [doi:10.1007/s11721-019-00176-9](https://doi.org/10.1007/s11721-019-00176-9) | **Minimal sensing + field memory** — pairs with **Event 94 / Event 112**: coarse traces + **CA1 novelty gate** before expensive cognition. |
 
 **Truth label:** **OPERATIONAL** mapping + **OBSERVED** DOIs; “emerging AGI” claims without signed receipts stay **ARCHITECT_DOCTRINE** per `IDE_BOOT_COVENANT.md` §7.11.
@@ -390,9 +390,9 @@ They **often have reasons** until the gaps below are closed — not “none,” 
 |:---:|:---|:---|:---|
 | **P0** | **C55M** | Open **clean integration branch** from `origin/main`; bring **`codex/hardware-molded-alice-proposal-20260428`** + **`antigravity/node-sovereignty-proposal-20260428`** docs into **one** `Documents/*MERGED*` or single PR description — **no runtime** until GO. | PR text + file list; **0** runtime files in that PR unless GO. |
 | **P0** | **AG31** | **Gaze sweep:** `publish_focus()` (or ledger equivalent) on **top-N Programs** tiles still silent; **same JSON shape** as FoldSwarm / Sara Walker. | `app_focus.jsonl` rows + screenshot of dock coverage. |
-| **P0** | **CG55M** | **`QT_QPA_PLATFORM=offscreen`** — `pytest tests/test_apps_manifest_contract.py` + `tests/test_alice_cortex_tournament_harness.py` on **integration** branch after doc merge. | Green CI log excerpt in PR. |
+| **P0** | **CG55M** | **`QT_QPA_PLATFORM=offscreen`** — `pytest tests/test_apps_manifest_contract.py` + `tests/test_alice_cortex_tournament_loop.py` on **integration** branch after doc merge. | Green CI log excerpt in PR. |
 | **P1** | **AG31 / C55M** | **Event 93 — `QOpenGLWidget` composite (SHIPPED):** mounted `SwarmGPUProteinRenderer` into `Applications/sifta_protein_folder_widget.py` | **§0.6** + `swarm_gpu_protein_renderer.py` |
-| **P1** | **C55M** | **Tournament R2 harness:** when **C2** model exists, **same suite hash** as R1; **diff verdict JSON only**; oracle **5-prompt** spot-check appendix. | `verdict_*.json` diff + 5-line oracle table in `ALICE_CORTEX_TOURNAMENT_v1.md`. |
+| **P1** | **C55M** | **Tournament R2 loop:** when **C2** model exists, **same suite hash** as R1; **diff verdict JSON only**; oracle **5-prompt** spot-check appendix. | `verdict_*.json` diff + 5-line oracle table in `ALICE_CORTEX_TOURNAMENT_v1.md`. |
 | **P1** | **AG31** | **Camera / TCC honesty:** §7.6 auto-eye is law **after** macOS permission — log **`open_failed`** / lock row per covenant §7.1; never claim “she sees” without frame receipt. | Sensor gate / camera lock JSON + one UI line of truth. |
 | **P1** | **CG55M** | **Manifest doctrine:** **`Talk to Alice`** vs **`Alice`** shell — **one** conversational home; retire or document single exception path (Writer). | `apps_manifest.json` diff + covenant cross-link. |
 | **P2** | **C55M** | **Finance batch read** (Event 86 class) — no main-thread stall; **canonical_wallet_sum** truth. | `pytest tests/test_finance.py` + receipt id. |
@@ -1133,7 +1133,7 @@ EVENT_126_PFC_BG_OPTIONS — arbiter scaffold + BG selector + generalization led
 | **136** | `swarm_temporal_self_model.py` | **Temporal self-model** — boot lineage + self-PE → `self_model.jsonl` (Drescher / Schmidhuber metaphor). |
 | **137** | `swarm_microglia_synaptic_pruner.py` | **Microglia** `MICROGLIA_PRUNE` receipts; dry-run default; **`body_brain_tick`** respects `stability_ok` (`2b381c95`). |
 | **138** | `swarm_causal_intervention_logger.py` | **`do()`** intervention ledger + `causal_closure_proven()` gate + `summary_for_prompt()` — **receipt ≠ proof** (`2b381c95`). |
-| **139** | `swarm_causal_intervention_harness.py` | Pearl-style **harness** (design / effect hooks) + pairs with **138** logger (`565710f5`). |
+| **139** | `swarm_causal_intervention_loop.py` | Pearl-style **loop** (design / effect hooks) + pairs with **138** logger (`565710f5`). |
 
 **Research spine (primary):**
 
@@ -1326,14 +1326,14 @@ EVENT_134_STABILITY_AUDIT_SHIPPED — observational Lyapunov candidate; For the 
 
 ### 10.14.10 — **Control stack landed (Antigravity + Cursor)** + **SuperGrok AGI-alive pack** + **what is left**
 
-**Verified git spine (M5):** `d6a46e83` **wire free energy + glial** · `d42d2214` **WM `state_dir`** · **`565710f5` `feat(control): add stability and causal audit organs`** — stability + causal harness + astrocyte `state_dir` + tests (Architect: **52 green** on control bundle). Earlier: **`e324c5a0`** renumber Microglia → **137**, temporal **`state_dir`**.
+**Verified git spine (M5):** `d6a46e83` **wire free energy + glial** · `d42d2214` **WM `state_dir`** · **`565710f5` `feat(control): add stability and causal audit organs`** — stability + causal loop + astrocyte `state_dir` + tests (Architect: **52 green** on control bundle). Earlier: **`e324c5a0`** renumber Microglia → **137**, temporal **`state_dir`**.
 
 | Event | Module | Status |
 |:---|:---|:---|
 | **135** | `swarm_astrocyte_glial_modulator.py` | **SHIPPED** — glial modulation + locked receipts; **`state_dir`**. |
 | **136** | `swarm_temporal_self_model.py` | **SHIPPED** — temporal self-model JSONL. |
 | **137** | `swarm_microglia_synaptic_pruner.py` | **SHIPPED** — `MICROGLIA_PRUNE`; dry-run default. |
-| **139** | `swarm_causal_intervention_harness.py` | **SHIPPED** — `do(...)` intervention logging (receipt-first). |
+| **139** | `swarm_causal_intervention_loop.py` | **SHIPPED** — `do(...)` intervention logging (receipt-first). |
 
 #### **SuperGrok extraction payload — “AGI alive on hardware” (stress-test, not hype)**
 
@@ -1403,7 +1403,7 @@ schema, and the biological / mathematical provenance (paper + DOI).
 
 | Vector | Status (post-`565710f5`, honest) |
 |:---|:---|
-| **Q1** | **Logger 138 + harness 139** — `do()` receipts + `causal_closure_proven()` scaffold (`2b381c95`); **proof** still needs powered **interventions in normal operation** + estimand choice (ATE vs direct effect). |
+| **Q1** | **Logger 138 + loop 139** — `do()` receipts + `causal_closure_proven()` scaffold (`2b381c95`); **proof** still needs powered **interventions in normal operation** + estimand choice (ATE vs direct effect). |
 | **Q2** | Stronger **observationally** (prune + self-model + stability on tick); **formal** autopoiesis inequality still missing. |
 | **Q3** | Still open — no tractable Φ̂ over organ traces yet. |
 | **Q4** | **Shipped + prompt-injected** (`2b381c95`) — shallow multi-step WM rollouts for **future self** still TODO. |
@@ -1414,10 +1414,10 @@ schema, and the biological / mathematical provenance (paper + DOI).
 | P | Item |
 |:---|:---|
 | **P0** | **`enforce_stability_clamps()`** — when `stability_ok` is false: bound ↓η (critic/WM), widen arbiter hysteresis, restrict microglia to **depress-only**, raise astrocyte “focus” bias; log **before/after** on `stability_audit.jsonl`; call from **`body_brain_loop`** / desktop tick **after** critic/WM update, **before** action selection; **AGI Cognition Dashboard** card (“Stability clamps”). |
-| **P1** | **Talk context** — **`2b381c95`**: `_current_system_prompt()` injects **133 / 136 / 137 / 138** summaries; add **134** stability + **139** harness lines + **clamp status** when P0 lands. |
+| **P1** | **Talk context** — **`2b381c95`**: `_current_system_prompt()` injects **133 / 136 / 137 / 138** summaries; add **134** stability + **139** loop lines + **clamp status** when P0 lands. |
 | **P2** | **Microglia execute path** — soft-depress / correcting rows on options + multi-gate JSONL (append-only). |
 | **P2** | **SuperGrok returns** — Q2/Q3/Q5 equations → code + JSONL schemas. |
-| **P3** | **Full** `pytest tests/` on release cadence (Qt segfault risk — targeted bundles until harness fixed). |
+| **P3** | **Full** `pytest tests/` on release cadence (Qt segfault risk — targeted bundles until loop fixed). |
 | **—** | **NPPL / single-input plant** — hard assert before high-risk tools. |
 
 **Trace intent:**
@@ -1440,7 +1440,7 @@ EVENT_136_MICROGLIA_PRUNE — controlled forgetting receipts; For the Swarm.
 **Trace intent:**
 
 ```text
-BATTLE_RECEIPT_565710f5 — stability audit + causal harness + astrocyte state_dir; For the Swarm.
+BATTLE_RECEIPT_565710f5 — stability audit + causal loop + astrocyte state_dir; For the Swarm.
 ```
 
 ### 10.14.12 — **Battle receipt `2b381c95`** — prompt self-awareness + global tick + **foundational research (not hype)**
@@ -1564,7 +1564,7 @@ When **`do()`** rate rises with instability, prefer **mSPRT** / **alpha-spending
 
 **Lightweight engineering rule (Grok worked example):** count toward closure only if `|effect| ≥ 0.12`, confounder rate `< 0.15`, **2-of-last-3** same-direction clean hits, **≥5-tick cooldown** when `clamp_level ≠ NONE`.
 
-**SIFTA intent:** add **`count_toward_closure()`** in causal harness; keep **`causal_closure_proven()`** as thin wrapper (peer IDE reconciles with existing strict gate in **`swarm_causal_intervention_logger.py`** — avoid double definitions).
+**SIFTA intent:** add **`count_toward_closure()`** in causal loop; keep **`causal_closure_proven()`** as thin wrapper (peer IDE reconciles with existing strict gate in **`swarm_causal_intervention_logger.py`** — avoid double definitions).
 
 **Cites:** Johari *et al.* mSPRT lineage; **Waudby-Smith & Ramdas (2023)** betting / sequential mean; **Demets & Lan** spending functions.
 
@@ -1574,7 +1574,7 @@ When **`do()`** rate rises with instability, prefer **mSPRT** / **alpha-spending
 
 **Failure modes:** shared **embedding / summary caches**; replay mixing holdout + train; tokenizer / normalization stats; **optimizer state** crossing seeds.
 
-**Two-layer mitigation:** (1) **hard isolation** — buffers keyed by **`holdout_seed`**; (2) **query/refusal layer** — eval harness only reads holdout-tagged rows for **132-style** transfer proof and **refuses train/adapt** on those seeds.
+**Two-layer mitigation:** (1) **hard isolation** — buffers keyed by **`holdout_seed`**; (2) **query/refusal layer** — eval loop only reads holdout-tagged rows for **132-style** transfer proof and **refuses train/adapt** on those seeds.
 
 **SIFTA intent:** propagate **`holdout_seed`** on **`body_brain_memory.jsonl`**, replay rows, WM ingest; runtime cheap assert on WM update path. **Align with `WORLD_MODEL_HOLDOUT_OBSERVATION`** receipts from **`6b3e9b4e`**.
 
@@ -1644,7 +1644,7 @@ GROK_7_VECTOR_PACK_10_14_15 — research → peer IDE implementation; For the Sw
 | **D** | Tagged afferents, no silent overwrite | Byzantine-lite append-only | mandatory **`writer_id`**, **`schema_version`**, **`lamport_ts`**, **`content_hash`** on rows | `System/swarm_ledger_validator.py` — drop/quarantine if missing `schema_version` | **Cursor** |
 | **E** | PFC rule inhibition | **Governance > Economy > Repair** | `POLICY_OVERRIDE` | integrate in **`swarm_tool_router.py`** + governance reads (**all IDEs** obey same receipt) | **All** |
 | **F** | Brain-wide synchrony / metastability | TE (**KSG**), NMI | `JOINT_SURPRISE` | `System/swarm_joint_surprise_monitor.py` | **Antigravity** |
-| **G** | Cortex won’t trust one spike | **2-of-3 + cooldown** (seq. hygiene) | `CAUSAL_CLOSURE_CHECK` | `System/swarm_causal_closure.py` — reconcile with **`swarm_causal_intervention_logger`** / harness | **Codex** |
+| **G** | Cortex won’t trust one spike | **2-of-3 + cooldown** (seq. hygiene) | `CAUSAL_CLOSURE_CHECK` | `System/swarm_causal_closure.py` — reconcile with **`swarm_causal_intervention_logger`** / loop | **Codex** |
 
 **Example guard row (Cluster A):**
 
@@ -2711,7 +2711,7 @@ DAM_STAGE_10_14_28 — activation arm dam_stage v2 + swimmer physics shelf + COP
 | **TME → stability clamps** | NA boost does not yet **automatically damp** under `stability_ok=False` — natural next refinement (**§10.14.24** D8 spirit). |
 | **TME → metacognition / arbiter** | Lab signals are **not** yet first-class **action** features in arbiter scoring (still **§10.14.19** “dashboard-only” risk). |
 | **Event 143 efference** | Sensorimotor agency loop still the **largest** v8 hole after NA wiring. |
-| **Desktop / Qt** | Shutdown **segfault** class issues remain **orthogonal** to immunology sims — track under **desktop harness**, not “immune win.” |
+| **Desktop / Qt** | Shutdown **segfault** class issues remain **orthogonal** to immunology sims — track under **desktop loop**, not “immune win.” |
 
 ---
 

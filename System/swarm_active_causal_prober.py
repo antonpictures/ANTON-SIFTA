@@ -12,7 +12,7 @@ ACTIVE RUNTIME EXPERIMENTATION:
     - Measure the real downstream shift (before/after the state file changes)
     - Record a full Pearl receipt with real effect_size, not simulated
 
-Execution policy (Grok: "make causal harness actively propose and EXECUTE"):
+Execution policy (Grok: "make causal loop actively propose and EXECUTE"):
     - DEFAULT: execute=True when stability_level == "NONE"
     - Falls back to dry-run under RATE_LIMIT (safer)
     - Never fires under EMERGENCY or BLOCK_NEW

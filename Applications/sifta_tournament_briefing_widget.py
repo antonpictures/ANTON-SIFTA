@@ -4,7 +4,7 @@ SIFTA Tournament Briefing
 ========================
 
 Visible OS surface for external benchmark maps: IBM agents, Agent Skills,
-NVIDIA contrast, Chamath/JRE narrative, and Codex harness lessons.
+NVIDIA contrast, Chamath/JRE narrative, and Codex loop lessons.
 """
 from __future__ import annotations
 

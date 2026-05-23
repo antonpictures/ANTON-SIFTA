@@ -4,7 +4,7 @@
 Truth label: SIFTA_AGI_CONFIRMATION_GAUNTLET_V1.
 
 This module turns the Architect's ten-test AGI confirmation list into a
-receipt-backed local harness. It does not declare AGI. It defines the tests,
+receipt-backed local loop. It does not declare AGI. It defines the tests,
 maps each one to evidence ledgers, records observations, and reports whether a
 test is actually evidenced, merely scaffolded, ready to run, or still missing
 long-duration evidence.
@@ -53,7 +53,7 @@ GAUNTLET_LEDGER = "agi_confirmation_gauntlet.jsonl"
 TRUTH_LABEL = "SIFTA_AGI_CONFIRMATION_GAUNTLET_V1"
 BEST_LINE = "We expose the open gaps in the ledger instead of hiding them in the demo."
 TRUTH_BOUNDARY = (
-    "Receipt-backed AGI confirmation harness. Passing these local tests would "
+    "Receipt-backed AGI confirmation loop. Passing these local tests would "
     "be strong SIFTA evidence, not a universal scientific certificate of AGI, "
     "sentience, consciousness, or human-like feeling."
 )
@@ -702,4 +702,3 @@ def main() -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

@@ -34,7 +34,7 @@
 | **NVIDIA Warp** | `nvidia/warp` — GPU Python kernels | **BSD-3-Clause** | Accelerate `fill_goal_potential` / voxel ops (replace O(N³) hot loops) | **P0** |
 | **cuRobo** | `NVlabs/curobo` — GPU motion / collision planning | **See repo `LICENSE`** (commonly permissive; verify before ship) | Optional **upgrade path** for `ArmSegment` (trajectory feasibility vs naive gradient step) | P1 |
 | **NVIDIA Cosmos** | WFMs + tools (Predict / Transfer / Reason) | [NVIDIA Open Model License](https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf) (per developer page) | Synthetic video / curation for **future** face + sim-to-real; not blocking Event 74 | P2 |
-| **Isaac-GR00T code** | `https://github.com/NVIDIA/Isaac-GR00T` | Repo license (verify) | Training / eval harness reference | P1 |
+| **Isaac-GR00T code** | `https://github.com/NVIDIA/Isaac-GR00T` | Repo license (verify) | Training / eval loop reference | P1 |
 
 ### Hugging Face CLI (Architect machine — not CI by default)
 

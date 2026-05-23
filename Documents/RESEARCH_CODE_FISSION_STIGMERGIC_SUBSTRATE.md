@@ -202,7 +202,7 @@ Use as **communication** aids; **prefer** arXiv / journals for **publication-gra
 2. **Minimal blackboard** that can **score** and **expose** residues.  
 3. **Decay engine** — universal **half-life** on traces.  
 4. **Spawn policy** — high-value residues → tasks / skills (governor-gated).  
-5. **Replay harness** — every spawn decision **auditable** and **testable**.
+5. **Replay loop** — every spawn decision **auditable** and **testable**.
 
 **Do not** ship **flashy autonomy** before **replay** — otherwise you cannot tell **evolution** from **noise**.
 

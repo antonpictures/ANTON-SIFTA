@@ -1,0 +1,12 @@
+{"description": "Domain evals for skill-invoke, trigger, and CheckResolvable. Generated from the live skill index so turns do not drift to phantom skills.", "truth_label": "CS153_SKILL_V1", "version": 1}
+
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "memory_store", "target": "skill_invoke", "turn_id": "s01"}
+{"expect": {"near_miss_query": "unrelated quantum physics banana", "no_overfire_on_near_miss": true, "trigger_fired": true}, "query": "send whatsapp message to team", "skill_name": "whatsapp_macos_cli", "target": "skill_trigger_eval", "turn_id": "s02"}
+{"expect": {"no_duplicate_owner": true}, "skill_name": "memory_store", "target": "skill_check_resolvable", "turn_id": "s03"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "epistemic_dissonance", "target": "skill_invoke", "turn_id": "s04"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "gag_self_report", "target": "skill_invoke", "turn_id": "s05"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "physarum_solve", "target": "skill_invoke", "turn_id": "s06"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "demand_resolve", "target": "skill_invoke", "turn_id": "s07"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "lora_train_cycle", "target": "skill_invoke", "turn_id": "s08"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "swarm_handoff", "target": "skill_invoke", "turn_id": "s09"}
+{"expect": {"receipt_status_in": ["installed", "success"]}, "skill_name": "explore", "target": "skill_invoke", "turn_id": "s10"}

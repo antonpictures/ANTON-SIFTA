@@ -937,14 +937,14 @@ class SiftaBrainstem:
                         # Never let compaction fracture the heartbeat
                         pass
 
-                # ── Cowork 2026-05-12 · §9.C burn harness (fast-ish tick) ───────
+                # ── Cowork 2026-05-12 · §9.C burn loop (fast-ish tick) ───────
                 # Periodic CPU/RSS snapshot → .sifta_state/organ_burn.jsonl.
                 # Provides the OBSERVED inputs for the attention law's
                 # thermal_cost / STGM_cost subtractor terms (§8.0).
                 if (tick_start - last_burn_at) > BURN_INTERVAL_S:
                     last_burn_at = tick_start
                     try:
-                        from System.swarm_burn_harness import sample_burn as _burn_sample
+                        from System.swarm_burn_loop import sample_burn as _burn_sample
                         _burn_sample(organ_id="brainstem", action="heartbeat_tick")
                     except Exception:
                         pass

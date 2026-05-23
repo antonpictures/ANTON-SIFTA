@@ -115,7 +115,7 @@ def self_improvement_snapshot(
         recommended_actions.append("probe primary cortex before promotion")
     elif promotion_ready:
         status = "CANDIDATE_READY_REQUIRES_EXPLICIT_SWITCH"
-        recommended_actions.append("run multimodal harness and switch only with Architect GO")
+        recommended_actions.append("run multimodal loop and switch only with Architect GO")
     else:
         status = "KEEP_CURRENT_CORTEX"
         recommended_actions.append("keep active multimodal cortex")

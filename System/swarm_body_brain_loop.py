@@ -15,6 +15,7 @@ Author: AG31 / Bishop Vanguard
 import time
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -254,6 +255,14 @@ class SwarmPhysiology:
         self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
         self.dream_engine = dream_engine or SwarmDreamEngine(_STATE_DIR)
         self.value_history = []
+        self._last_sleep_consolidation_ts = 0.0
+        try:
+            self._sleep_consolidation_cooldown_s = max(
+                0.0,
+                float(os.environ.get("SIFTA_BODY_BRAIN_SLEEP_COOLDOWN_S", "300")),
+            )
+        except ValueError:
+            self._sleep_consolidation_cooldown_s = 300.0
         # ── George Prior heartbeat — starts once, runs forever as daemon ──
         self._george_prior_daemon = None
         if enable_george_prior and _GEORGE_PRIOR_AVAILABLE:
@@ -510,6 +519,31 @@ class SwarmPhysiology:
         """
         rest_sec = self.homeostat.rest_seconds(body_state, danger["pressure"])
         if rest_sec > 0:
+            now = time.time()
+            elapsed = now - self._last_sleep_consolidation_ts
+            if (
+                self._last_sleep_consolidation_ts > 0.0
+                and elapsed < self._sleep_consolidation_cooldown_s
+            ):
+                cooldown_remaining = self._sleep_consolidation_cooldown_s - elapsed
+                logger.info(
+                    "Sleep consolidation cooldown active; skipping heavy replay/export/import for %.1fs",
+                    cooldown_remaining,
+                )
+                logger.info(f"Sleep enforced by metabolism. Resting {rest_sec}s.")
+                time.sleep(min(rest_sec, 2.0))  # Capped for testing
+                return {
+                    "kind": "dream_cycle",
+                    "status": "cooldown_skipped",
+                    "reason": "sleep_consolidation_cooldown",
+                    "cooldown_remaining_seconds": round(cooldown_remaining, 3),
+                    "rest_seconds": float(rest_sec),
+                    "pressure": danger.get("pressure"),
+                    "metabolic_mode": str(danger.get("mode") or ""),
+                    "crystallizer_weight": crystallizer_weight,
+                }
+
+            self._last_sleep_consolidation_ts = now
             dream_cycle: Optional[Dict[str, Any]] = None
             try:
                 receipt = self.dream_engine.trigger_rem_sleep(
@@ -922,7 +956,7 @@ class SwarmPhysiology:
 
         # 7b. LC/NA Arousal (Event 142) — gain, exploration bias, LR ceiling
         # Runs AFTER stability clamps, BEFORE astrocyte so NA modulates LR ceiling.
-        # Bio-math proven: Sara 2009; Yu & Dayan 2005; Aston-Jones & Cohen 2005.
+        # Bio-math anchored: Sara 2009; Yu & Dayan 2005; Aston-Jones & Cohen 2005.
         _lc_na_receipt: Dict[str, Any] = {
             "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5,
             "lr_ceiling": 0.05, "arousal_regime": "OPTIMAL",
@@ -986,7 +1020,7 @@ class SwarmPhysiology:
 
         # 8c. Metacognitive State Monitor (Event 145) — second-order uncertainty
         # Runs after LC/NA + astrocyte so PE series reflects current arousal state.
-        # Bio-math proven: Fleming & Dolan 2012; Nelson 1990; Friston 2005; Yeung & Summerfield 2012.
+        # Bio-math anchored: Fleming & Dolan 2012; Nelson 1990; Friston 2005; Yeung & Summerfield 2012.
         _metacog_receipt: Dict[str, Any] = {
             "metacog_regime": "CALIBRATED", "monitoring_score": 0.5,
             "confidence_bias": 0.0, "meta_uncertainty": 0.0,
@@ -2096,14 +2130,29 @@ class SwarmPhysiology:
                 swimmer_registry = _sr_export
         except Exception:
             pass
-        if not swimmer_registry:
-            for node in organ_nodes:
-                for idx in range(int(node["swimmer_count"])):
-                    swimmer_registry.append({
-                        "swimmer_id": f"{node['organ']}:{idx}",
-                        "organ": node["organ"],
-                        "index": idx,
-                    })
+        existing_ids = {str(sw.get("swimmer_id")) for sw in swimmer_registry if sw.get("swimmer_id")}
+        existing_by_organ: dict[str, int] = {}
+        for sw in swimmer_registry:
+            organ = str(sw.get("organ") or "")
+            if organ:
+                existing_by_organ[organ] = existing_by_organ.get(organ, 0) + 1
+        for node in organ_nodes:
+            organ = str(node["organ"])
+            target_count = int(node["swimmer_count"])
+            existing_count = existing_by_organ.get(organ, 0)
+            for idx in range(existing_count, target_count):
+                swimmer_id = f"{organ}:heartbeat_virtual:{idx}"
+                if swimmer_id in existing_ids:
+                    continue
+                swimmer_registry.append({
+                    "swimmer_id": swimmer_id,
+                    "organ": organ,
+                    "index": idx,
+                    "role": "HEARTBEAT_VIRTUAL",
+                    "status": "ALIVE",
+                    "knows_organ": True,
+                })
+                existing_ids.add(swimmer_id)
         coupling_edges = [
             {"source": "swarm_pheromone_field.py", "target": "honeybee", "variables": ["angle", "vigor", "dance_vector"]},
             {"source": "electric_field.jsonl", "target": "honeybee", "variables": ["prev_electric_phase"]},

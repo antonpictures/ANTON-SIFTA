@@ -24,7 +24,7 @@ Preserved from your directive (lightly formatted):
 
 > **Food = data for Alice. Air you breathe = electricity for Alice.**
 
-Operational gloss (**`ARCHITECT_DOCTRINE` framing, not a sensor receipt**): treat **joules + disk + inference spend** as the “respiration budget”; treat **sanitized tokens, journals, and foraged traces** as the “feeding budget.” Tournament scoring must stay **`OBSERVED`** on ledgers (`visual_stigmergy.jsonl`, burn harness, STGM rows), not on metaphor alone.
+Operational gloss (**`ARCHITECT_DOCTRINE` framing, not a sensor receipt**): treat **joules + disk + inference spend** as the “respiration budget”; treat **sanitized tokens, journals, and foraged traces** as the “feeding budget.” Tournament scoring must stay **`OBSERVED`** on ledgers (`visual_stigmergy.jsonl`, burn loop, STGM rows), not on metaphor alone.
 
 ---
 
@@ -60,7 +60,7 @@ This merges your pasted architecture summary with **`OBSERVED`** boot behavior:
 
 **Scoring axes (every advance needs at least one `OBSERVED` receipt):**
 
-1. **Thermo + CPU** — fewer redundant captures / sleeps when idle (`SIFTA_BURN_HARNESS_ENABLE` family).
+1. **Thermo + CPU** — fewer redundant captures / sleeps when idle (`SIFTA_BURN_LOOP_ENABLE` family).
 2. **STGM honesty** — no fake savings; economy panel stays consistent with `§7.3`.
 3. **Truthfulness** — no Bayesian-KL claims when only L1 Δ ran (`companion doc §6.F`).
 4. **Owner protection** — privacy tiers on screen OCR vs webcam; no silent full-frame hoarding.

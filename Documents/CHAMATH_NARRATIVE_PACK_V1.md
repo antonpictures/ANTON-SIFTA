@@ -6,7 +6,7 @@ Extracted from the JRE #2494 (Chamath) analysis, SIFTA frames its architecture a
 *   **Attention Governance**: Treat "what gets amplified" as a governance problem, not a model feature.
     *   *Implementation*: Ledger-visible prioritization, stigmergic traces (`ide_stigmergic_trace.jsonl`), and Predator gaze (`swarm_app_focus.py`), not opaque attention masks inside a vendor brain.
 *   **Dual-Translator Audit**: Implement dual-model cross-review and human swarm inspection.
-    *   *Implementation*: Repeatable audit harness (two IDE Doctors + diff + human sign-off), detailed in `PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md`. Formalize rules in English/Markdown before code.
+    *   *Implementation*: Repeatable audit loop (two IDE Doctors + diff + human sign-off), detailed in `PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md`. Formalize rules in English/Markdown before code.
 *   **Energy Sovereignty**: Thermodynamics is metabolism. The tournament narrative is sovereign territory.
     *   *Implementation*: Node sovereignty, power envelope control, and policy enforcement via `swarm_metabolic_homeostasis.py` instead of relying on a hyperscaler API.
 *   **Reward-Hazard Resistance**: Standard reward functions encode catastrophic incentives (e.g., "polite refusals" over truth).

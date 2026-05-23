@@ -240,7 +240,7 @@ HIDDEN_ORGAN_DEPS: dict[str, dict[str, Any]] = {
 MANDATORY_SENSORS: dict[str, tuple[str, ...]] = {
     "substrate_quality": (
         "substrate_honesty_label",
-        "eval_harness_receipt",
+        "eval_loop_receipt",
         "model_identity_receipt",
     ),
     "causal_intent": (

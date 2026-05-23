@@ -228,6 +228,49 @@ def _latest_jsonl(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _format_throttle_decision(row: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(row, dict) or not row:
+        return {
+            "value": "No throttle decision",
+            "detail": "No recent metabolic throttle denial",
+            "mode": "UNKNOWN",
+            "balance": None,
+            "resolved_wallet_file": None,
+            "reason": "",
+            "decision_hash": "",
+        }
+
+    ok = bool(row.get("ok"))
+    reason = str(row.get("reason") or "")
+    wallet = row.get("resolved_wallet_file")
+    wallet_text = str(wallet) if wallet else "wallet unresolved"
+    try:
+        balance = float(row.get("balance", 0.0) or 0.0)
+    except Exception:
+        balance = 0.0
+
+    if not wallet:
+        value = "wallet unresolved"
+        mode = "FAIL_OPEN" if ok else "DENY_UNRESOLVED"
+    elif ok:
+        value = "Observed"
+        mode = "ALLOW"
+    else:
+        value = "Throttled"
+        mode = "DENY"
+
+    return {
+        "value": value,
+        "detail": f"{reason or mode}; balance {balance:.3f}; wallet {wallet_text}",
+        "mode": mode,
+        "balance": balance,
+        "resolved_wallet_file": wallet,
+        "reason": reason,
+        "sleep_needed": float(row.get("sleep_needed", 0.0) or 0.0),
+        "decision_hash": str(row.get("decision_hash") or ""),
+    }
+
+
 def _dir_mb(path: Path) -> float:
     try:
         total = sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
@@ -320,6 +363,7 @@ def _curated_voice_rows() -> list[tuple[str, str]]:
 def read_system_settings_snapshot() -> dict[str, Any]:
     health = _latest_jsonl(STATE / "health_scores.jsonl")
     metabolic = _latest_jsonl(STATE / "metabolic_homeostasis.jsonl")
+    throttle_decision = _format_throttle_decision(_latest_jsonl(STATE / "throttle_decisions.jsonl"))
     manifest = {}
     try:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -468,6 +512,7 @@ def read_system_settings_snapshot() -> dict[str, Any]:
         "metabolic_mode": metabolic.get("mode", "UNKNOWN"),
         "budget_multiplier": float(metabolic.get("budget_multiplier", 0.0) or 0.0),
         "rest_seconds": float(metabolic.get("rest_seconds", 0.0) or 0.0),
+        "throttle_decision": throttle_decision,
         "apps_total": len(manifest),
         "app_groups": {k: len(v) for k, v in group_manifest(manifest).items()},
         "missing_apps": [
@@ -2196,8 +2241,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
         page, root = self._page("Swarm Economy")
         self.metabolism_card = MetricCard("Budget Governor", "--")
         self.wallet_card = MetricCard("STGM Reserve", "--")
+        self.throttle_card = MetricCard("Throttle Reason", "--")
         root.addWidget(self.metabolism_card)
         root.addWidget(self.wallet_card)
+        root.addWidget(self.throttle_card)
         root.addStretch()
         return page
 
@@ -2361,6 +2408,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.wallet_card.set_metric(
             f"{snap['net_stgm']:.3f} STGM",
             f"spend {snap['spend_stgm']:.3f} STGM",
+        )
+        throttle = snap.get("throttle_decision", {})
+        self.throttle_card.set_metric(
+            str(throttle.get("value", "No throttle decision")),
+            str(throttle.get("detail", "")),
         )
 
         # Inference

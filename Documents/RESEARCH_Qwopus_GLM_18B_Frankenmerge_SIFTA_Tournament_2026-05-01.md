@@ -28,7 +28,7 @@
 ## 2. Latency / UX lesson (comments + transcript)
 
 - **Long “thinking”** on small models for marginal gains → map to **Alice**: cap **reasoning tokens**, surface **SLA tier** in receipts.
-- **“Loop until user aborts”** on pathological prompts → **Predator**: add **max_wall_s** + **stall detector** to harness, write row when tripped.
+- **“Loop until user aborts”** on pathological prompts → **Predator**: add **max_wall_s** + **stall detector** to loop, write row when tripped.
 
 ---
 

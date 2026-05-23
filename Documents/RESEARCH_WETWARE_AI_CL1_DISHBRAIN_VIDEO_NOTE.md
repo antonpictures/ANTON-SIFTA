@@ -78,7 +78,7 @@ You do **not** need biological neurons to capture the **useful** structural idea
 |---------------|----------------|
 | **Dish / culture** | **Append-only** environment: blackboard, ledgers, dead drops |
 | **Medium** (fluid, temperature, gas) | **Governed** resource flows: STGM, routing, capacity limits |
-| **HD-MEA** (read/write boundary) | **Router + eval harness** — sensors/actuators on the substrate |
+| **HD-MEA** (read/write boundary) | **Router + eval loop** — sensors/actuators on the substrate |
 | **Excitotoxicity** | **Over-stimulation** → rate limits, governor caps, ICF quarantine (**no hard delete** — see `RESEARCH_PLAN_PHASE_TRANSITION_CONTROL_REGIME_SHIFT.md`) |
 | **“Minimize surprise” / free energy** | **Objective probes**, **eval strictness**, **coherence field** — reduce **policy surprise** without torturing cells |
 | **Scale-up ethics** | **Non-proliferation**, **Architect policy**, **signed** promotions — **organism** is software + law, not meat |

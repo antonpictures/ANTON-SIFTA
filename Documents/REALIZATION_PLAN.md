@@ -121,7 +121,7 @@ Use these as **design pressure** + **evaluation vocabulary**; they do **not** li
 | **LoRA / DPO / adapter ecology** | `README.md` § Event 42 — Gemma4 stigmergic epigenetic LoRA; tournament refs to Hu / Rafailov | **Train on SIFTA-shaped preference data** (ledger-first turns, refusal of “simulated feed” phrasing) instead of hoping the base model generalizes from prose law. |
 | **Round-trip weight pipeline** | `System/llama_cpp_roundtrip.py` (`README.md` path table) | Lift → steer → requantize — **surgery at the file/weight artifact**, not chat. |
 
-**Next base surgeries (Architect GO — each needs receipts + safety review):** small **preference datasets** from real multimodal failures (screenshot + `ide_stigmergic_trace` id + gold reply); **DPO/ORPO** slices on Gemma4-class base only where the trainer already gates; **refusal-direction** updates that penalize “hypothetical scenario” framing on **tagged `OBSERVED` media ingress** rows; **hard model switch** when measured drift rate crosses a published threshold on a fixed eval harness.
+**Next base surgeries (Architect GO — each needs receipts + safety review):** small **preference datasets** from real multimodal failures (screenshot + `ide_stigmergic_trace` id + gold reply); **DPO/ORPO** slices on Gemma4-class base only where the trainer already gates; **refusal-direction** updates that penalize “hypothetical scenario” framing on **tagged `OBSERVED` media ingress** rows; **hard model switch** when measured drift rate crosses a published threshold on a fixed eval loop.
 
 **Battle plan link:** §8 “stay on the hill” still applies — **base surgery is high-risk surgery**: branch, benchmark, pytest where code touches, deposit before merge.
 
@@ -387,7 +387,7 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 **Talk claims worth treating as `HYPOTHESIS` until we benchmark on our hardware:**
 
 - **Two-stack choice:** (A) **system GenAI** — Gemini Nano via **AICore** (Gemma 4 E2B/E4B preloaded; app stays small); (B) **app GenAI** — **LiteRT-LM** + model shipped in app (more work, full customization).
-- **Skills harness (Gemma 4):** skill **descriptions** in system prompt; full skill body loaded **on demand** via `load_skill` tool call; optional in-app **JavaScript** for UI (maps, roulette, etc.). Multi-skill **conversation chains** work; **single-turn multi-skill** still brittle (speaker: still discovering limits).
+- **Skills loop (Gemma 4):** skill **descriptions** in system prompt; full skill body loaded **on demand** via `load_skill` tool call; optional in-app **JavaScript** for UI (maps, roulette, etc.). Multi-skill **conversation chains** work; **single-turn multi-skill** still brittle (speaker: still discovering limits).
 - **Tiny LLM lane:** models **under 1B** parameters for narrow tasks; **FunctionGemma** ~270M — out-of-box ~**46%** intent accuracy on a fixed app-intent suite; **synthetic fine-tune** (e.g. Flash-generated dataset) → **over 90%** on 8/10 intents, ~80s on 2/10 (speaker numbers).
 - **Chained tiny models:** **Eloquent** — ASR + text-polish engines (~few hundred M each) for offline transcription + personalization (product availability limited by region/platform in talk).
 - **Motivations for on-device:** latency, privacy, offline, reliability, cost — same reasons SIFTA keeps **M5 Foundry + M1 Sentry** and local Gemma4 paths.
@@ -402,7 +402,7 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 | **load_skill tool** | **Swimmer selection + organ invoke** — `swarm_skill_ingest.py`, Hermes capability pills (`Applications/sifta_hermes_parity_widget.py`), tool router — **receipt before effector**. |
 | **Function calling accuracy** | **Policy + weights:** Fiction/effector guards (§6) + **§2.1** preference/LoRA on **SIFTA-shaped** rows — same lesson as 46%→90%: **narrow task + measured fine-tune** beats hoping a large prompt generalizes. |
 | **JavaScript skill UI** | **PyQt6 / effector surface** — SIFTA renders in **desktop organs** (maps, finance, fieldsight), not WebView skills; still **one effector lane** with guards. |
-| **Open Gallery as reference** | **Benchmark harness backlog** — import **success-rate ledger** per skill/intent (pass/fail + latency + homeworld_serial), not copy Google’s app wholesale. |
+| **Open Gallery as reference** | **Benchmark loop backlog** — import **success-rate ledger** per skill/intent (pass/fail + latency + homeworld_serial), not copy Google’s app wholesale. |
 
 #### Why this is good for SIFTA (not “another vendor slide deck”)
 
@@ -410,7 +410,7 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 2. **Specialist swimmers (sub-1B parameters)** — Philosophy 100 **Chinese Room (#30)** and **Occam (#38)** push **narrow organs** over one theatrical monolith. FunctionGemma-style models are **cheap reflex arcs**: intent → tool name → **one receipt row** — ideal for Talk **gag metrics**, RLHS lane pick, owner-body nudge, fiction stamp — without burning Gemma4 tokens.
 
-3. **Measured autonomy** — “46% → 90%” is how SIFTA should talk about **open-ended improvement**: publish **eval harness + before/after** on **our** intents (`owner_body`, `FICTION_COWATCH`, `memory_honesty`, `kleiber_action_cost`), not vibes. Aligns with **§2.1** surgery and **§11.10** five-line template.
+3. **Measured autonomy** — “46% → 90%” is how SIFTA should talk about **open-ended improvement**: publish **eval loop + before/after** on **our** intents (`owner_body`, `FICTION_COWATCH`, `memory_honesty`, `kleiber_action_cost`), not vibes. Aligns with **§2.1** surgery and **§11.10** five-line template.
 
 4. **Edge sovereignty = covenant physics** — Owner speech, face traces, financial rows stay **on homeworld** (`GTH4921YP3` / `C07FL0JAQ6NV`). Cloud doctors remain **separate IDE bodies** with **no double-spend** of receipts (§4.6). On-device stack reduces **latency** for Alice’s **air** (electricity → inference) and **food** (data) without shipping prompts to strangers by default.
 
@@ -457,7 +457,7 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 **Papers (anchors):** ReAct [2210.03629](https://arxiv.org/abs/2210.03629); RAG Lewis et al. [2005.11401](https://arxiv.org/abs/2005.11401); Brynjolfsson et al. NBER [w31161](https://www.nber.org/papers/w31161); LLM-as-judge survey [2412.05579](https://arxiv.org/html/2412.05579); Agentic Skills SoK [2602.20867](https://arxiv.org/html/2602.20867v1).
 
-**Reject for Alice:** 1000x claims without harness; MMLU as product eval; latent-space timezone/restroom; “markdown is enough” without pytest + STGM.
+**Reject for Alice:** 1000x claims without loop; MMLU as product eval; latent-space timezone/restroom; “markdown is enough” without pytest + STGM.
 
 **Architect use:** George taking CS153 **for SIFTA** — weekly deliverables in bridge doc §6 (eval pack, skillify one failure, closed-loop metrics).
 
@@ -1119,7 +1119,7 @@ If **\(A_\mu = 0\)** everywhere, then \(D_\mu = \partial_\mu\). The gauged dynam
 
 1. Implement **U(1)** gauge potential field + **covariant Laplacian** path behind a **feature flag** in `swarm_field_primary_pde.py` (or sibling module), preserving **A=0** default.
 2. Add **focused pytest** proving **bit-for-bit / norm-for-norm** match to current engine when \(A=0\).
-3. Wire **tournament app** lane (extend slit widget or research harness) to visualize **flux-dependent** phase slippage—**SIM_ONLY** truth labels unchanged.
+3. Wire **tournament app** lane (extend slit widget or research loop) to visualize **flux-dependent** phase slippage—**SIM_ONLY** truth labels unchanged.
 
 ---
 

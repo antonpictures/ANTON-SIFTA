@@ -27,7 +27,7 @@ LEDGER = STATE_DIR / "alice_wake_ear.jsonl"
 
 TRUTH_LABEL = "ALICE_WAKE_EAR_WISH_003"
 DIRECT_THRESHOLD = 0.66
-MIN_NAME_SIMILARITY = 0.72
+MIN_NAME_SIMILARITY = 0.78  # Tightened per P1 of GROK_BIG_BATCH_ORDER_2026-05-21: "Ace" (0.6 edit sim) must not wake
 
 # Architect 2026-05-13 02:10 — these were hardcoded "alice" / "george"
 # literals, which broke when the owner renamed her in Layer 1 (any node

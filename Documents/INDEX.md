@@ -50,7 +50,7 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
 ## Part VI: Tournament Territory Maps
 
 - **[SIFTA Territory Benchmark Map](SIFTA_TERRITORY_BENCHMARK_MAP.md)**  
-  Canonical map from IBM Agents, Agent Skills, NVIDIA contrast, Chamath/JRE, and Codex-harness narratives to repo modules, ledgers, and tests.
+  Canonical map from IBM Agents, Agent Skills, NVIDIA contrast, Chamath/JRE, and Codex-loop narratives to repo modules, ledgers, and tests.
 - **[IBM Agents Hub Mapping](IBM_AGENTS_HUB_MAPPING.md)**  
   IBM / agentskills.io boxes mapped to SIFTA organs, skill files, receipts, and security rules.
 - **[Chamath Institutional Narrative Pack](CHAMATH_NARRATIVE_PACK_V1.md)**  

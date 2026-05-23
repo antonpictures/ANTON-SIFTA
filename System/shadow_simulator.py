@@ -33,8 +33,11 @@ class ShadowSimulator:
 
     def __init__(self):
         # We rely on the physical limbs to handle the sandbox itself
-        from claw_harness import ClawHarness
-        self.claw = ClawHarness()
+        try:
+            from System.claw_loop import ClawLoop
+        except ImportError:
+            from claw_loop import ClawLoop
+        self.claw = ClawLoop()
 
     def simulate_mutation(self, target_filepath: str, proposed_content: str) -> Tuple[bool, str]:
         """

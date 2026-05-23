@@ -13,4 +13,4 @@
 ---
 
 **One-line stigbus paste for Codex / Antigravity / Cursor:**
-> "They’re shipping harness velocity + auto-trust + screen memory in their cloud body; we ship homeworld_serial + append-only receipts + embodied Qt in ours. Same AI hype vocabulary — opposite substrate."
+> "They’re shipping loop velocity + auto-trust + screen memory in their cloud body; we ship homeworld_serial + append-only receipts + embodied Qt in ours. Same AI hype vocabulary — opposite substrate."

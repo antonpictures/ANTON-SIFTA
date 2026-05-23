@@ -38,12 +38,12 @@
 
 | Round | Skill under test | Pass bar |
 |:---|:---|:---|
-| A | **Math / logic** | Deterministic checks (closed-form, property tests, or referee harness) |
+| A | **Math / logic** | Deterministic checks (closed-form, property tests, or referee loop) |
 | B | **Physics** | Units, conservation laws in sim stubs, or documented measurement pipeline with raw probe output |
 | C | **Biology** | Allometry / homeostasis metaphors map to **code paths** (governor, throttle), not metaphor-only PRs |
 | D | **Economy / law** | STGM participant registry + UI labels match **canonical_wallet_sum** vs **net_stgm** honesty per covenant §7.3 |
 | E | **Triple-IDE discipline** | Bus read, single-owner risky patch, append-only corrections (covenant §4.4) |
-| F | **Motor cortex / sensorimotor closure** | Signed action plans only; `MOTOR_CORTEX_ACTION` JSONL + **efference mismatch** probe (`System/swarm_efference_copy.py`); RLHS gate + rate limit in pytest harness; **no** raw desktop actuation without Architect **GO** |
+| F | **Motor cortex / sensorimotor closure** | Signed action plans only; `MOTOR_CORTEX_ACTION` JSONL + **efference mismatch** probe (`System/swarm_efference_copy.py`); RLHS gate + rate limit in pytest loop; **no** raw desktop actuation without Architect **GO** |
 
 ---
 
@@ -334,7 +334,7 @@ When motor exists, pass/fail should cite:
 
 | Path | Tournament focus |
 |:---|:---|
-| **Motor** | Round **F** (§4): phased motor spec + pytest harness + ledger schema (**GO** required). |
+| **Motor** | Round **F** (§4): phased motor spec + pytest loop + ledger schema (**GO** required). |
 | **Speech UX** | Separate track: **tail sanitizer + routing + RLHS regime tuning** — *without* deleting STT hygiene (§14). |
 
 ---

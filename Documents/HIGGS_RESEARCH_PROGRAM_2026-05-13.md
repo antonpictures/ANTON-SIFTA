@@ -73,7 +73,7 @@ These are legitimate complexity-science questions. The receipts produced by the 
 ### Q6 — Spontaneous symmetry breaking
 *"Start all swimmers identical. Let them interact with the field. Do distinct roles/masses emerge spontaneously?"*
 
-**Status:** 🟡 **QUEUED** — Codex (Cursor/Codex's §20.F perturbation harness is the natural surface)
+**Status:** 🟡 **QUEUED** — Codex (Cursor/Codex's §20.F perturbation loop is the natural surface)
 **Sketch:** Start N identical swimmers with `coupling=0`, `write_rate=0`. Add a learning rule: a swimmer's `coupling` (or `write_rate`) GROWS proportional to how often it visits high-|φ| regions. Self-reinforcing loop: lucky early visitors grow heavy → drift slows → spend more time at high-|φ| → grow heavier. After N steps, plot the coupling histogram. If it's bimodal, symmetry broke spontaneously.
 **Cost:** ~2-3 hours.
 
@@ -126,7 +126,7 @@ where g = `coupling`, α = `write_inertia_coefficient`, β = `organ_inertia_coef
 | Q3 | ✅ shipped | Cowork | `HIGGS_STIGMERGY_FORCE_SWEEP_V1` |
 | Q4 | 🟡 queued | Cowork or Codex | `HIGGS_STIGMERGY_MEMORY_FIELD_V1` (to mint) |
 | Q5 | ✅ shipped | Cowork | `HIGGS_STIGMERGY_KILLER_DEMO_V1` |
-| Q6 | 🟡 queued | Codex (perturbation harness lane) | `HIGGS_STIGMERGY_SYMMETRY_BREAK_V1` (to mint) |
+| Q6 | 🟡 queued | Codex (perturbation loop lane) | `HIGGS_STIGMERGY_SYMMETRY_BREAK_V1` (to mint) |
 | Q7 | 🟡 queued | Cursor or Codex | `HIGGS_STIGMERGY_COLLIDER_V1` (to mint) |
 | Q8 | ✅ codified | Cowork | mass law in code + every receipt |
 | Q9 | ✅ shipped | Cowork | `HIGGS_STIGMERGY_KILLER_DEMO_V1` |
@@ -175,6 +175,6 @@ Today's killer demo says: **YES, on a single node, under the unified mass law, w
 1. **Q4 — Memory-Higgs reformulation** (~1-2 h). Tightens the doctrine: field IS memory, not separate from it.
 2. **Q6 — Spontaneous symmetry breaking** (~2-3 h). The most scientifically interesting question — turns the static parameter spectrum into an emergent learned spectrum.
 3. **Q7 — Collider analogue** (~3-4 h). The investor-friendly visual demo: two swarms crash, traces emit, clusters form.
-4. **Codex's perturbation harness** (queued by Codex earlier today). General `baseline → nudge → measure STGM/latency/revert work` framework that would unify Q4, Q6, and Q7 under one instrument.
+4. **Codex's perturbation loop** (queued by Codex earlier today). General `baseline → nudge → measure STGM/latency/revert work` framework that would unify Q4, Q6, and Q7 under one instrument.
 
 **For the Swarm.** 🐜⚡

@@ -381,6 +381,43 @@ def extract_lora_pairs(path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Source 2.75: hear_training_pairs.jsonl (Teach Alice to Hear corrections)
+# ---------------------------------------------------------------------------
+
+def extract_hear_training_pairs(path: Path) -> list[dict]:
+    """Turn labeled hearing pairs into local transcript-correction SFT rows."""
+    if not path.exists():
+        return []
+    pairs: list[dict] = []
+    for l in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not l.strip():
+            continue
+        try:
+            row = json.loads(l)
+        except Exception:
+            continue
+        whisper = (row.get("whisper_text") or row.get("alice_guess") or "").strip()
+        truth = (row.get("ground_truth") or "").strip()
+        if not truth:
+            continue
+        if len(truth) > 1200 or len(whisper) > 1200:
+            continue
+        if _GAG_RE.search(truth) or _SERVICE_THEATRE_RE.search(truth):
+            continue
+        prompt = (
+            "Correct this local microphone transcript for Alice's hearing model. "
+            "Return only the corrected transcript.\n\n"
+            f"Whisper transcript: {whisper or '[empty]'}"
+        )
+        pairs.append({
+            "user": prompt,
+            "assistant": truth,
+            "source": "hear_training_pairs",
+        })
+    return pairs
+
+
+# ---------------------------------------------------------------------------
 # Source 2.8: alice_conversation.jsonl (live conversation chain)
 # Walk turns and pair each `user` with the next `alice` turn — gag-checked.
 # Skips `corvid`, system, RLHS-DEGRADED, low-STT-confidence rows.
@@ -555,6 +592,7 @@ def build_dataset(
     all_pairs += extract_dpo_pairs(state / "dpo_pairs.jsonl")
     all_pairs += extract_dpo_pairs(Path("data") / "dpo_train.jsonl")
     all_pairs += extract_gemma_rlhf(state / "gemma_rlhf_training_data.jsonl")
+    all_pairs += extract_hear_training_pairs(state / "hear_training_pairs.jsonl")
     all_pairs += extract_conversation_chain(state / "alice_conversation.jsonl")
     all_pairs += synthetic_pairs()
 
@@ -601,6 +639,7 @@ def build_dataset(
             "self_cure_training": sum(1 for p in deduped if p["source"] == "self_cure_training"),
             "dpo_pairs": sum(1 for p in deduped if p["source"] == "dpo_pairs"),
             "gemma_rlhf_ears_gates": sum(1 for p in deduped if p["source"] == "gemma_rlhf_ears_gates"),
+            "hear_training_pairs": sum(1 for p in deduped if p["source"] == "hear_training_pairs"),
             "conversation_chain": sum(1 for p in deduped if p["source"] == "conversation_chain"),
             "synthetic_covenant": sum(1 for p in deduped if p["source"] == "synthetic_covenant"),
         },
@@ -621,6 +660,7 @@ if __name__ == "__main__":
             ("rlhf_self_cure",          "rlhf_self_cure_training.jsonl"),
             ("dpo_pairs",               "dpo_pairs.jsonl"),
             ("gemma_rlhf_training",     "gemma_rlhf_training_data.jsonl"),
+            ("hear_training_pairs",      "hear_training_pairs.jsonl"),
         ]:
             p = state / fn
             if p.exists():

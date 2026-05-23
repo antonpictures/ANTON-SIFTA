@@ -16,6 +16,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import time
 from typing import Dict, Iterable, List, Optional
@@ -56,6 +57,12 @@ DEFAULT_POLICIES: Dict[str, RotationPolicy] = {
         keep_last=5_000,
         min_bytes=16 * 1024 * 1024,
         reason="derived network snapshots; archive old topology frames",
+    ),
+    "kernel_process_table.jsonl": RotationPolicy(
+        "kernel_process_table.jsonl",
+        keep_last=20_000,
+        min_bytes=64 * 1024 * 1024,
+        reason="hot kernel heartbeats; live table consumes snapshot plus recent tail",
     ),
 }
 
@@ -141,6 +148,91 @@ def rotate_ledger(
             now=t,
         )
         row.update(archive)
+    assert_payload_keys("ledger_rotation.jsonl", row, strict=True)
+    append_line_locked(audit, json.dumps(row, sort_keys=True) + "\n")
+    return row
+
+
+def _read_tail_bytes_aligned(path: Path, keep_bytes: int, *, encoding: str = "utf-8") -> str:
+    keep = max(1, int(keep_bytes))
+    size = path.stat().st_size
+    offset = max(0, size - keep)
+    with path.open("rb") as fh:
+        fh.seek(offset)
+        chunk = fh.read().decode(encoding, errors="replace")
+    if offset > 0:
+        first_newline = chunk.find("\n")
+        if first_newline >= 0:
+            chunk = chunk[first_newline + 1:]
+    if chunk and not chunk.endswith("\n"):
+        chunk += "\n"
+    return chunk
+
+
+def fast_rotate_ledger_by_bytes(
+    ledger_name: str,
+    *,
+    state_dir: Optional[Path] = None,
+    archive_dir: Optional[Path] = None,
+    rotation_ledger: Optional[Path] = None,
+    max_bytes: int = 64 * 1024 * 1024,
+    keep_bytes: int = 8 * 1024 * 1024,
+    dry_run: bool = False,
+    now: Optional[float] = None,
+) -> Dict[str, object]:
+    """Rotate a giant hot ledger without reading it all into memory.
+
+    The full old file is moved into Archive/Ledger_Rotation and the active file
+    is replaced with a line-aligned recent byte tail. This preserves history
+    while keeping active control loops away from multi-GB JSONL bodies.
+    """
+    base = Path(state_dir) if state_dir is not None else _STATE
+    archive_base = Path(archive_dir) if archive_dir is not None else _ARCHIVE
+    audit = Path(rotation_ledger) if rotation_ledger is not None else _ROTATION_LEDGER
+    path = base / str(ledger_name)
+    t = time.time() if now is None else float(now)
+    before_bytes = path.stat().st_size if path.exists() else 0
+    row: Dict[str, object] = {
+        "event": "ledger_rotation",
+        "schema": "SIFTA_LEDGER_ROTATION_V1",
+        "module_version": _MODULE_VERSION,
+        "ledger_name": str(ledger_name),
+        "dry_run": bool(dry_run),
+        "before_bytes": int(before_bytes),
+        "after_bytes": int(before_bytes),
+        "keep_last": 0,
+        "kept_lines": 0,
+        "archived_lines": 0,
+        "archive_path": "",
+        "archive_sha256": "",
+        "archive_bytes": 0,
+        "reason": "fast byte-tail rotation for hot ledger",
+        "ts": t,
+    }
+    if before_bytes < int(max_bytes) or not path.exists():
+        row["reason"] = "skip: below max_bytes (fast byte-tail rotation)"
+        return row
+    if dry_run:
+        row["reason"] = f"dry_run: would keep last {int(keep_bytes)} bytes"
+        return row
+
+    archive_base.mkdir(parents=True, exist_ok=True)
+    archive_id = hashlib.sha256(f"{ledger_name}:{before_bytes}:{t}".encode("utf-8")).hexdigest()[:12]
+    archive_path = archive_base / f"{ledger_name}.{int(t)}.{before_bytes}.{archive_id}.jsonl"
+    tail = _read_tail_bytes_aligned(path, int(keep_bytes))
+    os.replace(path, archive_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tail, encoding="utf-8")
+
+    row["after_bytes"] = int(path.stat().st_size)
+    row["kept_lines"] = int(sum(1 for line in tail.splitlines() if line.strip()))
+    row["archive_path"] = str(archive_path)
+    row["archive_sha256"] = f"fast-archive-id:{archive_id}"
+    row["archive_bytes"] = int(archive_path.stat().st_size)
+    row["reason"] = (
+        "fast byte-tail rotation; full old ledger moved to archive, active ledger "
+        f"keeps last {int(keep_bytes)} bytes"
+    )
     assert_payload_keys("ledger_rotation.jsonl", row, strict=True)
     append_line_locked(audit, json.dumps(row, sort_keys=True) + "\n")
     return row

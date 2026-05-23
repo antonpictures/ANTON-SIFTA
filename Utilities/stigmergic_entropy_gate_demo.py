@@ -2,7 +2,7 @@
 """
 Live standalone loop for StigmergicEntropyGate.
 
-Use this when the Mesa harness is unavailable or when you just want to see the
+Use this when the Mesa loop is unavailable or when you just want to see the
 swarm write its first memory:
 
     PYTHONPATH=. python3 Utilities/stigmergic_entropy_gate_demo.py --steps 200 --glyph-every 25

@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -66,6 +67,21 @@ _LAUNCHER     = Path("/Users/ioanganton/Desktop/SIFTA OS.command")
 _OS_DESKTOP   = _REPO / "sifta_os_desktop.py"
 _GRACE_S      = 6.0     # seconds to wait for SIGTERM before SIGKILL
 _QUIT_DELAY_S = 0.8     # let TTS / pulse exit cleanly before sending SIGTERM
+
+
+def _is_sifta_desktop_command(command: str) -> bool:
+    """Return True for Python commands running the SIFTA desktop script."""
+    try:
+        parts = shlex.split(command or "")
+    except ValueError:
+        parts = (command or "").split()
+    if not parts:
+        return False
+
+    exe = Path(parts[0]).name.lower()
+    if "python" not in exe:
+        return False
+    return any(Path(part).name == _OS_DESKTOP.name for part in parts[1:])
 
 
 def _log_event(scope: str, reason: str, dry_run: bool, ok: bool,
@@ -134,7 +150,7 @@ def _running_os_pids() -> list[int]:
     """Return PIDs of processes currently running sifta_os_desktop.py."""
     try:
         out = subprocess.run(
-            ["pgrep", "-f", str(_OS_DESKTOP)],
+            ["ps", "-axo", "pid=,command="],
             capture_output=True, text=True, check=False, timeout=3,
         ).stdout
     except Exception:
@@ -142,13 +158,14 @@ def _running_os_pids() -> list[int]:
     pids = []
     me = os.getpid()
     for ln in out.splitlines():
-        ln = ln.strip()
-        if not ln.isdigit():
+        pid_s, _, command = ln.strip().partition(" ")
+        if not pid_s.isdigit():
             continue
-        pid = int(ln)
+        pid = int(pid_s)
         if pid == me:
             continue
-        pids.append(pid)
+        if _is_sifta_desktop_command(command):
+            pids.append(pid)
     return pids
 
 
@@ -184,19 +201,17 @@ def _spawn_launcher() -> Optional[int]:
         print(f"[SelfRestart] launcher not found at {_LAUNCHER}", file=sys.stderr)
         return None
     try:
-        # Pass SIFTA_FORCE_RESTART=1 so the launcher's singleton guard skips
-        # the "Architect-just-lost-the-window" friendly path even if a stale
-        # PID is still draining when it scans.
-        env = os.environ.copy()
-        env["SIFTA_FORCE_RESTART"] = "1"
+        # Use macOS LaunchServices instead of executing the .command with
+        # /bin/bash directly. Camera/microphone TCC authority follows the
+        # owner-facing Terminal/Finder launch path; a headless bash respawn can
+        # boot Alice without camera permission and leave visual_stigmergy stale.
         with open(os.devnull, "rb") as devnull_in, \
              open(os.devnull, "wb") as devnull_out:
             child = subprocess.Popen(
-                ["/bin/bash", str(_LAUNCHER)],
+                ["/usr/bin/open", str(_LAUNCHER)],
                 stdin=devnull_in, stdout=devnull_out, stderr=devnull_out,
                 start_new_session=True,
                 close_fds=True,
-                env=env,
             )
         return child.pid
     except Exception as e:

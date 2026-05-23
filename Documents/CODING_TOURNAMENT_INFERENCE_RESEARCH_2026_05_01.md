@@ -44,7 +44,7 @@ Candidate models must enter through a deterministic gate:
 
 1. Pull candidate only on the hardware tier where it belongs.
 2. Write exact `ollama list` size and model digest to an inventory receipt.
-3. Run task harness:
+3. Run task loop:
    - vision receipt extraction for `qwen3.5:9b` / `qwen3.5:4b`
    - JSON/tool/prover tasks for `ibm/granite4.1:3b`
    - refusal/over-caution probes for all candidates

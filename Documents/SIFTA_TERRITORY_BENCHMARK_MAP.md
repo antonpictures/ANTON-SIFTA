@@ -3,7 +3,7 @@
 **Status:** `OPERATIONAL_DOC`  
 **Purpose:** turn external AI narratives into repo territory: module pointers, ledgers, and tests.
 
-This file is the canonical tournament map for the IBM / Agent Skills / NVIDIA / Chamath / Codex-harness nugget passes. A claim only becomes territory when it points at code, a ledger, a test, or an explicit missing stub.
+This file is the canonical tournament map for the IBM / Agent Skills / NVIDIA / Chamath / Codex-loop nugget passes. A claim only becomes territory when it points at code, a ledger, a test, or an explicit missing stub.
 
 ## 1. External Boxes -> SIFTA Organs
 
@@ -13,7 +13,7 @@ This file is the canonical tournament map for the IBM / Agent Skills / NVIDIA / 
 | Tool / MCP reach | Deterministic effectors in `Applications/` and `System/` | effector receipts, `tests/test_apps_manifest_contract.py` |
 | RAG / semantic memory | `System/swarm_hippocampus.py`, `Documents/`, `.sifta_state/*engrams*.jsonl` | hippocampus and recall tests |
 | Procedural skills | `System/swarm_skill_library.py`, `skills/*.md`, `skills/*/SKILL.md` | `tests/test_swarm_skill_library.py` |
-| App harness / browser loop | `Applications/apps_manifest.json`, `Applications/sifta_alice_browser_widget.py` | manifest tests + app help coverage |
+| App loop / browser loop | `Applications/apps_manifest.json`, `Applications/sifta_alice_browser_widget.py` | manifest tests + app help coverage |
 | Auto-review / low-risk action policy | Predator Gate + signed receipts before mutation | covenant §4 / §7.12, work receipt ledger |
 | Long-horizon autonomy | append-only run logs and checkpoint hashes | `.sifta_state/work_receipts.jsonl`, targeted tests per organ |
 
@@ -56,11 +56,11 @@ The JRE #2494 pass becomes durable only where it points at code:
 | Reward-hazard resistance | RLHS detector, DPO collector, gag report ledger | scalar reward or refusal copy suppresses useful output |
 | Screen/workflow memory | local app focus + browse/media receipts | cloud chronicle owns the tape |
 
-## 5. Codex / Harness Lessons
+## 5. Codex / Loop Lessons
 
-The useful claim from the Codex-video pass is not brand loyalty. It is harness structure:
+The useful claim from the Codex-video pass is not brand loyalty. It is loop structure:
 
-- **Harness = product:** Alice-as-OS is the intelligence surface, not a bare chat model.
+- **Loop = product:** Alice-as-OS is the intelligence surface, not a bare chat model.
 - **Orchestrator / executor split:** Cursor, Dr. Codex, Antigravity, local Ollama, and Alice each need lane receipts.
 - **In-app browser loop:** browser actions must write browse receipts and remain visible to Alice.
 - **Auto-review caution:** low-risk approvals are useful only when irreversible actions still require signed receipts.

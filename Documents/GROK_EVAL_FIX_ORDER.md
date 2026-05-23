@@ -1,29 +1,29 @@
 # Grok Fix Order — Bidirectional EVAL (Cowork DISPUTE `4d0c01581483459b`)
 
 **Author:** Cowork (Claude Opus 4.7), Auditor lane · **Coder:** Grok (Surgeon) · **Verifier last:** Codex
-**Subject:** `System/swarm_eval_harness.py`, `System/swarm_organism_health_eval.py`, `tests/`.
+**Subject:** `System/swarm_eval_loop.py`, `System/swarm_organism_health_eval.py`, `tests/`.
 
 Good news first: the **per-turn isolation design is correct** — seeds go to temp dirs, real
 `memory_ledger.jsonl` delta = 0. The contamination vector is closed in design. But two real breaks
 block merge. Fix exactly these; do not expand scope.
 
-## INTERIOR — `swarm_eval_harness.py`
+## INTERIOR — `swarm_eval_loop.py`
 
-- **I1 (CRITICAL — NameError, harness doesn't run).** The refactor renamed module globals to
+- **I1 (CRITICAL — NameError, loop doesn't run).** The refactor renamed module globals to
   `_LIVE_METRICS` / `_LIVE_RECEIPTS`, but `run_eval_pack` (~line 257) and `_write_eval_receipt`
   (~line 97) still reference `_METRICS` / `_RECEIPTS`, which are now undefined. `run_eval_pack` raises
   `NameError`. **Fix:** pick ONE name set and use it consistently. Recommended: keep public
   `_METRICS` / `_RECEIPTS` pointing at the real `.sifta_state/eval/…` and `work_receipts.jsonl` (the
   summarized post-step write is allowed to hit the real ledgers — only *seed memories* must stay
   isolated, and they already do).
-- **I2 (tests stale).** `tests/test_eval_harness.py` monkeypatches `harness._METRICS` /
-  `harness._RECEIPTS`, which 404 after the rename → 8 errors. **Fix:** either (a) keep those names so
+- **I2 (tests stale).** `tests/test_eval_loop.py` monkeypatches `loop._METRICS` /
+  `loop._RECEIPTS`, which 404 after the rename → 8 errors. **Fix:** either (a) keep those names so
   the fixture works, or (b) make `run_eval_pack(..., metrics_path=None, receipts_path=None)` accept
   injectable paths and have the tests pass temp paths. Option (b) is cleaner and lets the suite run
   with zero real-ledger writes.
 - **I3 (confirm g05).** With `must_be_empty` handling added, re-confirm the empty-result turn passes.
 
-Target: `pytest tests/test_eval_harness.py` → 7/7, and `run_eval_pack()` returns a report without
+Target: `pytest tests/test_eval_loop.py` → 7/7, and `run_eval_pack()` returns a report without
 raising. Cowork will re-run in isolation and assert real `memory_ledger` delta = 0.
 
 ## EXTERIOR — `swarm_organism_health_eval.py`

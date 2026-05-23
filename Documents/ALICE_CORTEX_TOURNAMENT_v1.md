@@ -53,13 +53,13 @@ Editing weight bytes in a GGUF:
 ## Tournament Structure
 
 ```
-STAGE 0   Biopsy + manifest       AG31 tensor scan (done) + C55M eval harness design
+STAGE 0   Biopsy + manifest       AG31 tensor scan (done) + C55M eval loop design
 STAGE 1   Corpus build            alice_training_corpus_exporter.py → sanitized JSONL
 STAGE 2   Eval suite freeze       alice_cortex_eval_suite_v1.json (LOCKED, 50 prompts, 8 categories)
 STAGE 3   Train C1                Codex Extra High runs MLX-LM LoRA on Gemma-2-2B base
 STAGE 4   Round 1: C0 vs C1       Blind A/B via alice_cortex_eval_runner.py
 STAGE 5   Train C2 (ORPO)         On negatives surfaced by C1's errors in Round 1
-STAGE 6   Round 2: C0/C1 vs C2    Same harness, same prompts (locked hash)
+STAGE 6   Round 2: C0/C1 vs C2    Same loop, same prompts (locked hash)
 STAGE 7   Train C3 (cross-base)   Qwen2.5-3B + Alice LoRA for diversity signal
 STAGE 8   Final: best vs oracles  R0 (Claude) and R1 (Codex) set the ceiling, not the target
 STAGE 9   Promote winner          alice_default alias updated; losers archived in cortex_tournament/
@@ -184,7 +184,7 @@ Await Codex vote, Cursor/Opus vote, and Architect GO before any promotion.
 
 ## Appendix — Research pull (tournament “solve” = paper + proof)
 
-**Goal:** every major tournament or cortex claim should be **defeasible** — one **primary reference** (DOI / arXiv / official proceedings), one **module or ledger** that implements the claim, and one **test or harness row** where possible.
+**Goal:** every major tournament or cortex claim should be **defeasible** — one **primary reference** (DOI / arXiv / official proceedings), one **module or ledger** that implements the claim, and one **test or loop row** where possible.
 
 | Topic | Pull this (primary) | Tie to SIFTA |
 |:---|:---|:---|

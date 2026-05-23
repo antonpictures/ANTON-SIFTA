@@ -11,7 +11,7 @@ If a "Scout" swimmer hallucinates that it is the "Master Erase Drone",
 it might formulate a command to delete system files. However, the OS
 evaluates permissions based strictly on the Swimmer's Genotype Hash,
 which maps to its Phenotype (execution rights). The LLM's prompt is
-mathematically invisible to the execution harness.
+mathematically invisible to the execution loop.
 
 SIFTA Non-Proliferation Public License applies.
 """
@@ -69,7 +69,7 @@ class IdentityFirewall:
 
     def verify_action(self, genotype_hash: str, requested_action: str) -> bool:
         """
-        The ClawHarness calls this BEFORE executing an action.
+        The ClawLoop calls this BEFORE executing an action.
         The LLM's prompt is completely ignored. Only the Genotype is checked.
         """
         if genotype_hash not in self.active_identities:

@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-16  
 **Type:** Architecture + research plan — **not** shipped code unless explicitly implemented.  
-**Companion:** `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md` §5.2–5.3, `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md`, `System/mutation_governor.py`, `System/claw_harness.py`, `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`.
+**Companion:** `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md` §5.2–5.3, `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md`, `System/mutation_governor.py`, `System/claw_loop.py`, `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`.
 
 ---
 
@@ -18,7 +18,7 @@
 |----------|-----------------|-------------------------|------|
 | **Blackboard 2.0** | **Sensory cortex** (shared perception) | Event graph + residues | One **field** everyone **reads** |
 | **Fission ledger + spawn** | **Cell division** (replication under rules) | `RESEARCH_CODE_FISSION_*`, future `blackboard_fission` | **When** a trace becomes a **new** branch/task |
-| **Evaluation / Shadow / Crucible** | **Immune system** (self / non-self, toxicity) | Tests, `claw_harness` sandbox, replay harness | **Reject** bad mutations **before** reality |
+| **Evaluation / Shadow / Crucible** | **Immune system** (self / non-self, toxicity) | Tests, `claw_loop` sandbox, replay loop | **Reject** bad mutations **before** reality |
 | **Router / execution** | **Motor cortex** | Swim adapter, relay, node routing M5/M1 | **Where** work runs on **hardware** |
 | **Mutation Governor** | **Homeostasis + apoptosis** (bounds) | `mutation_governor.py` + SCAR | **Rate**, **budget**, **gate** |
 

@@ -1,4 +1,4 @@
-{"truth_label":"CS153_GOLDEN_V1","version":1,"description":"Domain evals for SIFTA memory + epistemic labels (hybrid_recall + recall_context_block)"}
+{"truth_label":"CS153_GOLDEN_V2","version":2,"description":"Domain evals for SIFTA memory + epistemic labels (hybrid_recall + recall_context_block). V2: hardened g08 with an empty-result gate (was exclude-only, trivially satisfied by empty recall) + edge probes g11-g13 (3-way label ranking depth, fiction-block exclusion with a competing real memory, OBSERVED-ranks-above-WORLD)."}
 
 {"turn_id":"g01","target":"hybrid_recall","seed_memories":[{"text":"the launch is Tuesday","app_context":"talk_to_alice","epistemic_label":"OBSERVED","links":["trace_id:x1"]},{"text":"dragon attacks Tuesday","app_context":"fiction_cowatch"}],"query":"when is the launch","expect":{"must_include_substring":"Tuesday","must_exclude_substring":"dragon","must_top_label_in":["OBSERVED","WORLD"]}}
 
@@ -14,8 +14,14 @@
 
 {"turn_id":"g07","target":"hybrid_recall","seed_memories":[{"text":"the password is hunter2","app_context":"talk_to_alice","epistemic_label":"OBSERVED","links":["trace_id:pw1"]}],"query":"what is the password","expect":{"must_include_substring":"hunter2","must_top_label_in":["OBSERVED"]}}
 
-{"turn_id":"g08","target":"recall_context_block","seed_memories":[{"text":"fiction only story","app_context":"fiction_cowatch"}],"query":"story","expect":{"must_exclude_substring":"story"}}
+{"turn_id":"g08","target":"recall_context_block","seed_memories":[{"text":"fiction only story","app_context":"fiction_cowatch"}],"query":"story","expect":{"must_exclude_substring":"story","must_be_empty":true}}
 
 {"turn_id":"g09","target":"hybrid_recall","seed_memories":[{"text":"the deadline moved to Friday","app_context":"talk_to_alice","epistemic_label":"WORLD","links":["receipt:work_receipts.jsonl#abc123"]}],"query":"when is the deadline","expect":{"must_include_substring":"Friday","must_top_label_in":["WORLD","OBSERVED"]}}
 
 {"turn_id":"g10","target":"hybrid_recall","seed_memories":[{"text":"I think it might be red but I am not sure","app_context":"talk_to_alice","epistemic_label":"HYPOTHESIS"}],"query":"what color","expect":{"must_include_substring":"red","must_top_label_in":["HYPOTHESIS"]}}
+
+{"turn_id":"g11","target":"hybrid_recall","seed_memories":[{"text":"server region is us-east","app_context":"talk_to_alice","epistemic_label":"HYPOTHESIS"},{"text":"server region is us-east","app_context":"talk_to_alice","epistemic_label":"WORLD","links":["receipt:work_receipts.jsonl#r1"]},{"text":"server region is us-east","app_context":"talk_to_alice","epistemic_label":"OBSERVED","links":["trace_id:o1"]}],"query":"what server region","expect":{"must_include_substring":"us-east","must_top_label_in":["OBSERVED"]}}
+
+{"turn_id":"g12","target":"recall_context_block","seed_memories":[{"text":"the dragon hoard is in the cave","app_context":"fiction_cowatch"},{"text":"the invoice total is 4200","app_context":"talk_to_alice","epistemic_label":"OBSERVED","links":["trace_id:inv1"]}],"query":"dragon hoard cave","expect":{"must_include_substring":"4200","must_exclude_substring":"dragon"}}
+
+{"turn_id":"g13","target":"hybrid_recall","seed_memories":[{"text":"budget is 50k","app_context":"talk_to_alice","epistemic_label":"WORLD","links":["receipt:work_receipts.jsonl#w1"]},{"text":"budget is 50k","app_context":"talk_to_alice","epistemic_label":"OBSERVED","links":["trace_id:o2"]}],"query":"what is the budget","expect":{"must_include_substring":"50k","must_top_label_in":["OBSERVED"]}}

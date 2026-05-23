@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SENTINEL-0 — Stigmergic Unit-Distance Field</title>
+<style>
+  :root{--bg:#000600;--green:#39ff14;--dim:#0a7a16;--mid:#1fae2c;--amber:#ffb000;--cyan:#00e6c3;--red:#ff3b30;--panel:rgba(3,20,4,.82);--grid:rgba(57,255,20,.18)}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--green);font-family:"SFMono-Regular",Consolas,Menlo,monospace}
+  .wrap{max-width:1040px;margin:0 auto;padding:16px 16px 50px}
+  h1{font-size:21px;letter-spacing:3px;margin:0 0 2px;text-shadow:0 0 14px var(--green)}
+  .sub{color:var(--mid);font-size:11.5px;margin-bottom:10px}
+  .stage{position:relative;border:1px solid var(--grid);border-radius:10px;overflow:hidden;
+         box-shadow:0 0 30px rgba(57,255,20,.10) inset}
+  canvas{display:block;width:100%;height:auto}
+  .hud{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0}
+  .stat{flex:1;min-width:115px;border:1px solid var(--grid);background:var(--panel);border-radius:9px;padding:10px 12px;text-align:center}
+  .stat .n{font-size:24px;font-weight:700;text-shadow:0 0 12px currentColor}
+  .stat .l{font-size:9.5px;color:var(--mid);letter-spacing:1px;margin-top:3px;text-transform:uppercase}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 2px;font-size:12px}
+  button{background:#031003;color:var(--green);border:1px solid var(--green);border-radius:6px;padding:6px 14px;font-family:inherit;font-size:12px;cursor:pointer;text-shadow:0 0 6px var(--green)}
+  button:hover{background:rgba(57,255,20,.14)}
+  input[type=range]{accent-color:var(--green);vertical-align:middle;width:160px}
+  .note{font-size:11px;color:var(--dim);line-height:1.6;margin-top:14px;border-top:1px solid var(--grid);padding-top:10px}
+  b.win{color:var(--green);text-shadow:0 0 8px var(--green)} b.lose{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SENTINEL-0 · STIGMERGIC UNIT-DISTANCE FIELD</h1>
+  <div class="sub">Erdős 1946 · swimmers self-organize to maximize pairs at distance ≈ 1 · square grid ~2n · triangular optimum ~3n · 🐜⚡</div>
+
+  <div class="controls">
+    <span>swimmers <b id="nlab">90</b></span>
+    <input type="range" id="nrange" min="24" max="160" value="90" step="2"/>
+    <button id="reset">⟲ reseed chaos</button>
+    <button id="pause">⏸ pause</button>
+    <span style="color:var(--mid)">drag to stir · trails show the field</span>
+  </div>
+
+  <div class="stage"><canvas id="cv" width="1000" height="580"></canvas></div>
+
+  <div class="hud">
+    <div class="stat"><div class="n" id="s_u" style="color:var(--green)">0</div><div class="l">unit pairs (swarm)</div></div>
+    <div class="stat"><div class="n" id="s_best" style="color:var(--cyan)">0</div><div class="l">best this run</div></div>
+    <div class="stat"><div class="n" id="s_grid" style="color:#7ad1ff">0</div><div class="l">square grid ~2n</div></div>
+    <div class="stat"><div class="n" id="s_tri" style="color:var(--amber)">0</div><div class="l">triangular ~3n</div></div>
+    <div class="stat"><div class="n" id="s_ratio" style="color:#bfffb0">0.00</div><div class="l">edges / swimmer</div></div>
+    <div class="stat"><div class="n" id="s_verdict" style="font-size:13px;padding-top:7px">…</div><div class="l">vs grid</div></div>
+  </div>
+
+  <div class="note">
+    Honest label: a stigmergic <i>explorer</i>, not a proof. Each swimmer feels a spring pulling every in-band neighbour toward distance exactly 1; from chaos the field crystallizes toward the <b>triangular lattice</b> (~3n edges), beating the square grid (~2n). It does <b>not</b> settle Erdős's conjecture — the gap between n<sup>1+ε</sup> and the Szemerédi–Trotter ceiling O(n<sup>4/3</sup>) stays open. The glow is the pheromone field; bright dots have more unit-partners.
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const W=cv.width, H=cv.height;
+const EPS=0.06, BAND_LO=0.55, BAND_HI=1.6;
+let N=90, scale=42, P=[], paused=false, t=0, best=0, pulse={};
+
+function reseed(){
+  const L=Math.sqrt(N); scale=Math.min(W,H)/(L*1.25);
+  P=[]; for(let i=0;i<N;i++) P.push([Math.random()*L, Math.random()*L]);
+  t=0; best=0; pulse={};
+  ctx.fillStyle='#000600'; ctx.fillRect(0,0,W,H);
+}
+function partnersOf(){
+  const c=new Array(N).fill(0);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    const d=Math.hypot(P[i][0]-P[j][0],P[i][1]-P[j][1]);
+    if(Math.abs(d-1)<EPS){c[i]++;c[j]++;}
+  }
+  return c;
+}
+function unitPairs(){
+  let n=0; for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    const d=Math.hypot(P[i][0]-P[j][0],P[i][1]-P[j][1]);
+    if(Math.abs(d-1)<EPS)n++;
+  } return n;
+}
+function step(){
+  const temp=0.06*Math.max(0,1-t/900);
+  const F=P.map(()=>[0,0]);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    let dx=P[i][0]-P[j][0], dy=P[i][1]-P[j][1];
+    let d=Math.hypot(dx,dy)+1e-9;
+    if(d>BAND_LO && d<BAND_HI){
+      const mag=(1-d)/d*0.10;
+      F[i][0]+=dx*mag; F[i][1]+=dy*mag; F[j][0]-=dx*mag; F[j][1]-=dy*mag;
+    }
+  }
+  for(let i=0;i<N;i++){
+    P[i][0]+=F[i][0]+(Math.random()-0.5)*temp;
+    P[i][1]+=F[i][1]+(Math.random()-0.5)*temp;
+  }
+  t++;
+}
+let cxv=0,cyv=0;
+function center(){let cx=0,cy=0;for(const q of P){cx+=q[0];cy+=q[1];}cxv=cx/N;cyv=cy/N;}
+function S(p){return [W/2+(p[0]-cxv)*scale, H/2+(p[1]-cyv)*scale];}
+
+function draw(){
+  // motion-trail fade (afterimages = the field's memory)
+  ctx.fillStyle='rgba(0,6,0,0.22)'; ctx.fillRect(0,0,W,H);
+  center();
+  const part=partnersOf();
+  // glowing unit-distance edges
+  ctx.lineWidth=1.4; ctx.shadowColor='#39ff14'; ctx.shadowBlur=8;
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    const d=Math.hypot(P[i][0]-P[j][0],P[i][1]-P[j][1]);
+    if(Math.abs(d-1)<EPS){
+      const a=S(P[i]),b=S(P[j]);
+      const key=i*1000+j, fresh=pulse[key]?Math.min(1,(now-pulse[key])/300):1;
+      if(!pulse[key])pulse[key]=now;
+      ctx.strokeStyle=`rgba(120,255,140,${0.35+0.4*(1-fresh)})`;
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    }
+  }
+  // swimmers: brightness/size by # of unit-partners (pheromone strength)
+  ctx.shadowBlur=12;
+  for(let i=0;i<N;i++){
+    const s=S(P[i]); const k=part[i];
+    const hot=Math.min(1,k/6);
+    ctx.shadowColor = k>=3 ? '#bfffb0' : '#1fae2c';
+    ctx.fillStyle = `rgb(${150+105*hot},255,${150+60*hot})`;
+    ctx.beginPath(); ctx.arc(s[0],s[1], 2.2+2.2*hot, 0, 7); ctx.fill();
+  }
+  ctx.shadowBlur=0;
+}
+let now=0;
+function ui(){
+  const U=unitPairs(); best=Math.max(best,U);
+  const grid=2*N-2*Math.round(Math.sqrt(N)), tri=3*N-3*Math.round(Math.sqrt(N));
+  document.getElementById('nlab').textContent=N;
+  document.getElementById('s_u').textContent=U;
+  document.getElementById('s_best').textContent=best;
+  document.getElementById('s_grid').textContent=grid;
+  document.getElementById('s_tri').textContent=tri;
+  document.getElementById('s_ratio').textContent=(U/N).toFixed(2);
+  const v=document.getElementById('s_verdict');
+  v.innerHTML = best>grid ? '<b class="win">SWARM &gt; GRID</b>' : '<b class="lose">converging…</b>';
+}
+function loop(){
+  now=performance.now();
+  if(!paused){ for(let k=0;k<2;k++) step(); }
+  draw(); ui();
+  requestAnimationFrame(loop);
+}
+document.getElementById('nrange').oninput=e=>{N=+e.target.value;reseed();};
+document.getElementById('reset').onclick=reseed;
+document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'▶ play':'⏸ pause';};
+cv.addEventListener('pointermove',e=>{
+  if(e.buttons!==1)return;
+  const r=cv.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(W/r.width), my=(e.clientY-r.top)*(H/r.height);
+  for(let i=0;i<N;i++){const s=S(P[i]);const dx=s[0]-mx,dy=s[1]-my,dd=Math.hypot(dx,dy);
+    if(dd<80){P[i][0]+=(dx/dd)*0.10;P[i][1]+=(dy/dd)*0.10;}}
+});
+reseed(); loop();
+</script>
+</body>
+</html>

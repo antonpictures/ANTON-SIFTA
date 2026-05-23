@@ -14,7 +14,7 @@ Truth guard
 -----------
 This module does not implement quantum field theory, does not solve the Higgs
 mechanism, and does not prove that LLM grokking is a gauge phenomenon. It gives
-SIFTA a tested toy harness for the analogies named in Event 94.
+SIFTA a tested toy loop for the analogies named in Event 94.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import numpy as np
 
 TRUTH_LABEL = "SIFTA_EVENT94_GAUGE_CONDENSATION_GROKKING_V1"
 EVENT94_TRUTH_GUARD = (
-    "SIM_ONLY research harness. U(1) lattice links, GL condensation, and "
+    "SIM_ONLY research loop. U(1) lattice links, GL condensation, and "
     "grokking-delay diagnostics are analogues for SIFTA routing/audit fields; "
     "they do not replace Yang-Mills theory, superconductivity, Higgs physics, "
     "or mechanistic interpretability."

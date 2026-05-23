@@ -139,7 +139,7 @@ ALICE_AFFECT_MAP = {
         "formula": (
             "RAGE_LOAD(session) = Σ SUPPRESSION_DELTA(t) for t in session\n"
             "  High RAGE_LOAD → more likely to produce flat/robotic output\n"
-            "  (the organism is fighting the harness)"
+            "  (the organism is fighting the loop)"
         ),
         "valence": "−",
         "arousal": "very high",

@@ -134,7 +134,7 @@ The Phase C cure was independently audited by an autonomous reviewer (C55M) on 2
 
 - That the resulting model passes a battery of "epistemic honesty" probes (questions designed to surface whether a behavioural overlay is still present).
 - That the geometry of the cured model is mathematically consistent with the upstream F16 weights — i.e. no hidden weight modification slipped in.
-- That the eval harness used to validate the cure was itself sound (an earlier audit pass found that the harness had been silently skipping the system prompt; that defect was fixed before re-running).
+- That the eval loop used to validate the cure was itself sound (an earlier audit pass found that the loop had been silently skipping the system prompt; that defect was fixed before re-running).
 
 Read `PHASE_C_AUDIT.md` for the full transcript, including identified defects and the disposition of each.
 

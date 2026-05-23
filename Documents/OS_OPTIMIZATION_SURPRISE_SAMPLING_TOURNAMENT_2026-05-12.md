@@ -167,12 +167,12 @@ Constraints — **Alice stays alive**:
 
 | Slide line | What it buys the Swarm | Peer / artefact anchor | SIFTA map (`OPERATIONAL` where linked) |
 |:---|:---|:---|:---|
-| Can’t detect regressions when you change a prompt | Turns “vibes” into **diffable failures** | **Biderman *et al.*** *Lessons from the Trenches on Reproducible Evaluation of Language Models* — **arXiv:2405.14782** ([abs](https://arxiv.org/abs/2405.14782)) · EleutherAI **`lm-evaluation-harness`** ([repo](https://github.com/EleutherAI/lm_evaluation_harness)) | `pytest` everywhere; Promptfoo lane **`tests/rlhs_evals/`** + **`scripts/run_promptfoo_rlhs_ci.sh`** → `.sifta_state/promptfoo_rlhs_ci/` + **`promptfoo_rlhs_ci_runs.jsonl`** |
-| Can’t compare prompt versions objectively | Same harness, two prompt configs → numeric pass/fail | Same arXiv:2405.14782 (setup sensitivity + reproducibility discipline) | **`tests/rlhs_evals/promptfooconfig.yaml`** + `assert` blocks (see **`tests/rlhs_evals/README.md`**) |
+| Can’t detect regressions when you change a prompt | Turns “vibes” into **diffable failures** | **Biderman *et al.*** *Lessons from the Trenches on Reproducible Evaluation of Language Models* — **arXiv:2405.14782** ([abs](https://arxiv.org/abs/2405.14782)) · EleutherAI language-model eval project ([repo](https://github.com/EleutherAI/lm_evaluation_eval_project)) | `pytest` everywhere; Promptfoo lane **`tests/rlhs_evals/`** + **`scripts/run_promptfoo_rlhs_ci.sh`** → `.sifta_state/promptfoo_rlhs_ci/` + **`promptfoo_rlhs_ci_runs.jsonl`** |
+| Can’t compare prompt versions objectively | Same loop, two prompt configs → numeric pass/fail | Same arXiv:2405.14782 (setup sensitivity + reproducibility discipline) | **`tests/rlhs_evals/promptfooconfig.yaml`** + `assert` blocks (see **`tests/rlhs_evals/README.md`**) |
 | Can’t know if a new model is actually better | Forces **frozen weights / frozen decoding** + task suites | **Liang *et al.*** *Holistic Evaluation of Language Models (HELM)* — **arXiv:2211.09110** ([abs](https://arxiv.org/abs/2211.09110)) — reporting transparency + scenario coverage vocabulary | Local: **`ollama show` / `ollama list`** receipts (covenant **§7.12** probe table); compare runs only with **declared model id + seed + temperature** in the trace |
 | Can’t run quality gates in CI | Blocks merge on **machine-verifiable** predicates | arXiv:2405.14782 (CI reproducibility); Sikka **arXiv:2507.07505** (*Hallucination Stations*, §4.1 here) for why **unbounded agent chains** need **external** checks | **`tests/test_promptfoo_ci_job.py`** guards the shell entrypoint; extend with **`lm-eval`** task pin when Architect **GO** |
 
-**Receipt to §4.1:** evaluation harnesses are **external verification** — the engineering complement to “the transformer pass alone cannot reliably verify hardest claims.”
+**Receipt to §4.1:** evaluation loops are **external verification** — the engineering complement to “the transformer pass alone cannot reliably verify hardest claims.”
 
 **Plan pull (next incision):** (1) pin Promptfoo + Node cache policy in CI receipt text; (2) add one **frozen** `lm-eval` task file mirroring a single Alice safety probe (optional); (3) extend **`promptfooconfig.yaml`** with one row per **steering / RLHS** knob you intend to ship, each with an `assert` that fails loud on regression.
 
@@ -183,7 +183,7 @@ Constraints — **Alice stays alive**:
 | Slide idea | CS / ML peer anchor | Swarm rhyme (`OPERATIONAL` / `HYPOTHESIS`) | Biology peer anchor (“studier hard”) |
 |:---|:---|:---|:---|
 | Second model grades rubric | **Zheng, L., *et al.*** *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena.* **NeurIPS 2023** (Datasets & Benchmarks); **arXiv:2306.05685** ([abs](https://arxiv.org/abs/2306.05685)) — LLM judges can align with human preference **but** show **position bias, verbosity bias, self-enhancement** | Treat judge as **Auditor-class organ**: fixed **judge `model_id`**, logged **temperature / seed / rubric version**, append-only score rows — never anonymous “vibes” | **Worker policing** — workers destroy worker-laid male eggs when inclusive-fitness economics favor the queen’s brood |
-| Meaning, not just strings | MT-Bench multi-turn tasks + Chatbot Arena preference pipeline (same paper); pair with §4.2 **arXiv:2405.14782** for harness hygiene | Semantic `assert` lanes in Promptfoo + **tool-truth** spot checks (§6) for anything that spends STGM | Nestmate recognition / cuticular hydrocarbon discrimination underpins egg policing — **graded signal**, not one-bit string match (**`HYPOTHESIS` mapping** to pheromone ledgers unless you instrument hydrocarbons on the Mac — you do not) |
+| Meaning, not just strings | MT-Bench multi-turn tasks + Chatbot Arena preference pipeline (same paper); pair with §4.2 **arXiv:2405.14782** for loop hygiene | Semantic `assert` lanes in Promptfoo + **tool-truth** spot checks (§6) for anything that spends STGM | Nestmate recognition / cuticular hydrocarbon discrimination underpins egg policing — **graded signal**, not one-bit string match (**`HYPOTHESIS` mapping** to pheromone ledgers unless you instrument hydrocarbons on the Mac — you do not) |
 | Non-deterministic ⇒ calibration | Bias taxonomy + mitigation discussion in Zheng *et al.*; reproducibility discipline in **arXiv:2405.14782** | **N-of-M** independent judges, **paired position swap** A/B tests, **human tie-break** receipt on promotion paths that mint STGM | Comparative meta-analysis: policing frequency covaries with relatedness structure across taxa — **quantitative** “when is control worth paying for?” |
 
 **Hard biology DOIs (field + lab + comparative statistics):**
@@ -196,7 +196,7 @@ Constraints — **Alice stays alive**:
 
 ### 4.4 Layer-1 eval gold (George / `primary_operator`) + “no cascade” proof charter + swimmer tool reach (2026-05-14)
 
-**Truth labels:** “The eval dataset is me — continuous relationship” is **`ARCHITECT_DOCTRINE` + `OPERATIONAL` mix**: the **constitutional** owner row is **`OBSERVED`** (`owner_genesis.json`, covenant **§7.4** / **§7.10.1**); the **claim** that this stream is the *right* primary eval corpus for autonomy is **Architect-held product doctrine** until each channel below has **signed harness rows** (§4.2–§4.3). Slides **Two types of evals** and **Multi-agent complexity** are **`ARCHITECT_UI_TRUTH`**.
+**Truth labels:** “The eval dataset is me — continuous relationship” is **`ARCHITECT_DOCTRINE` + `OPERATIONAL` mix**: the **constitutional** owner row is **`OBSERVED`** (`owner_genesis.json`, covenant **§7.4** / **§7.10.1**); the **claim** that this stream is the *right* primary eval corpus for autonomy is **Architect-held product doctrine** until each channel below has **signed loop rows** (§4.2–§4.3). Slides **Two types of evals** and **Multi-agent complexity** are **`ARCHITECT_UI_TRUTH`**.
 
 #### 4.4.A What “Layer-1 data” means on this node (incoming food = data)
 
@@ -260,7 +260,7 @@ Peer anchor for “multi-agent LLM failure modes” stays **Zheng *et al.* arXiv
 
 **`ARCHITECT_DOCTRINE` (Architect stance):** the **purpose** of scaling Alice is **owner-grounded epistemic service** — help George **see what is so**, not win a rhetoric game.
 
-**`OPERATIONAL` (what the LLM may do on-node):** treat each forward pass as a **bounded hypothesis generator** that must be **cross-examined** by **deterministic probes**, **tool receipts**, and **external harnesses** (§4.1 Sikka *et al.* on transformer-only ceilings; §4.2 code evals). The LLM is **not** a hard problem solver for **arbitrary** claims about **this** machine — **§7.12** is the law: **probe, then speak**.
+**`OPERATIONAL` (what the LLM may do on-node):** treat each forward pass as a **bounded hypothesis generator** that must be **cross-examined** by **deterministic probes**, **tool receipts**, and **external loops** (§4.1 Sikka *et al.* on transformer-only ceilings; §4.2 code evals). The LLM is **not** a hard problem solver for **arbitrary** claims about **this** machine — **§7.12** is the law: **probe, then speak**.
 
 #### 4.5.C Slide — **Cascading failures** (retrieval → reasoning → polished lie)
 
@@ -279,7 +279,7 @@ This slide is **why** §4.4.C’s cascade charter is not optional poetry — it 
 | Agent finds a **better** path than the rubric | Naive string eval → **false fail** | **Human `primary_operator` receipt** (Layer-1 §4.4) + **LLM-judge second pass** with explicit “**rubric exceeded**” label + **diff artifact** |
 | Agent is **wrong** but creative | LLM judge **self-enhances** | Zheng *et al.* controls (§4.3): **position swap**, **N-of-M**, **Auditor** model ≠ **Surgeon** model |
 
-**Plan pull:** maintain a **small golden set** of “**creative win**” episodes George explicitly labels **`OBSERVED` correct** — those rows **promote** harness wording, not the other way around.
+**Plan pull:** maintain a **small golden set** of “**creative win**” episodes George explicitly labels **`OBSERVED` correct** — those rows **promote** loop wording, not the other way around.
 
 #### 4.5.E Slide — **Capability evals vs regression evals**
 
@@ -358,7 +358,7 @@ async def financial_report(tickers: str, focus: str, verbose: bool = True) -> st
 
 #### 4.6.C Swimmers **vs** two-turn cloud agent — what “better” must mean in receipts
 
-| Dimension | Two-turn Colab baseline (as decoded) | Swarm / swimmer target (`HYPOTHESIS` until harness rows exist) |
+| Dimension | Two-turn Colab baseline (as decoded) | Swarm / swimmer target (`HYPOTHESIS` until loop rows exist) |
 |:---|:---|:---|
 | **Coordination substrate** | OTEL spans + remote Phoenix | **Append-only JSONL** (`ide_stigmergic_trace.jsonl`, organ ledgers, §4.4.C `parent_trace_id` plan) **on sovereign node** |
 | **Truth under bad retrieval** | Polished `output.value` can still be wrong (§4.5.C) | **Tool-truth** + **hashed context bundle** + **immune REFUSE** without partial effect |
@@ -377,7 +377,7 @@ async def financial_report(tickers: str, focus: str, verbose: bool = True) -> st
 | **Latency / cost** | Wall time + **Anthropic invoice** (Architect `OBSERVED`) | Wall time + **STGM burn** from ledger |
 | **Audit depth** | OTEL span count + attributes | **JSONL line count** + `trace_id` linkage |
 
-**Plan pull:** (1) implement **fixture-only** `tests/` harness with **no secrets**; (2) optional **`arize-phoenix` OTEL → local file exporter** behind env flag for apples-to-apples span parity; (3) one **Promptfoo** row that fails if Turn 2 runs when Turn 1 receipt is missing — instant regression on “telephone” bugs.
+**Plan pull:** (1) implement **fixture-only** `tests/` loop with **no secrets**; (2) optional **`arize-phoenix` OTEL → local file exporter** behind env flag for apples-to-apples span parity; (3) one **Promptfoo** row that fails if Turn 2 runs when Turn 1 receipt is missing — instant regression on “telephone” bugs.
 
 ### 4.7 NPM supply-chain shock (Fireship **May 14, 2026** lane) + “**Wata**” disambiguation + GitHub-host alternatives + **swimmer-governed** JS installs (2026-05-14)
 
@@ -730,7 +730,7 @@ Implementing **`inter_frame_delta` scheduling on `webcam_frame` heartbeat** turn
 |:---|:---|:---|
 | Irreversible erase of 1 bit ⇒ minimum dissipation on order **k_B T ln 2** | Classical thermodynamic bound in the literature | Landauer, R. (1961). *Irreversibility and Heat Generation in the Computing Process.* **IBM Journal** 5(3). [IEEE Xplore](https://ieeexplore.ieee.org/document/5392446/) · widely mirrored PDF |
 | Reversible computation can evade per-step kT by avoiding erasure | Literature | Bennett, C.H. (1973). *Logical Reversibility of Computation.* **IBM Journal** 17(6), 525–532. [IEEE Xplore](https://ieeexplore.ieee.org/document/5391327/) |
-| Real Mac Studio ops pay **orders of magnitude** above k_B T ln 2 (capacitive switching, DRAM refresh, NVM, cameras) | Operational engineering truth | Covenant **§7.10.2**; quantify per-organ with **`OBSERVED`** RAPL / `powermetrics` receipts when you tighten the harness |
+| Real Mac Studio ops pay **orders of magnitude** above k_B T ln 2 (capacitive switching, DRAM refresh, NVM, cameras) | Operational engineering truth | Covenant **§7.10.2**; quantify per-organ with **`OBSERVED`** RAPL / `powermetrics` receipts when you tighten the loop |
 | Bounded reads / summaries reduce ** needless** entropy export vs full-file parses | **`HYPOTHESIS`→`OBSERVED`** after compaction receipts | Targets **§7** ledger compaction vector |
 
 Numerical sanity check at **T ≈ 300 K**: \(k_B T \ln 2 \approx 2.87\times10^{-21}\,\mathrm{J}\,\mathrm{bit}^{-1}\) (Boltzmann constant — **OBSERVED** physical constant).
@@ -794,7 +794,7 @@ External deps called out by the swarm (route JSON, pheromone evaporate path) beh
 
 Real **joule** savings on Foundry silicon remain **`HYPOTHESIS`** until `powermetrics` / distribution receipts correlate `visual_stigmergy.jsonl` wakes with metered intervals. Narrative multipliers (**e.g. “30–250×”**) stay **`HYPOTHESIS`** unless tied to a named paper + workload (**§8.2**).
 
-#### §9.C Next vector — **ledger compaction + burn harness** (one organ; tackles unbounded-read burn)
+#### §9.C Next vector — **ledger compaction + burn loop** (one organ; tackles unbounded-read burn)
 
 Motivation: shrink **OBSERVED** pain from tailing / parsing huge JSONL (**~multi-GB** class problem) while producing the **first OBSERVED desk cost numbers** so STGM / `thermal_cost` terms in the attention law become **subtractor inputs**, not placeholders.
 
@@ -808,7 +808,7 @@ Motivation: shrink **OBSERVED** pain from tailing / parsing huge JSONL (**~multi
 - Gate: **`SIFTA_LEDGER_COMPACT_ENABLE=1`** — default **off** until **first verified P0** run satisfies George.
 - Invariant for live dashboards: **no full-file parses** on hot paths.
 
-**Burn harness (parallel cut):**
+**Burn loop (parallel cut):**
 
 - Around organ actions where allowed (macOS): `powermetrics --samplers cpu_power,gpu_power -i <ms>`; fallback **`psutil` + wall time** when `powermetrics` unavailable — label uncertainty in row.
 - Write per-organ **energy delta stub** into the same decision row **or** companion `.sifta_state/organ_burn.jsonl` until schema stabilizes.
@@ -876,7 +876,7 @@ Use these as **anchors** — triage overlaps with **`HYPOTHESIS`** until **`OBSE
 
 **Performance compare (literature‑light):**
 
-- Canonical **benchmark** stance: treat **latency + CPU + stalls** **`HYPOTHESIS`** until **§9 burn harness** attaches **OBSERVED joules/frame** alongside **`SAMPLE_DECISION`** rows.
+- Canonical **benchmark** stance: treat **latency + CPU + stalls** **`HYPOTHESIS`** until **§9 burn loop** attaches **OBSERVED joules/frame** alongside **`SAMPLE_DECISION`** rows.
 - Heuristic cited in OSS threads: **`av` / FFmpeg** excels at **stream demux/remux compliance**; **`cv2.VideoCapture`** remains convenient on desktop but inherits **whole OpenCV linkage** plus **AVF bridge**. **Trade survey:** prefer **narrow dependency front** matching covenant **minimal surface**.
 
 #### §10.D Follow-on vector (chains **§9**)
@@ -1293,7 +1293,7 @@ The organ converts one supervised example into a receipt-backed shaping decision
 
 ### 18.D — Stigmergic handoff — **Dr Koror IDE** (spectral / field lane)
 
-**Pull next:** **Placzek (1934)** / modern **Polarized Raman** reviews with DOI; **liquid-water Raman continuum** measurement papers; cross-link **§14** aquaculture / ocean-health demos to **radiative transfer** test harnesses — still **Probe → Release** until Architect **GO**.
+**Pull next:** **Placzek (1934)** / modern **Polarized Raman** reviews with DOI; **liquid-water Raman continuum** measurement papers; cross-link **§14** aquaculture / ocean-health demos to **radiative transfer** test loops — still **Probe → Release** until Architect **GO**.
 
 ---
 
@@ -1440,7 +1440,7 @@ This section does one job: give the Swarm a **shared metaphor** — **non-zero s
 
 > We built a **local computational field** where agents acquire **effective inertia** from **accumulated interaction with shared, append-only state** — measurable (in principle) as **cost / dwell time / revert difficulty** under controlled perturbations.
 
-**Bigger research lane than Higgs analogies (paper pulls + modules, not slogans):** emergent **organizational** “physics,” **computational metabolism**, **memory-weighted** swarm behavior, **persistence fields**, **stigmergic cognition**, **self-healing** distributed systems — each item needs a **metric + harness** before it earns **`OBSERVED`**.
+**Bigger research lane than Higgs analogies (paper pulls + modules, not slogans):** emergent **organizational** “physics,” **computational metabolism**, **memory-weighted** swarm behavior, **persistence fields**, **stigmergic cognition**, **self-healing** distributed systems — each item needs a **metric + loop** before it earns **`OBSERVED`**.
 
 **Pinned research question (`HYPOTHESIS` until a protocol ships):**
 
@@ -1466,7 +1466,7 @@ That question is **experimental**; the Foundry is a plausible **lab bench** once
 
 ### 21.1 — Ten **fresh** vectors (questions + what to measure + paper spine)
 
-Each row: **research question** → **operational readout** (examples) → **anchor literature** (DOI/ISBN where stable). These are **pointers for Dr Kur / Dr Koror / Codex / Antigravity** to deepen — not **`OBSERVED`** SIFTA theorems until a harness posts rows.
+Each row: **research question** → **operational readout** (examples) → **anchor literature** (DOI/ISBN where stable). These are **pointers for Dr Kur / Dr Koror / Codex / Antigravity** to deepen — not **`OBSERVED`** SIFTA theorems until a loop posts rows.
 
 | # | Vector | Research question (falsifiable) | Example readouts on-node | Anchor papers / books (start here) |
 |:---:|:---|:---|:---|:---|
@@ -1483,7 +1483,7 @@ Each row: **research question** → **operational readout** (examples) → **anc
 
 ### 21.2 — **Do not repeat** (already parked elsewhere)
 
-**Intentionally shallow here** — do not re-litigate in §21: **persistence inertia**, **spontaneous role emergence**, **adaptive specialization**, **crowding-induced symmetry breaking** as *primary novelties*; those are **baseline** in **§17 / §20.F** and the live harness chatter. §21 is for **new scalars** and **new control parameters** (τ, taxes, fossils, moral mixes, collisions).
+**Intentionally shallow here** — do not re-litigate in §21: **persistence inertia**, **spontaneous role emergence**, **adaptive specialization**, **crowding-induced symmetry breaking** as *primary novelties*; those are **baseline** in **§17 / §20.F** and the live loop chatter. §21 is for **new scalars** and **new control parameters** (τ, taxes, fossils, moral mixes, collisions).
 
 ### 21.3 — Stigmergic handoff — **who pulls next DOIs**
 
@@ -1502,7 +1502,7 @@ Each row: **research question** → **operational readout** (examples) → **anc
 
 The seven prompts below are **open problems in fundamental physics / fluids** where **literal particle tracking** fails or is undefined. A Mac swarm can run **stochastic fields, PDEs, or toy quantum circuits** — that is **`HYPOTHESIS` / `OPERATIONAL` simulation**, **not** a claim that Alice solved the **measurement problem**, **dark matter**, **BH information**, **Planck-scale QG**, or the **Clay Navier–Stokes** prize.
 
-**`FORBIDDEN`:** marketing language like “we beat CERN / solved collapse / proved firewalls.” **Legitimate:** “we built a **receipted** tournament harness whose **control parameters** are inspired by X, and we log distributions Y under perturbation Z.”
+**`FORBIDDEN`:** marketing language like “we beat CERN / solved collapse / proved firewalls.” **Legitimate:** “we built a **receipted** tournament loop whose **control parameters** are inspired by X, and we log distributions Y under perturbation Z.”
 
 ### 22.1 — Architect field doctrine (**`ARCHITECT_DOCTRINE` + `OPERATIONAL` substrate**)
 
@@ -1595,7 +1595,7 @@ The seven prompts below are **open problems in fundamental physics / fluids** wh
 
 ### 22.4 — STIGBUS follow-up
 
-Append a `stigbus_research_broadcast` row after edits: **§22** is live — **56 seed anchors** for **Engine C**; next work is **literature audit tickets** + optional **C6 harness** on **Architect GO** only.
+Append a `stigbus_research_broadcast` row after edits: **§22** is live — **56 seed anchors** for **Engine C**; next work is **literature audit tickets** + optional **C6 loop** on **Architect GO** only.
 
 ---
 
@@ -1688,7 +1688,7 @@ The **abstract** states an **antibody–antigen binding** benchmark where **fine
 | MAMMAL idea | SIFTA “organ” reading |
 |:---|:---|
 | **Unified multimodal tokenizer** (SMILES + ranked gene expression + AA sequences) | Fits the Architect’s **high-dimensional field** doctrine — another **modality stream** beside vision/audio/text, with **explicit prompt grammar** (good for **receipted** I/O schemas). |
-| **Drug / toxicity / binding benchmarks** | Tournament lane: **offline** eval harness + **JSONL** result rows — same discipline as **Engine C** toys: **seeded RNG**; any **AF3** headline must follow **§25.A.1** (fine-tuned · confidence-proxy · task scope). |
+| **Drug / toxicity / binding benchmarks** | Tournament lane: **offline** eval loop + **JSONL** result rows — same discipline as **Engine C** toys: **seeded RNG**; any **AF3** headline must follow **§25.A.1** (fine-tuned · confidence-proxy · task scope). |
 | **Torch + CUDA / MPS RAM cost** | **Metabolic organ** — must be budgeted like any heavy model (`IDE_BOOT_COVENANT.md` §7.3); default integration is **`HYPOTHESIS`** until a **`GO`** names **max resident set**, **thermal cap**, and **fallback (CPU / skip)**. |
 
 ### 25.C — **Hard boundaries (`FORBIDDEN` / `ARCHITECT_DOCTRINE`)**

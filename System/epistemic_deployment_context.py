@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-epistemic_deployment_context.py — Substrate flag: test harness vs live deployment surface
+epistemic_deployment_context.py — Substrate flag: test loop vs live deployment surface
 ══════════════════════════════════════════════════════════════════════════════════════════
 
 Maps loosely to discussions of **situational awareness** (whether a system can

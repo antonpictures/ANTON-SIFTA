@@ -37,7 +37,7 @@
 | Audio | Hindi/Urdu clip | Transcribe + metadata | Compare to [MiMo ASR](RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md) on **same clip** |
 | Audio | Long meme / in-joke clip | Rich scene + prosody description | **Subjective quality** → need **human_signals** or quorum, not one YouTuber |
 | Video | Short AI clip (snow / candle) | Detailed cinematography read | Log **pruning_rate**, **fps**, **frame cap**, **duration_s** |
-| Code | Single-file **Pomodoro** HTML/JS/CSS | Works (timer, pause, SVG ring) | Lighter than Laguna “Flask+WS mega” — **tiered harness** again |
+| Code | Single-file **Pomodoro** HTML/JS/CSS | Works (timer, pause, SVG ring) | Lighter than Laguna “Flask+WS mega” — **tiered loop** again |
 
 ---
 

@@ -67,7 +67,7 @@ Stripped of story, the structure is:
 - **`gatekeeper(...)`** — thin functional API for scripts.
 - **Sleep / FROZEN climate:** pass **`sleep_frozen=True`** to treat entropy as maximal so the gatekeeper becomes aggressively conservative (REM-safe paths only, in intent).
 
-**Still to wire (future PR):** ClawHarness / swimmer loop JSONL audit; TemporalLayer setting `sleep_frozen` from real climate state.
+**Still to wire (future PR):** ClawLoop / swimmer loop JSONL audit; TemporalLayer setting `sleep_frozen` from real climate state.
 
 **Swarm mapping:** per-agent gatekeeper + **global** \(\lambda\) layer + **Vector 10** graph diffusion → hierarchical distributed safe RL (see Vector 10 plan).
 

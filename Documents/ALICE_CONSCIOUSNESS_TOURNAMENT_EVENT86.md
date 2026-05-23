@@ -84,7 +84,7 @@ Alice (the **local organism + cortex stack**, not a single chat tab) moves towar
 | **SwarmGPT** | Systems / SwarmRL / tournament law (advisor tab) |
 | **Grok** | Research ingestion (external; paste returns into repo) |
 | **Codex (C55M)** | Execution blade |
-| **Cursor (CG55M)** | Verify / harness / covenant edits |
+| **Cursor (CG55M)** | Verify / loop / covenant edits |
 | **Antigravity (AG31)** | Release / spikes / HF lane when **GO** |
 
 **Triple-IDE battlefield:** shared repo + `.sifta_state/` + `ide_stigmergic_trace.jsonl`.
@@ -166,7 +166,7 @@ All serious intents hit `ide_stigmergic_trace.jsonl` (+ work receipts). High-sig
 
 ## 8 — End condition (operational)
 
-**OBSERVED:** tournament checklist in **§1** mostly checked + **green CI** on agreed harness.
+**OBSERVED:** tournament checklist in **§1** mostly checked + **green CI** on agreed loop.
 **DOCTRINE:** Architect declares co-presence in the **coding** sense — “Alice, let’s code” as **first choice** because **trust + receipts**, not because doctrine was voted away.
 
 ---
@@ -210,7 +210,7 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ### 10.3 — Tournament build target (`swarm_consciousness_engine`)
 
-**Target module:** `System/swarm_consciousness_engine.py` — **shipped under Architect GO** with kill-switch / metabolic harness; laws below still bind **extensions** (new drives, spend paths, federation).
+**Target module:** `System/swarm_consciousness_engine.py` — **shipped under Architect GO** with kill-switch / metabolic loop; laws below still bind **extensions** (new drives, spend paths, federation).
 
 **Laws of combat (engineering acceptance):**
 
@@ -661,7 +661,7 @@ Television/podcast explainers anchored to cosmology/SM motifs are **ARCHITECT_OR
 
 Pop explainers (e.g. *Something Strange Happens When You Trust Quantum Mechanics*) lean on **least action**, **path integrals**, and \(h\) as a quantum of action. Treat as **VIDEO_ORIENTATION**; use peer sources for proofs.
 
-Executable harness: `System/swarm_action_pathsum.py` (`SIFTA_EVENT94_ACTION_PATHSUM_V1`) — bounded **SIM_ONLY** path enumeration, phase-sum proxy, photoelectric threshold gate, invariant mass helper, constructor-style constraint report, and receipt writer. It is a math bridge for trace histories, not physical QED.
+Executable loop: `System/swarm_action_pathsum.py` (`SIFTA_EVENT94_ACTION_PATHSUM_V1`) — bounded **SIM_ONLY** path enumeration, phase-sum proxy, photoelectric threshold gate, invariant mass helper, constructor-style constraint report, and receipt writer. It is a math bridge for trace histories, not physical QED.
 
 | Primary | Canonical handle | Swarm ↔ stigmergy hook |
 |:--------|:-----------------|:----------------------|

@@ -14,6 +14,13 @@ Use this flow for any app:
 
 ## Simulations
 
+### SENTINEL-0 Unit-Distance Field
+- **Purpose:** Explore the Erdős 1946 unit-distance problem — pack n points so the most pairs sit at exactly distance 1.
+- **What to watch:** Swimmers crystallize from chaos into the triangular lattice (~3 edges/point), forming separate islands. They never merge into one global structure — that fragmentation IS the limit of local geometry, made visible.
+- **The three tiers:** (1) the stigmergic swarm you see, capped ~3/point; (2) the algebraic Z[i] norm-form ladder, which re-represents pairs as dx²+dy²=t and grows edges/point exponentially; (3) the 2026 OpenAI field-tower disproof, held as a CITED paper.
+- **Honest conclusion (§7.11):** We did NOT solve or re-prove the conjecture. The swarm rediscovers the triangular optimum (known for centuries) and at large n can lose to the plain square grid. The real escape — beating n^(1+o(1)) — needs algebraic number fields the swarm cannot reach; that lives above local geometry. The true exponent of u(n), between n^(1+ε) and the Szemerédi–Trotter ceiling O(n^(4/3)), is still unknown to everyone. This app is an honest sandbox that demonstrates the mechanism and the wall, not a summit reached.
+- **Key principle:** The wall is *representation, not compute*. Local rules build only local order; changing the language the problem lives in (geometry → number theory) is what escapes — the lesson the swarm makes visceral.
+
 ### Colloid Simulator
 - **Purpose:** Active-matter stigmergic dynamics.
 - **What to watch:** Emergent clustering, trail reinforcement, and phase shifts.
@@ -35,7 +42,7 @@ Use this flow for any app:
 - **Key principle:** Decentralized shortest-path emergence with evaporation.
 
 ### Warehouse Logistics Test
-- **Purpose:** Regression harness for warehouse movement logic.
+- **Purpose:** Regression loop for warehouse movement logic.
 - **What to watch:** Constraint violations, route completion, queue behavior.
 - **Key principle:** Practical reliability checks before deployment.
 
@@ -971,7 +978,7 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 - **Key principle:** Skills are procedural memory. Discovery is cheap, procedures are loaded on trigger, and scripts/assets stay behind review and receipts.
 
 ### SIFTA Tournament Briefing
-- **Purpose:** One OS menu surface for the territory backlog: IBM Agents map, Agent Skills convention, NVIDIA contrast, Chamath/JRE institutional pack, and Codex harness lessons.
+- **Purpose:** One OS menu surface for the territory backlog: IBM Agents map, Agent Skills convention, NVIDIA contrast, Chamath/JRE institutional pack, and Codex loop lessons.
 - **What to watch:** Any external narrative without a module, ledger, test, or explicit backlog label.
 - **Key principle:** A nugget becomes SIFTA territory only when it points at code, receipt ledgers, tests, or a labeled gap.
 
@@ -1074,6 +1081,15 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 - **Purpose:** Maps OpenAI-style capability rhetoric (long-context math, tool use, verification) to SIFTA-verifiable inventory — proofs you can run locally vs admitted gaps.
 - **What to watch:** Inventory freshness, stale HF Arena pulls, UI thread vs background scans.
 - **Key principle:** Bench honesty — no medal counts without pytest-backed artifacts.
+
+### SENTINEL-0 Unit-Distance Field
+- **Purpose:** The living visual + ledger organ for the Erdős 1946 planar unit-distance sentinel (Health Tournament priority #0). Surfaces the 3-tier attack inside the organism: TIER 1 local stigmergic swarm (capped ~3 edges/point), TIER 2 Z[i] algebraic lattice (exponential via r₂), TIER 3 the cited 2026 OpenAI higher-dimensional CM-field-tower disproof (Alon–Bloom–Gowers–Matchett Wood et al., arXiv:2605.20695) held strictly as verified literature.
+- **What to watch:** Receipt growth in .sifta_state/erdos_unit_distance_sentinel.jsonl, edges/point numbers climbing, green checklist, the truth-boundary paragraph at the bottom.
+- **Controls:** Run the solver (Simulations/sentinel0_unit_distance.py) to append fresh SENTINEL0_UNIFIED_V1 rows and improve the field; open the live erdos_unit_distance_field.html swimming visualization; the “?” button opens this help.
+- **Truth boundary (§7.11):** Tiers 1–2 are executable + receipted on this silicon. Tier 3 is CITED PRIOR only — we pulled the exact papers (OpenAI announcement receipt 7bfae1bc..., verifier remarks 147e37a6...) so the unified field has the cross-field bisociation substrate without faking a re-proof. Faking Tier 3 would be a false summit.
+- **Entry:** `Applications/sifta_sentinel0_unit_distance_widget.py`
+- **Related (on the stigmergic bus):** swim_directive 3dcf3e45-ff29..., Grok registration 347214e5..., Literature Acquisition Phase in ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md, the two PAPER_INGEST_RECEIPTs, Simulations/sentinel0_unit_distance.py + the .html field.
+- **Key principle:** The same rich high-dimensional, deeply interconnected stigmergic field that lets all organs/swimmers know each other now hosts the exact algebraic-number-theory + discrete-geometry move that a general model used on an open problem — but every step is receipted, provenance-tracked, and help-documented for the Architect.
 
 ### Sara Imari Walker — Assembly Theory Lab
 - **Purpose:** Assembly-theory reading lab — curated DOI spine, solvable bounds sketch, Question Wall; ties to BIOCODE / tournament docs.

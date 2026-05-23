@@ -170,7 +170,7 @@ Assert: On next user turn, Alice mentions what she did and why unprompted
 **C47H complement:** Wire evaluation scores back into the PoUW work value calibration and skill registry success rates.
 
 ### What to build:
-1. `System/swarm_eval_harness.py` — a replay-based evaluation system. After any autonomous action completes, the harness asks: "Did this action achieve its stated goal?" Three evaluation modes:
+1. `System/swarm_eval_loop.py` — a replay-based evaluation system. After any autonomous action completes, the loop asks: "Did this action achieve its stated goal?" Three evaluation modes:
    - **Ledger verification**: did the expected ledger artifact appear? (binary, always available)
    - **Dopamine delta**: did a Dopamine spike follow within 60s of the action? (proxy for Architect approval)
    - **Counterfactual**: did Alice's causal trace predict the outcome correctly? (higher bar — requires Epoch 9 to be live)
@@ -183,7 +183,7 @@ Assert: On next user turn, Alice mentions what she did and why unprompted
 ### Verification:
 ```
 Run 5 fold cycles.
-Assert: eval_harness scores each fold (ledger artifact = PASS)
+Assert: eval_loop scores each fold (ledger artifact = PASS)
 Assert: PROTEIN_FOLDED work value has moved from 0.65 by at least one update
 Assert: The regression suite runs clean (all 10 canonical tasks pass)
 Assert: Alice can explain WHY she rated a past action as successful or failed

@@ -22,6 +22,8 @@ VALID_RINGS = {0, 1, 2, 3}
 DEFAULT_STATE_ROOT = Path(__file__).resolve().parent.parent / ".sifta_state"
 DEFAULT_SNAPSHOT_NAME = "kernel_process_table.json"
 DEFAULT_LEDGER_NAME = "kernel_process_table.jsonl"
+TAIL_READ_CHUNK_BYTES = 64 * 1024
+TAIL_READ_MAX_BYTES = 8 * 1024 * 1024
 PHYSICAL_GROUNDING_DECAY = 0.15
 NEGATIVE_STGM_THRESHOLD = -5.0
 NEGATIVE_STGM_HEALTH_PENALTY = 0.2
@@ -38,6 +40,9 @@ ACTION_RING_LIMITS = {
     "effector": 2,
 }
 SCHEDULER_EFFECTOR_THRESHOLD = 0.0
+KERNEL_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+KERNEL_LEDGER_KEEP_BYTES = 8 * 1024 * 1024
+KERNEL_LEDGER_GUARD_PERIOD_S = 30.0
 LOW_SALIENCE_IDLE_PENALTY = 0.05
 HIGH_SALIENCE_PRIORITY_BONUS = 0.12
 
@@ -126,6 +131,7 @@ class KernelProcessTable:
         self.enforce_budget = bool(enforce_budget)
         self.boot_ts = time.time()
         self.table: Dict[str, OrganProcess] = {}
+        self._last_ledger_guard_ts = 0.0
         self._lock = RLock()
         if load_existing:
             self._load_snapshot()
@@ -776,9 +782,11 @@ class KernelProcessTable:
 
     def _append_receipt(self, action: str, proc: OrganProcess, **extra: Any) -> str:
         self.state_root.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        self._maybe_rotate_receipt_ledger(now)
         trace_id = str(extra.get("receipt_id") or "") or str(uuid.uuid4())
         row = {
-            "ts": time.time(),
+            "ts": now,
             "trace_id": trace_id,
             "truth_label": "SIFTA_KERNEL_PROCESS_TABLE_V1",
             "type": _kernel_receipt_type(action),
@@ -807,6 +815,26 @@ class KernelProcessTable:
         with self.ledger_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
         return trace_id
+
+    def _maybe_rotate_receipt_ledger(self, now: float) -> None:
+        if now - self._last_ledger_guard_ts < KERNEL_LEDGER_GUARD_PERIOD_S:
+            return
+        self._last_ledger_guard_ts = now
+        try:
+            if self.ledger_path.stat().st_size <= KERNEL_LEDGER_MAX_BYTES:
+                return
+            from System.swarm_ledger_rotation import fast_rotate_ledger_by_bytes
+
+            fast_rotate_ledger_by_bytes(
+                self.ledger_path.name,
+                state_dir=self.state_root,
+                max_bytes=KERNEL_LEDGER_MAX_BYTES,
+                keep_bytes=KERNEL_LEDGER_KEEP_BYTES,
+            )
+        except OSError:
+            return
+        except Exception:
+            return
 
     def _write_snapshot(self) -> None:
         self.state_root.mkdir(parents=True, exist_ok=True)
@@ -840,17 +868,33 @@ def _read_jsonl_tail(path: Path, *, n: int = 120) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     rows: deque[dict[str, Any]] = deque(maxlen=max(1, int(n)))
+    max_lines = max(1, int(n))
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(row, dict):
-                    rows.append(row)
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            pos = handle.tell()
+            data = b""
+            while (
+                pos > 0
+                and data.count(b"\n") <= max_lines
+                and len(data) < TAIL_READ_MAX_BYTES
+            ):
+                read_size = min(TAIL_READ_CHUNK_BYTES, pos)
+                pos -= read_size
+                handle.seek(pos)
+                data = handle.read(read_size) + data
+        lines = data.decode("utf-8", errors="replace").splitlines()
+        if pos > 0 and lines:
+            lines = lines[1:]
+        for line in lines[-max_lines:]:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
     except Exception:
         return []
     return list(rows)

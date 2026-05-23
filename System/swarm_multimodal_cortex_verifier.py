@@ -1,7 +1,7 @@
 """
-Multimodal cortex verification harness.
+Multimodal cortex verification loop.
 
-Use after a primary cortex switch or before promotion. The harness is receipt
+Use after a primary cortex switch or before promotion. The loop is receipt
 first: it accepts probe scores from real probe runners and decides whether the
 new cortex is safe to promote. It does not fake vision/audio/tool competence.
 
@@ -60,7 +60,7 @@ def promotion_gate(row: Dict[str, Any]) -> bool:
     return all(float(scores[name]) >= MIN_PROBE for name in PROBES)
 
 
-def run_harness(
+def run_loop(
     cortex_id: str,
     probe_results: Optional[Dict[str, Any]] = None,
     *,
@@ -107,8 +107,8 @@ def verify_after_switch(
     root: Optional[Path] = None,
     write_ledger: bool = True,
 ) -> Dict[str, Any]:
-    before = run_harness(old_cortex, before_results, root=root, write_ledger=False)
-    after = run_harness(new_cortex, after_results, root=root, write_ledger=False)
+    before = run_loop(old_cortex, before_results, root=root, write_ledger=False)
+    after = run_loop(new_cortex, after_results, root=root, write_ledger=False)
     delta = {}
     for probe in PROBES:
         b = before["probes"].get(probe)
@@ -171,7 +171,7 @@ __all__ = [
     "log_path",
     "normalize_probe_results",
     "promotion_gate",
-    "run_harness",
+    "run_loop",
     "summary_for_prompt",
     "tail_verification_rows",
     "verify_after_switch",

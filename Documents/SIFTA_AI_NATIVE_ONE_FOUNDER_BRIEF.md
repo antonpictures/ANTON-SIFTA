@@ -70,7 +70,7 @@ recently hardened organs sit in the **66–77% line-coverage** range — well be
 bar the lecture treats as table stakes, and below the founder's own ~97% target. That gap is precisely
 the use of funds: this is an inputs-before-outcomes raise.
 
-Capital would fund, in order: (1) a **domain-evaluation harness** — golden-turn eval packs and
+Capital would fund, in order: (1) a **domain-evaluation loop** — golden-turn eval packs and
 LLM-as-judge scoring per organ, not generic benchmarks — so capability is *measured*; (2) a
 **coverage and reliability push** toward the 90–97% bar across the core organs; (3) a **closed-loop
 company dashboard** (commits, test-pass rate, trace volume, STGM burn per week) that turns the

@@ -231,9 +231,9 @@ def set_primary_cortex(
     verification: Optional[Dict[str, Any]] = None
     if require_verification or verification_results is not None:
         try:
-            from System.swarm_multimodal_cortex_verifier import run_harness
+            from System.swarm_multimodal_cortex_verifier import run_loop
 
-            verification = run_harness(
+            verification = run_loop(
                 installed_match,
                 verification_results or {},
                 root=_STATE,

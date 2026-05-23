@@ -40,11 +40,11 @@ unset SIFTA_DESKTOP_PHOTONS
 export SIFTA_EYE_DELTA_ENABLE="${SIFTA_EYE_DELTA_ENABLE:-1}"
 
 # §9.C — bounded JSONL compaction with hourly summaries.
-# Default ON now that the compactor + burn harness are landed; revert with =0.
+# Default ON now that the compactor + burn loop are landed; revert with =0.
 export SIFTA_LEDGER_COMPACT_ENABLE="${SIFTA_LEDGER_COMPACT_ENABLE:-1}"
 
 # §9.C — per-organ energy receipts (psutil + macOS powermetrics fallback).
-export SIFTA_BURN_HARNESS_ENABLE="${SIFTA_BURN_HARNESS_ENABLE:-1}"
+export SIFTA_BURN_LOOP_ENABLE="${SIFTA_BURN_LOOP_ENABLE:-1}"
 
 if [ -x ".venv/bin/python3" ]; then
   PYTHON_BIN=".venv/bin/python3"

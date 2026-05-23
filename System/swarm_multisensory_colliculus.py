@@ -27,7 +27,7 @@ if str(_REPO) not in sys.path:
 _STATE = _REPO / ".sifta_state"
 _AUDIO_LOG = _STATE / "audio_ingress_log.jsonl"
 _VISION_LOG = _STATE / "face_detection_events.jsonl"
-# Legacy path kept for back-compat reads / proof harness only; canonical I/O
+# Legacy path kept for back-compat reads / proof loop only; canonical I/O
 # now flows through System.swarm_camera_target (see 2026-04-23 surgery).
 _TARGET_STATE = _STATE / "active_saccade_target.txt"
 _TARGET_JSON = _STATE / "active_saccade_target.json"
@@ -377,7 +377,7 @@ def proof_of_property() -> Dict[str, bool]:
     results: Dict[str, bool] = {}
     print("\n=== SIFTA MULTISENSORY COLLICULUS : JUDGE VERIFICATION ===")
     c = SwarmMultisensoryColliculus(saccade_threshold=28.0, vad_threshold=0.010)
-    # Don't pollute the canonical ledger from the test harness.
+    # Don't pollute the canonical ledger from the test loop.
     c.ledger_saccades = False
     c.current_cam_idx = 1
 

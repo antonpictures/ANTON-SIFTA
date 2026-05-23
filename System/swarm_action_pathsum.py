@@ -33,7 +33,7 @@ import numpy as np
 
 TRUTH_LABEL = "SIFTA_EVENT94_ACTION_PATHSUM_V1"
 TRUTH_GUARD = (
-    "SIM_ONLY action/path-sum harness. Discrete path histories, phase sums, "
+    "SIM_ONLY action/path-sum loop. Discrete path histories, phase sums, "
     "photoelectric-style thresholds, and mass-energy invariants are local demo "
     "tools; they do not replace QED, the Standard Model, or textbook relativity."
 )
@@ -69,7 +69,7 @@ def enumerate_discrete_paths(config: ActionPathConfig) -> list[list[int]]:
     """Enumerate all bounded paths from start to end over `steps`.
 
     This is intentionally tiny and deterministic. It is for demo/referee
-    harnesses, not large-scale path integration.
+    loops, not large-scale path integration.
     """
     moves = tuple(range(-config.max_step, config.max_step + 1))
     paths: list[list[int]] = []

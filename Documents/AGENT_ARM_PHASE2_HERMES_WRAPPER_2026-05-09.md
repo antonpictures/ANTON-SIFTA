@@ -1,10 +1,10 @@
-# Agent Arms Phase 2 — Hermes Wrapper Harness
+# Agent Arms Phase 2 — Hermes Wrapper Loop
 
 **Truth label:** `PHASE2_WRAPPER_TESTED` / `HERMES_STILL_NOT_AUTONOMOUS`
 
 **Doctor:** `CG55M@cursor`
 **Registration trace:** `3deb7006-23ac-4176-9c66-8674b01549cd`
-**Scope:** Add the first SIFTA-side Hermes registry and receipt-first launcher harness, and strengthen Alice's deterministic agent-arm briefing recall path.
+**Scope:** Add the first SIFTA-side Hermes registry and receipt-first launcher loop, and strengthen Alice's deterministic agent-arm briefing recall path.
 
 ---
 

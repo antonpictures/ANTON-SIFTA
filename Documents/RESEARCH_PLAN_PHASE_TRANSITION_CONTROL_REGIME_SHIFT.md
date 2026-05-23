@@ -143,7 +143,7 @@ Implement **multi-channel** regime inference — **no single scalar** if you wan
 |---------|------------|-----------------|
 | **EWS** | Rolling variance ↑, lag-1 autocorr ↑ of ICF / probe rate | Scheffer 2009; 2406.05195 |
 | **Budget phase** | Synergy vs saturation vs collapse under compute | 2601.17311 |
-| **Coordination phase** | CSR vs stability index proxies (eval variance, TD-like error from harness) | 2511.23315 |
+| **Coordination phase** | CSR vs stability index proxies (eval variance, TD-like error from loop) | 2511.23315 |
 | **Stigmergy** | Trace density vs \(\rho_c\) | 2512.10166 |
 | **Drift** | Sudden change-points in objective probe streams | drift / CPD surveys |
 

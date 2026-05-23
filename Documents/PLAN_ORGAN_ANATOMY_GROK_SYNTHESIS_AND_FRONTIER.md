@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-16  
 **Sources:** Narrative seed from **Grok-style** “telemetry report” (high energy, metaphor-rich) **plus** Cursor editorial pass: **dependencies**, **honest land-vs-design**, **non-proliferation**, and **extra novel vectors** not in the original paste.  
-**Companion:** `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md`, `Documents/DRAFT_SILENCE_TEMPORAL_IDENTITY_THREE.md`, `System/dream_state.py`, `System/claw_harness.py`, `mutation_governor.py`.
+**Companion:** `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md`, `Documents/DRAFT_SILENCE_TEMPORAL_IDENTITY_THREE.md`, `System/dream_state.py`, `System/claw_loop.py`, `mutation_governor.py`.
 
 ---
 
@@ -39,10 +39,10 @@ The following is the **synthesized map** of what SIFTA is **aiming** to be on **
 | **4** | **Immune — Contradiction engine** | Block conflicting “truths” on blackboard | Design + blackboard 2.0 |
 | **5** | **Immune — Identity decoupling** | **Belief** vs **hardware permission** | PKI, `homeworld_serial`, `.cursorrules` |
 | **6** | **Immune — Mutation governor (12-gate / N-gate)** | Friction, reversibility, attention, climate | `mutation_governor.py` |
-| **7** | **Brain — Shadow simulation** | **Dry-run** before commit | `claw_harness.py` Crucible, future pre-governor |
-| **8** | **Brain — Failure harvesting** | Cluster failures → fuel evolution | Logs + eval harness (design) |
+| **7** | **Brain — Shadow simulation** | **Dry-run** before commit | `claw_loop.py` Crucible, future pre-governor |
+| **8** | **Brain — Failure harvesting** | Cluster failures → fuel evolution | Logs + eval loop (design) |
 | **9** | **Brain — Skill registry** | Reusable `.gene` / skill artifacts, decay, STGM | Design + partial app fitness |
-| **10** | **Limbs — Claw harness** | Sandboxed execution | `claw_harness.py` |
+| **10** | **Limbs — Claw loop** | Sandboxed execution | `claw_loop.py` |
 | **11** | **Blood — STGM vault / economy** | Energy accounting for cognition & replay | `stgm_memory_rewards.jsonl`, casino vault patterns |
 
 **Governance overlay:** **Neural Gate** + **SCAR** + **non-proliferation** license — not listed as a separate “organ” but **wraps** all mutating paths.

@@ -1,0 +1,11 @@
+{
+  "title": "Q4 2026 Mock Financial Report",
+  "summary": "Three rows of fixture research data — no API call, no network. Used only by the two-turn receipt gate test loop.",
+  "evidence": [
+    {"period": "Q4-2026-10", "revenue": 1.2, "currency": "USD_M"},
+    {"period": "Q4-2026-11", "revenue": 1.4, "currency": "USD_M"},
+    {"period": "Q4-2026-12", "revenue": 1.6, "currency": "USD_M"}
+  ],
+  "truth_label": "FIXTURE_RESEARCH_DATA_V1",
+  "truth_boundary": "Synthetic data for receipt-gate tests. NOT actual revenue. NOT a forecast. NOT financial advice."
+}

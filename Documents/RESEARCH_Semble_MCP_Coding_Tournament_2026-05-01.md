@@ -2,7 +2,7 @@
 
 **For the Swarm.** 🐜⚡
 
-**Truth label:** `RESEARCH_NOT_SHIPPED` — ideas and citations for tournament / harness work; nothing here is merged runtime until **Architect GO + pytest + Predator row**.
+**Truth label:** `RESEARCH_NOT_SHIPPED` — ideas and citations for tournament / loop work; nothing here is merged runtime until **Architect GO + pytest + Predator row**.
 
 **Primary sources (video + code):**
 
@@ -18,7 +18,7 @@
 | Claim (as stated in transcript/comments) | Risk | Honest SIFTA stance |
 |:---|:---|:---|
 | ~**98% fewer tokens** than “grep whole files” | Marketing / workload dependent | **Benchmark on ANTON_SIFTA** with fixed prompts + token counter; write result to `work_receipts.jsonl`. |
-| Index in **~250 ms**, query in **~1.5 ms** on CPU | Hardware + corpus dependent | Same: micro-benchmark harness, pinned repo revision. |
+| Index in **~250 ms**, query in **~1.5 ms** on CPU | Hardware + corpus dependent | Same: micro-benchmark loop, pinned repo revision. |
 | **16M-parameter** “portion” embedding + **BM25** + **RRF** fusion | Plausible engineering pattern | Treat as **retrieval stack pattern**, not magic; compare against `ripgrep` + selective `read_file` for your agents. |
 | Works with **OpenCode** + **MCP** + **Ollama** | Integration truth | Spike in disposable venv; do not vendor into `main` until license + NPPL review. |
 

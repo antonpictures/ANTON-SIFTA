@@ -47,7 +47,7 @@ NUGGETS: tuple[Nugget, ...] = (
         ),
         adoption_action="Run scripts/run_promptfoo_rlhs_ci.sh locally; keep prompts local.",
         covenant_risk="LOW_LOCAL_ONLY",
-        notes="Declarative RLHS regression harness exists. It is not a cloud service path.",
+        notes="Declarative RLHS regression loop exists. It is not a cloud service path.",
     ),
     Nugget(
         name="Agent Skills / mattpocock skills pattern",
@@ -67,7 +67,7 @@ NUGGETS: tuple[Nugget, ...] = (
         notes="Progressive disclosure is implemented; no outside skill code auto-runs.",
     ),
     Nugget(
-        name="browser-use / deterministic browser harness",
+        name="browser-use / deterministic browser loop",
         url="https://github.com/browser-use/browser-use",
         tier="A",
         lane="browser effector pattern",
@@ -80,7 +80,7 @@ NUGGETS: tuple[Nugget, ...] = (
         ),
         adoption_action="Preserve plan/execute separation and effector receipts.",
         covenant_risk="MEDIUM_BROWSER_EFFECTOR",
-        notes="SIFTA mirrors the harness discipline; it does not vendor browser-use.",
+        notes="SIFTA mirrors the loop discipline; it does not vendor browser-use.",
     ),
     Nugget(
         name="BitNet.cpp",
@@ -193,15 +193,15 @@ NUGGETS: tuple[Nugget, ...] = (
         notes="Not integrated.",
     ),
     Nugget(
-        name="OpenHarness",
-        url="https://github.com/HKUDS/OpenHarness",
+        name="HKUDS eval project",
+        url="https://github.com/HKUDS/HKUDS eval project",
         tier="B",
-        lane="benchmark harness",
+        lane="benchmark loop",
         status="pattern_candidate",
         local_artifacts=("tests/rlhs_evals",),
-        adoption_action="Compare harness layout against existing pytest/promptfoo lanes.",
+        adoption_action="Compare loop layout against existing pytest/promptfoo lanes.",
         covenant_risk="MEDIUM_UNPROBED_DEPENDENCIES",
-        notes="Existing eval harnesses cover the immediate need.",
+        notes="Existing eval loops cover the immediate need.",
     ),
     Nugget(
         name="sim",
@@ -600,7 +600,7 @@ NUGGETS: tuple[Nugget, ...] = (
         adoption_action=(
             "Evaluate as a lower-level, more deterministic browser control story "
             "for the existing QWebEngineView + browser effector setup. Requires "
-            "a local harness + effector receipt before any hot-path use."
+            "a local loop + effector receipt before any hot-path use."
         ),
         covenant_risk="MEDIUM_BROWSER_EFFECTOR",
         notes=(
@@ -920,7 +920,7 @@ NUGGETS: tuple[Nugget, ...] = (
         ),
     ),
     Nugget(
-        name="Protorikis — Qwen 3.6 vs Gemma 4 local harness (LTE modem RE + memory benchmarks)",
+        name="Protorikis — Qwen 3.6 vs Gemma 4 local loop (LTE modem RE + memory benchmarks)",
         url="https://www.youtube.com/@Protorikis",
         tier="A",
         lane="local LLM routing / long-context RE methodology (not a silicon receipt)",
@@ -933,7 +933,7 @@ NUGGETS: tuple[Nugget, ...] = (
             "Use as **benchmark discipline** for picking/rounding Alice’s local brains: "
             "chunked reads of huge minified JS, human-in-the-loop beautify, **fresh "
             "session** to avoid context pollution, **CSV logging** of prefill vs decode — "
-            "then **probe** on *this* node (`ollama list`, `ollama show`, harness) before "
+            "then **probe** on *this* node (`ollama list`, `ollama show`, loop) before "
             "any router claim (covenant §7.12, §8.6). M-series throughput numbers from the "
             "video are **reference hardware**, not GTH4921YP3 facts. Any modem crawl stays "
             "**owner equipment + lawful scope** (NPPL); no credential exfil patterns in-repo."

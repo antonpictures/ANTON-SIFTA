@@ -120,7 +120,7 @@ Hermes is **not yet** a permanent Alice organ. It is a configured candidate arm 
 Next required step before owner-facing autonomy:
 
 ```text
-Build SIFTA-side agent arm registry + launcher harness.
+Build SIFTA-side agent arm registry + launcher loop.
 Default Hermes arm = disabled.
 Allowed first mode = bounded single-query researcher.
 Allowed tools = none or clarify-only.

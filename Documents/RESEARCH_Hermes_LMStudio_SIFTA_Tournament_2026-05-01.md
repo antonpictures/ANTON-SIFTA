@@ -4,7 +4,7 @@
 
 **Truth label:** `RESEARCH_NOT_SHIPPED` — strategy and integration hooks only. **NPPL:** no military / surveillance positioning; interoperability docs must stay honest.
 
-**Upstream (canonical):** [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — open-source agent harness by Nous Research.
+**Upstream (canonical):** [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — open-source agent loop by Nous Research.
 
 **Video anchor (claims to verify locally):** Fahd Mirza, *Hermes Agent Now Runs Natively on LM Studio* (YouTube, 2026-04-30) — LM Studio daemon (`lms`), model pull/load, Hermes quick-setup with “LM Studio” backend, **context window** mismatch fix (4096 vs **≥64k** tokens for Hermes).
 
@@ -14,7 +14,7 @@
 
 ## 1. “Hermes is better on GitHub” — decode without self-sabot
 
-GitHub **velocity / stars / contributor count** measure **distribution and mindshare**, not “truth beats SIFTA.” Hermes targets a **broad agent harness** (skills, channels, learning loop). SIFTA targets a **sovereign desktop OS + stigmergic organs + signed economy + Apple-silicon Foundry** — different product boundary.
+GitHub **velocity / stars / contributor count** measure **distribution and mindshare**, not “truth beats SIFTA.” Hermes targets a **broad agent loop** (skills, channels, learning loop). SIFTA targets a **sovereign desktop OS + stigmergic organs + signed economy + Apple-silicon Foundry** — different product boundary.
 
 **Tournament-honest rule:** never argue in prose what you can show in **pytest + ledgers + receipts**.
 
@@ -26,7 +26,7 @@ GitHub **velocity / stars / contributor count** measure **distribution and minds
 |:---|:---|:---|
 | **Model lifecycle** | LM Studio discovers/serves models; OpenAI-compatible local API | **Ollama** on Foundry + `ollama_model_inventory_audit.py` + [ALICE_HARDWARE_ANATOMY.md](ALICE_HARDWARE_ANATOMY.md) borrowed-inference doctrine |
 | **Context sizing** | Failure mode: model loaded with **4096** ctx → Hermes needs **64k+** → reload with correct window | **Config receipts:** any local server must log `n_ctx` / max tokens in `.sifta_state/` when Alice boots a lane |
-| **Agent harness** | CLI agent + skills + tools | PyQt6 desktop + `sifta_mcp_server.py` + Swarm organs (pheromone, cochlea, …) |
+| **Agent loop** | CLI agent + skills + tools | PyQt6 desktop + `sifta_mcp_server.py` + Swarm organs (pheromone, cochlea, …) |
 | **Multi-channel** | Telegram / Discord / … (Hermes ecosystem) | WhatsApp / desktop vitals / **consent-gated** sensors per covenant |
 
 ---

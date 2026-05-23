@@ -27,12 +27,12 @@ path = _state_dir(state_dir) / "borg_interaction_receipts.jsonl"   # state_dir o
 So `state_dir` redirects only the BORG receipt, not the actual pheromone write. Tests that rely on it
 both **fail** and **contaminate** the live body (this run leaked rows `0aa6d00e3c5c`,
 `c5787d44bcd8` and minted STGM; both are now quarantined append-only in `memory_quarantine.jsonl`).
-This is the exact contamination class we already closed for the eval harness.
+This is the exact contamination class we already closed for the eval loop.
 
 ## PART A — Codex: make `state_dir` truly isolate (in `swarm_interaction_borg.py`)
 
 When `state_dir` is provided, the underlying memory write MUST land there, not in the real ledger.
-Mirror the pattern already proven in `swarm_eval_harness._isolated_memory_bus`: for the duration of the
+Mirror the pattern already proven in `swarm_eval_loop._isolated_memory_bus`: for the duration of the
 call, redirect the memory-bus module globals.
 
 ```python

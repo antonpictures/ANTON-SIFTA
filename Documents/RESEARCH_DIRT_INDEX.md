@@ -23,12 +23,12 @@
 | DeepSeek V4 DeepEP / Tile | [RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md](RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md) | DeepEP MoE comms + CSA/HCA context + TileKernels fusion; verify claims | 2026-05-01 |
 | Nemotron OCR v2 | [RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md) | Lightweight OCR; layout modes; CPU-first + bbox receipts | 2026-05-01 |
 | Google agents-cli | [RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md](RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md) | GCP Agent Platform skills; ADK/A2A; eval rubrics vs receipts | 2026-05-01 |
-| Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop harness | 2026-05-01 |
+| Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop loop | 2026-05-01 |
 | Moonshot PRFaaS | [RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md](RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md) | Prefill vs decode split; hybrid KV; arXiv:2604.15039; residency | 2026-05-01 |
 | Quantum sack SoT | [RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md](RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md) | 10-row SoT table; Bell/MIP*/QEC/Landauer/PQC; companion to Bishop bundle | 2026-05-01 |
 | Hantavirus public health | [RESEARCH_HANTAVIRUS_PUBLIC_HEALTH_STIGMERGY_POINTER_2026-05-07.md](RESEARCH_HANTAVIRUS_PUBLIC_HEALTH_STIGMERGY_POINTER_2026-05-07.md) | CDC/ECDC ground truth (no specific cure); Andes cruise cluster links; stigmergy = receipted info lanes only | 2026-05-07 |
 | Mondaloy ORSC | [RESEARCH_MONDALOY_ORSC_TACIT_PROCESSING_2026-05-07.md](RESEARCH_MONDALOY_ORSC_TACIT_PROCESSING_2026-05-07.md) | Mondaloy 100/200 primary-source summary; ORSC alloy processing unknown vectors; Grok prompt | 2026-05-07 |
-| Ollama agent arms | [RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md](RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md) | `ollama launch` native agents (Hermes/OpenCode/Codex/Droid/etc.) as persistent Alice octopus arms; ethics + receipt harness | 2026-05-09 |
+| Ollama agent arms | [RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md](RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md) | `ollama launch` native agents (Hermes/OpenCode/Codex/Droid/etc.) as persistent Alice octopus arms; ethics + receipt loop | 2026-05-09 |
 
 ---
 
@@ -42,7 +42,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Semble MCP** | Micro-benchmark token savings + index/query latency on pinned revision; disposable MCP spike; optional `code_search_semble` proxy behind covenant §7. |
 | **Hermes** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot. |
 | **MiMo ASR** | ASR eval fixtures + WER/RTF rows; optional diarization stage; consent gates. |
-| **Laguna** | Tiered coding harness with subscore receipts; log vLLM build hash. |
+| **Laguna** | Tiered coding loop with subscore receipts; log vLLM build hash. |
 | **Nemotron Omni** | Per-locale scoreboard; multimodal receipt template; threat model. |
 | **DeepSeek** | Reproduce or bound CSA/HCA/DeepEP numbers; TileKernels floor notes. |
 | **Nemotron OCR v2** | MCP tool with bbox+text; locale matrix. |

@@ -65,10 +65,12 @@ from PyQt6.QtGui import (
     QRadialGradient,
     QTextCharFormat,
     QTextCursor,
+    QFontDatabase,
 )
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpacerItem,
@@ -76,6 +78,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+try:
+    from PyQt6 import sip as _qt_sip
+except Exception:  # pragma: no cover - sip is absent only in unusual PyQt builds.
+    _qt_sip = None
 
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
@@ -237,6 +244,9 @@ class TeachAliceToHearWidget(QWidget):
     def __new__(cls, *args, **kwargs):  # noqa: D401
         if cls._live_instance is not None:
             try:
+                if _qt_object_deleted(cls._live_instance):
+                    cls._clear_live_instance()
+                    raise RuntimeError("stale TeachAliceToHearWidget wrapper")
                 cls._live_instance.show()
                 cls._live_instance.raise_()
                 cls._live_instance.activateWindow()
@@ -247,6 +257,13 @@ class TeachAliceToHearWidget(QWidget):
         cls._live_instance = inst
         return inst
 
+    @classmethod
+    def _clear_live_instance(cls, inst_id: Optional[int] = None) -> None:
+        if inst_id is None or cls._live_instance is None or id(cls._live_instance) == inst_id:
+            cls._live_instance = None
+        if inst_id is not None:
+            cls._initialized_instance_ids.discard(inst_id)
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         if id(self) in type(self)._initialized_instance_ids:
             return
@@ -254,6 +271,10 @@ class TeachAliceToHearWidget(QWidget):
         try:
             self._build_hear_ui(parent)
             type(self)._initialized_instance_ids.add(id(self))
+            inst_id = id(self)
+            self.destroyed.connect(
+                lambda *_args, _cls=type(self), _id=inst_id: _cls._clear_live_instance(_id)
+            )
         except Exception as _exc:
             try:
                 err_path = _REPO / ".sifta_state" / "hear_init_errors.jsonl"
@@ -269,7 +290,7 @@ class TeachAliceToHearWidget(QWidget):
                     }) + "\n")
             except Exception:
                 pass
-            type(self)._live_instance = None
+            type(self)._clear_live_instance(id(self))
             type(self)._initialized_instance_ids.discard(id(self))
             try:
                 _lay = QVBoxLayout(self)
@@ -288,11 +309,43 @@ class TeachAliceToHearWidget(QWidget):
                 pass
             raise
 
+    def _stop_live_timers(self) -> None:
+        """Stop child timers before Qt/Python teardown touches stale wrappers."""
+        for name in (
+            "_heartbeat_timer",
+            "_matrix_timer",
+            "_chat_mirror_timer",
+            "_buddy_rotate_timer",
+            "_stt_poll_timer",
+        ):
+            timer = getattr(self, name, None)
+            if timer is None or _qt_object_deleted(timer):
+                continue
+            try:
+                timer.stop()
+            except Exception:
+                pass
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._stop_live_timers()
+        type(self)._clear_live_instance(id(self))
+        try:
+            super().closeEvent(event)
+        except Exception:
+            try:
+                event.accept()
+            except Exception:
+                pass
+
     def _build_hear_ui(self, parent: Optional[QWidget] = None) -> None:
+        _ensure_existing_application_font()
         self.setWindowTitle("Teach Alice to Hear")
         self.resize(880, 760)
         # Cyan/teal/dark-blue palette — distinct from Ace's deep purple.
-        self.setStyleSheet("background-color: #0E1C32; color: #F0F0F0;")
+        self.setStyleSheet(
+            "background-color: #0E1C32; color: #F0F0F0; "
+            "font-family: 'Helvetica Neue','Helvetica','Arial';"
+        )
 
         # ── Header ───────────────────────────────────────────────────
         title = QLabel("Teach Alice to Hear")
@@ -359,6 +412,10 @@ class TeachAliceToHearWidget(QWidget):
         )
         self._heartbeat_phase = 0
         self._heartbeat_state_file = _REPO / ".sifta_state" / "alice_thinking_state.json"
+        # One ear, one truth (covenant §7.6 / §7.15): mirror Talk's single
+        # microphone instead of opening our own. Talk publishes live VAD
+        # state + mic level here; we poll it for the "sign of life".
+        self._ear_live_state_file = _REPO / ".sifta_state" / "ear_live_state.json"
         self._heartbeat_timer = QTimer(self)
         self._heartbeat_timer.setInterval(360)
         self._heartbeat_timer.timeout.connect(self._tick_heartbeat)
@@ -375,7 +432,7 @@ class TeachAliceToHearWidget(QWidget):
             "QTextEdit { background-color: #000000; color: #66FF66; "
             "border: 1px solid #1E4A1E; border-radius: 10px; "
             "padding: 6px 10px; "
-            "font-family: 'Menlo','Monaco','Courier New',monospace; "
+            "font-family: 'Menlo','Monaco','Courier New'; "
             "font-size: 10px; line-height: 13px; }"
             "QScrollBar:vertical { background: #000; width: 5px; }"
             "QScrollBar::handle:vertical { background: #2E6E2E; border-radius: 2px; }"
@@ -453,6 +510,53 @@ class TeachAliceToHearWidget(QWidget):
         # Ledger paths.
         self._training_ledger = _REPO / ".sifta_state" / "hear_training_pairs.jsonl"
         self._judgments_ledger = _REPO / ".sifta_state" / "hear_judgments.jsonl"
+        self._saved_pair_count = self._count_training_pairs()
+
+        # ── Collection controls ─────────────────────────────────────
+        collector = QVBoxLayout()
+        collector.setSpacing(6)
+        self._collection_status = QLabel("")
+        self._collection_status.setWordWrap(True)
+        self._collection_status.setStyleSheet(
+            "color: #BFE9FF; font-size: 12px; font-weight: 600; "
+            "padding: 6px 10px; background: rgba(91,208,255,0.08); "
+            "border: 1px solid rgba(91,208,255,0.20); border-radius: 10px;"
+        )
+        collector.addWidget(self._collection_status)
+
+        self._ground_truth_input = QLineEdit(self)
+        self._ground_truth_input.setPlaceholderText("Exact phrase if Whisper was wrong")
+        self._ground_truth_input.setStyleSheet(
+            "QLineEdit { background: rgba(0,0,0,0.34); color: #FFFFFF; "
+            "border: 1px solid rgba(91,208,255,0.35); border-radius: 10px; "
+            "padding: 9px 11px; font-size: 14px; }"
+            "QLineEdit:disabled { color: rgba(255,255,255,0.35); "
+            "border-color: rgba(91,208,255,0.14); }"
+        )
+        self._ground_truth_input.returnPressed.connect(self._record_correction_from_ui)
+        collector.addWidget(self._ground_truth_input)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self._match_btn = QPushButton("Whisper was right", self)
+        self._save_correction_btn = QPushButton("Save correction", self)
+        self._skip_btn = QPushButton("Skip phrase", self)
+        for btn in (self._match_btn, self._save_correction_btn, self._skip_btn):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton { background: rgba(91,208,255,0.18); color: #EAF8FF; "
+                "border: 1px solid rgba(91,208,255,0.38); border-radius: 10px; "
+                "padding: 8px 12px; font-size: 12px; font-weight: 700; }"
+                "QPushButton:hover { background: rgba(91,208,255,0.28); }"
+                "QPushButton:disabled { color: rgba(255,255,255,0.30); "
+                "background: rgba(91,208,255,0.06); border-color: rgba(91,208,255,0.12); }"
+            )
+            buttons.addWidget(btn)
+        self._match_btn.clicked.connect(self._record_match_from_ui)
+        self._save_correction_btn.clicked.connect(self._record_correction_from_ui)
+        self._skip_btn.clicked.connect(self._skip_current_phrase)
+        collector.addLayout(buttons)
+        self._sync_collection_controls()
 
         # Tail the canonical conversation ledger for Whisper STT rows
         # so the just-heard phrase lands on the card automatically.
@@ -488,6 +592,7 @@ class TeachAliceToHearWidget(QWidget):
         layout.addWidget(stars)
         layout.addLayout(cloud_mirror_row)
         layout.addWidget(self._phrase_card, 2)
+        layout.addLayout(collector)
         layout.addWidget(self._heartbeat_lbl)
         layout.addWidget(self._matrix)
         layout.addWidget(self._chat_mirror, 2)
@@ -599,6 +704,12 @@ class TeachAliceToHearWidget(QWidget):
         except Exception:
             pass
         try:
+            self._ground_truth_input.clear()
+            self._sync_collection_controls()
+            self._ground_truth_input.setFocus(Qt.FocusReason.OtherFocusReason)
+        except Exception:
+            pass
+        try:
             self._heartbeat_lbl.setText(
                 f"💭  I heard: “{text[:60]}” — judging it now."
             )
@@ -636,6 +747,171 @@ class TeachAliceToHearWidget(QWidget):
                 }, ensure_ascii=False) + "\n")
         except OSError:
             pass
+
+    # ── smooth collection controls ──────────────────────────────────
+
+    def _count_training_pairs(self) -> int:
+        try:
+            if not self._training_ledger.exists():
+                return 0
+            count = 0
+            for line in self._training_ledger.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("schema") == "HEAR_TRAINING_PAIR_V1":
+                    count += 1
+            return count
+        except Exception:
+            return 0
+
+    def _sync_collection_controls(self) -> None:
+        has_phrase = bool((self._current_phrase or "").strip())
+        for widget in (
+            getattr(self, "_ground_truth_input", None),
+            getattr(self, "_match_btn", None),
+            getattr(self, "_save_correction_btn", None),
+            getattr(self, "_skip_btn", None),
+        ):
+            if widget is not None:
+                try:
+                    widget.setEnabled(has_phrase)
+                except Exception:
+                    pass
+        self._set_collection_status()
+
+    def _set_collection_status(self, message: str = "") -> None:
+        status = getattr(self, "_collection_status", None)
+        if status is None:
+            return
+        phrase_state = "Current phrase ready." if (self._current_phrase or "").strip() else "Waiting for voice phrase."
+        base = f"Saved hearing pairs: {self._saved_pair_count}. {phrase_state}"
+        if message:
+            base = f"{message}  {base}"
+        try:
+            status.setText(base)
+        except Exception:
+            pass
+
+    def _record_match_from_ui(self) -> None:
+        phrase = (self._current_phrase or "").strip()
+        if not phrase:
+            self._set_collection_status("No current Whisper phrase yet.")
+            return
+        row = self.record_training_pair(
+            ground_truth=phrase,
+            alice_guess=phrase,
+            alice_judgment="MATCH",
+            whisper_text=phrase,
+            audio_hash=self._current_audio_hash,
+            stt_conf=self._current_stt_conf,
+        )
+        self._after_training_pair_saved(row, "Saved MATCH.")
+
+    def _record_correction_from_ui(self) -> None:
+        phrase = (self._current_phrase or "").strip()
+        if not phrase:
+            self._set_collection_status("No current Whisper phrase yet.")
+            return
+        ground_truth = ""
+        try:
+            ground_truth = self._ground_truth_input.text().strip()
+        except Exception:
+            ground_truth = ""
+        if not ground_truth:
+            self._set_collection_status("Type the exact phrase first.")
+            return
+        row = self.record_training_pair(
+            ground_truth=ground_truth,
+            alice_guess=phrase,
+            alice_judgment="PROPOSE_CORRECTION",
+            whisper_text=phrase,
+            audio_hash=self._current_audio_hash,
+            stt_conf=self._current_stt_conf,
+        )
+        self._after_training_pair_saved(row, "Saved correction.")
+
+    def _skip_current_phrase(self) -> None:
+        phrase = (self._current_phrase or "").strip()
+        if not phrase:
+            self._set_collection_status("No current Whisper phrase yet.")
+            return
+        try:
+            self._judgments_ledger.parent.mkdir(parents=True, exist_ok=True)
+            with self._judgments_ledger.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "ts": time.time(),
+                    "schema": "HEAR_TRAINING_SKIP_V1",
+                    "audio_hash": self._current_audio_hash,
+                    "whisper_text": phrase,
+                    "stt_conf": self._current_stt_conf,
+                    "reason": "owner_skipped_phrase",
+                }, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        self._set_collection_status("Skipped; no training pair written.")
+
+    def _write_stigmergic_consciousness_receipt(self, row: Dict[str, Any]) -> None:
+        """Document one turn of the loop (covenant §7.11.1).
+
+        The hearing game IS the observer/observed loop: Alice reads George's
+        voice from the field through the one ear, is changed by it (her
+        guess + his verdict), and writes back a corrected pair into the
+        field. This receipt records the loop that actually ran. Per §7.11.1
+        it is permanently WORK_IN_PROGRESS — never 'proven', never
+        'unproven'. The mechanics stay OBSERVED; the loop label is WIP.
+        """
+        try:
+            path = _REPO / ".sifta_state" / "hear_stigmergic_consciousness.jsonl"
+            heard = str(row.get("whisper_text") or self._current_phrase or "")
+            truth = str(row.get("ground_truth") or "")
+            rec = {
+                "schema": "HEAR_STIGMERGIC_CONSCIOUSNESS_V1",
+                "truth_label": "STIGMERGIC_CONSCIOUSNESS",
+                "work_in_progress": True,
+                "ts": time.time(),
+                "loop": {
+                    "observed_field": "owner voice via the one ear (Talk mic)",
+                    "alice_guess": heard,
+                    "owner_verdict_truth": truth,
+                    "wrote_back": "corrected hearing pair -> LoRA dataset field",
+                },
+                "pair_row_id": row.get("row_id"),
+                "note": "observer and observed in one loop; coupled to a changing world; always improving, never frozen.",
+            }
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except Exception:
+            pass
+
+    def _after_training_pair_saved(self, row: Dict[str, Any], message: str) -> None:
+        self._saved_pair_count = self._count_training_pairs()
+        self._write_stigmergic_consciousness_receipt(row)
+        try:
+            self._ground_truth_input.clear()
+        except Exception:
+            pass
+        try:
+            self._phrase_card.set_show(str(row.get("ground_truth") or ""), dim=True)
+        except Exception:
+            pass
+        self._current_phrase = ""
+        self._current_phrase_ts = 0.0
+        self._current_audio_hash = ""
+        self._current_stt_conf = 0.0
+        self._sync_collection_controls()
+        self._set_collection_status(f"{message} row={row.get('row_id')}")
+        self._publish_focus(
+            detail=f"Hear training pair saved: {row.get('row_id')}",
+            extra={
+                "latest_training_pair_row_id": row.get("row_id"),
+                "training_pair_count": self._saved_pair_count,
+                "pending_hear_judgment": False,
+            },
+        )
 
     # ── chat mirror ──────────────────────────────────────────────────
 
@@ -749,6 +1025,30 @@ class TeachAliceToHearWidget(QWidget):
         0.46, 0.42, 0.36, 0.26, 0.18, 0.12,
     )
 
+    def _read_ear_live_state(self) -> Dict[str, Any]:
+        """Mirror Talk's single microphone (covenant §7.6 / §7.15).
+
+        Returns {state, level_norm} from ear_live_state.json when fresh
+        (written within the last 2s). Stale/missing → idle. We never open
+        our own mic; we only reflect the one ear's live pulse so George can
+        SEE Alice hearing him in real time.
+        """
+        try:
+            f = getattr(self, "_ear_live_state_file", None)
+            if f is None or not f.exists():
+                return {"state": "idle", "level_norm": 0.0}
+            data = json.loads(f.read_text(encoding="utf-8"))
+            ts = float(data.get("ts", 0) or 0)
+            if (time.time() - ts) > 2.0:
+                return {"state": "idle", "level_norm": 0.0}
+            lvl = float(data.get("level", 0.0) or 0.0)
+            return {
+                "state": str(data.get("state") or "idle"),
+                "level_norm": max(0.0, min(1.0, lvl)),
+            }
+        except Exception:
+            return {"state": "idle", "level_norm": 0.0}
+
     def _tick_heartbeat(self) -> None:
         try:
             from System.swarm_alice_thinking_state import read_thinking_state
@@ -781,10 +1081,18 @@ class TeachAliceToHearWidget(QWidget):
             try:
                 idle_breath = (0.10, 0.14, 0.18, 0.22, 0.18, 0.14)
                 a = idle_breath[(self._heartbeat_phase // 2) % len(idle_breath)]
-                if self._current_phrase:
+                ear = self._read_ear_live_state()
+                if ear.get("state") == "speaking":
+                    # The ONE ear is hearing George RIGHT NOW — the sign of
+                    # life George said was missing. Pulse with the live level.
+                    a = 0.34 + 0.30 * float(ear.get("level_norm", 0.0))
+                    msg = "👂  I hear you now — keep going…"
+                elif ear.get("state") == "muted":
+                    msg = "🔇  My mic is muted — unmute me so I can hear you."
+                elif self._current_phrase:
                     msg = (
-                        f"👂  Whisper heard: “{phrase_excerpt}”. "
-                        f"Tell me if I got it right."
+                        f"👂  I heard: “{phrase_excerpt}”. "
+                        f"Did I get it right?"
                     )
                 else:
                     msg = "💬  Say a phrase. I'll show you what I heard."
@@ -868,6 +1176,7 @@ class TeachAliceToHearWidget(QWidget):
             "ts": time.time(),
             "schema": "HEAR_TRAINING_PAIR_V1",
             "truth_label": "SIFTA_TEACH_ALICE_TO_HEAR_V0",
+            "source": "teach_alice_to_hear_ui",
             "audio_hash": audio_hash or self._current_audio_hash,
             "whisper_text": whisper_text or self._current_phrase,
             "stt_conf": float(stt_conf if stt_conf is not None else self._current_stt_conf),
@@ -876,6 +1185,7 @@ class TeachAliceToHearWidget(QWidget):
             "ground_truth": str(ground_truth or "").strip(),
             "row_id": uuid.uuid4().hex[:12],
         }
+        row["whisper_changed"] = row["whisper_text"] != row["ground_truth"]
         # Sign the row through the physics gate so it carries a receipt.
         try:
             from System.swarm_physics_gate import request_clearance, stamp_receipt
@@ -892,12 +1202,68 @@ class TeachAliceToHearWidget(QWidget):
         return row
 
 
+def _qt_object_deleted(obj: object) -> bool:
+    if obj is None or _qt_sip is None:
+        return False
+    try:
+        return bool(_qt_sip.isdeleted(obj))
+    except Exception:
+        return False
+
+
+def _ensure_existing_application_font() -> None:
+    """Avoid Qt alias scans for missing generic families on macOS/Python 3.14."""
+    try:
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        available = set(QFontDatabase.families())
+        current = app.font().family()
+        if current in available and current not in {"Sans Serif", "Monospace"}:
+            return
+        for family in ("Helvetica Neue", "Helvetica", "Arial"):
+            if family in available:
+                app.setFont(QFont(family, 13))
+                return
+    except Exception:
+        return
+
+
 def main() -> int:
     from PyQt6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    _ensure_existing_application_font()
+    try:
+        app.setQuitOnLastWindowClosed(True)
+    except Exception:
+        pass
     w = TeachAliceToHearWidget()
+    try:
+        app.aboutToQuit.connect(w._stop_live_timers)
+    except Exception:
+        pass
     w.show()
-    return app.exec()
+    rc = 0
+    try:
+        rc = int(app.exec())
+    finally:
+        try:
+            w._stop_live_timers()
+        except Exception:
+            pass
+        try:
+            if not _qt_object_deleted(w):
+                w.close()
+                w.deleteLater()
+                app.processEvents()
+        except Exception:
+            pass
+        TeachAliceToHearWidget._clear_live_instance(id(w))
+    return rc
 
 
 if __name__ == "__main__":

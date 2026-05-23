@@ -620,7 +620,7 @@ def _run_hardened_tests() -> int:
     """Hardened test suite: 20+ scenarios including STRICT mode, load, adversarial.
 
     Returns the number of failed tests. Designed to be called both as __main__
-    and from external test harnesses. Uses a temporary state directory to avoid
+    and from external test loops. Uses a temporary state directory to avoid
     polluting Alice's real reputation/chorum state.
     """
     import tempfile

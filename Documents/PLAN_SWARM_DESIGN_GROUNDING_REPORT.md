@@ -68,7 +68,7 @@ These are the **communication conventions** that help the Architect and external
 ### What it is NOT:
 - **Ground truth.** A score of 85 doesn't mean the system is "correct" — it means hardware is stable, memory is bounded, and the ledger is net-positive. It says nothing about whether the system is completing tasks correctly.
 - **A reward signal.** No swimmer should ever optimize to increase the health score. The score observes; it does not drive.
-- **A replacement for evaluation.** The score cannot tell you if a swimmer's outputs are *right*. Only a proper evaluation harness (Phase 3 in SOLID_PLAN) can do that.
+- **A replacement for evaluation.** The score cannot tell you if a swimmer's outputs are *right*. Only a proper evaluation loop (Phase 3 in SOLID_PLAN) can do that.
 
 ### Dimension weighting (honest about limitations):
 
@@ -94,9 +94,9 @@ Adapted from the external critique. These are the **real engineering objectives*
 | Objective | How SIFTA Addresses It | Gap |
 |-----------|----------------------|-----|
 | **Predictability** | `homeostasis_engine` gates all swim activity; `genesis_lock` prevents axiom mutation | No regression test suite yet (Phase 3) |
-| **Control** | Human approves all SCAR proposals; `mutation_governor` rate-limits; `claw_harness` sandboxes execution | No "pause all swimmers" button in GUI yet |
+| **Control** | Human approves all SCAR proposals; `mutation_governor` rate-limits; `claw_loop` sandboxes execution | No "pause all swimmers" button in GUI yet |
 | **Clarity** | `swarm_health_monitor` gives single score; `warren_buffett` gives economics; `cartography_widget` gives visual telemetry | Logs exist but no structured log viewer |
-| **Safety** | Claw harness blocks destructive commands; genesis lock protects axioms; apoptosis prevents zombie agents | No rollback/snapshot mechanism yet (Phase 3) |
+| **Safety** | Claw loop blocks destructive commands; genesis lock protects axioms; apoptosis prevents zombie agents | No rollback/snapshot mechanism yet (Phase 3) |
 
 ### For the Swarm (System):
 
@@ -105,7 +105,7 @@ Adapted from the external critique. These are the **real engineering objectives*
 | **Bounded resources** | Heatwave decay caps genome at 500 files; governor caps mutations per minute; disk critical halts writes | No max agent count enforced yet |
 | **Evaluation loops** | Not implemented | **Phase 3 critical gap** — no automated task correctness checking |
 | **Memory decay** | Ebbinghaus bus, genome decay, heatwave culling | Dream traces accumulate without limit (needs ceiling) |
-| **Strict sandboxing** | Claw harness (binary blacklist, pipe blocking, 15s timeout, Crucible jail) | Not yet wired into all swim paths |
+| **Strict sandboxing** | Claw loop (binary blacklist, pipe blocking, 15s timeout, Crucible jail) | Not yet wired into all swim paths |
 
 ### Anthropomorphism Risk Register:
 

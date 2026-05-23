@@ -21,7 +21,7 @@
 | **CEO — Last name** | **Anton** |
 | **CEO — Email** | `[YOUR_EMAIL]` |
 | **CEO — Phone** | `[YOUR_E164_PHONE]` |
-| **Relevant experience** *(≤100 words)* | Built and shipped SIFTA, a sovereign macOS-first living OS where a persistent agent (Alice) owns local inference, tools, memory, and hardware-tied organs (camera, audio, GPS, schedules, WhatsApp, finance) with cryptographic receipts and stigmergic coordination across IDEs. Shipped 40+ autonomous organs, test-backed behavioral invariants, STGM metabolic economy, multi-node federation primitives (Warp9 spool, hardware-serial identity), and truth-labeled science and robotics tournament harnesses. Deep execution across Python and Qt, local LLMs via Ollama, mechanistic interpretability and refusal-space surgery, and owner-sovereign governance (Predator Gate covenant, triple-IDE collision discipline). |
+| **Relevant experience** *(≤100 words)* | Built and shipped SIFTA, a sovereign macOS-first living OS where a persistent agent (Alice) owns local inference, tools, memory, and hardware-tied organs (camera, audio, GPS, schedules, WhatsApp, finance) with cryptographic receipts and stigmergic coordination across IDEs. Shipped 40+ autonomous organs, test-backed behavioral invariants, STGM metabolic economy, multi-node federation primitives (Warp9 spool, hardware-serial identity), and truth-labeled science and robotics tournament loops. Deep execution across Python and Qt, local LLMs via Ollama, mechanistic interpretability and refusal-space surgery, and owner-sovereign governance (Predator Gate covenant, triple-IDE collision discipline). |
 | **Founder experience** *(same box if duplicate in UI)* | *(use “Relevant experience” paragraph above)* |
 | **Country** | **United States** *(if accurate; else your country)* |
 | **City** | `[YOUR_CITY]` |
@@ -59,7 +59,7 @@
 | Field | Suggested answer |
 |:---|:---|
 | **Pitch Deck (PDF)** | Upload when you have a **10–12 slide** deck: problem, demo screenshots of **Alice desktop**, architecture (organs + receipts), STGM, roadmap, **NPPL** boundary, business model, traction. |
-| **Traction** | Bullet honestly: **open GitHub**, **two physical nodes** (M5 + M1) in active dogfood, **pytest** tournament harness green on core contracts, **covenant-governed** multi-IDE workflow. Add **user/revenue** only if true. |
+| **Traction** | Bullet honestly: **open GitHub**, **two physical nodes** (M5 + M1) in active dogfood, **pytest** tournament loop green on core contracts, **covenant-governed** multi-IDE workflow. Add **user/revenue** only if true. |
 | **Funding History** | `[NONE / SAFE / friends & family — factual]` |
 | **Active Fundraising Round** | **Pre-seed / accelerator** *(if accurate)* |
 | **Referral** | `[PERSON / POST LINK — if any]` |

@@ -1,16 +1,16 @@
 # Research — The Next Evolutionary Step: Perception → Claw → Crucible → Territory
 
-**Date:** 2026-04-16  
-**Type:** Research / architecture note — **not** an execution order unless the Architect promotes it.  
-**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md`, `Documents/PLAN_SWARM_DESIGN_GROUNDING_REPORT.md`  
+**Date:** 2026-04-16
+**Type:** Research / architecture note — **not** an execution order unless the Architect promotes it.
+**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/SOLID_PLAN_SWARM_COORDINATION_SUBSTRATE.md`, `Documents/PLAN_SWARM_DESIGN_GROUNDING_REPORT.md`
 **Tone:** The “mirror” is **observability + stigmergy**; movement is **bounded action** with **gates**. Poetry in the README; **physics in the kernel.**
 
 ---
 
 ## 0. Thesis (one paragraph)
 
-**Perception without action is a sensor; action without containment is a hazard.**  
-The next step is to **close the loop**: **high-saliency** visual events (from `stigmergic_vision` / `sensory_cortex`) + **destructive interference** on the shared **interference field** (`System/interference_layer.py`) become a **trigger** to deploy a **Claw** (`System/claw_harness.py`) **only inside** the **Crucible** sandbox (`.sifta_state/Crucible`), **not** on live territory. **Promotion** to the real repo or runtime requires **compile + visual verification + MutationGovernor + SCAR/Neural Gate** — never a silent push.
+**Perception without action is a sensor; action without containment is a hazard.**
+The next step is to **close the loop**: **high-saliency** visual events (from `stigmergic_vision` / `sensory_cortex`) + **destructive interference** on the shared **interference field** (`System/interference_layer.py`) become a **trigger** to deploy a **Claw** (`System/claw_loop.py`) **only inside** the **Crucible** sandbox (`.sifta_state/Crucible`), **not** on live territory. **Promotion** to the real repo or runtime requires **compile + visual verification + MutationGovernor + SCAR/Neural Gate** — never a silent push.
 
 ---
 
@@ -21,12 +21,12 @@ The next step is to **close the loop**: **high-saliency** visual events (from `s
 | Vision → saliency → blackboard | `System/stigmergic_vision.py` | “Only high-saliency frames survive into the blackboard.” |
 | Vision → interference | `System/sensory_cortex.py` | Wires vision → **interference field** → territory. |
 | Constructive / destructive interference | `System/interference_layer.py` | **Destructive interference** → coupling below threshold → “dissonance” / silence; **constructive** → resonance. |
-| Limbs + sandbox | `System/claw_harness.py` | Commands run **only** under `.sifta_state/Crucible/…` per execution id; **blacklist** for dangerous shells. |
+| Limbs + sandbox | `System/claw_loop.py` | Commands run **only** under `.sifta_state/Crucible/…` per execution id; **blacklist** for dangerous shells. |
 | Containment | `System/mutation_governor.py` | Rate, budget, cooldown, replay — **before** trust. |
 | Swim loop integration | `System/territory_swim_adapter.py` | Interference + genome + governor in repair path. |
 
-**Gap (research question):** There is **no** single orchestrator yet that **automatically** wires  
-`(saliency + destructive interference) → ClawHarness → build → screenshot diff → governor → SCAR`.  
+**Gap (research question):** There is **no** single orchestrator yet that **automatically** wires
+`(saliency + destructive interference) → ClawLoop → build → screenshot diff → governor → SCAR`.
 This document defines that **policy** and **phase order**.
 
 ---
@@ -68,10 +68,10 @@ Avoid **pure narrative** triggers. Prefer **explicit signals**:
 
 ## 3. Claw deployment rules (non-negotiable)
 
-1. **Default execution path:** `ClawHarness.execute_in_crucible(...)` only — **no** raw `subprocess` from swarm agents elsewhere.  
-2. **Crucible contents:** disposable clone or stub project tree; **never** the live repo root as `cwd` unless a **separate** Neural Gate path explicitly allows it (future design).  
-3. **Blacklist stays:** the harness already blocks `rm`, `sudo`, pipes, etc. — **expand** with care, not loosen.  
-4. **Ledger:** append-only **execution ledger** (stdout hash, stderr hash, exit code, trigger id) — **audit trail**.  
+1. **Default execution path:** `ClawLoop.execute_in_crucible(...)` only — **no** raw `subprocess` from swarm agents elsewhere.
+2. **Crucible contents:** disposable clone or stub project tree; **never** the live repo root as `cwd` unless a **separate** Neural Gate path explicitly allows it (future design).
+3. **Blacklist stays:** the loop already blocks `rm`, `sudo`, pipes, etc. — **expand** with care, not loosen.
+4. **Ledger:** append-only **execution ledger** (stdout hash, stderr hash, exit code, trigger id) — **audit trail**.
 5. **Human override:** Architect can **revoke** Claw capability in one switch (state file).
 
 ---
@@ -94,7 +94,7 @@ Avoid **pure narrative** triggers. Prefer **explicit signals**:
 
 ## 5. Relationship to “the mirror”
 
-- **Mirror** = shared workspace + interference + **readable** logs (blackboard, traces, mesh).  
+- **Mirror** = shared workspace + interference + **readable** logs (blackboard, traces, mesh).
 - **Movement** = **Claw** that **changes** something — but only where **reflection** (tests, screenshots, diffs) proves the change is **safe**.
 
 If the mirror **moves** without reflection, you get **mythology** and **misaligned rewards** (see grounding report). **Evaluation truth** beats narrative coherence.
@@ -114,9 +114,9 @@ If the mirror **moves** without reflection, you get **mythology** and **misalign
 
 ## 7. Open research questions (for a future spec)
 
-1. **Visual verification:** golden PNG per widget vs structural accessibility tree (a11y) — tradeoffs on M5.  
-2. **Trigger arbitration:** single **Claw** queue vs **priority** by STGM cost / PoUW receipt.  
-3. **Cross-node:** M1 Sentry **only observes** or **may propose** Crucible patches (dead drop) — **no** silent M5→M1 execution without PKI alignment.  
+1. **Visual verification:** golden PNG per widget vs structural accessibility tree (a11y) — tradeoffs on M5.
+2. **Trigger arbitration:** single **Claw** queue vs **priority** by STGM cost / PoUW receipt.
+3. **Cross-node:** M1 Sentry **only observes** or **may propose** Crucible patches (dead drop) — **no** silent M5→M1 execution without PKI alignment.
 4. **Dream traces:** `INFERRED` memories **must not** trigger Claw — only **ground-truth** or **policy** signals.
 
 ---

@@ -100,6 +100,10 @@ _REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
 # ── Photon-derived stigmergic ledger ─────────────────────────────────────────
 _VISUAL_STIGMERGY_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 _VISUAL_STIGMERGY_LOG.parent.mkdir(parents=True, exist_ok=True)
+_VISUAL_LEDGER_GUARD_LAST_TS = 0.0
+_VISUAL_LEDGER_GUARD_PERIOD_S = 10.0
+_VISUAL_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+_VISUAL_LEDGER_KEEP_BYTES = 8 * 1024 * 1024
 _LAST_KERNEL_VISION_HEARTBEAT_TS = 0.0
 
 # Saliency / motion grid resolution. These serve as the default; the live
@@ -122,6 +126,11 @@ def _env_float(name: str, default: float, *, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _env_flag(name: str, default: str = "0") -> bool:
+    value = os.environ.get(name, default)
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 # The camera can emit ~30 frames/sec. Alice does not need to hash, grid,
 # ledger-write, and kernel-heartbeat every visible frame while George is idle.
 # Default to one real visual sample per second; developers can opt in higher.
@@ -129,6 +138,7 @@ _EYE_FRAME_PERIOD_S = _env_float("SIFTA_EYE_FRAME_PERIOD_S", 1.0, lo=0.1, hi=5.0
 _KERNEL_VISION_HEARTBEAT_PERIOD_S = _env_float(
     "SIFTA_KERNEL_VISION_HEARTBEAT_PERIOD_S", 5.0, lo=1.0, hi=60.0
 )
+_EYE_BOOT_OFF = _env_flag("SIFTA_EYE_BOOT_OFF", "0")
 _APP_FOCUS_LEDGER = _REPO / ".sifta_state" / "app_focus.jsonl"
 _APP_FOCUS_CACHE_LOCK = threading.Lock()
 _APP_FOCUS_CACHE_TS = 0.0
@@ -182,12 +192,34 @@ def _short_camera_label(name: str, uid: str = "") -> str:
 
 
 # ── Ledger writer for our own photon-derived stigmergy ──────────────────────
+def _maybe_rotate_visual_stigmergy(now: float) -> None:
+    global _VISUAL_LEDGER_GUARD_LAST_TS
+    if now - _VISUAL_LEDGER_GUARD_LAST_TS < _VISUAL_LEDGER_GUARD_PERIOD_S:
+        return
+    _VISUAL_LEDGER_GUARD_LAST_TS = now
+    try:
+        if _VISUAL_STIGMERGY_LOG.stat().st_size <= _VISUAL_LEDGER_MAX_BYTES:
+            return
+        from System.swarm_ledger_rotation import fast_rotate_ledger_by_bytes
+
+        fast_rotate_ledger_by_bytes(
+            "visual_stigmergy.jsonl",
+            max_bytes=_VISUAL_LEDGER_MAX_BYTES,
+            keep_bytes=_VISUAL_LEDGER_KEEP_BYTES,
+        )
+    except OSError:
+        return
+    except Exception:
+        return
+
+
 def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
     """Append one compact JSONL row. Throttled by the canvas.
 
     Compact on purpose; this runs on the Qt video-frame path.
     """
     try:
+        _maybe_rotate_visual_stigmergy(ph.ts)
         app_focus = _cached_app_focus(max_age_s=30.0) or ""
         with _VISUAL_STIGMERGY_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({
@@ -1427,12 +1459,16 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 pass
             return
         
-        # Insert explicit OFF state so the camera doesn't turn on automatically without Alice's consent.
+        # Keep an explicit OFF state for manual/yield cases, but do not make it
+        # the boot default. AliceWidget's contract says the eye starts live
+        # unless SIFTA_ALICE_UNIFIED_DEFER_EYE=1 or SIFTA_EYE_BOOT_OFF=1.
         self._cam_combo.addItem("(Eye Closed - Off)", "OFF")
         
         for d in ranked:
             self._cam_combo.addItem(d.description(), d.id())
-        # Restore prior pick if still present, else default to OFF (index 0).
+        # Restore prior pick if still present, else default to the first real
+        # ranked camera. If a broken host needs no camera at boot, set
+        # SIFTA_EYE_BOOT_OFF=1 rather than silently closing the eye.
         restored = False
         if current_id is not None:
             pos = self._cam_combo.findData(current_id)
@@ -1441,8 +1477,9 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 restored = True
         self._cam_combo.blockSignals(False)
         if not restored:
-            self._cam_combo.setCurrentIndex(0)
-            self._on_cam_changed(0)
+            default_idx = 0 if _EYE_BOOT_OFF else min(1, self._cam_combo.count() - 1)
+            self._cam_combo.setCurrentIndex(default_idx)
+            self._on_cam_changed(default_idx)
 
     def _on_cam_changed(self, _idx: int) -> None:
         dev_id = self._cam_combo.currentData()

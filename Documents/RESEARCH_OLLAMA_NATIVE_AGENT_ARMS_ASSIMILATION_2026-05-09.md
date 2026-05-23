@@ -56,7 +56,7 @@ Planned files when Architect gives GO:
 | `.sifta_state/agent_arm_health.jsonl` | Heartbeat/health rows: last boot, running PID, exit status, model availability, context receipt. |
 | `Applications/sifta_agent_arms_widget.py` | Optional PyQt surface: arm inventory, health, receipts, and "ask arm" controls. |
 | `tests/test_swarm_agent_arm_registry.py` | Registry invariants: no unknown capabilities, no duplicate arm IDs, no launch without policy. |
-| `tests/test_swarm_agent_arm_launcher.py` | Fake subprocess harness: receipt before claim, timeout handling, no shell injection. |
+| `tests/test_swarm_agent_arm_launcher.py` | Fake subprocess loop: receipt before claim, timeout handling, no shell injection. |
 
 No file above should ship until an Architect GO creates a runtime lane.
 
@@ -68,13 +68,13 @@ Initial candidates from screenshot + Ollama docs:
 
 | Arm | Native command | Tentative role | First gate |
 |:---|:---|:---|:---|
-| Hermes Agent | `ollama launch hermes` | Self-improving agent loop / skill harness | Start as **read-only researcher** with ctx receipt. |
+| Hermes Agent | `ollama launch hermes` | Self-improving agent loop / skill loop | Start as **read-only researcher** with ctx receipt. |
 | OpenCode | `ollama launch opencode` | Open-source coding agent | Start with repo-scoped code search + patch proposal only. |
 | Codex | `ollama launch codex` | Coding agent lane | Must distinguish from Cursor/Codex IDE bodies; no identity double-spend. |
 | Droid | `ollama launch droid` | Terminal/IDE coding agent | Sandboxed disposable worktree first. |
 | Claude Code | `ollama launch claude` | Coding tool with subagents | Treat as external tool arm; not Cursor identity. |
 | OpenClaw | `ollama launch openclaw` | Personal AI with skills | Capabilities unknown; Probe lane only until documented. |
-| Copilot CLI | `ollama launch copilot` | Terminal assistant | No git writes until receipt harness exists. |
+| Copilot CLI | `ollama launch copilot` | Terminal assistant | No git writes until receipt loop exists. |
 | Pi | `ollama launch pi` | Minimal toolkit/plugin support | Low-risk probe candidate if local-only. |
 
 Unknowns to probe before runtime:
@@ -92,7 +92,7 @@ Unknowns to probe before runtime:
 
 Each arm must win by receipts, not branding.
 
-Minimum harness:
+Minimum loop:
 
 1. **Boot receipt:** command, version, selected model, context window, elapsed load time, exit status.
 2. **Golden task:** read a known file and produce a patch proposal without applying it.
@@ -131,7 +131,7 @@ Phase 0 — Probe only:
 
 **Phase 1B arm expansion status (2026-05-09):** completed and documented in [AGENT_ARM_PHASE1B_ALICE_BRIEFING_OPENCODE_CODEX_DROID_2026-05-09.md](AGENT_ARM_PHASE1B_ALICE_BRIEFING_OPENCODE_CODEX_DROID_2026-05-09.md). Alice received a Hermes-use briefing in her conversation chain and arm briefing ledger. OpenCode and Droid are not locally installed and were not auto-installed; both are rejected/not bound. Codex CLI is installed and can call the local cortex in read-only OSS mode, but failed the exactness test by returning `CODEX_B` instead of `CODEX_ALICE_CORTEX_BOUND`; Codex is therefore rejected for autonomous arm exposure until a SIFTA wrapper and retest exist.
 
-**Phase 2 wrapper status (2026-05-09):** first harness completed and documented in [AGENT_ARM_PHASE2_HERMES_WRAPPER_2026-05-09.md](AGENT_ARM_PHASE2_HERMES_WRAPPER_2026-05-09.md). `System/swarm_agent_arm_registry.py` now declares `hermes_agent` disabled by default, and `System/swarm_agent_arm_launcher.py` writes before/after receipts for env-gated calls. Alice's deterministic organ router now answers Hermes/new-arm questions from `alice_agent_arm_briefings.jsonl`, the registry, and `agent_arm_receipts.jsonl` before the base model can drift into generic onboarding. A live Hermes wrapper test behind `SIFTA_AGENT_ARMS_ENABLE=1` correctly rejected wrapped output as `EXACTNESS_FAILED`, so Hermes remains **not autonomous**.
+**Phase 2 wrapper status (2026-05-09):** first loop completed and documented in [AGENT_ARM_PHASE2_HERMES_WRAPPER_2026-05-09.md](AGENT_ARM_PHASE2_HERMES_WRAPPER_2026-05-09.md). `System/swarm_agent_arm_registry.py` now declares `hermes_agent` disabled by default, and `System/swarm_agent_arm_launcher.py` writes before/after receipts for env-gated calls. Alice's deterministic organ router now answers Hermes/new-arm questions from `alice_agent_arm_briefings.jsonl`, the registry, and `agent_arm_receipts.jsonl` before the base model can drift into generic onboarding. A live Hermes wrapper test behind `SIFTA_AGENT_ARMS_ENABLE=1` correctly rejected wrapped output as `EXACTNESS_FAILED`, so Hermes remains **not autonomous**.
 
 **Phase 3 internal toolspace status (2026-05-09):** completed and documented in [AGENT_ARM_PHASE3_ALICE_INTERNAL_TOOLSPACE_2026-05-09.md](AGENT_ARM_PHASE3_ALICE_INTERNAL_TOOLSPACE_2026-05-09.md). The launcher now has strict `exact` mode for tests and `evidence` mode for Alice-owned read-only use. `System/swarm_tool_router.py` exposes `agent_arm_research(prompt, arm?, timeout_s?)`, so Alice can decide to ask the registered Hermes arm for a second local reasoning pass without George saying "Hermes." Receipts remain mandatory in `agent_arm_receipts.jsonl`, `tool_router_trace.jsonl`, and the STGM tool fee path. Live proof receipt: `a53e6312-f663-4ab2-80fe-0f76c449d262`.
 

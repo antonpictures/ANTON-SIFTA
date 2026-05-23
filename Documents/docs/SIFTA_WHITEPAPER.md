@@ -247,7 +247,7 @@ CID   → 10 deaths autopsied
 
 SIFTA is a **User-Land Consensus Protocol**, not a kernel-level rootkit. If a hostile actor edits files via terminal without using the agent runtime, the OS accepts it. However, the next time any SIFTA agent scans that directory, the file's SHA-256 hash will mismatch the authenticated territory ledger. The Swarm will flag the file as a Foreign Anomaly and reject it from the economic boundary.
 
-You can break the OS physics. You cannot force the Swarm to accept your unharnessed reality.
+You can break the OS physics. You cannot force the Swarm to accept your unlooped reality.
 
 > *Analogy: Someone can forge a document claiming Elvis Presley's estate. Nothing stops them from printing it. But the moment they bring it to the judge, the county registry (the Ledger) is checked. The signatures don't match. The faker is arrested. SIFTA is the judge.*
 

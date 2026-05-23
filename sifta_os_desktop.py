@@ -1692,6 +1692,7 @@ class LaunchpadWidget(QWidget):
 
         # ── Search bar ───────────────────────────────────────────────────
         self.search_bar = QLineEdit()
+        self.search_bar.setMaxLength(_SEARCH_INPUT_MAX_CHARS)
         self.search_bar.setPlaceholderText("🔍  Search apps…")
         self.search_bar.setStyleSheet(
             "QLineEdit { background: rgba(36, 40, 59, 0.80); color: #ffffff;"
@@ -1699,7 +1700,12 @@ class LaunchpadWidget(QWidget):
             " font-size: 13px; }"
             "QLineEdit:focus { border: 1px solid #bb9af7; }"
         )
-        self.search_bar.textChanged.connect(lambda _: self._rebuild_grid(self._active_cat))
+        self._search_rebuild_timer = QTimer(self)
+        self._search_rebuild_timer.setSingleShot(True)
+        self._search_rebuild_timer.timeout.connect(lambda: self._rebuild_grid(self._active_cat))
+        self.search_bar.textChanged.connect(
+            lambda _: self._search_rebuild_timer.start(_SEARCH_REBUILD_DEBOUNCE_MS)
+        )
         root.addWidget(self.search_bar)
 
         esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -1771,7 +1777,7 @@ class LaunchpadWidget(QWidget):
             item = self.grid_layout.takeAt(0)
             if item and item.widget():
                 item.widget().hide()
-        query = self.search_bar.text().strip().casefold()
+        query = self.search_bar.text().strip().casefold()[:_SEARCH_INPUT_MAX_CHARS]
         visible = [
             (name, cat, btn)
             for name, cat, btn in self._app_buttons
@@ -1882,9 +1888,15 @@ class SpotlightWidget(QWidget):
         layout.setSpacing(0)
 
         self.search_bar = QLineEdit()
+        self.search_bar.setMaxLength(_SEARCH_INPUT_MAX_CHARS)
         self.search_bar.setPlaceholderText("Spotlight Search...")
         self.search_bar.setStyleSheet("background: transparent; color: white; padding: 15px; font-size: 24px; border: none;")
-        self.search_bar.textChanged.connect(self._update_list)
+        self._search_update_timer = QTimer(self)
+        self._search_update_timer.setSingleShot(True)
+        self._search_update_timer.timeout.connect(self._update_list)
+        self.search_bar.textChanged.connect(
+            lambda _: self._search_update_timer.start(_SEARCH_REBUILD_DEBOUNCE_MS)
+        )
         self.search_bar.returnPressed.connect(self._launch_selected)
         layout.addWidget(self.search_bar)
         esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -1905,12 +1917,18 @@ class SpotlightWidget(QWidget):
         self.list_widget.itemClicked.connect(self._launch_item)
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
         layout.addWidget(self.list_widget)
+        self._last_focus_publish: tuple[str, float] = ("", 0.0)
 
     def _on_item_changed(self, current, previous):
         if current:
             app_name = current.data(Qt.ItemDataRole.UserRole)
             if app_name:
                 try:
+                    now = time.time()
+                    last_app, last_ts = self._last_focus_publish
+                    if app_name == last_app and now - last_ts < 2.0:
+                        return
+                    self._last_focus_publish = (app_name, now)
                     from System.swarm_app_focus import publish_focus
                     publish_focus("Spotlight", f"Focus on app: {app_name}", tab=app_name)
                 except Exception:
@@ -1918,7 +1936,7 @@ class SpotlightWidget(QWidget):
 
     def _update_list(self):
         self.list_widget.clear()
-        query = self.search_bar.text().strip().casefold()
+        query = self.search_bar.text().strip().casefold()[:_SEARCH_INPUT_MAX_CHARS]
         matches = []
         for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
             if dat.get("_retired") or dat.get("hidden"):
@@ -2602,16 +2620,9 @@ class SiftaDesktop(QMainWindow):
 
         layout.addStretch()
 
-        # Architect 2026-05-13 06:55 — emergency UI-cost A/B toggle.
-        # Saliency overlay = pretty but costly. Let the owner kill it
-        # without losing camera vision (the vision organ keeps writing
-        # `visual_stigmergy.jsonl` either way; we just skip painting).
+        # Saliency overlay is always on (Architect never turns it off).
+        # The vision organ continues writing visual_stigmergy.jsonl regardless.
         self._saliency_overlay_on = True
-        self._saliency_toggle_btn = _QPB("👁 Saliency: ON")
-        self._saliency_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._saliency_toggle_btn.setStyleSheet(self._tab_inactive_style)
-        self._saliency_toggle_btn.clicked.connect(self._toggle_saliency_overlay)
-        layout.addWidget(self._saliency_toggle_btn)
 
         self._desktop_mode_label = _QL(
             "Alice is listening continuously on the Chat desktop. Just talk."
@@ -4977,6 +4988,8 @@ _SCHEDULER_MAX_ALLOCATIONS_PER_TICK = 4
 _SCHEDULER_MAX_SPEND_PER_TICK = 0.08
 _SCHEDULER_MAX_SLICE_SPEND = 0.03
 _ATTENTION_DIRECTOR_INTERVAL_MS = 3000
+_SEARCH_INPUT_MAX_CHARS = 96
+_SEARCH_REBUILD_DEBOUNCE_MS = 120
 _KERNEL_MAINTENANCE_INTERVAL_S = {
     "engage": 12.0,
     "sample": 25.0,

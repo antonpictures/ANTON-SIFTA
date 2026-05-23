@@ -23,7 +23,7 @@ Status: triage notes from the next hygiene pass.
   not yet injected into every Talk-widget turn. Future work should add a small
   prompt directive and tests around mixed narrative/real-action prompts.
 
-## Test Harness
+## Test Loop
 
 - The reported `pytest --collect-only` segfault remains unverified. No matching
   local receipt or issue note was found in the repo search.

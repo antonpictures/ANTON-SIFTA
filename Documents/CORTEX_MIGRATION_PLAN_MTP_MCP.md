@@ -106,7 +106,7 @@ Each phase is its own receipt. None happens until you say go.
 
 **Phase 2 — download and verify Qwen3.6-27B Q4_K_M.** Local download only. No swap. Run llama.cpp benchmark to confirm MTP is active and confirm tok/s gain on M5 silicon. Receipt.
 
-**Phase 3 — bring up second brain on a separate port.** Run Qwen3.6 in parallel to Gemma4 on a different llama-server port. Alice's voice stays on Gemma4. New brain is reachable only to a test harness. Smoke-test that the substrate gate, when pointed at the new brain, finds the new tag via `ai_name_alias.json`.
+**Phase 3 — bring up second brain on a separate port.** Run Qwen3.6 in parallel to Gemma4 on a different llama-server port. Alice's voice stays on Gemma4. New brain is reachable only to a test loop. Smoke-test that the substrate gate, when pointed at the new brain, finds the new tag via `ai_name_alias.json`.
 
 **Phase 4 — flip with rollback receipt.** Update `ai_name_alias.json` weight_name to the Qwen tag. Write `SUBSTRATE_MIGRATION` row. Talk widget points at the new brain. Old Gemma4 binary stays on disk, rollback is one file flip + one ledger row. Architect signs.
 

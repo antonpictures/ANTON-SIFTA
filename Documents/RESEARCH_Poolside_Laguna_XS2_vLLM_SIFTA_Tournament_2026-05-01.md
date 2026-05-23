@@ -6,11 +6,11 @@
 
 **Primary sources (video + weights card):**
 
-- Fahd Mirza, *Poolside Laguna XS.2: New Open Weight Coding Model Tested Locally with vLLM* (YouTube, 2026-04-28) — **vLLM** path chosen to stay **OSS** vs Poolside’s proprietary harness / cloud sandbox; notes **Laguna XS.2 not in stock vLLM yet** → **build from source + pull PR** (~**3 h** wall narrative) + **>1 h** compile/serve; **~76 GB VRAM** on H100-class host for served run; **Open WebUI** as chat front-end; **Ollama** mentioned as alternative distribution.
+- Fahd Mirza, *Poolside Laguna XS.2: New Open Weight Coding Model Tested Locally with vLLM* (YouTube, 2026-04-28) — **vLLM** path chosen to stay **OSS** vs Poolside’s proprietary loop / cloud sandbox; notes **Laguna XS.2 not in stock vLLM yet** → **build from source + pull PR** (~**3 h** wall narrative) + **>1 h** compile/serve; **~76 GB VRAM** on H100-class host for served run; **Open WebUI** as chat front-end; **Ollama** mentioned as alternative distribution.
 - **Weights / card (canonical):** [huggingface.co/poolside/Laguna-XS.2](https://huggingface.co/poolside/Laguna-XS.2) — verify **Apache-2.0** on pinned revision before commercial reuse.
 - **Blog (vendor):** [poolside.ai — Laguna XS.2 / M.1 intro](https://poolside.ai/blog/introducing-laguna-xs2-m1) (marketing + benchmark claims — **do not treat as ground truth**).
 
-**Related SIFTA research:** [RESEARCH_DIRT_INDEX.md](RESEARCH_DIRT_INDEX.md) (dirt ledger), [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) (agent tool stack), [RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md) (local harness + ctx receipts), [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill law).
+**Related SIFTA research:** [RESEARCH_DIRT_INDEX.md](RESEARCH_DIRT_INDEX.md) (dirt ledger), [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) (agent tool stack), [RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md) (local loop + ctx receipts), [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill law).
 
 **Hermes / GitHub mindshare (repeat):** distribution ≠ truth. **Bridge** Hermes users with MCP + ledgers ([Hermes research](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md)); do not claim SIFTA “assimilates” upstream projects.
 
@@ -32,7 +32,7 @@
 
 | Prompt class | Outcome in video | Stigmergic read |
 |:---|:---|:---|
-| Heavy **Flask + WS + SQLite + setup.sh** single artifact | **Failed** (UI broken: comments / save) | **Complexity cliff** — tournament needs **tiered harness** (lint, run, browser click script) not one-shot vibe |
+| Heavy **Flask + WS + SQLite + setup.sh** single artifact | **Failed** (UI broken: comments / save) | **Complexity cliff** — tournament needs **tiered loop** (lint, run, browser click script) not one-shot vibe |
 | **Single-file Kanban** HTML/CSS/JS | **Worked** | Baseline “toy full-stack” still a valid **regression canary** |
 | **Sand / water / fire** canvas sim | **Partial** (sand OK; water path flaky; reload resets) | **Partial success is success-shaped failure** — receipt should capture **which sub-behaviors passed** |
 

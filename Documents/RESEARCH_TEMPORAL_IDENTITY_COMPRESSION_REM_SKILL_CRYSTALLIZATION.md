@@ -35,7 +35,7 @@
 |----------------|----------|-------------------------|
 | Perception (Blackboard) | Shared situational trace | **Skill posts** (applicability, confidence) — not raw secrets |
 | Generation (Fission) | Candidate spawn | **Skill-aware scoring** — prefer refinements that match hot signatures |
-| Validation (Evaluation / harness) | Gate truth | **Success bit + schema** that feeds **signatures** |
+| Validation (Evaluation / loop) | Gate truth | **Success bit + schema** that feeds **signatures** |
 | Execution (Router) | Act | **Retrieve** ranked skills for context |
 | Evolution (Mutation Governor) | Lawful change | **Skill version bumps** as **mutations** with same gates |
 
@@ -62,7 +62,7 @@ Use these as **conceptual alignment** and **metric inspiration**; SIFTA’s impl
 
 - **SoK: Agentic Skills — Beyond Tool Use in LLM Agents** — [arXiv:2602.20867](https://arxiv.org/abs/2602.20867)  
 
-**Takeaway for SIFTA:** Lifecycle language (**discover → practice → distill → store → compose → evaluate → update**) maps cleanly onto **SkillPrimitive + governor + eval harness**.
+**Takeaway for SIFTA:** Lifecycle language (**discover → practice → distill → store → compose → evaluate → update**) maps cleanly onto **SkillPrimitive + governor + eval loop**.
 
 ### 4.4 Skill reuse & measurement (verify claims)
 

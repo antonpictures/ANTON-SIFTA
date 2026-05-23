@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Voss-style two-turn eval harness for receipt-gated report writing.
+"""Voss-style two-turn eval loop for receipt-gated report writing.
 
 Truth label: ``SIFTA_VOSS_FINANCIAL_REPORT_EVAL_V1``.
 
@@ -7,7 +7,7 @@ This is the code slice behind the §4.6 Colab decode: a two-turn agent
 pattern is only safe when Turn 2 (write/report) proves Turn 1
 (research/tool receipt) happened first.
 
-The harness is fixture-only. It uses no API keys, no live brokerage data,
+The loop is fixture-only. It uses no API keys, no live brokerage data,
 and no cloud calls. Its job is to make the invariant testable:
 
     RESEARCH_PROMPT receipt -> WRITE_PROMPT may run

@@ -22,7 +22,7 @@ Everything else in this document **hangs off** that spine.
 |-------|------|----------------|
 | **Perception** | Blackboard / sensory field | Shared traces, event graph (design → Phase 2) |
 | **Generation** | Fission | Residue → spawn candidates (`RESEARCH_CODE_FISSION_*`) |
-| **Validation** | Evaluation / Shadow / Crucible | Immune layer — `claw_harness`, replay harness |
+| **Validation** | Evaluation / Shadow / Crucible | Immune layer — `claw_loop`, replay loop |
 | **Execution** | Router / motor | M5/M1, swim adapter, relay |
 | **Evolution** | Mutation Governor | `mutation_governor.py`, SCAR, Final Boss loop |
 

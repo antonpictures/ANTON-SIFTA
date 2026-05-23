@@ -22,7 +22,7 @@ compressed, and the post-dream memory-gravity ranking.
 
 Truth class: HYPOTHESIS until a paired baseline measurement (recovery
 time / coherence / role-stability) shows post-dream adaptation
-improved. The harness here EMITS that measurement on each cycle so
+improved. The loop here EMITS that measurement on each cycle so
 the architect can compare runs.
 """
 from __future__ import annotations

@@ -32,7 +32,7 @@ The pattern in 2024–2026: single-metric leaderboards are out; multi-axis suite
 
 | Anchor | What it measures | SIFTA hook |
 |---|---|---|
-| **Kwa et al. (2025).** *Measuring AI Ability to Complete Long Tasks.* arXiv:2503.14499 (METR). | Task-completion time horizon at 50%/80% reliability, benchmarked against expert-human time. Doubling ~every 7 months from 9s to ~14.5h on frontier models. | `swarm_metabolic_homeostasis.py` already tracks STGM burn vs uptime; a `talk_session_horizon.jsonl` rolled up from existing receipts gives us our **own local 50%/80% horizon** for Alice's tool-use without depending on METR's harness. |
+| **Kwa et al. (2025).** *Measuring AI Ability to Complete Long Tasks.* arXiv:2503.14499 (METR). | Task-completion time horizon at 50%/80% reliability, benchmarked against expert-human time. Doubling ~every 7 months from 9s to ~14.5h on frontier models. | `swarm_metabolic_homeostasis.py` already tracks STGM burn vs uptime; a `talk_session_horizon.jsonl` rolled up from existing receipts gives us our **own local 50%/80% horizon** for Alice's tool-use without depending on METR's loop. |
 | **METR Time Horizon 1.1** (Jan 2026) — task suite grew 170 → 228, long tasks 14 → 31. | Higher-confidence horizon estimate, more long-tail tasks. | Lifts our internal suite design — we should mark each owner-asked job's *expert-human time estimate* in `work_receipts.jsonl` so horizon is computable retrospectively, not just prospectively. |
 
 ### B. Fluid reasoning under novelty — "can the agent solve problems it cannot have memorised"

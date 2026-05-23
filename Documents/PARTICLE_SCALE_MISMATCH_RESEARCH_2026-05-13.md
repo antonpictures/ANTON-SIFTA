@@ -1,8 +1,8 @@
 # Particle-Physics Scale Mismatches — SIFTA Research Brief
 
-**Date:** 2026-05-13  
-**Doctor:** Codex Desktop  
-**Lane:** research only; no runtime mutation  
+**Date:** 2026-05-13
+**Doctor:** Codex Desktop
+**Lane:** research only; no runtime mutation
 **Truth boundary:** SIFTA is not claiming a Higgs, W-boson, muon, cosmology, or Standard Model discovery. This brief identifies real physics mismatches and maps only defensible computational analogues into SIFTA.
 
 ---
@@ -30,7 +30,7 @@ That is a local, measurable analogue of naturalness: when high-level traces, org
 | Mystery | Real physics version | Why it matters | Current status | SIFTA-safe analogue |
 |---|---|---|---|---|
 | Cosmological constant | Observed vacuum energy / dark energy is enormously smaller than naive QFT vacuum-energy estimates | Largest scale mismatch in fundamental physics | Unsolved; classic source Weinberg 1989 | **Metabolic zero-point audit:** background ledgers should not create runaway STGM / thermal pressure when no useful work happens |
-| Higgs hierarchy / naturalness | Higgs mass and electroweak scale remain low compared with Planck / UV scales | Scalar masses are sensitive to high-scale physics | Unsolved; LHC has not found the expected simple naturalness partners | **UV-IR stability harness:** perturb high-cost organs and see whether core behavior stays stable without retuning |
+| Higgs hierarchy / naturalness | Higgs mass and electroweak scale remain low compared with Planck / UV scales | Scalar masses are sensitive to high-scale physics | Unsolved; LHC has not found the expected simple naturalness partners | **UV-IR stability loop:** perturb high-cost organs and see whether core behavior stays stable without retuning |
 | W-boson mass | CDF II 2022 was high; CMS 2024 and other LHC results align better with SM | Precision electroweak consistency check | Open measurement tension, but current balance does not support "SM broken" as a clean claim | **Cross-instrument referee:** one outlier receipt does not override field consensus |
 | Muon `g-2` | Experiment is ultra-precise; theory prediction changed with lattice work | Sensitive loop-level test for hidden particles | Final Fermilab result is precise; evidence for new physics is weaker because theory moved | **Prediction ledger discipline:** anomaly may be in model, measurement, or theory calculation, not automatically new entity |
 | Strong CP | QCD permits CP violation; neutron EDM says theta is tiny | Tiny number with no obvious Standard Model reason | Unsolved; axions/discrete symmetries remain active ideas | **Forbidden-drift gate:** why does a permitted harmful mode remain nearly zero? |
@@ -43,41 +43,41 @@ That is a local, measurable analogue of naturalness: when high-level traces, org
 
 ### Higgs / hierarchy / naturalness
 
-- PDG 2025 Higgs review: electroweak symmetry breaking gives masses to W/Z and fermions after the Higgs field acquires a vacuum expectation value `v ≈ 246 GeV`. The Higgs remains the unique known fundamental scalar.  
+- PDG 2025 Higgs review: electroweak symmetry breaking gives masses to W/Z and fermions after the Higgs field acquires a vacuum expectation value `v ≈ 246 GeV`. The Higgs remains the unique known fundamental scalar.
   Source: <https://pdg.lbl.gov/2025/reviews/rpp2025-rev-higgs-boson.pdf>
 
-- Recent naturalness direction: "The quantum criticality of the Standard Model and the hierarchy problem" revisits hierarchy through Wilsonian functional renormalization and near-criticality. This is directly useful to SIFTA because "near critical but stable" is an operational field-governor idea, not a particle claim.  
+- Recent naturalness direction: "The quantum criticality of the Standard Model and the hierarchy problem" revisits hierarchy through Wilsonian functional renormalization and near-criticality. This is directly useful to SIFTA because "near critical but stable" is an operational field-governor idea, not a particle claim.
   Source: <https://arxiv.org/abs/2506.15919>
 
 ### W-boson mass
 
-- PDG 2025 W review: electroweak fit excluding direct W measurements predicts `mW = 80.356 ± 0.006 GeV`.  
+- PDG 2025 W review: electroweak fit excluding direct W measurements predicts `mW = 80.356 ± 0.006 GeV`.
   Source: <https://pdgaws.lbl.gov/2025/reviews/rpp2025-rev-w-mass.pdf>
 
-- CMS high-precision W mass: `mW = 80,360.2 ± 9.9 MeV`, agreeing with Standard Model expectation and disagreeing with CDF II.  
+- CMS high-precision W mass: `mW = 80,360.2 ± 9.9 MeV`, agreeing with Standard Model expectation and disagreeing with CDF II.
   Source: <https://cms-results.web.cern.ch/cms-results/public-results/publications/SMP-23-002/>
 
 ### Muon `g-2`
 
-- Fermilab / DOE 2025 final measurement: third and final muon magnetic anomaly result with 127 parts-per-billion precision; theory challenges reduce evidence for new physics, but the result is a benchmark for Standard Model extensions.  
+- Fermilab / DOE 2025 final measurement: third and final muon magnetic anomaly result with 127 parts-per-billion precision; theory challenges reduce evidence for new physics, but the result is a benchmark for Standard Model extensions.
   Source: <https://www.energy.gov/science/articles/muon-g-2-announces-most-precise-measurement-magnetic-anomaly-muon>
 
-- CERN Courier summary: final Fermilab measurement agrees closely with a revised Standard Model prediction; theorists still need to resolve tensions in the theory inputs.  
+- CERN Courier summary: final Fermilab measurement agrees closely with a revised Standard Model prediction; theorists still need to resolve tensions in the theory inputs.
   Source: <https://cerncourier.com/a/fermilabs-final-word-on-muon-g-2/>
 
 ### Cosmological constant
 
-- Weinberg 1989 remains the classic statement of the cosmological constant problem.  
+- Weinberg 1989 remains the classic statement of the cosmological constant problem.
   Source: <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.61.1>
 
 ### Strong CP
 
-- Recent review/preprint framing: absence of neutron EDM constrains QCD theta below about one part in ten billion, creating the Strong CP problem.  
+- Recent review/preprint framing: absence of neutron EDM constrains QCD theta below about one part in ten billion, creating the Strong CP problem.
   Source: <https://arxiv.org/abs/2510.18951>
 
 ### Hubble tension
 
-- 2026 sound-horizon-free H0 comparison reports distance-ladder and one-step measurements disagreeing at `6.7σ`; this is cosmology, not particle bosons, but it is a live scale-consistency problem.  
+- 2026 sound-horizon-free H0 comparison reports distance-ladder and one-step measurements disagreeing at `6.7σ`; this is cosmology, not particle bosons, but it is a live scale-consistency problem.
   Source: <https://arxiv.org/abs/2601.00650>
 
 ---
@@ -86,7 +86,7 @@ That is a local, measurable analogue of naturalness: when high-level traces, org
 
 ### Name
 
-**Naturalness Field Harness**  
+**Naturalness Field Loop**
 Alias: **UV-IR Stability Audit**
 
 ### Question
@@ -134,7 +134,7 @@ Do **not** collide with Cowork's active Q6 symmetry-breaking edit in `System/swa
 
 Best next Codex-owned cut after Q6 lands:
 
-1. Add `System/swarm_naturalness_field_harness.py`.
+1. Add `System/swarm_naturalness_field_loop.py`.
 2. Mint `NATURALNESS_FIELD_AUDIT_V1` receipts.
 3. Add a Physics Observatory tab only after the standalone tests pass.
 4. Compare baseline vs perturbation using the existing Engine E persistence-inertia metrics.

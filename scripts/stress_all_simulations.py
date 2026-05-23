@@ -5,7 +5,7 @@ stress_all_simulations.py — repeat headless runs for every Swarm OS simulation
 Default: 50 iterations each (override with --iterations).
 Uses small grids / tick counts so the full matrix finishes in reasonable wall time.
 
-Does not run sifta_arena.py (needs Ollama / tournament harness).
+Does not run sifta_arena.py (needs Ollama / tournament loop).
 
 Usage:
   cd ~/Music/ANTON_SIFTA

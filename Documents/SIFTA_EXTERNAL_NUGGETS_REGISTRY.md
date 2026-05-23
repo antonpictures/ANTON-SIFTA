@@ -14,7 +14,7 @@ unsafe and noisy. The correct split is:
 
 | Class | Meaning |
 |---|---|
-| `coded_in_repo` | A local implementation or harness exists in this repository. |
+| `coded_in_repo` | A local implementation or loop exists in this repository. |
 | `coded_pattern` | SIFTA implements the same engineering pattern without vendoring that project. |
 | `research_only` | Good idea, no local code path yet. |
 | `probe_first` | Do not integrate until license, privacy, runtime, and covenant risks are checked. |
@@ -27,13 +27,13 @@ unsafe and noisy. The correct split is:
 |---|---|---|
 | Promptfoo | `coded_in_repo` | `tests/rlhs_evals/promptfooconfig.yaml`, `tests/rlhs_evals/sifta_provider.py`, `scripts/run_promptfoo_rlhs_ci.sh`, `tests/test_promptfoo_ci_job.py` |
 | Agent Skills / skills pattern | `coded_pattern` | `System/swarm_skill_library.py`, `System/swarm_skill_validator.py`, `System/swarm_skill_submission_packager.py`, `Applications/sifta_skill_browser.py`, `skills/ide_boot_covenant/SKILL.md` |
-| browser-use / deterministic browser harness | `coded_pattern` | `Applications/sifta_alice_browser_widget.py`, `Applications/sifta_swarm_browser.py`, `System/qt_webengine_bootstrap.py` |
+| browser-use / deterministic browser loop | `coded_pattern` | `Applications/sifta_alice_browser_widget.py`, `Applications/sifta_swarm_browser.py`, `System/qt_webengine_bootstrap.py` |
 | open-swe workflow discipline | `coded_pattern` | `Documents/IDE_BOOT_COVENANT.md`, `System/ide_stigmergic_bridge.py` |
 
 ## Probe / Bookmark Only
 
 BitNet.cpp, PostHog, PowerToys, Maigret, Invidious, ShareX,
-free-programming-books, Deep Agents, TradingAgents, OpenHarness, sim,
+free-programming-books, Deep Agents, TradingAgents, HKUDS eval project, sim,
 Symphony, GitHub Copilot SDK, supermemory, Archon, Kreuzberg, hindsight,
 Helium, evlog, react-admin, MiroFish, Temporal ui-server, FlipOff/gitGost/
 Obscura, and the Mindra/Flowly/Wispr SaaS set are not local integrations.
@@ -64,7 +64,7 @@ The 2026-05-05 browser batch adds two new entries:
 
 | Nugget | Status | Why it stays held |
 |---|---|---|
-| Chrome DevTools for Agents | `research_only` | Strongest near-term browser candidate; needs local harness + effector receipt + §7.5 justification before hot-path use. |
+| Chrome DevTools for Agents | `research_only` | Strongest near-term browser candidate; needs local loop + effector receipt + §7.5 justification before hot-path use. |
 | Lightpanda | `research_only` | Zig-based minimal headless browser; license (BSL) and M5 performance unprobed. |
 
 The 2026-05-05 scientific reference batch registers the literature anchors formally (they were previously only cited in code comments and `SIFTA_SCIENTIFIC_FOUNDATIONS.md`):

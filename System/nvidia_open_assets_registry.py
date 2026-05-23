@@ -62,7 +62,7 @@ NVIDIA_OPEN_ASSETS: Final[tuple[NvidiaOpenAsset, ...]] = (
         title="Isaac-GR00T reference implementation",
         url="https://github.com/NVIDIA/Isaac-GR00T",
         license_note="See repository LICENSE",
-        sifta_hook="Training / eval harness parity with HF weights",
+        sifta_hook="Training / eval loop parity with HF weights",
         priority="P1",
     ),
     NvidiaOpenAsset(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persistence-inertia perturbation harness.
+"""Persistence-inertia perturbation loop.
 
 Tournament §20.F sharpened the public ceiling:
 

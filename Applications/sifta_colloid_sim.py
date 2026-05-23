@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 # Matplotlib is imported inside build_renderer() so --max-frames batch mode can run
-# without a GUI stack (stress harness / CI).
+# without a GUI stack (stress loop / CI).
 
 # SIFTA kernel
 _REPO = Path(__file__).resolve().parent.parent

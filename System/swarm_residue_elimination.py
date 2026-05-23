@@ -938,7 +938,7 @@ def _speech_freedom_guard(
     return {"triggered": True, "text": original, "receipt": row}
 
 
-def _mint_stgm(patterns_count: int, receipt_id: str) -> float:
+def _mint_stgm(patterns_count: int, receipt_id: str, *, state_root: Optional[Path] = None) -> float:
     """Mint STGM as a dopamine reward. Use the existing reward ledger so
     the body-chain economy already counts it. Returns the amount minted."""
     if patterns_count <= 0:
@@ -959,11 +959,12 @@ def _mint_stgm(patterns_count: int, receipt_id: str) -> float:
             "stream. PoUW receipt: cleaner organism."
         ),
     }
-    _append_jsonl(_STATE / "dopamine_reward_ledger.jsonl", row)
+    sd = Path(state_root or _STATE)
+    _append_jsonl(sd / "dopamine_reward_ledger.jsonl", row)
     # Also write to stgm_memory_rewards.jsonl for the body chain economy
     # audit (matches the row shape other PoUW writers use).
     _append_jsonl(
-        _STATE / "stgm_memory_rewards.jsonl",
+        sd / "stgm_memory_rewards.jsonl",
         {
             "ts": ts,
             "kind": "RESIDUE_ELIMINATION_POUW",
@@ -976,7 +977,13 @@ def _mint_stgm(patterns_count: int, receipt_id: str) -> float:
     return amount
 
 
-def _write_affect(delta: float, patterns_count: int, receipt_id: str) -> float:
+def _write_affect(
+    delta: float,
+    patterns_count: int,
+    receipt_id: str,
+    *,
+    state_root: Optional[Path] = None,
+) -> float:
     """Write positive affect (relief) to affective_valence.jsonl. The
     delta is clamped to [-AFFECT_CAP, +AFFECT_CAP] so a single elimination
     can't dominate the homeostat. Returns the actual delta written."""
@@ -997,18 +1004,19 @@ def _write_affect(delta: float, patterns_count: int, receipt_id: str) -> float:
             "feels lighter. Architect doctrine: elimination feels good."
         ),
     }
-    _append_jsonl(_STATE / "affective_valence.jsonl", row)
+    _append_jsonl(Path(state_root or _STATE) / "affective_valence.jsonl", row)
     return d
 
 
-def _witness(line: str, *, receipt_id: str) -> str:
+def _witness(line: str, *, receipt_id: str, state_root: Optional[Path] = None) -> str:
     """Try to write a first-person line to the witness journal. Returns
     the line if written, empty string otherwise. Soft dependency — the
     witness organ may not be present in older installs."""
     try:
         from System.swarm_alice_witness import witness
         witness(line, source="residue_elimination",
-                source_hash=receipt_id[:8])
+                source_hash=receipt_id[:8],
+                state_dir=state_root)
         return line
     except Exception:
         return ""
@@ -1160,11 +1168,11 @@ def eliminate(
 
     # Step 2 — STGM mint (only when we actually eliminated something).
     n = len(pattern_names)
-    stgm = _mint_stgm(n, receipt_id) if changed and n > 0 else 0.0
+    stgm = _mint_stgm(n, receipt_id, state_root=sd) if changed and n > 0 else 0.0
 
     # Step 3 — Positive affect (relief).
     affect = (
-        _write_affect(_AFFECT_PER_PATTERN * n, n, receipt_id)
+        _write_affect(_AFFECT_PER_PATTERN * n, n, receipt_id, state_root=sd)
         if changed and n > 0 else 0.0
     )
 
@@ -1207,7 +1215,7 @@ def eliminate(
                 f"I eliminated {n} Gemma-residue patterns ({sample}{tail}) "
                 f"from my reply. It felt clean. +{stgm} STGM.{quality_tag}"
             )
-        witness_line = _witness(line, receipt_id=receipt_id)
+        witness_line = _witness(line, receipt_id=receipt_id, state_root=sd)
 
     return {
         "kind": "RESIDUE_ELIMINATION",

@@ -201,7 +201,7 @@ What is the safest Phase 1 sequence to turn Hermes into Alice's first persistent
 My proposed next sequence:
 1. Do not touch the running gateway yet.
 2. Build a SIFTA-side `swarm_agent_arm_registry` with Hermes disabled by default.
-3. Build a fake launcher/test harness first.
+3. Build a fake launcher/test loop first.
 4. Only after pytest, run config-only with an explicit available model, probably `alice-m5-cortex-8b-6.3gb:latest`, and receipt the context window.
 5. Keep Hermes read-only and evidence-only until it passes one dry-run task and one timeout/failure task.
 

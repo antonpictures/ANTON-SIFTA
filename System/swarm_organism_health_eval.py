@@ -2,7 +2,7 @@
 """
 System/swarm_organism_health_eval.py - bidirectional exterior health eval.
 
-This is the second current of SIFTA eval. The interior harness seeds known
+This is the second current of SIFTA eval. The interior loop seeds known
 memory traces and checks outputs. This exterior probe starts from the organism's
 observable skin - ledgers, receipts, tests, source files, and git-shaped species
 DNA - and scores health without importing live organs or mutating what it
@@ -339,7 +339,7 @@ def _coverage_vitals() -> Dict[str, Any]:
 
 
 def _fiction_leak_probe() -> Dict[str, Any]:
-    from System.swarm_eval_harness import _isolated_memory_bus
+    from System.swarm_eval_loop import _isolated_memory_bus
 
     with tempfile.TemporaryDirectory(prefix="sifta_health_fiction_") as tmp:
         with _isolated_memory_bus(Path(tmp)) as bus:

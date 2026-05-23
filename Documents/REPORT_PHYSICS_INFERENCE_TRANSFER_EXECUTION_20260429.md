@@ -569,7 +569,7 @@ Physics settlement: not fully wired into canonical accounting + power probe unti
 
 ## Appendix D — External research anchor (OpenAI-relevant direction, not exhaustive)
 
-Strong math/science / reasoning stacks still require: **verifiable outputs, receipts, harnesses, and conventional review** — i.e. the same class of discipline SIFTA encodes in ledgers and tests. Use vendor research as **methodology support**, not as a substitute for **`pytest` + `repair_log.jsonl` rows**.
+Strong math/science / reasoning stacks still require: **verifiable outputs, receipts, loops, and conventional review** — i.e. the same class of discipline SIFTA encodes in ledgers and tests. Use vendor research as **methodology support**, not as a substitute for **`pytest` + `repair_log.jsonl` rows**.
 
 - OpenAI, **Learning to reason with LLMs** (2024): https://openai.com/index/learning-to-reason-with-llms/ — reasoning improves with train/test-time compute and is evaluated on math/science/coding benchmarks.
 - OpenAI, **Solving (some) formal math olympiad problems** (2022): https://openai.com/index/formal-math/ — formal systems matter because they provide machine-checkable success/failure for proof attempts.

@@ -1753,6 +1753,18 @@ def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> 
         "wordays": reading_app,
         "wordasapp": reading_app,
         "wordasa": reading_app,
+        # ── Hearing trainer (P2 voice launch) ─────────────────────────────
+        # Voice commands like "open teach alice how to hear", "open the hear trainer",
+        # "open alice hear" must resolve reliably so the owner can train with voice
+        # as preferred. This gives Alice the full rich, owner-driven field (not just
+        # the efficient gate).
+        "teach alice to hear": "Teach Alice to Hear",
+        "teach alice hear": "Teach Alice to Hear",
+        "alice hear": "Teach Alice to Hear",
+        "hear trainer": "Teach Alice to Hear",
+        "teach hear": "Teach Alice to Hear",
+        "how to hear": "Teach Alice to Hear",
+        "hear app": "Teach Alice to Hear",
         "wordaapp": reading_app,
         "wordaapps": reading_app,
         "acer": reading_app,
@@ -2212,6 +2224,24 @@ def _strip_misheard_ace_vocative(text: str) -> str:
     return _BARE_ACE_VOCATIVE_RE.sub("Alice", text, count=1)
 
 
+def _normalize_manifest_app_request_name(raw_requested: str) -> str:
+    """Remove speech filler around the app name before manifest matching."""
+    name = (raw_requested or "").strip().rstrip(",.?!\"'")
+    name = re.sub(
+        r"\s+(?:app|application|program|window)$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    ).strip()
+    name = re.sub(
+        r"^(?:the\s+)?(?:app|application|program|window)\s+(?:called\s+|named\s+)?",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    ).strip()
+    return name
+
+
 def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
     """Parse owner commands to open a SIFTA app, browse a website, or flip desktops."""
     clean = " ".join((text or "").strip().split())
@@ -2245,7 +2275,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         return {}
     app_names = app_names or _load_manifest_app_names()
     m = re.match(
-        r"^\s*(?:(?:hey|ok|okay|yo)\s+)?(?:alice[,\s]+)?"
+        r"^\s*(?:(?:hey|ok|okay|yo|hi|hello)\s+)?(?:alice[,\s]+)?"
         r"(?:(?:can|could|would|will)\s+you\s+|please\s+|pls\s+|"
         r"i\s+(?:want|need)\s+(?:you\s+to\s+)?|let'?s\s+)?"
         r"(?:open|launch|show|display|bring\s+up|start)\b\s+"
@@ -2254,13 +2284,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         re.IGNORECASE,
     )
     if m:
-        raw_requested = (m.group("name") or "").strip().rstrip(",.?!\"'")
-        raw_requested = re.sub(
-            r"\s+(?:app|application|program|window)$",
-            "",
-            raw_requested,
-            flags=re.IGNORECASE,
-        ).strip()
+        raw_requested = _normalize_manifest_app_request_name(m.group("name") or "")
         raw_norm = raw_requested.casefold().replace("-", " ")
         raw_norm = " ".join(raw_norm.split())
         if raw_norm in {"alice", "alice alive", "talk", "chat", "talk to alice", "what alice sees"}:
@@ -2880,6 +2904,22 @@ except Exception:
 # eliminating hardware contention with the live sounddevice InputStream.
 # Updated in _VADListener._on_block before self.utterance.emit(audio).
 _LAST_UTTERANCE_AUDIO: list = []  # max 1 item; [:] = [audio] to update atomically
+
+
+def _ollama_keep_alive(default: str = "45s") -> str:
+    """Bound local model residency so Talk does not hold GPU/RAM for minutes."""
+    value = os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", default)
+    value = str(value or "").strip()
+    return value or default
+
+
+def _ollama_num_ctx(default: int = 4096) -> int:
+    """Bound the local context window unless the owner deliberately overrides it."""
+    try:
+        value = int(float(os.environ.get("SIFTA_OLLAMA_NUM_CTX", str(default))))
+    except (TypeError, ValueError):
+        value = default
+    return max(1024, min(8192, value))
 
 # Pluggable speech backend + stigmergic voice modulator. Both are
 # tolerantly imported so the widget still runs (with the legacy direct-
@@ -8724,6 +8764,10 @@ _VAD_PREROLL_S        = 0.5     # keep this much audio *before* trigger
 _VAD_MIN_UTTER_S      = 0.20    # ignore micro-blips shorter than this
 _VAD_MAX_UTTER_S      = 30.0    # safety cap
 _DEFERRED_UTTERANCE_MAX_AGE_S = 20.0  # one in-memory rescue clip; never written to disk
+try:
+    _STT_TURN_TIMEOUT_S = float(os.environ.get("SIFTA_STT_TURN_TIMEOUT_S", "45") or "45")
+except Exception:
+    _STT_TURN_TIMEOUT_S = 45.0
 
 
 
@@ -9287,6 +9331,7 @@ class _BrainWorker(QThread):
             "model": self._model,
             "messages": _pipeline_history,
             "stream": True,
+            "keep_alive": _ollama_keep_alive(),
             # Architect 2026-05-14: let George read along while the
             # LLM works. Ollama streams message.thinking separately
             # from message.content on thinking-capable models. See
@@ -9300,6 +9345,7 @@ class _BrainWorker(QThread):
                 "repeat_last_n": 256,
                 "frequency_penalty": 0.5,
                 "presence_penalty": 0.3,
+                "num_ctx": _ollama_num_ctx(),
                 "num_predict": 700,
                 "stop": [
                     "\nYou said:", "You said: \"", "You said:\"",
@@ -9695,10 +9741,12 @@ class _WordAceLineComposer(QThread):
                 "model": model,
                 "messages": _wordace_compose_messages(fallback, self._metadata),
                 "stream": False,
+                "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
                 "options": {
                     "temperature": 0.45,
                     "top_p": 0.8,
+                    "num_ctx": _ollama_num_ctx(2048),
                     "num_predict": 40,
                     "repeat_penalty": 1.12,
                 },
@@ -11151,6 +11199,90 @@ def _pre_user_media_ingress_receipt(
         return None
 
 
+def _mandatory_voice_ingress_receipt(
+    text: str,
+    conf: float = 0.0,
+    acoustic_fingerprint: Optional[Dict[str, Any]] = None,
+    *,
+    voice_george_conf: float = 0.0,
+) -> Optional[Dict[str, Any]]:
+    """Mandatory first voice gate; returns a field receipt for non-direct turns.
+
+    Direct owner/Alice speech returns None and may continue to reflexes/cortex.
+    Ambient media, phone calls, room speech, appliance noise, and unknown outer
+    field input write receipts and must not continue to the brain.
+    """
+    try:
+        from System.swarm_media_ingress_gate import (
+            classify_external_consciousness_lane,
+            classify_spoken_ingress,
+            write_gate_receipt,
+        )
+
+        media_ctx = _media_focus_context_for_audio_gate()
+        acoustic = acoustic_fingerprint or {}
+        decision = classify_spoken_ingress(
+            text,
+            stt_conf=conf,
+            focus_context=media_ctx,
+            acoustic_fingerprint=acoustic,
+            voice_george_conf=voice_george_conf,
+        )
+        lane = classify_external_consciousness_lane(
+            text,
+            route=str(decision.get("route", "unknown") or "unknown"),
+            reason=str(decision.get("reason", "") or ""),
+            stt_conf=conf,
+            focus_context=media_ctx,
+            acoustic_fingerprint=acoustic,
+            voice_george_conf=voice_george_conf,
+        )
+        if decision.get("route") in {"direct", "owner_direct_speech"}:
+            return None
+
+        row = write_gate_receipt(
+            decision,
+            text=text,
+            stt_conf=conf,
+            focus_context=media_ctx,
+            acoustic_fingerprint=acoustic,
+            voice_george_conf=voice_george_conf,
+            external_consciousness=lane,
+        )
+
+        try:
+            ambient_log = _STATE_DIR / "ambient_external_consciousness.jsonl"
+            ambient_log.parent.mkdir(parents=True, exist_ok=True)
+            with ambient_log.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": time.time(),
+                    "source_class": lane.get("source_class"),
+                    "attention_policy": lane.get("attention_policy"),
+                    "text": str(text or "")[:200],
+                    "route": decision.get("route"),
+                    "reason": decision.get("reason"),
+                    "gate": "mandatory_voice_gate",
+                }, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            pass
+        return row
+    except Exception as exc:
+        # Fail open for gate implementation failure only. Dropping real owner
+        # speech is worse than letting one turn through, but leave a receipt.
+        print(f"[TalkToAliceWidget] voice gate exception (fail-open): {exc}")
+        try:
+            from System.swarm_media_ingress_gate import write_gate_receipt
+
+            write_gate_receipt(
+                {"route": "direct", "reason": "gate_exception_fail_open", "confidence": 0.0},
+                text=text,
+                stt_conf=conf,
+            )
+        except Exception:
+            pass
+        return None
+
+
 def _media_focus_context_for_audio_gate() -> str:
     """Best-effort current focus context for audio routing organs."""
     parts: List[str] = []
@@ -11557,6 +11689,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._busy = False                      # pipeline (STT/Brain/TTS) in flight
         self._listener: Optional[_ContinuousListener] = None
         self._stt: Optional[_STTWorker] = None
+        self._stt_started_ts: float = 0.0
         self._brain: Optional[_BrainWorker] = None
         self._tts: Optional[_TTSWorker] = None
         self._fast_ask_ticket = None  # Fast Ask training example, opened on dispatch
@@ -11815,6 +11948,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if self._busy:
             self._append_system_line("(I am still answering — wait for my turn to finish.)", error=True)
             return
+
+        # ── MANDATORY GATE FOR PUBLIC submit_text PATH (GROK_VOICE_GATE_ORDER) ──
+        # Typed input is almost always direct (stt_conf=1.0), but we still classify
+        # so every entry point is auditable and the external consciousness lane is recorded.
+        try:
+            from System.swarm_media_ingress_gate import classify_spoken_ingress
+            typed_ingress = classify_spoken_ingress(
+                text,
+                stt_conf=1.0,  # typed is owner by definition
+                focus_context="",
+            )
+            if typed_ingress.get("route") not in {"direct"}:
+                # Extremely rare for typed, but if it happens, treat as field input
+                try:
+                    from System.swarm_media_ingress_gate import write_gate_receipt
+                    write_gate_receipt(typed_ingress, text=text, stt_conf=1.0)
+                except Exception:
+                    pass
+                self._append_system_line("(external field input via text — no reply)", error=False)
+                return
+        except Exception:
+            pass
+
         # ── Owner chat-pref skill (fast path, no LLM) ─────────────────
         # Architect 2026-05-13 doctrine: natural-language USER font
         # colour change. Catch here, before any cortex routing, so
@@ -12216,6 +12372,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_listener_state(self, state: str) -> None:
         self._listener_state = state
+        self._publish_ear_live_state(state)
         if self._busy:
             return  # don't override "thinking"/"alice" pills
         if state == "speaking":
@@ -12295,10 +12452,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._set_pill("thinking", "⏳ transcribing…")
         model_name = _selected_whisper_model()
         self._stt = _STTWorker(audio, model_name=model_name, parent=self)
+        self._stt_started_ts = time.time()
         self._stt.progress.connect(self.set_status)
         self._stt.transcribed.connect(self._on_stt_done)
         self._stt.failed.connect(self._on_stt_failed)
         self._stt.start()
+        QTimer.singleShot(
+            int(max(5.0, _STT_TURN_TIMEOUT_S) * 1000),
+            lambda worker=self._stt: self._on_stt_watchdog(worker),
+        )
+
+    def _on_stt_watchdog(self, worker: Optional[_STTWorker]) -> None:
+        if worker is None or worker is not self._stt:
+            return
+        try:
+            if not worker.isRunning():
+                return
+        except RuntimeError:
+            return
+        try:
+            worker.requestInterruption()
+            worker.quit()
+            if not worker.wait(1000):
+                worker.terminate()
+                worker.wait(1000)
+        except Exception:
+            pass
+        self._stt = None
+        self._busy = False
+        self._pending_acoustic_fingerprint = {}
+        self._append_system_line(
+            f"STT timed out after {int(max(5.0, _STT_TURN_TIMEOUT_S))}s; I reset the ear path and kept listening.",
+            error=True,
+        )
+        self.set_status("STT timed out; listening again.")
+        self._return_to_listening()
 
     def _on_stt_failed(self, msg: str) -> None:
         self._busy = False
@@ -12494,6 +12682,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
                 self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                 return "I cannot see the SIFTA OS desktop from this widget to close anything."
+
+        # ── Open app (P2 completion) ────────────────────────────────────────
+        # Voice "open Teach Alice to Hear" (or any resolved manifest app) now
+        # actually triggers the desktop launcher. This completes the end-to-end
+        # so the test can prove the launch fires, not just name resolution.
+        if command.get("kind") == "app":
+            app_name = (command.get("app_name") or "").strip()
+            if not app_name:
+                receipt = _write_app_command_receipt(action="open_app", ok=False, note="no app_name resolved")
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return "I heard an app open request but could not resolve which app you meant."
+            if launcher is None:
+                receipt = _write_app_command_receipt(action="open_app", ok=False, app_name=app_name, note="no desktop launcher")
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I cannot reach the SIFTA OS desktop to open {app_name}."
+            try:
+                if hasattr(launcher, "_trigger_manifest_app"):
+                    launcher._trigger_manifest_app(app_name)
+                receipt = _write_app_command_receipt(action="open_app", ok=True, app_name=app_name)
+                self._append_system_line(f"App/browser receipt: {receipt}")
+                return f"Opening {app_name} now."
+            except Exception as exc:
+                receipt = _write_app_command_receipt(action="open_app", ok=False, app_name=app_name, note=str(exc))
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I tried to open {app_name} but it failed: {exc}"
             try:
                 if hasattr(launcher, "close_app_by_title"):
                     closed = launcher.close_app_by_title(target)
@@ -12852,10 +13065,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     _empty_msg = "I caught some audio but did not make out a word — say it once more."
                 else:
                     _empty_msg = "Audio reached my ear path, but the transcript came back empty. I logged the drop and kept listening."
-                self._append_system_line(
-                    _empty_msg,
-                    error=False,
-                )
+                _now = time.time()
+                _last_msg = getattr(self, "_last_empty_stt_fallback_msg", "")
+                _last_ts = float(getattr(self, "_last_empty_stt_fallback_ts", 0.0) or 0.0)
+                if not (_empty_msg == _last_msg and (_now - _last_ts) < 1.25):
+                    self._append_system_line(
+                        _empty_msg,
+                        error=False,
+                    )
+                    self._last_empty_stt_fallback_msg = _empty_msg
+                    self._last_empty_stt_fallback_ts = _now
             except Exception:
                 pass
             try:
@@ -12874,6 +13093,32 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+        # ── MANDATORY EXTERNAL CONSCIOUSNESS GATE (GROK_VOICE_GATE_ORDER) ──
+        # Every voice turn is classified before any reflex or brain call. A
+        # non-direct row means strict silence plus field receipt.
+        if not typed_turn:
+            _early_acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
+            _voice_gate_row = _mandatory_voice_ingress_receipt(
+                text,
+                conf,
+                _early_acoustic_fingerprint,
+                voice_george_conf=0.0,
+            )
+            if _voice_gate_row:
+                external = (
+                    _voice_gate_row.get("external_consciousness")
+                    if isinstance(_voice_gate_row.get("external_consciousness"), dict)
+                    else {}
+                )
+                source_class = external.get("source_class", "ambient")
+                self._append_system_line(
+                    f"(external field: {source_class} logged; no reply)",
+                    error=False,
+                )
+                self._busy = False
+                self._return_to_listening()
+                return
         # Architect 2026-05-14: WordAce lesson (renamed from Acer the
         # same day at Carlton + Kole + Drew's request) runs as an auto
         # state machine. When the WordAce widget has just published a
@@ -16131,6 +16376,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
         self._stigtime_action = new_lane
 
+    def _mark_alice_thinking_done(self, last_reply_excerpt: str = "") -> None:
+        """Clear Alice's cross-organ thinking heartbeat after a reply path exits."""
+        try:
+            from System.swarm_alice_thinking_state import mark_done as _alice_mark_done
+            _alice_mark_done(last_reply_excerpt=(last_reply_excerpt or "")[:160])
+        except Exception:
+            pass
+
     def _on_brain_done(self, text: str) -> None:
         """Brain has produced a candidate reply. The model proposes;
         the body decides whether to vocalize it.
@@ -17238,6 +17491,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── 4. Body said yes (or SSP unavailable) — speak the cleaned reply
         self._history.append({"role": "assistant", "content": cleaned})
         _log_turn("alice", cleaned, model=model_name, prior_user_text=prior_user_text)
+        self._mark_alice_thinking_done(cleaned)
 
         # Event 122 — vocal lane (refined after mute / WhatsApp flags below).
         _stig_lane_ctx = str(model_name)[:80]
@@ -17385,6 +17639,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._fast_ask_ticket = None
         self._pending_whatsapp_reply = None
         self._busy = False
+        self._mark_alice_thinking_done(f"(brain failed: {str(msg or '')[:120]})")
         self._end_alice_streaming_line()
         self._append_system_line(msg, error=True)
         self.set_status("Brain unreachable.")
@@ -17802,11 +18057,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # thinking flip false immediately, with the reply excerpt for
         # context. This is the canonical exit funnel — every Alice line
         # (brain, polarity, page summary, spell short-circuit) lands here.
-        try:
-            from System.swarm_alice_thinking_state import mark_done as _alice_mark_done
-            _alice_mark_done(last_reply_excerpt=(text or "")[:160])
-        except Exception:
-            pass
+        self._mark_alice_thinking_done(text)
 
         # Cowork 2026-05-17 — consciousness organ — every outgoing Alice
         # line gets scanned for qualia/awareness claims and recorded
@@ -18196,6 +18447,44 @@ class TalkToAliceWidget(SiftaBaseWidget):
     # ── Level meter (decays smoothly so it doesn't strobe) ─────────────────
     def _on_level(self, lvl: float) -> None:
         self._level_target = max(self._level_target, float(lvl))
+        self._publish_ear_live_state(level=float(lvl))
+
+    def _publish_ear_live_state(self, state: str = "", level: float = -1.0) -> None:
+        """One ear, one truth (covenant §7.6 / §7.15).
+
+        Talk owns the single microphone. Other organs — e.g. Teach Alice to
+        Hear — must MIRROR this one ear rather than grow a second mic. So we
+        publish the live VAD state + mic level to a tiny file any organ can
+        poll. Deterministic, no LLM. Throttled so the high-frequency level
+        callback does not hammer the disk.
+        """
+        try:
+            now = time.time()
+            if not state:
+                state = getattr(self, "_listener_state", "idle") or "idle"
+            if level < 0.0:
+                level = float(getattr(self, "_level_target", 0.0) or 0.0)
+            last = getattr(self, "_ear_live_state_last_write", 0.0)
+            last_state = getattr(self, "_ear_live_state_last_state", "")
+            # Always write on a state transition; throttle level-only writes.
+            if state == last_state and (now - last) < 0.12:
+                return
+            self._ear_live_state_last_write = now
+            self._ear_live_state_last_state = state
+            payload = {
+                "schema": "EAR_LIVE_STATE_V1",
+                "truth_label": "OBSERVED",
+                "state": state,            # idle | speaking | muted
+                "level": round(float(level), 4),
+                "busy": bool(getattr(self, "_busy", False)),
+                "ts": now,
+            }
+            path = _REPO / ".sifta_state" / "ear_live_state.json"
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload), encoding="utf-8")
+            tmp.replace(path)
+        except Exception:
+            pass
 
     def _decay_level(self) -> None:
         if self._level_current < self._level_target:
