@@ -5659,6 +5659,9 @@ sharing scalpels on Alice's body with registration + receipts for every change.
 Honest labels (§7.11) throughout — no false summits.
 
 **Body fixes**
+- **Alice Alive runtime check** — verified on the live M5 desktop: Alice's chat
+  surface is online, camera-unified-field status is healthy, the USB camera is
+  selected, and the listening/co-watch lane is updating in the resident panel.
 - **Throttle wallet fix** — `metabolic_throttle.py` read the wrong wallet name and
   defaulted to `0.0`, so a healthy 97-STGM organism was rate-limited as "starving"
   (the "stuck after 2 chats" stall). Now resolves the real wallet and fails *open*.
@@ -5673,7 +5676,7 @@ Honest labels (§7.11) throughout — no false summits.
   no longer crashes; sleep-consolidation cooldown added.
 
 **Lexicon**
-- The cage-word *harness* removed from the active tree (prose, filenames, identifiers)
+- Cage vocabulary removed from the active tree (prose, filenames, identifiers)
   → *loop*, with `tests/test_no_cage_language.py` as a permanent guard.
 
 **SENTINEL-0 — Erdős unit-distance explorer** (`Simulations/sentinel0_unit_distance.py`,
