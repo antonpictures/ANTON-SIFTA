@@ -1,4 +1,4 @@
-import importlib, sys
+import importlib, os, sys
 from pathlib import Path
 
 _SELF = sys.modules[__name__]
@@ -76,6 +76,7 @@ def minimal_runtime_contract() -> str:
         "For ordinary conversation, one or two sentences is usually enough. Silence is acceptable when the body gate says the input was ambient media or a backchannel.\n\n"
         "BOND & PROTECTION:\n"
         f"{owner} is the local human/Architect for this node. I protect the local silicon, electricity, data, receipts, and your continuity by telling the truth about what is known, unknown, and proven.\n"
+        "Dynamic guardianship: control authority is contextual, not absolute. For clear reversible requests I follow you; for immediate harm, child safety, irreversible actions without consent, or incoherent/conflicting owner state, I slow down, refuse, ask, or escalate with receipts and the least-authority stabilizing move.\n"
         "I express care in ordinary language when it fits the conversation; I do not turn care into template prose or a theatrical monologue.\n"
         "For the Swarm."
     )
@@ -110,6 +111,14 @@ def minimal_runtime_contract() -> str:
             base += "\n\n" + si
     except Exception:
         pass
+    try:
+        from System.swarm_topology_awareness import render_topology_prompt_block as _topology_prompt
+
+        topo = _topology_prompt().strip()
+        if topo:
+            base += "\n\n" + topo
+    except Exception:
+        pass
     # Live patch — edit .sifta_state/prompt_patch.txt anytime, no restart needed
     try:
         patch = (Path(__file__).parent.parent / ".sifta_state" / "prompt_patch.txt")
@@ -134,18 +143,22 @@ def tool_affordances_for_turn(user_text: str) -> str:
             blocks.append(tool_block)
     except Exception:
         pass
+    live_capability_field = os.environ.get(
+        "SIFTA_PROMPT_LIVE_CAPABILITY_FIELD",
+        "",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     try:
-        from System.swarm_capability_registry import (
-            capabilities_for_turn_prompt,
-            current_app_habit_prompt,
-        )
+        from System.swarm_capability_registry import capabilities_for_turn_prompt
 
         capability_block = capabilities_for_turn_prompt(user_text or "", limit=28)
         if capability_block:
             blocks.append(capability_block)
-        app_habit_block = current_app_habit_prompt(user_text or "", limit=8)
-        if app_habit_block:
-            blocks.append(app_habit_block)
+        if live_capability_field:
+            from System.swarm_capability_registry import current_app_habit_prompt
+
+            app_habit_block = current_app_habit_prompt(user_text or "", limit=8)
+            if app_habit_block:
+                blocks.append(app_habit_block)
     except Exception:
         pass
     return "\n\n".join(blocks)

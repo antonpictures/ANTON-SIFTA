@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from Applications import sifta_talk_to_alice_widget as talk
-from System.swarm_tool_router import parse_tool_calls
+from System.swarm_tool_router import _exec_matrix_pty, parse_tool_calls
 
 
 def test_direct_run_request_routes_to_real_terminal_tool_call() -> None:
@@ -13,6 +13,188 @@ def test_direct_run_request_routes_to_real_terminal_tool_call() -> None:
     assert calls[0].tool_name == "run_terminal"
     assert calls[0].params["command"] == "pwd"
     assert "cost_justification" in calls[0].params
+
+
+def test_matrix_terminal_request_drives_visible_pty(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    class FakePane:
+        def __init__(self) -> None:
+            self.commands = []
+
+        def execute_direct_commands(self, commands):
+            self.commands.append(list(commands))
+
+    pane = FakePane()
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: pane)
+
+    text = talk._owner_direct_read_tool_request("pwd")
+    calls = parse_tool_calls(text)
+
+    assert pane.commands == [["pwd"]]
+    assert len(calls) == 1
+    assert calls[0].tool_name == "matrix_pty"
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["pwd"]
+    assert "cost_justification" in calls[0].params
+
+    pane.commands.clear()
+    text = talk._owner_direct_read_tool_request(
+        'Alice, pls start in this terminal "grok" command and then inside grok cli execute /help'
+    )
+    calls = parse_tool_calls(text)
+
+    assert pane.commands == []
+    assert calls == []
+
+
+def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    class FakePane:
+        def __init__(self) -> None:
+            self.delegations = []
+
+        def delegate_grok_from_global_chat(self, text):
+            self.delegations.append(text)
+            return {"ok": True}
+
+    pane = FakePane()
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: pane)
+
+    text = talk._owner_direct_read_tool_request("Alice ask Grok what did the last receipt prove?")
+    calls = parse_tool_calls(text)
+
+    assert pane.delegations == ["Alice ask Grok what did the last receipt prove?"]
+    assert len(calls) == 1
+    assert calls[0].tool_name == "matrix_pty"
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+
+    pane.delegations.clear()
+    text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
+    calls = parse_tool_calls(text)
+
+    assert pane.delegations == ["ask grok how are your organs wired"]
+    assert len(calls) == 1
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+
+    pane.delegations.clear()
+    text = talk._owner_direct_read_tool_request(
+        "i want you to be able to ask grok and grok to print the answer here in global chat as proof"
+    )
+    calls = parse_tool_calls(text)
+
+    assert pane.delegations == [
+        "i want you to be able to ask grok and grok to print the answer here in global chat as proof"
+    ]
+    assert len(calls) == 1
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+
+
+def test_global_chat_grok_request_without_live_pane_is_queued_not_faked(monkeypatch, tmp_path) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: None)
+    monkeypatch.setattr(talk, "Path", lambda _path: tmp_path)
+
+    text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
+    calls = parse_tool_calls(text)
+
+    assert calls == []
+    assert "GROK_DELEGATION_QUEUED" in text
+    assert "did not claim matrix_pty executed" in text
+
+    ledger = tmp_path / "grok_delegation_requests.jsonl"
+    rows = [line for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert rows
+    import json
+
+    payload = json.loads(rows[-1])
+    assert payload["queue_for_matrix_terminal"] is True
+    assert payload["dispatched_live"] is False
+
+
+def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    class FakePane:
+        def __init__(self) -> None:
+            self.opens = []
+
+        def open_grok_from_global_chat(self, text):
+            self.opens.append(text)
+            return {"ok": True}
+
+    pane = FakePane()
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: pane)
+
+    text = talk._owner_direct_read_tool_request("type grok and bypass the two screen selections")
+    calls = parse_tool_calls(text)
+
+    assert pane.opens == ["type grok and bypass the two screen selections"]
+    assert len(calls) == 1
+    assert calls[0].tool_name == "matrix_pty"
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_OPEN"]
+
+    pane.opens.clear()
+    text = talk._owner_direct_read_tool_request("i used my voice, i meant grok, start grok cli now")
+    calls = parse_tool_calls(text)
+
+    assert pane.opens == ["i used my voice, i meant grok, start grok cli now"]
+    assert len(calls) == 1
+    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_OPEN"]
+
+
+def test_prebrain_reflex_catches_topology_identity_before_cortex(tmp_path) -> None:
+    reply, model = talk._deterministic_prebrain_reflex(
+        "Alice, who are you and who is Grok?",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert model == "topology_self_other_pre_answer_reflex"
+    assert "Layer One Owner = owner / continuity anchor" in reply
+    assert "Alice = SIFTA field / organism" in reply
+    assert "Grok = external tool/cortex surface" in reply
+
+
+def test_prebrain_reflex_catches_hard_recall_before_body_gate(monkeypatch, tmp_path) -> None:
+    import System.swarm_hard_recall as hard_recall_module
+
+    monkeypatch.setattr(
+        hard_recall_module,
+        "hard_recall",
+        lambda text: {
+            "mode": "HARD_RECALL",
+            "exact_text": 'Your previous prompt was:\n\n"exact prior text"',
+        },
+    )
+
+    reply, model = talk._deterministic_prebrain_reflex(
+        "Alice, read back my previous prompt exactly.",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert model == "hard_recall_reflex"
+    assert "exact prior text" in reply
+
+
+def test_prebrain_reflex_stands_down_for_grok_action_intent(tmp_path) -> None:
+    for text in (
+        "ask grok how are your organs wired",
+        "i used my voice, i meant grok, start grok cli now",
+        "i want you to be able to ask grok and grok to print the answer here in global chat as proof",
+    ):
+        reply, model = talk._deterministic_prebrain_reflex(
+            text,
+            state_dir=tmp_path,
+            owner_label="Layer One Owner",
+            write_receipt=False,
+        )
+
+        assert (reply, model) == ("", "")
 
 
 def test_write_file_bridge_preserves_code_literals_without_pipe_parser() -> None:

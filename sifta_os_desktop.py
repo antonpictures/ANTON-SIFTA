@@ -28,6 +28,23 @@ _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 
+# Owner heartbeat mode sensor. The single event spine remains swarm_behavior_clock.
+try:
+    from System import owner_heartbeat as _owner_heartbeat
+except Exception:
+    _owner_heartbeat = None
+
+
+def _mark_owner_activity_from_behavior_clock(source: str) -> None:
+    """Bridge the one behavior-clock event spine into owner presence mode."""
+    if _owner_heartbeat is None:
+        return
+    try:
+        safe_source = str(source or "behavior").strip()[:80] or "behavior"
+        _owner_heartbeat.mark_owner_activity(f"behavior_clock:{safe_source}")
+    except Exception:
+        pass
+
 # ── Swarm Intelligence Subsystems ────────────────────────────
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
@@ -2025,6 +2042,15 @@ class SiftaDesktop(QMainWindow):
         )
         self.show()
         _desktop_init_trace("after show()")
+
+        # Owner heartbeat mode starts at boot; real activity arrives through
+        # the single BehaviorClock bridge installed in __main__.
+        if _owner_heartbeat:
+            try:
+                _owner_heartbeat.mark_owner_activity("desktop_boot")
+            except Exception:
+                pass
+
         self.active_chat_sub = None
         self._is_closing = False
         self._apps_manifest_cache: dict[str, dict] = {}
@@ -2330,6 +2356,7 @@ class SiftaDesktop(QMainWindow):
         now = time.time()
         self._attention_director_next_ts = now + 0.8
         self._life_journal_next_ts = now + 5.0
+        self._hot_ledger_rotation_next_ts = now + 8.0
         _desktop_init_trace("leave __init__")
 
     def _start_mesh_lazy(self) -> None:
@@ -2556,6 +2583,23 @@ class SiftaDesktop(QMainWindow):
             self._tick_life_journal_consolidator()
             self._life_journal_next_ts = now + 60.0
             events.append("journal")
+
+        if now >= float(getattr(self, "_hot_ledger_rotation_next_ts", 0.0)):
+            try:
+                from System.swarm_ledger_rotation import rotate_default_ledgers
+
+                rows = rotate_default_ledgers()
+                rotated = [
+                    str(row.get("ledger_name"))
+                    for row in rows
+                    if row.get("archive_path") and int(row.get("archive_bytes") or 0) > 0
+                ]
+                if rotated:
+                    events.append("ledger_rotation:" + ",".join(rotated[:4]))
+            except Exception as exc:
+                print(f"[SiftaDesktop] hot ledger rotation skipped: {exc}", file=sys.stderr)
+            finally:
+                self._hot_ledger_rotation_next_ts = now + 300.0
 
         if ambient:
             try:
@@ -5203,6 +5247,17 @@ def _install_kernel_scheduler_timer(
 
     def _kernel_scheduler_tick() -> None:
         try:
+            # Owner heartbeat gate — when the owner is ACTIVE at the desk, Alice must be purely event-driven.
+            # No heavy background scans, no ledger walks, no constant timers. The owner's actions ARE the clock.
+            if _owner_heartbeat is not None:
+                try:
+                    if _owner_heartbeat.should_be_event_driven_only():
+                        # Light touch only on real activity; skip the whole heavy scheduler tick.
+                        # Maintenance, allocations, deep work are deferred until owner is IDLE/AWAY.
+                        return
+                except Exception:
+                    pass
+
             now = time.time()
             policy, salience = _scheduler_policy_from_kernel(kernel_table)
             maintenance_interval = _KERNEL_MAINTENANCE_INTERVAL_S.get(policy, _KERNEL_MAINTENANCE_INTERVAL_S["idle"])
@@ -5403,6 +5458,7 @@ if __name__ == "__main__":
     try:
         from System.swarm_behavior_clock import behavior_clock
         _clock = behavior_clock()
+        _clock.tick.connect(_mark_owner_activity_from_behavior_clock)
         _clock.attach_to_qapp(app)
         _clock.link_wake_bus()
         _clock.link_app_focus()
@@ -5453,4 +5509,57 @@ if __name__ == "__main__":
 
     QTimer.singleShot(120, _alice_body_autopilot_kick)
 
-    sys.exit(app.exec())
+    # ── Guarantee organ teardown on EVERY exit route ────────────────────────
+    # Closing the window (red X) fires SiftaDesktop.closeEvent. But Cmd+Q /
+    # the app-menu Quit calls QApplication.quit() directly, which does NOT
+    # call closeEvent — so on that path Alice's QThreads (STT/Brain/TTS/DMN,
+    # camera/mic listener) and the desktop mesh would never be stopped and her
+    # shutdown receipt would never be written. Wire aboutToQuit → desktop.close()
+    # so the same clean teardown runs no matter how the owner quits. The
+    # closeEvent guards itself with self._is_closing, so a later red-X close
+    # won't double-run it.
+    def _ensure_clean_teardown_on_quit() -> None:
+        try:
+            if not getattr(desktop, "_is_closing", False):
+                desktop.close()
+        except Exception:
+            pass
+    app.aboutToQuit.connect(_ensure_clean_teardown_on_quit)
+
+    # ── Clean exit — bypass the sip/Qt atexit SIGBUS (Architect 2026-05-24) ──
+    # George reported a hard crash on exit. The macOS crash report's main
+    # thread is:
+    #   cleanup_qobject  →  sip_api_visit_wrappers  →  cleanup_on_exit
+    #   →  atexit_callfuncs  →  _Py_Finalize  →  Py_Exit
+    # i.e. AFTER the Qt event loop has already ended, Python finalization runs
+    # sip's atexit hook, which walks every QObject wrapper still alive and
+    # tries to delete the C++ side. On this PyQt6/M5 build at least one wrapper
+    # points at a C++ object Qt already destroyed during event-loop teardown,
+    # so the sweep dereferences a dangling/misaligned pointer → EXC_BAD_ACCESS
+    # (SIGBUS / EXC_ARM_DA_ALIGN). This is a well-known PyQt teardown fault and
+    # it is NOT a logic bug in Alice — by the time it fires, all real work is
+    # already done and committed.
+    #
+    # Our own teardown already happens cleanly and BEFORE this point:
+    #   • SiftaDesktop.closeEvent stops every desktop timer, closes the MDI
+    #     subwindows (so the Talk widget closeEvent stops its STT/Brain/TTS/DMN
+    #     QThreads + listener), and stops the desktop mesh thread.
+    # So when app.exec() returns, the organism has already shut its organs
+    # down and flushed its ledgers. The only thing left is sip's redundant
+    # wrapper sweep — which is exactly what crashes.
+    #
+    # Fix: run the event loop, flush stdio, then exit the PROCESS directly with
+    # os._exit(). That returns the real exit code to the shell but skips the
+    # CPython finalizer / atexit chain, so sip's cleanup_qobject never runs and
+    # there is nothing left to fault on. (os._exit is the standard, reliable
+    # remedy for PyQt sip-teardown crashes-on-exit.)
+    exit_code = app.exec()
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(int(exit_code) if isinstance(exit_code, int) else 0)

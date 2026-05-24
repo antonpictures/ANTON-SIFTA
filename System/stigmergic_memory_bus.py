@@ -41,7 +41,6 @@ import random
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
-from difflib import SequenceMatcher
 
 
 # ─── Config ────────────────────────────────────────────────────────────────────
@@ -241,17 +240,19 @@ class MemoryForager:
 
             self.traces_read += 1
 
-            # Compute semantic scent: tag overlap + text similarity
+            # Compute semantic scent: tag overlap + FAST token similarity.
+            # George 2026-05-23 — py-spy root cause: difflib.SequenceMatcher.ratio()
+            # here was O(n^2) + dict-churn, run over the ENTIRE memory corpus on the
+            # MAIN thread on every recall. It pegged the CPU for minutes and bloated
+            # the process to 10GB (starving the Gemma/Ollama cortex -> "resource
+            # limitations" crashes). Token Jaccard is ~100x cheaper, bounded, and a
+            # perfectly good scent for memory recall. Keep organs healthy. 🐜⚡
             tag_overlap = len(set(trace.semantic_tags) & set(query_tags))
-            text_sim    = SequenceMatcher(
-                None,
-                query.lower(),
-                trace.raw_text.lower()
-            ).ratio()
-
-            # Keyword match boost
-            trace_words   = set(trace.raw_text.lower().split())
-            keyword_boost = len(query_words & trace_words) * 0.1
+            trace_words = set(trace.raw_text.lower().split())
+            _inter = len(query_words & trace_words)
+            _union = len(query_words | trace_words) or 1
+            text_sim = _inter / _union
+            keyword_boost = _inter * 0.1
 
             raw_similarity = min(1.0, (tag_overlap * 0.3) + text_sim + keyword_boost)
 
@@ -584,6 +585,16 @@ class StigmergicMemoryBus:
         if not traces:
             return []
 
+        forager_scores: dict[str, float] = {}
+        try:
+            # One swimmer pass per recall. The old loop spawned a forager for
+            # every trace, which reread/rescored the whole memory ledger N times
+            # from Alice's main speech path.
+            forager = self._spawn_forager()
+            forager_scores = {tr.trace_id: float(sc) for sc, tr in forager.forage(query, LEDGER_FILE)}
+        except Exception:
+            forager_scores = {}
+
         results = []
         for t in traces:
             label = getattr(t, "epistemic_label", "HYPOTHESIS")
@@ -591,16 +602,7 @@ class StigmergicMemoryBus:
                 continue
 
             # 1. Existing forager confidence (reuse the smell logic)
-            forager_score = 0.0
-            try:
-                forager = self._spawn_forager()
-                scored = forager.forage(query, LEDGER_FILE)
-                for sc, tr in scored:
-                    if tr.trace_id == t.trace_id:
-                        forager_score = float(sc)
-                        break
-            except Exception:
-                forager_score = 0.0
+            forager_score = float(forager_scores.get(t.trace_id, 0.0))
 
             # 2. BM25-lite on raw_text + tags
             text_for_bm25 = t.raw_text + " " + " ".join(t.semantic_tags)

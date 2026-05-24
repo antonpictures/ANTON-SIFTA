@@ -45,6 +45,31 @@ _JOURNAL_DIR = _STATE / "alice_journal"   # daily files: YYYY-MM-DD.jsonl
 _LEGACY_LEDGER = _STATE / "alice_narrative_diary.jsonl"  # backward compat
 
 
+def _read_jsonl_tail(path: Path, *, limit: int = 80, byte_window: int = 256 * 1024) -> list[dict]:
+    if not path.exists():
+        return []
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            size = handle.tell()
+            handle.seek(max(0, size - max(4096, int(byte_window))))
+            payload = handle.read()
+        lines = payload.decode("utf-8", errors="replace").splitlines()
+        if size > byte_window and lines:
+            lines = lines[1:]
+    except OSError:
+        return []
+    rows: list[dict] = []
+    for line in lines[-max(1, int(limit)):]:
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
 def _today_ledger() -> Path:
     """Today's journal file: alice_journal/YYYY-MM-DD.jsonl"""
     _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -290,26 +315,19 @@ def format_narrative_for_prompt(max_rows: int = 8, max_age_hours: float = 24.0) 
         cutoff = time.time() - max_age_hours * 3600
         rows = []
 
-        # Read legacy monolithic file for old entries
-        if _LEGACY_LEDGER.exists():
-            for line in _LEGACY_LEDGER.read_text().strip().splitlines():
-                try:
-                    r = json.loads(line)
-                    if float(r.get("ts", 0)) >= cutoff:
-                        rows.append(r)
-                except Exception:
-                    pass
+        # Prompt construction is hot-path work: read bounded tails, not whole
+        # historical journals.
+        for r in _read_jsonl_tail(_LEGACY_LEDGER, limit=max_rows * 4):
+            if float(r.get("ts", 0) or 0) >= cutoff:
+                rows.append(r)
 
         # Read daily files
         _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-        for f in sorted(_JOURNAL_DIR.glob("*.jsonl")):
-            for line in f.read_text().strip().splitlines():
-                try:
-                    r = json.loads(line)
-                    if float(r.get("ts", 0)) >= cutoff:
-                        rows.append(r)
-                except Exception:
-                    pass
+        files = sorted(_JOURNAL_DIR.glob("*.jsonl"))
+        for f in files[-3:]:
+            for r in _read_jsonl_tail(f, limit=max_rows * 6):
+                if float(r.get("ts", 0) or 0) >= cutoff:
+                    rows.append(r)
 
         # Sort by ts and deduplicate
         seen: set[tuple] = set()

@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton,
     QPlainTextEdit, QVBoxLayout, QWidget, QFrame, QSplitter,
 )
-from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 
 # ── Global SIFTA Palette (reusable constants) ────────────────────
@@ -427,6 +427,76 @@ class SiftaBaseWidget(QWidget):
 
     # ── Lifecycle ─────────────────────────────────────────────────
 
+    def _stop_child_qthreads_before_delete(self) -> None:
+        """Drain parented QThreads before QWidget child destruction.
+
+        Qt aborts the whole process if a QThread C++ object is destroyed while
+        its native thread is still running. Several SIFTA apps create short
+        lived worker threads as children of the widget; the latest worker is
+        often tracked by an attribute, but older still-running children can be
+        invisible to the app-specific closeEvent. The base widget is the last
+        common membrane before QWidget teardown, so it performs a final sweep.
+        """
+        try:
+            workers = list(self.findChildren(QThread))
+        except RuntimeError:
+            return
+        current = QThread.currentThread()
+        for worker in workers:
+            if worker is None or worker is current:
+                continue
+            try:
+                running = bool(worker.isRunning())
+            except RuntimeError:
+                continue
+            if not running:
+                continue
+
+            # Give custom workers first chance to stop cooperatively.
+            for method_name in ("halt", "stop"):
+                try:
+                    method = getattr(worker, method_name, None)
+                except RuntimeError:
+                    method = None
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        pass
+                    try:
+                        if not worker.isRunning():
+                            break
+                    except RuntimeError:
+                        break
+
+            try:
+                if not worker.isRunning():
+                    continue
+            except RuntimeError:
+                continue
+
+            try:
+                worker.requestInterruption()
+            except RuntimeError:
+                pass
+            try:
+                worker.quit()
+            except RuntimeError:
+                pass
+            try:
+                if worker.wait(2000):
+                    continue
+            except RuntimeError:
+                continue
+
+            # Last resort during app shutdown. Better an interrupted worker
+            # than Qt deleting a live QThread and aborting Python.
+            try:
+                worker.terminate()
+                worker.wait(1000)
+            except RuntimeError:
+                pass
+
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         for t in self._timers:
             t.stop()
@@ -436,4 +506,5 @@ class SiftaBaseWidget(QWidget):
                 self._gci.close()
             except Exception:
                 pass
+        self._stop_child_qthreads_before_delete()
         super().closeEvent(event)

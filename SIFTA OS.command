@@ -46,6 +46,11 @@ export SIFTA_LEDGER_COMPACT_ENABLE="${SIFTA_LEDGER_COMPACT_ENABLE:-1}"
 # §9.C — per-organ energy receipts (psutil + macOS powermetrics fallback).
 export SIFTA_BURN_LOOP_ENABLE="${SIFTA_BURN_LOOP_ENABLE:-1}"
 
+# Matrix Terminal is Alice-first by default. Grok/Hermes remain macOS commands,
+# but this surface should not become an owner-facing agent-CLI chat unless the
+# owner explicitly starts SIFTA with SIFTA_MATRIX_ENABLE_AGENT_CLI=1.
+export SIFTA_MATRIX_ENABLE_AGENT_CLI="${SIFTA_MATRIX_ENABLE_AGENT_CLI:-0}"
+
 if [ -x ".venv/bin/python3" ]; then
   PYTHON_BIN=".venv/bin/python3"
 else

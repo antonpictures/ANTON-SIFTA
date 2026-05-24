@@ -37,6 +37,28 @@ def test_sifta_os_desktop_public_overlay_and_magnetic_types():
     assert m.SiftaDesktop.__module__ == "sifta_os_desktop"
 
 
+def test_desktop_owner_heartbeat_uses_behavior_clock_bridge(monkeypatch):
+    import sifta_os_desktop as m
+
+    calls: list[str] = []
+
+    class FakeOwnerHeartbeat:
+        @staticmethod
+        def mark_owner_activity(source: str) -> None:
+            calls.append(source)
+
+    monkeypatch.setattr(m, "_owner_heartbeat", FakeOwnerHeartbeat)
+    m._mark_owner_activity_from_behavior_clock("key")
+
+    assert calls == ["behavior_clock:key"]
+
+
+def test_desktop_does_not_install_second_owner_activity_filter():
+    desktop = (REPO / "sifta_os_desktop.py").read_text(encoding="utf-8")
+    assert "_clock.tick.connect(_mark_owner_activity_from_behavior_clock)" in desktop
+    assert "app.installEventFilter(self)" not in desktop
+
+
 def test_beeson_alice_eye_chrome_defaults_are_low_stress():
     """BeeSon demo path: eye organ can run, panel chrome stays calm."""
     alice = (REPO / "Applications" / "sifta_alice_widget.py").read_text()

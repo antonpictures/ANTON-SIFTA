@@ -60,7 +60,7 @@ def _sample_snapshot():
     }
 
 
-def test_swarm_field_widget_constructs_and_renders(monkeypatch):
+def test_swarm_field_widget_constructs_and_renders(monkeypatch, tmp_path):
     import Applications.sifta_swarm_visibility_widget as widget_mod
 
     _app()
@@ -70,6 +70,30 @@ def test_swarm_field_widget_constructs_and_renders(monkeypatch):
     focus_rows = []
     monkeypatch.setattr(widget_mod, "_publish_focus", lambda *args, **kwargs: focus_rows.append((args, kwargs)))
     monkeypatch.setattr(widget_mod, "full_snapshot", _sample_snapshot)
+    monkeypatch.setattr(widget_mod, "_STATE", tmp_path)
+    (tmp_path / "alice_conversation.jsonl").write_text(
+        json.dumps({
+            "payload": {
+                "ts": 1.0,
+                "role": "user",
+                "text": "[Matrix Terminal]: Alice open Grok",
+                "routing_metadata": {"surface": "matrix_terminal"},
+            }
+        }) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "sifta_desktop_app_state.json").write_text(
+        json.dumps({"desktop_mode": "chat", "active_app": "Terminal", "open_apps": ["Terminal"]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "app_focus.jsonl").write_text(
+        json.dumps({"ts": 1.0, "app": "Terminal", "detail": "Matrix Terminal focused"}) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "matrix_terminal_process_trace.jsonl").write_text(
+        json.dumps({"ts": 1.0, "action": "write_command", "text": "send command -> grok: grok"}) + "\n",
+        encoding="utf-8",
+    )
 
     w = widget_mod.SwarmFieldWidget()
     assert w.windowTitle() == "Swarm Field"
@@ -77,11 +101,36 @@ def test_swarm_field_widget_constructs_and_renders(monkeypatch):
     assert "LLM_REGISTRATION" in w._field["text"].toPlainText()
     assert "99.97" in w._stgm["text"].toPlainText()
     assert "Codex" in w._swimmers["text"].toPlainText()
+    assert "Matrix Terminal" in w._global_chat["text"].toPlainText()
+    assert "Terminal" in w._territory["text"].toPlainText()
+    assert "write_command" in w._process["text"].toPlainText()
     assert focus_rows
 
     again = widget_mod.SwarmFieldWidget()
     assert again is w
     w.close()
+
+
+def test_widget_tail_jsonl_uses_bounded_file_tail(monkeypatch, tmp_path):
+    import Applications.sifta_swarm_visibility_widget as widget_mod
+
+    path = tmp_path / "alice_conversation.jsonl"
+    path.write_text(
+        "".join(
+            json.dumps({"payload": {"role": "user", "text": f"old-{i}", "ts": i}}) + "\n"
+            for i in range(80)
+        )
+        + json.dumps({"payload": {"role": "assistant", "text": "latest", "ts": 100}}) + "\n",
+        encoding="utf-8",
+    )
+
+    def fail_read_text(self, *args, **kwargs):
+        raise AssertionError(f"full text read in widget tailer: {self}")
+
+    monkeypatch.setattr(Path, "read_text", fail_read_text)
+    rows = widget_mod._tail_jsonl(path, 3)
+
+    assert [row["payload"]["text"] for row in rows] == ["old-78", "old-79", "latest"]
 
 
 def test_swarm_field_manifest_entry_points_to_existing_widget():

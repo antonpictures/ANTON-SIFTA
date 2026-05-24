@@ -164,6 +164,10 @@ def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, 
 
     # 1b. Phrase-based tool / skill detection (fixes the 4 eval failures: run ls, read file tool, extract skill, pull hermes skill)
     phrase_rules = [
+        # George 2026-05-23: "tell Alice, she does it" — open the Grok CLI in HER terminal,
+        # no button. Routes to the Matrix Terminal's start_grok_cli / write_command("grok").
+        (r"\b(open|start|type|launch|run|talk to)\s+grok\b", "tool", "open_grok_cli", True),
+        (r"\bgrok\b.*\b(terminal|cli)\b", "tool", "open_grok_cli", True),
         (r"\b(run|exec)\s+(ls|list|dir|files?)\b", "tool", "list_dir", False),
         (r"\b(use|call|run)\s+(the\s+)?(read|cat)\s+(file|tool)\b", "tool", "read_file", False),
         (r"\b(extract|pull)\s+(a\s+)?skill\b", "skill", "skill_extract_from_trace", False),

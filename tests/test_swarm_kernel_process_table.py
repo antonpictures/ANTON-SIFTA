@@ -533,6 +533,40 @@ def test_sys_effector_request_allows_ring2_and_spends_visible_stgm(tmp_path):
     )
 
 
+def test_sys_effector_request_read_only_grok_lane_has_final_receipt_fields(tmp_path):
+    table = KernelProcessTable(state_root=tmp_path)
+    table.register(_process("router", ring=2))
+
+    gate = table.sys_effector_request(
+        "router",
+        "matrix_pty",
+        0.25,
+        evidence_gain=0.92,
+        stgm_delta=-0.25,
+        thermal=0.0,
+        interrupt_risk=0.01,
+        metadata={
+            "clearance_lane": "READ_ONLY_GROK_DELEGATION",
+            "effector_decision": "SHOULD_NOT_SURVIVE_METADATA_MERGE",
+            "read_only_grok_delegation": "true",
+            "tool": "matrix_pty",
+        },
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "kernel_process_table.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    receipt = next(row for row in rows if row["trace_id"] == gate["receipt_id"])
+    assert gate["allow"] is True
+    assert gate["decision"] == "ALLOW"
+    assert receipt["current_job"] == "effector_request:matrix_pty:ALLOW"
+    proc = table.get("router")
+    assert proc.metadata["effector_decision"] == "ALLOW"
+    assert proc.metadata["clearance_lane"] == "READ_ONLY_GROK_DELEGATION"
+    assert "safe read-only inspection" in proc.metadata["lane_note"]
+
+
 def test_sys_effector_request_throttles_low_utility_without_spend(tmp_path):
     table = KernelProcessTable(state_root=tmp_path)
     table.register(_process("router", ring=2))

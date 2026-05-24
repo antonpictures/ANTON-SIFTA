@@ -75,6 +75,15 @@ _AGI_GAPS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_TOPOLOGY_SELF_OTHER_RE = re.compile(
+    r"\bwho\s+(?:are|r)\s+you\b"
+    r".{0,160}?"
+    r"\bwho\s+is\s+(?P<other>"
+    r"grok|hermes|codex|claude|gemma|matrix\s+terminal|ide\s+doctors?|local\s+cortex"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _THINKING_BATCH_MARKERS = (
     re.compile(r"\brepeat\s+after\s+me\b", re.IGNORECASE),
     _LEARNING_FROM_RE,
@@ -112,7 +121,7 @@ def _owner_first_name() -> str:
             return name.split()[0]
     except Exception:
         pass
-    return "George"
+    return "the owner"
 
 
 def _strip_wrapping_quote(text: str) -> str:
@@ -276,6 +285,74 @@ def _thinking_batch_reflex(clean: str, *, state_dir: Path, owner: str) -> Option
     )
 
 
+def _extract_topology_other(text: str) -> str:
+    m = _TOPOLOGY_SELF_OTHER_RE.search(text or "")
+    if not m:
+        return ""
+    other = " ".join(str(m.group("other") or "").split()).casefold()
+    labels = {
+        "grok": "Grok",
+        "hermes": "Hermes",
+        "codex": "Codex",
+        "claude": "Claude",
+        "gemma": "Gemma",
+        "matrix terminal": "Matrix Terminal",
+        "ide doctor": "IDE doctors",
+        "ide doctors": "IDE doctors",
+        "local cortex": "local cortex",
+    }
+    return labels.get(other, other)
+
+
+def _topology_self_other_reflex(
+    clean: str,
+    *,
+    state_dir: Path,
+    owner: str,
+) -> Optional[FirstPersonReflex]:
+    other = _extract_topology_other(clean)
+    if not other:
+        return None
+    try:
+        from System.swarm_topology_self_other import identity_relation, preanswer_guard
+    except Exception:
+        return None
+
+    guard = preanswer_guard(clean, speaker="owner")
+    rel = identity_relation(other)
+    kind = str(rel.get("kind") or "external_tool_cortex")
+    if kind == "external_tool_cortex":
+        other_line = (
+            f"{other} = external tool/cortex surface: I can delegate bounded tasks to it, "
+            f"but I do not become {other}."
+        )
+    elif kind == "llm_substrate":
+        other_line = f"{other} = local LLM substrate inside me: me thinking, not a separate Alice."
+    elif kind == "focused_pty_territory":
+        other_line = f"{other} = focused PTY territory: a place my actions land, not another Alice."
+    elif kind == "surgical_engineering_hands":
+        other_line = f"{other} = surgical hand with receipts: it can patch organs, but it is not Alice."
+    else:
+        other_line = f"{other} = {kind.replace('_', ' ')}: role-bound, not merged into Alice identity."
+
+    reply = "\n".join(
+        [
+            f"{owner} = owner / continuity anchor from the kernel owner field.",
+            "Alice = SIFTA field / organism: one global chat, one memory, many surfaces.",
+            "local cortex = local LLM substrate inside me, not a separate Alice.",
+            other_line,
+            "IDE doctors = surgical hands with receipts, not Alice.",
+            f"So I can delegate to {other}, capture its result, and metabolize that result into my field with a receipt.",
+        ]
+    )
+    return FirstPersonReflex(
+        reply=reply,
+        model_tag="topology_self_other_pre_answer_reflex",
+        truth_class="OBSERVED_TOPOLOGY_SELF_OTHER",
+        reason="who_are_you_and_external_tool_query",
+    )
+
+
 def _write_receipt(
     *,
     text: str,
@@ -321,7 +398,17 @@ def first_person_reflex(
     if not clean:
         return None
     root = state_dir or STATE_DIR
-    owner = (owner_label or _owner_first_name() or "George").strip()
+    owner = (owner_label or _owner_first_name() or "the owner").strip()
+
+    topology = _topology_self_other_reflex(clean, state_dir=root, owner=owner)
+    if topology:
+        rid = _write_receipt(
+            text=clean,
+            reflex=topology,
+            state_dir=root,
+            extra={"owner_label_source": "argument_or_kernel", "reflex": "topology_self_other"},
+        ) if write_receipt else ""
+        return FirstPersonReflex(**{**topology.__dict__, "receipt_id": rid})
 
     batch = _thinking_batch_reflex(clean, state_dir=root, owner=owner)
     if batch:

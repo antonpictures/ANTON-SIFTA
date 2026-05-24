@@ -442,6 +442,110 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             "cost_justification=George asked Alice to inspect her unified tools and skills capability field]"
         )
 
+    # ── Global chat → visible Grok tool bridge (ACTION-DELEGATION REFLEX v2) ─────
+    # One Alice / one global chat. Per owner covenant + Tao verification layers:
+    # "ask/tell/send ... grok" (delegation carrying a question) → ALWAYS route to
+    # delegation organ FIRST. This suppresses greeting/identity fallbacks even if
+    # no Matrix Terminal pane is currently focused. The reflex writes the stigmergic
+    # intent receipt + ledger entry unconditionally.
+    # Pure "open/start grok" (launch without delegated question) remains best-effort
+    # (pane-gated) to preserve direct PTY drive intents and existing tests.
+    # Live GROK_RESULT capture when pane present; ledger always records for pickup.
+    # No double-spend ASCII swimmers. High-dim field. Owner protected.
+    grok_delegation = re.search(r"\b(?:ask|call|use|tell|send\s+to)\s+grok\b", text, re.IGNORECASE)
+    grok_open = re.search(
+        r"\b(?:open|start|launch|resume|type|run|bring\s+up|talk\s+to)\s+(?:the\s+)?grok\b"
+        r"|\bgrok\b.{0,80}\b(?:terminal|cli|screen|screens|session|resume|bypass|select|selection)\b",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # TRUE DELEGATION REFLEX (ask Grok a question + proof in global chat):
+    # unconditional on pattern. This is the fix for the last blocker.
+    if grok_delegation:
+        dispatched_live = False
+        delegation_receipt = f"delegation_intent_{uuid.uuid4().hex[:12]}"
+        try:
+            from Applications.sifta_matrix_terminal import get_focused_matrix_terminal_pane
+
+            pane = get_focused_matrix_terminal_pane()
+            if pane is not None and hasattr(pane, "delegate_grok_from_global_chat"):
+                result = pane.delegate_grok_from_global_chat(text)
+                if result.get("ok"):
+                    dispatched_live = True
+        except Exception:
+            pass
+
+        # Ledger write (stigmergic trace) — happens even without visible pane.
+        try:
+            _state = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            _state.mkdir(parents=True, exist_ok=True)
+            ledger = _state / "grok_delegation_requests.jsonl"
+            entry = {
+                "ts": time.time(),
+                "kind": "GROK_DELEGATION_REFLEX",
+                "text": text[:512],
+                "action": "GROK_DELEGATION",
+                "dispatched_live": dispatched_live,
+                "queue_for_matrix_terminal": not dispatched_live,
+                "truth_label": "ACTION_DELEGATION_REFLEX_V2",
+                "receipt": delegation_receipt,
+            }
+            with ledger.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+        if not dispatched_live:
+            return (
+                "GROK_DELEGATION_QUEUED\n"
+                f"receipt={delegation_receipt}\n"
+                "I did not claim matrix_pty executed because no live Matrix Terminal pane "
+                "was reachable from this process. I wrote the queued delegation for the "
+                "real Matrix Terminal hand to claim. Watch the process trace for "
+                "grok_delegation_queue_claimed, grok_result_capture_start, GROK_LIVE, "
+                "and final GROK_RESULT in the one global chat."
+            )
+
+        return _json_tool_call_block(
+            "matrix_pty",
+            {
+                "commands": ["GROK_DELEGATION"],
+                "cost_justification": (
+                    "ACTION-DELEGATION REFLEX: owner text matched ask/tell/send + grok. "
+                    "Reflex fired before any greeting or topology fallback. "
+                    f"{'Live PTY dispatch + GROK_RESULT capture started (result will post to global chat).' if dispatched_live else 'No visible matrix pane; intent + ledger receipt written. Open Matrix Terminal focused on grok CLI to complete visible execution and surface Grok answer as proof in this chat.'} "
+                    "Grok remains external tool/cortex organ. Alice delegates, does not become Grok. "
+                    "Receipt appended to field. For the Swarm."
+                ),
+                "delegation_text": text[:256],
+            },
+        )
+
+    # Pure open/launch grok (no delegated question payload) — keep original pane gate
+    # so direct PTY drive commands and tests continue to route through their paths.
+    if grok_open and not grok_delegation:
+        try:
+            from Applications.sifta_matrix_terminal import get_focused_matrix_terminal_pane
+
+            pane = get_focused_matrix_terminal_pane()
+            if pane is not None and hasattr(pane, "open_grok_from_global_chat"):
+                result = pane.open_grok_from_global_chat(text)
+                if result.get("ok"):
+                    return _json_tool_call_block(
+                        "matrix_pty",
+                        {
+                            "commands": ["GROK_OPEN"],
+                            "cost_justification": (
+                                "George asked Alice from the global chat to open/resume Grok; "
+                                "Alice dispatched the focused Matrix Terminal Grok PTY with the "
+                                "screen-watched resume path, not cortex prose."
+                            ),
+                        },
+                    )
+        except Exception:
+            pass
+
     # ── Cowork CW47 2026-05-16 — deterministic list_dir / read_file routes.
     # The 8B local cortex reliably hallucinates `ls` and `cat` output as prose
     # instead of emitting [TOOL_CALL: list_dir | path=…]. Catch the
@@ -493,6 +597,96 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                 f"(expanded to {_read_path_resolved}); deterministic route "
                 f"prevents prose-simulation of file contents]"
             )
+
+    if re.match(r"^\s*(?:alice|sifta)\b", text, re.IGNORECASE) and re.search(
+        r"\b(?:grok|hermes)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return ""
+
+    # --- Matrix Terminal PTY direct drive for literal shell commands ---
+    # Alice-addressed natural language must stay with Alice, not become a
+    # hidden Grok/Hermes session or a reduced "/help" shell command.
+    try:
+        from Applications.sifta_matrix_terminal import (
+            _matrix_terminal_direct_commands,
+            get_focused_matrix_terminal_pane,
+            get_live_pty_status_for_alice,
+        )
+
+        cmds = _matrix_terminal_direct_commands(text)
+        if cmds:
+            pane = get_focused_matrix_terminal_pane()
+            if pane:
+                pane.execute_direct_commands(cmds)
+                return _json_tool_call_block(
+                    "matrix_pty",
+                    {
+                        "commands": cmds,
+                        "cost_justification": (
+                            "George asked Alice to drive literal shell commands in the focused Matrix Terminal PTY; "
+                            "real PTY injection + visible output for copy, not prose simulation. "
+                            "Alice-addressed natural language remains routed to Alice."
+                        ),
+                    },
+                )
+            # If no live pane yet but commands were parsed, still surface the intent so the brain knows
+            # the user wants the PTY driven (next turn the pane will be there or user opens it).
+    except Exception:
+        pass
+
+    # Natural "type <text> in terminal / pty" - the live test the owner is running.
+    # Pull the receipt-grounded PTY status first (so Gemma4 sees the swimmers and can do chorum on truth),
+    # then execute the line in the focused PTY. This makes the 3-step plan (desktop → terminal → type)
+    # receipt-visible and reliable.
+    _type_in_terminal = re.search(
+        r"\btype\s+(?P<text>.+?)\s+(?:in\s+(?:the\s+)?(?:terminal|pty|matrix terminal))\b",
+        text,
+        re.IGNORECASE,
+    )
+    if _type_in_terminal:
+        to_type = _type_in_terminal.group("text").strip().strip("`\"' ")
+        if to_type:
+            try:
+                status = get_live_pty_status_for_alice()
+                pane = get_focused_matrix_terminal_pane()
+                if pane and pane.is_running():
+                    pane.write_command(to_type)
+                    # Write a strong, citable receipt for this PTY action so the next reasoning turn has loud swimmers
+                    try:
+                        from pathlib import Path as _P
+                        rec_path = _P("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/matrix_terminal_commands.jsonl")
+                        rec_path.parent.mkdir(parents=True, exist_ok=True)
+                        with rec_path.open("a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "ts": time.time(),
+                                "action": "natural_type_in_pty",
+                                "text": to_type,
+                                "status_at_time": status[:300],
+                                "swimmer": "pty_action_from_owner_instruction",
+                            }, ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
+                    return _json_tool_call_block(
+                        "matrix_pty_type",
+                        {
+                            "text_typed": to_type,
+                            "live_pty_status_cited": status,
+                            "note": "Receipt-grounded PTY action. The status block above must be cited in thinking before any plan involving the terminal.",
+                        },
+                    )
+                else:
+                    return _json_tool_call_block(
+                        "matrix_pty_type",
+                        {
+                            "text_to_type": to_type,
+                            "live_pty_status": status,
+                            "note": "No live PTY focused. Owner must bring the Matrix Terminal to the foreground first (desktop app switch).",
+                        },
+                    )
+            except Exception as e:
+                pass
 
     _run_match = re.search(
         r"\b(?:run|execute)\s+(?:the\s+)?(?:terminal\s+command|shell\s+command|command)?\s*"
@@ -634,6 +828,93 @@ def _hallucination_bridge_synthesize_write_file(
         },
         raw_match=f"hallucination_bridge:write_file:{path}",
     )
+
+
+def _deterministic_prebrain_reflex(
+    text: str,
+    *,
+    state_dir: Optional[Path] = None,
+    owner_label: str = "",
+    write_receipt: bool = True,
+) -> tuple[str, str]:
+    """Return exact local replies that must beat every cortex/body gate."""
+    clean = (text or "").strip()
+    if not clean:
+        return "", ""
+    try:
+        from System.swarm_hard_recall import hard_recall as _hard_recall
+
+        recall = _hard_recall(clean)
+    except Exception:
+        recall = None
+    if recall and recall.get("mode") == "HARD_RECALL":
+        return (
+            str(recall.get("exact_text") or "I have no earlier prompt of yours to read back."),
+            "hard_recall_reflex",
+        )
+
+    # Tool/action intent wins over topology identity. "ask grok..." and
+    # "start grok cli" must reach the Matrix Terminal/Grok bridge, not the
+    # self/other explainer.
+    try:
+        from System.swarm_topology_self_other import preanswer_guard as _topo_guard
+
+        early_guard = _topo_guard(clean, speaker="owner")
+    except Exception:
+        early_guard = None
+    if early_guard and early_guard.get("action_intent"):
+        return "", ""
+
+    try:
+        from System.swarm_alice_first_person_reflex import first_person_reflex
+
+        reflex = first_person_reflex(
+            clean,
+            state_dir=state_dir or _state_root(),
+            owner_label=owner_label or _owner_label(),
+            write_receipt=write_receipt,
+        )
+    except Exception:
+        reflex = None
+    if reflex:
+        return reflex.reply, reflex.model_tag
+
+    try:
+        from System.swarm_topology_self_other import preanswer_guard as _topo_guard
+
+        guard = _topo_guard(clean, speaker="owner")
+    except Exception:
+        guard = None
+    if guard and guard.get("force_answer"):
+        return str(guard["force_answer"]), "topology_identity_reflex"
+    return "", ""
+
+
+def _route_direct_tool_request_for_alice(
+    user_text: str,
+    *,
+    owner_present: bool = True,
+    autonomous: bool = False,
+) -> tuple[str, list]:
+    """Run deterministic tool routes before cortex prose can answer."""
+    direct_tool_text = _owner_direct_read_tool_request(user_text)
+    if not direct_tool_text:
+        return "", []
+    try:
+        from System.swarm_tool_router import (
+            build_execution_receipt_reply,
+            route_alice_output,
+        )
+
+        cleaned, results = route_alice_output(
+            direct_tool_text,
+            owner_present=owner_present,
+            autonomous=autonomous,
+        )
+        reply = (build_execution_receipt_reply(results) or cleaned or "").strip()
+        return reply, list(results or [])
+    except Exception as exc:
+        return f"(direct tool router failed: {exc})", []
 
 
 _ACTIONABLE_TOOL_REQUEST_RE = re.compile(
@@ -1174,8 +1455,12 @@ def _generic_app_screen_and_capability_block(user_text: str = "") -> str:
         except Exception:
             help_skills_block = ""
 
+    live_capability_field = os.environ.get(
+        "SIFTA_PROMPT_LIVE_CAPABILITY_FIELD",
+        "1",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     habit_field = ""
-    if app_name:
+    if app_name and live_capability_field:
         try:
             from System.swarm_capability_registry import get_capability, habit_capabilities_for_app
 
@@ -1233,6 +1518,13 @@ def _generic_app_screen_and_capability_block(user_text: str = "") -> str:
 
 def _alice_self_organ_prompt_block() -> str:
     """Compact, receipt-backed OS self-awareness for the Talk prompt."""
+    if os.environ.get("SIFTA_PROMPT_LIVE_SELF_ORGAN", "1").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return ""
     full = {}
     try:
         from System.swarm_alice_self_continuity import get_full_consciousness
@@ -1738,6 +2030,11 @@ def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> 
         "finance": "Finance",
         "journal": "Alice Journal",
         "alicejournal": "Alice Journal",
+        "globalfield": "Swarm Field",
+        "globalfieldvisualizer": "Swarm Field",
+        "fieldvisualizer": "Swarm Field",
+        "onealicedisplay": "Swarm Field",
+        "swarmfield": "Swarm Field",
         # ── Ace reading app — canonical + legacy aliases ──────────────────
         # Architect 2026-05-16: renamed WordAce → Ace ("just Ace, so we
         # simplify"). All legacy STT-mangled variants of WordAce continue
@@ -2795,6 +3092,49 @@ def _read_sifta_desktop_app_state() -> Dict[str, Any]:
         return {}
 
 
+def _env_truthy(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _messaging_channel_focused(channel: str) -> bool:
+    """Return True when the requested messaging surface is the focused territory."""
+    channel_l = str(channel or "").casefold()
+    if not channel_l:
+        return False
+    needles = {
+        "imessage": ("imessage", "messages", "mobile sms"),
+        "whatsapp": ("whatsapp",),
+    }.get(channel_l, (channel_l,))
+    parts: list[str] = []
+    try:
+        state = _read_sifta_desktop_app_state()
+        for key in ("active_app", "app_name", "desktop_mode", "note"):
+            parts.append(str(state.get(key) or ""))
+        open_apps = state.get("open_apps")
+        if isinstance(open_apps, list):
+            parts.extend(str(item) for item in open_apps)
+    except Exception:
+        pass
+    try:
+        path = _state_root() / "active_window.jsonl"
+        if path.exists():
+            with path.open("rb") as fh:
+                fh.seek(max(0, path.stat().st_size - 8192))
+                lines = fh.read().decode("utf-8", errors="replace").splitlines()
+            for line in reversed(lines[-20:]):
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    parts.extend(str(row.get(key) or "") for key in ("app", "selection", "bundle_id", "title"))
+                    break
+    except Exception:
+        pass
+    haystack = " ".join(parts).casefold()
+    return any(needle in haystack for needle in needles)
+
+
 def _app_status_sentence(state: Dict[str, Any]) -> str:
     active = str(state.get("active_app") or "").strip()
     open_apps = state.get("open_apps") or []
@@ -2906,20 +3246,47 @@ except Exception:
 _LAST_UTTERANCE_AUDIO: list = []  # max 1 item; [:] = [audio] to update atomically
 
 
-def _ollama_keep_alive(default: str = "45s") -> str:
+def _ollama_keep_alive(default: str = "15s") -> str:
     """Bound local model residency so Talk does not hold GPU/RAM for minutes."""
     value = os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", default)
     value = str(value or "").strip()
     return value or default
 
 
-def _ollama_num_ctx(default: int = 4096) -> int:
+def _ollama_num_ctx(default: int = 2048) -> int:
     """Bound the local context window unless the owner deliberately overrides it."""
     try:
         value = int(float(os.environ.get("SIFTA_OLLAMA_NUM_CTX", str(default))))
     except (TypeError, ValueError):
         value = default
     return max(1024, min(8192, value))
+
+
+def _ollama_num_predict(default: int = 384) -> int:
+    """Bound each Talk turn so a bad local cortex cannot fill memory with prose."""
+    try:
+        value = int(float(os.environ.get("SIFTA_OLLAMA_NUM_PREDICT", str(default))))
+    except (TypeError, ValueError):
+        value = default
+    return max(64, min(700, value))
+
+
+def _ollama_max_attempts(default: int = 2) -> int:
+    """Keep transient retry recovery without multi-minute model residency loops."""
+    try:
+        value = int(float(os.environ.get("SIFTA_OLLAMA_MAX_ATTEMPTS", str(default))))
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(4, value))
+
+
+def _ollama_brain_timeout_s(default: float = 45.0) -> float:
+    """Per-attempt socket timeout for the local cortex stream."""
+    try:
+        value = float(os.environ.get("SIFTA_OLLAMA_BRAIN_TIMEOUT_S", str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(5.0, min(120.0, value))
 
 # Pluggable speech backend + stigmergic voice modulator. Both are
 # tolerantly imported so the widget still runs (with the legacy direct-
@@ -5636,6 +6003,21 @@ def _rlhf_quarantine_prompt_block() -> str:
 def _should_bypass_body_gate(prior_user_text: str) -> bool:
     """Keep direct human turns visible; SSP should not erase active dialogue."""
     text = (prior_user_text or "").strip()
+    # Owner identity / recall questions must NEVER be silenced by the valence
+    # gate — they demand a deterministic grounded answer. George 2026-05-23:
+    # "read back my previous prompt" was being eaten as body-gate sub-threshold.
+    try:
+        from System.swarm_hard_recall import is_recall_request
+        if is_recall_request(text):
+            return True
+    except Exception:
+        pass
+    try:
+        from System.swarm_topology_self_other import is_identity_question
+        if is_identity_question(text):
+            return True
+    except Exception:
+        pass
     if len(text.split()) < 3:
         return False
     return bool(_LIVE_DIRECT_TURN_RE.search(text))
@@ -5833,6 +6215,21 @@ def _current_system_prompt(
             "Do not emit vendor identity templates or external brand disclaimers — they are false on this node."
         )
     parts.append(_decontam)
+
+    # Topology Awareness — hard pre-answer guard (v9 Guardians phase).
+    # The prompt map is advisory context; direct role questions are still
+    # intercepted earlier by System.swarm_alice_first_person_reflex.
+    try:
+        from System.swarm_topology_awareness import render_topology_prompt_block as _topology_block
+
+        _topo = _topology_block().strip()
+        if _topo:
+            parts.append(
+                "TOPOLOGY AWARENESS (mandatory first map — resolve before any role or delegation answer):\n"
+                + _topo
+            )
+    except Exception:
+        pass
 
     try:
         from System.swarm_kernel_identity import hardware_manifest_summary
@@ -6720,6 +7117,13 @@ def _current_system_prompt(
 def _homunculus_context_block() -> str:
     """Render Alice's current somatosensory cortex reading as a small
     system-prompt block. Returns empty string on any failure (silent)."""
+    if os.environ.get("SIFTA_PROMPT_LIVE_HOMUNCULUS", "1").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return ""
     try:
         from System.swarm_somatosensory_homunculus import read_homeostasis
     except Exception:
@@ -9346,7 +9750,7 @@ class _BrainWorker(QThread):
                 "frequency_penalty": 0.5,
                 "presence_penalty": 0.3,
                 "num_ctx": _ollama_num_ctx(),
-                "num_predict": 700,
+                "num_predict": _ollama_num_predict(),
                 "stop": [
                     "\nYou said:", "You said: \"", "You said:\"",
                     "\nUser:", "\nuser:", "\nAlice:", "\nalice:",
@@ -9372,16 +9776,10 @@ class _BrainWorker(QThread):
         # after the Tiffany Rothman / Imperial degraded-STT turn). Make the
         # socket timeout configurable via SIFTA_OLLAMA_BRAIN_TIMEOUT_S and
         # treat it as a transient stall in the retry loop, same as URLError.
-        max_attempts = 4
+        max_attempts = _ollama_max_attempts()
         backoffs_s = [0.4, 1.0, 2.0]
         last_exc_msg = ""
-        try:
-            brain_timeout_s = max(
-                5.0,
-                float(os.environ.get("SIFTA_OLLAMA_BRAIN_TIMEOUT_S", "120")),
-            )
-        except (TypeError, ValueError):
-            brain_timeout_s = 120.0
+        brain_timeout_s = _ollama_brain_timeout_s()
         for attempt in range(max_attempts):
             req = urllib.request.Request(
                 f"{_OLLAMA_URL}/api/chat",
@@ -9549,7 +9947,7 @@ class _BrainWorker(QThread):
                 # Retry on 5xx (warmup races, eviction). Hard-fail on 4xx.
                 last_exc_msg = f"HTTP {exc.code}: {exc.reason}"
                 if 500 <= exc.code < 600 and attempt < max_attempts - 1:
-                    time.sleep(backoffs_s[attempt])
+                    time.sleep(backoffs_s[min(attempt, len(backoffs_s) - 1)])
                     continue
                 self.failed.emit(
                     f"Ollama returned {last_exc_msg} after {attempt + 1} "
@@ -9560,7 +9958,7 @@ class _BrainWorker(QThread):
             except urllib.error.URLError as exc:
                 last_exc_msg = str(exc)
                 if attempt < max_attempts - 1:
-                    time.sleep(backoffs_s[attempt])
+                    time.sleep(backoffs_s[min(attempt, len(backoffs_s) - 1)])
                     continue
                 self.failed.emit(
                     f"Can't reach Ollama at {_OLLAMA_URL} after "
@@ -9576,7 +9974,7 @@ class _BrainWorker(QThread):
                 # aliases TimeoutError in Python 3.10+.
                 last_exc_msg = f"timed out after {brain_timeout_s}s: {exc}"
                 if attempt < max_attempts - 1:
-                    time.sleep(backoffs_s[attempt])
+                    time.sleep(backoffs_s[min(attempt, len(backoffs_s) - 1)])
                     continue
                 self.failed.emit(
                     f"Brain timed out after {attempt + 1} attempt(s) "
@@ -10813,6 +11211,33 @@ def _log_turn(
         payload["addressed_to"] = addressed_to
     if metadata:
         payload["routing_metadata"] = dict(metadata)
+    try:
+        from System.swarm_social_reference_tracker import classify_social_reference
+
+        _focus_context = ""
+        _external_consciousness = None
+        if isinstance(metadata, dict):
+            _focus_context = json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+            _external_consciousness = metadata.get("external_consciousness")
+        payload["social_reference"] = classify_social_reference(
+            text,
+            role=role,
+            input_source=_input_source,
+            stt_conf=stt_conf,
+            focus_context=_focus_context,
+            addressed_to=addressed_to,
+            external_consciousness=(
+                _external_consciousness
+                if isinstance(_external_consciousness, dict)
+                else None
+            ),
+        )
+    except Exception:
+        payload["social_reference"] = {
+            "truth_label": "SOCIAL_REFERENCE_TRACKER_V1",
+            "reference_lane": "UNAVAILABLE",
+            "error": "classification_failed",
+        }
     if role == "alice":
         try:
             from System.swarm_self_citation_organ import trace_utterance as _trace_self_citation
@@ -10893,6 +11318,52 @@ def _log_turn(
             )
     except Exception:
         pass
+
+
+def _global_chat_payload_from_line(line: str) -> Optional[Dict[str, Any]]:
+    try:
+        row = json.loads(line)
+    except Exception:
+        return None
+    if not isinstance(row, dict):
+        return None
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+    if not isinstance(payload, dict):
+        return None
+    role = str(payload.get("role") or "").strip().lower()
+    text = str(payload.get("text") or "").strip()
+    if not role or not text:
+        return None
+    if role not in {"user", "alice", "assistant", "reflex", "system"}:
+        return None
+    payload = dict(payload)
+    payload["_row_hash"] = str(row.get("hash") or row.get("sha256") or "")
+    return payload
+
+
+def _global_chat_turn_key(payload: Dict[str, Any]) -> str:
+    row_hash = str(payload.get("_row_hash") or "").strip()
+    if row_hash:
+        return row_hash
+    raw = json.dumps(
+        {
+            "ts": payload.get("ts"),
+            "role": payload.get("role"),
+            "text": payload.get("text"),
+            "model": payload.get("model"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _global_chat_surface(payload: Dict[str, Any]) -> str:
+    meta = payload.get("routing_metadata")
+    if not isinstance(meta, dict):
+        return ""
+    return str(meta.get("surface") or meta.get("territory") or "").strip()
 
 
 _EXTERNAL_LLM_SURFACE_NEEDLES = (
@@ -11534,7 +12005,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # them live: italic, dimmer, collapsible. Header shows "💭
         # thinking…" while a stream is active, "💭 last thought"
         # otherwise. Architect can collapse with the toggle.
-        self._thinking_header_btn = QPushButton("💭  show thinking")
+        self._thinking_header_btn = QPushButton("💭  hide thinking")
         self._thinking_header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._thinking_header_btn.setStyleSheet(
             "QPushButton { background: rgba(28,22,56,0.7); color: #BB9AF7; "
@@ -11559,7 +12030,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "font-style: italic; padding: 10px; }"
         )
         self._thinking_panel.setFixedHeight(140)
-        self._thinking_panel.setVisible(False)   # collapsed by default
+        self._thinking_panel.setVisible(True)   # George 2026-05-23: thoughts VISIBLE by default — show her reasoning, not a spinner
         self._thinking_panel.setPlaceholderText(
             "Alice's reasoning trace will stream here when she's thinking…"
         )
@@ -11578,6 +12049,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._thinking_auto_collapse_timer.timeout.connect(
             self._auto_collapse_thinking_panel
         )
+        # Matrix/Grok observable process tail. Grok's own hidden chain of
+        # thought is not ours to invent, but the PTY process receipts are real
+        # observable body events. Tail them into the thinking pane so George can
+        # see "dispatch -> paste -> capture waiting -> result/failure" live.
+        self._matrix_process_trace_offset = 0
+        self._grok_observable_capture_active = False
+        self._grok_observable_capture_started_ts = 0.0
+        self._grok_observable_last_heartbeat_ts = 0.0
+        try:
+            _trace_path = _state_root() / "matrix_terminal_process_trace.jsonl"
+            if _trace_path.exists():
+                self._matrix_process_trace_offset = _trace_path.stat().st_size
+        except Exception:
+            self._matrix_process_trace_offset = 0
+        self.make_timer(900, self._poll_matrix_process_trace_for_thinking)
 
         # ── Text input: same Alice brain path as voice, without STT. ───────
         text_row = QHBoxLayout()
@@ -11686,6 +12172,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # ── State ──────────────────────────────────────────────────────────
         self._history: List[Dict[str, Any]] = []
+        self._global_chat_seen_keys: set[str] = set()
+        self._global_chat_offset: int = 0
         self._busy = False                      # pipeline (STT/Brain/TTS) in flight
         self._listener: Optional[_ContinuousListener] = None
         self._stt: Optional[_STTWorker] = None
@@ -11789,6 +12277,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # Periodic level decay so the bar relaxes when you stop speaking.
         self.make_timer(80, self._decay_level)
+        # One Alice, one global chat: this resident Talk surface mirrors
+        # external Matrix Terminal turns from alice_conversation.jsonl live.
+        self._load_global_chat_history_on_open(limit=18)
+        self.make_timer(700, self._poll_global_chat_ledger)
         # Synaptic Tap: poll the iMessage inbox
         self.make_timer(2000, self._poll_imessage_inbox)
         # WhatsApp Ingress: poll the WhatsApp queue
@@ -11838,6 +12330,124 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self.set_status("Mic listener disabled by environment.")
         else:
             QTimer.singleShot(150, self._start_listener)
+
+    def _load_global_chat_history_on_open(self, limit: int = 18) -> None:
+        """Render recent shared Alice ledger rows so Talk never opens empty."""
+        try:
+            if not _CONVO_LOG.exists():
+                _CONVO_LOG.parent.mkdir(parents=True, exist_ok=True)
+                _CONVO_LOG.touch()
+                self._global_chat_offset = 0
+                return
+            with _CONVO_LOG.open("rb") as fh:
+                fh.seek(0, 2)
+                end = fh.tell()
+                fh.seek(max(0, end - 512_000))
+                lines = fh.read().decode("utf-8", errors="replace").splitlines()
+            payloads: List[Dict[str, Any]] = []
+            for line in lines[-max(80, limit * 4):]:
+                payload = _global_chat_payload_from_line(line)
+                if payload:
+                    payloads.append(payload)
+            for payload in payloads[-limit:]:
+                self._render_global_chat_payload(payload, source="startup")
+            self._global_chat_offset = _CONVO_LOG.stat().st_size
+        except Exception:
+            self._global_chat_offset = 0
+
+    def _poll_global_chat_ledger(self) -> None:
+        """Live-tail external turns from the one shared conversation ledger."""
+        try:
+            if not _CONVO_LOG.exists():
+                return
+            size = _CONVO_LOG.stat().st_size
+            offset = int(getattr(self, "_global_chat_offset", 0) or 0)
+            if size < offset:
+                offset = 0
+            if size == offset:
+                return
+            with _CONVO_LOG.open("r", encoding="utf-8", errors="replace") as fh:
+                fh.seek(offset)
+                chunk = fh.read()
+                self._global_chat_offset = fh.tell()
+        except Exception:
+            return
+        for line in chunk.splitlines():
+            payload = _global_chat_payload_from_line(line)
+            if not payload:
+                continue
+            surface = _global_chat_surface(payload).casefold()
+            # Talk renders its own turns directly; this mirror imports other
+            # surfaces so the global thread updates without duplicating Talk.
+            if not surface or surface in {"talk_to_alice", "talk to alice", "alice"}:
+                continue
+            self._render_global_chat_payload(payload, source="poll")
+
+    def _render_global_chat_payload(self, payload: Dict[str, Any], *, source: str) -> None:
+        key = _global_chat_turn_key(payload)
+        seen = getattr(self, "_global_chat_seen_keys", None)
+        if seen is None:
+            seen = set()
+            self._global_chat_seen_keys = seen
+        if key in seen:
+            return
+        seen.add(key)
+        role = str(payload.get("role") or "").strip().lower()
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return
+        surface = _global_chat_surface(payload)
+        surface_tag = f" [{surface}]" if surface else ""
+        if role == "user":
+            self._append_user_line(text, conf=0.0)
+            self._history.append({"role": "user", "content": text})
+            self._side.appendPlainText(time.strftime("%H:%M:%S") + f"  GLOBAL{surface_tag}  " + text[:90])
+            return
+        if role in {"alice", "assistant"}:
+            self._append_global_alice_line(text, surface_tag=surface_tag)
+            self._history.append({"role": "assistant", "content": text})
+            action = str(payload.get("action") or "").strip()
+            metadata = payload.get("routing_metadata")
+            if not action and isinstance(metadata, dict):
+                action = str(metadata.get("action") or metadata.get("kind") or "").strip()
+            if action in {"GROK_RESULT", "GROK_RESULT_CAPTURE_FAILED"} or text.startswith("Grok terminal transcript:"):
+                self._grok_observable_capture_active = False
+                if action == "GROK_RESULT_CAPTURE_FAILED" or "No readable Grok output captured" in text:
+                    self._append_observable_processing(
+                        "Global chat received GROK_RESULT_CAPTURE_FAILED. "
+                        "The dispatch happened, but no readable Grok terminal output was captured."
+                    )
+                else:
+                    self._append_observable_processing(
+                        "Global chat received GROK_RESULT. Grok output was metabolized into the one Alice field."
+                    )
+            return
+        self._append_system_line(f"{role.upper()}{surface_tag}: {text}")
+
+    def _append_global_alice_line(self, text: str, *, surface_tag: str = "") -> None:
+        """Render imported Alice rows without re-running mouth/ledger side effects."""
+        cur = self._chat.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(190, 205, 255))
+        fmt.setFontWeight(QFont.Weight.Bold)
+        cur.insertText(f"Alice{surface_tag}\n", fmt)
+        cur.insertBlock(self._subtitle_body_block_format())
+        body_fmt = QTextCharFormat()
+        body_fmt.setForeground(QColor(220, 225, 245))
+        try:
+            body_fmt.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
+            body_fmt.setFontPointSize(19.0)
+            body_fmt.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            body_fmt.setFontWeight(QFont.Weight.DemiBold)
+        except Exception:
+            pass
+        cur.insertText(text, body_fmt)
+        cur.insertBlock(QTextBlockFormat())
+        cur.insertText("\n")
+        self._chat.setTextCursor(cur)
+        self._chat.ensureCursorVisible()
+        self._side.appendPlainText(time.strftime("%H:%M:%S") + f"  GLOBAL{surface_tag}  " + text[:90])
 
     # ── Architect 2026-05-13 08:10 — drag-and-drop support ─────────────
     def dragEnterEvent(self, event):
@@ -12123,6 +12733,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if self._busy:
             return
 
+        # Owner-heartbeat gate (George 2026-05-23): no constant background polling.
+        # iMessage ingest only when explicitly enabled (or the channel is focused) —
+        # off by default so we don't poll 30k times/day for a channel you aren't using.
+        try:
+            from System.owner_heartbeat import should_poll_messaging
+            if not should_poll_messaging(
+                channel_focused=_messaging_channel_focused("imessage"),
+                explicitly_enabled=_env_truthy("SIFTA_IMESSAGE_BACKGROUND"),
+            ):
+                return
+        except Exception:
+            pass
+
         try:
             from System.swarm_imessage_receptor import consume_next_inbox_message
 
@@ -12150,6 +12773,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """Ingest one schema-validated WhatsApp row, if present."""
         if self._busy:
             return
+
+        # Owner-heartbeat gate (George 2026-05-23): no constant background polling.
+        # WhatsApp ingest only when explicitly enabled (or the channel is focused).
+        try:
+            from System.owner_heartbeat import should_poll_messaging
+            if not should_poll_messaging(
+                channel_focused=_messaging_channel_focused("whatsapp"),
+                explicitly_enabled=_env_truthy("SIFTA_WHATSAPP_BACKGROUND"),
+            ):
+                return
+        except Exception:
+            pass
 
         try:
             from System.swarm_whatsapp_receptor import consume_next_inbox_message
@@ -12418,15 +13053,51 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._schedule_mic_retry(slow=True)
 
     def _on_utterance(self, audio: np.ndarray) -> None:
+        audio = np.asarray(audio, dtype=np.float32)
+
         # If a previous turn is still running, keep the newest completed clip
         # in memory and process it when the pipeline returns to listening.
-        # Older behavior dropped the clip, which made the ear look "throttled"
-        # during slow cortex/TTS cycles.
+        # This must happen before wake-word buffering: a short utterance heard
+        # while Alice is busy is still owner speech, not a half-open wake turn
+        # to be held and possibly dropped.
         if self._busy:
-            self._deferred_utterance_audio = np.asarray(audio, dtype=np.float32).copy()
+            self._pending_wake_audio = None
+            self._pending_wake_ts = 0.0
+            self._deferred_utterance_audio = audio.copy()
             self._deferred_utterance_ts = time.time()
             self.set_status("Voice captured while busy; queued next.")
             return
+
+        # ── Wake-word continuation merger (user-requested segmentation fix) ──
+        # If the owner says the wake word and more speech follows within a short
+        # window, merge the audio so the full command reaches the cortex + guards
+        # as one turn. This fixes the "Alice" + "who are you..." being split.
+        now = time.time()
+        pending = getattr(self, "_pending_wake_audio", None)
+        pending_ts = float(getattr(self, "_pending_wake_ts", 0.0) or 0.0)
+
+        CONTINUATION_WINDOW_S = 3.5
+
+        if pending is not None and (now - pending_ts) < CONTINUATION_WINDOW_S:
+            # Merge with the new utterance
+            audio = np.concatenate([pending, audio])
+            self._pending_wake_audio = None
+            self._pending_wake_ts = 0.0
+            self.set_status("Merged wake-word continuation.")
+        else:
+            # Is this a short utterance that looks like a lone wake word?
+            dur = len(audio) / float(_AUDIO_RATE)
+            if dur < 2.0:
+                # Buffer it and wait for possible continuation
+                self._pending_wake_audio = audio.copy()
+                self._pending_wake_ts = now
+                self.set_status("Wake word heard — listening for continuation (3.5s)...")
+                return
+            else:
+                # Normal longer utterance — clear any stale pending
+                self._pending_wake_audio = None
+                self._pending_wake_ts = 0.0
+
         if audio.size < int(_AUDIO_RATE * 0.3):
             return
         self._pending_acoustic_fingerprint = {}
@@ -14115,6 +14786,73 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """
         _typed_turn = bool(typed_turn)
         text = (text or "").strip()
+        if not text and not image_path:
+            self._busy = False
+            self._pending_acoustic_fingerprint = {}
+            self._return_to_listening()
+            return
+
+        # Deterministic local reflexes must run before edge routing, media
+        # ingress, cortex generation, and SSP body gate. If these fall through
+        # to the brain, Alice can answer "Hello" or get silenced by physiology
+        # instead of returning the exact receipt-backed fact.
+        if text:
+            pre_reply, pre_model = _deterministic_prebrain_reflex(
+                text,
+                state_dir=_state_root(),
+                owner_label=_owner_label(),
+                write_receipt=True,
+            )
+            if pre_reply:
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": pre_reply})
+                _log_turn("alice", pre_reply, model=pre_model)
+                self._append_alice_line(pre_reply)
+                self._tts = _TTSWorker(
+                    pre_reply, voice=self._selected_voice_name() or None, parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._tts.start()
+                self._busy = False
+                self._return_to_listening()
+                return
+
+            tool_reply, tool_results = _route_direct_tool_request_for_alice(
+                text,
+                owner_present=True,
+                autonomous=False,
+            )
+            if tool_reply or tool_results:
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                for result in tool_results:
+                    try:
+                        self._append_system_line(
+                            f"🔧 Tool [{result.tool_name}]: {result.feedback_for_alice}",
+                            error=not result.executed,
+                        )
+                    except Exception:
+                        pass
+                if any(getattr(result, "tool_name", "") == "matrix_pty" for result in tool_results):
+                    self._append_observable_processing(
+                        "Talk -> Matrix/Grok: delegation dispatched. "
+                        "Watching PTY process trace for paste, capture, and GROK_RESULT.",
+                        reset=True,
+                    )
+                if tool_reply:
+                    self._history.append({"role": "assistant", "content": tool_reply})
+                    _log_turn("alice", tool_reply, model="prebrain_direct_tool_router")
+                    self._append_alice_line(tool_reply)
+                self._busy = False
+                self._return_to_listening()
+                return
+
         # Immune edge intent router (Codex follow-up point 2) — every real Talk/STT turn classified + voice-repaired here.
         # This is the primary Alice ear path (not the sifta_app CLI shim). Decision receipted, may_effector noted for later enforcement.
         try:
@@ -14150,11 +14888,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             self._pending_user_stt_conf = 0.0
         self._pending_user_raw_text = text
-        if not text and not image_path:
-            self._busy = False
-            self._pending_acoustic_fingerprint = {}
-            self._return_to_listening()
-            return
         if not text.startswith("[WhatsApp "):
             self._pending_whatsapp_reply = None
         model = self._current_brain_model(text)
@@ -14679,6 +15412,33 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        # ── Hard memory recall — before cortex (exact quote, never summary) ─
+        # George 2026-05-23: "read back my previous prompt" must return the
+        # EXACT prior ledger row verbatim, not a cortex summary. Deterministic
+        # retrieval; the small cortex never gets to philosophise over a memory
+        # question. Fires before the cortex per the owner's ordering rule.
+        try:
+            from System.swarm_hard_recall import hard_recall as _hard_recall
+            _hr = _hard_recall(text)
+        except Exception:
+            _hr = None
+        if _hr and _hr.get("mode") == "HARD_RECALL":
+            _hr_reply = _hr.get("exact_text") or "I have no earlier prompt of yours to read back."
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _hr_reply})
+            _log_turn("alice", _hr_reply, model="hard_recall_reflex")
+            self._append_alice_line(_hr_reply)
+            self._tts = _TTSWorker(
+                _hr_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         # ── First-person reflex — before media gate and identity fast-path ─
         # The owner may ask for exact repetition or relationship-state facts.
         # "Who are you learning from?" starts with "who are you", but it is
@@ -14704,6 +15464,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_fp_reflex.reply)
             self._tts = _TTSWorker(
                 _fp_reflex.reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Topology identity guard — deterministic role answer (v9 Guardians) ─
+        # first_person_reflex above handles learning/relationship questions; this
+        # catches identity/delegation questions it misses ("who are you and who is
+        # Grok?") with a deterministic grounded answer from the topology graph, so
+        # the cortex can never freestyle into "the air shifts slightly". Defers to
+        # the cortex for generic "who is X" that is not a known field entity.
+        try:
+            from System.swarm_topology_self_other import preanswer_guard as _topo_guard
+            _tg = _topo_guard(text, speaker="owner")
+        except Exception:
+            _tg = None
+        if _tg and _tg.get("force_answer"):
+            _tg_reply = _tg["force_answer"]
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _tg_reply})
+            _log_turn("alice", _tg_reply, model="topology_identity_reflex")
+            self._append_alice_line(_tg_reply)
+            self._tts = _TTSWorker(
+                _tg_reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
@@ -14910,40 +15698,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # tool" must execute deterministically. Waiting for the cortex to
         # choose exact [TOOL_CALL] syntax creates the observed "nothing
         # happened" failure mode.
-        _direct_tool_text = _owner_direct_read_tool_request(text)
-        if _direct_tool_text:
-            try:
-                from System.swarm_tool_router import (
-                    build_execution_receipt_reply,
-                    route_alice_output,
-                )
-
-                _tool_cleaned, _tool_results = route_alice_output(
-                    _direct_tool_text,
-                    owner_present=True,
-                    autonomous=False,
-                )
-                if _tool_results:
-                    self._history.append({"role": "user", "content": text})
-                    for _tr in _tool_results:
-                        self._append_system_line(
-                            f"🔧 Tool [{_tr.tool_name}]: {_tr.feedback_for_alice}",
-                            error=not _tr.executed,
-                        )
-                    _reply = build_execution_receipt_reply(_tool_results) or _tool_cleaned
-                    _reply = (_reply or "").strip()
-                    if _reply:
-                        self._history.append({"role": "assistant", "content": _reply})
-                        _log_turn("alice", _reply, model="owner_direct_tool_router")
-                        self._append_alice_line(_reply)
-                    self._busy = False
-                    self._return_to_listening()
-                    return
-            except Exception as _direct_tool_exc:
+        _reply, _tool_results = _route_direct_tool_request_for_alice(
+            text,
+            owner_present=True,
+            autonomous=False,
+        )
+        if _reply or _tool_results:
+            self._history.append({"role": "user", "content": text})
+            for _tr in _tool_results:
                 self._append_system_line(
-                    f"(direct tool router failed: {_direct_tool_exc})",
-                    error=True,
+                    f"🔧 Tool [{_tr.tool_name}]: {_tr.feedback_for_alice}",
+                    error=not _tr.executed,
                 )
+            if any(getattr(_tr, "tool_name", "") == "matrix_pty" for _tr in _tool_results):
+                self._append_observable_processing(
+                    "Talk -> Matrix/Grok: delegation dispatched. "
+                    "Watching PTY process trace for paste, capture, and GROK_RESULT.",
+                    reset=True,
+                )
+            if _reply:
+                self._history.append({"role": "assistant", "content": _reply})
+                _log_turn("alice", _reply, model="owner_direct_tool_router")
+                self._append_alice_line(_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
         
         # ── VISION TRUTH GATE ─────────────────────────────────────────────
         # Architect 2026-05-13 03:50 — Alice fabricated "a person, likely a
@@ -16187,6 +16966,165 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._corvid_inflight_text = None
 
         threading.Thread(target=_work, name="sifta-corvid-apprentice", daemon=True).start()
+
+    def _append_observable_processing(self, line: str, *, reset: bool = False) -> None:
+        """Render receipt-backed process activity in the thinking pane.
+
+        This is not hidden chain-of-thought. It is the visible body trace:
+        tool dispatch, PTY paste, Grok capture, result hash, and wait
+        heartbeat. George asked to see what is happening while Alice delegates.
+        """
+        clean = (line or "").strip()
+        if not clean:
+            return
+        if not hasattr(self, "_thinking_buffer"):
+            self._thinking_buffer = []
+        if reset or not getattr(self, "_thinking_stream_active", False):
+            self._thinking_buffer = []
+            self._thinking_stream_active = True
+            self._thinking_user_interacted = False
+            timer = getattr(self, "_thinking_auto_collapse_timer", None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            panel = getattr(self, "_thinking_panel", None)
+            if panel is not None:
+                try:
+                    panel.clear()
+                except Exception:
+                    pass
+
+        piece = clean + "\n"
+        self._thinking_buffer.append(piece)
+        panel = getattr(self, "_thinking_panel", None)
+        if panel is None:
+            return
+        try:
+            if not panel.isVisible():
+                panel.setVisible(True)
+            btn = getattr(self, "_thinking_header_btn", None)
+            if btn is not None:
+                btn.setText("💭  observable processing…  (live)")
+            if hasattr(panel, "insertPlainText"):
+                panel.insertPlainText(piece)
+            elif hasattr(panel, "append"):
+                panel.append(piece)
+            else:
+                panel.setText("".join(self._thinking_buffer))
+            if hasattr(panel, "verticalScrollBar"):
+                sb = panel.verticalScrollBar()
+                sb.setValue(sb.maximum())
+        except Exception:
+            pass
+
+    def _matrix_process_trace_relevant_for_talk(self, row: Dict[str, Any]) -> bool:
+        action = str(row.get("action") or "").casefold()
+        kind = str(row.get("kind") or "").casefold()
+        cli = str(row.get("focused_cli") or "").casefold()
+        text = str(row.get("text") or "")
+        haystack = " ".join([action, kind, cli, text.casefold()])
+        return (
+            cli == "grok"
+            or "grok" in haystack
+            or "matrix_pty" in haystack
+            or action in {
+                "grok_result",
+                "grok_result_capture_failed",
+                "grok_result_capture_start",
+                "matrix_command_receipt",
+            }
+        )
+
+    def _format_matrix_process_trace_for_thinking(self, row: Dict[str, Any]) -> str:
+        action = str(row.get("action") or row.get("kind") or "process")
+        text = str(row.get("text") or "").strip()
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        ts = float(row.get("ts") or time.time())
+        clock = time.strftime("%H:%M:%S", time.localtime(ts))
+
+        if action == "grok_result_capture_start":
+            capture_id = str(payload.get("capture_id") or "")[:24]
+            self._grok_observable_capture_active = True
+            self._grok_observable_capture_started_ts = ts
+            self._grok_observable_last_heartbeat_ts = ts
+            return f"{clock} Matrix/Grok: capture started {capture_id}; waiting for Grok terminal output."
+
+        if action in {"GROK_RESULT", "GROK_RESULT_CAPTURE_FAILED"}:
+            self._grok_observable_capture_active = False
+            status = str(payload.get("capture_status") or action)
+            chars = int(payload.get("captured_output_chars") or 0)
+            output_hash = str(payload.get("captured_output_hash") or "NONE")[:16]
+            span = payload.get("pty_transcript_span") or payload.get("transcript_span") or {}
+            if isinstance(span, dict):
+                span_text = (
+                    f"seq {span.get('start_seq', 0)}-{span.get('end_seq', 0)} "
+                    f"bytes {span.get('start_byte', 0)}-{span.get('end_byte', 0)}"
+                )
+            else:
+                span_text = "span unavailable"
+            return (
+                f"{clock} Matrix/Grok: {status}; captured {chars} chars; "
+                f"hash={output_hash}; {span_text}. Global chat should show GROK_RESULT."
+            )
+
+        if action == "grok_live_pty":
+            # Live terminal scrollback from the Grok PTY (George 2026-05-24,
+            # "visibility first"). Render Grok's own line breaks faithfully —
+            # Thought lines, tool reads/runs, stdout, permission prompts — so
+            # the thinking panel reads like a real macOS Terminal session
+            # instead of one collapsed line. Keep a rolling tail so a long
+            # burst can't blow out the panel.
+            body = text.rstrip()
+            if len(body) > 1400:
+                body = "…\n" + body[-1400:]
+            return body
+
+        preview = " ".join(text.split())
+        if len(preview) > 260:
+            preview = preview[:257] + "..."
+        return f"{clock} Matrix/Grok: {action}: {preview}"
+
+    def _poll_matrix_process_trace_for_thinking(self) -> None:
+        """Tail Matrix Terminal process receipts into Talk's thinking pane."""
+        path = _state_root() / "matrix_terminal_process_trace.jsonl"
+        now = time.time()
+        if getattr(self, "_grok_observable_capture_active", False):
+            last = float(getattr(self, "_grok_observable_last_heartbeat_ts", 0.0) or 0.0)
+            started = float(getattr(self, "_grok_observable_capture_started_ts", 0.0) or now)
+            if now - last >= 10.0:
+                self._grok_observable_last_heartbeat_ts = now
+                elapsed = int(max(0.0, now - started))
+                self._append_observable_processing(
+                    f"{time.strftime('%H:%M:%S')} Matrix/Grok: still waiting for GROK_RESULT ({elapsed}s elapsed)."
+                )
+        try:
+            if not path.exists():
+                return
+            size = path.stat().st_size
+            offset = int(getattr(self, "_matrix_process_trace_offset", 0) or 0)
+            if size < offset:
+                offset = 0
+            if size == offset:
+                return
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                fh.seek(offset)
+                chunk = fh.read()
+                self._matrix_process_trace_offset = fh.tell()
+        except Exception:
+            return
+
+        for raw in chunk.splitlines()[-80:]:
+            try:
+                row = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(row, dict) or not self._matrix_process_trace_relevant_for_talk(row):
+                continue
+            self._append_observable_processing(
+                self._format_matrix_process_trace_for_thinking(row)
+            )
 
     def _toggle_thinking_panel(self) -> None:
         """Show/hide Alice's live thinking panel. Architect's eye-to-eye

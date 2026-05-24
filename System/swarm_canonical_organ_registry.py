@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import time
 import uuid
@@ -960,9 +961,35 @@ def write_registry_snapshot(
     return {"snapshot": snapshot}
 
 
+def _live_prompt_registry_enabled() -> bool:
+    value = os.environ.get("SIFTA_PROMPT_LIVE_ORGAN_REGISTRY", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _prompt_registry_snapshot(state: Path) -> dict[str, Any]:
+    """Return bounded prompt context without walking ledger tails every turn."""
+    if _live_prompt_registry_enabled():
+        return build_registry(state_dir=state, include_dynamic=False)
+    snap = _read_json(state / SNAPSHOT_NAME)
+    if isinstance(snap, dict):
+        return snap
+    return {
+        "counts": {
+            "system_python_organs": _count_files(_REPO, "System/*.py"),
+            "application_surfaces": _count_files(_REPO, "Applications/*.py"),
+            "state_ledgers": _count_files(state, "*.jsonl"),
+            "registry_organs": len(CANONICAL_ORGANS),
+            "desktop_body_present": _exists(_REPO, "sifta_os_desktop.py"),
+        },
+        "merged_sources": {"canonical": len(CANONICAL_ORGANS)},
+        "organs": [],
+    }
+
+
 def summary_for_prompt(query: str = "", *, state_dir: Path | str | None = None, max_lines: int = 8) -> str:
     """Compact prompt block for Alice's cortex."""
-    snap = build_registry(state_dir=state_dir, include_dynamic=False)
+    state = _state_dir(state_dir)
+    snap = _prompt_registry_snapshot(state)
     counts = snap.get("counts", {})
     merged = snap.get("merged_sources", {})
     lines = [

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from System.canonical_schemas import LEDGER_SCHEMAS
 from System.swarm_ledger_rotation import (
+    DEFAULT_POLICIES,
     RotationPolicy,
     fast_rotate_ledger_by_bytes,
     rotate_ledger,
@@ -97,3 +98,18 @@ def test_fast_rotate_by_bytes_moves_full_file_and_keeps_recent_tail(tmp_path: Pa
     assert min(kept) > 0
     written = json.loads(audit.read_text(encoding="utf-8").strip())
     assert written["archive_path"] == row["archive_path"]
+
+
+def test_default_policies_cover_owner_protection_hot_ledgers():
+    required = {
+        "sensory_attention_ledger.jsonl",
+        "sensor_lane_journal.jsonl",
+        "journal_schedule_receipts.jsonl",
+        "motor_pulses.jsonl",
+        "alice_first_person_journal.jsonl",
+        "camera_unified_field_proof.jsonl",
+        "architect_screen_gaze_balance.jsonl",
+        "active_eye_identity_frames.jsonl",
+    }
+
+    assert required <= set(DEFAULT_POLICIES)

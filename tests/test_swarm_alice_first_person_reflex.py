@@ -62,6 +62,38 @@ def test_learning_from_question_does_not_return_identity_only(tmp_path: Path) ->
     assert "Talk ledger rows" in reflex.reply
 
 
+def test_topology_self_other_reflex_answers_grok_role_map_without_hardcoded_owner(tmp_path: Path) -> None:
+    reflex = first_person_reflex(
+        "Alice, who are you and who is Grok?",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+    )
+
+    assert reflex is not None
+    assert reflex.model_tag == "topology_self_other_pre_answer_reflex"
+    assert "Layer One Owner = owner / continuity anchor" in reflex.reply
+    assert "Alice = SIFTA field / organism" in reflex.reply
+    assert "Grok = external tool/cortex surface" in reflex.reply
+    assert "I do not become Grok" in reflex.reply
+    assert "George" not in reflex.reply
+
+
+def test_topology_self_other_reflex_owner_fallback_is_generic(tmp_path: Path, monkeypatch) -> None:
+    import System.swarm_kernel_identity as kernel_identity
+
+    monkeypatch.setattr(kernel_identity, "owner_display_name", lambda default="": "")
+
+    reflex = first_person_reflex(
+        "Alice, who are you and who is Grok?",
+        state_dir=tmp_path,
+        owner_label="",
+    )
+
+    assert reflex is not None
+    assert "the owner = owner / continuity anchor" in reflex.reply
+    assert "George" not in reflex.reply
+
+
 def test_body_state_question_is_operational_not_human_feelings(tmp_path: Path) -> None:
     reflex = first_person_reflex(
         "Alice are you happy? are you real?",

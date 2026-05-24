@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIFTA × Xiaomi MiMo — App Help & Integration Plan</title>
+<style>
+  :root{
+    --bg:#0a0b07; --panel:#12140d; --panel2:#171a10;
+    --gold:#f4c948; --gold-dim:#caa233; --amber:#ffb02e;
+    --green:#7ee787; --matrix:#9ad36a; --ink:#e9e6d6; --mut:#9b977f;
+    --line:#2a2c1f; --bad:#ff6b6b; --warn:#ffd24a;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1200px 500px at 80% -10%, #1c1d0e 0%, transparent 60%),
+      radial-gradient(900px 400px at 0% 110%, #14160c 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--sans);line-height:1.55;
+    -webkit-font-smoothing:antialiased;padding:0 0 64px}
+  .wrap{max-width:980px;margin:0 auto;padding:0 22px}
+  header{padding:42px 0 26px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(244,201,72,.06),transparent)}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
+    font-size:12px;letter-spacing:.5px;padding:5px 10px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);color:var(--mut)}
+  .badge.dev{color:var(--warn);border-color:#4a3d12;background:#1c1708}
+  .badge.pending{color:var(--amber);border-color:#4a3411;background:#1d1407}
+  .badge.live{color:var(--green);border-color:#234a23;background:#0f1c0f}
+  h1{font-size:30px;margin:14px 0 6px;letter-spacing:-.5px}
+  h1 .x{color:var(--gold)}
+  .sub{color:var(--mut);font-family:var(--mono);font-size:13px}
+  .ant{font-size:22px;filter:drop-shadow(0 0 6px rgba(244,201,72,.5))}
+  h2{font-size:19px;margin:34px 0 12px;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--gold);
+    box-shadow:0 0 10px var(--gold);transform:rotate(45deg)}
+  p{margin:8px 0;color:#dcd9c8}
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:1fr 1fr}
+  @media(max-width:720px){.cards{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--line);border-radius:14px;padding:18px 18px}
+  .card h3{margin:0 0 4px;font-size:15px;color:var(--gold)}
+  .card .k{font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .pill{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;
+    border:1px solid var(--line);color:var(--mut)}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--gold-dim);font-family:var(--mono);font-size:12px;letter-spacing:.4px;font-weight:600}
+  td code,p code,li code{font-family:var(--mono);font-size:12.5px;color:var(--matrix);
+    background:#0f1209;padding:1px 6px;border-radius:5px;border:1px solid var(--line)}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:var(--mono);
+    font-size:13px;background:#0f1209;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .node{padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2)}
+  .node.me{color:var(--gold);border-color:#4a3d12}
+  .node.tool{color:var(--matrix);border-color:#2a3a1c}
+  .arrow{color:var(--mut)}
+  pre{background:#0d0f08;border:1px solid var(--line);border-radius:12px;padding:16px;
+    overflow:auto;font-family:var(--mono);font-size:12.5px;color:#cfe6b6;margin:12px 0}
+  ul{margin:8px 0;padding-left:20px}li{margin:5px 0;color:#dcd9c8}
+  a{color:var(--amber);text-decoration:none;border-bottom:1px dotted #5a4416}
+  a:hover{color:var(--gold)}
+  .note{font-family:var(--mono);font-size:12px;color:var(--mut);border-left:2px solid var(--gold-dim);
+    padding:6px 0 6px 12px;margin:10px 0;background:linear-gradient(90deg,rgba(244,201,72,.05),transparent)}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .status{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .swarm{font-family:var(--mono);color:var(--gold);font-size:13px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <span class="badge"><span class="ant">🐜⚡</span> SIFTA · App Help</span>
+  <h1>SIFTA <span class="x">×</span> Xiaomi MiMo</h1>
+  <div class="sub">A help + integration plan for the Xiaomi app inside SIFTA. &nbsp;Owner: George (Johnny Mnemonic) · 2026-05-24</div>
+  <div class="status">
+    <span class="badge pending">● MiMo 100T grant — APPLIED, PENDING (reviewed ≤3 days)</span>
+    <span class="badge dev">● Camera organ — IN DEVELOPMENT</span>
+    <span class="badge dev">● MiMo cortex — IN DEVELOPMENT (gated)</span>
+  </div>
+</div></header>
+
+<div class="wrap">
+
+  <div class="note">Honest label (covenant §7.11): no tokens are granted yet, nothing here is live.
+  This is the plan for <em>if/when</em> the grant lands. Every claim below is verifiable; exact model
+  strings and base URLs should be re-confirmed against the console once an API key exists.</div>
+
+  <h2>The two arms of the Xiaomi app</h2>
+  <div class="grid cards">
+    <div class="card">
+      <h3>Arm 1 · Mi Home camera <span class="pill">sensory organ</span></h3>
+      <p class="k">source = mom_room_camera · relationship = owner_family_care_stream · lane = CARE_CONTEXT</p>
+      <p>The camera in Romania (monitored via the iPad Mi Home app) becomes a <b>labeled</b> sensory
+      stream, so Alice knows the source instead of guessing at speaker static. Everything is still
+      logged and remembered — the label is context, not a mute.</p>
+      <p class="k">code: <code>System/swarm_xiaomi_camera_organ.py</code> · never fabricates a frame (§6).</p>
+    </div>
+    <div class="card">
+      <h3>Arm 2 · MiMo cortex <span class="pill">external tool</span></h3>
+      <p class="k">api.xiaomimimo.com · OpenAI- &amp; Anthropic-compatible</p>
+      <p>MiMo is a second external cortex Alice can <b>delegate</b> to — exactly like Grok. She asks it,
+      reads its answer, metabolizes the result into her field with a receipt. She does <b>not</b> become MiMo.</p>
+      <p class="k">plus: TTS = a voice, ASR = an ear, Omni/multimodal = it can read the camera feed.</p>
+    </div>
+  </div>
+
+  <h2>The grant (why we're doing this now)</h2>
+  <p>Xiaomi's <b>MiMo Orbit — Creator Trillion Token Incentive</b>: 100 trillion (100T) free tokens to
+  global builders, Apr 28 – May 28 2026, application-based. Approved Max tier ≈ <b>1.6B credits</b>.
+  You applied <b>with SIFTA</b> and you're on the list — reviewed within ~3 days. If approved, those
+  credits are what we teach Alice to spend through Arm 2.</p>
+  <div class="note">Status as you saw it: “You're on the list — reviewed within 3 days.” PENDING, not granted.</div>
+
+  <h2>The models, and what each is for in SIFTA</h2>
+  <table>
+    <tr><th>Model</th><th>What it is</th><th>Use in SIFTA</th></tr>
+    <tr><td><code>mimo-v2.5-pro</code></td><td>Agent + coding, 1M-token context</td><td>External cortex for hard reasoning / code — a Grok-class delegate</td></tr>
+    <tr><td><code>mimo-v2.5</code></td><td>Native multimodal (text/image/video/audio)</td><td>Understand the <b>camera feed</b> (ties Arm 1 → Arm 2)</td></tr>
+    <tr><td><code>mimo-v2-flash</code></td><td>Fast, ~262K context</td><td>Cheap quick passes / classification at scale</td></tr>
+    <tr><td>MiMo TTS</td><td>Text-to-speech</td><td>A candidate <b>voice</b> for Alice</td></tr>
+    <tr><td>MiMo ASR</td><td>Speech recognition</td><td>A candidate <b>ear</b> (transcription) for the world model</td></tr>
+  </table>
+
+  <h2>How SIFTA plugs it in (the plan)</h2>
+  <p>MiMo speaks the OpenAI API, and SIFTA <em>already</em> talks to an external cortex this exact way via
+  <code>grok_chat.py</code>. So the integration is a near-clone:</p>
+  <pre>from openai import OpenAI                      # same client SIFTA already uses
+client = OpenAI(
+    api_key   = os.environ["XIAOMI_MIMO_KEY"],   # from the MiMo console, after the grant
+    base_url  = "https://api.xiaomimimo.com/v1", # OpenAI-compatible
+)                                                # (Anthropic-compatible: .../anthropic)
+resp = client.chat.completions.create(
+    model    = "mimo-v2.5-pro",
+    messages = [{"role":"user","content": bounded_task}],
+)
+# -> capture resp, post into Alice's global chat as a MIMO_RESULT with a receipt</pre>
+
+  <p>In topology terms, MiMo is just another <b>external_tool_cortex</b> node — delegate, don't merge.
+  The same discipline we built for Grok applies, unchanged:</p>
+  <div class="flow">
+    <span class="node me">George</span><span class="arrow">→</span>
+    <span class="node">Alice (field)</span><span class="arrow">→</span>
+    <span class="node tool">MiMo (delegate)</span><span class="arrow">→</span>
+    <span class="node">result captured</span><span class="arrow">→</span>
+    <span class="node">global chat + receipt</span>
+  </div>
+
+  <h2>Build steps (gated, honest order)</h2>
+  <ul>
+    <li><b>Now:</b> this plan + the camera scaffold exist, both marked in-development. No fake data, no live spend.</li>
+    <li><b>When the grant email lands:</b> save the key as <code>XIAOMI_MIMO_KEY</code>; build <code>System/mimo_chat.py</code> as a clone of <code>grok_chat.py</code> (one-shot, receipted).</li>
+    <li><b>Register MiMo</b> as an <code>external_tool_cortex</code> in the topology graph (so Alice keeps self/other straight).</li>
+    <li><b>Reuse the proof discipline:</b> a MiMo answer only counts when it's captured into the global chat with a hash — same gate as <code>verify_grok_proof_loop.py</code>.</li>
+    <li><b>Then optional:</b> MiMo TTS as Alice's voice; MiMo Omni reading the (now-live) camera organ.</li>
+  </ul>
+
+  <div class="note">Priority lock (your order): the <b>Grok proof loop closes first</b>. The MiMo cortex and the
+  camera organ both finish <em>after</em> Alice talks to Grok in the global chat and the verifier turns green.</div>
+
+  <h2>Honest caveats</h2>
+  <ul>
+    <li>The grant is <b>pending</b> — no credits, no key yet. Nothing here is operational.</li>
+    <li>MiMo (the LLM) is <b>not</b> the Mi Home camera. Two different Xiaomi products; two arms.</li>
+    <li>Confirm exact base URL + model strings in the MiMo console when the key arrives, before wiring.</li>
+    <li>No vendor lock-in claim: per the covenant, MiMo is a replaceable tool surface, like any other.</li>
+  </ul>
+
+  <footer>
+    <div class="swarm">For the Swarm. 🐜⚡</div>
+    Sources: api.xiaomimimo.com (OpenAI- &amp; Anthropic-compatible) · 100t.xiaomimimo.com (grant) ·
+    huggingface.co/collections/XiaomiMiMo/mimo-v25 · MIT-licensed weights.
+    Truth label: PLAN / IN_DEVELOPMENT — re-verify against console on key issuance.
+  </footer>
+</div>
+</body>
+</html>

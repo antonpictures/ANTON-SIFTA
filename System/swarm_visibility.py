@@ -42,6 +42,10 @@ FIELD_LEDGERS: tuple[str, ...] = (
     "app_focus.jsonl",
 )
 
+_TAIL_READ_BYTES = 512 * 1024
+_COUNT_EXACT_MAX_BYTES = 1024 * 1024
+_HEAD_HASH_BYTES = 256 * 1024
+
 
 def _state_dir(state_dir: str | Path | None = None) -> Path:
     if state_dir is not None:
@@ -59,12 +63,41 @@ def _read_json_file(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _jsonl_rows(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
+def _read_tail_bytes(path: Path, max_bytes: int = _TAIL_READ_BYTES) -> bytes:
+    if not path.exists():
+        return b""
+    try:
+        size = path.stat().st_size
+        read_size = max(1, int(max_bytes))
+        offset = max(0, size - read_size)
+        with path.open("rb") as fh:
+            fh.seek(offset)
+            chunk = fh.read(read_size)
+    except Exception:
+        return b""
+    if offset > 0:
+        first_newline = chunk.find(b"\n")
+        if first_newline >= 0:
+            chunk = chunk[first_newline + 1 :]
+    return chunk
+
+
+def _jsonl_rows(
+    path: Path,
+    limit: int | None = None,
+    *,
+    max_bytes: int = _TAIL_READ_BYTES,
+) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     rows: list[dict[str, Any]] = []
     try:
-        lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if limit and limit > 0:
+            tail = _read_tail_bytes(path, max_bytes=max_bytes).decode("utf-8", errors="replace")
+            lines = [line.strip() for line in tail.splitlines() if line.strip()]
+        else:
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                lines = [line.strip() for line in fh if line.strip()]
     except Exception:
         return []
     selected = lines[-limit:] if limit and limit > 0 else lines
@@ -82,7 +115,12 @@ def _jsonl_count(path: Path) -> int:
     if not path.exists():
         return 0
     try:
-        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        size = path.stat().st_size
+        if size > _COUNT_EXACT_MAX_BYTES:
+            data = _read_tail_bytes(path, max_bytes=_COUNT_EXACT_MAX_BYTES)
+            return sum(1 for line in data.splitlines() if line.strip())
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            return sum(1 for line in fh if line.strip())
     except Exception:
         return 0
 
@@ -119,12 +157,17 @@ def _head_for_path(path: Path, last_row: dict[str, Any] | None = None) -> str:
     if not path.exists():
         return ""
     try:
-        data = path.read_bytes()
+        size = path.stat().st_size
+        data = _read_tail_bytes(path, max_bytes=_HEAD_HASH_BYTES)
     except Exception:
         return ""
     if not data:
         return ""
-    return hashlib.sha256(data).hexdigest()[:16]
+    h = hashlib.sha256()
+    h.update(str(size).encode("ascii", errors="ignore"))
+    h.update(b"\0")
+    h.update(data)
+    return h.hexdigest()[:16]
 
 
 def _health_for(last_row: dict[str, Any] | None, row_count: int, age_s: float | None) -> str:
@@ -159,6 +202,10 @@ def organ_status(state_dir: str | Path | None = None) -> list[dict[str, Any]]:
             row_count = _jsonl_count(path)
             rows = _jsonl_rows(path, limit=1)
             last_row = rows[-1] if rows else None
+        try:
+            file_bytes = path.stat().st_size if exists else 0
+        except OSError:
+            file_bytes = 0
 
         ts = _row_ts(last_row or {})
         age_s = round(now - ts, 3) if ts > 0 else None
@@ -169,6 +216,8 @@ def organ_status(state_dir: str | Path | None = None) -> list[dict[str, Any]]:
                 "ledger": ledger,
                 "exists": exists,
                 "row_count": row_count,
+                "row_count_basis": "tail" if file_bytes > _COUNT_EXACT_MAX_BYTES and path.suffix != ".json" else "exact",
+                "file_bytes": int(file_bytes),
                 "health": health,
                 "head": _head_for_path(path, last_row),
                 "last_type": _row_type(last_row or {}) if last_row else "",

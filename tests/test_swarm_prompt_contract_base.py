@@ -42,7 +42,7 @@ def test_prompt_contract_instructs_agent_arm_decision_without_naming_hermes():
 
     assert "agent_arm_research" in contract
     assert "second local reasoning pass" in contract
-    assert "I do not need George to name Hermes" in contract
+    assert "I do not need " in contract and " to name Hermes" in contract
     assert "arm output as evidence" in contract
 
 
@@ -78,3 +78,14 @@ def test_prompt_contract_stigbody_blocks_role_assignment():
     assert "Screenshots and pasted transcripts are real artifacts" in contract
     assert "live node telemetry" in contract
     assert "unless local model identity receipts prove it" in contract
+
+
+def test_prompt_contract_includes_topology_awareness_boundaries():
+    contract = minimal_runtime_contract()
+
+    assert "TOPOLOGY AWARENESS" in contract
+    assert "Alice field -> tool/cortex organs -> external surfaces -> receipts" in contract
+    assert "George -> Alice field" not in contract
+    assert "Grok is external" in contract
+    assert "IDE doctors are surgical hands" in contract
+    assert "focus routes actions" in contract

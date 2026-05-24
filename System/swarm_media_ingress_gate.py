@@ -776,6 +776,29 @@ def classify_external_consciousness_lane(
     if acoustic_cue:
         evidence.append(f"acoustic:{acoustic_cue}")
 
+    external_row = {
+        "source_class": source_class,
+        "route": route_s,
+        "attention_policy": attention_policy,
+    }
+    try:
+        from System.swarm_social_reference_tracker import classify_social_reference
+
+        social_reference = classify_social_reference(
+            clean,
+            role="user",
+            input_source="voice" if conf > 0 else "unknown",
+            stt_conf=conf,
+            focus_context=context,
+            external_consciousness=external_row,
+        )
+    except Exception:
+        social_reference = {
+            "truth_label": "SOCIAL_REFERENCE_TRACKER_V1",
+            "reference_lane": "UNAVAILABLE",
+            "error": "classification_failed",
+        }
+
     return {
         "truth_label": "EXTERNAL_CONSCIOUSNESS_LANE_V1",
         "field_layer": field_layer,
@@ -785,6 +808,7 @@ def classify_external_consciousness_lane(
         "owner_direct_likelihood": owner_p,
         "stt_confidence": conf,
         "evidence": evidence[:6],
+        "social_reference": social_reference,
     }
 
 

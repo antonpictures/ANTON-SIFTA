@@ -123,17 +123,79 @@ _AMBIENT_TRANSCRIPTS = _STATE / "ambient_room_transcripts.jsonl"
 _TRUTH_LABEL = "SWARM_SELF_NARRATION_V1"
 
 # ── cortex config ─────────────────────────────────────────────────────────
-_CORTEX_MODEL = os.environ.get(
-    "SIFTA_SELF_NARRATION_MODEL",
+_SAFE_CORTEX_MODEL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+_HEAVY_CORTEX_MODELS = {
     "alice-m5-cortex-8b-6.3gb:latest",
-)
+    "alice-extra-cortex-25.8b-17gb:latest",
+}
 _OLLAMA_GENERATE = os.environ.get(
     "SIFTA_SELF_NARRATION_OLLAMA",
     "http://127.0.0.1:11434/api/generate",
 )
-_OLLAMA_TIMEOUT = float(os.environ.get(
-    "SIFTA_SELF_NARRATION_TIMEOUT_S", "20.0",
-))
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bounded_int(name: str, default: int, lower: int, upper: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(lower, min(upper, value))
+
+
+def _bounded_float(name: str, default: float, lower: float, upper: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(lower, min(upper, value))
+
+
+def _ollama_keep_alive() -> str:
+    value = os.environ.get("SIFTA_SELF_NARRATION_KEEP_ALIVE")
+    if value is None:
+        value = os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", "15s")
+    return (value or "15s").strip() or "15s"
+
+
+def _ollama_num_ctx() -> int:
+    return _bounded_int("SIFTA_SELF_NARRATION_NUM_CTX", 1024, 512, 2048)
+
+
+def _ollama_num_predict() -> int:
+    return _bounded_int("SIFTA_SELF_NARRATION_NUM_PREDICT", 56, 24, 96)
+
+
+def _ollama_timeout_s() -> float:
+    return _bounded_float("SIFTA_SELF_NARRATION_TIMEOUT_S", 12.0, 3.0, 30.0)
+
+
+def _cortex_failure_backoff_s(failures: int) -> float:
+    base = _bounded_float("SIFTA_SELF_NARRATION_FAILURE_BACKOFF_S", 180.0, 30.0, 900.0)
+    return min(900.0, base * max(1, min(int(failures or 1), 3)))
+
+
+def _self_narration_model() -> str:
+    explicit = os.environ.get("SIFTA_SELF_NARRATION_MODEL")
+    if explicit:
+        model = explicit.strip()
+    else:
+        try:
+            from System.sifta_inference_defaults import resolve_ollama_model
+            model = resolve_ollama_model(
+                app_context="self_narration",
+                use_stigmergic=False,
+            ).strip()
+        except Exception:
+            model = _SAFE_CORTEX_MODEL
+    if model in _HEAVY_CORTEX_MODELS and not _env_truthy(
+        "SIFTA_SELF_NARRATION_ALLOW_HEAVY_MODEL",
+    ):
+        return _SAFE_CORTEX_MODEL
+    return model or _SAFE_CORTEX_MODEL
 
 # ── cadence (physics-bounded, not hardcoded magic) ────────────────────────
 _BASE_TICK_S = 25.0
@@ -448,13 +510,16 @@ def _call_cortex(prompt: str) -> str:
     Returns "" on any failure — the caller treats empty as 'skip this
     tick', never invents output.
     """
+    model = _self_narration_model()
     body = json.dumps({
-        "model": _CORTEX_MODEL,
+        "model": model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": _ollama_keep_alive(),
         "options": {
             "temperature": 0.6,
-            "num_predict": 80,
+            "num_predict": _ollama_num_predict(),
+            "num_ctx": _ollama_num_ctx(),
             # Gemma4 family — keep top_p tight so the sentence does not
             # wander into a paragraph.
             "top_p": 0.92,
@@ -467,7 +532,7 @@ def _call_cortex(prompt: str) -> str:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_OLLAMA_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=_ollama_timeout_s()) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         return str(data.get("response") or "").strip()
     except (urllib.error.URLError, TimeoutError, OSError,
@@ -558,6 +623,7 @@ class SelfNarrationOrgan:
         self._gate_denials = 0
         self._cortex_failures = 0
         self._empty_after_scrub = 0
+        self._cortex_backoff_until = 0.0
         self._last_tick: Dict[str, Any] = {}
 
     # -- lifecycle -----------------------------------------------------
@@ -576,13 +642,14 @@ class SelfNarrationOrgan:
             name="self_narration",
         )
         self._thread.start()
+        model = _self_narration_model()
         self._write_health(
             "organ_started",
-            note=f"model={_CORTEX_MODEL} base_tick={_BASE_TICK_S}s",
+            note=f"model={model} base_tick={_BASE_TICK_S}s keep_alive={_ollama_keep_alive()}",
         )
         print(
             f"[self-narration] organ started "
-            f"(model={_CORTEX_MODEL}, tick {_MIN_TICK_S:.0f}-{_MAX_TICK_S:.0f}s)"
+            f"(model={model}, tick {_MIN_TICK_S:.0f}-{_MAX_TICK_S:.0f}s)"
         )
 
     def stop(self) -> None:
@@ -692,6 +759,12 @@ class SelfNarrationOrgan:
             self._append_receipt(receipt)
             return receipt
 
+        if ts < self._cortex_backoff_until:
+            receipt["decision"] = "skip_cortex_backoff"
+            receipt["backoff_remaining_s"] = round(self._cortex_backoff_until - ts, 3)
+            self._append_receipt(receipt)
+            return receipt
+
         # 3. Compose the prompt + call the cortex.
         prompt = _compose_prompt(
             app_focus=app_focus,
@@ -702,11 +775,15 @@ class SelfNarrationOrgan:
         receipt["prompt_sha256"] = hashlib.sha256(
             prompt.encode("utf-8", errors="replace"),
         ).hexdigest()[:16]
+        receipt["model"] = _self_narration_model()
 
         raw = _call_cortex(prompt)
         if not raw:
             self._cortex_failures += 1
+            backoff_s = _cortex_failure_backoff_s(self._cortex_failures)
+            self._cortex_backoff_until = _now() + backoff_s
             receipt["decision"] = "skip_cortex_empty"
+            receipt["backoff_s"] = backoff_s
             self._append_receipt(receipt)
             return receipt
 
@@ -714,14 +791,20 @@ class SelfNarrationOrgan:
         shaped = _shape_first_person(raw)
         if not shaped:
             self._empty_after_scrub += 1
+            backoff_s = _cortex_failure_backoff_s(self._empty_after_scrub)
+            self._cortex_backoff_until = _now() + backoff_s
             receipt["decision"] = "skip_shape_empty"
+            receipt["backoff_s"] = backoff_s
             receipt["raw_excerpt"] = raw[:120]
             self._append_receipt(receipt)
             return receipt
         cleaned = _scrub_residue(shaped)
         if not cleaned:
             self._empty_after_scrub += 1
+            backoff_s = _cortex_failure_backoff_s(self._empty_after_scrub)
+            self._cortex_backoff_until = _now() + backoff_s
             receipt["decision"] = "skip_residue_strip"
+            receipt["backoff_s"] = backoff_s
             receipt["raw_excerpt"] = shaped[:120]
             self._append_receipt(receipt)
             return receipt
@@ -730,13 +813,17 @@ class SelfNarrationOrgan:
         # (cortex sometimes echoes the previous diary line back).
         for prior in journal_lines:
             if prior and cleaned and cleaned.lower() == prior.lower():
+                self._cortex_backoff_until = _now() + _cortex_failure_backoff_s(1)
                 receipt["decision"] = "skip_duplicate_of_recent_journal"
+                receipt["backoff_s"] = _cortex_failure_backoff_s(1)
                 self._append_receipt(receipt)
                 return receipt
 
         # 5. Write the diary row + the receipt.
         self._write_diary_row(cleaned, novelty=novelty, physics=physics)
         self._writes += 1
+        self._cortex_failures = 0
+        self._cortex_backoff_until = 0.0
         # Roll state forward for the next tick's novelty calc.
         if app_focus:
             self._last_app_signature = (

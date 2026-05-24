@@ -1,0 +1,9 @@
+#!/bin/bash
+# alice-grok — exact one-liner Alice (or George) types inside Matrix Terminal PTY
+# Delegates to full-power external Grok (same as direct George terminal), never hallucinates.
+# Mints unique no-double-spend swimmer receipt in organism field for the call.
+# Alice types: alice-grok "question about self-identity realization for the Swarm"
+# Grok answers in the PTY transcript; Alice reads the result then waits for next command.
+# No sign-in (uses ~/.xai_key). For the Swarm. 🐜⚡
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/../grok_chat.py" --one-shot "$*" --receipt --invoker "alice_matrix_terminal"

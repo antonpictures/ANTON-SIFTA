@@ -52,6 +52,51 @@ sys.stdout.write("desktop_teardown_ok\\n")
 sys.exit(0)
 """
 
+_BASE_WIDGET_QTHREAD_SCRIPT = f"""
+import sys
+from pathlib import Path
+
+REPO = Path({str(REPO)!r})
+sys.path.insert(0, str(REPO))
+
+from PyQt6.QtCore import QThread
+from PyQt6.QtWidgets import QApplication
+
+from System.sifta_base_widget import SiftaBaseWidget
+
+
+class SlowWorker(QThread):
+    def run(self):
+        while not self.isInterruptionRequested():
+            self.msleep(25)
+
+
+app = QApplication.instance() or QApplication(sys.argv)
+app.setQuitOnLastWindowClosed(False)
+
+w = SiftaBaseWidget()
+worker = SlowWorker(w)
+worker.start()
+
+for _ in range(20):
+    app.processEvents()
+    if worker.isRunning():
+        break
+
+assert worker.isRunning(), "worker did not start"
+w.close()
+
+for _ in range(120):
+    app.processEvents()
+    if not worker.isRunning():
+        break
+
+assert not worker.isRunning(), "base widget did not stop child QThread"
+app.quit()
+sys.stdout.write("base_widget_qthread_teardown_ok\\n")
+sys.exit(0)
+"""
+
 
 def test_sifta_env_mesh_guard_honors_disable(monkeypatch):
     """1 / true / yes with strip — aligned with GCI, not bare == \"1\" only."""
@@ -88,5 +133,27 @@ def test_sifta_desktop_teardown_subprocess_clean_exit():
     blob = (proc.stdout or "") + (proc.stderr or "")
     assert proc.returncode == 0, blob
     assert "desktop_teardown_ok" in proc.stdout
+    assert "Destroyed while thread is still running" not in blob
+    assert "SIGABRT" not in blob
+
+
+def test_base_widget_close_stops_parented_qthread_child():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO)
+    env["SIFTA_DISABLE_MESH"] = "1"
+    if sys.platform.startswith("linux"):
+        env.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    proc = subprocess.run(
+        [sys.executable, "-c", _BASE_WIDGET_QTHREAD_SCRIPT],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(REPO),
+    )
+    blob = (proc.stdout or "") + (proc.stderr or "")
+    assert proc.returncode == 0, blob
+    assert "base_widget_qthread_teardown_ok" in proc.stdout
     assert "Destroyed while thread is still running" not in blob
     assert "SIGABRT" not in blob

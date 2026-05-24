@@ -52,6 +52,72 @@ DEFAULT_POLICIES: Dict[str, RotationPolicy] = {
         min_bytes=64 * 1024 * 1024,
         reason="high-volume pheromone trace; recent gradients matter most",
     ),
+    "sensory_attention_ledger.jsonl": RotationPolicy(
+        "sensory_attention_ledger.jsonl",
+        keep_last=20_000,
+        min_bytes=64 * 1024 * 1024,
+        reason="resident attention decisions; recent leases and evidence matter most",
+    ),
+    "sensor_lane_journal.jsonl": RotationPolicy(
+        "sensor_lane_journal.jsonl",
+        keep_last=10_000,
+        min_bytes=64 * 1024 * 1024,
+        reason="derived sensor summaries; daily markdown and receipts preserve older meaning",
+    ),
+    "journal_schedule_receipts.jsonl": RotationPolicy(
+        "journal_schedule_receipts.jsonl",
+        keep_last=10_000,
+        min_bytes=64 * 1024 * 1024,
+        reason="life-journal receipt stream; recent receipt tail is enough for live prompts",
+    ),
+    "global_segment_index.jsonl": RotationPolicy(
+        "global_segment_index.jsonl",
+        keep_last=5_000,
+        min_bytes=32 * 1024 * 1024,
+        reason="derived segment index snapshots; latest JSON carries the live view",
+    ),
+    "motor_pulses.jsonl": RotationPolicy(
+        "motor_pulses.jsonl",
+        keep_last=30_000,
+        min_bytes=32 * 1024 * 1024,
+        reason="heartbeat pulse trace; live organs consume the recent rhythm tail",
+    ),
+    "alice_first_person_journal.jsonl": RotationPolicy(
+        "alice_first_person_journal.jsonl",
+        keep_last=20_000,
+        min_bytes=32 * 1024 * 1024,
+        reason="first-person witness rows; daily journals preserve older narrative",
+    ),
+    "camera_unified_field_proof.jsonl": RotationPolicy(
+        "camera_unified_field_proof.jsonl",
+        keep_last=10_000,
+        min_bytes=16 * 1024 * 1024,
+        reason="camera proof snapshots; latest proofs drive current truth claims",
+    ),
+    "architect_screen_gaze_balance.jsonl": RotationPolicy(
+        "architect_screen_gaze_balance.jsonl",
+        keep_last=10_000,
+        min_bytes=16 * 1024 * 1024,
+        reason="gaze proxy samples; current EMA and recent samples are live control state",
+    ),
+    "active_eye_identity_frames.jsonl": RotationPolicy(
+        "active_eye_identity_frames.jsonl",
+        keep_last=10_000,
+        min_bytes=8 * 1024 * 1024,
+        reason="identity-frame receipts; image path plus recent sha anchors are sufficient live state",
+    ),
+    "app_focus.jsonl": RotationPolicy(
+        "app_focus.jsonl",
+        keep_last=20_000,
+        min_bytes=16 * 1024 * 1024,
+        reason="active-app focus trace; current app and recent transitions feed Alice's prompt",
+    ),
+    "unified_stigmergic_field.jsonl": RotationPolicy(
+        "unified_stigmergic_field.jsonl",
+        keep_last=10_000,
+        min_bytes=16 * 1024 * 1024,
+        reason="derived field snapshots; recent field vectors carry live coupling state",
+    ),
     "network_topology.jsonl": RotationPolicy(
         "network_topology.jsonl",
         keep_last=5_000,
@@ -243,11 +309,33 @@ def rotate_default_ledgers(
     state_dir: Optional[Path] = None,
     archive_dir: Optional[Path] = None,
     dry_run: bool = False,
+    giant_bytes: int = 512 * 1024 * 1024,
+    giant_keep_bytes: int = 8 * 1024 * 1024,
 ) -> List[Dict[str, object]]:
-    return [
-        rotate_ledger(policy, state_dir=state_dir, archive_dir=archive_dir, dry_run=dry_run)
-        for policy in DEFAULT_POLICIES.values()
-    ]
+    base = Path(state_dir) if state_dir is not None else _STATE
+    rows: List[Dict[str, object]] = []
+    for policy in DEFAULT_POLICIES.values():
+        path = base / policy.ledger_name
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        if size >= int(giant_bytes):
+            rows.append(
+                fast_rotate_ledger_by_bytes(
+                    policy.ledger_name,
+                    state_dir=state_dir,
+                    archive_dir=archive_dir,
+                    max_bytes=policy.min_bytes,
+                    keep_bytes=giant_keep_bytes,
+                    dry_run=dry_run,
+                )
+            )
+            continue
+        rows.append(
+            rotate_ledger(policy, state_dir=state_dir, archive_dir=archive_dir, dry_run=dry_run)
+        )
+    return rows
 
 
 def main() -> int:

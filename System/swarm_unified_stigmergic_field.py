@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -497,6 +498,7 @@ def build_unified_field(
     state_dir: Path | str = STATE_DIR,
     now: float | None = None,
     write: bool = False,
+    include_app_habit: bool = True,
 ) -> dict[str, Any]:
     """Build the current owner/OS/media field from bounded ledger tails."""
     root = Path(state_dir)
@@ -524,7 +526,7 @@ def build_unified_field(
         state_dir=root,
         now=now_ts,
         write=write,
-    ) if app_focus else {}
+    ) if app_focus and include_app_habit else {}
 
     signals = {
         "sifta_app_focus": float(app_focus.get("freshness", 0.0) or 0.0),
@@ -601,6 +603,11 @@ def build_unified_field(
     return row
 
 
+def _live_prompt_field_enabled() -> bool:
+    value = os.environ.get("SIFTA_PROMPT_LIVE_UNIFIED_FIELD", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def format_unified_field_for_prompt(
     *,
     state_dir: Path | str = STATE_DIR,
@@ -608,7 +615,18 @@ def format_unified_field_for_prompt(
     write: bool = True,
 ) -> str:
     """Return a compact prompt block for Alice's global chat."""
-    row = build_unified_field(state_dir=state_dir, now=now, write=write)
+    root = Path(state_dir)
+    if _live_prompt_field_enabled():
+        row = build_unified_field(state_dir=root, now=now, write=write)
+    else:
+        row = _read_json(root / "unified_stigmergic_field_latest.json")
+        if not isinstance(row, dict):
+            row = build_unified_field(
+                state_dir=root,
+                now=now,
+                write=False,
+                include_app_habit=False,
+            )
     if not row.get("watching_together") and row.get("field_confidence", 0.0) <= 0.0:
         return ""
 

@@ -140,6 +140,25 @@ def test_hybrid_recall_returns_breakdown(bus):
     assert "decay" in breakdown and "stgm" in breakdown and "label" in breakdown
 
 
+def test_hybrid_recall_uses_one_forager_pass(bus, monkeypatch):
+    for i in range(5):
+        bus.remember(f"alpha memory {i}", "talk_to_alice")
+
+    calls = 0
+    original = mb.MemoryForager.forage
+
+    def counted(self, query, ledger_path):
+        nonlocal calls
+        calls += 1
+        return original(self, query, ledger_path)
+
+    monkeypatch.setattr(mb.MemoryForager, "forage", counted)
+    results = bus.hybrid_recall("alpha memory", "talk_to_alice", top_k=3)
+
+    assert results
+    assert calls == 1
+
+
 def test_hybrid_epistemic_weighting(bus):
     bus.remember("fact one", "talk_to_alice", epistemic_label="OBSERVED", links=["trace_id:1"])
     bus.remember("guess one", "talk_to_alice", epistemic_label="HYPOTHESIS")

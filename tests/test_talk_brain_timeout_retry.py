@@ -40,6 +40,7 @@ def test_ollama_stream_timeout_retries_before_failure(monkeypatch):
     worker.failed.connect(failed.append)
 
     monkeypatch.setenv("SIFTA_OLLAMA_BRAIN_TIMEOUT_S", "not-a-number")
+    monkeypatch.setenv("SIFTA_OLLAMA_MAX_ATTEMPTS", "4")
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     monkeypatch.setattr(talk.time, "sleep", sleeps.append)
 
@@ -47,7 +48,7 @@ def test_ollama_stream_timeout_retries_before_failure(monkeypatch):
 
     assert done == ["Alice recovered."]
     assert failed == []
-    assert calls == [120.0, 120.0, 120.0, 120.0]
+    assert calls == [45.0, 45.0, 45.0, 45.0]
     assert sleeps == [0.4, 1.0, 2.0]
 
 
@@ -73,8 +74,8 @@ def test_ollama_stream_timeout_failure_is_not_reported_as_crash(monkeypatch):
 
     worker.run()
 
-    assert len(calls) == 4
-    assert calls == [9.0, 9.0, 9.0, 9.0]
+    assert len(calls) == 2
+    assert calls == [9.0, 9.0]
     assert len(failed) == 1
-    assert failed[0].startswith("Brain timed out after 4 attempt(s)")
+    assert failed[0].startswith("Brain timed out after 2 attempt(s)")
     assert "Brain crashed" not in failed[0]

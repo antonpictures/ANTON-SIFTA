@@ -1313,9 +1313,13 @@
     "signature": "CODEX_SWARM_FIELD_QT_V1",
     "doctor": "Codex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "BeeSon-native Swarm visibility surface: organ ledger health, recent stigmergic field rows, STGM flow, and active IDE swimmers in one Qt widget. Publishes app_focus so Alice can talk about the field. Replaces the detached white app idea without creating a second chat.",
+    "description": "BeeSon-native global field visualizer: one Alice global chat, focused territory, process trace, organ ledger health, recent stigmergic field rows, STGM flow, and active IDE swimmers in one Qt widget. Publishes app_focus so Alice can talk about the field. Replaces the detached white app idea without creating a second chat.",
     "truth_label": "SIFTA_SWARM_FIELD_QT_V1",
     "autostart": false,
+    "legacy_names": [
+      "Global Field Visualizer",
+      "One Alice Display"
+    ],
     "icon": "🐝"
   },
   "Organism Doctor": {

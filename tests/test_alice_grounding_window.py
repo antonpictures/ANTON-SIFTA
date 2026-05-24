@@ -186,6 +186,7 @@ def test_sifta_app_commands_resolve_manifest_apps_and_browser_urls():
         "Ace",
         "Pheromone Symphony (Generative Music)",
         "Stigmergic Video Poker",
+        "Swarm Field",
     ]
 
     assert mod._match_sifta_app_name("Alice Browser app", app_names) == "Alice Browser"
@@ -195,6 +196,8 @@ def test_sifta_app_commands_resolve_manifest_apps_and_browser_urls():
     assert mod._match_sifta_app_name("word ace", app_names) == "Ace"
     assert mod._match_sifta_app_name("ace", app_names) == "Ace"
     assert mod._match_sifta_app_name("Ace app", app_names) == "Ace"
+    assert mod._match_sifta_app_name("global field visualizer", app_names) == "Swarm Field"
+    assert mod._match_sifta_app_name("one Alice display", app_names) == "Swarm Field"
 
     app_cmd = mod._extract_sifta_app_command("Alice, open Alice Browser app", app_names)
     assert app_cmd == {"kind": "app", "app_name": "Alice Browser", "url": ""}
@@ -1078,6 +1081,35 @@ def test_system_prompt_includes_generic_app_focus_for_non_ace_app(tmp_path, monk
     )
 
 
+def test_messaging_channel_focus_reads_desktop_and_active_window(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    (tmp_path / "sifta_desktop_app_state.json").write_text(
+        json.dumps({"active_app": "WhatsApp", "open_apps": ["WhatsApp"]}),
+        encoding="utf-8",
+    )
+    assert mod._messaging_channel_focused("whatsapp") is True
+    assert mod._messaging_channel_focused("imessage") is False
+
+    (tmp_path / "sifta_desktop_app_state.json").write_text(
+        json.dumps({"active_app": "", "open_apps": []}),
+        encoding="utf-8",
+    )
+    (tmp_path / "active_window.jsonl").write_text(
+        json.dumps({"app": "Messages", "bundle_id": "com.apple.MobileSMS"}) + "\n",
+        encoding="utf-8",
+    )
+    assert mod._messaging_channel_focused("imessage") is True
+
+
+def test_background_messaging_env_requires_truthy_value(monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setenv("SIFTA_WHATSAPP_BACKGROUND", "0")
+    assert mod._env_truthy("SIFTA_WHATSAPP_BACKGROUND") is False
+    monkeypatch.setenv("SIFTA_WHATSAPP_BACKGROUND", "1")
+    assert mod._env_truthy("SIFTA_WHATSAPP_BACKGROUND") is True
+
+
 def test_local_reality_relapse_rewrites_cipi_identity_whatsapp_denial():
     mod = _load_widget_module()
     prior = (
@@ -1649,7 +1681,7 @@ def test_whatsapp_auto_reply_denial_falls_back_to_sendable_text():
         {"display_name": "Example Contact", "chat_type": "direct"},
     )
     assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
-    assert repaired.startswith("Hi Jeff, thanks for reaching out.")
+    assert repaired.startswith("Hi Example, thanks for reaching out.")
     assert "cannot" not in repaired.casefold()
 
 

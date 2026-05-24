@@ -47,6 +47,7 @@ def test_body_monitor_organ_field_enters_identity_prompt(monkeypatch) -> None:
     from System import swarm_body_monitor as body
     from System import swarm_composite_identity as sci
 
+    monkeypatch.setenv("SIFTA_PROMPT_LIVE_BODY_MONITOR", "1")
     monkeypatch.setattr(
         body,
         "summary_for_alice",

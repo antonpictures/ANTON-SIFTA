@@ -103,3 +103,41 @@ def test_full_snapshot_shape(fresh_vis, chdir_tmp):
     assert isinstance(snap["field"], list)
     assert isinstance(snap["stgm"], dict)
     assert isinstance(snap["swimmers"], list)
+
+
+def test_live_jsonl_reads_use_bounded_tails(fresh_vis, chdir_tmp, monkeypatch):
+    import time
+
+    state = chdir_tmp / ".sifta_state"
+    now = time.time()
+    _drop(
+        state,
+        "ide_stigmergic_trace.jsonl",
+        [
+            {"type": "NOISE", "ts": now - 3, "padding": "x" * 4096},
+            {
+                "type": "LLM_REGISTRATION",
+                "doctor": "Codex",
+                "model": "gpt-5-codex",
+                "trace_id": "tail",
+                "ts": now,
+            },
+        ],
+    )
+
+    original_read_text = Path.read_text
+
+    def fail_jsonl_read_text(self, *args, **kwargs):
+        if self.name.endswith(".jsonl"):
+            raise AssertionError(f"full text read on live JSONL: {self.name}")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_jsonl_read_text)
+
+    field = fresh_vis.field_recent(10)
+    swimmers = fresh_vis.active_swimmers(20)
+    organs = {row["organ"]: row for row in fresh_vis.organ_status()}
+
+    assert any(row.get("trace_id") == "tail" for row in field)
+    assert swimmers and swimmers[-1]["doctor"] == "Codex"
+    assert organs["ide_bus"]["row_count"] == 2

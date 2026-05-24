@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import time
@@ -234,6 +235,18 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=True,
         requires_autonomy_gate=False,
     ),
+    "matrix_pty": ToolSpec(
+        name="matrix_pty",
+        description=(
+            "Acknowledge commands dispatched to the focused Matrix Terminal PTY. "
+            "Special READ_ONLY_GROK_DELEGATION clearance lane for bounded inspect/propose "
+            "tasks that explicitly carry 'do not edit' + 'print answer with receipt'. "
+            "Grok remains external cortex; Alice owns the body and receipts every surgery."
+        ),
+        required_params=("commands",),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
     "read_file": ToolSpec(
         name="read_file",
         description="Read file content with path denylist and receipt",
@@ -299,6 +312,19 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         ),
         required_params=(),
         optional_params=("query", "limit", "app_name"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "topology_awareness_status": ToolSpec(
+        name="topology_awareness_status",
+        description=(
+            "Read Alice's relationship graph: George, Alice/global chat, Matrix Terminal, "
+            "local cortex, Grok/external tools, IDE doctors, and receipts. Use when the "
+            "request asks who is talking to whom, how surfaces/tools relate, or how to "
+            "preserve One Alice boundaries."
+        ),
+        required_params=(),
+        optional_params=("focus_context", "current_app"),
         write_action=False,
         requires_autonomy_gate=False,
     ),
@@ -425,10 +451,14 @@ def capabilities_for_alice_prompt() -> str:
     # === CURRENT APP ATTENTION (the key attention mechanism the user is asking for) ===
     # Stigmergic physics: app_focus rows + co-occurrence + explicit metadata raise Ace/lesson habits when kid is practicing.
     # Weight is high so teaching habits dominate Alice's prompt during real lessons (one Alice only).
+    live_capability_field = os.environ.get(
+        "SIFTA_PROMPT_LIVE_CAPABILITY_FIELD",
+        "",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     try:
         from System.swarm_capability_registry import current_app_name_from_field, habit_capabilities_for_app
 
-        current_app = current_app_name_from_field()
+        current_app = current_app_name_from_field() if live_capability_field else ""
         if current_app:
             ranked = habit_capabilities_for_app(current_app, limit=8)
             lines.append(f"CURRENT APP ATTENTION — {current_app} (STIGMERGIC PRIORITY)")
@@ -490,6 +520,9 @@ def capabilities_for_alice_prompt() -> str:
         "- Core tools and hybrids execute through this router with full hash-chained receipts and STGM cost.",
         "- Learned skills are loaded as procedures to shape your reasoning and composition (never auto-execute third-party code).",
         "- Always include a real cost_justification. The field must remain profitable.",
+        "- External/social write tools require owner_consent=true when autonomous; without it the router records a silence/refusal receipt instead of pretending action happened.",
+        "- Registered agent arms for agent_arm_research: hermes_agent, codex_agent, corvid_scout.",
+        "- run_local_command is allowlisted argv execution; web_research and repo_patch are bounded external/repo effectors.",
         "- When George asks what you can do, call capability_field_status or skill_library_status first.",
         "- Before any effector autonomy, call edge_intent_eval and confirm accuracy >= 0.80 on the fixed suite.",
         "",
@@ -1252,6 +1285,51 @@ def _exec_run_terminal(params: Dict[str, str]) -> Dict[str, Any]:
     )
 
 
+def _exec_matrix_pty(params: Dict[str, Any]) -> Dict[str, Any]:
+    commands = params.get("commands")
+    if isinstance(commands, str):
+        raw_commands = commands.strip()
+        parsed_commands: Any = None
+        if raw_commands.startswith("["):
+            try:
+                parsed_commands = json.loads(raw_commands)
+            except Exception:
+                try:
+                    import ast
+
+                    parsed_commands = ast.literal_eval(raw_commands)
+                except Exception:
+                    parsed_commands = None
+        if isinstance(parsed_commands, list):
+            commands_list = [str(cmd) for cmd in parsed_commands if str(cmd).strip()]
+        elif "\n" in raw_commands:
+            commands_list = [cmd.strip() for cmd in raw_commands.splitlines() if cmd.strip()]
+        else:
+            commands_list = [raw_commands]
+    elif isinstance(commands, list):
+        commands_list = [str(cmd) for cmd in commands if str(cmd).strip()]
+    else:
+        commands_list = []
+    if not commands_list:
+        return {
+            "ok": False,
+            "status": "MATRIX_PTY_NO_COMMANDS",
+            "error": "matrix_pty requires at least one command",
+            "alice_summary": "matrix_pty did not run: no commands were provided.",
+        }
+    preview = " then ".join(commands_list)[:220]
+    return {
+        "ok": True,
+        "status": "MATRIX_PTY_DISPATCHED",
+        "commands": commands_list,
+        "truth_note": (
+            "The focused Matrix Terminal pane already wrote these commands to its live PTY; "
+            "this router result acknowledges that visible execution path."
+        ),
+        "alice_summary": f"matrix_pty dispatched visible terminal command sequence: {preview}",
+    }
+
+
 def _exec_read_file(params: Dict[str, str]) -> Dict[str, Any]:
     if fileo is None:
         return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
@@ -1493,6 +1571,37 @@ def _exec_capability_field_status(params: Dict[str, str]) -> Dict[str, Any]:
             "status": "CAPABILITY_FIELD_STATUS_FAILED",
             "error": f"{type(exc).__name__}: {exc}",
             "alice_summary": f"capability_field_status failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_topology_awareness_status(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        from System import swarm_topology_awareness as topo_mod
+
+        focus_context = str(params.get("focus_context") or "")
+        current_app = str(params.get("current_app") or "")
+        topology = topo_mod.build_topology_awareness(
+            focus_context=focus_context,
+            current_app=current_app,
+        )
+        node_names = ", ".join(str(n.get("id")) for n in topology.get("nodes", [])[:12])
+        return {
+            "ok": True,
+            "status": topo_mod.TRUTH_LABEL,
+            "topology": topology,
+            "prompt_block": topo_mod.render_topology_prompt_block(topology),
+            "alice_summary": (
+                "topology_awareness_status: one Alice relationship graph loaded. "
+                f"Nodes: {node_names}. Grok is external; IDE doctors are surgical hands; "
+                "focus routes actions, not identity."
+            ),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "TOPOLOGY_AWARENESS_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"topology_awareness_status failed: {type(exc).__name__}: {exc}",
         }
 
 
@@ -1741,6 +1850,7 @@ _EXECUTORS = {
     "physical_effector_demo": _exec_physical_effector_demo,
     # Hermes surface parity (Event 120 hardened)
     "run_terminal": _exec_run_terminal,
+    "matrix_pty": _exec_matrix_pty,
     "read_file": _exec_read_file,
     "write_file": _exec_write_file,
     "edit_file": _exec_edit_file,
@@ -1748,6 +1858,7 @@ _EXECUTORS = {
     "fetch_url": _exec_fetch_url,
     "search_web": _exec_search_web,
     "capability_field_status": _exec_capability_field_status,
+    "topology_awareness_status": _exec_topology_awareness_status,
     "edge_intent_classify": _exec_edge_intent_classify,
     "edge_intent_eval": _exec_edge_intent_eval,
     "architect_memory_digest": _exec_architect_memory_digest,
@@ -1874,6 +1985,8 @@ def _kernel_tool_preflight(
                     "tool_write_action": "true",
                     "owner_present": str(bool(owner_present)),
                     "autonomous": str(bool(autonomous)),
+                    "read_only_grok_delegation": "true" if _is_safe_read_only_grok_delegation(call.params or {}, _cost_justification(call.params or {})) else "false",
+                    "clearance_lane": "READ_ONLY_GROK_DELEGATION" if _is_safe_read_only_grok_delegation(call.params or {}, _cost_justification(call.params or {})) else "",
                 },
             )
             budget = dict(effector_gate.get("budget") or {})
@@ -2018,6 +2131,49 @@ def _kernel_tool_heartbeat(
     return rid
 
 
+def _is_safe_read_only_grok_delegation(params: Dict[str, Any], justification: str = "") -> bool:
+    """READ_ONLY_GROK_DELEGATION clearance lane classifier.
+    Bounded inspection/proposal tasks that explicitly say "do not edit" / "propose" / "inspect"
+    and ask for the answer printed with receipt are low-risk visible delegations.
+    They may execute through matrix_pty without full write throttle.
+
+    This is one of the small constraining layers in the ordered cognitive
+    architecture (owner 2026-05 insight): tool delegation reflex + body gate
+    coordination. Not a magic cortex; many specialized organs + receipts
+    that together shape safe, grounded behavior. Similar to biological
+    layered systems (gating loops, attention, body-state, social inference).
+    Current surgery phase: restarts reload the whole nervous system.
+    Future: hot-swappable organs.
+    """
+    text = " ".join([
+        str(justification or ""),
+        str(params.get("delegation_text") or ""),
+        str(params.get("cost_justification") or ""),
+        str(params.get("commands") or ""),
+    ]).lower()
+    safe_markers = (
+        "inspect", "propose", "do not edit", "print", "answer", "with a receipt",
+        "smallest safe", "read-only", "read only", "proposal", "propose the", "do not yet"
+    )
+    has_safe = any(m in text for m in safe_markers)
+    is_grok_del = "grok_delegation" in text or "grok delegation" in text
+    # George's rule (2026-05-23): a request carrying destructive/mutating intent
+    # must require higher clearance / explicit owner GO — it can NEVER clear the
+    # read-only lane just because it also says "print" or "answer". Exclusion wins.
+    # Word-boundaried so it does not trip on the canonical SAFE phrasing
+    # ("propose the smallest safe patch") or on the safe negation ("do not edit").
+    scan = (text.replace("do not edit", "").replace("don't edit", "")
+                .replace("do not modify", "").replace("do not delete", ""))
+    has_destructive = bool(re.search(
+        r"\b(?:edit|edits|editing|modif(?:y|ies|ying)|delete[sd]?|deleting|"
+        r"implement(?:s|ing)?|overwrite|wipe[sd]?|mutate|deploy)\b"
+        r"|rm\s+-|force[- ]?push|git\s+push|apply\s+the\s+patch|"
+        r"write\s+the\s+(?:patch|file)|save\s+the\s+file",
+        scan,
+    ))
+    return is_grok_del and has_safe and not has_destructive
+
+
 def _kernel_tool_proposal(
     call: ParsedToolCall,
     spec: ToolSpec,
@@ -2032,6 +2188,11 @@ def _kernel_tool_proposal(
         evidence_gain = 0.65
     elif call.tool_name in {"organ_registry_lookup", "self_improvement_status", "verification_contract"}:
         evidence_gain = 0.55
+    elif call.tool_name == "matrix_pty" and _is_safe_read_only_grok_delegation(call.params or {}, _cost_justification(call.params or {})):
+        # READ_ONLY_GROK_DELEGATION clearance lane (owner covenant + Tao verification)
+        # Inspect / propose / "do not edit yet" / "print answer with receipt" = high evidence, minimal risk.
+        # Grok helps repair the organ; Alice owns the body and receipts the surgery. Never free-run.
+        evidence_gain = 0.92
     elif spec.write_action:
         evidence_gain = 0.45
     else:
@@ -2039,6 +2200,8 @@ def _kernel_tool_proposal(
     interrupt_risk = 0.05 if owner_present else 0.10
     if spec.write_action and autonomous and not owner_present:
         interrupt_risk = 0.25
+    if call.tool_name == "matrix_pty" and _is_safe_read_only_grok_delegation(call.params or {}, _cost_justification(call.params or {})):
+        interrupt_risk = 0.01   # visible, bounded, owner-intent, explicit "do not edit"
     metrics = cortex_metrics or {}
     evidence_gain += min(0.3, max(0.0, _floatish(metrics.get("tokens_per_sec"), default=0.0)) / 100.0)
     return {

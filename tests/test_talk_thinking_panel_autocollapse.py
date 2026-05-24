@@ -56,3 +56,40 @@ def test_done_schedules_auto_collapse_after_final_char_count():
     assert "n_chars = len(panel.toPlainText() or \"\")" in done_block
     assert "self._schedule_thinking_auto_collapse()" in done_block
 
+
+def test_talk_tails_matrix_process_trace_into_thinking_panel():
+    src = _src()
+    assert "self.make_timer(900, self._poll_matrix_process_trace_for_thinking)" in src
+    assert "matrix_terminal_process_trace.jsonl" in src
+    assert "still waiting for GROK_RESULT" in src
+    assert "Global chat received GROK_RESULT" in src
+
+
+def test_matrix_process_trace_formatter_reports_grok_result_proof():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(
+        widget,
+        {
+            "ts": 1779650000.0,
+            "action": "GROK_RESULT",
+            "text": "GROK_RESULT captured",
+            "payload": {
+                "capture_status": "captured",
+                "captured_output_chars": 321,
+                "captured_output_hash": "abcdef1234567890abcdef",
+                "pty_transcript_span": {
+                    "start_seq": 4,
+                    "end_seq": 9,
+                    "start_byte": 100,
+                    "end_byte": 999,
+                },
+            },
+        },
+    )
+
+    assert "captured 321 chars" in line
+    assert "hash=abcdef1234567890" in line
+    assert "seq 4-9 bytes 100-999" in line
+    assert "Global chat should show GROK_RESULT" in line

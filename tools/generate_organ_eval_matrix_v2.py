@@ -189,6 +189,31 @@ def _table(headers: Iterable[str], rows: Iterable[Iterable[Any]]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 
+# Matrix-rain backdrop (plain strings — NOT f-strings — so their braces stay literal).
+_RAIN_CSS = (
+    "canvas#rain{position:fixed;inset:0;z-index:0;opacity:.16}"
+    "main{position:relative;z-index:1}"
+    "h1{text-shadow:0 0 12px #39ff14}"
+    "h2.section{text-shadow:0 0 8px rgba(57,255,20,.4)}"
+)
+_RAIN_CANVAS = '<canvas id="rain"></canvas>'
+_RAIN_SCRIPT = (
+    "<script>"
+    "const cv=document.getElementById('rain'),ctx=cv.getContext('2d');let cols,drops;"
+    "function rs(){cv.width=innerWidth;cv.height=innerHeight;cols=Math.floor(cv.width/14);"
+    "drops=Array(cols).fill(0).map(()=>Math.random()*cv.height/14);}"
+    "rs();addEventListener('resize',rs);"
+    "const G='0123456789STGMABCDEF01ALICE'.split('');"
+    "function draw(){ctx.fillStyle='rgba(7,9,8,.10)';ctx.fillRect(0,0,cv.width,cv.height);"
+    "ctx.fillStyle='#39ff14';ctx.font='13px monospace';"
+    "for(let i=0;i<cols;i++){const c=G[Math.floor(Math.random()*G.length)];"
+    "ctx.fillText(c,i*14,drops[i]*14);"
+    "if(drops[i]*14>cv.height&&Math.random()>0.975)drops[i]=0;drops[i]++;}}"
+    "setInterval(draw,60);"
+    "</script>"
+)
+
+
 def build_html() -> str:
     snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
@@ -273,9 +298,10 @@ th,td{{padding:8px;border-bottom:1px solid #1d3523;text-align:left;font-size:12p
 th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 .ok{{color:#74f28c}}.warn{{color:#ffca5f}}.bad{{color:#ff7b72}}.dim{{color:#93a199}}
 .sources{{margin-top:24px;font-size:11px;color:#7f9a86;line-height:1.6;}}
+{_RAIN_CSS}
 </style>
 </head>
-<body><main>
+<body>{_RAIN_CANVAS}<main>
 <h1>THE ORGAN EVAL MATRIX v2</h1>
 <div class="stamp">Rendered {html.escape(rendered)} from live local ledgers. Registry organs: {len(organs)}; canonical organs: {len(canonical)}; coverage holes: {len(coverage_holes)}. Coverage line gate: {html.escape(str(dashboard.get('coverage_percent', '--')))}%.</div>
 <div class="grid">{''.join(cards)}</div>
@@ -286,7 +312,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <p>Status counts: {html.escape(json.dumps(dict(coverage_counts), sort_keys=True))}</p>{coverage_table}
 <h2 class="section">Work Queue</h2>{queue_table}
 <div class="sources">Sources: .sifta_state/canonical_organ_registry_snapshot.json; .sifta_state/eval/eval_campaign_rollup.jsonl; .sifta_state/eval/cs153_*_runs.jsonl; .sifta_state/eval/eval_verdicts.jsonl; .sifta_state/eval/organ_coverage.jsonl; data/eval/cs153_*.jsonl; Documents/ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md.</div>
-</main></body></html>
+</main>{_RAIN_SCRIPT}</body></html>
 """
 
 

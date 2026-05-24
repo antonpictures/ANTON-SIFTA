@@ -329,6 +329,32 @@ def test_physical_effector_demo_runs_through_kernel_gate(monkeypatch):
     )
 
 
+def test_matrix_pty_read_only_grok_delegation_clears_kernel_preflight(monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: matrix_pty | commands=GROK_DELEGATION | "
+        "delegation_text=Alice, ask Grok to inspect your Matrix Terminal delegation path and propose the smallest safe patch. Do not edit yet. Print Grok answer here in global chat with a receipt. | "
+        "cost_justification=read-only grok delegation inspect propose do not edit print answer with receipt]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=False)
+
+    rows = [
+        json.loads(line)
+        for line in (router._STATE / "kernel_process_table.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert out.executed is True
+    assert out.status == "EXECUTED"
+    assert out.result["commands"] == ["GROK_DELEGATION"]
+    assert out.result["kernel_effector_request"]["decision"] == "ALLOW"
+    receipt_id = out.result["kernel_effector_request"]["receipt_id"]
+    receipt = next(row for row in rows if row["trace_id"] == receipt_id)
+    assert receipt["current_job"] == "effector_request:matrix_pty:ALLOW"
+    table = kernel_module.get_kernel_process_table(state_root=router._STATE)
+    proc = table.get(router._KERNEL_TOOL_ROUTER_PID)
+    assert proc.metadata["clearance_lane"] == "READ_ONLY_GROK_DELEGATION"
+
+
 def test_scheduler_utility_gate_rejects_low_score_before_executor(monkeypatch):
     _patch_cerebellum(monkeypatch)
     table = kernel_module.get_kernel_process_table(state_root=router._STATE)

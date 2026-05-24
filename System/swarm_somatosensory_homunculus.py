@@ -48,6 +48,7 @@ Original .dirt drop archived at:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -262,12 +263,16 @@ def read_real_git_dirty_count(repo: Path = _REPO) -> int:
     Returns 0 if git is unavailable or the repo isn't a git checkout
     (degrades gracefully — Alice still functions on a non-git substrate)."""
     try:
+        timeout_s = float(os.environ.get("SIFTA_HOMUNCULUS_GIT_TIMEOUT_S", "0.75") or "0.75")
+    except ValueError:
+        timeout_s = 0.75
+    try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=str(repo),
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=max(0.1, min(2.0, timeout_s)),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return 0

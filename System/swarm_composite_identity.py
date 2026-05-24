@@ -58,6 +58,7 @@ Public API
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -307,11 +308,31 @@ def _probe_persona() -> Dict[str, Any]:
         return {}
 
 
+_BODY_STGM_LEDGER_CACHE: Dict[str, tuple[float, float]] = {}
+_BODY_STGM_LEDGER_TTL_S = 60.0
+
+
+def _prompt_live_stgm_enabled() -> bool:
+    value = os.environ.get("SIFTA_COMPOSITE_IDENTITY_LIVE_STGM", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _body_snapshot_stgm(data: Dict[str, Any]) -> Optional[float]:
+    try:
+        return float(data["stgm_balance"]) if "stgm_balance" in data else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _probe_body() -> Dict[str, Any]:
     """Read the M5 body file (preferred) and fall back to M1 if absent.
-    STGM balance is ALWAYS derived from the canonical ledger
-    (repair_log.jsonl via inference_economy.ledger_balance) — never
-    from the stale snapshot in the JSON state file."""
+
+    Prompt construction must be bounded. Replaying the full STGM ledger with
+    cryptographic verification belongs to economy/audit surfaces, not every
+    Alice utterance. By default this prompt probe uses the persisted body
+    snapshot; set SIFTA_COMPOSITE_IDENTITY_LIVE_STGM=1 for a cached live ledger
+    reconciliation when that heavier behavior is explicitly needed.
+    """
     for path in (_M5_BODY, _M1_BODY):
         try:
             if not path.exists():
@@ -319,24 +340,31 @@ def _probe_body() -> Dict[str, Any]:
             data = json.loads(path.read_text(encoding="utf-8"))
             agent_id = data.get("id", path.stem)
 
-            # ── Live STGM balance from canonical ledger ──────────────────
-            live_stgm = None
-            try:
-                from Kernel.inference_economy import ledger_balance
-                live_stgm = ledger_balance(agent_id)
-                # Sync back to state file so other consumers stay current
-                if live_stgm is not None and data.get("stgm_balance") != live_stgm:
-                    data["stgm_balance"] = round(live_stgm, 4)
+            live_stgm = _body_snapshot_stgm(data)
+            if _prompt_live_stgm_enabled():
+                now = time.time()
+                cache_key = str(agent_id)
+                cached = _BODY_STGM_LEDGER_CACHE.get(cache_key)
+                if cached and (now - cached[0]) < _BODY_STGM_LEDGER_TTL_S:
+                    live_stgm = cached[1]
+                else:
                     try:
-                        path.write_text(
-                            json.dumps(data, indent=2),
-                            encoding="utf-8",
-                        )
+                        from Kernel.inference_economy import ledger_balance
+
+                        live_stgm = float(ledger_balance(agent_id))
+                        _BODY_STGM_LEDGER_CACHE[cache_key] = (now, live_stgm)
+                        # Sync back to state file so other consumers stay current.
+                        if data.get("stgm_balance") != live_stgm:
+                            data["stgm_balance"] = round(live_stgm, 4)
+                            try:
+                                path.write_text(
+                                    json.dumps(data, indent=2),
+                                    encoding="utf-8",
+                                )
+                            except Exception:
+                                pass  # read-only FS — no crash, ledger still authoritative
                     except Exception:
-                        pass  # read-only FS — no crash, ledger still authoritative
-            except Exception:
-                # Ledger unavailable — fall back to file snapshot
-                live_stgm = float(data["stgm_balance"]) if "stgm_balance" in data else None
+                        live_stgm = _body_snapshot_stgm(data)
 
             return {
                 "body_energy": int(data["energy"]) if "energy" in data else None,
@@ -948,10 +976,17 @@ def _probe_pheromone_field() -> Dict[str, Any]:
 
 def _probe_e35_physical_spacetime() -> Dict[str, Any]:
     """Fold E35 physical-space report into IdentitySnapshot (local trace tail only)."""
+    if os.environ.get("SIFTA_PROMPT_LIVE_OBSERVABILITY", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return {}
     try:
         from System.stigmerobotics_observability import live_observability_report
 
-        rep = live_observability_report(limit=240)
+        rep = live_observability_report(limit=40)
         ps = rep.physical_space
         if ps is None:
             return {}
@@ -1731,13 +1766,19 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             f"- attention_focus: {snap.pheromone_focus} intensity={snap.pheromone_intensity:.2f}"
         )
 
-    try:
-        from System.alice_body_autopilot import read_prompt_line as _autopilot_line
-        _apl = _autopilot_line()
-        if _apl:
-            lines.append(f"- autopilot: {_apl}")
-    except Exception:
-        pass
+    if os.environ.get("SIFTA_PROMPT_LIVE_HARDWARE_BODY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        try:
+            from System.alice_body_autopilot import read_prompt_line as _autopilot_line
+            _apl = _autopilot_line()
+            if _apl:
+                lines.append(f"- autopilot: {_apl}")
+        except Exception:
+            pass
 
     # ── Predator v7 Decision Substrate (Round 1 — 2026-05-04) ────────────
     # Real ledger-backed fields. Alice can reference all of these directly.
@@ -1853,13 +1894,19 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             _field_bits.append("sources=" + ",".join(snap.field_source_ledgers[:4]))
         lines.append("- high_dimensional_field: " + " ".join(_field_bits))
 
-    try:
-        from System.swarm_body_monitor import summary_for_alice as _body_monitor_summary
-        _organ_field = _body_monitor_summary().strip()
-        if _organ_field:
-            lines.append(_organ_field)
-    except Exception:
-        pass
+    if os.environ.get("SIFTA_PROMPT_LIVE_BODY_MONITOR", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        try:
+            from System.swarm_body_monitor import summary_for_alice as _body_monitor_summary
+            _organ_field = _body_monitor_summary().strip()
+            if _organ_field:
+                lines.append(_organ_field)
+        except Exception:
+            pass
 
     if snap.organs_silent:
         lines.append(f"- silent_organs: {', '.join(snap.organs_silent)}")

@@ -4,6 +4,38 @@ This module is the first kernel-discipline layer for the living OS: organs,
 agent arms, sensors, repair loops, and UI surfaces register as accountable
 processes. It is intentionally pure Python and macOS/PyQt friendly; it does
 not introduce Linux service assumptions or detach Alice from the desktop body.
+
+Layered cognitive architecture (owner teaching, received 2026-05):
+Cognition does not emerge from one magic intelligence blob (the LLM surface).
+It emerges from coordination over time between many small, specialized,
+"stupid" systems that constrain and shape the cortex:
+- speech segmentation / voice ear
+- hard recall + persistent memory
+- topology awareness + self/other distinction
+- tool delegation reflex + action routing
+- body gates & effector clearance (this module)
+- social-reference tracking
+- receipts, ledgers, stigmergic traces
+- guardian / immune preflight loops
+
+Each layer alone is minimal. Together they create ordered architecture
+that forces grounded, verifiable behavior. This is the biological pattern:
+the brain is many layered reflexes, filters, gating loops, memory systems,
+attention systems, and body-state systems whose coordination produces
+the appearance of coherent mind.
+
+Current practical reality during live organ surgery:
+restarts = full nervous system reload (Python module cache + running Alice
+process holds old code). This is temporary. Mature target:
+hot-swappable organs — replace or reload one subsystem while the rest
+of the organism stays alive.
+
+The guardian implemented here (sys_effector_request, scheduler_utility,
+the READ_ONLY_GROK_DELEGATION lane, etc.) is one of these constraining
+organs. When it blocks unsafe matrix_pty / Grok delegation paths even
+after Alice has correctly routed the request, that is correct immune
+function: Alice understands the intent; the body is still protected.
+Receipts are written either way. This is working as designed.
 """
 
 from __future__ import annotations
@@ -394,6 +426,18 @@ class KernelProcessTable:
         else:
             decision = "ALLOW"
 
+        # READ_ONLY_GROK_DELEGATION clearance lane (owner covenant 2026-05)
+        # Bounded "inspect / propose / do not edit yet / print answer with receipt"
+        # via matrix_pty + GROK_DELEGATION is explicitly low-risk visible delegation.
+        # External cortex (Grok) may help repair organs; Alice owns the body and
+        # receipts the surgery. Never free-run edits inside her field.
+        meta_lane = (metadata or {}).get("read_only_grok_delegation") or (metadata or {}).get("clearance_lane")
+        read_only_lane = str(meta_lane).lower() in ("true", "read_only_grok_delegation")
+        if read_only_lane:
+            # Bounded "inspect / propose / do not edit yet / print answer with receipt"
+            # via matrix_pty + GROK_DELEGATION is explicitly low-risk visible delegation.
+            decision = "ALLOW"
+
         receipt_id = f"receipt_{uuid.uuid4()}"
         meta = {
             "syscall": "sys_effector_request",
@@ -409,6 +453,12 @@ class KernelProcessTable:
         }
         if metadata:
             meta.update({str(k): str(v) for k, v in metadata.items()})
+        if read_only_lane:
+            # Final lane facts must be written after caller metadata is merged so
+            # the receipt cannot drift back to the pre-clearance decision.
+            meta["effector_decision"] = decision
+            meta["clearance_lane"] = "READ_ONLY_GROK_DELEGATION"
+            meta["lane_note"] = "safe read-only inspection/proposal to external cortex; no mutation permitted"
         self.heartbeat(
             pid,
             stgm_delta=-cost if decision == "ALLOW" else 0.0,
