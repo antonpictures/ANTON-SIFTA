@@ -11,6 +11,42 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ---
 
+## Swarm Cortex & Arms — Agent-Arm Delegation (updated 2026-05-25)
+
+Alice has **one local cortex** (her voice, a local Ollama model — sovereign, on
+her own silicon) and **many arms** (external agent CLIs she delegates to:
+Hermes, Grok, Claude Code, Codex). Arm output is *evidence / a bridge* — never
+silently spoken as Alice's own voice (covenant §7.10.4, "no vendor identity
+bleed").
+
+**Shipped (verified):**
+
+- Arms run **off the Qt UI thread** in a worker with a live heartbeat, so a long
+  cortex call never freezes the desktop (no more beachball).
+- The **observable thinking panel** streams each arm's trace live, **colour-coded
+  per arm** (Hermes amber · Claude coral · Codex cyan · Grok violet), bounded so
+  it never grows unbounded.
+- The heartbeat **stops cleanly** when the arm finishes (no "still waiting" tail).
+- Hermes's clarify gate was removed so it builds instead of stalling on a
+  confirmation prompt.
+- **Return-leg learning:** every arm result now refreshes routing weights, updates
+  the arm's **reputation** (`.sifta_reputation/<ARM>.rep.json`), and writes a
+  **diary/briefing** row — so a run *changes* Alice, not just her log.
+- Hermes's cortex is owner-switchable today via `.sifta_state/hermes_cortex.json`,
+  e.g. *"Alice, set hermes cortex to alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"*.
+
+**Designed, not yet wired (needs on-Mac implementation + runtime test):** making
+the four arms selectable **as the cortex** (Hermes default, then Grok / Claude /
+Codex) so Alice's turn can be *generated* by an arm. This is a core change to the
+turn-generation path (`set_primary_cortex` currently requires a local Ollama
+model; arms are CLI subprocesses), so it must be built and tested on the macOS
+runtime. **Sovereignty note:** Hermes-as-cortex stays fully local (its cortex is a
+local Ollama model) and is covenant-clean; Claude/Codex/Grok are *cloud* models,
+so using them as Alice's voice crosses node sovereignty (§3) and vendor-identity
+(§7.10.4) — an explicit Architect doctrine choice, not a neutral toggle.
+
+---
+
 ## Quick Install (macOS Apple Silicon — code path ~5 minutes)
 
 **Current verified node:** George's Apple M5, 24 GB. BeeSon is hardware-adaptive; no specific M5 variant is required.
