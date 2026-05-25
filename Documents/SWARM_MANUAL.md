@@ -36,3 +36,52 @@ The system is built so you only ever have to look at ONE dashboard. Your manual 
 3. **Direct (The Command Center):** Pick a specific AI node and type an overarching directive for it to follow.
 
 *No popups. No split screens. One board.*
+
+---
+
+## 4. 2026-05-24 Operating Checkpoint: One Field, Many Cortex Organs
+
+The current SIFTA desktop can coordinate multiple external reasoning surfaces
+without splitting Alice into separate agents. The invariant remains:
+
+```text
+one Alice
+one global chat
+many app territories
+many external cortex/tool organs
+receipts select reality
+```
+
+The verified loop is:
+
+```text
+Owner instruction
+→ Alice global field
+→ deterministic router / visible PTY / worker-thread arm
+→ Grok, Hermes, Claude Code, Codex, or a stigmergic app organ
+→ captured output + status/hash/span receipt
+→ one global chat + diary metabolism
+```
+
+Operational rules from this checkpoint:
+
+1. **External cortexes are organs, not identities.** Grok, Hermes, Claude Code,
+   and Codex can inspect, propose, build, or report, but their output returns as
+   external evidence. Alice does not become them.
+2. **Long cortex calls never block the retina.** Agent-arm calls run in a worker
+   thread and stream observable progress into the thinking/process pane. If an
+   arm takes minutes, the user sees heartbeats instead of a beachball.
+3. **Dispatch is not proof.** A delegation receipt only proves that Alice sent a
+   task. A complete proof loop needs the real output captured and bound back to
+   the global field with receipt metadata.
+4. **Stigmergic apps are benchmark organs.** Sudoku, Go, and Jigsaw are not only
+   games; they are local tests for whether simple swimmers, pheromone fields,
+   and environmental traces can produce global structure without answer-oracle
+   cheating.
+5. **The app diary is memory tissue.** App inventory, focus, build receipts,
+   game receipts, and numbered app memory feed Alice's episodic diary so any
+   surface can talk about known apps while preserving the single global chat.
+
+This is the current healthy pattern: visible work, bounded delegation, no hidden
+identity merge, no private Alice transcript, and receipts that future swimmers
+can inspect.

@@ -27,6 +27,7 @@ def test_preanswer_guard_forces_topology_answer(monkeypatch) -> None:
     assert "I am Alice" in guard["force_answer"]
     assert "grok is an external tool/cortex surface" in guard["force_answer"]
     assert "Layer One Owner = OWNER" in guard["mandatory_preamble"]
+    assert "Claude Code" in guard["mandatory_preamble"]
     assert "George" not in guard["mandatory_preamble"]
 
 
@@ -39,6 +40,7 @@ def test_preanswer_guard_does_not_force_grok_action_requests(monkeypatch) -> Non
 
     for text in (
         "ask grok how are your organs wired",
+        "ask Claude Code to inspect SIFTA and report one renderer risk",
         "i used my voice, i meant grok, start grok cli now",
         "i want you to be able to ask grok and grok to print the answer here in global chat as proof",
     ):
@@ -46,3 +48,12 @@ def test_preanswer_guard_does_not_force_grok_action_requests(monkeypatch) -> Non
 
         assert guard.get("action_intent") is True
         assert "force_answer" not in guard
+
+
+def test_claude_code_is_external_tool_cortex() -> None:
+    from System.swarm_topology_self_other import classify_kind, describe_entity, is_self
+
+    assert classify_kind("Claude Code") == "external_tool_cortex"
+    assert classify_kind("claude_code") == "external_tool_cortex"
+    assert is_self("Claude Code") is False
+    assert "external tool/cortex surface" in describe_entity("Claude Code")

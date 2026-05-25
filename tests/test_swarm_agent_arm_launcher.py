@@ -64,7 +64,8 @@ def test_launcher_runs_fake_hermes_with_receipts(tmp_path: Path) -> None:
     command = seen["command"]
     assert command[:3] == ["hermes", "chat", "-Q"]
     assert "--toolsets" in command
-    assert "clarify" in command
+    assert "file,code_execution" in command
+    assert "clarify" not in command
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
     assert rows[-1]["truth_label"] == "AGENT_ARM_LAUNCH_RESULT"
     assert rows[-1]["ok"] is True
@@ -129,15 +130,43 @@ def test_codex_evidence_builds_read_only_ephemeral_command(tmp_path: Path) -> No
     assert result.arm_id == "codex_agent"
     command = seen["command"]
     assert command[:2] == ["codex", "exec"]
-    assert "--oss" in command
-    assert "--local-provider" in command
-    assert "ollama" in command
-    assert "--sandbox" in command
-    assert "read-only" in command
-    assert "--ephemeral" in command
-    assert command[-1] == "Return one evidence sentence."
+    assert "--full-auto" in command
+    assert "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md" in command[-1]
+    assert command[-1].endswith("Return one evidence sentence.")
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
     assert rows[-1]["arm_id"] == "codex_agent"
+    assert rows[-1]["status"] == "EVIDENCE_CAPTURED"
+
+
+def test_claude_code_evidence_builds_headless_print_command(tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
+        seen["command"] = command
+        seen["timeout_s"] = timeout_s
+        return SimpleNamespace(returncode=0, stdout="Claude Code evidence: renderer risk is bounded.\n", stderr="")
+
+    result = ask_agent_arm(
+        "claude_agent",
+        "inspect SIFTA renderer",
+        state_dir=tmp_path,
+        env={},
+        evidence_mode=True,
+        runner=fake_runner,
+        timeout_s=11,
+    )
+
+    assert result.ok is True
+    assert result.status == "EVIDENCE_CAPTURED"
+    assert result.arm_id == "claude_agent"
+    command = seen["command"]
+    assert command[:3] == ["claude", "-p", "--dangerously-skip-permissions"]
+    assert "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md" in command[-1]
+    assert command[-1].endswith("inspect SIFTA renderer")
+    assert seen["timeout_s"] == 11
+    rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
+    assert rows[-1]["arm_id"] == "claude_agent"
+    assert rows[-1]["evidence_mode"] is True
     assert rows[-1]["status"] == "EVIDENCE_CAPTURED"
 
 

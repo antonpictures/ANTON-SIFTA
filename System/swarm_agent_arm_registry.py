@@ -43,41 +43,53 @@ HERMES_AGENT = AgentArmSpec(
     provider_base_url="http://localhost:11434/v1",
     enabled=False,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
-    default_toolsets=("clarify",),
-    max_turns=1,
-    capabilities=("single_query_research", "evidence_output"),
+    # George 2026-05-24: Hermes kept "failing to build" not because the cortex is
+    # weak, but because the arm was caged — clarify-only, ONE turn, no file/shell
+    # tools. Its own report: "shell:run_command unavailable / Reached maximum
+    # iterations (1)." Hermes HAS file (write_file/patch/read_file) + code_execution
+    # tools (per its welcome screen); the arm just forbade them. Uncage it so it can
+    # actually write app files across many turns — that is the honest "can Hermes
+    # build?" test. Owner always-allow standing order; verifier + git diff = audit.
+    # claude-opus-4-7 2026-05-25: dropped "clarify" from this tuple. It was the FIRST
+    # toolset, so Hermes opened every build by calling clarify to confirm its plan,
+    # then blocked waiting for a human "yes" that never arrives → "clarify timed out
+    # after 120s" → the 120s burn + slow 30B generation tripped the arm timeout, so
+    # every run died at the confirm gate having written nothing. Owner's standing
+    # order is always-allow, so the arm should not ask at all — same non-interactive
+    # pattern as the Codex arm below (default_toolsets=()). file + code_execution stay
+    # so it can actually build; verifier + git diff remain the audit trail.
+    default_toolsets=("file", "code_execution"),
+    max_turns=30,
+    capabilities=("single_query_research", "evidence_output", "codebase_build"),
     notes=(
-        "Configured candidate arm only. Output is evidence, not Alice voice. "
-        "Autonomous exposure requires SIFTA launcher receipts and Architect GO."
+        "Builder-capable arm: file + code_execution toolsets, multi-turn. Output is "
+        "evidence, not Alice voice. Was previously caged to clarify/1-turn, which is "
+        "why builds only ever produced intent reports. Receipts on every attempt."
     ),
 )
 
 CODEX_AGENT = AgentArmSpec(
     arm_id="codex_agent",
-    display_name="Codex CLI",
-    command=(
-        "codex",
-        "exec",
-        "--oss",
-        "--local-provider",
-        "ollama",
-        "-m",
-        "alice-m5-cortex-8b-6.3gb:latest",
-        "--sandbox",
-        "read-only",
-        "--ephemeral",
-        "--json",
-    ),
-    model="alice-m5-cortex-8b-6.3gb:latest",
-    provider_base_url="ollama",
+    display_name="Codex CLI (OpenAI gpt-5.5)",
+    # George 2026-05-24: bring the REAL Codex (the signed-in gpt-5.5 CLI George runs,
+    # /opt/homebrew/bin/codex) as a builder octopus arm, like Claude — NOT the old
+    # OSS/local-Ollama read-only config. `codex exec --full-auto` is non-interactive
+    # (no prompts to stall on) with a workspace-write sandbox so it can build SIFTA
+    # apps in the repo (the runner's cwd). The owner's standing always-allow order;
+    # the build verifier + git diff are the audit trail.
+    command=("codex", "exec", "--full-auto"),
+    model="gpt-5.5",
+    provider_base_url="openai_codex_cli",
     enabled=False,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=(),
     max_turns=1,
-    capabilities=("single_query_code_review", "evidence_output", "read_only_workspace_reasoning"),
+    capabilities=("single_query_research", "evidence_output", "external_cortex", "codebase_build"),
     notes=(
-        "Configured read-only candidate arm. Runs codex exec with OSS/Ollama, "
-        "read-only sandbox, ephemeral session, and SIFTA launcher receipts."
+        "Real OpenAI Codex CLI (gpt-5.5) via `codex exec --full-auto`, run in the SIFTA "
+        "repo so it can read the codebase and write app files for the tournament. Output "
+        "is Codex's voice (evidence), never Alice's. Bridge, not identity merge. Uses the "
+        "signed-in Codex auth (no key handled here)."
     ),
 )
 
@@ -104,10 +116,49 @@ CORVID_SCOUT = AgentArmSpec(
     ),
 )
 
+GROK_AGENT = AgentArmSpec(
+    arm_id="grok_agent",
+    display_name="Grok (xAI grok-4)",
+    command=("grok_chat",),  # marker; _build_command expands to python3 grok_chat.py --one-shot <prompt>
+    model="grok-4",
+    provider_base_url="https://api.x.ai/v1",
+    enabled=False,
+    live_env_var="SIFTA_AGENT_ARMS_ENABLE",
+    default_toolsets=(),
+    max_turns=1,
+    capabilities=("single_query_research", "evidence_output", "external_cortex"),
+    notes=(
+        "External xAI Grok cortex via grok_chat.py --one-shot (grok-4). Owner decision "
+        "2026-05-24: Grok runs from global chat like Hermes — headless evidence + receipt, "
+        "streamed live. Output is Grok's voice (evidence), never Alice's. Bridge, not merge."
+    ),
+)
+
+CLAUDE_AGENT = AgentArmSpec(
+    arm_id="claude_agent",
+    display_name="Claude Code",
+    command=("claude",),  # marker; _build_command expands to: claude -p <prompt>
+    model="claude-code-cli-default",
+    provider_base_url="claude_code_cli",
+    enabled=False,
+    live_env_var="SIFTA_AGENT_ARMS_ENABLE",
+    default_toolsets=(),
+    max_turns=1,
+    capabilities=("single_query_research", "evidence_output", "external_cortex", "codebase_reading"),
+    notes=(
+        "External Claude Code CLI via `claude -p <prompt>` (headless print mode), run in the "
+        "SIFTA repo so it can read the codebase and report on SIFTA. Owner 2026-05-24: Alice "
+        "delegates to Claude like Hermes. Uses the Claude Max auth already signed in (no key "
+        "handled here). Output is Claude's voice (evidence), never Alice's. Bridge, not merge."
+    ),
+)
+
 _ARMS: dict[str, AgentArmSpec] = {
     HERMES_AGENT.arm_id: HERMES_AGENT,
     CODEX_AGENT.arm_id: CODEX_AGENT,
     CORVID_SCOUT.arm_id: CORVID_SCOUT,
+    GROK_AGENT.arm_id: GROK_AGENT,
+    CLAUDE_AGENT.arm_id: CLAUDE_AGENT,
 }
 
 

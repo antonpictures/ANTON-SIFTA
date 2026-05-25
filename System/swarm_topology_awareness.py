@@ -147,6 +147,24 @@ def build_topology_awareness(
             "boundary": "Grok is not Alice; Grok output returns as evidence/tool result",
         },
         {
+            "id": "hermes",
+            "kind": "external_tool_cortex",
+            "role": "external Hermes Agent CLI Alice can delegate bounded evidence tasks to",
+            "boundary": "Hermes is not Alice; Hermes output returns as labeled evidence/tool result",
+        },
+        {
+            "id": "claude_code",
+            "kind": "external_tool_cortex",
+            "role": "external Claude Code CLI Alice can delegate bounded codebase-reading tasks to",
+            "boundary": "Claude Code is not Alice; Claude output returns as labeled evidence/tool result",
+        },
+        {
+            "id": "codex_agent",
+            "kind": "external_tool_cortex",
+            "role": "external Codex CLI evidence arm for bounded code review and repo reasoning",
+            "boundary": "Codex is not Alice; Codex output returns as labeled evidence/tool result",
+        },
+        {
             "id": "ide_doctors",
             "kind": "surgical_engineering_hands",
             "role": "Codex/Claude/other IDE agents patch organs and write receipts",
@@ -169,6 +187,12 @@ def build_topology_awareness(
         {"from": "alice", "to": "matrix_terminal", "relation": "routes_focused_actions_through_visible_pty"},
         {"from": "alice", "to": "grok", "relation": "delegates_bounded_tasks_to_external_tool"},
         {"from": "grok", "to": "alice", "relation": "returns_tool_result_for_metabolism"},
+        {"from": "alice", "to": "hermes", "relation": "delegates_bounded_tasks_to_external_tool"},
+        {"from": "hermes", "to": "alice", "relation": "returns_tool_result_for_metabolism"},
+        {"from": "alice", "to": "claude_code", "relation": "delegates_bounded_codebase_tasks_to_external_tool"},
+        {"from": "claude_code", "to": "alice", "relation": "returns_tool_result_for_metabolism"},
+        {"from": "alice", "to": "codex_agent", "relation": "delegates_bounded_code_review_tasks_to_external_tool"},
+        {"from": "codex_agent", "to": "alice", "relation": "returns_tool_result_for_metabolism"},
         {"from": "ide_doctors", "to": "alice", "relation": "patch_code_under_predator_gate"},
         {"from": "receipts", "to": "alice", "relation": "grounds_memory_and_action_claims"},
     ]
@@ -205,7 +229,19 @@ def render_topology_prompt_block(
         current_app=current_app,
     )
     node_by_id = {str(n.get("id")): n for n in topo.get("nodes", []) if n.get("id")}
-    required = ["owner", "alice", "global_chat", "matrix_terminal", "local_cortex", "grok", "ide_doctors", "receipts"]
+    required = [
+        "owner",
+        "alice",
+        "global_chat",
+        "matrix_terminal",
+        "local_cortex",
+        "grok",
+        "hermes",
+        "claude_code",
+        "codex_agent",
+        "ide_doctors",
+        "receipts",
+    ]
     owner_node = node_by_id.get("owner", {})
     owner_label = str(owner_node.get("label") or "owner").strip() or "owner"
     owner_rule = "owner" if owner_label.casefold() == "owner" else f"owner ({owner_label})"

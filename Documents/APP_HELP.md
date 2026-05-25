@@ -962,6 +962,15 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 - **What to watch:** Score, power-pellet timing, sidebar organ-feed honesty labels.
 - **Key principle:** Stigmergic navigation over a maze — not a production robotics controller.
 
+### Stigmergic Sudoku
+- **Purpose:** Play a normal Sudoku puzzle manually, or let the ACO swarm solve it without seeing the answer key. Empty cells hold candidate-digit pheromones; swimmers deposit stronger trails where row/column/box constraints make a digit locally plausible.
+- **How to play manually:** Choose a difficulty, click an empty cell, type `1`-`9`, use arrows to move, and press Backspace/Delete/`0` to clear a cell. Given digits are locked. Press **Check** to mark wrong manual entries against the hidden answer key.
+- **Swarm Solve:** Press **Swarm Solve** to let the stigmergic solver run. Watch the heat overlay and gold swimmer dots. The status line shows iterations, placements, remaining cells, pheromone deposits, and field energy. Press it again to pause.
+- **Self-Play x3:** Runs three races where two independent swarms solve the same generated puzzle from separate pheromone fields. This is Sudoku self-play as a race, not adversarial Go: both sides use only local Sudoku constraints and their own pheromone deposits; neither side gets the solution board.
+- **Receipts:** `.sifta_state/sudoku_receipts.jsonl` records `swarm_solve`, `swarm_stalled`, `manual_solve`, and `self_play_x3` rows. Receipts include `used_solution_oracle=false` for the swarm paths.
+- **Failure mode:** On harder boards the current swarm only commits forced placements (naked/hidden singles). If it stalls, the honest reading is “this constraint field needs a stronger stigmergic move proposer,” not “Alice solved it.”
+- **Key principle:** The test is whether local pheromone + constraint pressure can converge without teacher-forcing or peeking at `self.solution`.
+
 ### AGI Cognition Dashboard
 - **Purpose:** Read-only dashboard for the AGI-class organ suite (events 125–138): stability, world model, microglia, causal closure, autopoiesis signals.
 - **What to watch:** Per-organ status tiles, truth labels, stale vs live receipts.

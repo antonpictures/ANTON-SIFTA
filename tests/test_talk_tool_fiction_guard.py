@@ -90,7 +90,12 @@ def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) ->
     assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
 
 
-def test_global_chat_grok_request_without_live_pane_is_queued_not_faked(monkeypatch, tmp_path) -> None:
+def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(monkeypatch, tmp_path) -> None:
+    """Owner correction 2026-05-24: Grok is the VISIBLE local `grok` CLI, never the
+    headless xAI-API wrapper (no XAI_API_KEY). With no live pane, "ask grok" routes to
+    the matrix_pty effector (GROK_DELEGATION) so Alice drives the real terminal and
+    clicks past the two startup screens with her hands — it does NOT call the API arm.
+    """
     from Applications import sifta_matrix_terminal as matrix
 
     monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: None)
@@ -99,9 +104,12 @@ def test_global_chat_grok_request_without_live_pane_is_queued_not_faked(monkeypa
     text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
     calls = parse_tool_calls(text)
 
-    assert calls == []
-    assert "GROK_DELEGATION_QUEUED" in text
-    assert "did not claim matrix_pty executed" in text
+    assert len(calls) == 1
+    assert calls[0].tool_name == "matrix_pty"
+    assert "GROK_DELEGATION" in calls[0].params.get("commands", [])
+    # Must NOT route to the headless API arm.
+    assert "agent_arm_research" not in text
+    assert "grok_chat" not in text
 
     ledger = tmp_path / "grok_delegation_requests.jsonl"
     rows = [line for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -109,8 +117,8 @@ def test_global_chat_grok_request_without_live_pane_is_queued_not_faked(monkeypa
     import json
 
     payload = json.loads(rows[-1])
-    assert payload["queue_for_matrix_terminal"] is True
     assert payload["dispatched_live"] is False
+    assert payload["queue_for_matrix_terminal"] is True
 
 
 def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch) -> None:
@@ -142,6 +150,19 @@ def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch)
     assert pane.opens == ["i used my voice, i meant grok, start grok cli now"]
     assert len(calls) == 1
     assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_OPEN"]
+
+
+def test_global_chat_claude_code_request_routes_to_external_evidence_arm() -> None:
+    text = talk._owner_direct_read_tool_request(
+        "Alice, ask Claude Code to inspect SIFTA and report one renderer risk"
+    )
+    calls = parse_tool_calls(text)
+
+    assert len(calls) == 1
+    assert calls[0].tool_name == "agent_arm_research"
+    assert calls[0].params["arm"] == "claude"
+    assert calls[0].params["prompt"] == "inspect SIFTA and report one renderer risk"
+    assert "Claude's output is external evidence" in calls[0].params["cost_justification"]
 
 
 def test_prebrain_reflex_catches_topology_identity_before_cortex(tmp_path) -> None:
@@ -195,6 +216,36 @@ def test_prebrain_reflex_stands_down_for_grok_action_intent(tmp_path) -> None:
         )
 
         assert (reply, model) == ("", "")
+
+
+def test_conversational_continuity_repair_refires_grok_without_payload_corruption(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path, raising=False)
+    (tmp_path / "grok_delegation_requests.jsonl").write_text(
+        '{"action":"GROK_DELEGATION","text":"ask grok how are your organs wired"}\n',
+        encoding="utf-8",
+    )
+
+    class FakeWidget:
+        pass
+
+    assert talk._repair_conversational_continuity("i meant grok", 1.0, FakeWidget())[0] == "bring grok up"
+    assert talk._repair_conversational_continuity("no I said grok not drug", 1.0, FakeWidget())[0] == "bring grok up"
+    assert (
+        talk._repair_conversational_continuity(
+            "no i said grok do not delete the file",
+            1.0,
+            FakeWidget(),
+        )[0]
+        == "ask grok do not delete the file"
+    )
+    assert (
+        talk._repair_conversational_continuity(
+            "no i said grok do not drug the ledger",
+            1.0,
+            FakeWidget(),
+        )[0]
+        == "ask grok do not drug the ledger"
+    )
 
 
 def test_write_file_bridge_preserves_code_literals_without_pipe_parser() -> None:

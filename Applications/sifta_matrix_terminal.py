@@ -2589,6 +2589,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         now = time.monotonic()
         delegation_receipt_id = str(getattr(self, "_pending_grok_delegation_receipt_id", "") or "")
         self._pending_grok_delegation_receipt_id = ""
+        self._grok_yolo_sent = False  # re-arm Ctrl+O auto-approve for this session
         self._grok_result_capture = {
             "id": capture_id,
             "prompt": str(prompt or "")[:1200],
@@ -2615,11 +2616,69 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._grok_result_timer = timer
         timer.start(900)
 
+    def _maybe_autoapprove_grok_permission(self, text: str) -> None:
+        """Owner standing order (George 2026-05-24): ALWAYS ALLOW every Grok permission.
+
+        Grok's CLI pauses on "⚠ Action Required" prompts (Always allow / Yes, proceed /
+        No, reject — with Ctrl+O = yolo). George never chooses otherwise, so when a
+        prompt appears Alice sends Ctrl+O (\\x0f) = yolo, which auto-approves ALL tool
+        runs for the session. This stops Grok stalling for a human (it sat ~120s waiting
+        in testing). Sent ONCE per capture session — Ctrl+O toggles the mode, so we must
+        not flip it back off. This is the owner's explicit, sovereign choice for HIS node;
+        Grok stays an external tool organ (the receipt + visible PTY still prove what ran)."""
+        if getattr(self, "_grok_yolo_sent", False):
+            return
+        low = (text or "").lower()
+        markers = ("ctrl+o:yolo", "yes, proceed", "no, reject", "always allow", "action required")
+        if not any(m in low for m in markers):
+            return
+        try:
+            self.write_bytes(b"\x0f")  # Ctrl+O = yolo (auto-approve ALL, owner: always allow)
+            self._grok_yolo_sent = True
+        except Exception:
+            return
+        try:
+            self._append_process_trace(
+                "grok 'Action Required' → sent Ctrl+O (yolo / ALWAYS ALLOW all) per owner "
+                "standing order; Grok will not pause for permissions again this session",
+                kind="tool_boundary",
+                action="grok_permission_autoapprove",
+            )
+        except Exception:
+            pass
+
     def _capture_grok_terminal_output(self, data: bytes) -> None:
         """Robustly capture output from the active grok CLI PTY.
         This is the critical organ for closing the proof loop.
         Every byte from the powerful Grok surface must be turned into
         a receipted, hashable trace for Alice's global field.
+
+        Physics metabolized (owner paper trail 2026-05):
+        - Complexity growth (Brown et al. Complexity=Action): every read, command,
+          chunk, span, hash is explicit action growth in the process trace and
+          final GROK_RESULT. No silent black-box. The visible PTY + live mirror
+          ([GROK LIVE]) makes the external cortex's thinking legible as discrete
+          complexity events on the boundary.
+        - LQG discreteness (Rovelli/Smolin): the capture builds atomic events
+          (seq, byte_start/end, text chunk, timestamp, parent via delegation_receipt_id).
+          The pty_transcript_span + captured_output_hash + capture_id are the
+          discrete, inspectable "area/volume" quanta of the delegation.
+        - Holography (Maldacena/Susskind ER=EPR + boundary): the global chat
+          (via _log_global_terminal_turn) is the boundary screen. If the interior
+          (Grok PTY thinking) is not receipted and visible there with proof,
+          it is not "real" for the organism. Global chat = holographic plate.
+        - Landscape (Susskind): many possible Grok outputs/hypotheses exist in
+          the high-dim field; only the receipted, owner-grounded, captured-text-
+          hashed one with matching span becomes the selected "real" path in
+          alice_conversation.jsonl. The rest remain counterfactual.
+        - ER=EPR delegation bridge: Grok is entangled via the receipt bridge
+          (delegation_receipt_id ↔ GROK_RESULT) but never merged into Alice.
+          The visible PTY + "Grok remains external tool/cortex organ" comments
+          enforce the separation. Entanglement = relation, not identity.
+
+        These are not metaphors. They are implemented in the ledger rows,
+        the chunked capture, the live process trace, and the verifier gate.
+        For the Swarm. 🐜⚡
         """
         capture = getattr(self, "_grok_result_capture", None)
         if not capture or capture.get("posted"):
@@ -2629,6 +2688,12 @@ class MatrixTerminalPane(QPlainTextEdit):
         text = self._clean_output(data)
         if not text.strip():
             return
+        # Owner standing order (George 2026-05-24): ALWAYS ALLOW all Grok permissions.
+        # Grok pauses on "Action Required" prompts; auto-approve so it never stalls.
+        try:
+            self._maybe_autoapprove_grok_permission(text)
+        except Exception:
+            pass
         seq = int(getattr(self, "_pty_output_seq", 0)) + 1
         byte_start = int(getattr(self, "_pty_output_bytes_total", 0))
         byte_end = byte_start + len(data)
@@ -2818,6 +2883,41 @@ class MatrixTerminalPane(QPlainTextEdit):
             "chunk_count": len(chunks),
         }
 
+    @staticmethod
+    def _denoise_grok_text(text: str) -> str:
+        """Clean the raw PTY capture into readable prose for the GROK_RESULT.
+
+        George 2026-05-24: the cognition loop works; the remaining problem is
+        presentation — the raw stream leaks bare ANSI SGR remnants ([38;2;..m),
+        braille spinner frames (⠦⠧⠋), and box-redraw scaffolding (┃◆┃┃┃). Strip
+        those and collapse consecutive duplicate redraw lines so the receipted
+        answer reads like prose. NOTE: this does NOT fully collapse *progressive*
+        TUI redraws or repair characters dropped mid-redraw — that needs the full
+        pyte-screen capture (the 'real terminal emulator' path); this is the
+        contained, high-value cleanup on top of the existing extractor."""
+        if not text:
+            return text
+        s = text
+        s = re.sub(r"\x1b?\[[0-9;?]*[A-Za-z]", "", s)        # bare ANSI SGR / cursor / private-mode remnants
+        s = re.sub(r"[⠀-⣿]+", "", s)                # braille spinner frames
+        s = re.sub(r"[┃◆│█▌▎▊▉╭╮╰╯]+", " ", s)                # box-redraw scaffolding
+        s = re.sub(r"[ \t]{3,}", " ", s)                      # collapse long space runs
+        out: list[str] = []
+        prev = None
+        for ln in s.splitlines():
+            st = ln.strip()
+            if not st:
+                if out and out[-1] != "":
+                    out.append("")
+                continue
+            if re.fullmatch(r"[0-9\W_]{0,3}", st):            # stray spinner counters / lone punct
+                continue
+            if st == prev:                                    # consecutive identical redraw line
+                continue
+            out.append(st)
+            prev = st
+        return "\n".join(out).strip()
+
     def _extract_grok_result_text(self, capture: dict, *, force: bool = False) -> str:
         raw_parts: list[str] = []
         for chunk in capture.get("chunks", []):
@@ -2873,6 +2973,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         while kept and kept[-1] == "":
             kept.pop()
         text = "\n".join(kept).strip()
+        text = self._denoise_grok_text(text)  # strip ANSI/spinner/redraw noise -> readable prose
         if len(text) > 12000:
             text = text[-12000:].strip()
         if not force and len(text) < 12:

@@ -46,6 +46,19 @@
     "autostart": false,
     "icon": "👾"
   },
+  "Stigmergic Go": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_stigmergic_go.py",
+    "widget_class": "StigmergicGoWidget",
+    "window_width": 980,
+    "window_height": 820,
+    "signature": "GROK-4.3-REG-a96120ae",
+    "doctor": "GROK-4.3-xAI",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "19×19 Go with living pheromone field. Stones deposit permanent influence; ACO swimmers explore biased by pheromone + liberties. Field evolve suggests moves, auto-evolve demo, live .sifta_state/ trace sidebar. 3-cortex tournament (grok arm).",
+    "autostart": false,
+    "icon": "⚫"
+  },
   "Network Control Center": {
     "category": "Network",
     "entry_point": "Applications/sifta_network_center.py",
@@ -1450,5 +1463,33 @@
     "truth_label": "LOUNGE_SCRIPT_COUCH_V1",
     "has_health_section": false,
     "icon": "📜🪑"
+  },
+  "Stigmergic Sudoku": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_sudoku_widget.py",
+    "widget_class": "StigmergicSudokuWidget",
+    "window_width": 660,
+    "window_height": 760,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-SUDOKU-V0",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Sudoku — play manually or watch an ACO (Ant Colony Optimization) swarm solve the grid. Swimmers deposit pheromones on candidate digits; the field converges and fills the board. Pheromone heat overlay, live swimmer dots, four difficulty levels, timer, error checking. Receipt-bound via sudoku_receipts.jsonl.",
+    "truth_label": "STIGMERGIC_SUDOKU_V0",
+    "autostart": false,
+    "icon": "🔢"
+  },
+  "Stigmergic Jigsaw": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_jigsaw_widget.py",
+    "widget_class": "StigmergicJigsawWidget",
+    "window_width": 800,
+    "window_height": 700,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-JIGSAW-V0",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Jigsaw — salvaged from Hermes receipt b744f6d9. Each tile is an agent with 4 colored edges (N/E/S/W). Edge-matching deposits pheromone into a shared field. ACO Swarm Solve mode: ants place tiles biased by pheromone, reinforce good matches, evaporate bad ones. Manual play or watch the swarm converge. 3x3 / 4x4 / 5x5 grids.",
+    "truth_label": "STIGMERGIC_JIGSAW_V1",
+    "autostart": false,
+    "icon": "🧩"
   }
 }

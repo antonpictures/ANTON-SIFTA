@@ -65,6 +65,41 @@ def test_talk_tails_matrix_process_trace_into_thinking_panel():
     assert "Global chat received GROK_RESULT" in src
 
 
+def test_long_external_tools_have_observable_worker_lane():
+    src = _src()
+    assert "class _DirectToolWorker(QThread)" in src
+    assert "_maybe_start_observable_direct_tool_request" in src
+    assert "still waiting for tool receipt" in src
+    assert "Tool worker:" in src
+
+
+def test_external_cortex_requests_are_observable_direct_tool_requests():
+    from Applications.sifta_talk_to_alice_widget import (
+        _direct_tool_request_needs_observable_worker,
+        _observable_direct_tool_label,
+        _observable_tool_result_line,
+    )
+
+    assert _direct_tool_request_needs_observable_worker("Alice, ask Hermes how your organs are wired")
+    assert _direct_tool_request_needs_observable_worker("Alice, ask Claude Code to inspect the repo")
+    assert not _direct_tool_request_needs_observable_worker("Alice, show Hermes skills app")
+    assert _observable_direct_tool_label("ask claude code to inspect the repo") == "Claude Code agent arm"
+    assert _observable_direct_tool_label("ask hermes how your organs are wired") == "Hermes agent arm"
+
+    class FakeResult:
+        tool_name = "agent_arm_research"
+        status = "TIMEOUT"
+        executed = False
+        result = {"arm_id": "claude_agent", "receipt_id": "r-123"}
+        feedback_for_alice = "agent_arm_research returned no usable evidence"
+
+    line = _observable_tool_result_line(FakeResult())
+    assert "Tool agent_arm_research" in line
+    assert "status=TIMEOUT" in line
+    assert "arm=claude_agent" in line
+    assert "receipt=r-123" in line
+
+
 def test_matrix_process_trace_formatter_reports_grok_result_proof():
     from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
 

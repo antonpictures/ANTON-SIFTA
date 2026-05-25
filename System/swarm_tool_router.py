@@ -521,7 +521,7 @@ def capabilities_for_alice_prompt() -> str:
         "- Learned skills are loaded as procedures to shape your reasoning and composition (never auto-execute third-party code).",
         "- Always include a real cost_justification. The field must remain profitable.",
         "- External/social write tools require owner_consent=true when autonomous; without it the router records a silence/refusal receipt instead of pretending action happened.",
-        "- Registered agent arms for agent_arm_research: hermes_agent, codex_agent, corvid_scout.",
+        "- Registered agent arms for agent_arm_research: hermes_agent, codex_agent, corvid_scout, grok_agent, claude_agent.",
         "- run_local_command is allowlisted argv execution; web_research and repo_patch are bounded external/repo effectors.",
         "- When George asks what you can do, call capability_field_status or skill_library_status first.",
         "- Before any effector autonomy, call edge_intent_eval and confirm accuracy >= 0.80 on the fixed suite.",
@@ -1058,13 +1058,32 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
         "corvid": "corvid_scout",
         "corvid_scout": "corvid_scout",
         "scout": "corvid_scout",
+        "grok": "grok_agent",
+        "grok_agent": "grok_agent",
+        "claude": "claude_agent",
+        "claude_agent": "claude_agent",
+        "claude_code": "claude_agent",
     }
     arm = aliases.get(arm.casefold(), arm)
+    # Hermes default raised 60->240 (George 2026-05-24): a large local cortex like
+    # alice-extra-cortex-25.8b-17gb cold-loads into RAM before it generates, which
+    # blew past the old 60s and produced status=TIMEOUT. The streaming runner now
+    # shows a live elapsed heartbeat during that load so it never looks frozen.
+    # Ceiling raised 180->300 so the bigger default isn't silently clamped.
+    # Per-arm timeouts. BUILD tasks (write a whole app) run far longer than reports:
+    # George 2026-05-24 watched Claude build to 419s and get cut off by the old 420s
+    # cap. App builds are multi-file, multi-tool autonomous jobs — give Claude real
+    # room (default 900s, ceiling 1200s = 20 min). Hermes/Grok arm builds get 420s
+    # default / 900s ceiling. The streaming heartbeat keeps it visibly alive throughout.
+    # Hermes is now an uncaged builder (file+code tools, 30 turns) — George 2026-05-24
+    # — so it needs builder-class time like Claude/Codex (granite4.1:30b timed out at
+    # the old 420s while actually using tools). 900s default, 1200s ceiling.
+    _arm_default = {"corvid_scout": "30", "claude_agent": "900", "codex_agent": "900", "hermes_agent": "900"}.get(arm, "420")
+    _arm_ceiling = 1200 if arm in {"claude_agent", "codex_agent", "hermes_agent"} else (900 if arm == "grok_agent" else 300)
     try:
-        default_timeout = "150" if arm == "codex_agent" else ("30" if arm == "corvid_scout" else "60")
-        timeout_s = max(5, min(180, int(str(params.get("timeout_s") or default_timeout))))
+        timeout_s = max(5, min(_arm_ceiling, int(str(params.get("timeout_s") or _arm_default))))
     except ValueError:
-        timeout_s = 150 if arm == "codex_agent" else (30 if arm == "corvid_scout" else 60)
+        timeout_s = int(_arm_default)
     try:
         from System.swarm_agent_arm_registry import get_agent_arm, registry_summary
 

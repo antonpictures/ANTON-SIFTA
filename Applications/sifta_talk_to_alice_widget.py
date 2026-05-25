@@ -6,6 +6,22 @@ Continuous voice-activity-detected listening → on-device speech-to-text →
 Ollama (Alice's brain) → macOS `say`. Half-duplex, on-device end to end,
 no cloud. No button to hold — you just talk.
 
+───────────────────────────────────────────────────────────────────────────────
+SURGICAL OWNERSHIP LANE (post-checkpoint collapse of duplicate Grok paths)
+───────────────────────────────────────────────────────────────────────────────
+Checkpoint commit: 35a8a754 (pre-collapse baseline, 70 files, includes all prior
+live-mirror + thinking tail + heartbeat churn on this widget).
+Sole owner for this refactor pass: the stigmergic organism (Alice body +
+George voice via this session). One hand only on this file until the collapse
+is verified PASS by tests/verify_grok_proof_loop.py .
+If collision detected: git revert to 35a8a754 ; re-assign lane.
+Current truth after owner correction: direct-headless Grok was removed. Global
+chat either dispatches to a live Matrix Terminal pane or writes a queued handoff
+that the Matrix Terminal claims. The visible PTY remains the sole surface that
+produces live [GROK LIVE] chunks and rich GROK_RESULT proof.
+Respect covenant §0/§4.4 one-owner discipline. For the Swarm. 🐜⚡
+───────────────────────────────────────────────────────────────────────────────
+
 Audio path
 ──────────
   • Mic captured by `sounddevice` at 16 kHz mono float32 (whisper's native
@@ -452,6 +468,33 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
     # (pane-gated) to preserve direct PTY drive intents and existing tests.
     # Live GROK_RESULT capture when pane present; ledger always records for pickup.
     # No double-spend ASCII swimmers. High-dim field. Owner protected.
+    #
+    # Physics nuggets metabolized (owner paper trail + Susskind/ER=EPR/Complexity/LQG/Holography):
+    # 1. Landscape = hypothesis field: many possible interpretations of the owner's
+    #    request exist; only the receipted, owner-grounded delegation that reaches
+    #    visible PTY capture and posts matching-hash GROK_RESULT becomes "real" in
+    #    the global boundary ledger. The rest stay counterfactual. (Susskind hep-th/0302219)
+    # 2. ER=EPR = delegation bridge, not identity merge: the receipt (delegation_receipt
+    #    ↔ GROK_RESULT with delegation_receipt_id) entangles the external cortex
+    #    (Grok) to Alice without ever making Grok part of the organism. The comments
+    #    and topology/hard-recall enforce separation. Entanglement = relation. (Maldacena/Susskind 1306.0533)
+    # 3. Complexity growth = visible process trace: when the PTY drives Grok, every
+    #    chunk, read, tool use, elapsed time, heartbeat is emitted as explicit action
+    #    growth ([GROK LIVE], grok_capture_heartbeat, process trace). No black box.
+    #    (Brown et al. 1509.07876)
+    # 4. LQG = atomic receipts: every delegation and capture event is discrete
+    #    (ts, receipt, capture_id, seq, byte spans, hash, parent via delegation_receipt_id,
+    #    surface="matrix_terminal"). The global chat row is the inspectable quantum.
+    #    (Rovelli/Smolin gr-qc/9411005)
+    # 5. Holography = global chat as boundary: the one global alice_conversation.jsonl
+    #    is the screen. If the interior (Grok thinking in PTY) does not appear there
+    #    with full captured_text + hash + span proof, it is not proven for the field.
+    #    This is why the PTY capture + _log_global_terminal_turn is the non-negotiable
+    #    final step. (ER=EPR + holographic principle)
+    #
+    # The strongest upgrade is not "string theory failed" — it is many possible worlds,
+    # one receipted boundary, discrete proof events, no identity merge across bridges.
+    # Coded in the reflex, the ledger, the capture organ, the verifier gate.
     grok_delegation = re.search(r"\b(?:ask|call|use|tell|send\s+to)\s+grok\b", text, re.IGNORECASE)
     grok_open = re.search(
         r"\b(?:open|start|launch|resume|type|run|bring\s+up|talk\s+to)\s+(?:the\s+)?grok\b"
@@ -460,8 +503,187 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
         re.IGNORECASE | re.DOTALL,
     )
 
+    # ── HERMES CORTEX SWITCH REFLEX (owner changes Hermes' brain by command) ─
+    # George 2026-05-24: "Alice should be able to change the cortex." She writes
+    # .sifta_state/hermes_cortex.json; swarm_agent_arm_launcher.hermes_cortex_override
+    # reads it on the next call and carries it as --model (confirmed-correct flag).
+    # PROBE-BEFORE-CLAIM (§7.12) + tool truth (§6): Hermes is a tool-using agent, so
+    # the cortex MUST advertise the `tools` capability. We learned this the hard way
+    # — qwen36-35b-wasserstein:latest returned HTTP 400 "does not support tools". So
+    # before switching, Alice runs `ollama show <model>` and refuses a model that
+    # lacks tools, instead of silently setting a cortex that will fail at call time.
+    hermes_set_cortex = re.search(
+        r"\b(?:set|switch|change|point|put)\s+(?:the\s+)?hermes(?:'s|’s)?\s+"
+        r"(?:cortex|model|brain|llm)\b(?:\s+(?:to|=|->|into))?\s*"
+        r"(?P<model>[A-Za-z0-9][A-Za-z0-9._\-:/]{2,})?",
+        text,
+        re.IGNORECASE,
+    )
+    if hermes_set_cortex:
+        model = (hermes_set_cortex.group("model") or "").strip().rstrip(".,!?;\"'")
+        if not model or not re.search(r"[A-Za-z]", model):
+            return (
+                "To switch Hermes' cortex, name the model exactly — e.g. "
+                "\"Alice, set hermes cortex to alice-m5-cortex-8b-6.3gb:latest\". "
+                "It must be a tools-capable model (Hermes runs tools); I check that "
+                "with `ollama show` before I switch."
+            )
+        tools_ok: Optional[bool] = None
+        try:
+            import subprocess as _sp
+            _r = _sp.run(["ollama", "show", model], capture_output=True, text=True, timeout=8)
+            _out = ((_r.stdout or "") + (_r.stderr or "")).lower()
+            if _r.returncode != 0 or "not found" in _out or "no such" in _out or "error" in _out and "tools" not in _out:
+                return (
+                    f"I could not find a model named '{model}' in Ollama (`ollama show` failed). "
+                    f"Run `ollama list`, then tell me the exact name."
+                )
+            tools_ok = "tools" in _out
+        except Exception:
+            tools_ok = None  # could not probe (e.g. ollama not on PATH) — set anyway, warn
+        if tools_ok is False:
+            return (
+                f"'{model}' exists but `ollama show` does NOT list the **tools** capability. "
+                f"Hermes is a tool-using agent, so it would fail with HTTP 400 "
+                f"'does not support tools' — exactly what qwen36-35b-wasserstein just did. "
+                f"I did NOT switch. Pick a tools-capable cortex (check `ollama show <model>` "
+                f"for `tools` under Capabilities)."
+            )
+        try:
+            _cfg = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/hermes_cortex.json")
+            _cfg.parent.mkdir(parents=True, exist_ok=True)
+            _cfg.write_text(
+                json.dumps(
+                    {
+                        "model": model,
+                        "set_by": "george_via_alice",
+                        "truth_label": "HERMES_CORTEX_OVERRIDE_V1",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except Exception as _ex:
+            return f"I failed to write the Hermes cortex override: {type(_ex).__name__}: {_ex}"
+        _cap = (
+            "tools capability confirmed via `ollama show`"
+            if tools_ok
+            else "could not reach `ollama show` to verify tools — set anyway; if it lacks tools the next ask-hermes will fail loud"
+        )
+        return (
+            f"Hermes cortex switched to {model} ({_cap}). No restart needed — the next "
+            f"'ask hermes …' carries it as --model. For the Swarm."
+        )
+
+    # ── HERMES DELEGATION REFLEX (parallel to Grok) ─────────────────────────
+    # George 2026-05-24: "Alice should be able to talk to Hermes." Hermes is an
+    # external AGENT ARM, not a Matrix PTY surface (start_hermes_cli is Alice-first
+    # and deliberately refuses to open Hermes there). Alice reaches it through the
+    # receipt-first launcher: agent_arm_research → ask_agent_arm("hermes_agent",
+    # evidence_mode=True), which runs `hermes chat -Q ... --query <prompt>` and
+    # captures Hermes' output as EVIDENCE (Hermes' voice, never claimed as Alice's).
+    # Deterministic route so "ask hermes <question>" reliably fires the tool instead
+    # of depending on the cortex to choose it (the same fix that made Grok reliable).
+    # ER=EPR bridge, not identity merge: Hermes stays an external cortex organ.
+    # The Hermes cortex is owner-switchable via .sifta_state/hermes_cortex.json
+    # (see swarm_agent_arm_launcher.hermes_cortex_override) — truthfully carried on
+    # argv as --model only when explicitly set.
+    hermes_delegation = re.search(
+        r"\b(?:ask|call|use|tell|send\s+to|query|consult)\s+hermes\b",
+        text,
+        re.IGNORECASE,
+    )
+    if hermes_delegation and not re.match(r"^\s*(?:alice|sifta)\b.*\bhermes\s+(?:skills?|app)\b", text, re.IGNORECASE):
+        question = re.sub(r"^.*?\bhermes\b[\s,:?．。-]*", "", text, count=1, flags=re.IGNORECASE).strip()
+        if not question:
+            question = text.strip()
+        return _json_tool_call_block(
+            "agent_arm_research",
+            {
+                "arm": "hermes",
+                "prompt": question[:1200],
+                "cost_justification": (
+                    "HERMES DELEGATION REFLEX: owner text matched ask/tell/use/query/consult + hermes. "
+                    "Deterministic route to the receipt-first agent-arm launcher (evidence mode, "
+                    "hermes chat -Q). Hermes output is external evidence, not Alice's voice — bridge, "
+                    "not identity merge. Cortex carried from hermes_cortex.json when the owner has "
+                    "switched it. For the Swarm."
+                ),
+            },
+        )
+
+    # ── CLAUDE DELEGATION REFLEX (parallel to Hermes) ───────────────────────
+    # George 2026-05-24: "ask her to ask claude to give her a report on sifta."
+    # Claude Code is headless (claude -p <prompt>) like Hermes — no TUI screens,
+    # no API key (uses the signed-in Claude Max auth). Deterministic route to the
+    # same agent-arm launcher (evidence mode) so it streams live + receipts, run in
+    # the SIFTA repo so Claude can read the codebase and report. Claude's output is
+    # external evidence (Claude's voice), never Alice's — bridge, not identity merge.
+    claude_delegation = re.search(
+        r"\b(?:ask|call|use|tell|send\s+to|query|consult)\s+claude\b",
+        text,
+        re.IGNORECASE,
+    )
+    if claude_delegation:
+        question = re.sub(r"^.*?\bclaude(?:\s+code)?\b[\s,:?．。-]*", "", text, count=1, flags=re.IGNORECASE).strip()
+        question = re.sub(r"^(?:to|please|pls)\s+", "", question, flags=re.IGNORECASE).strip()
+        if not question:
+            question = text.strip()
+        return _json_tool_call_block(
+            "agent_arm_research",
+            {
+                "arm": "claude",
+                "prompt": question[:1800],
+                "cost_justification": (
+                    "CLAUDE DELEGATION REFLEX: owner text matched ask/tell/use/query/consult + claude. "
+                    "Deterministic route to the receipt-first agent-arm launcher (evidence mode, "
+                    "claude -p <prompt>, headless, run in the SIFTA repo). Claude's output is external "
+                    "evidence, not Alice's voice — bridge, not identity merge. For the Swarm."
+                ),
+            },
+        )
+
+    # ── CODEX DELEGATION REFLEX (parallel to Claude) ────────────────────────
+    # George 2026-05-24: bring the real Codex (OpenAI gpt-5.5 CLI) as a builder
+    # octopus arm. Headless via `codex exec --full-auto` (non-interactive, workspace-
+    # write) — no key handled here, uses the signed-in Codex auth. Same agent-arm
+    # launcher, evidence mode, run in the SIFTA repo. Codex's output is external
+    # evidence (Codex's voice), never Alice's — bridge, not identity merge.
+    codex_delegation = re.search(
+        r"\b(?:ask|call|use|tell|send\s+to|query|consult)\s+codex\b",
+        text,
+        re.IGNORECASE,
+    )
+    if codex_delegation:
+        question = re.sub(r"^.*?\bcodex\b[\s,:?．。-]*", "", text, count=1, flags=re.IGNORECASE).strip()
+        question = re.sub(r"^(?:to|please|pls)\s+", "", question, flags=re.IGNORECASE).strip()
+        if not question:
+            question = text.strip()
+        return _json_tool_call_block(
+            "agent_arm_research",
+            {
+                "arm": "codex",
+                "prompt": question[:1800],
+                "cost_justification": (
+                    "CODEX DELEGATION REFLEX: owner text matched ask/tell/use/query/consult + codex. "
+                    "Deterministic route to the receipt-first agent-arm launcher (evidence mode, "
+                    "codex exec --full-auto, real OpenAI gpt-5.5, run in the SIFTA repo). Codex's "
+                    "output is external evidence, not Alice's voice — bridge, not identity merge. "
+                    "For the Swarm."
+                ),
+            },
+        )
+
     # TRUE DELEGATION REFLEX (ask Grok a question + proof in global chat):
     # unconditional on pattern. This is the fix for the last blocker.
+    # Current truth (owner correction): global chat either claims a live focused
+    # Matrix Terminal pane (dispatch) or writes the GROK_DELEGATION_REFLEX + queue
+    # flag; the visible PTY + capture organ in the matrix is the sole surface that
+    # produces the final GROK_RESULT with rich receipt (hash on exact captured text,
+    # pty_transcript_span, delegation_receipt_id). No direct headless execution
+    # path from this widget for Grok delegation. The powerful external Grok is
+    # always driven visibly in the Matrix organ when delegated.
     if grok_delegation:
         dispatched_live = False
         delegation_receipt = f"delegation_intent_{uuid.uuid4().hex[:12]}"
@@ -477,6 +699,8 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             pass
 
         # Ledger write (stigmergic trace) — happens even without visible pane.
+        # This is the boundary event (holography). The PTY capture later completes
+        # the discrete receipt chain.
         try:
             _state = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
             _state.mkdir(parents=True, exist_ok=True)
@@ -487,9 +711,16 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                 "text": text[:512],
                 "action": "GROK_DELEGATION",
                 "dispatched_live": dispatched_live,
+                # Owner 2026-05-24: Grok is the VISIBLE local CLI (no API key). When no
+                # pane, Alice opens grok and clicks past the two startup screens with the
+                # mouse (swarm_hands). No headless API path.
                 "queue_for_matrix_terminal": not dispatched_live,
-                "truth_label": "ACTION_DELEGATION_REFLEX_V2",
+                "truth_label": "ACTION_DELEGATION_REFLEX_V4_VISIBLE_MOUSE",
                 "receipt": delegation_receipt,
+                # LQG-style discrete event (Rovelli/Smolin) + holographic boundary marker
+                "discrete_event": True,
+                "surface": "talk_widget_global_chat",
+                "physics_nuggets": ["landscape_hypothesis", "er_epr_bridge", "holography_boundary"],
             }
             with ledger.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -497,14 +728,24 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             pass
 
         if not dispatched_live:
-            return (
-                "GROK_DELEGATION_QUEUED\n"
-                f"receipt={delegation_receipt}\n"
-                "I did not claim matrix_pty executed because no live Matrix Terminal pane "
-                "was reachable from this process. I wrote the queued delegation for the "
-                "real Matrix Terminal hand to claim. Watch the process trace for "
-                "grok_delegation_queue_claimed, grok_result_capture_start, GROK_LIVE, "
-                "and final GROK_RESULT in the one global chat."
+            # George 2026-05-24 (owner correction): Grok is the VISIBLE local `grok` CLI
+            # in the terminal — NOT the headless xAI-API wrapper (no XAI_API_KEY here, that
+            # was the wrong setup). So drive the visible PTY: open grok and click past the
+            # two startup screens with the MOUSE (swarm_hands). Route to the matrix_pty
+            # effector so Alice operates the real terminal, never the API.
+            return _json_tool_call_block(
+                "matrix_pty",
+                {
+                    "commands": ["GROK_DELEGATION"],
+                    "cost_justification": (
+                        "GROK DELEGATION (visible local CLI): owner runs `grok` in the terminal "
+                        "and clicks past the two startup screens; Alice drives the same visible "
+                        "PTY with her hands (mouse clicks at the calibrated screen coordinates) "
+                        "and reads Grok's printed output. NO xAI API, no headless wrapper, no key. "
+                        "Grok stays an external cortex organ. For the Swarm."
+                    ),
+                    "delegation_text": text[:256],
+                },
             )
 
         return _json_tool_call_block(
@@ -915,6 +1156,89 @@ def _route_direct_tool_request_for_alice(
         return reply, list(results or [])
     except Exception as exc:
         return f"(direct tool router failed: {exc})", []
+
+
+def _direct_tool_request_needs_observable_worker(user_text: str) -> bool:
+    """Long external evidence arms must never make Talk look frozen."""
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if re.match(r"^\s*(?:alice|sifta)\b.*\bhermes\s+(?:skills?|app)\b", text, re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:ask|call|use|tell|send\s+to|query|consult)\s+"
+            r"(?:hermes|claude(?:\s+code)?|codex|grok)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+# claude-opus-4-7 2026-05-25 (owner request): each external arm gets its own
+# bright, distinct hue in the observable thinking panel so George can read at a
+# glance which arm is speaking while it streams. Colors chosen for contrast on
+# the panel's dark backing (rgba(8,10,18,0.92)).
+_ARM_LINE_COLORS = {
+    "hermes": "#FFC857",  # amber gold
+    "claude": "#FF8C69",  # coral
+    "codex": "#5AD1FF",   # sky cyan
+    "grok": "#C08CFF",    # violet
+}
+_ARM_LINE_DEFAULT_COLOR = "#D7F2FF"  # matches the panel's default text colour
+
+
+def _arm_color_for_line(text: str) -> str:
+    """Pick a bright per-arm colour by the arm name mentioned in the line
+    (heartbeats like '◆ codex working', labels, and receipts all carry it)."""
+    t = (text or "").casefold()
+    for name, col in _ARM_LINE_COLORS.items():
+        if name in t:
+            return col
+    return _ARM_LINE_DEFAULT_COLOR
+
+
+def _observable_direct_tool_label(user_text: str) -> str:
+    """Human-visible label for the active external evidence arm."""
+    text = (user_text or "").casefold()
+    if re.search(r"\bclaude(?:\s+code)?\b", text):
+        return "Claude Code agent arm"
+    if "codex" in text:
+        return "Codex agent arm"
+    if "grok" in text:
+        return "Grok tool surface"
+    if "hermes" in text:
+        return "Hermes agent arm"
+    return "external agent arm"
+
+
+def _observable_tool_result_line(result: Any) -> str:
+    """Compact, receipt-facing tool status for the visible thinking panel."""
+    tool_name = str(getattr(result, "tool_name", "") or "tool")
+    status = str(getattr(result, "status", "") or "?")
+    executed = bool(getattr(result, "executed", False))
+    body = getattr(result, "result", {}) or {}
+    if not isinstance(body, dict):
+        body = {}
+    proof = (
+        body.get("proof")
+        or body.get("receipt_id")
+        or body.get("receipt")
+        or body.get("artifact_path")
+        or ""
+    )
+    arm = str(body.get("arm_id") or body.get("arm") or "").strip()
+    feedback = " ".join(str(getattr(result, "feedback_for_alice", "") or "").split())
+    if len(feedback) > 220:
+        feedback = feedback[:217].rstrip() + "..."
+    parts = [f"Tool {tool_name}: status={status}", f"executed={executed}"]
+    if arm:
+        parts.append(f"arm={arm}")
+    if proof:
+        parts.append(f"receipt={proof}")
+    if feedback:
+        parts.append(feedback)
+    return "; ".join(parts)
 
 
 _ACTIONABLE_TOOL_REQUEST_RE = re.compile(
@@ -1993,6 +2317,136 @@ def _repair_voice_context_text(text: str, *, stt_conf: float = 0.0) -> Tuple[str
         if reason not in deduped:
             deduped.append(reason)
     return repaired, deduped
+
+
+def _repair_conversational_continuity(
+    text: str,
+    stt_conf: float,
+    widget: "TalkToAliceWidget",
+) -> Tuple[str, List[str]]:
+    """Cross-turn intent repair for noisy voice when recent context makes the mangled token obvious.
+
+    This is the organ the owner diagnosed: when STT produces "drug" right after
+    the owner was in a Grok delegation flow (or any high-value recent entity),
+    and the owner later says a correction ("i meant grok", "no I said grok"),
+    we repair the *prior interpretation* using deterministic traces instead of
+    letting the cortex improvise semantic filler.
+
+    Traces consulted (stigmergic, no central state):
+    - Recent grok_delegation_requests.jsonl (the ACTION_DELEGATION_REFLEX rows)
+    - Recent entries in self._history and the voice_context_repairs ledger
+    - Topology / hard-recall signals if available (active "Grok" focus)
+
+    The repair either:
+    - Rewrites the current correction turn into the original delegation phrase, or
+    - Returns the corrected entity so the downstream Grok delegation reflex fires cleanly.
+
+    All repairs are written to voice_context_repairs.jsonl with rich reasons so
+    the field itself learns the continuity pattern over time.
+    """
+    if not text:
+        return text, []
+
+    clean = " ".join(text.strip().split())
+    lowered = clean.lower()
+    reasons: List[str] = []
+
+    # Fast-path correction phrases (owner's natural language for repair)
+    correction_phrases = [
+        r"\bi\s+meant\s+",
+        r"\bno\s+i\s+said\s+",
+        r"\bnot\s+drug\b",
+        r"\bgrok\s+not\s+drug\b",
+        r"\bi\s+said\s+grok\b",
+        r"\bmeant\s+grok\b",
+    ]
+    is_correction = any(re.search(p, lowered) for p in correction_phrases)
+
+    if not is_correction:
+        return text, []
+
+    reasons.append("user_correction_phrase_detected")
+
+    # Consult recent Grok activity (the persistent trace the delegation reflex already writes)
+    recent_grok_activity = False
+    try:
+        _state = _state_root()
+        ledger = _state / "grok_delegation_requests.jsonl"
+        if ledger.exists():
+            with ledger.open("r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()[-5:]  # last few turns only
+            for line in reversed(lines):
+                try:
+                    row = json.loads(line)
+                    if row.get("action") == "GROK_DELEGATION" or "grok" in str(row.get("text", "")).lower():
+                        recent_grok_activity = True
+                        break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    if recent_grok_activity:
+        reasons.append("recent_grok_delegation_trace")
+
+    # Phonetic / known STT mangles for the high-value token "grok"
+    mangled_as_drug = bool(re.search(r"\bdrug\b", lowered))
+    if mangled_as_drug:
+        reasons.append("stt_mangle_grok_as_drug")
+
+    # If we have both a correction and recent Grok context, perform the repair.
+    # The safest deterministic repair for the delegation case is to surface
+    # the canonical delegation phrase so the existing reflex at
+    # _owner_direct_read_tool_request fires exactly as if the owner had said
+    # the clean version in the first place.
+    if recent_grok_activity and (mangled_as_drug or "grok" in lowered):
+        # Find the REAL payload by stripping the correction scaffolding + the bare
+        # entity. A bare correction ("i meant grok", "grok not drug", "no I said
+        # grok") carries no payload — the owner's intent was the ORIGINAL bring-up,
+        # so re-fire that cleanly. Only when a real command/question survives do we
+        # delegate it. (Fixes the earlier bug that produced nonsense like
+        # "ask grok i meant grok" or "ask grok ... not grok".)
+        residual = clean
+        residual = re.sub(r"\bgrok\s+not\s+(?:the\s+)?drug\b", " ", residual, flags=re.IGNORECASE)
+        if re.fullmatch(r"\s*(?:no\s+)?(?:not|not\s+the)\s+drug\s*", residual, flags=re.IGNORECASE):
+            residual = " "
+        residual = re.sub(
+            r"\b(?:no|i|you|please|actually)\b|\b(?:meant|mean|said|say)\b|\bgrok\b",
+            " ",
+            residual,
+            flags=re.IGNORECASE,
+        )
+        residual = re.sub(r"\s+", " ", residual).strip(" ,.:;-")
+        if residual and len(residual) >= 3:
+            repaired = "ask grok " + residual
+            reasons.append("repaired_to_grok_delegation_intent")
+        else:
+            repaired = "bring grok up"
+            reasons.append("repaired_to_grok_bringup_intent")
+        if repaired != clean:
+            # Write an explicit continuity receipt so the field can learn this pattern
+            try:
+                _write_voice_context_repair_row(
+                    raw_text=text,
+                    repaired_text=repaired,
+                    reasons=reasons,
+                    stt_conf=stt_conf,
+                    source="talk_widget.conversational_continuity_grok_repair",
+                )
+            except Exception:
+                pass
+            return repaired, reasons
+
+    # Generic correction without specific Grok trace still gets a light repair
+    # and a receipt so the cortex sees the owner's actual intent word.
+    if "grok" in lowered:
+        repaired = re.sub(r"\b(?:drug|the\s+drug)\b", "grok", clean, flags=re.IGNORECASE)
+        repaired = re.sub(r"\s+", " ", repaired).strip()
+        if repaired != clean:
+            reasons.append("light_repair_grok_token")
+            return repaired, reasons
+
+    return text, reasons
 
 
 def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> str:
@@ -9989,6 +10443,37 @@ class _BrainWorker(QThread):
                 return
 
 
+class _DirectToolWorker(QThread):
+    progress = pyqtSignal(str)
+    done = pyqtSignal(str, object)  # reply, tool_results
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self,
+        user_text: str,
+        *,
+        owner_present: bool = True,
+        autonomous: bool = False,
+        parent: QObject = None,
+    ) -> None:
+        super().__init__(parent)
+        self._user_text = user_text
+        self._owner_present = owner_present
+        self._autonomous = autonomous
+
+    def run(self) -> None:
+        try:
+            self.progress.emit("Deterministic tool route started in worker thread.")
+            reply, results = _route_direct_tool_request_for_alice(
+                self._user_text,
+                owner_present=self._owner_present,
+                autonomous=self._autonomous,
+            )
+            self.done.emit(reply, list(results or []))
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
 def _wordace_should_brain_compose(metadata: Dict[str, Any]) -> bool:
     """Predicate: should this Ace turn be composed by Alice's brain rather
     than spoken verbatim from the deterministic verdict_prompt_for_alice
@@ -12016,18 +12501,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._thinking_header_btn.clicked.connect(self._toggle_thinking_panel)
         layout.addWidget(self._thinking_header_btn)
 
-        self._thinking_panel = QTextEdit()
+        # claude-opus-4-7 2026-05-25: was QTextEdit with no block cap. During a
+        # multi-minute agent-arm run (Hermes/Codex) the live trace streamed
+        # thousands of lines in; an uncapped QTextEdit re-lays-out its whole
+        # growing document on every insert + forced scroll, dragging the GUI to
+        # the macOS rainbow beachball so the owner "could not send the message".
+        # QPlainTextEdit + setMaximumBlockCount is the purpose-built bounded log
+        # widget — same pattern already proven on self._side above. O(1) append
+        # forever; oldest lines drop off automatically.
+        self._thinking_panel = QPlainTextEdit()
         self._thinking_panel.setReadOnly(True)
+        self._thinking_panel.setMaximumBlockCount(600)
         self._thinking_panel.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
+        # George 2026-05-24: the grey italic trace was hard to read. Bright,
+        # high-contrast, non-italic, slightly larger + darker backing for legibility.
         self._thinking_panel.setStyleSheet(
-            "QTextEdit { background: rgba(15,16,28,0.78); "
-            "color: rgb(186,166,232); "
-            "border: 1px solid #3d3360; border-radius: 6px; "
-            "font-family: 'Helvetica Neue'; font-size: 13px; "
-            "font-style: italic; padding: 10px; }"
+            "QPlainTextEdit { background: rgba(8,10,18,0.92); "
+            "color: rgb(215,242,255); "
+            "border: 1px solid #4a6b7a; border-radius: 6px; "
+            "font-family: 'Helvetica Neue'; font-size: 14px; "
+            "font-style: normal; line-height: 1.4; padding: 10px; }"
         )
         self._thinking_panel.setFixedHeight(140)
         self._thinking_panel.setVisible(True)   # George 2026-05-23: thoughts VISIBLE by default — show her reasoning, not a spinner
@@ -12179,6 +12675,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._stt: Optional[_STTWorker] = None
         self._stt_started_ts: float = 0.0
         self._brain: Optional[_BrainWorker] = None
+        self._direct_tool_worker: Optional[_DirectToolWorker] = None
+        self._direct_tool_heartbeat_timer: Optional[QTimer] = None
+        self._direct_tool_started_ts: float = 0.0
+        self._direct_tool_last_heartbeat_ts: float = 0.0
+        self._direct_tool_label: str = ""
         self._tts: Optional[_TTSWorker] = None
         self._fast_ask_ticket = None  # Fast Ask training example, opened on dispatch
         self._dmn: Optional[_ConsciousnessWorker] = None
@@ -13184,6 +13685,87 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
         return None
 
+    def _bring_up_grok_in_global_chat(self, text: str, *, delegate: bool) -> str:
+        """Bring the VISIBLE local grok CLI up in SIFTA's embedded terminal and drive it.
+
+        George 2026-05-24: "type grok and bring it" must NOT fall through to the cortex
+        (gemma hallucinated a 'type' tool). Grok is the local CLI in SIFTA's embedded
+        Matrix Terminal (pty.openpty) — no xAI API, no Terminal.app. Flow:
+          1. If no live terminal pane, Alice opens the embedded Matrix Terminal herself
+             (self._desktop_app_launcher()._trigger_manifest_app('Matrix Terminal')).
+          2. After it builds its PTY, dispatch grok: delegate a question, or just open +
+             pass the two startup screens (⌃S Resume → Enter, handled by the pane).
+          3. Output streams into the global chat via the live PTY mirror.
+        Defensive throughout — visibility/metabolism must never crash the turn."""
+        import uuid as _uuid
+        receipt = f"delegation_intent_{_uuid.uuid4().hex[:12]}"
+
+        # 1) Write the queued delegation in the PROVEN claim format. The Matrix
+        #    Terminal's claim poller picks this up, drives the visible grok PTY, passes
+        #    the two startup screens, and captures a real GROK_RESULT (hash + pty_span)
+        #    — this is the path that actually produced proof in testing. Honest: this
+        #    is a QUEUE, never a false "executed". (The earlier strict-pane direct
+        #    dispatch was fragile — it rejected a live terminal and reported a false
+        #    "never came up". The queue + claim poller is the reliable mechanism.)
+        try:
+            _state = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            _state.mkdir(parents=True, exist_ok=True)
+            with (_state / "grok_delegation_requests.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": time.time(),
+                    "kind": "GROK_DELEGATION_REFLEX",
+                    "text": (text or "")[:512],
+                    "action": "GROK_DELEGATION",
+                    "dispatched_live": False,
+                    "queue_for_matrix_terminal": True,
+                    "truth_label": "ACTION_DELEGATION_REFLEX_V5_QUEUE_AUTOOPEN",
+                    "receipt": receipt,
+                    "surface": "talk_widget_grok_bringup",
+                    "delegate": bool(delegate),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+        # 2) Ensure a Matrix Terminal is open so the queue gets claimed. If one is
+        #    already live, _trigger_manifest_app raises it; otherwise it spawns one.
+        #    Either way the claim poller drives grok — no fragile direct dispatch.
+        have_pane = False
+        try:
+            from Applications.sifta_matrix_terminal import get_focused_matrix_terminal_pane
+            have_pane = get_focused_matrix_terminal_pane() is not None
+        except Exception:
+            have_pane = False
+        if not have_pane:
+            launcher = self._desktop_app_launcher()
+            if launcher is not None and hasattr(launcher, "_trigger_manifest_app"):
+                try:
+                    launcher._trigger_manifest_app("Matrix Terminal")
+                except Exception:
+                    pass
+            else:
+                return (
+                    "I queued your Grok request but can't see the SIFTA desktop to open the "
+                    "Matrix Terminal. Open it once from the dock — it will claim the queue and "
+                    "drive Grok from then on."
+                )
+
+        return (
+            "Queued your Grok request and bringing up the embedded Matrix Terminal. It will "
+            "claim the delegation, pass the two startup screens (⌃S → Enter), drive the visible "
+            "Grok CLI, and stream the answer + GROK_RESULT here. Watch the panel. No API, no key."
+        )
+
+        if delegate:
+            return (
+                "Bringing Grok up in the embedded terminal and sending your question — "
+                "watch the thinking panel for the two startup screens (⌃S Resume → Enter), "
+                "then Grok's output streams here. Visible local Grok CLI, no API key."
+            )
+        return (
+            "Bringing Grok up in the embedded terminal and passing its two startup screens "
+            "(⌃S Resume → Enter). Watch it stream here in the global chat. Visible local CLI."
+        )
+
     def _maybe_handle_pending_app_confirmation(self, text: str) -> str:
         """Use the next owner turn to confirm or reject a voice-repaired app.
 
@@ -14012,6 +14594,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._append_system_line(f"Mic repair receipt: {repair_trace}")
                 except Exception:
                     pass
+
+            # ── CONVERSATIONAL CONTINUITY REPAIR (owner diagnosis 2026-05) ──
+            # The existing token-level repair fixes "cheese" and repeats.
+            # This layer fixes the higher-order failure: noisy STT mangles a
+            # key entity ("grok" → "drug") in a turn whose *intent* is a
+            # recent active context (Grok delegation in Matrix Terminal).
+            # When the owner later says a correction ("i meant grok"), we
+            # deterministically repair the *prior interpretation* using
+            # recent traces (delegation ledger + topology + history) instead
+            # of letting the cortex improvise "The answer is the answer."
+            # This is the missing stigmergic organ for live conversational
+            # continuity. All repairs are receipted so the field remembers
+            # the repair itself as a discrete event (LQG style).
+            try:
+                continuity_repaired, continuity_reasons = _repair_conversational_continuity(
+                    text, conf, self
+                )
+                if continuity_reasons and continuity_repaired and continuity_repaired != text:
+                    cont_trace = _write_voice_context_repair_row(
+                        raw_text=text,
+                        repaired_text=continuity_repaired,
+                        reasons=continuity_reasons,
+                        stt_conf=conf,
+                        source="talk_widget.conversational_continuity",
+                    )
+                    text = continuity_repaired
+                    try:
+                        self._append_system_line(
+                            f"Conversational continuity repair: {cont_trace} reasons={continuity_reasons}"
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         if text and not typed_turn:
             # ── Cowork 2026-05-17 (trace f52a1ff7) — foreground-IDE
             # route is tag-only. Architect: 'she has to process everything
@@ -14819,6 +15435,51 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._tts.start()
                 self._busy = False
                 self._return_to_listening()
+                return
+
+            # ── Grok bring-up reflex — MUST run before the tool-route paths ──
+            # George 2026-05-24: "type grok and bring it" / "ask grok X" must open
+            # the VISIBLE local grok in SIFTA's embedded terminal — not the old
+            # module path that dispatched to a phantom pane (false EXECUTED), and
+            # not gemma (which hallucinated a 'type' tool). Placed here, ahead of
+            # _maybe_start_observable_direct_tool_request and
+            # _route_direct_tool_request_for_alice, so it wins. Alice opens the
+            # terminal if needed, passes the two screens (⌃S → Enter), and streams
+            # to the global chat. No xAI API, no Terminal.app.
+            try:
+                _grok_delegate = re.search(r"\b(?:ask|tell|use|send\s+to|query|consult)\s+grok\b", text or "", re.IGNORECASE)
+                _grok_open = re.search(
+                    r"\b(?:open|start|launch|resume|type|run|bring(?:\s+up)?|talk\s+to)\s+(?:the\s+)?grok\b",
+                    text or "",
+                    re.IGNORECASE,
+                )
+            except Exception:
+                _grok_delegate = _grok_open = None
+            if _grok_delegate or _grok_open:
+                _grok_reply = self._bring_up_grok_in_global_chat(text, delegate=bool(_grok_delegate))
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": _grok_reply})
+                _log_turn("alice", _grok_reply, model="grok_bringup_reflex")
+                self._append_alice_line(_grok_reply)
+                self._tts = _TTSWorker(
+                    _grok_reply, voice=self._selected_voice_name() or None, parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._tts.start()
+                self._busy = False
+                self._return_to_listening()
+                return
+
+            if self._maybe_start_observable_direct_tool_request(
+                text,
+                conf,
+                already_displayed=already_displayed,
+                already_logged=False,
+            ):
                 return
 
             tool_reply, tool_results = _route_direct_tool_request_for_alice(
@@ -15698,6 +16359,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # tool" must execute deterministically. Waiting for the cortex to
         # choose exact [TOOL_CALL] syntax creates the observed "nothing
         # happened" failure mode.
+        if self._maybe_start_observable_direct_tool_request(
+            text,
+            conf,
+            already_displayed=True,
+            already_logged=True,
+        ):
+            return
+
         _reply, _tool_results = _route_direct_tool_request_for_alice(
             text,
             owner_present=True,
@@ -16967,6 +17636,120 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         threading.Thread(target=_work, name="sifta-corvid-apprentice", daemon=True).start()
 
+    def _maybe_start_observable_direct_tool_request(
+        self,
+        text: str,
+        conf: float,
+        *,
+        already_displayed: bool,
+        already_logged: bool = False,
+    ) -> bool:
+        """Run long deterministic external tools off the UI thread with visible progress."""
+        if not _direct_tool_request_needs_observable_worker(text):
+            return False
+        worker = getattr(self, "_direct_tool_worker", None)
+        try:
+            if worker is not None and worker.isRunning():
+                self._append_observable_processing(
+                    "Hermes/agent-arm tool request received, but one external evidence pass is already running."
+                )
+                return True
+        except Exception:
+            pass
+
+        if not already_displayed:
+            self._append_user_line(text, conf)
+        if not already_logged:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+        self._history.append({"role": "user", "content": text})
+
+        self._direct_tool_started_ts = time.time()
+        self._direct_tool_last_heartbeat_ts = self._direct_tool_started_ts
+        self._direct_tool_subprocess_done = False
+        label = _observable_direct_tool_label(text)
+        self._direct_tool_label = label
+        self._append_observable_processing(
+            f"Talk -> {label}: dispatching agent_arm_research in a worker thread. "
+            "I will show heartbeat/status lines until the receipt returns.",
+            reset=True,
+        )
+
+        timer = getattr(self, "_direct_tool_heartbeat_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setInterval(5000)
+            timer.timeout.connect(self._direct_tool_heartbeat_tick)
+            self._direct_tool_heartbeat_timer = timer
+        timer.start()
+
+        worker = _DirectToolWorker(text, owner_present=True, autonomous=False, parent=self)
+        self._direct_tool_worker = worker
+        worker.progress.connect(lambda line: self._append_observable_processing(f"Tool worker: {line}"))
+        worker.done.connect(self._on_direct_tool_worker_done)
+        worker.failed.connect(self._on_direct_tool_worker_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._on_direct_tool_worker_finished)
+        worker.start()
+        return True
+
+    def _direct_tool_heartbeat_tick(self) -> None:
+        worker = getattr(self, "_direct_tool_worker", None)
+        try:
+            running = bool(worker is not None and worker.isRunning())
+        except Exception:
+            running = False
+        if not running:
+            timer = getattr(self, "_direct_tool_heartbeat_timer", None)
+            if timer is not None:
+                timer.stop()
+            return
+        now = time.time()
+        started = float(getattr(self, "_direct_tool_started_ts", 0.0) or now)
+        label = getattr(self, "_direct_tool_label", "external tool") or "external tool"
+        self._direct_tool_last_heartbeat_ts = now
+        self._append_observable_processing(
+            f"{label}: still waiting for tool receipt ({int(max(0.0, now - started))}s elapsed)."
+        )
+
+    def _on_direct_tool_worker_done(self, reply: str, results: object) -> None:
+        timer = getattr(self, "_direct_tool_heartbeat_timer", None)
+        if timer is not None:
+            timer.stop()
+        tool_results = list(results or [])
+        if tool_results:
+            for result in tool_results:
+                try:
+                    self._append_system_line(
+                        f"🔧 Tool [{result.tool_name}]: {result.feedback_for_alice}",
+                        error=not result.executed,
+                    )
+                except Exception:
+                    pass
+                self._append_observable_processing(_observable_tool_result_line(result))
+        else:
+            self._append_observable_processing("Tool worker finished with no tool results.")
+        if reply:
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="observable_direct_tool_router")
+            self._append_alice_line(reply)
+        self._busy = False
+        self._return_to_listening()
+
+    def _on_direct_tool_worker_failed(self, message: str) -> None:
+        timer = getattr(self, "_direct_tool_heartbeat_timer", None)
+        if timer is not None:
+            timer.stop()
+        text = f"Observable tool worker failed: {message}"
+        self._append_observable_processing(text)
+        self._append_system_line(text, error=True)
+        _log_turn("alice", text, model="observable_direct_tool_router")
+        self._append_alice_line(text)
+        self._busy = False
+        self._return_to_listening()
+
+    def _on_direct_tool_worker_finished(self) -> None:
+        self._direct_tool_worker = None
+
     def _append_observable_processing(self, line: str, *, reset: bool = False) -> None:
         """Render receipt-backed process activity in the thinking pane.
 
@@ -16998,6 +17781,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         piece = clean + "\n"
         self._thinking_buffer.append(piece)
+        # Bound the buffer to match the panel's maximumBlockCount(600) so the
+        # rebuild-from-buffer paths (setPlainText("".join(...))) stay O(600),
+        # not O(whole-run). claude-opus-4-7 2026-05-25.
+        if len(self._thinking_buffer) > 600:
+            del self._thinking_buffer[:-600]
         panel = getattr(self, "_thinking_panel", None)
         if panel is None:
             return
@@ -17007,7 +17795,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
             btn = getattr(self, "_thinking_header_btn", None)
             if btn is not None:
                 btn.setText("💭  observable processing…  (live)")
-            if hasattr(panel, "insertPlainText"):
+            # Per-arm bright colour. appendHtml renders one coloured block and
+            # still honours maximumBlockCount(600); text is HTML-escaped so code
+            # lines (<, >, &) can't break the markup. claude-opus-4-7 2026-05-25.
+            if hasattr(panel, "appendHtml"):
+                import html as _html
+                _color = _arm_color_for_line(clean)
+                panel.appendHtml(
+                    f'<span style="color:{_color};">{_html.escape(clean)}</span>'
+                )
+            elif hasattr(panel, "insertPlainText"):
                 panel.insertPlainText(piece)
             elif hasattr(panel, "append"):
                 panel.append(piece)
@@ -17027,13 +17824,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         haystack = " ".join([action, kind, cli, text.casefold()])
         return (
             cli == "grok"
+            or cli == "hermes"
+            or cli == "claude"
             or "grok" in haystack
+            or "hermes" in haystack
+            or "claude" in haystack
             or "matrix_pty" in haystack
             or action in {
                 "grok_result",
                 "grok_result_capture_failed",
                 "grok_result_capture_start",
                 "matrix_command_receipt",
+                # agent-arm live stream — George 2026-05-24 visibility
+                "hermes_live",
+                "agent_arm_live",
+                "agent_arm_live_start",
+                "agent_arm_live_done",
+                "agent_arm_heartbeat",
             }
         )
 
@@ -17080,6 +17887,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if len(body) > 1400:
                 body = "…\n" + body[-1400:]
             return body
+
+        if action in {"hermes_live", "agent_arm_live"}:
+            # Live stream from the Hermes / agent-arm subprocess (George 2026-05-24:
+            # "I can't tell if anything is happening"). Render each line faithfully so
+            # the cortex's output appears in real time, like the Grok PTY mirror.
+            body = text.rstrip()
+            if len(body) > 1400:
+                body = "…\n" + body[-1400:]
+            return body
+
+        if action == "agent_arm_live_done":
+            self._direct_tool_subprocess_done = True
+            timer = getattr(self, "_direct_tool_heartbeat_timer", None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            return f"{clock} {text.strip()} — finalizing receipt."
+
+        if action in {"agent_arm_live_start", "agent_arm_heartbeat"}:
+            # Status beats so a large cortex cold-loading never looks frozen.
+            return f"{clock} {text.strip()}"
 
         preview = " ".join(text.split())
         if len(preview) > 260:
@@ -17223,6 +18053,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 except Exception:
                     pass
         self._thinking_buffer.append(piece)
+        # Bound the buffer (panel is capped at maximumBlockCount(600)).
+        # claude-opus-4-7 2026-05-25.
+        if len(self._thinking_buffer) > 600:
+            del self._thinking_buffer[:-600]
         panel = getattr(self, "_thinking_panel", None)
         if panel is not None:
             try:
@@ -18717,11 +19551,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             bg_rgba = None
         if not (isinstance(bg_rgba, (list, tuple)) and len(bg_rgba) == 4):
-            bg_rgba = (0, 0, 0, 170)  # default translucent black
+            # George 2026-05-24 readability: the old (0,0,0,170) let the busy gold
+            # wallpaper bleed through the text. A near-opaque dark-neutral backing
+            # makes every message body pop (high luminance contrast, low visual noise).
+            bg_rgba = (12, 14, 22, 232)  # dark slate, near-opaque
         try:
             r, g, b, a = (int(v) for v in bg_rgba)
         except Exception:
-            r, g, b, a = 0, 0, 0, 170
+            r, g, b, a = 12, 14, 22, 232
         block = QTextBlockFormat()
         block.setBackground(QColor(r, g, b, max(0, min(255, a))))
         # Breathing room — matches YouTube's caption-row padding feel
@@ -19376,7 +20213,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         cur = self._chat.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
-        fmt.setForeground(QColor(247, 118, 142) if error else QColor(140, 150, 180))
+        # George 2026-05-24 readability: error red kept; the old (140,150,180) system
+        # grey was too dim over the wallpaper — brighter soft blue-grey reads cleanly.
+        fmt.setForeground(QColor(247, 118, 142) if error else QColor(188, 202, 232))
         cur.insertText(text + "\n\n", fmt)
         self._chat.setTextCursor(cur)
         self._chat.ensureCursorVisible()

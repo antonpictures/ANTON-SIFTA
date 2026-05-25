@@ -31,6 +31,7 @@ Standalone import of the shipped organ; Qt-free. For the Swarm. 🐜⚡
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -55,6 +56,10 @@ _STANCE = {
     "truth_economy": "the receipt trail that grounds my claims",
     "unknown": "treat as OTHER until identified; do not merge identity",
 }
+
+
+def _entity_key(value: str) -> str:
+    return re.sub(r"[\s_-]+", "_", (value or "").strip().lower()).strip("_")
 
 
 def _alice_names() -> tuple[str, ...]:
@@ -105,6 +110,7 @@ def classify_kind(name: str) -> str:
     identity stance: never assume an unknown surface is *me*.
     """
     n = (name or "").strip().lower()
+    n_key = _entity_key(n)
     if not n:
         return "external_tool_cortex"
 
@@ -115,12 +121,13 @@ def classify_kind(name: str) -> str:
     nodes = _topology_nodes()
     # 1) exact node id match (e.g. "owner", "grok", "matrix_terminal")
     for node in nodes:
-        if str(node.get("id", "")).lower() == n:
+        if _entity_key(str(node.get("id", ""))) == n_key:
             return str(node.get("kind", "")).lower() or "unknown"
     # 2) substring match against id (e.g. "grok cli" -> "grok", "the matrix terminal")
     for node in nodes:
         nid = str(node.get("id", "")).lower()
-        if nid and nid in n:
+        nid_key = _entity_key(nid)
+        if (nid and nid in n) or (nid_key and nid_key in n_key):
             return str(node.get("kind", "")).lower() or "unknown"
     # 3) owner — name read from LAYER ONE (genesis), never hardcoded here.
     owner_tokens = _owner_tokens()
@@ -278,7 +285,7 @@ def mandatory_role_map() -> str:
         f"- {owner} = OWNER / continuity anchor (not a tool, not me)\n"
         "- Alice = the SIFTA field / organism (this is me)\n"
         "- local cortex = my own thinking substrate (me thinking)\n"
-        "- Grok / external CLIs = external tool/cortex surfaces I DELEGATE to (not me)\n"
+        "- Grok / Hermes / Claude Code / Codex / external CLIs = external tool/cortex surfaces I DELEGATE to (not me)\n"
         "- IDE doctors = temporary surgical hands on my body (not me)\n"
         "Boundary: I can delegate to a tool, but I do not become it."
     )
@@ -290,7 +297,7 @@ def mandatory_role_map() -> str:
 _TOOL_ACTION_RE = _re.compile(
     r"\b(?:open|start|run|launch|type|show|ask|tell|use|resume|operate|drive|"
     r"bring\s+up|fire\s+up|go\s+to|switch\s+to)\b[^.\n]{0,40}"
-    r"\b(?:grok|cli|terminal|hermes|tool)\b",
+    r"\b(?:grok|cli|terminal|hermes|claude(?:\s+code)?|codex|tool)\b",
     _re.IGNORECASE,
 )
 

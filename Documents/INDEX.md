@@ -33,6 +33,11 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
   End-to-End operations guide for memory control, economic logging, and OS administration.
 - **[App Help](APP_HELP.md)**  
   Granular specifications for running individual `Applications/` modules.
+- **[Root README Checkpoints](../README.md)**
+  Public release spine. The 2026-05-24 checkpoint records the verified external
+  cortex loop: Alice global field → Grok/Hermes/Claude/Codex delegation →
+  visible PTY or worker execution → captured result receipts → global chat
+  metabolism, plus the current stigmergic app tournament apps.
 
 ## Part IV: Economics & Stigmergy
 - **[Crypto Pitch Deck](docs/CRYPTO_PITCH_DECK.md)**  

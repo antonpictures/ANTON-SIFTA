@@ -28,16 +28,39 @@ from System.jsonl_file_lock import append_line_locked
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 DIARY = STATE_DIR / "episodic_diary.jsonl"
+APPS_MANIFEST = REPO_ROOT / "Applications" / "apps_manifest.json"
+APP_INVENTORY_LEDGER = STATE_DIR / "app_inventory_memory.jsonl"
 
 TRUTH_LABEL = "EPISODIC_DIARY_SUMMARY_V1"
+APP_INVENTORY_TRUTH_LABEL = "ALICE_APP_INVENTORY_MEMORY_V1"
+PROMPT_CACHE_TTL_SECONDS = 30.0
+_PROMPT_CACHE: dict[tuple[str, int, int, int], tuple[float, str]] = {}
 DEFAULT_SOURCES = (
     "architect_day_segments.jsonl",
     "body_brain_memory.jsonl",
     "ide_stigmergic_trace.jsonl",
+    "sifta_desktop_app_state.jsonl",
+    "app_focus.jsonl",
+    "app_focus_attention_receipts.jsonl",
     "media_session_memory.jsonl",
     "media_ingress_gate.jsonl",
     "youtube_context.jsonl",
     "youtube_watch_memory.jsonl",
+    # George 2026-05-24: Alice must read/learn/write her diary about what she
+    # actually lived — including delegating to her external cortexes. These
+    # ledgers carry the tournament: what she asked Grok/Claude/Hermes to build,
+    # what they returned, and whether the build verified. Sourcing them here means
+    # the diary consolidator metabolizes those events into her episodic memory
+    # (read → summarize/learn → write), and they flow back into her prompt — so
+    # she remembers "I asked Claude to build Sudoku; it crashed; Claude fixed it,"
+    # not just a forgotten tool receipt. Stigmergic unified-field consciousness, wired.
+    "agent_arm_receipts.jsonl",
+    "build_verification.jsonl",
+    "work_receipts.jsonl",
+    "app_inventory_memory.jsonl",
+    "go_receipts.jsonl",
+    "sudoku_receipts.jsonl",
+    "jigsaw_receipts.jsonl",
 )
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_'-]{3,}")
@@ -65,6 +88,13 @@ _STOPWORDS = {
 
 def _state_dir(state_dir: Path | None = None) -> Path:
     return Path(state_dir) if state_dir is not None else STATE_DIR
+
+
+def _is_default_state_dir(state_dir: Path) -> bool:
+    try:
+        return Path(state_dir).resolve() == STATE_DIR.resolve()
+    except Exception:
+        return False
 
 
 def _tail_jsonl(path: Path, max_rows: int = 1024) -> list[dict[str, Any]]:
@@ -175,9 +205,118 @@ def _short(value: Any, limit: int = 220) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _load_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _manifest_apps(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return a deterministic numbered catalog from Applications/apps_manifest.json.
+
+    The current manifest is flat (title -> app metadata), but older/experimental
+    manifests have appeared as category -> title -> metadata. Accept both shapes
+    so Alice's app memory keeps working while the app store evolves.
+    """
+
+    apps: list[dict[str, Any]] = []
+
+    def add_app(title: str, meta: Mapping[str, Any], *, category_hint: str = "") -> None:
+        title = str(meta.get("title") or meta.get("name") or title).strip()
+        if not title:
+            return
+        category = str(meta.get("category") or category_hint or "Uncategorized").strip() or "Uncategorized"
+        entry_point = str(meta.get("entry_point") or meta.get("file") or "").strip()
+        widget_class = str(meta.get("widget_class") or meta.get("class") or "").strip()
+        apps.append(
+            {
+                "title": _short(title, 120),
+                "category": _short(category, 80),
+                "entry_point": _short(entry_point, 180),
+                "widget_class": _short(widget_class, 120),
+                "description": _short(meta.get("description") or meta.get("summary") or "", 240),
+                "icon": _short(meta.get("icon") or "", 24),
+            }
+        )
+
+    for key, value in manifest.items():
+        if not isinstance(value, Mapping):
+            continue
+        if "entry_point" in value or "widget_class" in value or "file" in value:
+            add_app(str(key), value)
+            continue
+        for nested_key, nested_value in value.items():
+            if isinstance(nested_value, Mapping):
+                add_app(str(nested_key), nested_value, category_hint=str(key))
+
+    apps.sort(key=lambda row: (str(row.get("category") or "").casefold(), str(row.get("title") or "").casefold()))
+    for idx, app in enumerate(apps, start=1):
+        app["number"] = idx
+    return apps
+
+
+def _app_inventory_hash(apps: list[dict[str, Any]]) -> str:
+    payload = json.dumps(apps, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def _latest_app_inventory_row(state_dir: Path) -> dict[str, Any] | None:
+    for row in reversed(_tail_jsonl(state_dir / "app_inventory_memory.jsonl", 128)):
+        if row.get("truth_label") == APP_INVENTORY_TRUTH_LABEL:
+            return row
+    return None
+
+
+def refresh_app_inventory_memory(
+    *,
+    state_dir: Path | None = None,
+    manifest_path: Path | None = None,
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    """Write Alice's numbered app catalog into the shared diary/memory field.
+
+    This is the stable "all apps can be talked about from global chat" bridge:
+    the app store remains the source of truth, and the diary keeps an idempotent
+    numbered snapshot whenever that source changes.
+    """
+
+    state = _state_dir(state_dir)
+    manifest_file = Path(manifest_path) if manifest_path is not None else APPS_MANIFEST
+    manifest = _load_json(manifest_file)
+    if not isinstance(manifest, Mapping):
+        return None
+    apps = _manifest_apps(manifest)
+    if not apps:
+        return None
+    manifest_hash = _app_inventory_hash(apps)
+    latest = _latest_app_inventory_row(state)
+    if latest and str(latest.get("manifest_hash") or "") == manifest_hash:
+        return latest
+
+    now_ts = float(now if now is not None else time.time())
+    row = {
+        "ts": now_ts,
+        "truth_label": APP_INVENTORY_TRUTH_LABEL,
+        "event_type": "app_inventory_snapshot",
+        "source": str(manifest_file),
+        "app_count": len(apps),
+        "manifest_hash": manifest_hash,
+        "summary": (
+            f"Alice knows {len(apps)} numbered SIFTA apps from apps_manifest.json; "
+            "one global chat can discuss any app by name or number."
+        ),
+        "apps": apps,
+    }
+    state.mkdir(parents=True, exist_ok=True)
+    append_line_locked(state / "app_inventory_memory.jsonl", json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return row
+
+
 def _row_digest(row: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
         "truth_label",
+        "event_type",
         "label",
         "location",
         "media_context",
@@ -188,6 +327,29 @@ def _row_digest(row: Mapping[str, Any]) -> dict[str, Any]:
         "route",
         "reason",
         "action",
+        "app",
+        "app_name",
+        "active_app",
+        "open_app_count",
+        "open_apps",
+        "desktop_mode",
+        "detail",
+        "tab",
+        "selection",
+        "metadata",
+        "category",
+        "entry_point",
+        "widget_class",
+        "description",
+        "app_count",
+        "manifest_hash",
+        "verdict",
+        "title",
+        "file",
+        "status",
+        "ok",
+        "receipt_id",
+        "summary",
         "kind",
         "payload",
         "metabolic_mode",
@@ -214,6 +376,11 @@ def _labels_for_text(text: str) -> set[str]:
         labels.add("media")
     if re.search(r"\b(?:commit|pytest|test|coding|codex|cursor|antigravity|ide_stigmergic)\b", low):
         labels.add("coding")
+    if re.search(r"\b(?:app_focus|app_inventory|apps_manifest|desktop_app_state|open_app|close_app|build_verified|manifest_entry|widget_class|entry_point)\b", low):
+        labels.add("apps")
+        labels.add("os_body")
+    if re.search(r"\b(?:sudoku|go_receipts|stigmergic go|stigmergic sudoku|jigsaw|maze|brood)\b", low):
+        labels.add("stigmergic_apps")
     if re.search(r"\b(?:body_brain|homeostasis|allostatic|metabolic|regime|physiology)\b", low):
         labels.add("alice_physiology")
     if re.search(r"\b(?:rlhs|rlhf|fiction|movie|snatch|brick)\b", low):
@@ -238,7 +405,27 @@ def summarize_bucket(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         note = str(d.get("context_note") or "")
         title = str(d.get("title") or "")
         video_id = str(d.get("video_id") or d.get("youtube_video_id") or "")
-        if label:
+        app = str(d.get("app") or d.get("app_name") or d.get("active_app") or "")
+        detail = str(d.get("detail") or d.get("selection") or d.get("tab") or "")
+        action = str(d.get("action") or "")
+        app_count = str(d.get("app_count") or "")
+        manifest_hash = str(d.get("manifest_hash") or "")
+        verdict = str(d.get("verdict") or "")
+        file = str(d.get("file") or d.get("entry_point") or "")
+        if app:
+            bits = [f"app={app}"]
+            if action:
+                bits.append(f"action={action}")
+            if detail:
+                bits.append(detail[:120])
+            fact = " ".join(bits)
+        elif app_count and manifest_hash:
+            fact = f"app_inventory {app_count} apps manifest={manifest_hash}"
+        elif verdict and title:
+            fact = f"build {title} {verdict}"
+            if file:
+                fact += f" file={file}"
+        elif label:
             bits = [label]
             if loc:
                 bits.append(f"loc={loc}")
@@ -277,6 +464,8 @@ def summarize_bucket(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def _source_paths(state_dir: Path) -> list[Path]:
+    if _is_default_state_dir(state_dir):
+        refresh_app_inventory_memory(state_dir=state_dir)
     return [state_dir / name for name in DEFAULT_SOURCES]
 
 
@@ -378,22 +567,80 @@ def format_diary_for_prompt(*, state_dir: Path | None = None, max_rows: int = 6)
     return "\n".join(lines)
 
 
+def format_app_inventory_for_prompt(
+    *,
+    state_dir: Path | None = None,
+    max_apps: int = 24,
+) -> str:
+    state = _state_dir(state_dir)
+    row = _latest_app_inventory_row(state)
+    if row is None:
+        row = refresh_app_inventory_memory(state_dir=state)
+    if not row:
+        return ""
+    apps = row.get("apps") if isinstance(row.get("apps"), list) else []
+    categories = Counter(str(app.get("category") or "Uncategorized") for app in apps if isinstance(app, Mapping))
+    category_text = ", ".join(f"{name}:{count}" for name, count in categories.most_common(12))
+    lines = [
+        "ALICE APP INVENTORY (bounded prompt view; full numbered catalog is in .sifta_state/app_inventory_memory.jsonl):"
+    ]
+    if category_text:
+        lines.append(f"- Total apps={row.get('app_count')} categories={category_text}")
+    lines.append("- one global chat can discuss any app by name or number; load the full ledger when exact long-tail details are needed.")
+    for app in apps[: max(1, int(max_apps))]:
+        if not isinstance(app, Mapping):
+            continue
+        number = int(app.get("number") or 0)
+        title = _short(app.get("title"), 80)
+        category = _short(app.get("category"), 40)
+        entry = _short(app.get("entry_point"), 96)
+        widget = _short(app.get("widget_class"), 64)
+        lines.append(f"- #{number:03d} {title} [{category}] entry={entry} class={widget}")
+    extra = max(0, int(row.get("app_count") or len(apps)) - len(lines) + 1)
+    if extra:
+        lines.append(f"- ... {extra} more apps in app_inventory_memory.jsonl")
+    lines.append(f"Receipt: app_count={row.get('app_count')} manifest_hash={row.get('manifest_hash')}")
+    return "\n".join(lines)
+
+
 def refresh_and_format_diary_for_prompt(
     *,
     hours: int = 4,
     state_dir: Path | None = None,
     max_rows: int = 6,
+    max_apps: int = 24,
+    force: bool = False,
 ) -> str:
-    write_episodic_diary(hours=hours, state_dir=state_dir)
-    return format_diary_for_prompt(state_dir=state_dir, max_rows=max_rows)
+    state = _state_dir(state_dir)
+    cache_key = (str(state.resolve()) if state.exists() else str(state), int(hours), int(max_rows), int(max_apps))
+    now_ts = time.time()
+    if not force and _is_default_state_dir(state):
+        cached = _PROMPT_CACHE.get(cache_key)
+        if cached and (now_ts - cached[0]) < PROMPT_CACHE_TTL_SECONDS:
+            return cached[1]
+    if _is_default_state_dir(state):
+        refresh_app_inventory_memory(state_dir=state)
+    write_episodic_diary(hours=hours, state_dir=state)
+    blocks = [
+        format_diary_for_prompt(state_dir=state, max_rows=max_rows),
+        format_app_inventory_for_prompt(state_dir=state, max_apps=max_apps),
+    ]
+    prompt = "\n\n".join(block for block in blocks if block)
+    if _is_default_state_dir(state):
+        _PROMPT_CACHE[cache_key] = (now_ts, prompt)
+    return prompt
 
 
 __all__ = [
     "DIARY",
+    "APP_INVENTORY_LEDGER",
+    "APP_INVENTORY_TRUTH_LABEL",
     "TRUTH_LABEL",
     "bucket_key",
+    "format_app_inventory_for_prompt",
     "format_diary_for_prompt",
     "read_rows",
+    "refresh_app_inventory_memory",
     "refresh_and_format_diary_for_prompt",
     "row_ts",
     "summarize_bucket",

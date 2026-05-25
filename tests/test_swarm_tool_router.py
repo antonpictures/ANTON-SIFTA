@@ -652,7 +652,7 @@ def test_agent_arm_research_can_target_codex_evidence_arm(monkeypatch):
         assert arm_id == "codex_agent"
         assert "review this patch" in prompt
         assert kwargs["evidence_mode"] is True
-        assert kwargs["timeout_s"] == 150
+        assert kwargs["timeout_s"] == 900
         return launcher.AgentArmResult(
             ok=True,
             receipt_id="codex-receipt-1",
@@ -673,6 +673,36 @@ def test_agent_arm_research_can_target_codex_evidence_arm(monkeypatch):
     assert out.result["arm_id"] == "codex_agent"
     assert out.result["receipt_id"] == "codex-receipt-1"
     assert "Codex evidence" in out.feedback_for_alice
+
+
+def test_agent_arm_research_can_target_claude_code_evidence_arm(monkeypatch):
+    from System import swarm_agent_arm_launcher as launcher
+
+    def fake_ask_agent_arm(arm_id, prompt, **kwargs):
+        assert arm_id == "claude_agent"
+        assert "inspect SIFTA" in prompt
+        assert kwargs["evidence_mode"] is True
+        assert kwargs["timeout_s"] == 900
+        return launcher.AgentArmResult(
+            ok=True,
+            receipt_id="claude-receipt-1",
+            arm_id="claude_agent",
+            status="EVIDENCE_CAPTURED",
+            mode="evidence",
+            output="Claude Code evidence: renderer risk is bounded.",
+            artifact_path=".sifta_state/agent_arm_receipts.jsonl",
+        )
+
+    monkeypatch.setattr(launcher, "ask_agent_arm", fake_ask_agent_arm)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: agent_arm_research | arm=claude_code | prompt=inspect SIFTA renderer | cost_justification=Alice wants Claude Code evidence]"
+    )[0]
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["arm_id"] == "claude_agent"
+    assert out.result["receipt_id"] == "claude-receipt-1"
+    assert "Claude Code evidence" in out.feedback_for_alice
 
 
 def test_agent_arm_research_can_target_corvid_scout(monkeypatch):
