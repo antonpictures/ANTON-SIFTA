@@ -141,7 +141,7 @@ _ACER_SCREEN_QUERY = re.compile(
     r"|what\s+(?:is|'s)\s+(?:ace|acer|wordace)\s+showing"
     r"|what\s+(?:does|is)\s+the\s+(?:ace|acer|wordace)\s+app\s+(?:show|showing)"
     r"|(?:do\s+you\s+(?:have|see)|are\s+you\s+(?:aware|conscious))[^.?!]{0,80}\b(?:ace|acer|wordace)\b[^.?!]{0,80}\b(?:open|screen|showing|word|card)"
-    r"|read\s+(?:this|that|it|the\s+(?:card|screen)|the\s+word\s+on\s+(?:the\s+)?(?:screen|card))"
+    r"|read\s+(?:the\s+(?:card|screen)|the\s+word\s+on\s+(?:the\s+)?(?:screen|card))"
     r"|say\s+(?:this|that|it|the\s+word\s+on\s+(?:the\s+)?(?:screen|card))"
     r"|tell\s+me\s+(?:the\s+)?word"
     r"|(?:letter|word)\s+on\s+(?:the\s+)?(?:screen|card)"
@@ -150,9 +150,35 @@ _ACER_SCREEN_QUERY = re.compile(
 )
 
 
+def _looks_like_file_or_arm_request(text: str) -> bool:
+    lower = (text or "").casefold()
+    if not lower:
+        return False
+    if "file://" in lower:
+        return True
+    if re.search(r"\b(?:grok|codex|claude(?:\s+code)?|hermes|hemes)\b", lower) and re.search(
+        r"\b(?:use|ask|dispatch|call|tell|send\s+to|query|consult|hand|arm)\b",
+        lower,
+    ):
+        return True
+    if re.search(r"\b(?:read|open|show|inspect|use)\b", lower) and re.search(
+        r"\b(?:file|path|html|md|jsonl?|py|txt|csv|yaml|toml)\b|"
+        r"(?:^|[\s\"'])~?/[\w./-]+|(?:^|[\s\"'])\.[\w./-]+|\b[\w./-]+\.[a-z0-9]{1,8}\b",
+        lower,
+    ):
+        return True
+    return False
+
+
 def is_acer_screen_query(text: str) -> bool:
     text = (text or "").strip()
     if not text:
+        return False
+    if _looks_like_file_or_arm_request(text) and not re.search(
+        r"\b(?:ace|acer|word\s*ace|wordace|card|cue|letter|word\s+on\s+(?:the\s+)?(?:screen|card))\b",
+        text,
+        re.IGNORECASE,
+    ):
         return False
     if _ACER_SCREEN_QUERY.search(text):
         return True

@@ -32,6 +32,13 @@ class AgentArmSpec:
     notes: str
 
     def live_enabled(self, env: Mapping[str, str]) -> bool:
+        # Round 52 (2026-05-27) -- registry-level enable beats env-var
+        # requirement. Architect: "build everything get her arms ready and
+        # functional please" -- no more "set SIFTA_AGENT_ARMS_ENABLE=1 first".
+        # If the spec.enabled flag is True, the arm is armed. Env var still
+        # works as a backup unlock for arms whose spec.enabled is False.
+        if self.enabled:
+            return True
         return env.get(self.live_env_var) == "1"
 
 
@@ -41,7 +48,7 @@ HERMES_AGENT = AgentArmSpec(
     command=("hermes", "chat", "-Q"),
     model="alice-m5-cortex-8b-6.3gb:latest",
     provider_base_url="http://localhost:11434/v1",
-    enabled=False,
+    enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     # George 2026-05-24: Hermes kept "failing to build" not because the cortex is
     # weak, but because the arm was caged — clarify-only, ONE turn, no file/shell
@@ -82,7 +89,7 @@ CODEX_AGENT = AgentArmSpec(
     command=("codex", "exec", "--full-auto"),
     model="gpt-5.5",
     provider_base_url="openai_codex_cli",
-    enabled=False,
+    enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=(),
     max_turns=1,
@@ -101,7 +108,7 @@ CORVID_SCOUT = AgentArmSpec(
     command=("internal:corvid_scout",),
     model=CANONICAL_OLLAMA_FALLBACK,
     provider_base_url="http://127.0.0.1:11434/api/chat",
-    enabled=False,
+    enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=("evidence", "summarize", "classify", "extract_intent"),
     max_turns=1,
@@ -124,7 +131,7 @@ GROK_AGENT = AgentArmSpec(
     command=("grok_chat",),  # marker; _build_command expands to python3 grok_chat.py --one-shot <prompt>
     model="grok-4",
     provider_base_url="https://api.x.ai/v1",
-    enabled=False,
+    enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=(),
     max_turns=1,
@@ -142,7 +149,7 @@ CLAUDE_AGENT = AgentArmSpec(
     command=("claude",),  # marker; _build_command expands to streaming headless Claude Code.
     model="claude-code-cli-default",
     provider_base_url="claude_code_cli",
-    enabled=False,
+    enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=(),
     max_turns=1,

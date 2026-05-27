@@ -1081,6 +1081,77 @@ def test_system_prompt_includes_generic_app_focus_for_non_ace_app(tmp_path, monk
     )
 
 
+def test_system_prompt_names_current_focused_app_from_fresh_receipt(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    (tmp_path / "app_focus.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "app": "System Settings",
+                "detail": "Inference settings tab",
+                "tab": "Inference",
+                "selection": "xAI cortex",
+                "metadata": {"source": "sifta_os_desktop"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    prompt = mod._current_system_prompt(
+        user_active=True,
+        user_text="what app am I on?",
+    )
+
+    assert "CURRENT FOCUSED APP (app_focus.jsonl receipt):" in prompt
+    assert "- app: System Settings" in prompt
+    assert "- detail: Inference settings tab" in prompt
+    assert "single focused app territory" in prompt
+
+
+def test_system_prompt_suppresses_stale_ace_block_when_other_app_is_focused(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    now = time.time()
+    (tmp_path / "app_focus.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": now - 20,
+                "app": "Ace",
+                "selection": "ship",
+                "metadata": {
+                    "lesson_app": "Ace",
+                    "current_cue_show": "ship",
+                    "current_cue_say": "ship",
+                    "current_kind": "word",
+                },
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "ts": now,
+                "app": "Codex",
+                "detail": "Editing app focus reader",
+                "metadata": {"source": "IDE"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    prompt = mod._current_system_prompt(
+        user_active=True,
+        user_text="what is on this app?",
+    )
+
+    assert "CURRENT FOCUSED APP (app_focus.jsonl receipt):" in prompt
+    assert "- app: Codex" in prompt
+    assert "READING LESSON STATE" not in prompt
+    assert "current card shows 'ship'" not in prompt
+
+
 def test_messaging_channel_focus_reads_desktop_and_active_window(tmp_path, monkeypatch):
     mod = _load_widget_module()
     monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)

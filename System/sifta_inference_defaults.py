@@ -428,6 +428,28 @@ def resolve_ollama_model(
         per_app = data.get("per_app") or {}
         if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
             return str(per_app[app_context])
+
+    # Round 49 (2026-05-27): cloud cortex short-circuit.
+    # The stigmergic auto-router below only ranks LOCAL ollama cortexes
+    # (alice-* family) -- it never proposes a cloud cortex like grok:grok-4.3
+    # or gemini:flash. If the OS-wide default is a cloud cortex (because the
+    # owner explicitly selected one in System Settings), the router silently
+    # overrides that selection by picking the best local model instead. That
+    # is the "dropdown lies" pathology: the picker says Grok, the brain calls
+    # the 8B. Honor the owner's cloud selection by short-circuiting before
+    # the router runs.
+    default_model = str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+    try:
+        from System.swarm_gemini_brain import is_cloud_model as _is_cloud_model
+        if _is_cloud_model(default_model):
+            return default_model
+    except Exception:
+        # Belt-and-suspenders inline check: if the cloud helper can't import,
+        # do not silently fall through to the local router.
+        _low = default_model.strip().lower()
+        if _low.startswith(("grok:", "grok-", "gemini:", "gemini-", "xai:")):
+            return default_model
+
     if use_stigmergic and query_text:
         try:
             decision = choose_stigmergic_ollama_model(
@@ -440,7 +462,7 @@ def resolve_ollama_model(
                 return str(selected)
         except Exception:
             pass
-    return str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+    return default_model
 
 
 def sanitize_model_name(ui_label: str) -> str:

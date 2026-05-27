@@ -410,6 +410,33 @@ class SiftaBrainstem:
                 print(f"💤 [REM] Failed to start sleep daemon: "
                       f"{type(e).__name__}: {e}")
 
+        # 5.10 §24 API Egress Sentry — boot_wire dual-ledger heartbeat (Round 48 / Event 86)
+        # Ensures swarm_boot (CLI/headless) path also emits the §24 proof row to BOTH
+        # work_receipts.jsonl and api_egress_log.jsonl with matching trace_id.
+        # Desktop GUI path already calls this; this covers the pure brainstem boot.
+        try:
+            from System.swarm_api_sentry import boot_wire as _api_sentry_boot_wire
+            from System.swarm_api_sentry import stale_check as _api_sentry_stale_check
+            _sentry_row = _api_sentry_boot_wire(
+                caller="swarm_boot_wake",
+                sender_agent="api_sentry",
+            )
+            _sentry_stale = _api_sentry_stale_check()
+            trace_short = str(_sentry_row.get("trace_id", "???"))[:8]
+            gap_h = (_sentry_stale or {}).get("hours_since_last_egress")
+            gap_str = f"{gap_h:.1f}h" if gap_h is not None else "n/a"
+            print(f"  [BOOT] sentry : api_sentry boot_wire trace_id={trace_short} hours_since_last={gap_str}")
+            # 24h freshness alarm (non-blocking)
+            try:
+                from System.swarm_api_sentry import emit_sentry_cold_alarm as _emit_cold
+                alarm = _emit_cold()
+                if alarm:
+                    print(f"  [BOOT] sentry : SENTRY_COLD alarm emitted (gap={alarm.get('hours_since_last_egress')}h)")
+            except Exception:
+                pass
+        except Exception as exc:
+            print(f"  [BOOT] api_sentry boot_wire skipped in brainstem: {exc}")
+
         # 5.8 Boot Epoch 14 Merkle Attestor (C53M, memory lineage)
         # Creates an initial Merkle anchor over critical ledgers so Alice
         # can prove her memory substrate existed at boot time. Periodic

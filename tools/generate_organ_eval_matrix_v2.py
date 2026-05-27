@@ -78,6 +78,106 @@ def _status_class(text: str) -> str:
     return "dim"
 
 
+_STATUS_RANK = {
+    "HOT_HEALTHY_RECEIPTS": 0,
+    "HEALTHY_RECEIPTS": 1,
+    "PARTIAL_RECEIPTS": 2,
+    "COLD_RECEIPTS": 3,
+    "DEGRADED_RECEIPTS": 4,
+    "NO_LEDGER_SEEN": 5,
+    "MODULE_ONLY": 6,
+}
+
+_ATTENTION_RANK = {
+    "DEGRADED_RECEIPTS": 0,
+    "NO_LEDGER_SEEN": 1,
+    "COLD_RECEIPTS": 2,
+    "PARTIAL_RECEIPTS": 3,
+    "MODULE_ONLY": 4,
+}
+
+
+def _fmt_age_s(value: Any) -> str:
+    try:
+        s = float(value)
+    except Exception:
+        return "--"
+    if s < 60:
+        return f"{int(s)}s"
+    if s < 3600:
+        return f"{int(s // 60)}m"
+    if s < 86400:
+        return f"{s / 3600.0:.1f}h"
+    return f"{s / 86400.0:.1f}d"
+
+
+def _organ_function_summary(organ: dict[str, Any], *, max_len: int = 180) -> str:
+    layer = str(organ.get("layer") or "unknown-layer")
+    mode = "effector" if bool(organ.get("write_action")) else "observe/compute"
+    caps = organ.get("capabilities") or []
+    paths = organ.get("organ_paths") or []
+    module_hint = ""
+    if isinstance(paths, list) and paths:
+        stems = []
+        for p in paths[:2]:
+            stem = Path(str(p)).stem
+            if stem:
+                stems.append(stem)
+        if stems:
+            module_hint = f"module:{'/'.join(stems)}"
+    if isinstance(caps, list):
+        cap_head = ", ".join(str(c) for c in caps[:3] if c)
+    else:
+        cap_head = str(caps)
+    # Discovery rows often have broad tokenized capability lists; keep them
+    # anchored to concrete module identity so owner sees what code to inspect.
+    if layer == "discovered" and module_hint:
+        cap_head = module_hint
+    if not cap_head:
+        cap_head = module_hint or "no capability tags"
+    text = f"{layer} · {mode} · {cap_head}"
+    return text[:max_len] + ("…" if len(text) > max_len else "")
+
+
+def _attention_rows(organs: list[dict[str, Any]], *, limit: int = 40) -> list[list[Any]]:
+    rows: list[tuple[tuple[Any, ...], list[Any]]] = []
+    for organ in organs:
+        health = organ.get("health") or {}
+        status = str(health.get("status", "UNKNOWN"))
+        if status in {"HOT_HEALTHY_RECEIPTS", "HEALTHY_RECEIPTS"}:
+            continue
+        score = health.get("score")
+        try:
+            score_f = float(score)
+        except Exception:
+            score_f = 9.99
+        age_s = health.get("newest_ledger_age_s")
+        try:
+            age_f = float(age_s)
+        except Exception:
+            age_f = -1.0
+        rows.append(
+            (
+                (_ATTENTION_RANK.get(status, 99), score_f, -age_f, str(organ.get("display_name") or "").lower()),
+                [
+                    html.escape(str(organ.get("display_name") or organ.get("organ_id") or "?")),
+                    f"<span class='{_status_class(status)}'>{html.escape(status)}</span>",
+                    html.escape(str(score if score is not None else "--")),
+                    html.escape(_fmt_age_s(age_s)),
+                    html.escape(str(health.get("receipt_rows", "--"))),
+                    html.escape(_organ_function_summary(organ, max_len=120)),
+                ],
+            )
+        )
+    rows.sort(key=lambda item: item[0])
+    return [row for _, row in rows[:limit]]
+
+
+def _coverage_hole_reason(row: dict[str, Any]) -> str:
+    bits = [k for k in ("ledger_exists", "fresh_ledger", "outcome_bearing_row") if not row.get(k)]
+    return ", ".join(bits) if bits else "unspecified"
+
+
 def _golden_inventory() -> list[dict[str, Any]]:
     files = [
         "cs153_golden_turns.jsonl",
@@ -275,19 +375,19 @@ def _all_organs_rows(organs: list[dict[str, Any]]) -> list[list[Any]]:
             html.escape(str(o.get("display_name") or o.get("organ_id") or o.get("name") or "?")),
             f"<span class='{_status_class(status)}'>{html.escape(status)}</span>",
             html.escape(str(health.get("score", "--"))),
+            html.escape(str(health.get("receipt_rows", "--"))),
+            html.escape(_fmt_age_s(health.get("newest_ledger_age_s"))),
+            html.escape(_organ_function_summary(o)),
             html.escape(str(o.get("source_registry") or "")),
             html.escape(ledgers_str),
         ])
-    # Sort: HOT_HEALTHY first, then HEALTHY, then PARTIAL/COLD, then NO_LEDGER/DEGRADED, then MODULE_ONLY
-    rank = {"HOT_HEALTHY_RECEIPTS": 0, "HEALTHY_RECEIPTS": 1,
-            "PARTIAL_RECEIPTS": 2, "COLD_RECEIPTS": 3,
-            "DEGRADED_RECEIPTS": 4, "NO_LEDGER_SEEN": 5, "MODULE_ONLY": 6}
+
     def _key(row: list[Any]) -> tuple:
         # row[1] contains a <span class='X'> wrapper — extract the status text
         import re
         m = re.search(r">([A-Z_]+)<", str(row[1]))
         status = m.group(1) if m else "UNKNOWN"
-        return (rank.get(status, 99), str(row[0]).lower())
+        return (_STATUS_RANK.get(status, 99), str(row[0]).lower())
     rows.sort(key=_key)
     return rows
 
@@ -297,6 +397,9 @@ def build_html() -> str:
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
     canonical = [row for row in organs if row.get("source_registry") == "CANONICAL_ORGANS"]
     status_dist = Counter((row.get("health") or {}).get("status", "UNKNOWN") for row in organs)
+    canonical_status_dist = Counter((row.get("health") or {}).get("status", "UNKNOWN") for row in canonical)
+    layer_dist = Counter(str(row.get("layer") or "unknown") for row in organs)
+    registry_dist = Counter(str(row.get("source_registry") or "unknown") for row in organs)
     coverage_rows = _latest_run(_EVAL / "organ_coverage.jsonl")
     coverage_counts = Counter(row.get("status", "UNKNOWN") for row in coverage_rows)
     coverage_holes = [row for row in coverage_rows if not row.get("ok")]
@@ -315,7 +418,7 @@ def build_html() -> str:
         )
 
     canonical_table = _table(
-        ["Organ", "Status", "Score", "Reliability", "Truth", "Ledgers"],
+        ["Organ", "Status", "Score", "Reliability", "Truth", "Function", "Ledgers"],
         (
             [
                 html.escape(str(row.get("display_name"))),
@@ -324,6 +427,7 @@ def build_html() -> str:
                 html.escape(str((row.get("health") or {}).get("score", "--"))),
                 html.escape(str((row.get("health") or {}).get("functional_reliability", "--"))),
                 html.escape(str((row.get("health") or {}).get("truth_alignment", "--"))),
+                html.escape(_organ_function_summary(row)),
                 html.escape(", ".join(row.get("present_ledgers", [])[:4])),
             ]
             for row in canonical
@@ -341,9 +445,9 @@ def build_html() -> str:
         ["Organ", "Status", "Missing"],
         (
             [
-                html.escape(str(row.get("organ_id"))),
+                html.escape(str(row.get("display_name") or row.get("organ_id"))),
                 f"<span class='{_status_class(str(row.get('status')))}'>{html.escape(str(row.get('status')))}</span>",
-                html.escape(", ".join(k for k in ("ledger_exists", "fresh_ledger", "outcome_bearing_row") if not row.get(k))),
+                html.escape(_coverage_hole_reason(row)),
             ]
             for row in coverage_holes
         ),
@@ -410,8 +514,20 @@ def build_html() -> str:
         ),
     )
     all_organs_rows_built = _all_organs_rows(organs)
+    attention_table = _table(
+        ["Organ", "Status", "Score", "Newest Ledger Age", "Receipt Rows", "Function"],
+        _attention_rows(organs, limit=50),
+    )
+    structure_layer_table = _table(
+        ["Layer", "Organs"],
+        ([html.escape(layer), count] for layer, count in sorted(layer_dist.items(), key=lambda kv: -kv[1])),
+    )
+    structure_registry_table = _table(
+        ["Registry", "Organs"],
+        ([html.escape(reg), count] for reg, count in sorted(registry_dist.items(), key=lambda kv: -kv[1])),
+    )
     full_census_table = _table(
-        ["Organ", "Status", "Score", "Registry", "Ledgers"],
+        ["Organ", "Status", "Score", "Receipt Rows", "Newest Ledger Age", "Function", "Registry", "Ledgers"],
         all_organs_rows_built,
     )
 
@@ -445,7 +561,16 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <h1>THE ORGAN EVAL MATRIX v2</h1>
 <div class="stamp">Rendered {html.escape(rendered)} from live local ledgers. Registry organs: {len(organs)}; canonical organs: {len(canonical)}; coverage holes: {len(coverage_holes)}. Coverage line gate: {html.escape(str(dashboard.get('coverage_percent', '--')))}%.</div>
 <div class="grid">{''.join(cards)}</div>
+<h2 class="section">Structure Snapshot (What Exists)</h2>
+<p>Status buckets across canonical organs: {html.escape(json.dumps(dict(canonical_status_dist), sort_keys=True))}</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+<div><h3 style="font-size:12px;color:#9ff2ad;margin:0 0 6px;">By layer</h3>{structure_layer_table}</div>
+<div><h3 style="font-size:12px;color:#9ff2ad;margin:0 0 6px;">By registry source</h3>{structure_registry_table}</div>
+</div>
 <h2 class="section">Canonical 13 Health</h2>{canonical_table}
+<h2 class="section">Needs Review Now (What To Look At First)</h2>
+<p>Top 50 non-healthy organs ranked by severity (DEGRADED/NO_LEDGER/COLD/PARTIAL), score, and ledger staleness.</p>
+{attention_table}
 <h2 class="section">Full Census Status Distribution</h2>{census_table}
 <h2 class="section">Golden Inventory</h2>{golden_table}
 <h2 class="section">Canonical Organ Coverage Gate</h2>

@@ -45,7 +45,7 @@ class _FakeRouterWidget:
         return False
 
 
-def test_router_fires_on_six_greeter_punchthrough_fixtures(tmp_path, monkeypatch):
+def test_router_stands_down_on_six_greeter_punchthrough_fixtures(tmp_path, monkeypatch):
     monkeypatch.setattr(talk, "_state_root", lambda: tmp_path)
     widget = _FakeRouterWidget()
     prompts = [
@@ -65,19 +65,11 @@ def test_router_fires_on_six_greeter_punchthrough_fixtures(tmp_path, monkeypatch
             already_displayed=False,
             already_logged=False,
         )
-        assert routed is True
+        assert routed is False
 
-    assert len(widget.grok_calls) == 6
-    assert len(widget.alice_lines) == 6
-    assert len(widget._history) == 12
-    for reply in widget.alice_lines:
-        low = reply.lower()
-        assert reply.startswith("[ARM SKILL skills/grok_pty_arm.md]")
-        assert "hello" not in low
-        assert "i feel" not in low
-        assert "i sense" not in low
-        assert "i am here" not in low
-        assert "low-frequency vibration" not in low
+    assert widget.grok_calls == []
+    assert widget.alice_lines == []
+    assert widget._history == []
 
     trace_path = tmp_path / "cortex_bypass_router_trace.jsonl"
     rows = [
@@ -86,35 +78,48 @@ def test_router_fires_on_six_greeter_punchthrough_fixtures(tmp_path, monkeypatch
         if line.strip()
     ]
     assert len(rows) == 6
-    assert all(row.get("action_taken") == "dispatched_grok_pty_from_skill" for row in rows)
-    assert all(row.get("arm_skill_path") == "skills/grok_pty_arm.md" for row in rows)
+    assert all(row.get("action_taken") == "router_disabled_round35_fallthrough" for row in rows)
+    assert all(row.get("arm_skill_path") == "" for row in rows)
 
 
-def test_start_brain_short_circuits_llm_when_router_consumes(monkeypatch):
-    class _FakeStartBrainWidget:
-        def __init__(self) -> None:
-            self._busy = True
-            self._pending_acoustic_fingerprint = {}
-            self.router_called = False
-
-        def _maybe_route_operational_prompt_before_cortex(self, *args, **kwargs) -> bool:
-            self.router_called = True
-            return True
-
-    widget = _FakeStartBrainWidget()
-    monkeypatch.setattr(talk, "_deterministic_prebrain_reflex", lambda *a, **k: ("", ""))
-
-    class _FailIfConstructed:
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            raise AssertionError("LLM worker should not be constructed when router consumes turn")
-
-    monkeypatch.setattr(talk, "_BrainWorker", _FailIfConstructed)
-
-    talk.TalkToAliceWidget._start_brain(
-        widget,
-        "Alice, dispatch Grok and run pytest with work_receipt output.",
-        conf=0.92,
-        already_displayed=True,
+def test_natural_arm_dispatch_is_not_direct_tool_routed():
+    text = talk._owner_direct_read_tool_request(
+        "Alice, dispatch Grok and run pytest with work_receipt output."
     )
 
-    assert widget.router_called is True
+    assert text == ""
+
+
+@pytest.mark.parametrize(
+    "owner_text",
+    [
+        "Alice, dispatch your codex arm now to read the tournament file and code the next item.",
+        "Alice, dispatch your Codex arm to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the next teaching gate.",
+        "Alice, ask grok to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the lost-Alice fix.",
+        "Alice, ask your Grok arm to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the next teaching gate.",
+        "Alice, use your Hermes arm to read file:///Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html",
+        "Alice, tell Claude Code to inspect the repo and patch the cortex-first gate.",
+        "Alice, have Codex build the Round 47 restart loader and print receipt_id.",
+    ],
+)
+def test_natural_language_arm_delegation_reaches_cortex_first(owner_text):
+    """Round 47B: dispatch/ask arm to read/code wording reaches cortex first."""
+    text = talk._owner_direct_read_tool_request(owner_text)
+
+    assert text == ""
+
+
+def test_explicit_tool_call_syntax_still_routes_after_cortex_composes():
+    from System.swarm_tool_router import parse_tool_calls
+
+    explicit = (
+        "[TOOL_CALL: read_file | path=Documents/IDE_BOOT_COVENANT.md | "
+        "cost_justification=cortex explicitly requested a receipt-backed read]"
+    )
+
+    text = talk._owner_direct_read_tool_request(explicit)
+    calls = parse_tool_calls(text)
+
+    assert text == explicit
+    assert len(calls) == 1
+    assert calls[0].tool_name == "read_file"

@@ -12,6 +12,8 @@ import pytest
 
 from System.swarm_app_focus_reader import (
     AppFocusSnapshot,
+    current_focused_app,
+    current_focused_app_prompt_block,
     generic_app_focus_prompt_block,
     latest_focus_for,
     recent_focus_for,
@@ -224,6 +226,81 @@ def test_generic_app_focus_prompt_block_returns_empty_when_stale(tmp_path: Path)
 def test_generic_app_focus_prompt_block_returns_empty_when_no_receipt(tmp_path: Path):
     _write_focus(tmp_path)
     assert generic_app_focus_prompt_block({"ace"}, state_dir=tmp_path) == ""
+
+
+def test_current_focused_app_reports_newest_fresh_focus_with_paths(tmp_path: Path):
+    now = time.time()
+    manifest = tmp_path / "apps_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "System Settings": {
+                    "category": "System Settings",
+                    "health_trace_path": ".sifta_state/app_health/system_settings/health_trace.jsonl",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    help_dir = tmp_path / "app_help"
+    help_dir.mkdir()
+    (help_dir / "system_settings.md").write_text("System Settings help", encoding="utf-8")
+    _write_focus(
+        tmp_path,
+        {"ts": now - 40, "app": "Ace", "selection": "stale-ish", "metadata": {}},
+        {
+            "ts": now - 5,
+            "app": "System Settings",
+            "detail": "Inference settings tab",
+            "tab": "Inference",
+            "selection": "xAI cortex",
+            "metadata": {"source": "sifta_os_desktop"},
+        },
+    )
+
+    focus = current_focused_app(
+        state_dir=tmp_path,
+        now=now,
+        manifest_path=manifest,
+        help_dir=help_dir,
+    )
+
+    assert focus["ok"] is True
+    assert focus["app"] == "System Settings"
+    assert focus["raw_app"] == "System Settings"
+    assert focus["age_s"] == pytest.approx(5.0, abs=0.001)
+    assert focus["help_path"].endswith("system_settings.md")
+    assert focus["health_trace_path"] == ".sifta_state/app_health/system_settings/health_trace.jsonl"
+
+
+def test_current_focused_app_returns_missing_when_stale(tmp_path: Path):
+    now = time.time()
+    _write_focus(tmp_path, {"ts": now - 90, "app": "Ace", "selection": "old"})
+
+    focus = current_focused_app(state_dir=tmp_path, now=now, max_age_s=30.0)
+
+    assert focus["ok"] is False
+    assert focus["reason"] == "no_fresh_app_focus"
+
+
+def test_current_focused_app_prompt_block_names_one_focused_territory(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now - 3,
+            "app": "Codex",
+            "detail": "Editing Talk widget",
+            "metadata": {"surface": "IDE"},
+        },
+    )
+
+    block = current_focused_app_prompt_block(state_dir=tmp_path, now=now)
+
+    assert "CURRENT FOCUSED APP (app_focus.jsonl receipt):" in block
+    assert "- app: Codex" in block
+    assert "- age_s: 3" in block
+    assert "single focused app territory" in block
 
 
 def test_snapshot_as_dict_round_trip(tmp_path: Path):

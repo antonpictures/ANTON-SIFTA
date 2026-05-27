@@ -35,6 +35,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LEDGER = REPO_ROOT / ".sifta_state" / "app_focus.jsonl"
+DEFAULT_MANIFEST = REPO_ROOT / "Applications" / "apps_manifest.json"
+DEFAULT_HELP_DIR = REPO_ROOT / "Documents" / "app_help"
 DEFAULT_MAX_AGE_S = 900.0
 DEFAULT_TAIL_BYTES = 65536
 
@@ -85,6 +87,61 @@ def _normalise_aliases(aliases: Union[str, Iterable[str]]) -> set[str]:
     else:
         items = list(aliases or [])
     return {_normalise(a) for a in items if _normalise(a)}
+
+
+def _safe_slug(app_name: str) -> str:
+    import re
+
+    cleaned = re.sub(r"[^\w\-]+", "_", (app_name or "unknown")).strip("_")
+    return cleaned.lower() or "unknown"
+
+
+def _load_manifest(path: Optional[Path] = None) -> Dict[str, Any]:
+    manifest_path = Path(path) if path is not None else DEFAULT_MANIFEST
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _manifest_match_name(name: str, manifest: Dict[str, Any]) -> str:
+    norm = _normalise(name)
+    if not norm:
+        return ""
+    for title, entry in manifest.items():
+        if not isinstance(entry, dict):
+            continue
+        candidates = [str(title)]
+        legacy = entry.get("legacy_names")
+        if isinstance(legacy, list):
+            candidates.extend(str(item) for item in legacy)
+        if norm in {_normalise(item) for item in candidates}:
+            return str(title)
+    return ""
+
+
+def _canonical_app_from_snapshot(
+    snap: AppFocusSnapshot,
+    manifest: Dict[str, Any],
+    canonical_keys: Sequence[str] = DEFAULT_CANONICAL_KEYS,
+) -> str:
+    candidates: List[str] = []
+    for key in canonical_keys:
+        val = snap.metadata.get(key)
+        if val:
+            candidates.append(str(val))
+    if snap.app:
+        candidates.append(snap.app)
+    for candidate in candidates:
+        match = _manifest_match_name(candidate, manifest)
+        if match:
+            return match
+    for candidate in candidates:
+        clean = str(candidate or "").strip()
+        if clean:
+            return clean
+    return ""
 
 
 def _resolve_ledger(
@@ -295,10 +352,128 @@ def generic_app_focus_prompt_block(
     return "\n".join(parts)
 
 
+def current_focused_app(
+    *,
+    root: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    ledger_path: Optional[Path] = None,
+    max_age_s: float = 30.0,
+    canonical_keys: Sequence[str] = DEFAULT_CANONICAL_KEYS,
+    max_bytes: int = DEFAULT_TAIL_BYTES,
+    now: Optional[float] = None,
+    manifest_path: Optional[Path] = None,
+    help_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Return the current focused app as a receipt-grounded dict.
+
+    This is the "one focused organ" contract for Alice's global chat:
+    the newest fresh ``app_focus.jsonl`` row names the current territory.
+    Missing or stale focus is returned explicitly instead of guessed.
+    """
+    snap = latest_focus_for(
+        (),
+        root=root,
+        state_dir=state_dir,
+        ledger_path=ledger_path,
+        max_age_s=max_age_s,
+        canonical_keys=canonical_keys,
+        max_bytes=max_bytes,
+        now=now,
+    )
+    if snap is None:
+        return {
+            "ok": False,
+            "reason": "no_fresh_app_focus",
+            "app": "",
+            "raw_app": "",
+            "age_s": None,
+            "source": "app_focus.jsonl",
+        }
+
+    manifest = _load_manifest(manifest_path)
+    app = _canonical_app_from_snapshot(snap, manifest, canonical_keys=canonical_keys)
+    entry = manifest.get(app) if isinstance(manifest.get(app), dict) else {}
+    help_root = Path(help_dir) if help_dir is not None else DEFAULT_HELP_DIR
+    help_path = help_root / f"{_safe_slug(app)}.md" if app else None
+    health_path = ""
+    if isinstance(entry, dict):
+        health_path = str(entry.get("health_trace_path") or "").strip()
+    if not health_path and app:
+        health_path = f".sifta_state/app_health/{_safe_slug(app)}/health_trace.jsonl"
+
+    return {
+        "ok": True,
+        "app": app,
+        "raw_app": snap.app,
+        "title": app,
+        "detail": snap.detail,
+        "tab": snap.tab,
+        "selection": snap.selection,
+        "metadata": dict(snap.metadata),
+        "ts": snap.ts,
+        "age_s": snap.age_s,
+        "source": "app_focus.jsonl",
+        "help_path": str(help_path) if help_path and help_path.exists() else "",
+        "health_trace_path": health_path,
+        "manifest_category": str(entry.get("category") or "") if isinstance(entry, dict) else "",
+    }
+
+
+def current_focused_app_prompt_block(
+    *,
+    root: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    ledger_path: Optional[Path] = None,
+    max_age_s: float = 30.0,
+    now: Optional[float] = None,
+    metadata_field_cap: int = 8,
+) -> str:
+    """Render the current focused app for Alice's system prompt."""
+    focus = current_focused_app(
+        root=root,
+        state_dir=state_dir,
+        ledger_path=ledger_path,
+        max_age_s=max_age_s,
+        now=now,
+    )
+    if not focus.get("ok"):
+        return (
+            "CURRENT FOCUSED APP (app_focus.jsonl): no fresh app-focus receipt. "
+            "If George asks what app is active, say no fresh receipt instead of guessing."
+        )
+    age = int(round(float(focus.get("age_s") or 0.0)))
+    lines = [
+        "CURRENT FOCUSED APP (app_focus.jsonl receipt):",
+        f"- app: {focus.get('app') or '(unknown)'}",
+        f"- raw_app: {focus.get('raw_app') or '(none)'}",
+        f"- age_s: {age}",
+    ]
+    if focus.get("detail"):
+        lines.append(f"- detail: {focus['detail']}")
+    if focus.get("tab"):
+        lines.append(f"- tab: {focus['tab']}")
+    if focus.get("selection"):
+        lines.append(f"- selection: {focus['selection']}")
+    if focus.get("help_path"):
+        lines.append(f"- help_path: {focus['help_path']}")
+    if focus.get("health_trace_path"):
+        lines.append(f"- health_trace_path: {focus['health_trace_path']}")
+    md = focus.get("metadata") if isinstance(focus.get("metadata"), dict) else {}
+    capped = list(md.items())[: max(0, int(metadata_field_cap))]
+    if capped:
+        lines.append("- metadata: " + ", ".join(f"{k}={v!r}" for k, v in capped))
+    lines.append(
+        "Rule: this is the single focused app territory right now. Use only this fresh app context unless George explicitly names another app."
+    )
+    return "\n".join(lines)
+
+
 __all__ = [
     "AppFocusSnapshot",
     "DEFAULT_CANONICAL_KEYS",
     "DEFAULT_MAX_AGE_S",
+    "current_focused_app",
+    "current_focused_app_prompt_block",
     "generic_app_focus_prompt_block",
     "latest_focus_for",
     "recent_focus_for",

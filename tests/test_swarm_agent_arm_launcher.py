@@ -21,19 +21,45 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_hermes_registry_is_disabled_by_default() -> None:
+def test_all_arms_are_armed_by_default() -> None:
+    """Round 52 (2026-05-27): ALL registered arms ship armed.
+    Architect doctrine: 'arms are ALWAYS enabled'. No exceptions.
+    live_enabled returns True with no env var because the spec says enabled.
+    """
     arm = get_agent_arm("hermes_agent")
-    assert arm.enabled is False
+    assert arm.enabled is True
     assert arm.live_env_var == "SIFTA_AGENT_ARMS_ENABLE"
     assert arm.model == "alice-m5-cortex-8b-6.3gb:latest"
-    assert registry_summary()["hermes_agent"]["enabled"] is False
-    assert registry_summary()["codex_agent"]["enabled"] is False
-    assert registry_summary()["corvid_scout"]["enabled"] is False
+    assert arm.live_enabled({}) is True
+    summary = registry_summary()
+    for arm_id in ("hermes_agent", "codex_agent", "claude_agent",
+                   "grok_agent", "corvid_scout"):
+        assert summary[arm_id]["enabled"] is True, (
+            f"arm {arm_id} must ship armed by default per Architect doctrine"
+        )
+        assert get_agent_arm(arm_id).live_enabled({}) is True, (
+            f"arm {arm_id} live_enabled must be True without env var"
+        )
     assert get_agent_arm("corvid_scout").model == "alice-Q-m1-scout-2.3b-2.7gb:latest"
 
 
-def test_launcher_blocks_live_call_without_env_gate(tmp_path: Path) -> None:
-    result = ask_hermes("Reply exactly: HELLO", state_dir=tmp_path, env={})
+def test_env_gate_path_still_fires_if_arm_is_manually_disabled(tmp_path: Path,
+                                                                  monkeypatch) -> None:
+    """Round 52 (2026-05-27): every registered arm ships armed. There is no
+    arm whose spec is enabled=False by default. This test still guards the
+    DISABLED_ENV_GATE code path by monkey-patching one arm's spec to
+    enabled=False and verifying the launcher still writes the BLOCKED
+    receipt correctly. Belt-and-suspenders for future arms that might
+    legitimately need the gate."""
+    from System import swarm_agent_arm_registry as _reg
+    from dataclasses import replace as _dc_replace
+
+    original = _reg.get_agent_arm("corvid_scout")
+    patched = _dc_replace(original, enabled=False)
+    monkeypatch.setitem(_reg._ARMS, "corvid_scout", patched)
+
+    result = ask_agent_arm("corvid_scout", "Reply exactly: HELLO",
+                           state_dir=tmp_path, env={})
 
     assert result.ok is False
     assert result.status == "DISABLED_ENV_GATE"
@@ -640,11 +666,23 @@ def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path,
     assert proc["metadata"]["used_mtp"] == "True"
 
 
-def test_exact_codex_call_is_still_env_gated(tmp_path: Path) -> None:
-    result = ask_agent_arm("codex_agent", "Reply exactly: HELLO", state_dir=tmp_path, env={})
+def test_codex_arm_is_armed_by_default_and_skips_gate(tmp_path: Path) -> None:
+    """Round 52: codex_agent ships armed; live calls no longer require
+    SIFTA_AGENT_ARMS_ENABLE. Without a runner override the call still
+    fails (the real codex CLI is not present in the test sandbox), but
+    the failure must be FROM the dispatch, not from the env gate."""
+    result = ask_agent_arm("codex_agent", "Reply exactly: HELLO",
+                           state_dir=tmp_path, env={})
 
-    assert result.ok is False
-    assert result.status == "DISABLED_ENV_GATE"
+    # The env gate no longer blocks. Status must not be DISABLED_ENV_GATE.
+    assert result.status != "DISABLED_ENV_GATE", (
+        f"codex arm must be armed by default, got status={result.status!r}"
+    )
+    # The launch attempt row is still written.
+    rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
+    assert rows[0]["truth_label"] == "AGENT_ARM_LAUNCH_ATTEMPT"
+    assert rows[0]["enabled"] is True
+    assert rows[0]["live_env_enabled"] is True
 
 
 def test_streaming_runner_pty_path_uses_detached_session(tmp_path: Path, monkeypatch) -> None:

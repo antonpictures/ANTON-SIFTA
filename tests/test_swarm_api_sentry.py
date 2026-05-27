@@ -135,3 +135,117 @@ def test_real_ledgers_untouched_including_organ_own(tmp_path, monkeypatch):
     delta = {k: after[k] - before[k] for k in before}
 
     assert all(v == 0 for v in delta.values()), f"Real ledgers (incl. organ own) contaminated: {delta}"
+
+
+# ── §24 boot_wire + stale_check tests (2026-05-27) ────────────────────────
+
+
+def _read_last_json_line(path: Path) -> dict:
+    """Return the last parseable JSON row in path."""
+    last = None
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                last = __import__("json").loads(line)
+            except Exception:
+                continue
+    assert last is not None, f"no parseable rows in {path}"
+    return last
+
+
+def test_boot_wire_writes_exactly_one_row_to_each_ledger(tmp_path, monkeypatch):
+    """§24 delta=0 test: boot_wire() grows both ledgers by exactly 1 row."""
+    original_log = sentry._AUDIT_LOG
+    original_receipts = sentry._WORK_RECEIPTS
+    sentry._AUDIT_LOG = tmp_path / "api_egress_log.jsonl"
+    sentry._WORK_RECEIPTS = tmp_path / "work_receipts.jsonl"
+
+    try:
+        before_egress = _count_lines(sentry._AUDIT_LOG)
+        before_work = _count_lines(sentry._WORK_RECEIPTS)
+
+        row = sentry.boot_wire(caller="test_boot_wire", sender_agent="api_sentry")
+
+        after_egress = _count_lines(sentry._AUDIT_LOG)
+        after_work = _count_lines(sentry._WORK_RECEIPTS)
+
+        assert (after_egress - before_egress) == 1, "egress delta != 1"
+        assert (after_work - before_work) == 1, "work_receipts delta != 1"
+
+        # Returned row matches what landed on disk
+        assert row["provider"] == "api_sentry"
+        assert row["model"] == "boot_wire"
+        assert row["status"] == "ok"
+
+        # Trace IDs must match across the two ledgers
+        egress_row = _read_last_json_line(sentry._AUDIT_LOG)
+        work_row = _read_last_json_line(sentry._WORK_RECEIPTS)
+        assert egress_row["trace_id"] == work_row["trace_id"], (
+            "trace_id mismatch between egress and work_receipts"
+        )
+        assert work_row["action"] == "api_sentry_boot_wire"
+    finally:
+        sentry._AUDIT_LOG = original_log
+        sentry._WORK_RECEIPTS = original_receipts
+
+
+def test_stale_check_reports_fresh_after_boot_wire(tmp_path, monkeypatch):
+    """stale_check() flips to FRESH immediately after boot_wire() fires."""
+    original_log = sentry._AUDIT_LOG
+    original_receipts = sentry._WORK_RECEIPTS
+    sentry._AUDIT_LOG = tmp_path / "api_egress_log.jsonl"
+    sentry._WORK_RECEIPTS = tmp_path / "work_receipts.jsonl"
+
+    try:
+        # Cold: log doesn't exist yet.
+        cold = sentry.stale_check()
+        assert cold["is_stale"] is True
+        assert cold["hours_since_last_egress"] is None
+
+        # Fire boot_wire.
+        sentry.boot_wire(caller="stale_check_fresh_test")
+
+        # Fresh: log exists, gap is tiny.
+        fresh = sentry.stale_check(threshold_hours=24.0)
+        assert fresh["is_stale"] is False, f"expected FRESH right after boot_wire, got {fresh}"
+        assert fresh["hours_since_last_egress"] is not None
+        assert fresh["hours_since_last_egress"] < 0.001  # under 3.6 seconds
+    finally:
+        sentry._AUDIT_LOG = original_log
+        sentry._WORK_RECEIPTS = original_receipts
+
+
+def test_boot_wire_does_not_touch_real_ledgers(tmp_path, monkeypatch):
+    """§24 covenant: boot_wire under isolation must not touch real disk ledgers."""
+    state = Path(".sifta_state")
+    watch = [
+        state / "memory_ledger.jsonl",
+        state / "stgm_memory_rewards.jsonl",
+        state / "work_receipts.jsonl",
+        state / "ide_stigmergic_trace.jsonl",
+        state / "api_egress_log.jsonl",
+        state / "api_keys.json",
+    ]
+    before = {str(p): _count_lines(p) for p in watch}
+
+    original_log = sentry._AUDIT_LOG
+    original_receipts = sentry._WORK_RECEIPTS
+    sentry._AUDIT_LOG = tmp_path / "api_egress_log.jsonl"
+    sentry._WORK_RECEIPTS = tmp_path / "work_receipts.jsonl"
+
+    try:
+        sentry.boot_wire(caller="real_ledger_isolation_test")
+        _ = sentry.stale_check()
+    finally:
+        sentry._AUDIT_LOG = original_log
+        sentry._WORK_RECEIPTS = original_receipts
+
+    after = {str(p): _count_lines(p) for p in watch}
+    delta = {k: after[k] - before[k] for k in before}
+
+    assert all(v == 0 for v in delta.values()), (
+        f"boot_wire contaminated real ledgers: {delta}"
+    )

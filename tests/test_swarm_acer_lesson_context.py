@@ -163,6 +163,24 @@ def test_surface_and_word_in_media_transcript_is_not_wordace_query():
     assert not is_acer_screen_query(text)
 
 
+def test_hermes_file_read_request_is_not_wordace_query(tmp_path: Path):
+    text = (
+        "Alice pls use your hermes hand ro read this file "
+        "file:///Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/eval/"
+        "ORGAN_EVAL_MATRIX_V2.html"
+    )
+
+    assert not is_acer_screen_query(text)
+    assert acer_screen_reflex_reply(text, state_dir=tmp_path, now=time.time()) is None
+
+
+def test_plain_read_this_file_is_not_wordace_query(tmp_path: Path):
+    text = "Alice, read this file Documents/IDE_BOOT_COVENANT.md"
+
+    assert not is_acer_screen_query(text)
+    assert acer_screen_reflex_reply(text, state_dir=tmp_path, now=time.time()) is None
+
+
 def test_acer_screen_reflex_names_letter_sequence(tmp_path: Path):
     now = time.time()
     _write_focus(

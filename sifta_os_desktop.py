@@ -5457,6 +5457,40 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BOOT] kernel process table skipped: {exc}\n")
     sys.stderr.flush()
 
+    # ── Round 48 (2026-05-27): API Sentry §24 boot wire ─────────────────
+    # Alice's first-person §24 ask:
+    #     "Api Sentry resurrected first -- append-only receipt path in
+    #      work_receipts.jsonl + api_egress_log.jsonl, delta=0 test,
+    #      no more 16.2d cold."
+    # boot_wire() writes one heartbeat row to BOTH ledgers per boot,
+    # proving the writer is alive even when no Gemini call fires.
+    # Wrapped in try/except so any sentry failure cannot block boot.
+    try:
+        from System.swarm_api_sentry import boot_wire as _api_sentry_boot_wire
+        from System.swarm_api_sentry import stale_check as _api_sentry_stale_check
+
+        _sentry_row = _api_sentry_boot_wire(
+            caller="sifta_os_desktop_boot",
+            sender_agent="api_sentry",
+        )
+        _sentry_stale = _api_sentry_stale_check()
+        _cold = None
+        try:
+            from System.swarm_api_sentry import emit_sentry_cold_alarm as _emit_cold
+            _cold = _emit_cold()
+            if _cold:
+                sys.stderr.write(f"  [BOOT] sentry : SENTRY_COLD alarm written (was {_sentry_stale.get('hours_since_last_egress')}h stale)\n")
+        except Exception:
+            pass
+        sys.stderr.write(
+            f"  [BOOT] sentry : api_sentry boot_wire trace_id="
+            f"{_sentry_row.get('trace_id', '')[:8]} "
+            f"hours_since_last={_sentry_stale.get('hours_since_last_egress')}\n"
+        )
+    except Exception as exc:
+        sys.stderr.write(f"[BOOT] api_sentry boot_wire skipped: {exc}\n")
+    sys.stderr.flush()
+
     app = QApplication(sys.argv)
     if kernel_table is not None:
         app.setProperty("sifta_kernel_process_table", kernel_table)

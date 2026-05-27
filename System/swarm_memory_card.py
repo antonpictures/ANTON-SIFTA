@@ -34,11 +34,17 @@ TRUTH_LABEL = "MEMORY_CARD_V1"
 
 _DEFAULT_BUDGET = 2000
 
+# Round 50 (2026-05-27, Task #103) — arm_session_block added as its own
+# section so the cortex sees its own arm activity in the memory card
+# instead of having to grep the raw matrix terminal trace ad-hoc.
+# Reallocated shares: recent_actions 0.30, engrams 0.20, episodic 0.18,
+# digest 0.08, continuity 0.10, arm_session 0.14. Sum = 1.00.
 _SECTION_ORDER = [
-    ("recent_actions_block", 0.35),
-    ("engram_block", 0.25),
-    ("episodic_block", 0.20),
-    ("digest_block", 0.10),
+    ("recent_actions_block", 0.30),
+    ("engram_block", 0.20),
+    ("episodic_block", 0.18),
+    ("arm_session_block", 0.14),
+    ("digest_block", 0.08),
     ("continuity_capsule_block", 0.10),
 ]
 
@@ -72,6 +78,7 @@ class MemoryCard:
     engram_block: str = ""
     digest_block: str = ""
     continuity_capsule_block: str = ""
+    arm_session_block: str = ""   # Round 50 / Task #103
     estimated_tokens: int = 0
     parse_errors: int = 0
     truth_label: str = TRUTH_LABEL
@@ -163,6 +170,16 @@ def _fetch_continuity_capsule(state_dir: Path) -> str:
     return (format_latest_capsule_for_prompt(state_dir=state_dir) or "").strip()
 
 
+def _fetch_arm_session(state_dir: Path, user_text: str) -> str:
+    """Round 50 / Task #103 — arm activity surfaced into the memory card."""
+    from System.swarm_arm_session_ingest import fetch_arm_session_block
+
+    return (
+        fetch_arm_session_block(state_dir, user_text=user_text)
+        or ""
+    ).strip()
+
+
 def compose_memory_card(
     ledgers_dir: Path,
     *,
@@ -189,6 +206,8 @@ def compose_memory_card(
         ("recent_actions_block", lambda: _fetch_recent_actions(ledgers_dir, user_text)),
         ("engram_block", _fetch_engrams),
         ("episodic_block", _fetch_episodic),
+        # Round 50 / Task #103 — arm-session evidence as a memory section.
+        ("arm_session_block", lambda: _fetch_arm_session(ledgers_dir, user_text)),
         ("digest_block", lambda: _fetch_digest(repo_root)),
         ("continuity_capsule_block", lambda: _fetch_continuity_capsule(ledgers_dir)),
     ]
@@ -242,6 +261,7 @@ def compose_memory_card(
         engram_block=allocated.get("engram_block", ""),
         digest_block=allocated.get("digest_block", ""),
         continuity_capsule_block=allocated.get("continuity_capsule_block", ""),
+        arm_session_block=allocated.get("arm_session_block", ""),
         estimated_tokens=used,
         parse_errors=parse_errors,
         truth_label=TRUTH_LABEL,
@@ -265,6 +285,9 @@ def format_for_prompt(card: MemoryCard) -> str:
         sections.append(card.engram_block)
     if card.episodic_block:
         sections.append(card.episodic_block)
+    if card.arm_session_block:
+        # Round 50 / Task #103 — what Alice's arms have been doing.
+        sections.append(card.arm_session_block)
     if card.digest_block:
         sections.append(
             "ARCHITECT MEMORY DIGEST (latest snapshot):\n" + card.digest_block

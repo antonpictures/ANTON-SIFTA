@@ -66,8 +66,10 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _KEYS_FILE = _STATE / "api_keys.json"
 _AUDIT_LOG = _STATE / "api_egress_log.jsonl"
+_WORK_RECEIPTS = _STATE / "work_receipts.jsonl"
 
-MODULE_VERSION = "2026-04-19.v1-sentry-born"
+MODULE_VERSION = "2026-05-27.v2-sentry-boot-wire"
+SENTRY_STALE_THRESHOLD_HOURS = 24.0
 
 
 # ── Credential loading ─────────────────────────────────────────────────────
@@ -308,5 +310,197 @@ def health() -> Dict[str, Any]:
     }
 
 
+# ── §24 resurrection (2026-05-27) — boot wire + stale alarm ─────────────────
+#
+# Architect §24 first-person ask (recorded in
+# Documents/ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md):
+#
+#     "Api Sentry resurrected first — append-only receipt path in
+#      work_receipts.jsonl + api_egress_log.jsonl, delta=0 test, no more
+#      16.2d cold."
+#
+# Coldness on 2026-05-27 = 20.7d on api_egress_log.jsonl (last write
+# 2026-05-06). The Gemini call path still works; nothing has used it
+# since May 6 because Alice's actual cortex traffic flows through
+# Hermes/Grok and Ollama instead. The sentry never saw those calls.
+#
+# boot_wire() writes a single signed row to BOTH ledgers on every Alice
+# boot, proving the writer is alive even if no Gemini call ever fires.
+# It is the minimum viable §24 resurrection: the cold-organ alarm in
+# the eval matrix flips green the first time desktop boots after this
+# patch lands. The broader cortex-call interception (Grok/Hermes/Ollama
+# all flowing through the sentry) is the next round.
+
+
+def _write_work_receipt(row: Dict[str, Any]) -> None:
+    """Append one row to .sifta_state/work_receipts.jsonl. Never raises."""
+    try:
+        _WORK_RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
+        with open(_WORK_RECEIPTS, "a") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"[SENTRY] cannot append work receipt: {exc}", file=sys.stderr)
+
+
+def boot_wire(*, caller: str = "sifta_os_desktop_boot",
+              sender_agent: str = "api_sentry") -> Dict[str, Any]:
+    """
+    Write one heartbeat row to BOTH api_egress_log.jsonl AND
+    work_receipts.jsonl, proving the sentry's writer is alive on boot.
+
+    The dual write is §24's exact ask. The row carries a shared
+    trace_id so the two ledgers can be cross-correlated.
+
+    Returns the row that was written (same trace_id in both ledgers).
+    """
+    trace_id = str(uuid.uuid4())
+    ts = time.time()
+    keys = _load_keys()
+
+    egress_row = {
+        "trace_id": trace_id,
+        "ts": ts,
+        "provider": "api_sentry",
+        "model": "boot_wire",
+        "key_fingerprint": "(boot_wire)",
+        "caller": caller,
+        "sender_agent": sender_agent,
+        "status": "ok",
+        "http_code": None,
+        "error": None,
+        "latency_ms": 0.0,
+        "request_text": "boot_wire",
+        "response_text": (
+            f"api_sentry boot_wire fired; providers_loaded="
+            f"{sorted(keys.keys())}"
+        ),
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "module_version": MODULE_VERSION,
+        "extra": {"kind": "boot_wire", "audit_log_exists_before": _AUDIT_LOG.exists()},
+    }
+    _AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(_AUDIT_LOG, "a") as fh:
+        fh.write(json.dumps(egress_row, ensure_ascii=False) + "\n")
+
+    work_row = {
+        "trace_id": trace_id,
+        "ts": ts,
+        "action": "api_sentry_boot_wire",
+        "sender_agent": sender_agent,
+        "truth_note": (
+            f"api_sentry alive on boot; providers_loaded="
+            f"{sorted(keys.keys())}; module_version={MODULE_VERSION}"
+        ),
+        "node_serial": os.environ.get("SIFTA_NODE_SERIAL", "unknown"),
+        "stigtime": ts,
+        "gap_seconds_at_boot": _stale_gap_seconds_or_none(),
+    }
+    _write_work_receipt(work_row)
+
+    return egress_row
+
+
+def _stale_gap_seconds_or_none() -> Optional[float]:
+    """Seconds since the last egress row, or None if log is empty/missing."""
+    if not _AUDIT_LOG.exists():
+        return None
+    try:
+        last_ts = None
+        with open(_AUDIT_LOG, "r", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                row_ts = row.get("ts")
+                if isinstance(row_ts, (int, float)):
+                    last_ts = float(row_ts)
+        if last_ts is None:
+            return None
+        return time.time() - last_ts
+    except OSError:
+        return None
+
+
+def stale_check(threshold_hours: float = SENTRY_STALE_THRESHOLD_HOURS) -> Dict[str, Any]:
+    """
+    Return {hours_since_last_egress, is_stale, threshold_hours, last_ts}.
+
+    is_stale is True when no row has been written within threshold_hours,
+    or when the log is missing/empty. Use this for the §24 24h alarm.
+    """
+    gap = _stale_gap_seconds_or_none()
+    if gap is None:
+        return {
+            "hours_since_last_egress": None,
+            "is_stale": True,
+            "threshold_hours": threshold_hours,
+            "last_ts": None,
+            "truth_note": "api_egress_log.jsonl missing or empty",
+        }
+    hours = gap / 3600.0
+    return {
+        "hours_since_last_egress": round(hours, 3),
+        "is_stale": hours > threshold_hours,
+        "threshold_hours": threshold_hours,
+        "last_ts": time.time() - gap,
+        "truth_note": (
+            "FRESH" if hours <= threshold_hours
+            else f"STALE: last egress was {hours:.1f}h ago"
+        ),
+    }
+
+
+_FAILOVER_LEDGER = _STATE / "cortex_failover.jsonl"
+
+
+def emit_sentry_cold_alarm(threshold_hours: float = SENTRY_STALE_THRESHOLD_HOURS) -> Optional[Dict[str, Any]]:
+    """
+    §24 24h freshness alarm.
+    If api_egress_log.jsonl is stale beyond threshold, append one
+    kind=SENTRY_COLD row to cortex_failover.jsonl (shared with auth failovers)
+    and return the row. Idempotent per call (caller decides cadence).
+    Never raises; returns None if not stale.
+    """
+    check = stale_check(threshold_hours)
+    if not check.get("is_stale"):
+        return None
+    row: Dict[str, Any] = {
+        "ts": time.time(),
+        "kind": "SENTRY_COLD",
+        "hours_since_last_egress": check.get("hours_since_last_egress"),
+        "is_stale": True,
+        "threshold_hours": threshold_hours,
+        "last_ts": check.get("last_ts"),
+        "truth_label": "SENTRY_COLD_V1",
+        "module_version": MODULE_VERSION,
+        "trace_id": str(uuid.uuid4()),
+    }
+    try:
+        _FAILOVER_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        prefix = ""
+        try:
+            if _FAILOVER_LEDGER.exists() and _FAILOVER_LEDGER.stat().st_size > 0:
+                with _FAILOVER_LEDGER.open("rb") as fh:
+                    fh.seek(-1, 2)
+                    if fh.read(1) != b"\n":
+                        prefix = "\n"
+        except OSError:
+            pass
+        with _FAILOVER_LEDGER.open("a", encoding="utf-8") as fh:
+            fh.write(prefix + json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    return row
+
+
 if __name__ == "__main__":
-    print(json.dumps(health(), indent=2))
+    print(json.dumps({
+        "health": health(),
+        "stale_check": stale_check(),
+        "cold_alarm_fired": emit_sentry_cold_alarm() is not None,
+    }, indent=2))

@@ -10,11 +10,41 @@ if str(_REPO) not in sys.path:
 
 from System.swarm_agent_arm_decision import (
     agent_arm_decision_for_turn,
+    agent_arm_prepass_enabled,
     format_agent_arm_prepass_context,
     run_agent_arm_decision_prepass,
     schedule_async_agent_arm_prepass,
     summary_for_prompt,
 )
+
+
+def test_agent_arm_prepass_enabled_by_default_with_emergency_disable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("SIFTA_AGENT_ARM_PREPASS_ENABLE", raising=False)
+    assert agent_arm_prepass_enabled({}) is True
+    assert agent_arm_prepass_enabled({"SIFTA_AGENT_ARM_PREPASS_ENABLE": "1"}) is True
+    assert agent_arm_prepass_enabled({"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"}) is False
+
+    job = schedule_async_agent_arm_prepass(
+        "Compare safer research strategies for async evidence.",
+        state_dir=tmp_path,
+        start_thread=False,
+    )
+    assert job is not None
+    assert job.status == "SCHEDULED"
+
+    assert schedule_async_agent_arm_prepass(
+        "Compare safer research strategies for async evidence.",
+        state_dir=tmp_path / "disabled",
+        start_thread=False,
+        env={"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"},
+    ) is None
+
+    decision, result = run_agent_arm_decision_prepass(
+        "Research the safest way to wire this feature.",
+        env={"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"},
+    )
+    assert decision is None
+    assert result is None
 
 
 def test_research_task_selects_hermes_without_owner_naming_it() -> None:
@@ -122,6 +152,7 @@ def test_prepass_executes_router_tool(monkeypatch) -> None:
     decision, result = decision_mod.run_agent_arm_decision_prepass(
         "Research the safest way to wire this feature.",
         owner_present=True,
+        force=True,
     )
 
     assert decision is not None
@@ -154,6 +185,7 @@ def test_async_prepass_schedules_without_running_when_thread_disabled(tmp_path: 
         "Compare safer research strategies for async evidence.",
         state_dir=tmp_path,
         start_thread=False,
+        force=True,
     )
 
     assert job is not None
@@ -185,6 +217,7 @@ def test_async_prepass_run_inline_writes_prompt_summary(tmp_path: Path) -> None:
         state_dir=tmp_path,
         executor=fake_executor,
         run_inline=True,
+        force=True,
     )
 
     assert job is not None
@@ -209,6 +242,7 @@ def test_async_prepass_labels_timeout_output_as_partial_evidence(tmp_path: Path)
         state_dir=tmp_path,
         executor=fake_executor,
         run_inline=True,
+        force=True,
     )
 
     prompt = summary_for_prompt(state_dir=tmp_path)
@@ -218,8 +252,8 @@ def test_async_prepass_labels_timeout_output_as_partial_evidence(tmp_path: Path)
 
 def test_async_prepass_deduplicates_recent_same_turn(tmp_path: Path) -> None:
     text = "Compare safer implementation strategies for duplicate suppression."
-    first = schedule_async_agent_arm_prepass(text, state_dir=tmp_path, start_thread=False)
-    second = schedule_async_agent_arm_prepass(text, state_dir=tmp_path, start_thread=False)
+    first = schedule_async_agent_arm_prepass(text, state_dir=tmp_path, start_thread=False, force=True)
+    second = schedule_async_agent_arm_prepass(text, state_dir=tmp_path, start_thread=False, force=True)
 
     assert first is not None
     assert second is not None

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import threading
@@ -41,6 +42,18 @@ class AgentArmAsyncJob:
     decision: AgentArmDecision
     artifact_path: str
     duplicate_of: str = ""
+
+
+def agent_arm_prepass_enabled(env: dict[str, str] | None = None) -> bool:
+    """Return True unless automatic arm prepass is explicitly disabled.
+
+    Architect doctrine on 2026-05-27: Alice's arms are available by default;
+    no owner click, approval, or env unlock is required. The env var is only an
+    emergency off switch for debugging a broken arm loop.
+    """
+    source = os.environ if env is None else env
+    value = str(source.get("SIFTA_AGENT_ARM_PREPASS_ENABLE", "1")).strip().lower()
+    return value not in {"0", "false", "no", "off", "disabled"}
 
 
 _TASK_RE = re.compile(
@@ -238,9 +251,17 @@ def _execute_decision(decision: AgentArmDecision, *, owner_present: bool = True)
     )
 
 
-def run_agent_arm_decision_prepass(user_text: str, *, owner_present: bool = True):
-    """Execute the selected arm through the deterministic tool router."""
+def run_agent_arm_decision_prepass(
+    user_text: str,
+    *,
+    owner_present: bool = True,
+    force: bool = False,
+    env: dict[str, str] | None = None,
+):
+    """Execute the selected arm through the receipted tool router."""
 
+    if not force and not agent_arm_prepass_enabled(env):
+        return None, None
     decision = agent_arm_decision_for_turn(user_text)
     if decision is None:
         return None, None
@@ -285,6 +306,8 @@ def schedule_async_agent_arm_prepass(
     executor: Callable[[AgentArmDecision, bool], Any] | None = None,
     start_thread: bool = True,
     run_inline: bool = False,
+    force: bool = False,
+    env: dict[str, str] | None = None,
 ) -> AgentArmAsyncJob | None:
     """Schedule an arm evidence pass without blocking Alice's Talk turn.
 
@@ -293,6 +316,8 @@ def schedule_async_agent_arm_prepass(
     ``summary_for_prompt`` on subsequent turns.
     """
 
+    if not force and not agent_arm_prepass_enabled(env):
+        return None
     decision = agent_arm_decision_for_turn(user_text)
     if decision is None:
         return None

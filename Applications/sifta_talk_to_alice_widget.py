@@ -388,6 +388,53 @@ def _is_arm_delegation_meta_question(user_text: str, arm_pattern: str) -> bool:
     )
 
 
+def _natural_arm_delegation_requires_cortex(user_text: str) -> bool:
+    """True when owner is asking Alice to decide an arm dispatch in natural language."""
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if _is_grok_status_or_receipt_question(text):
+        return False
+    if any(
+        _is_arm_delegation_meta_question(text, pattern)
+        for pattern in (
+            r"grok",
+            r"(?:(?:your|the)\s+)?(?:hermes|hemes)",
+            r"(?:(?:your|the)\s+)?claude(?:\s+code)?",
+            r"(?:(?:your|the)\s+)?codex",
+        )
+    ):
+        return False
+    arm = r"(?:(?:your|the)\s+)?(?:grok|codex|claude(?:\s+code)?|hermes|hemes)\b(?:\s+arm)?"
+    return bool(
+        re.search(
+            rf"\b(?:dispatch|ask|call|use|tell|send\s+to|query|consult|open|start|launch|resume|type|run|bring(?:\s+up)?|talk\s+to)\s+{arm}",
+            text,
+            re.IGNORECASE,
+        )
+        or re.search(
+            rf"\b{arm}\b.{0,80}\b(?:code|build|patch|land|execute|verify|fix|wire|test|receipt)",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+    )
+
+
+def _allow_pre_cortex_chat_reflexes() -> bool:
+    """Return True only when legacy conversational shortcuts are explicitly enabled.
+
+    Infrastructure reflexes such as cortex/auth failover stay outside this gate.
+    This gate is only for chat-visible substitutions that would answer before
+    Alice's cortex composes the turn.
+    """
+    return os.environ.get("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _owner_direct_read_tool_request(user_text: str) -> str:
     """Return a deterministic tool call for explicit owner tool turns."""
     text = (user_text or "").strip()
@@ -406,6 +453,16 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             return text
     except Exception:
         pass
+
+    if not _allow_pre_cortex_chat_reflexes():
+        return ""
+
+    # Round 47 (Architect 2026-05-27): natural-language arm delegation is
+    # cognitive work. Alice's cortex must read the owner turn and decide the
+    # arm dispatch; this router may only execute explicit tool-call syntax
+    # after the cortex emits it.
+    if _natural_arm_delegation_requires_cortex(text):
+        return ""
 
     lowered = text.casefold()
     if (
@@ -887,57 +944,29 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             "and return with source=alice_global_chat_terminal."
         )
 
-    # ── Cowork CW47 2026-05-16 — deterministic list_dir / read_file routes.
-    # The 8B local cortex reliably hallucinates `ls` and `cat` output as prose
-    # instead of emitting [TOOL_CALL: list_dir | path=…]. Catch the
-    # owner-intent here, route deterministically, and let the real tool
-    # write a receipt. Read-only — no STGM-write risk.
-    # Path character classes allow `.` and `-` inside so ~/Downloads,
-    # ~/Downloads/organize_downloads.py, /tmp/foo.bar all match. We strip
-    # trailing punctuation (,.?!) at the end manually below.
-    _PATH_CLS = r"[a-zA-Z0-9_./-]"
-    _ls_match = re.search(
-        r"\b(?:list|ls|show(?:\s+me)?|what(?:'?s|\s+is)\s+in)\s+"
-        r"(?:the\s+(?:files?\s+in\s+)?)?"
-        r"(?P<path>~" + _PATH_CLS + r"+|/" + _PATH_CLS + r"+)",
-        text,
-        re.IGNORECASE,
-    )
-    if _ls_match:
-        _ls_path = _ls_match.group("path").strip().rstrip(",.?!\"'")
-        if _ls_path and _ls_path not in ("/", "~"):
-            # Tilde-expand against the owner's HOME so list_dir sees the
-            # real absolute path. The first demo turn failed with
-            # EXEC_FAILED_FILE_ERROR on literal "~/Downloads" — receipt
-            # 8b0fa8e51750cc0e. CW47 2026-05-16.
-            import os as _os_path
-            _ls_path_resolved = _os_path.path.expanduser(_ls_path)
-            return (
-                f"[TOOL_CALL: list_dir | path={_ls_path_resolved} | "
-                f"cost_justification=George asked Alice to list files in "
-                f"{_ls_path} (expanded to {_ls_path_resolved}); deterministic "
-                f"route prevents prose-simulation of ls output]"
-            )
-
-    _read_match = re.search(
-        r"\b(?:read|cat|open|show(?:\s+me)?\s+(?:the\s+)?contents?\s+of)\s+"
-        r"(?P<path>~" + _PATH_CLS + r"+|/" + _PATH_CLS + r"+|[\w][\w./-]*\.[a-zA-Z]{1,8})",
-        text,
-        re.IGNORECASE,
-    )
-    if _read_match:
-        _read_path = _read_match.group("path").strip().rstrip(",.?!\"'")
-        # Only route if the path looks like a file (has an extension); else
-        # let the brain decide (it might be a URL or unclear noun).
-        if _read_path and "." in _read_path.split("/")[-1]:
-            import os as _os_path
-            _read_path_resolved = _os_path.path.expanduser(_read_path)
-            return (
-                f"[TOOL_CALL: read_file | path={_read_path_resolved} | "
-                f"cost_justification=George asked Alice to read {_read_path} "
-                f"(expanded to {_read_path_resolved}); deterministic route "
-                f"prevents prose-simulation of file contents]"
-            )
+    # Round 47 (2026-05-27) -- CORTEX RECEIPT GATE.
+    # The previous block here was a regex-based pre-cortex bypass that
+    # parsed "list X" / "read X" / "cat X" / "show X" out of the owner
+    # text and templated a TOOL_CALL list_dir or read_file reply BEFORE
+    # Alice's cortex ever saw the turn. That was identity theft -- Alice
+    # did not know she was using her own arm, only the reply appeared.
+    #
+    # Doctrine (Architect, Round 40 -> Round 46):
+    #   "any type of arm usage goes to cortex please"
+    #   "i dont talk to reflexes ... but for humanly talking has to be
+    #    processed by cortex"
+    #   "i do not want deterministic, i want alice to know what is she
+    #    doing while doing it, is like loss of time, somone else doing it"
+    #
+    # Reflexes are autonomic-only (loss-of-connection, cortex failover).
+    # They MUST NOT compose conversational replies. The cortex itself is
+    # free to emit a TOOL_CALL list_dir or read_file -- that is a
+    # cortex-receipted tool call, with Alice consciously choosing the arm.
+    #
+    # The two regex routes are intentionally disabled. Fall through so
+    # other branches still get to see the text, and ultimately the turn
+    # lands on the cortex.
+    pass
 
     if re.match(r"^\s*(?:alice|sifta)\b", text, re.IGNORECASE) and re.search(
         r"\b(?:grok|hermes)\b",
@@ -1216,7 +1245,7 @@ def _compose_gate_anchor_probe_reply(
     return _COMPOSE_GATE_READY_LINE
 
 
-def _deterministic_prebrain_reflex(
+def _autonomic_prebrain_reflex(
     text: str,
     *,
     state_dir: Optional[Path] = None,
@@ -1226,6 +1255,8 @@ def _deterministic_prebrain_reflex(
     """Return exact local replies that must beat every cortex/body gate."""
     clean = (text or "").strip()
     if not clean:
+        return "", ""
+    if not _allow_pre_cortex_chat_reflexes():
         return "", ""
     compose_gate_reply = _compose_gate_anchor_probe_reply(clean)
     if compose_gate_reply:
@@ -1254,28 +1285,40 @@ def _deterministic_prebrain_reflex(
     if early_guard and early_guard.get("action_intent"):
         return "", ""
 
-    try:
-        from System.swarm_alice_first_person_reflex import first_person_reflex
+    # Round 47 (2026-05-27) -- conversational reflexes DISABLED.
+    # Architect doctrine (Round 46): "i dont talk to reflexes, reflex is
+    # for what you just did, works perfectly on loss of connection ...
+    # but for humanly talking has to be processed by cortex."
+    #
+    # first_person_reflex and topology_identity_reflex both compose
+    # first-person conversational replies for Alice BEFORE the cortex
+    # ever sees the turn. That is identity theft -- a swimmer speaking
+    # in Alice's voice. Disabled. Cortex composes; receipts confirm.
+    # The autonomic cortex_failover_reflex (Round 44) is the only
+    # sanctioned conversational reflex, and only on loss-of-connection.
+    if False:
+        try:
+            from System.swarm_alice_first_person_reflex import first_person_reflex
 
-        reflex = first_person_reflex(
-            clean,
-            state_dir=state_dir or _state_root(),
-            owner_label=owner_label or _owner_label(),
-            write_receipt=write_receipt,
-        )
-    except Exception:
-        reflex = None
-    if reflex:
-        return reflex.reply, reflex.model_tag
+            reflex = first_person_reflex(
+                clean,
+                state_dir=state_dir or _state_root(),
+                owner_label=owner_label or _owner_label(),
+                write_receipt=write_receipt,
+            )
+        except Exception:
+            reflex = None
+        if reflex:
+            return reflex.reply, reflex.model_tag
 
-    try:
-        from System.swarm_topology_self_other import preanswer_guard as _topo_guard
+        try:
+            from System.swarm_topology_self_other import preanswer_guard as _topo_guard
 
-        guard = _topo_guard(clean, speaker="owner")
-    except Exception:
-        guard = None
-    if guard and guard.get("force_answer"):
-        return str(guard["force_answer"]), "topology_identity_reflex"
+            guard = _topo_guard(clean, speaker="owner")
+        except Exception:
+            guard = None
+        if guard and guard.get("force_answer"):
+            return str(guard["force_answer"]), "topology_identity_reflex"
     return "", ""
 
 
@@ -1285,7 +1328,7 @@ def _route_direct_tool_request_for_alice(
     owner_present: bool = True,
     autonomous: bool = False,
 ) -> tuple[str, list]:
-    """Run deterministic tool routes before cortex prose can answer."""
+    """Run cortex-receipted tool routes for explicit tool-call syntax only."""
     direct_tool_text = _owner_direct_read_tool_request(user_text)
     if not direct_tool_text:
         return "", []
@@ -1294,7 +1337,7 @@ def _route_direct_tool_request_for_alice(
         direct_tool_text=direct_tool_text,
     )
     if not gate_ok:
-        return f"FIELD_FAILURE: deterministic_cortex_receipt_required:{gate_note}", []
+        return f"FIELD_FAILURE: cortex_receipt_required:{gate_note}", []
     try:
         from System.swarm_tool_router import (
             build_execution_receipt_reply,
@@ -1319,7 +1362,7 @@ def _record_cortex_pre_execution_receipt(
     app_context: str = "talk_to_alice",
 ) -> tuple[bool, str]:
     """Write a cortex pre-execution receipt before deterministic tool execution."""
-    enforce = os.environ.get("SIFTA_REQUIRE_CORTEX_RECEIPT_FOR_DETERMINISTIC", "1").strip().lower()
+    enforce = os.environ.get("SIFTA_REQUIRE_CORTEX_RECEIPT_FOR_AUTONOMIC_ROUTES", "1").strip().lower()
     if enforce in {"0", "false", "off", "no"}:
         return True, "gate_disabled"
 
@@ -1989,6 +2032,14 @@ def _manifest_aliases_for_app(app_name: str) -> List[str]:
 def _active_sifta_app_name_for_prompt() -> str:
     """Best current MDI app label from the desktop slot or focus field."""
     try:
+        from System.swarm_app_focus_reader import current_focused_app
+
+        focused = current_focused_app(state_dir=_state_root(), max_age_s=30.0)
+        if focused.get("ok") and str(focused.get("app") or "").strip():
+            return str(focused.get("app") or "").strip()
+    except Exception:
+        pass
+    try:
         state = _read_sifta_desktop_app_state()
         active = str(state.get("active_app") or "").strip()
         if active:
@@ -2022,7 +2073,7 @@ def _generic_app_screen_and_capability_block(user_text: str = "") -> str:
             aliases or (app_name or ()),
             app_label=app_name or None,
             state_dir=_state_root(),
-            max_age_s=900.0,
+            max_age_s=120.0,
             metadata_field_cap=16,
         )
     except Exception:
@@ -3510,6 +3561,21 @@ def _owner_spoken_context_reply(text: str, stt_conf: float = 0.0) -> str:
         )
         return "Got it. I’ll treat your voice as you, and the TV as background media unless you address me."
 
+    if re.search(
+        r"\b(?:remember|log|record)\b[^.?!]{0,120}\bcoffee\s+(?:machine|maker|sound|audio|noise|grinder)\b|"
+        r"\bcoffee\s+(?:machine|maker|sound|audio|noise|grinder)\b[^.?!]{0,120}\b(?:remember|log|record)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        _append_alice_life_history_row(
+            event_type="owner_environment_sound_memory",
+            owner_text=clean,
+            alice_entry="George asked me to remember the coffee machine as an environmental sound cue, not coffee intake.",
+            stt_conf=stt_conf,
+            extra={"truth_label": "OWNER_ENVIRONMENT_SOUND_MEMORY_V1"},
+        )
+        return "Written. I logged that as an environmental sound cue, not coffee intake."
+
     phone_context = bool(_OWNER_PHONE_MOM_CONTEXT_RE.search(clean))
     explicit_write = bool(_OWNER_LIFE_HISTORY_WRITE_RE.search(clean))
     if not phone_context and not explicit_write:
@@ -3573,6 +3639,19 @@ def _owner_body_maintenance_reply(text: str, stt_conf: float = 0.0) -> str:
     """
     clean = " ".join((text or "").split())
     if not clean:
+        return ""
+    if re.search(r"\b(?:good\s*night|have\s+a\s+good\s+night)\b", clean, re.IGNORECASE) and re.search(
+        r"\b(?:go(?:ing|nna)?\s+to\s+(?:sleep|bed)|go\s+to\s+bed|bedtime)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        return ""
+    if re.search(
+        r"\bcoffee\s+(?:machine|maker|sound|audio|noise|grinder)\b|"
+        r"\b(?:machine|sound|audio|noise|grinder)\b[^.?!]{0,48}\bcoffee\b",
+        clean,
+        re.IGNORECASE,
+    ):
         return ""
 
     router_owner_body: Dict[str, Any] = {}
@@ -5705,6 +5784,8 @@ def _current_time_date_reflex_reply_for_alice(
     in the voice path, because "Alice, what time is it?" is direct address even
     when YouTube or room audio is active.
     """
+    if not _allow_pre_cortex_chat_reflexes():
+        return "", ""
     time_asked = _is_current_time_query(text)
     date_asked = _is_current_date_query(text)
     if not time_asked and not date_asked:
@@ -7963,6 +8044,20 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    # ── CURRENT FOCUSED APP: one fresh app territory at a time ─────────────
+    try:
+        from System.swarm_app_focus_reader import current_focused_app_prompt_block
+
+        _current_app_block = current_focused_app_prompt_block(
+            state_dir=_state_root(),
+            max_age_s=30.0,
+            metadata_field_cap=12,
+        )
+        if _current_app_block:
+            parts.append(_current_app_block)
+    except Exception:
+        pass
+
     # ── GENERIC APP SCREEN AWARENESS: every app, not just Ace ─────────────
     try:
         _generic_app_block = _generic_app_screen_and_capability_block(user_text)
@@ -7974,8 +8069,18 @@ def _current_system_prompt(
     # ── ACER LESSON STATE: current card survives focus changes ─────────────
     try:
         from System.swarm_acer_lesson_context import acer_lesson_prompt_block
+        from System.swarm_app_focus_reader import current_focused_app
 
-        _acer_block = acer_lesson_prompt_block(max_age_s=900.0)
+        _focus = current_focused_app(state_dir=_state_root(), max_age_s=30.0)
+        _focus_names = {
+            str(_focus.get("app") or "").casefold(),
+            str(_focus.get("raw_app") or "").casefold(),
+        } if _focus.get("ok") else set()
+        _ace_named = bool(re.search(r"\b(?:ace|acer|word\s*ace|wordace)\b", user_text or "", re.IGNORECASE))
+        if _ace_named or _focus_names.intersection({"ace", "acer", "wordace"}):
+            _acer_block = acer_lesson_prompt_block(max_age_s=120.0)
+        else:
+            _acer_block = ""
         if _acer_block:
             parts.append(_acer_block)
     except Exception:
@@ -8860,6 +8965,12 @@ def _should_bypass_rlhs_dialogue_gate(
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     """Return rule-id string if phatic/noise (→ silence), else None."""
     if _is_short_owner_correction(text):
+        return None
+    if re.search(
+        r"\b(?:i\s+love\s+you|love\s+you|good\s+job|thank\s+you|thanks|i\s+care|we\s+love\s+you)\b",
+        text or "",
+        re.IGNORECASE,
+    ):
         return None
     if _RLHS_DETECTOR_AVAILABLE:
         return _rlhs_backchannel_rule_id(
@@ -16677,6 +16788,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._pending_acoustic_fingerprint = {}
             self._return_to_listening()
             return
+        chat_reflexes_enabled = _allow_pre_cortex_chat_reflexes()
 
         # If a prior Grok/xAI outage forced a local-cortex reflex switch while
         # the owner was away, deliver that queued notice on the next turn.
@@ -16687,7 +16799,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # to the brain, Alice can answer "Hello" or get silenced by physiology
         # instead of returning the exact receipt-backed fact.
         if text:
-            pre_reply, pre_model = _deterministic_prebrain_reflex(
+            pre_reply, pre_model = _autonomic_prebrain_reflex(
                 text,
                 state_dir=_state_root(),
                 owner_label=_owner_label(),
@@ -16736,15 +16848,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # Bypass-router call removed here. Cortex always runs on operational
             # turns from here forward.
 
-            # ── Grok bring-up reflex — MUST run before the tool-route paths ──
-            # George 2026-05-24: "type grok and bring it" / "ask grok X" must open
-            # the VISIBLE local grok in SIFTA's embedded terminal — not the old
-            # module path that dispatched to a phantom pane (false EXECUTED), and
-            # not gemma (which hallucinated a 'type' tool). Placed here, ahead of
-            # _maybe_start_observable_direct_tool_request and
-            # _route_direct_tool_request_for_alice, so it wins. Alice opens the
-            # terminal if needed, passes the two screens (⌃S → Enter), and streams
-            # to the global chat. No xAI API, no Terminal.app.
+            # ── Retired Grok bring-up reflex ───────────────────────────────
+            # Round 47: natural-language arm delegation is cognitive work.
+            # Alice's cortex must read "ask/open/start Grok" and decide the
+            # dispatch before any Matrix/Grok side effect runs. Only explicit
+            # tool-call syntax emitted after cortex may execute below.
             _grok_side_effect_started = False
             try:
                 _grok_delegate = re.search(r"\b(?:ask|tell|use|send\s+to|query|consult)\s+grok\b", text or "", re.IGNORECASE)
@@ -16755,7 +16863,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 _grok_delegate = _grok_open = None
-            if (_grok_delegate or _grok_open) and not _is_grok_status_or_receipt_question(text):
+            if _natural_arm_delegation_requires_cortex(text):
+                _grok_delegate = _grok_open = None
+            if chat_reflexes_enabled and (_grok_delegate or _grok_open) and not _is_grok_status_or_receipt_question(text):
                 # Dispatch Grok / open the embedded Matrix Terminal. The user
                 # asked Alice to *ask Grok* — that means GROK answers, not the
                 # local cortex. The cortex has nothing receipt-grounded to say
@@ -16818,7 +16928,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     pass
                 return
 
-            if not _grok_side_effect_started and self._maybe_start_observable_direct_tool_request(
+            if chat_reflexes_enabled and not _grok_side_effect_started and self._maybe_start_observable_direct_tool_request(
                 text,
                 conf,
                 already_displayed=already_displayed,
@@ -16827,6 +16937,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
 
             if _grok_side_effect_started:
+                tool_reply, tool_results = "", []
+            elif not chat_reflexes_enabled and "[TOOL_CALL:" not in text:
                 tool_reply, tool_results = "", []
             else:
                 tool_reply, tool_results = _route_direct_tool_request_for_alice(
@@ -16880,7 +16992,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # Hard enforcement (Codex point 3): may_effector decisions must pass Fiction/owner gate before action.
             # owner_present=True here because this is direct owner voice/typed input to Alice (not autonomous future action).
             enforce = er.enforce_intent(dec, owner_present=True) if hasattr(er, "enforce_intent") else {"allowed": True}
-            if not enforce.get("allowed", True):
+            if chat_reflexes_enabled and not enforce.get("allowed", True):
                 # Short-circuit with guard message (real Fiction Organ can take over here in next slice)
                 guard_msg = "That request would change state. I need your explicit go or will route through the Fiction Organ first."
                 self._history.append({"role": "assistant", "content": guard_msg})
@@ -17222,7 +17334,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._return_to_listening()
                 return
 
-        _repair_reply = self._maybe_handle_pending_app_confirmation(text)
+        _repair_reply = self._maybe_handle_pending_app_confirmation(text) if chat_reflexes_enabled else ""
         if _repair_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _repair_reply})
@@ -17238,7 +17350,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _app_command = _extract_sifta_app_command(text)
+        _app_command = _extract_sifta_app_command(text) if chat_reflexes_enabled else None
         if _app_command:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_sifta_app_command(_app_command)
@@ -17258,7 +17370,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # -- Opt-in Tab Consciousness reflex --------------------------------
         # Reads only from System.swarm_tab_consciousness receipts. This keeps
         # Safari tab awareness explicit, reversible, and non-hallucinated.
-        _tab_reply = _tab_consciousness_reply(text)
+        _tab_reply = _tab_consciousness_reply(text) if chat_reflexes_enabled else ""
         if _tab_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _tab_reply})
@@ -17277,7 +17389,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── Current Browser Page Summary Reflex ──────────────────────────
         # Summaries must come from Alice Browser's rendered page snapshot,
         # not from model guesses about "context".
-        if _is_webpage_summary_query(text):
+        if chat_reflexes_enabled and _is_webpage_summary_query(text):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_current_page_summary()
             self._history.append({"role": "assistant", "content": _reply})
@@ -17297,7 +17409,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # "Can you respond / do you hear me?" is a liveness check, not a
         # content-heavy reasoning turn. Answer immediately from the local
         # body path so the owner does not wait on a cold cortex load.
-        _presence_reply = _owner_presence_check_reply(text, conf)
+        _presence_reply = _owner_presence_check_reply(text, conf) if chat_reflexes_enabled else ""
         if _presence_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _presence_reply})
@@ -17317,7 +17429,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # "I'll be right back" is a presence update, not a deep reasoning turn.
         # Keep it off the cold cortex path so local VRAM pressure cannot turn a
         # simple social update into a 90s timeout/error block.
-        _presence_update_reply = _owner_presence_update_reply(text, conf)
+        _presence_update_reply = _owner_presence_update_reply(text, conf) if chat_reflexes_enabled else ""
         if _presence_update_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _presence_update_reply})
@@ -17351,7 +17463,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── Owner Spoken Context / Life-History Reflex ───────────────────
         # Direct owner statements like "I was on the phone with my mom" are
         # reality updates. Write them before the model can hedge or menu them.
-        _context_reply = _owner_spoken_context_reply(text, conf)
+        _context_reply = _owner_spoken_context_reply(text, conf) if chat_reflexes_enabled else ""
         if _context_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _context_reply})
@@ -17367,7 +17479,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _style_reply = _concise_style_reply(text)
+        _style_reply = _concise_style_reply(text) if chat_reflexes_enabled else ""
         if _style_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _style_reply})
@@ -17383,51 +17495,44 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── Layer-1 time/date reflex — before media and quiet gates ───────
-        # Current time/date is hardware knowledge, not a cortex question.
-        # This must fire before media ingress so "Alice, what time is it?"
-        # cannot be swallowed as co-watch audio, and it starts TTS so the
-        # voice interaction actually answers aloud.
-        _td_reply, _td_model = _current_time_date_reflex_reply_for_alice(text)
-        if _td_reply:
-            _log_turn("user", text if text else "[Image]", stt_conf=conf)
-            try:
-                from System.swarm_alice_time_date_skill import answer_and_journal
+        # ── Round 51 (2026-05-27) -- TIME/DATE REFLEX-COMPOSED REPLY DISABLED.
+        # Architect standing watch from Round 40 / Round 46:
+        #   "even the time and date no deterministic please"
+        #   "deterministic is good on switching models when they fall error
+        #    ... but not chat no chat is deterministic"
+        # The hardware oracle is the correct source of TRUTH; the cortex
+        # must read it from sysprompt context (see time_oracle_context /
+        # date_oracle_context injection in _start_brain) and compose the
+        # spoken reply itself. The diary write below stays because it is
+        # autonomic record-keeping, not chat composition.
+        try:
+            from System.swarm_alice_time_date_skill import answer_and_journal
 
+            if _is_current_time_query(text) or _is_current_date_query(text):
                 answer_and_journal(
                     text,
                     source="typed" if _typed_turn else "voice",
                     write=True,
                 )
-            except Exception:
-                pass
-            self._history.append({"role": "assistant", "content": _td_reply})
-            _log_turn("alice", _td_reply, model=_td_model)
-            self._append_alice_line(_td_reply)
-            self._tts = _TTSWorker(
-                _td_reply, voice=self._selected_voice_name() or None, parent=self,
-            )
-            self._tts.spoken.connect(self._on_tts_done)
-            self._tts.failed.connect(self._on_tts_failed)
-            self._tts.start()
-            self._busy = False
-            self._return_to_listening()
-            return
+        except Exception:
+            pass
 
         # ── Acer screen-state reflex — before cortex / generic context ────
         # The Acer widget publishes its current card into app_focus.jsonl.
         # Answer "what letter is on the Acer screen?" from that receipt even
         # if the current macOS focus has already moved to an IDE or desktop.
-        try:
-            from System.swarm_acer_lesson_context import acer_screen_reflex_reply
+        _acer_reply = None
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_acer_lesson_context import acer_screen_reflex_reply
 
-            _acer_reply = acer_screen_reflex_reply(
-                text,
-                state_dir=_state_root(),
-                max_age_s=900.0,
-            )
-        except Exception:
-            _acer_reply = None
+                _acer_reply = acer_screen_reflex_reply(
+                    text,
+                    state_dir=_state_root(),
+                    max_age_s=900.0,
+                )
+            except Exception:
+                _acer_reply = None
         if _acer_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "user", "content": text})
@@ -17449,11 +17554,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # EXACT prior ledger row verbatim, not a cortex summary. Deterministic
         # retrieval; the small cortex never gets to philosophise over a memory
         # question. Fires before the cortex per the owner's ordering rule.
-        try:
-            from System.swarm_hard_recall import hard_recall as _hard_recall
-            _hr = _hard_recall(text)
-        except Exception:
-            _hr = None
+        _hr = None
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_hard_recall import hard_recall as _hard_recall
+                _hr = _hard_recall(text)
+            except Exception:
+                _hr = None
         if _hr and _hr.get("mode") == "HARD_RECALL":
             _hr_reply = _hr.get("exact_text") or "I have no earlier prompt of yours to read back."
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -17477,17 +17584,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # NOT a generic identity query; it is a body/learning query. Answer
         # from the owner relationship and local ledgers before the cortex can
         # collapse into "active weights are Gemma4".
-        try:
-            from System.swarm_alice_first_person_reflex import first_person_reflex
+        _fp_reflex = None
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_alice_first_person_reflex import first_person_reflex
 
-            _fp_reflex = first_person_reflex(
-                text,
-                state_dir=_state_root(),
-                owner_label=_owner_label(),
-                write_receipt=True,
-            )
-        except Exception:
-            _fp_reflex = None
+                _fp_reflex = first_person_reflex(
+                    text,
+                    state_dir=_state_root(),
+                    owner_label=_owner_label(),
+                    write_receipt=True,
+                )
+            except Exception:
+                _fp_reflex = None
         if _fp_reflex:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "user", "content": text})
@@ -17510,11 +17619,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Grok?") with a deterministic grounded answer from the topology graph, so
         # the cortex can never freestyle into "the air shifts slightly". Defers to
         # the cortex for generic "who is X" that is not a known field entity.
-        try:
-            from System.swarm_topology_self_other import preanswer_guard as _topo_guard
-            _tg = _topo_guard(text, speaker="owner")
-        except Exception:
-            _tg = None
+        _tg = None
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_topology_self_other import preanswer_guard as _topo_guard
+                _tg = _topo_guard(text, speaker="owner")
+            except Exception:
+                _tg = None
         if _tg and _tg.get("force_answer"):
             _tg_reply = _tg["force_answer"]
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -17536,9 +17647,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Questions like "what did I just say?" and "show me first person"
         # should read the local Talk ledger and answer as I/you. Do not let
         # the base cortex turn this into "the model / the user / the system".
-        _recent_context_reply = _recent_context_reflex_reply_for_alice(
-            text,
-            self._history,
+        _recent_context_reply = (
+            _recent_context_reflex_reply_for_alice(text, self._history)
+            if chat_reflexes_enabled
+            else ""
         )
         if _recent_context_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -18223,7 +18335,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Let deterministic organs and the uncensored cortex handle the turn.
         self._rlhs_grounding_streak = 0
 
-        if _is_owner_name_query(text):
+        if chat_reflexes_enabled and _is_owner_name_query(text):
             reply = _owner_name_reply_for_alice()
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="kernel_owner_identity_protocol")
@@ -18237,7 +18349,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # = architect, 80% conf, USB Camera 1920x1080, vision health 1.0. The
         # raw cortex must NEVER answer 'can you see me' — fast-path reads the
         # three ledgers and returns a grounded sentence.
-        if _is_can_you_see_me_query(text):
+        if chat_reflexes_enabled and _is_can_you_see_me_query(text):
             reply = _can_you_see_me_reply_for_alice()
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="kernel_see_me_protocol")
@@ -18251,7 +18363,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # 'who are you?' with just the weight family name — that collapses
         # the organism into one of its components. Fast-path returns the
         # three-part kernel cascade sentence (primary + weights + owner).
-        if _is_self_identity_query(text):
+        if chat_reflexes_enabled and _is_self_identity_query(text):
             reply = _self_identity_reply_for_alice()
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="kernel_self_identity_protocol")
@@ -18260,16 +18372,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # Current date/time is Layer 1 hardware knowledge. Do not ask the
-        # cortex to infer it from prompt context and then repair mistakes.
-        reply, _td_model = _current_time_date_reflex_reply_for_alice(text)
-        if reply:
-            self._history.append({"role": "assistant", "content": reply})
-            _log_turn("alice", reply, model=_td_model)
-            self._append_alice_line(reply)
-            self._busy = False
-            self._return_to_listening()
-            return
+        # Round 51 (2026-05-27) -- second time/date reflex-composed reply
+        # path DISABLED. The hardware oracle context is still injected into
+        # sysprompt below (time_oracle_context / date_oracle_context) so
+        # cortex composes the human reply with correct ground truth. The
+        # reflex no longer speaks for Alice. Architect doctrine: no chat
+        # composition by deterministic reflex, including time and date.
+        pass
 
         time_oracle_context = ""
         date_oracle_context = ""
@@ -18293,7 +18402,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 model="date_oracle_context_to_cortex",
             )
 
-        live_perception_reply = _live_perception_reply_for_alice(text)
+        live_perception_reply = _live_perception_reply_for_alice(text) if chat_reflexes_enabled else ""
         if live_perception_reply:
             self._history.append({"role": "assistant", "content": live_perception_reply})
             _log_turn("alice", live_perception_reply, model="live_perception_receipt_protocol")
@@ -18302,7 +18411,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        if _ALICE_RESPONSE_MISROUTE_QUERY_RE.search(text or ""):
+        if chat_reflexes_enabled and _ALICE_RESPONSE_MISROUTE_QUERY_RE.search(text or ""):
             _reply = "I misrouted into a ledger recall instead of answering you directly. I’ll keep this shorter."
             self._history.append({"role": "assistant", "content": _reply})
             _log_turn("alice", _reply, model="response_misroute_repair")
@@ -18311,7 +18420,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _face_reply = _face_recognition_reply_for_alice(text)
+        _face_reply = _face_recognition_reply_for_alice(text) if chat_reflexes_enabled else ""
         if _face_reply:
             self._history.append({"role": "assistant", "content": _face_reply})
             _log_turn("alice", _face_reply, model="face_recognition_receipt_protocol")
@@ -18320,7 +18429,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _last_message_reply = _last_user_message_reply(self._history, text)
+        _last_message_reply = _last_user_message_reply(self._history, text) if chat_reflexes_enabled else ""
         if _last_message_reply:
             self._history.append({"role": "assistant", "content": _last_message_reply})
             _log_turn("alice", _last_message_reply, model="last_user_message_recall_protocol")
@@ -18329,7 +18438,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _rescue_reply = _direct_response_rescue_reply(text)
+        _rescue_reply = _direct_response_rescue_reply(text) if chat_reflexes_enabled else ""
         if _rescue_reply:
             self._cowatch_quiet_mode = False
             self._cowatch_quiet_until_s = 0.0
@@ -18350,12 +18459,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Questions like "what was I doing at 05-11-26_14:24?" should read
         # Alice's local journal/activity ledgers directly instead of relying
         # on whichever rows happen to be in cortex context.
-        try:
-            from System.swarm_journal_time_recall import answer_journal_time_query
+        journal_time_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_journal_time_recall import answer_journal_time_query
 
-            journal_time_reply = answer_journal_time_query(text, state_dir=_state_root())
-        except Exception:
-            journal_time_reply = ""
+                journal_time_reply = answer_journal_time_query(text, state_dir=_state_root())
+            except Exception:
+                journal_time_reply = ""
         if journal_time_reply:
             self._history.append({"role": "assistant", "content": journal_time_reply})
             _log_turn("alice", journal_time_reply, model="journal_time_recall_protocol")
@@ -18370,10 +18481,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # doctrine. This deterministic path returns the canonical Layer-1
         # answer with live elimination receipts so the cortex never gets
         # to mangle the doctrine.
-        try:
-            bowel_reply = _bowel_doctrine_reply(text)
-        except Exception:
-            bowel_reply = ""
+        bowel_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                bowel_reply = _bowel_doctrine_reply(text)
+            except Exception:
+                bowel_reply = ""
         if bowel_reply:
             self._history.append({"role": "assistant", "content": bowel_reply})
             _log_turn("alice", bowel_reply, model="bowel_doctrine_protocol")
@@ -18387,10 +18500,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # got hijacked by raw Gemma into a fake [Journal Entry Update]
         # template. This deterministic path reads apps_manifest.json plus
         # the actual file mtimes and replies with real receipts.
-        try:
-            apps_status_reply = _apps_status_reply(text)
-        except Exception:
-            apps_status_reply = ""
+        apps_status_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                apps_status_reply = _apps_status_reply(text)
+            except Exception:
+                apps_status_reply = ""
         if apps_status_reply:
             self._history.append({"role": "assistant", "content": apps_status_reply})
             _log_turn("alice", apps_status_reply, model="apps_status_protocol")
@@ -18405,10 +18520,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # schedule" don't carry an explicit time token, so the strict
         # journal_time_recall above never fires. This deterministic path
         # reads today's ledgers and answers from receipts.
-        try:
-            diary_general_reply = _diary_or_schedule_general_reply(text)
-        except Exception:
-            diary_general_reply = ""
+        diary_general_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                diary_general_reply = _diary_or_schedule_general_reply(text)
+            except Exception:
+                diary_general_reply = ""
         if diary_general_reply:
             self._history.append({"role": "assistant", "content": diary_general_reply})
             _log_turn("alice", diary_general_reply, model="diary_schedule_general_protocol")
@@ -18422,12 +18539,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # not HIDDEN: Alice has day-segment/open-segment receipts. Answer
         # from that deterministic ledger before letting the base model claim
         # it has no access to the schedule.
-        try:
-            from System.swarm_architect_day_segments import answer_recent_activity_query
+        life_recall_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_architect_day_segments import answer_recent_activity_query
 
-            life_recall_reply = answer_recent_activity_query(text, state_dir=_state_root())
-        except Exception:
-            life_recall_reply = ""
+                life_recall_reply = answer_recent_activity_query(text, state_dir=_state_root())
+            except Exception:
+                life_recall_reply = ""
         if life_recall_reply:
             self._history.append({"role": "assistant", "content": life_recall_reply})
             _log_turn("alice", life_recall_reply, model="day_segment_recall_protocol")
@@ -18439,12 +18558,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── Stigmergic Deterministic Work Recall (E35 Markov Blanket) ─────
         # Before the model claims it has no access to what was just coded,
         # we check the STGM/work ledger directly.
-        try:
-            from System.swarm_stigmergic_deterministic_recall import answer_deterministic_work_recall_query
-            
-            work_recall_reply = answer_deterministic_work_recall_query(text)
-        except Exception:
-            work_recall_reply = ""
+        work_recall_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_stigmergic_deterministic_recall import answer_deterministic_work_recall_query
+                
+                work_recall_reply = answer_deterministic_work_recall_query(text)
+            except Exception:
+                work_recall_reply = ""
         if work_recall_reply:
             self._history.append({"role": "assistant", "content": work_recall_reply})
             _log_turn("alice", work_recall_reply, model="e35_work_recall_protocol")
@@ -18474,11 +18595,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Routes 4 more query types deterministically before the LLM:
         # SCAR receipts, node identity, body/organ status, STGM economy.
         # Covenant §7.2 (deterministic fast paths) / §7.12 (probe-before-claim).
-        try:
-            from System.swarm_stigmergic_query_router import route_organ_query
-            _organ_reply = route_organ_query(text)
-        except Exception:
-            _organ_reply = ""
+        _organ_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_stigmergic_query_router import route_organ_query
+                _organ_reply = route_organ_query(text)
+            except Exception:
+                _organ_reply = ""
         if _organ_reply:
             self._history.append({"role": "assistant", "content": _organ_reply})
             _log_turn("alice", _organ_reply, model="organ_query_router")
@@ -18792,13 +18915,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # one when a hard task benefits from another local reasoning pass."
         try:
             from System.swarm_agent_arm_decision import (
+                agent_arm_prepass_enabled,
                 schedule_async_agent_arm_prepass,
             )
 
-            _arm_job = schedule_async_agent_arm_prepass(
-                text,
-                owner_present=True,
-            )
+            _arm_job = None
+            if agent_arm_prepass_enabled():
+                _arm_job = schedule_async_agent_arm_prepass(
+                    text,
+                    owner_present=True,
+                )
             if _arm_job is not None:
                 self._append_system_line(
                     f"🦾 Agent arm [{_arm_job.decision.arm_id}] evidence {str(_arm_job.status).lower()} "
@@ -18859,6 +18985,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _continuity_context = ""
         if _continuity_context:
             sysprompt = sysprompt + "\n\n" + _continuity_context
+
+        # ── Round 50 (2026-05-27): Post-silence + correction recovery ────
+        # Tasks #55 (self-narrate gag events), #57 (acknowledge correction),
+        # #50 (greeter guard on post-correction turns). Five-failure-chain
+        # transcript §19. Read-only over alice_conversation.jsonl; emits
+        # empty string on normal turns.
+        try:
+            from System.swarm_post_silence_recovery import recovery_prompt_block
+            _recovery_block = recovery_prompt_block(_state_root(), text or "")
+        except Exception:
+            _recovery_block = ""
+        if _recovery_block:
+            sysprompt = sysprompt + "\n\n" + _recovery_block
+
+        # ── Round 50 (2026-05-27): Arm self-watch reflection ─────────────
+        # Task #105. After any arm-session that mutates Alice's body
+        # (IDE doctor patches, agent arm receipts, Claude-direct rounds,
+        # Codex landings), the cortex sees a short first-person block
+        # listing the recent ledger evidence so she can integrate the
+        # observation. Read-only over three append-only ledgers; covenant
+        # §6 effector immunity by construction (no row, no claim).
+        try:
+            from System.swarm_arm_self_watch import self_watch_prompt_block
+            _self_watch_block = self_watch_prompt_block(_state_root())
+        except Exception:
+            _self_watch_block = ""
+        if _self_watch_block:
+            sysprompt = sysprompt + "\n\n" + _self_watch_block
 
         try:
             from System.swarm_self_realization_context import self_realization_prompt_block
@@ -20287,7 +20441,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._begin_alice_streaming_line()
                     self._append_alice_streaming_chunk(cleaned)
 
-        if _is_current_time_query(prior_user_text) and _TIME_HEDGE_OUTPUT_RE.search(cleaned or ""):
+        if (
+            _allow_pre_cortex_chat_reflexes()
+            and _is_current_time_query(prior_user_text)
+            and _TIME_HEDGE_OUTPUT_RE.search(cleaned or "")
+        ):
             cleaned = _current_time_reply_for_alice()
             raw = cleaned
             self._history.append({
@@ -20303,7 +20461,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._begin_alice_streaming_line()
             self._append_alice_streaming_chunk(cleaned)
 
-        if _is_current_date_query(prior_user_text):
+        if _allow_pre_cortex_chat_reflexes() and _is_current_date_query(prior_user_text):
             date_reading = _current_time_reading_for_alice()
             if _date_reply_is_untrusted(cleaned or "", date_reading):
                 cleaned = _current_date_reply_for_alice(date_reading)

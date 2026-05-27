@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 from Applications import sifta_talk_to_alice_widget as talk
-from System.swarm_tool_router import _exec_matrix_pty, parse_tool_calls
+from System.swarm_tool_router import parse_tool_calls
 
 
-def test_direct_run_request_routes_to_real_terminal_tool_call() -> None:
+def test_direct_run_request_reaches_cortex_before_terminal_tool_call() -> None:
     text = talk._owner_direct_read_tool_request("run `pwd`")
 
     calls = parse_tool_calls(text)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "run_terminal"
-    assert calls[0].params["command"] == "pwd"
-    assert "cost_justification" in calls[0].params
+    assert text == ""
+    assert calls == []
 
 
-def test_matrix_terminal_request_drives_visible_pty(monkeypatch) -> None:
+def test_matrix_terminal_request_reaches_cortex_before_visible_pty(monkeypatch) -> None:
     from Applications import sifta_matrix_terminal as matrix
 
     class FakePane:
@@ -31,11 +29,9 @@ def test_matrix_terminal_request_drives_visible_pty(monkeypatch) -> None:
     text = talk._owner_direct_read_tool_request("pwd")
     calls = parse_tool_calls(text)
 
-    assert pane.commands == [["pwd"]]
-    assert len(calls) == 1
-    assert calls[0].tool_name == "matrix_pty"
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["pwd"]
-    assert "cost_justification" in calls[0].params
+    assert pane.commands == []
+    assert text == ""
+    assert calls == []
 
     pane.commands.clear()
     text = talk._owner_direct_read_tool_request(
@@ -47,7 +43,7 @@ def test_matrix_terminal_request_drives_visible_pty(monkeypatch) -> None:
     assert calls == []
 
 
-def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) -> None:
+def test_global_chat_grok_request_reaches_cortex_before_matrix_terminal(monkeypatch) -> None:
     from Applications import sifta_matrix_terminal as matrix
 
     class FakePane:
@@ -64,18 +60,17 @@ def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) ->
     text = talk._owner_direct_read_tool_request("Alice ask Grok what did the last receipt prove?")
     calls = parse_tool_calls(text)
 
-    assert pane.delegations == ["Alice ask Grok what did the last receipt prove?"]
+    assert pane.delegations == []
+    assert text == ""
     assert calls == []
-    assert "Grok dispatched. receipt=" in text
-    assert "matrix_pty" not in text
 
     pane.delegations.clear()
     text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
     calls = parse_tool_calls(text)
 
-    assert pane.delegations == ["ask grok how are your organs wired"]
+    assert pane.delegations == []
+    assert text == ""
     assert calls == []
-    assert "Grok dispatched. receipt=" in text
 
     pane.delegations.clear()
     text = talk._owner_direct_read_tool_request(
@@ -83,11 +78,9 @@ def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) ->
     )
     calls = parse_tool_calls(text)
 
-    assert pane.delegations == [
-        "i want you to be able to ask grok and grok to print the answer here in global chat as proof"
-    ]
+    assert pane.delegations == []
+    assert text == ""
     assert calls == []
-    assert "Grok dispatched. receipt=" in text
 
 
 def test_grok_status_questions_reach_cortex_instead_of_canned_dispatch() -> None:
@@ -110,7 +103,7 @@ def test_operational_greeter_guard_strips_structural_robot_dialogue() -> None:
     )
 
     assert fired
-    assert cleaned.startswith("[no ledger-grounded answer surfaced")
+    assert cleaned == "FIELD_FAILURE: alice_greeter_punched_through_on_operational_turn"
 
     cleaned, fired = talk._strip_greeter_on_operational(
         "Hello. I am here, ready to receive your thoughts. Yes. I resumed Grok; receipt=abc123.",
@@ -121,31 +114,17 @@ def test_operational_greeter_guard_strips_structural_robot_dialogue() -> None:
     assert cleaned == "Yes. I resumed Grok; receipt=abc123."
 
 
-def test_hermes_common_stt_typo_routes_to_agent_arm() -> None:
+def test_hermes_common_stt_typo_reaches_cortex_before_agent_arm() -> None:
     text = talk._owner_direct_read_tool_request(
         "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
     )
     calls = parse_tool_calls(text)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "agent_arm_research"
-    assert calls[0].params["arm"] == "hermes"
-    assert "Stigmergic TicTacToe" in calls[0].params["prompt"]
-    assert "Alice-owned SIFTA app/build delegation" in calls[0].params["prompt"]
-    assert "Write real files" in calls[0].params["prompt"] or "write real files" in calls[0].params["prompt"]
-    assert "honest failure receipt" in calls[0].params["prompt"]
-    assert talk._direct_tool_request_needs_observable_worker(
-        "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
-    )
-    assert (
-        talk._observable_direct_tool_label(
-            "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
-        )
-        == "Hermes agent arm"
-    )
+    assert text == ""
+    assert calls == []
 
 
-def test_use_your_arm_phrasing_routes_to_agent_arm_before_read_file() -> None:
+def test_use_your_arm_phrasing_reaches_cortex_before_read_file() -> None:
     cases = (
         (
             "codex",
@@ -167,14 +146,12 @@ def test_use_your_arm_phrasing_routes_to_agent_arm_before_read_file() -> None:
         ),
     )
 
-    for arm, text, prompt_head in cases:
+    for _arm, text, _prompt_head in cases:
         reply = talk._owner_direct_read_tool_request(text)
         calls = parse_tool_calls(reply)
 
-        assert len(calls) == 1
-        assert calls[0].tool_name == "agent_arm_research"
-        assert calls[0].params["arm"] == arm
-        assert calls[0].params["prompt"].startswith(prompt_head)
+        assert reply == ""
+        assert calls == []
         assert "read_file" not in reply
 
 
@@ -194,16 +171,14 @@ def test_arm_meta_questions_do_not_auto_dispatch_external_arms() -> None:
         assert calls == []
 
 
-def test_question_form_with_explicit_task_still_dispatches_arm() -> None:
+def test_question_form_with_explicit_task_reaches_cortex_before_arm() -> None:
     reply = talk._owner_direct_read_tool_request(
         "can you ask codex to verify round 35 receipts now"
     )
     calls = parse_tool_calls(reply)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "agent_arm_research"
-    assert calls[0].params["arm"] == "codex"
-    assert calls[0].params["prompt"] == "verify round 35 receipts now"
+    assert reply == ""
+    assert calls == []
 
 
 def test_edge_router_repair_never_collapses_typed_turn_to_single_name() -> None:
@@ -262,16 +237,16 @@ def test_cortex_pre_execution_receipt_written_before_deterministic_tool_exec(mon
     assert rows[-1]["selected_model"] == "alice-m5-cortex-8b-6.3gb:latest"
 
 
-def test_deterministic_tool_exec_blocks_when_cortex_receipt_gate_fails(monkeypatch) -> None:
+def test_explicit_direct_tool_exec_blocks_when_cortex_receipt_gate_fails(monkeypatch) -> None:
     monkeypatch.setattr(
         talk,
         "_record_cortex_pre_execution_receipt",
         lambda **_kwargs: (False, "mock_gate_failure"),
     )
     reply, results = talk._route_direct_tool_request_for_alice(
-        "Alice, use your codex arm and execute Round 35 memory archive continuity now."
+        "[TOOL_CALL: read_file | path=Documents/IDE_BOOT_COVENANT.md | cost_justification=test]"
     )
-    assert reply == "FIELD_FAILURE: deterministic_cortex_receipt_required:mock_gate_failure"
+    assert reply == "FIELD_FAILURE: cortex_receipt_required:mock_gate_failure"
     assert results == []
 
 
@@ -296,7 +271,7 @@ def test_cortex_bypass_router_is_disabled_and_falls_through(monkeypatch) -> None
     assert seen[-1]["action_taken"] == "router_disabled_round35_fallthrough"
 
 
-def test_global_chat_grok_request_can_create_hidden_internal_pty(monkeypatch) -> None:
+def test_global_chat_grok_request_reaches_cortex_not_hidden_internal_pty(monkeypatch) -> None:
     from Applications import sifta_matrix_terminal as matrix
 
     class FakePane:
@@ -314,13 +289,12 @@ def test_global_chat_grok_request_can_create_hidden_internal_pty(monkeypatch) ->
     text = talk._owner_direct_read_tool_request("ask grok show your live framebuffer")
     calls = parse_tool_calls(text)
 
-    assert pane.delegations == ["ask grok show your live framebuffer"]
+    assert pane.delegations == []
+    assert text == ""
     assert calls == []
-    assert "Grok dispatched. receipt=" in text
-    assert "matrix_pty" not in text
 
 
-def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(monkeypatch, tmp_path) -> None:
+def test_global_chat_grok_request_without_live_pane_reaches_cortex(monkeypatch, tmp_path) -> None:
     """Owner correction 2026-05-25: with no live internal PTY pane, "ask grok"
     must not fake a Matrix dispatch or fall back to the headless API arm.
     It writes the global queue receipt and waits for/imports a real terminal
@@ -334,29 +308,9 @@ def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(m
     text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
     calls = parse_tool_calls(text)
 
+    assert text == ""
     assert calls == []
-    assert "Grok queued. receipt=" in text
-    # Must NOT route to the headless API arm.
-    assert "agent_arm_research" not in text
-    assert "grok_chat" not in text
-
-    ledger = tmp_path / "grok_delegation_requests.jsonl"
-    rows = [line for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()]
-    assert rows
-    import json
-
-    payload = json.loads(rows[-1])
-    assert payload["dispatched_live"] is False
-    assert payload["queue_for_matrix_terminal"] is True
-
-    trace_rows = [
-        json.loads(line)
-        for line in (tmp_path / "matrix_terminal_process_trace.jsonl").read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    assert trace_rows[-1]["action"] == "grok_delegation_queued_from_talk_widget"
-    assert trace_rows[-1]["payload"]["receipt"] == payload["receipt"]
-    assert trace_rows[-1]["payload"]["queue_for_matrix_terminal"] is True
+    assert not (tmp_path / "grok_delegation_requests.jsonl").exists()
 
 
 def test_grok_bringup_writes_immediate_visible_trace(monkeypatch, tmp_path) -> None:
@@ -509,12 +463,11 @@ def test_global_chat_terminal_import_rejects_front_terminal(monkeypatch) -> None
         "take whatever from the terminals, port to global chat"
     )
 
-    assert "Terminal.app import is disabled" in reply
-    assert "source=alice_global_chat_terminal" in reply
+    assert reply == ""
     assert rows == []
 
 
-def test_codex_delegation_with_terminal_words_is_not_terminal_import_guard() -> None:
+def test_codex_delegation_with_terminal_words_reaches_cortex() -> None:
     reply = talk._owner_direct_read_tool_request(
         "Alice, ask codex to restore the LIVE Grok framebuffer viewport in Alice global chat. "
         "The terminal_frame_view should update from live cells, not only on final GROK_RESULT."
@@ -522,13 +475,12 @@ def test_codex_delegation_with_terminal_words_is_not_terminal_import_guard() -> 
 
     calls = parse_tool_calls(reply)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "agent_arm_research"
-    assert calls[0].params["arm"] == "codex"
+    assert reply == ""
+    assert calls == []
     assert "Terminal.app import is disabled" not in reply
 
 
-def test_claude_and_hermes_delegations_with_terminal_words_are_not_terminal_import_guard() -> None:
+def test_claude_and_hermes_delegations_with_terminal_words_reach_cortex() -> None:
     cases = {
         "claude": (
             "Alice, ask claude to inspect the global chat terminal and patch the viewport "
@@ -544,9 +496,8 @@ def test_claude_and_hermes_delegations_with_terminal_words_are_not_terminal_impo
         reply = talk._owner_direct_read_tool_request(text)
         calls = parse_tool_calls(reply)
 
-        assert len(calls) == 1
-        assert calls[0].tool_name == "agent_arm_research"
-        assert calls[0].params["arm"] == arm
+        assert reply == ""
+        assert calls == []
         assert "Terminal.app import is disabled" not in reply
 
 
@@ -566,7 +517,7 @@ def test_grok_status_lines_do_not_infer_thinking_or_liveness() -> None:
     assert "status unknown — not inferred" in launcher_src
 
 
-def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch) -> None:
+def test_global_chat_grok_open_request_reaches_cortex_before_screen_resume(monkeypatch) -> None:
     from Applications import sifta_matrix_terminal as matrix
 
     class FakePane:
@@ -583,48 +534,41 @@ def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch)
     text = talk._owner_direct_read_tool_request("type grok and bypass the two screen selections")
     calls = parse_tool_calls(text)
 
-    assert pane.opens == ["type grok and bypass the two screen selections"]
+    assert pane.opens == []
     assert calls == []
-    assert "Grok open/resume" in text
-    assert "matrix_pty" not in text
+    assert text == ""
 
     pane.opens.clear()
     text = talk._owner_direct_read_tool_request("i used my voice, i meant grok, start grok cli now")
     calls = parse_tool_calls(text)
 
-    assert pane.opens == ["i used my voice, i meant grok, start grok cli now"]
+    assert pane.opens == []
     assert calls == []
-    assert "Grok open/resume" in text
+    assert text == ""
 
 
-def test_global_chat_claude_code_request_routes_to_external_evidence_arm() -> None:
+def test_global_chat_claude_code_request_reaches_cortex_before_evidence_arm() -> None:
     text = talk._owner_direct_read_tool_request(
         "Alice, ask Claude Code to inspect SIFTA and report one renderer risk"
     )
     calls = parse_tool_calls(text)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "agent_arm_research"
-    assert calls[0].params["arm"] == "claude"
-    assert calls[0].params["prompt"] == "inspect SIFTA and report one renderer risk"
-    assert "Claude's output is external evidence" in calls[0].params["cost_justification"]
+    assert text == ""
+    assert calls == []
 
 
-def test_prebrain_reflex_catches_topology_identity_before_cortex(tmp_path) -> None:
-    reply, model = talk._deterministic_prebrain_reflex(
+def test_prebrain_reflex_does_not_answer_topology_identity_before_cortex(tmp_path) -> None:
+    reply, model = talk._autonomic_prebrain_reflex(
         "Alice, who are you and who is Grok?",
         state_dir=tmp_path,
         owner_label="Layer One Owner",
         write_receipt=False,
     )
 
-    assert model == "topology_self_other_pre_answer_reflex"
-    assert "Layer One Owner = owner / continuity anchor" in reply
-    assert "Alice = SIFTA field / organism" in reply
-    assert "Grok = external tool/cortex surface" in reply
+    assert (reply, model) == ("", "")
 
 
-def test_prebrain_reflex_catches_hard_recall_before_body_gate(monkeypatch, tmp_path) -> None:
+def test_prebrain_reflex_does_not_catch_hard_recall_before_cortex(monkeypatch, tmp_path) -> None:
     import System.swarm_hard_recall as hard_recall_module
 
     monkeypatch.setattr(
@@ -636,15 +580,14 @@ def test_prebrain_reflex_catches_hard_recall_before_body_gate(monkeypatch, tmp_p
         },
     )
 
-    reply, model = talk._deterministic_prebrain_reflex(
+    reply, model = talk._autonomic_prebrain_reflex(
         "Alice, read back my previous prompt exactly.",
         state_dir=tmp_path,
         owner_label="Layer One Owner",
         write_receipt=False,
     )
 
-    assert model == "hard_recall_reflex"
-    assert "exact prior text" in reply
+    assert (reply, model) == ("", "")
 
 
 def test_prebrain_reflex_stands_down_for_grok_action_intent(tmp_path) -> None:
@@ -653,7 +596,7 @@ def test_prebrain_reflex_stands_down_for_grok_action_intent(tmp_path) -> None:
         "i used my voice, i meant grok, start grok cli now",
         "i want you to be able to ask grok and grok to print the answer here in global chat as proof",
     ):
-        reply, model = talk._deterministic_prebrain_reflex(
+        reply, model = talk._autonomic_prebrain_reflex(
             text,
             state_dir=tmp_path,
             owner_label="Layer One Owner",
