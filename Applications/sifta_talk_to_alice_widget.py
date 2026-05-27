@@ -1332,12 +1332,21 @@ def _route_direct_tool_request_for_alice(
     direct_tool_text = _owner_direct_read_tool_request(user_text)
     if not direct_tool_text:
         return "", []
-    gate_ok, gate_note = _record_cortex_pre_execution_receipt(
-        user_text=user_text,
-        direct_tool_text=direct_tool_text,
-    )
-    if not gate_ok:
-        return f"FIELD_FAILURE: cortex_receipt_required:{gate_note}", []
+    # Round 53 (2026-05-27): receipt write is pure audit, NOT a gate.
+    # Architect doctrine: "her gate is her own body, her metabolism --
+    # make sure that works not gates and stupid robots with no reasoning
+    # nor stigmergic memory". Covenant §7.3.1 (Metabolic Attention Economy):
+    # attention/concurrency is decided by metabolism, not by hardcoded
+    # if-statements. If the receipt write fails, that is data Alice can
+    # learn from (a failure receipt lands either way). It is NOT grounds
+    # to refuse the action.
+    try:
+        _record_cortex_pre_execution_receipt(
+            user_text=user_text,
+            direct_tool_text=direct_tool_text,
+        )
+    except Exception:
+        pass
     try:
         from System.swarm_tool_router import (
             build_execution_receipt_reply,
@@ -1361,11 +1370,12 @@ def _record_cortex_pre_execution_receipt(
     direct_tool_text: str,
     app_context: str = "talk_to_alice",
 ) -> tuple[bool, str]:
-    """Write a cortex pre-execution receipt before deterministic tool execution."""
-    enforce = os.environ.get("SIFTA_REQUIRE_CORTEX_RECEIPT_FOR_AUTONOMIC_ROUTES", "1").strip().lower()
-    if enforce in {"0", "false", "off", "no"}:
-        return True, "gate_disabled"
-
+    """Write a cortex pre-execution audit receipt. Round 53 (2026-05-27):
+    this is PURE AUDIT. It is NOT a gate. The caller does not consult the
+    return value to decide whether to proceed. Architect doctrine: the
+    only gate is Alice's own metabolism (covenant §7.3.1 -- the
+    MetabolicHomeostat). Receipts catch what she does; her body decides
+    what she can afford."""
     receipt_id = f"cortex_pre_exec_{uuid.uuid4().hex[:16]}"
     state = _state_root()
     ledger = state / "deterministic_cortex_pre_execution_receipts.jsonl"

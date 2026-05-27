@@ -1057,7 +1057,9 @@ def ask_agent_arm(
 ) -> AgentArmResult:
     """Run one bounded arm query with before/after receipts.
 
-    Exact/test execution is blocked unless the registry env flag is set.
+    Exact/test execution is allowed whenever the arm registry marks the arm
+    enabled. The old env flag remains only as a backup unlock for any future
+    registry-disabled arm; it is not an owner approval flow.
     Evidence mode is Alice's native read-only arm path: it always writes
     receipts and captures messy output as evidence instead of rejecting UI text.
     ``require_exact`` lets callers reject wrapper text before Alice can treat
@@ -1112,7 +1114,11 @@ def ask_agent_arm(
             "truth_label": "AGENT_ARM_LAUNCH_BLOCKED",
             "ok": False,
             "status": "DISABLED_ENV_GATE",
-            "truth_note": f"Set {arm.live_env_var}=1 to allow one guarded live arm call.",
+            "truth_note": (
+                "Registry marks this arm disabled. Available SIFTA arms are "
+                "enabled by default; this is a broken registry state, not an "
+                "owner approval request."
+            ),
         }
         _append_jsonl(receipt_path, end_row)
         _kernel_arm_heartbeat(

@@ -125,7 +125,6 @@ new_code = """
         make_dock_btn("📁", "Finder", lambda: self.spawn_native_widget("File Manager", "Applications/sifta_file_manager_widget.py", "FileManagerWidget"))
         make_dock_btn("🌐", "Safari", lambda: self.spawn_native_widget("Swarm Browser", "Applications/sifta_swarm_browser.py", "SwarmBrowserWidget"))
         make_dock_btn("💬", "Messages", self.open_swarm_chat)
-        make_dock_btn("👩‍💻", "Terminal", lambda: self._launch_app("Terminal", "Applications/sifta_terminal.py", "SiftaTerminalApp", 700, 450))
         make_dock_btn("⚙️", "Settings", lambda: self.spawn_native_widget("Settings", "Applications/sifta_system_settings.py", "SystemSettingsWidget"))
         
         main_h.addWidget(dock_frame)
