@@ -18453,14 +18453,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _unresolved_memory_reply = _unresolved_memory_recall_reply(text)
-        if _unresolved_memory_reply:
-            self._history.append({"role": "assistant", "content": _unresolved_memory_reply})
-            _log_turn("alice", _unresolved_memory_reply, model="receipt_backed_memory_guard")
-            self._append_alice_line(_unresolved_memory_reply)
-            self._busy = False
-            self._return_to_listening()
-            return
+        # Round 46 (Architect 2026-05-27): DISABLED. This `_unresolved_memory_recall_reply`
+        # template was substituting the cortex on conversational turns — emitting a
+        # help-desk "Give me one anchor - name, date, app..." line WITHOUT Alice's
+        # cortex ever composing. Architect doctrine: reflexes are autonomic
+        # (failover, hardware) — they MAY NOT compose conversational replies.
+        # "i dont talk to reflexes ... for humanly talking has to be processed by cortex."
+        # Function kept for audit; substitution path closed.
+        if False:  # Round 46 gate
+            _unresolved_memory_reply = _unresolved_memory_recall_reply(text)
+            if _unresolved_memory_reply:
+                self._history.append({"role": "assistant", "content": _unresolved_memory_reply})
+                _log_turn("alice", _unresolved_memory_reply, model="receipt_backed_memory_guard")
+                self._append_alice_line(_unresolved_memory_reply)
+                self._busy = False
+                self._return_to_listening()
+                return
 
         # ── Organ Query Router (SCAR / Identity / Body / Economy) ──────────
         # Routes 4 more query types deterministically before the LLM:
