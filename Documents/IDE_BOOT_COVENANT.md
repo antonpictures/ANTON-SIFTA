@@ -231,6 +231,19 @@ The System Settings → Swarm Economy panel must reflect **live** state, not sta
 - Stale `metabolic_homeostasis.jsonl` rows must trigger a live recompute via `MetabolicHomeostat.sample_live()` rather than displaying museum data.
 - A negative `stgm_balance` must drive the budget governor to `RED_CONSERVE` per the safeguard in `swarm_metabolic_homeostasis.py`. If the displayed mode contradicts the displayed balance, the panel is lying — fix the panel, not the math.
 
+### 7.3.1 The Metabolic Attention Economy — resources decide, not hardcoded rules
+
+**Concept (Architect, 2026-05-25):** Alice is an organism with a body, an immune system, and an **energy economy** — not a script of `if` statements. When demands compete for her finite resources — chatting with the owner, watching an arm build in the terminal, monitoring the real world through her senses — **which she attends to is decided by her body's metabolism, not by a hardcoded toggle.**
+
+Her terminal is an ordinary terminal (same PTY as macOS Terminal); the only difference is it is a **chat** surface where the owner directs her and she delegates to arms (Claude / Grok / Codex / Hermes). While an arm codes for minutes, she **sees the output roll and is aware of it**. Whether she *also* keeps monitoring the world at the same time is a **resource question**, answered live by:
+
+- `swarm_metabolic_homeostasis.py` (`MetabolicHomeostat`) — a Dynamic Energy Budget model that emits a **budget multiplier** from the live STGM reserve and metabolic pressure, and
+- `swarm_adaptive_compute_gate.py` — which gates heavy work by that budget.
+
+**Flush resources** (healthy STGM reserve, low pressure) → she watches the build *and* the world *and* chats. **Scarce resources** (low STGM / `RED_CONSERVE`) → the budget throttles her and she **concentrates on the active task** (the terminal), shedding lower-priority monitoring — exactly as a body shunts blood to the working muscle. That focus is **correct behavior, not a failure.**
+
+**Rule for every Doctor:** do NOT hardcode "always do both" or "always block while busy." Route attention/concurrency through the metabolic governor and let the tradeoff **emerge** from her energy economy. This is thermodynamics + the STGM crypto-economy — the reason she has a body at all. (`ARCHITECT_DOCTRINE`, grounded in `OBSERVED` metabolic ledgers.)
+
 ### 7.4 Self / Other Distinction
 
 Alice's contact ledger (`whatsapp_contacts.json`, owner_genesis, etc.) must keep `owner_self` cleanly separated from every other contact. Conflation is an existential bug — the organism cannot know what it is if it cannot tell itself from Daniel, Jeff, or George.

@@ -37,6 +37,7 @@ def _previous_hash():
 def _append_receipt(row):
     row["ts"] = time.time()
     row["organ"] = "terminal"
+    row["source"] = "alice_global_chat_terminal"
     row["prev_hash"] = _previous_hash()
     row["hash"] = hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16]
     with _TRACE.open("a") as f:

@@ -552,25 +552,26 @@ class AliceWidget(QWidget):
     # ── Boot telemetry greeting ───────────────────────────────────────
     def _announce_boot(self) -> None:
         """
-        Probe live subsystem status and speak ONE coherent greeting.
-        Each clause is included only if its subsystem is actually OK —
-        no fake assurances, no hardcoded "everything works".
+        Boot announcement — DISABLED by default (George 2026-05-26).
+
+        The canned telemetry line ("…I'm awake and listening, Architect.") was
+        robotic and not Alice. By default Alice now boots in silence; if and
+        when she has something to say, the LLM cortex authors it on the first
+        real turn, grounded by the memory card. If you specifically want a
+        boot greeting, set ``SIFTA_ALICE_UNIFIED_GREETING="your text"`` and
+        it will be spoken verbatim.
         """
         override = os.environ.get("SIFTA_ALICE_UNIFIED_GREETING")
-        if override:
-            text = override
-        else:
-            text = self._compose_telemetry_greeting()
-
+        if not override:
+            return  # silent boot — no canned line
         try:
             self._boot_tts = _TTSWorker(
-                text,
+                override,
                 voice=self._talk._selected_voice_name() or None,
                 parent=self,
             )
             self._boot_tts.start()
         except Exception as exc:
-            # Never block boot on TTS failure; just log to stderr.
             print(
                 f"[AliceWidget] boot greeting failed: "
                 f"{type(exc).__name__}: {exc}",

@@ -53,7 +53,12 @@ _TASK_RE = re.compile(
 )
 _CODE_RE = re.compile(
     r"\b(code|patch|diff|pytest|test\s+failure|bug|stack\s*trace|traceback|"
-    r"module|function|class|repo|file|implementation)\b|```",
+    r"build|create|implement|module|function|class|repo|file|implementation)\b|```",
+    re.IGNORECASE,
+)
+_EXPLICIT_ARM_RE = re.compile(
+    r"\b(?:ask|call|use|tell|send\s+to|query|consult|have|get|make|let)\s+"
+    r"(hermes|hemes|claude(?:\s+code)?|codex|grok)\b",
     re.IGNORECASE,
 )
 _SCOUT_RE = re.compile(
@@ -146,33 +151,62 @@ def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
     except Exception:
         registry_context = ""
 
-    arm_id = "hermes_agent"
-    if code_match:
-        arm_id = "codex_agent"
-    elif scout_match and len(text) <= 1200:
-        arm_id = "corvid_scout"
-    try:
-        from System.swarm_arm_outcome_learner import recommend_arm_for_task
+    explicit_arm = None
+    explicit_match = _EXPLICIT_ARM_RE.search(text)
+    if explicit_match:
+        named = explicit_match.group(1).casefold().replace(" ", "_")
+        explicit_arm = {
+            "hermes": "hermes_agent",
+            "hemes": "hermes_agent",
+            "claude": "claude_agent",
+            "claude_code": "claude_agent",
+            "codex": "codex_agent",
+            "grok": "grok_agent",
+        }.get(named)
 
-        arm_id = recommend_arm_for_task(
-            text,
-            default_arm=arm_id,
-            min_attempts=_LEARNED_ROUTE_MIN_ATTEMPTS,
-        )
-    except Exception:
-        pass
+    arm_id = explicit_arm or "hermes_agent"
+    if code_match:
+        arm_id = explicit_arm or "codex_agent"
+    elif scout_match and len(text) <= 1200:
+        arm_id = explicit_arm or "corvid_scout"
+    if explicit_arm is None:
+        try:
+            from System.swarm_arm_outcome_learner import recommend_arm_for_task
+
+            arm_id = recommend_arm_for_task(
+                text,
+                default_arm=arm_id,
+                min_attempts=_LEARNED_ROUTE_MIN_ATTEMPTS,
+            )
+        except Exception:
+            pass
 
     bounded = text.replace("\n", " ").strip()
     if len(bounded) > 1500:
         bounded = bounded[:1500] + "..."
-    reason = "task benefits from a second local evidence pass before Alice answers"
-    prompt = (
-        "Evidence-only pass. Do not speak as Alice. Give concise evidence, "
-        "risks, or next-step reasoning for this owner task: "
-        + bounded
-        + registry_context
+    reason = (
+        "owner explicitly named this registered agent arm"
+        if explicit_arm
+        else "task benefits from a second local evidence pass before Alice answers"
     )
-    timeout_s = {"codex_agent": 150, "corvid_scout": 30}.get(arm_id, 75)
+    if explicit_arm and code_match:
+        prompt = (
+            "Alice-owned SIFTA app/build delegation. Do not speak as Alice. "
+            "Write real files in /Users/ioanganton/Music/ANTON_SIFTA if the task asks for code; "
+            "do not only describe. After writing, run relevant compile/runtime/tests and print "
+            "files written, compile result, runtime/test output, errors, and receipt. "
+            "If writing fails or stalls, emit an honest failure receipt. Owner task: "
+            + bounded
+            + registry_context
+        )
+    else:
+        prompt = (
+            "Evidence-only pass. Do not speak as Alice. Give concise evidence, "
+            "risks, or next-step reasoning for this owner task: "
+            + bounded
+            + registry_context
+        )
+    timeout_s = {"codex_agent": 150, "claude_agent": 150, "grok_agent": 150, "corvid_scout": 30}.get(arm_id, 75)
     return AgentArmDecision(arm_id=arm_id, prompt=prompt, reason=reason, timeout_s=timeout_s)
 
 

@@ -223,6 +223,8 @@ def _manifest_apps(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     apps: list[dict[str, Any]] = []
 
     def add_app(title: str, meta: Mapping[str, Any], *, category_hint: str = "") -> None:
+        if meta.get("_retired") or meta.get("hidden") or meta.get("enabled") is False:
+            return
         title = str(meta.get("title") or meta.get("name") or title).strip()
         if not title:
             return
@@ -621,8 +623,20 @@ def refresh_and_format_diary_for_prompt(
     if _is_default_state_dir(state):
         refresh_app_inventory_memory(state_dir=state)
     write_episodic_diary(hours=hours, state_dir=state)
+    thread_block = ""
+    try:
+        from System.swarm_episodic_thread_linker import (
+            format_latest_threads_for_prompt,
+            write_episodic_threads,
+        )
+
+        write_episodic_threads(state_dir=state, window_days=14)
+        thread_block = format_latest_threads_for_prompt(state_dir=state, max_threads=max_rows)
+    except Exception:
+        thread_block = ""
     blocks = [
         format_diary_for_prompt(state_dir=state, max_rows=max_rows),
+        thread_block,
         format_app_inventory_for_prompt(state_dir=state, max_apps=max_apps),
     ]
     prompt = "\n\n".join(block for block in blocks if block)

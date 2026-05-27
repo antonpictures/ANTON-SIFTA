@@ -125,6 +125,24 @@ def test_system_settings_imports_demoted_gemma4_alias():
     assert CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 
+def test_system_settings_treats_grok_as_remote_cortex():
+    from Applications.sifta_system_settings import _looks_remote_model_name
+
+    assert _looks_remote_model_name("gemini:gemini-2.5-flash")
+    assert _looks_remote_model_name("grok:grok-4.3")
+    assert _looks_remote_model_name("grok-4.3")
+    assert not _looks_remote_model_name("alice-m5-cortex-8b-6.3gb:latest")
+
+
+def test_cloud_backend_recognizes_grok_model_selector():
+    from System.swarm_gemini_brain import is_cloud_model
+
+    assert is_cloud_model("grok:grok-4.3")
+    assert is_cloud_model("grok-4.3")
+    assert is_cloud_model("gemini:gemini-2.5-flash")
+    assert not is_cloud_model("alice-m5-cortex-8b-6.3gb:latest")
+
+
 def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
@@ -152,6 +170,7 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in picker_items
         assert "alice-m5-cortex-8b-6.3gb:latest" in picker_items
         assert "alice-extra-cortex-25.8b-17gb:latest" in picker_items
+        assert "grok:grok-4.3" in picker_items
     finally:
         settings.close()
         for _ in range(10):

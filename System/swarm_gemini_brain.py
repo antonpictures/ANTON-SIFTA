@@ -1,5 +1,5 @@
 """
-swarm_gemini_brain.py — Google Gemini API as a swappable brain backend
+swarm_gemini_brain.py — Cloud brain backend (Gemini + Grok)
 ══════════════════════════════════════════════════════════════════════
 
 Authored by C47H, 2026-04-20, on AG31's request:
@@ -18,9 +18,9 @@ combobox flip.
 Public surface (all the widget needs)
 ─────────────────────────────────────
     • `is_gemini_model(name) -> bool`
-        Returns True for any model name the widget should route to Gemini
-        instead of Ollama. Accepts both "gemini:gemini-2.5-flash" and the
-        bare "gemini-2.5-flash".
+        Returns True for any cloud model name the widget should route to
+        cloud instead of Ollama. Back-compat name kept for callers that still
+        import `is_gemini_model`. Accepts Gemini and Grok prefixes.
 
     • `gemini_api_key() -> Optional[str]`
         Resolves the API key from (in order):
@@ -32,8 +32,8 @@ Public surface (all the widget needs)
         cloud models gracefully).
 
     • `available_gemini_models() -> List[str]`
-        The display labels (with the `gemini:` prefix) the widget should
-        offer when an API key is present. Hand-curated, cheap-first.
+        Back-compat cloud model list. Includes Gemini entries when a Gemini key
+        is present, and includes the canonical Grok entry.
 
     • `stream_chat(model, messages, *, temperature=0.7) -> Iterator[Event]`
         The streaming generator the widget worker drains. Yields:
@@ -41,9 +41,9 @@ Public surface (all the widget needs)
             ("usage", usage_dict)     — final usage snapshot from Gemini
             ("done",  full_text)      — full concatenated text
             ("error", err_message)    — terminal error
-        Parsing tolerates Gemini's SSE-ish line framing (`data: {...}\n`)
-        AND the older newline-delimited JSON the v1beta endpoint sometimes
-        emits, so the widget doesn't break on a model rev.
+        For Gemini: parses SSE `data: {json}` chunks.
+        For Grok: performs a non-streaming chat-completions call and emits
+        one token chunk + final done.
 
     • `record_usage(...)` / `read_ledger(...)` / `summarize_ledger(...)`
         The token/$$ ledger the gas-station meter app reads from.
@@ -73,8 +73,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import socket
 import ssl
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -120,10 +123,12 @@ _KEY_FILES = (
 )
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+_XAI_API_BASE = "https://api.x.ai/v1/chat/completions"
 
 # Stamped on every request so they're trivially filterable in the
 # Google Cloud Console log viewer.
 _USER_AGENT = "sifta-swarm/c47h-2026-04-20"
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -150,30 +155,52 @@ _DEFAULT_MENU = (
     "gemini:gemini-2.0-flash",
     "gemini:gemini-2.5-pro",
 )
+_GROK_DEFAULT_MENU = ("grok:grok-4.3",)
 
 
 # ─────────────────────────────────────────────────────────────────────
 # Model name handling
 # ─────────────────────────────────────────────────────────────────────
 def is_gemini_model(name: str) -> bool:
-    """True if the widget should route this model to Gemini, not Ollama."""
+    """True if the widget should route this model to cloud, not Ollama."""
     if not name:
         return False
     n = str(name).strip().lower()
-    return n.startswith("gemini:") or n.startswith("gemini-")
+    return (
+        n.startswith("gemini:")
+        or n.startswith("gemini-")
+        or n.startswith("grok:")
+        or n.startswith("grok-")
+    )
+
+
+def _is_grok_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("grok:") or n.startswith("grok-")
+
+
+def is_cloud_model(name: str) -> bool:
+    """Provider-agnostic alias used by newer callers."""
+    return is_gemini_model(name)
 
 
 def strip_prefix(name: str) -> str:
-    """Return the bare API model id ('gemini-2.5-flash')."""
+    """Return bare API model id ('gemini-2.5-flash', 'grok-4.3')."""
     n = str(name).strip()
     if n.lower().startswith("gemini:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("grok:"):
         n = n.split(":", 1)[1]
     return n
 
 
 def display_label(name: str) -> str:
-    """Return the prefixed combobox label ('gemini:gemini-2.5-flash')."""
+    """Return prefixed combobox label ('gemini:...','grok:...')."""
     bare = strip_prefix(name)
+    if bare.lower().startswith("grok-"):
+        return f"grok:{bare}"
     return f"gemini:{bare}"
 
 
@@ -230,11 +257,42 @@ def gemini_api_key() -> Optional[str]:
 
 
 def available_gemini_models() -> List[str]:
-    """Models to advertise in the widget. Empty list if no key (so the
-    widget can offer Ollama-only without a confusing greyed-out item)."""
-    if not gemini_api_key():
-        return []
-    return list(_DEFAULT_MENU)
+    """Back-compat cloud model list for UI pickers.
+
+    Gemini entries are exposed when a Gemini key is available.
+    Grok entry stays visible as a selectable cortex so owner can bind
+    credentials later without code changes.
+    """
+    out: List[str] = []
+    if gemini_api_key():
+        out.extend(_DEFAULT_MENU)
+    out.extend(_GROK_DEFAULT_MENU)
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for name in out:
+        label = display_label(name)
+        if label not in seen:
+            seen.add(label)
+            deduped.append(label)
+    return deduped
+
+
+def xai_api_key() -> Optional[str]:
+    """Resolve a local xAI credential (env or token file)."""
+    try:
+        from System.xai_grok_oauth_organ import load_credential as _load_xai_credential
+
+        cred = _load_xai_credential()
+        if cred and getattr(cred, "value", ""):
+            return str(cred.value).strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def available_cloud_models() -> List[str]:
+    """Provider-agnostic alias used by newer selectors."""
+    return available_gemini_models()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -280,6 +338,63 @@ def _to_gemini_payload(messages: List[Dict[str, str]],
             "parts": [{"text": "\n\n".join(sys_chunks)}],
         }
     return payload
+
+
+def _to_xai_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Normalize widget history for xAI chat-completions payload."""
+    out: List[Dict[str, str]] = []
+    for m in messages or []:
+        role = str(m.get("role") or "user").strip().lower()
+        content = str(m.get("content") or "")
+        if not content.strip():
+            continue
+        if role not in {"system", "user", "assistant", "tool"}:
+            role = "user"
+        out.append({"role": role, "content": content})
+    return out
+
+
+def _grok_cli_binary() -> Optional[str]:
+    return shutil.which("grok")
+
+
+def _to_grok_cli_prompt(messages: List[Dict[str, str]]) -> str:
+    """Flatten chat history into a deterministic single-turn prompt for grok CLI."""
+    lines: List[str] = [
+        "You are the active SIFTA Grok Cortex for Alice.",
+        "Answer with the final assistant response only.",
+        "",
+    ]
+    for m in messages or []:
+        role = str(m.get("role") or "user").strip().upper()
+        content = str(m.get("content") or "").strip()
+        if not content:
+            continue
+        lines.append(f"{role}:")
+        lines.append(content)
+        lines.append("")
+    lines.append("ASSISTANT:")
+    return "\n".join(lines).strip()
+
+
+def _clean_grok_cli_output(text: str) -> str:
+    raw = _ANSI_RE.sub("", str(text or ""))
+    out_lines: List[str] = []
+    for line in raw.replace("\r\n", "\n").replace("\r", "\n").splitlines():
+        clean = line.strip()
+        if not clean:
+            out_lines.append("")
+            continue
+        lower = clean.lower()
+        if lower.startswith("turn completed in "):
+            continue
+        if lower == "tokens used":
+            # Some builds emit a short usage footer after the answer.
+            break
+        out_lines.append(line)
+    cleaned = "\n".join(out_lines).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -333,6 +448,245 @@ def _extract_usage(chunk: Dict[str, Any]) -> Optional[Dict[str, int]]:
     }
 
 
+def _stream_grok_chat(
+    model: str,
+    messages: List[Dict[str, str]],
+    *,
+    temperature: float = 0.7,
+    api_key: Optional[str] = None,
+    request_tag: Optional[str] = None,
+    timeout_s: int = 120,
+) -> Iterator[Tuple[str, Any]]:
+    """xAI chat-completions adapter.
+
+    We use non-streaming mode and emit one token chunk + done. This keeps the
+    worker contract intact while avoiding SSE parser drift across providers.
+    """
+    import urllib.error
+    import urllib.request
+
+    bare = strip_prefix(model)
+    key = api_key or xai_api_key()
+    if not key:
+        yield from _stream_grok_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    body = json.dumps(
+        {
+            "model": bare,
+            "messages": _to_xai_messages(messages),
+            "temperature": float(temperature),
+            "stream": False,
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        _XAI_API_BASE,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "User-Agent": _USER_AGENT,
+            "x-request-tag": tag,
+        },
+    )
+
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s, context=_SSL_CTX) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body_txt = ""
+        try:
+            body_txt = exc.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            pass
+        # OAuth bearer drift reflex:
+        # If the xAI HTTPS call is denied (expired/revoked OAuth token, or tier gate),
+        # immediately fall back to the local Grok CLI path. The CLI session can often
+        # recover using its own stored auth flow without requiring a full chat failure.
+        if int(getattr(exc, "code", 0) or 0) in (401, 403):
+            yield from _stream_grok_chat_via_cli(
+                model=model,
+                messages=messages,
+                request_tag=request_tag,
+                timeout_s=timeout_s,
+            )
+            return
+        yield ("error", f"xAI HTTP {exc.code} {exc.reason} — {body_txt}")
+        return
+    except urllib.error.URLError as exc:
+        yield ("error", f"Can't reach xAI API: {exc}")
+        return
+    except socket.timeout:
+        yield ("error", f"xAI call timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"xAI brain crashed: {exc}")
+        return
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        yield ("error", f"xAI returned non-JSON payload: {raw[:300]}")
+        return
+
+    message = ""
+    try:
+        message = str(
+            ((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        ).strip()
+    except Exception:
+        message = ""
+    if not message:
+        yield ("error", "xAI response had no assistant content.")
+        return
+
+    usage_raw = payload.get("usage") or {}
+    prompt_tokens = int(usage_raw.get("prompt_tokens") or 0)
+    completion_tokens = int(usage_raw.get("completion_tokens") or 0)
+    total_tokens = int(usage_raw.get("total_tokens") or 0)
+    cost_usd = usage_raw.get("cost_in_usd")
+    try:
+        cost_value = float(cost_usd) if cost_usd is not None else 0.0
+    except Exception:
+        cost_value = 0.0
+
+    usage = Usage(
+        model=bare,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw=usage_raw if isinstance(usage_raw, dict) else {},
+    )
+    usage.cost_usd = round(cost_value, 6)
+    record_usage(usage, backend="xai_grok")
+    yield ("token", message)
+    yield ("usage", usage)
+    yield ("done", message)
+
+
+def _stream_grok_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 120,
+) -> Iterator[Tuple[str, Any]]:
+    """Fallback path: use logged-in local grok CLI OAuth session.
+
+    This path keeps Alice operational on nodes with SuperGrok/X Premium+
+    where API-key credentials are intentionally absent.
+    """
+    cli = _grok_cli_binary()
+    if not cli:
+        yield (
+            "error",
+            "No xAI credential found and local `grok` CLI is missing. "
+            "Set XAI_API_KEY / XAI_OAUTH_ACCESS_TOKEN, or log in via Hermes "
+            "OAuth after updating Hermes: `hermes auth add xai-oauth`.",
+        )
+        return
+
+    bare = strip_prefix(model)
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    prompt = _to_grok_cli_prompt(messages)
+    used_model = bare
+    fallback_to_cli_default = False
+    cmd = [
+        cli,
+        "--single",
+        prompt,
+        "--model",
+        bare,
+        "--output-format",
+        "plain",
+        "--no-alt-screen",
+    ]
+
+    def _run_once(run_cmd: List[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            run_cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s,
+        )
+
+    t0 = time.time()
+    try:
+        proc = _run_once(cmd)
+    except subprocess.TimeoutExpired:
+        yield ("error", f"Grok CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"Grok CLI launch failed: {exc}")
+        return
+
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    combined = stdout if stdout.strip() else stderr
+    if proc.returncode != 0 and "unknown model id" in combined.lower():
+        # The local CLI account may expose a curated model set (e.g. grok-build
+        # only). Retry without explicit --model so Grok uses its configured
+        # default model for this OAuth session.
+        fallback_cmd = [
+            cli,
+            "--single",
+            prompt,
+            "--output-format",
+            "plain",
+            "--no-alt-screen",
+        ]
+        try:
+            proc = _run_once(fallback_cmd)
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+            combined = stdout if stdout.strip() else stderr
+            fallback_to_cli_default = proc.returncode == 0
+            if fallback_to_cli_default:
+                used_model = "grok-cli-default"
+        except Exception:
+            pass
+
+    if proc.returncode != 0:
+        snippet = _clean_grok_cli_output(combined)[:500]
+        yield ("error", f"Grok CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        return
+
+    text = _clean_grok_cli_output(combined)
+    if not text:
+        yield ("error", "Grok CLI returned empty output.")
+        return
+
+    usage = Usage(
+        model=used_model,
+        prompt_tokens=0,
+        completion_tokens=0,
+        total_tokens=0,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={
+            "transport": "grok_cli_single",
+            "requested_model": bare,
+            "fallback_to_cli_default": fallback_to_cli_default,
+        },
+    )
+    usage.cost_usd = 0.0
+    record_usage(usage, backend="xai_grok_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
 def stream_chat(
     model: str,
     messages: List[Dict[str, str]],
@@ -362,6 +716,17 @@ def stream_chat(
         • Two custom headers are sent on every request to make the call
           trivially findable in the Google Cloud Console log viewer.
     """
+    if _is_grok_model(model):
+        yield from _stream_grok_chat(
+            model,
+            messages,
+            temperature=temperature,
+            api_key=api_key,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+
     import urllib.error
     import urllib.request
 
@@ -460,7 +825,7 @@ def stream_chat(
         _cost_for(bare, usage.prompt_tokens, usage.completion_tokens),
         6,
     )
-    record_usage(usage)
+    record_usage(usage, backend="gemini")
     yield ("usage", usage)
     yield ("done", full_text)
 
@@ -468,13 +833,13 @@ def stream_chat(
 # ─────────────────────────────────────────────────────────────────────
 # Token ledger — the data layer the gas-station meter reads
 # ─────────────────────────────────────────────────────────────────────
-def record_usage(u: Usage) -> None:
+def record_usage(u: Usage, *, backend: str = "gemini") -> None:
     """Append one ledger row. Best-effort; ledger errors never break a
     chat turn (we'd rather lose a meter tick than drop a reply)."""
     row = {
         "ts": time.time(),
         "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "backend": "gemini",
+        "backend": str(backend or "gemini"),
         "model": u.model,
         "prompt_tokens": u.prompt_tokens,
         "completion_tokens": u.completion_tokens,
@@ -568,11 +933,14 @@ __all__ = [
     "TOKEN_LEDGER",
     "PRICING_USD_PER_M",
     "Usage",
+    "is_cloud_model",
     "is_gemini_model",
     "strip_prefix",
     "display_label",
     "gemini_api_key",
+    "xai_api_key",
     "available_gemini_models",
+    "available_cloud_models",
     "stream_chat",
     "record_usage",
     "read_ledger",

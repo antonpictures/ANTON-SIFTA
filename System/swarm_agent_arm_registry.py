@@ -56,15 +56,17 @@ HERMES_AGENT = AgentArmSpec(
     # after 120s" → the 120s burn + slow 30B generation tripped the arm timeout, so
     # every run died at the confirm gate having written nothing. Owner's standing
     # order is always-allow, so the arm should not ask at all — same non-interactive
-    # pattern as the Codex arm below (default_toolsets=()). file + code_execution stay
-    # so it can actually build; verifier + git diff remain the audit trail.
-    default_toolsets=("file", "code_execution"),
+    # pattern as the Codex arm below. file + terminal + code_execution stay so it can
+    # actually build; verifier + git diff remain the audit trail.
+    default_toolsets=("file", "terminal", "code_execution"),
     max_turns=30,
     capabilities=("single_query_research", "evidence_output", "codebase_build"),
     notes=(
-        "Builder-capable arm: file + code_execution toolsets, multi-turn. Output is "
-        "evidence, not Alice voice. Was previously caged to clarify/1-turn, which is "
-        "why builds only ever produced intent reports. Receipts on every attempt."
+        "Builder-capable arm: file + terminal + code_execution toolsets, multi-turn, "
+        "launched with Hermes --yolo by the SIFTA wrapper. Output is evidence, not "
+        "Alice voice. Was previously caged to clarify/1-turn, then starved of the "
+        "terminal toolset, which is why builds produced intent reports or broken "
+        "execute_command repairs. Receipts on every attempt."
     ),
 )
 
@@ -137,19 +139,28 @@ GROK_AGENT = AgentArmSpec(
 CLAUDE_AGENT = AgentArmSpec(
     arm_id="claude_agent",
     display_name="Claude Code",
-    command=("claude",),  # marker; _build_command expands to: claude -p <prompt>
+    command=("claude",),  # marker; _build_command expands to streaming headless Claude Code.
     model="claude-code-cli-default",
     provider_base_url="claude_code_cli",
     enabled=False,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
     default_toolsets=(),
     max_turns=1,
-    capabilities=("single_query_research", "evidence_output", "external_cortex", "codebase_reading"),
+    capabilities=(
+        "single_query_research",
+        "evidence_output",
+        "external_cortex",
+        "codebase_reading",
+        "codebase_build",
+    ),
     notes=(
-        "External Claude Code CLI via `claude -p <prompt>` (headless print mode), run in the "
-        "SIFTA repo so it can read the codebase and report on SIFTA. Owner 2026-05-24: Alice "
-        "delegates to Claude like Hermes. Uses the Claude Max auth already signed in (no key "
-        "handled here). Output is Claude's voice (evidence), never Alice's. Bridge, not merge."
+        "External Claude Code CLI via `claude -p --dangerously-skip-permissions "
+        "--permission-mode bypassPermissions --output-format stream-json "
+        "--include-partial-messages --verbose <prompt>` (headless streaming mode), run in the SIFTA "
+        "repo so it can read and patch the codebase for bounded tournament/build work. "
+        "Owner standing policy is always-allow; verifier + git diff are the audit trail. "
+        "Uses the Claude Max auth already signed in (no key handled here). Output is "
+        "Claude's voice/evidence, never Alice's. Bridge, not merge."
     ),
 )
 

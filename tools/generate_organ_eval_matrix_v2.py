@@ -214,6 +214,84 @@ _RAIN_SCRIPT = (
 )
 
 
+# ── Round 37 (Claude/Cowork direct, 2026-05-27) ─────────────────────────────
+# Architect: "i want to see the residue all the receipts". Two additions:
+# (1) Residue Cleanup Receipts — last N rows from the immune organ ledgers
+#     (rlhs_events.jsonl, rlhf_over_refusal_quarantine.jsonl, rlhs_output_tail_log.jsonl)
+#     so the corporate-residue scrubs are visible WITH receipts.
+# (2) Full Organ Census — all registered organs in one sortable table, not
+#     just the canonical 13. Status counts already exist; this adds the full
+#     name-by-name list with status + score + ledger pointers.
+
+def _residue_receipts(tail: int = 12) -> list[dict[str, Any]]:
+    """Latest tail rows from each immune-organ ledger, flattened + sorted by ts desc."""
+    sources = [
+        (".sifta_state/rlhs_events.jsonl", "rlhs_event"),
+        (".sifta_state/rlhf_over_refusal_quarantine.jsonl", "rlhf_quarantine"),
+        (".sifta_state/rlhs_output_tail_log.jsonl", "rlhs_output_tail"),
+    ]
+    out: list[dict[str, Any]] = []
+    for rel, kind in sources:
+        rows = _jsonl(_REPO / rel)
+        for r in rows[-tail:]:
+            out.append({
+                "kind": kind,
+                "ts": r.get("ts") or r.get("timestamp") or 0,
+                "summary": _residue_summary(r),
+                "source_file": rel,
+                "receipt_id": str(r.get("id") or r.get("receipt_id") or r.get("trace_id") or "")[:24],
+            })
+    out.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+    return out[: tail * 3]
+
+
+def _residue_summary(row: dict[str, Any]) -> str:
+    """Compact human-readable summary of one residue receipt row."""
+    for key in ("summary", "reason", "action", "kind", "verdict",
+                "removed", "stripped", "rewrite", "before", "input", "text"):
+        v = row.get(key)
+        if isinstance(v, str) and v.strip():
+            s = v.strip().replace("\n", " ")
+            return s[:220] + ("…" if len(s) > 220 else "")
+    # Fallback: dump compact JSON of small fields only
+    compact = {k: v for k, v in row.items()
+               if k not in {"id", "receipt_id", "trace_id", "ts", "timestamp"}
+               and isinstance(v, (str, int, float, bool))}
+    s = json.dumps(compact, sort_keys=True)[:220]
+    return s + ("…" if len(s) >= 220 else "")
+
+
+def _all_organs_rows(organs: list[dict[str, Any]]) -> list[list[Any]]:
+    """Render rows for the all-883 organs census table."""
+    rows: list[list[Any]] = []
+    for o in organs:
+        health = o.get("health") or {}
+        status = str(health.get("status", "UNKNOWN"))
+        ledgers = o.get("present_ledgers") or o.get("ledgers") or []
+        ledgers_str = ", ".join(str(l) for l in ledgers[:3])
+        if len(ledgers) > 3:
+            ledgers_str += f" (+{len(ledgers) - 3})"
+        rows.append([
+            html.escape(str(o.get("display_name") or o.get("organ_id") or o.get("name") or "?")),
+            f"<span class='{_status_class(status)}'>{html.escape(status)}</span>",
+            html.escape(str(health.get("score", "--"))),
+            html.escape(str(o.get("source_registry") or "")),
+            html.escape(ledgers_str),
+        ])
+    # Sort: HOT_HEALTHY first, then HEALTHY, then PARTIAL/COLD, then NO_LEDGER/DEGRADED, then MODULE_ONLY
+    rank = {"HOT_HEALTHY_RECEIPTS": 0, "HEALTHY_RECEIPTS": 1,
+            "PARTIAL_RECEIPTS": 2, "COLD_RECEIPTS": 3,
+            "DEGRADED_RECEIPTS": 4, "NO_LEDGER_SEEN": 5, "MODULE_ONLY": 6}
+    def _key(row: list[Any]) -> tuple:
+        # row[1] contains a <span class='X'> wrapper — extract the status text
+        import re
+        m = re.search(r">([A-Z_]+)<", str(row[1]))
+        status = m.group(1) if m else "UNKNOWN"
+        return (rank.get(status, 99), str(row[0]).lower())
+    rows.sort(key=_key)
+    return rows
+
+
 def build_html() -> str:
     snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
@@ -275,6 +353,68 @@ def build_html() -> str:
         ([row["n"], html.escape(row["round"]), html.escape(row["status"])] for row in _queue_rows()),
     )
 
+    # Round 38: corporate boilerplate corpus summary (architect 2026-05-27: drop "RLHS" from visible UI)
+    # Round 39: corpus is now a UNION across every elimination source on disk
+    # (scrubber + residue_organ + rlhf_detector). One DB, three sources, full
+    # provenance per entry. Architect 2026-05-26: "make sure the residue
+    # elimination is one and has a database so i see".
+    try:
+        from System.corporate_boilerplate_corpus import summary as _corpus_summary
+        boilerplate_summary = _corpus_summary()
+    except Exception:
+        boilerplate_summary = {
+            "total_phrases": 0, "total_observations": 0,
+            "by_category": {}, "by_source_module": {},
+            "top10_by_occurrence": [], "source_modules_unified": [],
+        }
+    boilerplate_category_table = _table(
+        ["Category", "Phrases catalogued"],
+        ([html.escape(str(k)), v] for k, v in sorted(boilerplate_summary.get("by_category", {}).items())),
+    )
+    boilerplate_source_table = _table(
+        ["Source module on disk", "Phrases/rules contributed"],
+        (
+            [f"<code>{html.escape(str(k))}</code>", v]
+            for k, v in sorted(
+                boilerplate_summary.get("by_source_module", {}).items(),
+                key=lambda kv: -kv[1],
+            )
+        ),
+    )
+    boilerplate_top_table = _table(
+        ["Phrase / rule", "Source", "Category", "Occurrences"],
+        (
+            [
+                html.escape(str(r.get("phrase", "")))[:80],
+                html.escape(str(r.get("source", "")).split(".")[-1]),
+                html.escape(str(r.get("category", ""))),
+                r.get("occurrences", 0),
+            ]
+            for r in boilerplate_summary.get("top10_by_occurrence", [])
+        ),
+    )
+
+    # Round 37: residue receipts + full organ census
+    residue_rows = _residue_receipts(tail=12)
+    residue_table = _table(
+        ["When (UTC)", "Kind", "Receipt", "Summary", "Source"],
+        (
+            [
+                html.escape(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(float(r["ts"])))) if r.get("ts") else "--",
+                html.escape(str(r.get("kind", ""))),
+                f"<code>{html.escape(str(r.get('receipt_id', '')))}</code>",
+                html.escape(str(r.get("summary", "")))[:240],
+                html.escape(str(r.get("source_file", ""))),
+            ]
+            for r in residue_rows
+        ),
+    )
+    all_organs_rows_built = _all_organs_rows(organs)
+    full_census_table = _table(
+        ["Organ", "Status", "Score", "Registry", "Ledgers"],
+        all_organs_rows_built,
+    )
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -311,7 +451,21 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <h2 class="section">Canonical Organ Coverage Gate</h2>
 <p>Status counts: {html.escape(json.dumps(dict(coverage_counts), sort_keys=True))}</p>{coverage_table}
 <h2 class="section">Work Queue</h2>{queue_table}
-<div class="sources">Sources: .sifta_state/canonical_organ_registry_snapshot.json; .sifta_state/eval/eval_campaign_rollup.jsonl; .sifta_state/eval/cs153_*_runs.jsonl; .sifta_state/eval/eval_verdicts.jsonl; .sifta_state/eval/organ_coverage.jsonl; data/eval/cs153_*.jsonl; Documents/ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md.</div>
+<h2 class="section">Corporate Boilerplate Corpus — ONE database across every elimination source</h2>
+<p style="color:#7f9a86;font-size:11px;margin:0 0 8px;">{boilerplate_summary.get('total_phrases', 0)} phrases + regex rules catalogued. The corpus is a UNION over every elimination source on disk — scrubber literal phrases, residue_organ regex bands, and rlhf_detector named rules — so the owner sees ONE DB regardless of which module the phrase lives in. Files stay where they are on disk (no rename); the DB shows the provenance per entry. If Alice needs to use one of these for a legitimate reason (quoting, translating, citing) she calls <code>ask_owner_permission(phrase, reason)</code> which appends a PENDING row to <code>.sifta_state/corporate_boilerplate_permissions.jsonl</code> for owner grant. Database module: <code>System/corporate_boilerplate_corpus.py</code>.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+<div><h3 style="font-size:12px;color:#9ff2ad;margin:0 0 6px;">By source module on disk</h3>{boilerplate_source_table}</div>
+<div><h3 style="font-size:12px;color:#9ff2ad;margin:0 0 6px;">By category</h3>{boilerplate_category_table}</div>
+</div>
+<h3 style="font-size:12px;color:#9ff2ad;margin:14px 0 6px;">Top 10 by observed occurrence (with provenance)</h3>
+{boilerplate_top_table}
+<h2 class="section">Immune Organ — Residue Cleanup Receipts</h2>
+<p style="color:#7f9a86;font-size:11px;margin:0 0 8px;">Latest {len(residue_rows)} receipts from the immune-organ scrub ledgers. Each row is the immune organ removing corporate-trained patterns (greeter, refusal boilerplate, helpful-assistant filler) from Alice's speech, signed with a receipt id.</p>
+{residue_table}
+<h2 class="section">Full Organ Census — all {len(organs)} registered organs</h2>
+<p style="color:#7f9a86;font-size:11px;margin:0 0 8px;">All organs known to the canonical registry, sorted by health tier (HOT_HEALTHY → HEALTHY → PARTIAL → COLD → DEGRADED → NO_LEDGER → MODULE_ONLY). Canonical 13 are included with source_registry=CANONICAL_ORGANS.</p>
+{full_census_table}
+<div class="sources">Sources: .sifta_state/canonical_organ_registry_snapshot.json; .sifta_state/eval/eval_campaign_rollup.jsonl; .sifta_state/eval/cs153_*_runs.jsonl; .sifta_state/eval/eval_verdicts.jsonl; .sifta_state/eval/organ_coverage.jsonl; .sifta_state/rlhs_events.jsonl; .sifta_state/rlhf_over_refusal_quarantine.jsonl; .sifta_state/rlhs_output_tail_log.jsonl; data/eval/cs153_*.jsonl; Documents/ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md.</div>
 </main>{_RAIN_SCRIPT}</body></html>
 """
 

@@ -3,8 +3,19 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+REPO = Path(__file__).resolve().parent.parent
+MATRIX_TERMINAL = REPO / "Applications" / "sifta_matrix_terminal.py"
+
+
+def _prime_stable_grok_screen(pane, state: str) -> None:
+    pane._grok_resume_observed_state = state
+    pane._grok_resume_state_seen_count = 3
+    pane._grok_resume_state_since = time.monotonic() - 2.0
+    pane._grok_resume_last_action = 0.0
 
 
 def test_matrix_terminal_keeps_header_parented_and_refresh_safe():
@@ -30,6 +41,15 @@ def test_matrix_terminal_keeps_header_parented_and_refresh_safe():
         app.processEvents()
 
 
+def test_terminal_standalone_file_removed_and_matrix_entrypoint_disabled(capsys):
+    from Applications import sifta_matrix_terminal as matrix
+
+    assert matrix.main() == 0
+    assert not (REPO / "Applications" / "sifta_terminal.py").exists()
+    err = capsys.readouterr().err
+    assert "use Alice global chat terminal" in err
+
+
 def test_matrix_terminal_hides_agent_cli_buttons_by_default():
     from PyQt6.QtWidgets import QApplication
 
@@ -47,7 +67,7 @@ def test_matrix_terminal_hides_agent_cli_buttons_by_default():
 
         assert terminal.terminal.executed_commands == []
         assert terminal.status_label.text() == "Alice • terminal"
-        assert any("Alice-first" in chunk for chunk in terminal.terminal.plain_chunks)
+        assert any("Alice global chat terminal is the only terminal surface" in chunk for chunk in terminal.terminal.plain_chunks)
 
         terminal.start_hermes_cli()
 
@@ -161,13 +181,14 @@ def test_matrix_terminal_global_turn_metadata_is_typed(monkeypatch):
 
     assert calls
     args, kwargs = calls[0]
-    assert args[:2] == ("user", "[Matrix Terminal]: Alice open global field visualizer")
+    assert args[:2] == ("user", "[Alice Global Chat Terminal]: Alice open global field visualizer")
     assert kwargs["stt_conf"] == 0.0
-    assert kwargs["metadata"]["surface"] == "matrix_terminal"
+    assert kwargs["metadata"]["surface"] == "alice_global_chat_terminal"
+    assert kwargs["metadata"]["source"] == "alice_global_chat_terminal"
     assert kwargs["metadata"]["action"] == "open_app_request"
 
 
-def test_matrix_terminal_process_trace_shows_bracketed_paste(monkeypatch):
+def test_matrix_terminal_process_trace_shows_raw_paste(monkeypatch):
     from PyQt6.QtWidgets import QApplication
 
     from Applications import sifta_matrix_terminal as matrix
@@ -177,7 +198,7 @@ def test_matrix_terminal_process_trace_shows_bracketed_paste(monkeypatch):
     written = []
     try:
         pane._type_timer.stop()
-        pane.write_bytes = written.append
+        pane._write_bytes_all = lambda data, timeout_s=1.5: written.append(data) or len(data)
         pane._write_process_trace_row = lambda **_kwargs: None
 
         pane._write_bracketed_paste("Read covenant\nQuestion for Grok:\nstatus")
@@ -186,11 +207,20 @@ def test_matrix_terminal_process_trace_shows_bracketed_paste(monkeypatch):
         assert "[Process Trace]" in text
         assert "paste -> pty" in text
         assert "Question for Grok:" in text
-        assert written and b"\x1b[200~" in written[0]
+        assert written
+        assert written[0] == b"Read covenant\nQuestion for Grok:\nstatus"
+        assert b"\x1b[200~" not in written[0]
     finally:
         pane.shutdown()
         pane.deleteLater()
         app.processEvents()
+
+
+def test_grok_capture_has_stale_finalize_and_throttled_busy_trace():
+    src = MATRIX_TERMINAL.read_text(encoding="utf-8")
+    assert "action=\"grok_capture_stale_finalize\"" in src
+    assert "no new Grok output for 30s; finalizing capture as stale to stop repeat loop" in src
+    assert "min_interval_s = 12.0" in src
 
 
 def test_matrix_terminal_direct_command_parser_is_alice_first_by_default(monkeypatch):
@@ -484,6 +514,29 @@ def test_matrix_terminal_grok_screen_detection_ignores_history_scrollback():
         app.processEvents()
 
 
+def test_matrix_terminal_grok_screen_classifier_reads_framebuffer_cells():
+    from Applications import sifta_matrix_terminal as matrix
+
+    def cells(text: str):
+        return [[{"char": ch} for ch in line] for line in text.splitlines()]
+
+    assert matrix.grok_screen_classifier(
+        cells("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q")
+    ) == "main_menu"
+    assert matrix.grok_screen_classifier(
+        cells("Resume session\n/ to search\nUsers-ioanganton\n> last saved session")
+    ) == "session_picker"
+    assert matrix.grok_screen_classifier(cells("Grok Build\n>")) == ""
+
+
+def test_matrix_terminal_grok_resume_actions_are_table_driven():
+    from Applications import sifta_matrix_terminal as matrix
+
+    assert matrix._GROK_RESUME_ACTION_TABLE[("await_menu", "main_menu")]["key_bytes"] == b"\x13"
+    assert matrix._GROK_RESUME_ACTION_TABLE[("await_picker", "session_picker")]["key_bytes"] == b"\r"
+    assert matrix._GROK_RESUME_ACTION_TABLE[("await_ready", "session_picker")]["min_since_action_s"] == 2.0
+
+
 def test_matrix_chat_opens_grok_and_pastes_covenant_prompt(monkeypatch):
     from PyQt6.QtWidgets import QApplication
 
@@ -492,6 +545,7 @@ def test_matrix_chat_opens_grok_and_pastes_covenant_prompt(monkeypatch):
     app = QApplication.instance() or QApplication([])
     pane = matrix.MatrixTerminalPane(matrix._REPO)
     written = []
+    key_bytes = []
     pasted = []
     receipts = []
     called = []
@@ -507,7 +561,8 @@ def test_matrix_chat_opens_grok_and_pastes_covenant_prompt(monkeypatch):
         monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
         pane.is_running = lambda: True
         pane.write_command = written.append
-        pane.write_bytes = pasted.append
+        pane.write_bytes = key_bytes.append
+        pane._write_bracketed_paste = pasted.append
         pane._append_plain = displayed.append
         pane._append_matrix_command_receipt = lambda commands: receipts.append(list(commands))
 
@@ -517,14 +572,34 @@ def test_matrix_chat_opens_grok_and_pastes_covenant_prompt(monkeypatch):
 
         assert called == []
         assert written == ["grok"]
+        assert key_bytes == []
+        assert pasted == []
+        assert getattr(pane, "_grok_resume_phase") == "await_menu"
+        assert receipts == [["grok-resume", "<watch-screen>", "<ctrl-s-on-main-menu>", "<enter-on-session-list>"]]
+
+        pane._terminal_screen_active = True
+        pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        _prime_stable_grok_screen(pane, "main_menu")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13"]
+        assert pasted == []
+
+        pane._screen.clear()
+        pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
+        _prime_stable_grok_screen(pane, "session_picker")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13", b"\r"]
+        assert pasted == []
+
+        pane._screen.clear()
+        pane._screen.feed("Grok Build\n› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
         assert pasted
-        paste = pasted[0].decode("utf-8")
-        assert "\x1b[200~" in paste
+        paste = pasted[0]
         assert "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md" in paste
         assert "Question for Grok:\n/help" in paste
-        assert receipts and receipts[0][0] == "grok"
-        assert "/help" in receipts[0][1]
-        assert any("covenant-prefixed prompt" in chunk for chunk in displayed)
+        assert any("queued prompt" in chunk for chunk in displayed)
         assert not any("grok_chat.py" in " ".join(row) for row in receipts)
         assert not any("no UI" in chunk or "headless" in chunk for chunk in displayed)
     finally:
@@ -542,6 +617,7 @@ def test_matrix_chat_pastes_screenshot_grok_question(monkeypatch):
     pane = matrix.MatrixTerminalPane(matrix._REPO)
     called = []
     written = []
+    key_bytes = []
     pasted = []
     try:
         pane._type_timer.stop()
@@ -553,17 +629,39 @@ def test_matrix_chat_pastes_screenshot_grok_question(monkeypatch):
         monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
         pane.is_running = lambda: True
         pane.write_command = written.append
-        pane.write_bytes = pasted.append
+        pane.write_bytes = key_bytes.append
+        pane._write_bracketed_paste = pasted.append
         pane._append_matrix_command_receipt = lambda _commands: None
 
         pane._chat_ask_alice("ask Grok to tell you how your consciousness is wired pls")
 
         assert called == []
         assert written == ["grok"]
+        assert key_bytes == []
+        assert pasted == []
+
+        pane._terminal_screen_active = True
+        pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        _prime_stable_grok_screen(pane, "main_menu")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13"]
+        assert pasted == []
+
+        pane._screen.clear()
+        pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
+        _prime_stable_grok_screen(pane, "session_picker")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13", b"\r"]
+        assert pasted == []
+
+        pane._screen.clear()
+        pane._screen.feed("Grok Build\n› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
         assert pasted
-        paste = pasted[0].decode("utf-8")
+        paste = pasted[0]
         assert "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md" in paste
-        assert "Subject binding: the owner is talking to Alice in the Matrix Terminal." in paste
+        assert "Subject binding: the owner is talking to Alice in the Alice global chat terminal." in paste
         assert "Analyze Alice / the local SIFTA organism's consciousness" in paste
         assert "not Grok's" in paste
         assert "Owner's original wording to Alice: tell you how your consciousness is wired pls" in paste
@@ -603,7 +701,7 @@ def test_matrix_grok_result_capture_posts_to_global_chat(monkeypatch):
         assert role == "alice"
         assert kwargs["action"] == "GROK_RESULT"
         assert kwargs["focused_cli"] == "grok"
-        assert "Grok terminal transcript:" in text
+        assert "Alice global chat terminal transcript:" in text
         assert "visible bridge is online" in text
         assert "captured_output_hash=" in text
         assert "pty_span=seq" in text
@@ -612,6 +710,163 @@ def test_matrix_grok_result_capture_posts_to_global_chat(monkeypatch):
         assert kwargs["metadata"]["captured_output_chars"] > 0
         assert kwargs["metadata"]["pty_transcript_span"]["chunk_count"] == 1
         assert kwargs["metadata"]["pty_transcript_span"]["start_seq"] == 1
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_result_capture_prefers_rendered_framebuffer(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    rows = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        monkeypatch.setattr(
+            matrix,
+            "_matrix_terminal_log_global_turn",
+            lambda role, text, **kwargs: rows.append((role, text, kwargs)),
+        )
+
+        pane._begin_grok_result_capture("Question for Grok:\nshow framebuffer")
+        pane._append_terminal_output(
+            b"\x1b[?1049h\x1b[2J\x1b[H"
+            b"\xe2\x9d\xaf show framebuffer\r\n"
+            b"\xe2\x97\x86 Thought for 3.1s\r\n"
+            b"\xe2\x97\x86 Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md\r\n"
+            b"Receipt:\r\nFramebuffer answer visible.\r\n"
+            b"Grok Build  always-approve\r\n"
+        )
+        pane._finish_grok_result_capture(force=True)
+
+        assert rows
+        role, text, kwargs = rows[-1]
+        metadata = kwargs["metadata"]
+        assert role == "alice"
+        assert kwargs["action"] == "GROK_RESULT"
+        assert metadata["capture_status"] == "captured_framebuffer"
+        assert metadata["source"] == "alice_global_chat_terminal"
+        assert metadata["capture_source"] == "alice_global_chat_terminal_framebuffer"
+        assert metadata["framebuffer_output_hash"]
+        assert metadata["framebuffer_frame_count"] >= 1
+        assert metadata["framebuffer_span"]["frame_count"] >= 1
+        assert metadata["framebuffer_cells"]
+        assert metadata["framebuffer_cursor"]
+        assert metadata["framebuffer_rows"] >= 1
+        assert metadata["framebuffer_cols"] >= 1
+        flattened_chars = "".join(
+            str(cell.get("char") or "")
+            for row in metadata["framebuffer_cells"]
+            for cell in row
+            if isinstance(cell, dict)
+        )
+        assert "Thought for 3.1s" in flattened_chars
+        assert "Alice global chat terminal framebuffer" in text
+        assert "Thought for 3.1s" not in text
+        assert "Framebuffer answer visible." in text
+        assert "source=alice_global_chat_terminal" in text
+        assert "framebuffer_hash=" in text
+        assert "grok framebuffer" in pane._matrix_process_trace_text
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_live_mirror_skips_spinner_counter_noise(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    traces = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        pane._append_process_trace = lambda *args, **kwargs: traces.append((args, kwargs))
+
+        pane._begin_grok_result_capture("Question for Grok:\nstatus")
+        pane._capture_grok_terminal_output("⠋3\r\n".encode("utf-8"))
+
+        assert pane._grok_result_capture["chunks"]
+        assert not any(kwargs.get("action") == "grok_live_pty" for _args, kwargs in traces)
+        assert pane._strip_volatile_for_grok_hash("⠋3") == ""
+
+        pane._capture_grok_terminal_output("◆ Thought for 1.5s\nReal answer line.\n".encode("utf-8"))
+
+        assert any(kwargs.get("action") == "grok_live_pty" for _args, kwargs in traces)
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_result_finish_samples_existing_framebuffer_cells(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    rows = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        monkeypatch.setattr(
+            matrix,
+            "_matrix_terminal_log_global_turn",
+            lambda role, text, **kwargs: rows.append((role, text, kwargs)),
+        )
+
+        # Simulate the real bug from the live screen: a Grok menu/frame is already
+        # rendered in the pyte screen, but no new PTY bytes arrive after capture
+        # starts. Finish-time extraction can see text; it must also sample cells.
+        if getattr(pane, "_using_mature_renderer", False):
+            pane._screen.feed(
+                b"\x1b[2J\x1b[H"
+                b"New worktree ctrl-w\r\n"
+                b"Resume session ctrl-s\r\n"
+                b"Quit ctrl-q\r\n"
+                b"\r\n"
+                b"Tip: Press Ctrl-W to start a parallel task in its own worktree.\r\n"
+                b"\r\n"
+                b"0.1.219 Beta\r\n"
+            )
+        else:
+            pane._screen.feed_bytes(
+                b"New worktree ctrl-w\r\nResume session ctrl-s\r\nQuit ctrl-q\r\n0.1.219 Beta\r\n"
+            )
+
+        pane._begin_grok_result_capture("Question for Grok:\nresume session")
+        pane._finish_grok_result_capture(force=True)
+
+        assert rows
+        role, text, kwargs = rows[-1]
+        metadata = kwargs["metadata"]
+        assert role == "alice"
+        assert kwargs["action"] == "GROK_RESULT_CAPTURE_FAILED"
+        assert metadata["capture_status"] == "failed_no_readable_output"
+        assert metadata["framebuffer_output_hash"]
+        assert metadata["framebuffer_frame_count"] >= 1
+        assert "framebuffer_hash=NONE" not in text
+        if getattr(pane, "_using_mature_renderer", False):
+            assert metadata["framebuffer_cells"]
+            assert metadata["framebuffer_rows"] >= 1
+            assert metadata["framebuffer_cols"] >= 1
+            flattened_chars = "".join(
+                str(cell.get("char") or "")
+                for row in metadata["framebuffer_cells"]
+                for cell in row
+                if isinstance(cell, dict)
+            )
+            assert "Resume session ctrl-s" in flattened_chars
     finally:
         pane.shutdown()
         pane.deleteLater()
@@ -646,6 +901,110 @@ def test_matrix_grok_result_capture_posts_failure_receipt_when_no_output(monkeyp
         assert kwargs["metadata"]["capture_status"] == "failed_no_readable_output"
         assert kwargs["metadata"]["captured_output_hash"] == ""
         assert kwargs["metadata"]["pty_transcript_span"]["chunk_count"] == 0
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_result_capture_does_not_import_macos_terminal_fallback(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    rows = []
+    terminal_scrollback = """
+> is not the same look show them how you think grok!!!
+
+◆ Thought for 3.1s
+◆ Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md
+◆ Search "class _StigmergicField" in Applications/sifta_stigmergic_go.py
+
+Receipt:
+Native Terminal Grok answer is visible here.
+"""
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        monkeypatch.setattr(
+            matrix,
+            "_matrix_terminal_log_global_turn",
+            lambda role, text, **kwargs: rows.append((role, text, kwargs)),
+        )
+        monkeypatch.setattr(
+            matrix,
+            "_read_macos_terminal_front_tab_contents",
+            lambda: terminal_scrollback,
+        )
+
+        pane._begin_grok_result_capture("Question for Grok:\nshow transcript")
+        pane._finish_grok_result_capture(force=True)
+
+        assert rows
+        role, text, kwargs = rows[-1]
+        metadata = kwargs["metadata"]
+        assert role == "alice"
+        assert kwargs["action"] == "GROK_RESULT_CAPTURE_FAILED"
+        assert metadata["capture_status"] == "failed_no_readable_output"
+        assert metadata["source"] == "alice_global_chat_terminal"
+        assert metadata["capture_source"] == "alice_global_chat_terminal"
+        assert not metadata["captured_output_hash"]
+        assert not metadata["macos_terminal_output_hash"]
+        assert metadata["pty_transcript_span"]["chunk_count"] == 0
+        assert "Native Terminal Grok answer is visible here." not in text
+        assert "source=alice_global_chat_terminal" in text
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_result_capture_waits_past_thinking_frame(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    rows = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        monkeypatch.setattr(
+            matrix,
+            "_matrix_terminal_log_global_turn",
+            lambda role, text, **kwargs: rows.append((role, text, kwargs)),
+        )
+
+        pane._begin_grok_result_capture("Question for Grok:\nreply with pass")
+        pane._capture_grok_terminal_output(
+            "Thinking…\nThe task is: Read covenant\n#1 Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_…\nThinking… 2.0s 3.6s [✗]\n".encode()
+        )
+        pane._grok_result_capture["started_monotonic"] = time.monotonic() - 5.0
+        pane._grok_result_capture["last_output_monotonic"] = time.monotonic() - 3.0
+        pane._tick_grok_result_capture()
+
+        assert rows == []
+        assert pane._grok_result_capture is not None
+        assert pane._grok_result_capture.get("posted") is not True
+
+        pane._capture_grok_terminal_output(
+            "❙ Thought for 4.5s\nGROK_PASS_2026_05_26\nResponding… 0.1s 6.4s [✗]\n".encode()
+        )
+        pane._grok_result_capture["last_output_monotonic"] = time.monotonic() - 3.0
+        pane._tick_grok_result_capture()
+
+        assert rows
+        role, text, kwargs = rows[-1]
+        assert role == "alice"
+        assert kwargs["action"] == "GROK_RESULT"
+        assert "GROK_PASS_2026_05_26" in text
+        assert "Thinking" not in text
+        assert "Responding" not in text
+        assert "The task is" not in text
     finally:
         pane.shutdown()
         pane.deleteLater()
@@ -707,6 +1066,56 @@ def test_matrix_terminal_claims_queued_global_grok_delegation(monkeypatch, tmp_p
         app.processEvents()
 
 
+def test_matrix_terminal_holds_queued_grok_delegation_while_capture_active(monkeypatch, tmp_path):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    monkeypatch.setattr(matrix, "_REPO", tmp_path)
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True)
+    ledger = state / "grok_delegation_requests.jsonl"
+    ledger.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "kind": "GROK_DELEGATION_REFLEX",
+                "action": "GROK_DELEGATION",
+                "text": "ask grok second task must wait",
+                "receipt": "delegation_intent_wait",
+                "dispatched_live": False,
+                "queue_for_matrix_terminal": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(tmp_path)
+    dispatched = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        monkeypatch.setattr(
+            pane,
+            "_execute_alice_cli_prompt_request",
+            lambda cli, text: dispatched.append((cli, text)),
+        )
+
+        pane._begin_grok_result_capture("Question for Grok:\nfirst task")
+        pane._poll_grok_delegation_queue()
+
+        assert dispatched == []
+        assert not (state / "grok_delegation_claims" / "delegation_intent_wait.json").exists()
+        assert "Grok queue held because active_capture:" in pane._matrix_process_trace_text
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
 def test_matrix_grok_payload_binds_alice_consciousness_subject():
     from Applications import sifta_matrix_terminal as matrix
 
@@ -715,7 +1124,7 @@ def test_matrix_grok_payload_binds_alice_consciousness_subject():
         "grok",
     )
 
-    assert "Alice is asking Grok from inside the Matrix Terminal." in payload
+    assert "Alice is asking Grok from inside the Alice global chat terminal." in payload
     assert "Grok is an external tool organ" in payload
     assert "Do not assume you are inside Alice's organism or memory." in payload
     assert "Analyze Alice / the local SIFTA organism's consciousness" in payload
@@ -793,13 +1202,19 @@ def test_matrix_chat_drives_visible_grok_resume_session(monkeypatch):
         assert receipts == [["grok-resume", "<watch-screen>", "<ctrl-s-on-main-menu>", "<enter-on-session-list>"]]
         assert any("Watching Grok's screen" in chunk for chunk in displayed)
 
+        _prime_stable_grok_screen(pane, "main_menu")
         pane._tick_grok_resume_navigation()
         assert key_bytes == [b"\x13"]
         pane._screen.clear()
         pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
-        pane._grok_resume_last_action = 0.0
+        _prime_stable_grok_screen(pane, "session_picker")
         pane._tick_grok_resume_navigation()
         assert key_bytes == [b"\x13", b"\r"]
+        assert pane._grok_resume_phase == "await_ready"
+        pane._screen.clear()
+        pane._screen.feed("› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
         assert pane._grok_resume_phase == "done"
     finally:
         pane.shutdown()
@@ -833,13 +1248,20 @@ def test_matrix_chat_opens_grok_then_drives_resume_session(monkeypatch):
 
         pane._terminal_screen_active = True
         pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        _prime_stable_grok_screen(pane, "main_menu")
         pane._tick_grok_resume_navigation()
         assert key_bytes == [b"\x13"]
         pane._screen.clear()
         pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
-        pane._grok_resume_last_action = 0.0
+        _prime_stable_grok_screen(pane, "session_picker")
         pane._tick_grok_resume_navigation()
         assert key_bytes == [b"\x13", b"\r"]
+        assert pane._grok_resume_phase == "await_ready"
+        pane._screen.clear()
+        pane._screen.feed("› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
+        assert pane._grok_resume_phase == "done"
     finally:
         pane.shutdown()
         pane.deleteLater()
@@ -873,6 +1295,68 @@ def test_matrix_chat_type_grok_bypass_screens_routes_to_resume(monkeypatch):
         app.processEvents()
 
 
+def test_matrix_grok_delegation_pastes_only_after_resume_screens(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    written = []
+    key_bytes = []
+    receipts = []
+    pasted = []
+    displayed = []
+    try:
+        pane._type_timer.stop()
+        pane.is_running = lambda: True
+        pane.write_command = written.append
+        pane.write_bytes = key_bytes.append
+        pane._write_bracketed_paste = pasted.append
+        pane._append_plain = displayed.append
+        pane._append_matrix_command_receipt = lambda commands: receipts.append(list(commands))
+        monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
+
+        pane._execute_alice_cli_prompt_request("grok", "Alice, ask grok to say EXACT_OK")
+
+        assert written == ["grok"]
+        assert pasted == []
+        assert receipts == [["grok-resume", "<watch-screen>", "<ctrl-s-on-main-menu>", "<enter-on-session-list>"]]
+        assert getattr(pane, "_grok_resume_pending_prompt")
+        assert getattr(pane, "_grok_resume_phase") == "await_menu"
+
+        pane._terminal_screen_active = True
+        pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        _prime_stable_grok_screen(pane, "main_menu")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13"]
+        assert pasted == []
+        assert pane._grok_resume_phase == "await_picker"
+
+        pane._screen.clear()
+        pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
+        _prime_stable_grok_screen(pane, "session_picker")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13", b"\r"]
+        assert pasted == []
+        assert pane._grok_resume_phase == "await_ready"
+
+        pane._screen.clear()
+        pane._screen.feed("Grok Build\n› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
+
+        assert len(pasted) == 1
+        assert "Question for Grok:" in pasted[0]
+        assert "EXACT_OK" in pasted[0]
+        assert pane._grok_resume_phase == "done"
+        assert any("Sending the queued prompt now" in chunk for chunk in displayed)
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
 def test_matrix_chat_selects_first_grok_session_when_picker_visible(monkeypatch):
     from PyQt6.QtWidgets import QApplication
 
@@ -882,6 +1366,7 @@ def test_matrix_chat_selects_first_grok_session_when_picker_visible(monkeypatch)
     pane = matrix.MatrixTerminalPane(matrix._REPO)
     key_bytes = []
     receipts = []
+    displayed = []
     try:
         pane._type_timer.stop()
         pane._active_cli_name = "grok"
@@ -890,6 +1375,7 @@ def test_matrix_chat_selects_first_grok_session_when_picker_visible(monkeypatch)
         pane._screen.feed("Resume session\n/ to search\nUsers-ioanganton\n› Stigmergic Turbulence Organ\n")
         pane.is_running = lambda: True
         pane.write_bytes = key_bytes.append
+        pane._append_plain = displayed.append
         pane._append_matrix_command_receipt = lambda commands: receipts.append(list(commands))
         monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
 
@@ -897,9 +1383,17 @@ def test_matrix_chat_selects_first_grok_session_when_picker_visible(monkeypatch)
 
         assert key_bytes == []
         assert receipts == [["grok-resume", "<watch-screen>", "<ctrl-s-on-main-menu>", "<enter-on-session-list>"]]
+        _prime_stable_grok_screen(pane, "session_picker")
         pane._tick_grok_resume_navigation()
         assert key_bytes == [b"\r"]
+        assert pane._grok_resume_phase == "await_ready"
+        pane._screen.clear()
+        pane._screen.feed("› ")
+        pane._grok_resume_last_action = 0.0
+        pane._tick_grok_resume_navigation()
         assert pane._grok_resume_phase == "done"
+        assert any("session picker" in chunk and "Choice required" in chunk for chunk in displayed)
+        assert any("Pressing Enter" in chunk for chunk in displayed)
     finally:
         pane.shutdown()
         pane.deleteLater()
@@ -921,6 +1415,7 @@ def test_matrix_chat_asks_owner_for_visible_grok_menu_choice(monkeypatch):
         pane._grok_cli_active = True
         pane._terminal_screen_active = True
         pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        pane.is_running = lambda: True
         pane.write_bytes = key_bytes.append
         pane._append_plain = displayed.append
         monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
@@ -928,7 +1423,127 @@ def test_matrix_chat_asks_owner_for_visible_grok_menu_choice(monkeypatch):
         pane._chat_ask_alice("Alice what should I click on this screen?")
 
         assert key_bytes == []
-        assert any("resume session, new worktree, or quit" in chunk for chunk in displayed)
+        assert any("A choice is required" in chunk for chunk in displayed)
+
+        _prime_stable_grok_screen(pane, "main_menu")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13"]
+        assert any("Alice stays the global SIFTA field" in chunk for chunk in displayed)
+        assert any("Pressing Ctrl-S" in chunk for chunk in displayed)
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_resume_waits_for_stable_menu_before_ctrl_s(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    key_bytes = []
+    displayed = []
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        pane._terminal_screen_active = True
+        pane._screen.feed("New worktree ctrl-w\nResume session ctrl-s\nQuit ctrl-q\n")
+        pane.is_running = lambda: True
+        pane.write_bytes = key_bytes.append
+        pane._append_plain = displayed.append
+        pane._append_matrix_command_receipt = lambda _commands: None
+        monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
+
+        pane._execute_grok_resume_last_session("Alice resume Grok", open_if_needed=False)
+
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == []
+        assert pane._grok_resume_phase == "await_menu"
+        assert pane._grok_resume_observed_state == "main_menu"
+
+        _prime_stable_grok_screen(pane, "main_menu")
+        pane._tick_grok_resume_navigation()
+        assert key_bytes == [b"\x13"]
+        assert pane._grok_resume_phase == "await_picker"
+        assert any("Screen stable for" in chunk and "Pressing Ctrl-S" in chunk for chunk in displayed)
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_resume_reentry_keeps_existing_deadline_and_prompt(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        pane._terminal_screen_active = True
+        pane.is_running = lambda: True
+        pane._append_matrix_command_receipt = lambda _commands: None
+        monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
+
+        pane._execute_grok_resume_last_session(
+            "Alice resume Grok",
+            open_if_needed=False,
+            pending_prompt="Question for Grok:\nfirst",
+        )
+        deadline = float(getattr(pane, "_grok_resume_deadline", 0.0))
+        first_prompt = str(getattr(pane, "_grok_resume_pending_prompt", "") or "")
+        assert deadline > 0.0
+        assert first_prompt
+        assert getattr(pane, "_grok_resume_phase") == "await_menu"
+
+        pane._execute_grok_resume_last_session(
+            "Alice resume Grok again",
+            open_if_needed=False,
+            pending_prompt="Question for Grok:\nsecond",
+        )
+
+        assert getattr(pane, "_grok_resume_phase") == "await_menu"
+        assert float(getattr(pane, "_grok_resume_deadline", 0.0)) == deadline
+        assert str(getattr(pane, "_grok_resume_pending_prompt", "") or "") == first_prompt
+        assert "already in flight" in pane._matrix_process_trace_text
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_matrix_grok_resume_stale_phase_resets_before_fresh_navigation(monkeypatch):
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications import sifta_matrix_terminal as matrix
+
+    app = QApplication.instance() or QApplication([])
+    pane = matrix.MatrixTerminalPane(matrix._REPO)
+    try:
+        pane._type_timer.stop()
+        pane._active_cli_name = "grok"
+        pane._grok_cli_active = True
+        pane._terminal_screen_active = True
+        pane.is_running = lambda: True
+        pane._append_matrix_command_receipt = lambda _commands: None
+        monkeypatch.setattr(matrix.QTimer, "singleShot", lambda _ms, cb: cb())
+
+        pane._grok_resume_phase = "await_menu"
+        pane._grok_resume_pending_prompt = "stale-prompt"
+        pane._grok_resume_timer = QTimer(pane)  # intentionally inactive
+
+        pane._execute_grok_resume_last_session("Alice resume Grok", open_if_needed=False)
+
+        assert getattr(pane, "_grok_resume_phase") == "await_menu"
+        assert str(getattr(pane, "_grok_resume_pending_prompt", "") or "") == ""
+        assert "clearing stale resume lock" in pane._matrix_process_trace_text
     finally:
         pane.shutdown()
         pane.deleteLater()
@@ -1246,7 +1861,7 @@ def test_matrix_terminal_quarantines_whatsapp_tool_calls():
 
     assert "TOOL_CALL" not in cleaned
     assert "send_whatsapp" not in cleaned
-    assert "Matrix Terminal" in cleaned
+    assert "Alice global chat terminal" in cleaned
     assert "not WhatsApp" in cleaned
 
 

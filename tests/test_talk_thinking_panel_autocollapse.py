@@ -62,7 +62,321 @@ def test_talk_tails_matrix_process_trace_into_thinking_panel():
     assert "self.make_timer(900, self._poll_matrix_process_trace_for_thinking)" in src
     assert "matrix_terminal_process_trace.jsonl" in src
     assert "still waiting for GROK_RESULT" in src
+    assert "SIFTA_GROK_WAIT_HEARTBEAT_S" in src
+    assert "now - last_row_ts >= hb_interval_s" in src
     assert "Global chat received GROK_RESULT" in src
+
+
+def test_observable_processing_mirrors_into_global_chat_cognition_stream():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = type("FakeTalkWidget", (), {})()
+    mirrored = []
+    widget._trim_thinking_buffer_for_body_economy = lambda: False
+    widget._append_global_cognition_stream = (
+        lambda line, reset=False: mirrored.append((line, reset))
+    )
+
+    TalkToAliceWidget._append_observable_processing(
+        widget,
+        "Tool worker: dispatching agent_arm_research",
+        reset=True,
+    )
+
+    assert mirrored == [("Tool worker: dispatching agent_arm_research", True)]
+
+
+def test_observable_processing_suppresses_exact_duplicate_rows(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = type("FakeTalkWidget", (), {})()
+    mirrored = []
+    widget._trim_thinking_buffer_for_body_economy = lambda: False
+    widget._append_global_cognition_stream = (
+        lambda line, reset=False: mirrored.append((line, reset))
+    )
+    monkeypatch.setattr("Applications.sifta_talk_to_alice_widget.time.time", lambda: 1000.0)
+
+    line = (
+        "13:58:47 Matrix/Grok: grok_delegation_queued_from_talk_widget: "
+        "queued visible Grok delegation receipt=delegation_intent_f31aa834e8e0"
+    )
+    TalkToAliceWidget._append_observable_processing(widget, line)
+    TalkToAliceWidget._append_observable_processing(widget, line)
+
+    assert mirrored == [(line, False)]
+
+
+def test_global_chat_cognition_stream_buffer_is_capped():
+    import types
+
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = type("FakeTalkWidget", (), {})()
+    widget._global_cognition_stream_active = False
+    widget._global_cognition_stream_buffer = []
+    widget._global_cognition_stream_max_chars = 260
+    widget._global_cognition_stream_max_chunks = 4
+    widget._trim_global_cognition_stream_buffer = types.MethodType(
+        TalkToAliceWidget._trim_global_cognition_stream_buffer,
+        widget,
+    )
+    widget._render_global_cognition_stream_block = lambda: None
+
+    for idx in range(12):
+        TalkToAliceWidget._append_global_cognition_stream(
+            widget,
+            f"09:12:{idx:02d} Codex live: " + ("x" * 70),
+        )
+
+    rendered = "".join(widget._global_cognition_stream_buffer)
+    assert len(rendered) <= 260
+    assert "older visible cognition stream compacted" in rendered
+    assert "matrix_terminal_process_trace.jsonl" in rendered
+    assert len(widget._global_cognition_stream_buffer) <= 4
+
+
+def test_global_chat_cognition_stream_is_visible_main_chat_not_ledger_spam():
+    src = _src()
+    assert "Alice visible cognition stream" in src
+    assert "def _append_global_cognition_stream" in src
+    assert "_append_global_cognition_stream(clean, reset=reset)" in src
+    assert "_global_cognition_stream_pending_render_line" in src
+    assert "reset_stream = action in {" in src
+    assert "does not write synthetic thoughts into alice_conversation.jsonl" in src
+
+
+def test_talk_renders_grok_framebuffer_cells_in_global_chat_surface():
+    src = _src()
+    assert "HighFidelityTerminalView" in src
+    assert "self._terminal_frame_view = HighFidelityTerminalView" in src
+    assert "def _connect_live_grok_framebuffer_source" in src
+    assert "grokFramebufferSnapshotReady" in src
+    assert "def _render_grok_terminal_frame_from_metadata" in src
+    assert "framebuffer_cells" in src
+    assert "pyte cells + cursor" in src
+
+
+def test_talk_grok_framebuffer_helper_feeds_view_and_label():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    class FakeView:
+        def __init__(self):
+            self.cells = None
+            self.cursor = None
+            self.visible = None
+
+        def set_cells(self, cells, cursor):
+            self.cells = cells
+            self.cursor = cursor
+
+        def setVisible(self, value):
+            self.visible = value
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = ""
+            self.visible = None
+
+        def setText(self, text):
+            self.text = text
+
+        def setVisible(self, value):
+            self.visible = value
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._terminal_frame_view = FakeView()
+    widget._terminal_frame_label = FakeLabel()
+
+    ok = TalkToAliceWidget._render_grok_terminal_frame_from_metadata(
+        widget,
+        {
+            "framebuffer_cells": [[{"char": "G", "fg": "green", "bg": "default"}]],
+            "framebuffer_cursor": [0, 0, True],
+            "framebuffer_rows": 1,
+            "framebuffer_cols": 1,
+            "framebuffer_output_hash": "abcdef1234567890",
+        },
+    )
+
+    assert ok is True
+    assert widget._terminal_frame_view.cells[0][0]["char"] == "G"
+    assert widget._terminal_frame_view.cursor == (0, 0, True)
+    assert widget._terminal_frame_view.visible is True
+    assert "Focused Grok viewport inside Alice global chat" in widget._terminal_frame_label.text
+    assert "not a separate window" in widget._terminal_frame_label.text
+    assert "1x1" in widget._terminal_frame_label.text
+    assert "abcdef1234567890" in widget._terminal_frame_label.text
+    assert widget._terminal_frame_label.visible is True
+
+
+def test_talk_live_grok_framebuffer_signal_feeds_view_and_label():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    class FakeView:
+        def __init__(self):
+            self.cells = None
+            self.cursor = None
+            self.visible = None
+
+        def set_cells(self, cells, cursor):
+            self.cells = cells
+            self.cursor = cursor
+
+        def setVisible(self, value):
+            self.visible = value
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = ""
+            self.visible = None
+
+        def setText(self, text):
+            self.text = text
+
+        def setVisible(self, value):
+            self.visible = value
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._terminal_frame_view = FakeView()
+    widget._terminal_frame_label = FakeLabel()
+
+    ok = TalkToAliceWidget._render_live_grok_terminal_frame_from_signal(
+        widget,
+        {
+            "framebuffer_cells": [[{"char": "L", "fg": "cyan", "bg": "default"}]],
+            "framebuffer_cursor": [0, 0, True],
+            "framebuffer_rows": 1,
+            "framebuffer_cols": 1,
+            "framebuffer_output_hash": "livehash1234567890",
+        },
+    )
+
+    assert ok is True
+    assert widget._terminal_frame_view.cells[0][0]["char"] == "L"
+    assert widget._terminal_frame_view.cursor == (0, 0, True)
+    assert widget._terminal_frame_view.visible is True
+    assert "live, not a separate window" in widget._terminal_frame_label.text
+    assert "livehash12345678" in widget._terminal_frame_label.text
+
+
+def test_talk_agent_arm_framebuffer_snapshot_feeds_same_terminal_view():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    class FakeView:
+        def __init__(self):
+            self.cells = None
+            self.cursor = None
+            self.visible = None
+
+        def set_cells(self, cells, cursor):
+            self.cells = cells
+            self.cursor = cursor
+
+        def setVisible(self, value):
+            self.visible = value
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = ""
+            self.visible = None
+
+        def setText(self, text):
+            self.text = text
+
+        def setVisible(self, value):
+            self.visible = value
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._terminal_frame_view = FakeView()
+    widget._terminal_frame_label = FakeLabel()
+
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(
+        widget,
+        {
+            "ts": 1779650000.0,
+            "action": "agent_arm_framebuffer_snapshot",
+            "focused_cli": "codex",
+            "text": "codex framebuffer",
+            "payload": {
+                "focused_cli": "codex",
+                "terminal_label": "Codex",
+                "framebuffer_cells": [[{"char": "C", "fg": "green", "bg": "default"}]],
+                "framebuffer_cursor": [0, 0, True],
+                "framebuffer_rows": 1,
+                "framebuffer_cols": 1,
+                "framebuffer_output_hash": "codexhash1234567890",
+            },
+        },
+    )
+
+    assert "Matrix/codex: framebuffer rendered in Alice global chat" in line
+    assert widget._terminal_frame_view.cells[0][0]["char"] == "C"
+    assert widget._terminal_frame_view.cursor == (0, 0, True)
+    assert widget._terminal_frame_view.visible is True
+    assert "Focused Codex viewport inside Alice global chat" in widget._terminal_frame_label.text
+    assert "live, not a separate window" in widget._terminal_frame_label.text
+
+
+def test_observable_trace_buffer_is_capped_by_body_economy():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    class FakeScroll:
+        def maximum(self):
+            return 0
+
+        def setValue(self, _value):
+            pass
+
+    class FakePanel:
+        def __init__(self):
+            self.text = ""
+            self.visible = True
+
+        def isVisible(self):
+            return self.visible
+
+        def setVisible(self, value):
+            self.visible = value
+
+        def appendHtml(self, text):
+            self.text += text + "\n"
+
+        def setPlainText(self, text):
+            self.text = text
+
+        def toPlainText(self):
+            return self.text
+
+        def verticalScrollBar(self):
+            return FakeScroll()
+
+    class FakeButton:
+        def __init__(self):
+            self.text = ""
+
+        def setText(self, text):
+            self.text = text
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._thinking_buffer = []
+    widget._thinking_panel = FakePanel()
+    widget._thinking_header_btn = FakeButton()
+    widget._thinking_stream_active = True
+    widget._thinking_buffer_max_chars = 260
+    widget._thinking_buffer_max_chunks = 4
+
+    for idx in range(12):
+        TalkToAliceWidget._append_observable_processing(
+            widget,
+            f"09:11:{idx:02d} Matrix/Grok: " + ("x" * 70),
+        )
+
+    rendered = widget._thinking_panel.toPlainText()
+    assert len(rendered) <= 260
+    assert "older observable trace compacted" in rendered
+    assert "full receipts remain on disk" in rendered
+    assert len(widget._thinking_buffer) <= 4
 
 
 def test_long_external_tools_have_observable_worker_lane():
@@ -70,7 +384,32 @@ def test_long_external_tools_have_observable_worker_lane():
     assert "class _DirectToolWorker(QThread)" in src
     assert "_maybe_start_observable_direct_tool_request" in src
     assert "still waiting for tool receipt" in src
+    assert "_direct_tool_last_stream_ts" in src
     assert "Tool worker:" in src
+    assert "Owner-named external arms are action requests, not greetings." in src
+
+
+def test_direct_tool_heartbeat_suppressed_while_live_stream_recent(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    class FakeWorker:
+        def isRunning(self):
+            return True
+
+    now = 1779650000.0
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._direct_tool_worker = FakeWorker()
+    widget._direct_tool_started_ts = now - 40.0
+    widget._direct_tool_label = "Codex agent arm"
+    widget._direct_tool_last_stream_ts = now - 2.0
+    appended = []
+    widget._append_observable_processing = appended.append
+
+    monkeypatch.setattr("Applications.sifta_talk_to_alice_widget.time.time", lambda: now)
+
+    TalkToAliceWidget._direct_tool_heartbeat_tick(widget)
+
+    assert appended == []
 
 
 def test_external_cortex_requests_are_observable_direct_tool_requests():
@@ -82,6 +421,9 @@ def test_external_cortex_requests_are_observable_direct_tool_requests():
 
     assert _direct_tool_request_needs_observable_worker("Alice, ask Hermes how your organs are wired")
     assert _direct_tool_request_needs_observable_worker("Alice, ask Claude Code to inspect the repo")
+    assert _direct_tool_request_needs_observable_worker("Alice, use your Codex arm and execute task #58")
+    assert _direct_tool_request_needs_observable_worker("Alice, use your Claude arm and inspect the repo")
+    assert _direct_tool_request_needs_observable_worker("Alice, use your Hermes arm and inspect receipts")
     assert not _direct_tool_request_needs_observable_worker("Alice, show Hermes skills app")
     assert _observable_direct_tool_label("ask claude code to inspect the repo") == "Claude Code agent arm"
     assert _observable_direct_tool_label("ask hermes how your organs are wired") == "Hermes agent arm"
@@ -128,3 +470,62 @@ def test_matrix_process_trace_formatter_reports_grok_result_proof():
     assert "hash=abcdef1234567890" in line
     assert "seq 4-9 bytes 100-999" in line
     assert "Global chat should show GROK_RESULT" in line
+
+
+def test_agent_arm_live_code_stream_stays_visible_by_default(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.delenv("SIFTA_AGENT_ARM_RAW_LIVE", raising=False)
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    row = {
+        "ts": 1779650000.0,
+        "action": "agent_arm_live",
+        "focused_cli": "codex",
+        "payload": {"session": "abc123456789"},
+        "text": "+    def _weighted_choice(self, scored):",
+    }
+
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(widget, row)
+
+    assert "_weighted_choice" in line
+    assert "raw code/diff stream hidden" not in line
+
+
+def test_agent_arm_live_code_stream_can_be_compacted_for_resource_pressure(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.setenv("SIFTA_AGENT_ARM_RAW_LIVE", "0")
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    row = {
+        "ts": 1779650000.0,
+        "action": "agent_arm_live",
+        "focused_cli": "codex",
+        "payload": {"session": "abc123456789"},
+        "text": "+    def _weighted_choice(self, scored):",
+    }
+
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(widget, row)
+
+    assert "raw code/diff stream hidden" in line
+    assert "_weighted_choice" not in line
+    assert "full trace on disk" in line
+
+
+def test_agent_arm_live_proof_lines_stay_visible(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.delenv("SIFTA_AGENT_ARM_RAW_LIVE", raising=False)
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(
+        widget,
+        {
+            "ts": 1779650000.0,
+            "action": "agent_arm_live",
+            "focused_cli": "codex",
+            "payload": {"session": "abc123456789"},
+            "text": "✅ BUILD_VERIFIED Stigmergic Ant Foraging Trail",
+        },
+    )
+
+    assert "BUILD_VERIFIED" in line
+    assert "raw code/diff stream hidden" not in line

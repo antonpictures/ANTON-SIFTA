@@ -134,6 +134,19 @@ Use this flow for any app:
 - **Export:** The calibrator writes live physics to `.sifta_state/swarm_physics.json` — any other simulation can hot-read these values.
 - **Failure modes:** Over-correction oscillation (kp too high), sluggish response (kp too low), noise overwhelming the field before calibrator can react.
 
+### Stigmergic Consensus Clustering
+- **Purpose:** Lumer-Faieta (1994) ant-based data partitioning on a toroidal grid. Ant agents walk randomly and pick up data points that are dissimilar to their local neighborhood, then drop them near similar ones. Clusters emerge purely from local similarity density — no K-means, no central coordinator.
+- **What to watch:**
+  - Live QPainter canvas: colored data points (by blob), teal ants, pickup/drop events, toroidal wrapping.
+  - Convergence graph: average local similarity over time.
+  - Purity metric: how cleanly the ants have sorted the original blobs.
+  - Real-time controls: number of points/ants, α (similarity sensitivity), k_pick / k_drop, simulation speed, "Add random blobs", "Run N steps", "Reset".
+  - Mouse: click to inject new data points directly into the field.
+- **Key principle:** Pure sematectonic stigmergy. The grid medium itself (via local density traces left by the ants) is the only memory and coordinator. The partition precipitates from simple local rules interacting with the field. Reference: Lumer & Faieta, Proc. 3rd Int. Conf. SAB 1994.
+- **Receipts:** Every significant event (blob generation, ant step batches, reset, manual point injection) writes to `.sifta_state/consensus_clustering_receipts.jsonl` with full field parameters and metrics at that moment.
+- **OS path:** Programs → Simulations → Stigmergic Consensus Clustering
+- **Proof boundary:** The emergent clustering dynamics, visual field behavior, and the stigmergic receipt trail; not a production ML clustering library drop-in. The algorithm is deliberately simple and local so the stigmergy is legible.
+
 ---
 
 ## Networking
@@ -970,6 +983,14 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 - **Receipts:** `.sifta_state/sudoku_receipts.jsonl` records `swarm_solve`, `swarm_stalled`, `manual_solve`, and `self_play_x3` rows. Receipts include `used_solution_oracle=false` for the swarm paths.
 - **Failure mode:** On harder boards the current swarm only commits forced placements (naked/hidden singles). If it stalls, the honest reading is “this constraint field needs a stronger stigmergic move proposer,” not “Alice solved it.”
 - **Key principle:** The test is whether local pheromone + constraint pressure can converge without teacher-forcing or peeking at `self.solution`.
+
+### Stigmergic Nanobot Tic-Tac-Toe
+- **Purpose:** Alice-X plays Nanobot-O on a 3x3 world-model board. Cells carry sematectonic pheromone and refractory traces; each move is a legal claim into the shared field, not a prewritten result.
+- **How it moves:** Each swarm senses empty cells, line pressure, old pheromone, opponent pressure, and refractory decay. The strongest legal gradient wins the move. No duplicate cell claim is accepted.
+- **Self-play:** Auto mode or the engine self-play path runs Alice against the nanobot swarm until a win or draw. Receipts include unique claim counts and rejected double-spend attempts.
+- **Receipts:** `.sifta_state/nanobot_tictactoe_receipts.jsonl` records boot, game end, self-play, and `double_spend_rejected` rows.
+- **Failure mode:** A rejected duplicate claim means the no-double-spend immune gate worked; a generic launch error means the Qt wrapper failed before the game was alive.
+- **Key principle:** The board is the shared memory. Alice and the opponent act through stigmergic field pressure; no hidden minimax oracle or direct result script is needed.
 
 ### AGI Cognition Dashboard
 - **Purpose:** Read-only dashboard for the AGI-class organ suite (events 125–138): stability, world model, microglia, causal closure, autopoiesis signals.

@@ -679,11 +679,26 @@ class TeachAceToReadWidget(QWidget):
         self._mic_visual_timer.setInterval(280)
         self._mic_visual_timer.timeout.connect(self._tick_mic_visual)
 
+        # NEXT WORD button — George 2026-05-26. Lets the architect/teacher
+        # advance the word on screen with one click instead of routing
+        # through voice/consent polling. Keeps the chat path completely free
+        # for natural LLM conversation about whatever word is currently up.
+        self._btn_next_word = QPushButton("▶  NEXT WORD", self)
+        self._btn_next_word.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_next_word.clicked.connect(self._on_next_word_button_clicked)
+        self._btn_next_word.setStyleSheet(
+            "QPushButton { background: rgba(255, 200, 60, 0.18); color: #FFD24A; "
+            "padding: 10px 18px; border: 2px solid #FFD24A; border-radius: 14px; "
+            "font-size: 14px; font-weight: 700; }"
+            "QPushButton:hover { background: #FFD24A; color: #1C1638; }"
+        )
+
         controls_top = QHBoxLayout()
         controls_top.addWidget(owner_label)
         controls_top.addWidget(self._owner_field)
         controls_top.addSpacerItem(QSpacerItem(20, 1))
         controls_top.addWidget(self._level_picker, 1)
+        controls_top.addWidget(self._btn_next_word)
         controls_top.addWidget(self._btn_pause)
 
         # ── Transcript area ─────────────────────────────────────────
@@ -1821,6 +1836,43 @@ class TeachAceToReadWidget(QWidget):
                 if new_word:
                     self._swap_word(new_word, pending=pending, consent=row)
                 self._pending_proposal = None
+        except Exception:
+            pass
+
+    def _on_next_word_button_clicked(self) -> None:
+        """Architect-driven word advance (NEXT WORD button).
+
+        George 2026-05-26: gives the teacher direct control to move on to
+        the next word with one click, freeing the chat path for natural LLM
+        conversation about the current word. Skips the joint-consent dance
+        for this explicit user-initiated advance; the engine still writes
+        its own cue receipt via next_cue(write=True)."""
+        try:
+            cue = self._engine.next_cue(write=True)
+        except Exception:
+            return
+        new_word = str((cue or {}).get("show") or "").strip()
+        if not new_word:
+            return
+        old_word = self._current_word or ""
+        self._current_word = new_word
+        try:
+            self._show_card.set_show(new_word, "word")
+        except Exception:
+            pass
+        try:
+            self._heard_lbl.setText(
+                f"▶  NEXT WORD: '{old_word}' → '{new_word}'. Talk to Alice about it."
+            )
+        except Exception:
+            pass
+        try:
+            self._publish_alice_context(
+                detail=(
+                    f"Ace word advanced from {old_word!r} to {new_word!r} via "
+                    f"NEXT WORD button. Owner is free-talking about the word."
+                ),
+            )
         except Exception:
             pass
 

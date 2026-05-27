@@ -107,6 +107,8 @@ CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else C
 CANONICAL_OLLAMA_REFLEX = "sifta-classifier-c1-3.1b-6.2gb:latest"
 CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
 CANONICAL_OLLAMA_LORA_CANDIDATE = "sifta-gemma4-alice-lora:latest"
+# Optional cloud cortex surface (xAI via local SIFTA cloud backend adapter).
+CANONICAL_CLOUD_GROK = "grok:grok-4.3"
 
 # Primary default. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
@@ -511,25 +513,48 @@ def list_installed_alice_cortexes(
 
 
 def list_available_cortexes_with_canonical_fallback() -> list[str]:
-    """Return installed Alice cortexes; on Ollama-offline fall back to canonical list.
+    """Return installed Alice cortexes plus cloud cortexes.
 
     This is the safe variant for UI dropdowns: it always returns at
-    least the canonical 4 cortex tags so the picker never appears
+    least the canonical local cortex tags so the picker never appears
     empty, even if the Ollama daemon is down.
     """
-    found = list_installed_alice_cortexes()
-    if found:
-        return found
-    return [
+    def _available_cloud_cortexes() -> list[str]:
+        cloud: list[str] = []
+        try:
+            backend = __import__("System.swarm_gemini_brain", fromlist=["*"])
+            list_fn = getattr(backend, "available_cloud_models", None)
+            if not callable(list_fn):
+                list_fn = getattr(backend, "available_gemini_models", None)
+            if callable(list_fn):
+                raw = list_fn() or []
+                if isinstance(raw, list):
+                    for name in raw:
+                        clean = _clean_model_name(str(name))
+                        if clean:
+                            cloud.append(clean)
+        except Exception:
+            pass
+        # Always expose the canonical Grok selector in the picker so
+        # owner can bind credentials later without code surgery.
+        cloud.append(CANONICAL_CLOUD_GROK)
+        return _dedupe(cloud)
+
+    local = list_installed_alice_cortexes()
+    cloud = _available_cloud_cortexes()
+    if local:
+        return _dedupe(local + cloud)
+    return _dedupe([
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_GEMMA4_SMALL,
         CANONICAL_OLLAMA_M5_FALLBACK,
         CANONICAL_OLLAMA_LOW_RAM,
-    ]
+    ] + cloud)
 
 
 __all__ = [
     "ALICE_CORTEX_V1_MODEL",
+    "CANONICAL_CLOUD_GROK",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",

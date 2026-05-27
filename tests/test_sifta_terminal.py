@@ -1,40 +1,32 @@
 from __future__ import annotations
 
-import os
-import time
+import json
+from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
-def _pump_until(app, predicate, timeout_s: float = 4.0) -> bool:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        app.processEvents()
-        if predicate():
-            return True
-        time.sleep(0.03)
-    return False
+_REPO = Path(__file__).resolve().parent.parent
+_STANDALONE_TERMINAL = _REPO / "Applications" / "sifta_terminal.py"
+_MANIFEST = _REPO / "Applications" / "apps_manifest.json"
 
 
-def test_sifta_terminal_uses_pty_shell_and_executes_commands(monkeypatch):
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+def test_sifta_terminal_file_is_removed():
+    assert not _STANDALONE_TERMINAL.exists(), (
+        "Applications/sifta_terminal.py must stay deleted; Alice global chat is "
+        "the only terminal surface."
+    )
 
-    from PyQt6.QtWidgets import QApplication
 
-    from Applications.sifta_terminal import SiftaTerminalApp
+def test_manifest_has_no_sifta_terminal_reference():
+    manifest = json.loads(_MANIFEST.read_text(encoding="utf-8"))
+    offenders: list[str] = []
+    for name, spec in manifest.items():
+        if not isinstance(spec, dict):
+            continue
+        entry_point = str(spec.get("entry_point") or "")
+        widget_class = str(spec.get("widget_class") or "")
+        if "sifta_terminal.py" in entry_point or widget_class == "SiftaTerminalApp":
+            offenders.append(name)
 
-    app = QApplication.instance() or QApplication([])
-    terminal = SiftaTerminalApp()
-    terminal.show()
-    try:
-        assert _pump_until(app, terminal.terminal.is_running)
-        terminal.write_command("printf SIFTA_TERMINAL_OK\\\\n")
-        assert _pump_until(
-            app,
-            lambda: "SIFTA_TERMINAL_OK" in terminal.terminal.toPlainText(),
-        )
-        assert "default interactive shell is now zsh" not in terminal.terminal.toPlainText()
-    finally:
-        terminal.shutdown()
-        _pump_until(app, lambda: not terminal.terminal.is_running(), timeout_s=2.0)
-        terminal.close()
+    assert not offenders, (
+        "Manifest still references the removed standalone terminal surface: "
+        f"{offenders}"
+    )

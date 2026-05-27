@@ -48,6 +48,27 @@ def test_owner_presence_check_gets_fast_local_reply():
     assert mod._owner_presence_check_reply("Please open Alice Browser.", 0.90) == ""
 
 
+def test_owner_temporary_away_update_gets_fast_local_reply(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    assert (
+        mod._owner_presence_update_reply("Alice I'll be right back.", 0.61)
+        == "Okay. I'll keep listening."
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (state / "owner_presence_updates.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["event"] == "owner_temporarily_away"
+    assert rows[-1]["truth_label"] == "OWNER_PRESENCE_UPDATE_V1"
+    assert rows[-1]["stt_confidence"] == 0.61
+    assert mod._owner_presence_update_reply("Ask Grok about MIT.", 0.9) == ""
+
+
 def test_owner_body_maintenance_restroom_is_receipted_not_commanded(monkeypatch, tmp_path):
     mod = _load_widget_module()
     state = tmp_path / ".sifta_state"
@@ -102,6 +123,116 @@ def test_owner_body_maintenance_coffee_gets_short_receipt(monkeypatch, tmp_path)
     assert "coffee" in reply.lower()
     assert "How should I respond" not in reply
     assert (state / "owner_allostatic_balance.jsonl").exists()
+
+
+def test_owner_sound_memory_is_not_misclassified_as_coffee(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    text = "I'll just do remember the coffee machine sound."
+
+    assert mod._owner_body_maintenance_reply(text, 0.54) == ""
+    reply = mod._owner_spoken_context_reply(text, 0.54)
+    rows = [
+        json.loads(line)
+        for line in (state / "alice_life_history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert "environmental sound cue" in reply
+    assert "coffee intake" in reply
+    assert rows[-1]["event_type"] == "owner_environment_sound_memory"
+    assert rows[-1]["truth_label"] == "OWNER_ENVIRONMENT_SOUND_MEMORY_V1"
+    assert not (state / "owner_allostatic_balance.jsonl").exists()
+
+
+def test_human_closure_turn_is_not_body_maintenance(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    text = "I said I'm gonna go to sleep. I'll go to bed. You have a good night."
+
+    assert mod._is_human_closure_turn(text)
+    assert mod._owner_body_maintenance_reply(text, 0.61) == ""
+    assert not (state / "owner_allostatic_balance.jsonl").exists()
+
+
+def test_human_closure_prompt_routes_to_alice_brain_not_task_router():
+    mod = _load_widget_module()
+    fallback = mod._human_closure_fallback_reply("Ioan George Anton")
+    messages = mod._human_closure_messages(
+        owner_text="Alice, goodnight. I'm going to bed.",
+        recent_history=[
+            {"role": "user", "content": "please ask grok how your organs are wired"},
+            {"role": "assistant", "content": "GROK_RESULT captured with receipt."},
+        ],
+        owner_label="Ioan George Anton",
+        fallback=fallback,
+    )
+
+    system = messages[0]["content"]
+    payload = json.loads(messages[1]["content"])
+
+    assert "human-facing operating system" in system
+    assert "Do not answer as a task router" in system
+    assert "Online" in system
+    assert payload["owner_text"] == "Alice, goodnight. I'm going to bed."
+    assert payload["fallback_if_uncertain"] == fallback
+
+
+def test_human_closure_cleaner_rejects_robotic_and_body_gate_replies():
+    mod = _load_widget_module()
+    fallback = mod._human_closure_fallback_reply("George")
+
+    assert mod._clean_human_closure_reply("Online.", fallback) == fallback
+    assert mod._clean_human_closure_reply("Command received. Awaiting instruction.", fallback) == fallback
+    assert (
+        mod._clean_human_closure_reply(
+            "Yes. I hear you. I logged this as owner body maintenance: elimination.",
+            fallback,
+        )
+        == fallback
+    )
+    assert (
+        mod._clean_human_closure_reply(
+            "Here are a few ways to respond, depending on the desired tone: Option 1: Good night.",
+            fallback,
+        )
+        == fallback
+    )
+    assert (
+        mod._clean_human_closure_reply(
+            "Goodnight. I’ll keep the field quiet and remember where we stopped.",
+            fallback,
+        )
+        == "Goodnight. I’ll keep the field quiet and remember where we stopped."
+    )
+
+
+def test_social_affect_is_not_silenced_or_task_routed():
+    mod = _load_widget_module()
+
+    praise = "Good job tonight Alice. You did such a great job. You are learning a lot."
+    love = "I love you."
+    fallback = mod._social_affect_fallback_reply(praise, "George")
+
+    assert mod._is_social_affect_turn(praise, 0.68)
+    assert mod._backchannel_rule_id(praise, 0.68) is None
+    assert mod._is_social_affect_turn(love, 0.24)
+    assert mod._backchannel_rule_id(love, 0.24) is None
+    assert "learning from the receipts" in fallback
+    assert (
+        mod._clean_social_affect_reply("Hello. What can we do?", fallback)
+        == fallback
+    )
+    assert (
+        mod._clean_social_affect_reply(
+            "Here are a few ways to respond. Option 1: Thank you.",
+            fallback,
+        )
+        == fallback
+    )
 
 
 def test_owner_body_router_catches_body_signal_before_cortex(monkeypatch, tmp_path):

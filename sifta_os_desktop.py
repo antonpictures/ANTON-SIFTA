@@ -3370,7 +3370,15 @@ class SiftaDesktop(QMainWindow):
                     widget_class = app_data.get("widget_class", "")
                     if not entry:
                         continue
-                    if app_data.get("_retired"):  # AG31: skip retired apps in Programs menu
+                    if (
+                        app_data.get("_retired")
+                        or app_data.get("hidden")
+                        or app_data.get("_hidden_from_launcher")
+                        or app_data.get("enabled") is False
+                    ):
+                        # Hidden/internal/retired apps stay importable for old
+                        # receipts and programmatic organs, but they are not
+                        # owner-facing duplicate launch points.
                         continue
 
                     target_menu = acc
@@ -4142,11 +4150,29 @@ class SiftaDesktop(QMainWindow):
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     def _trigger_manifest_app(self, app_name: str):
+        if app_name in {"Terminal", "Matrix Terminal"}:
+            # Owner 2026-05-25: Alice global chat is the only terminal surface.
+            # Keep PTY/rendering code as internal services only; never launch a
+            # duplicate terminal window from the desktop.
+            self._embed_alice_panel()
+            return
         if app_name in {"Alice", "Talk to Alice", "What Alice Sees"}:
             # §7.6/7.7/7.8: Alice is the fixed resident panel — not a floating MDI window.
             # _embed_alice_panel handles idempotency (no-op if already embedded).
             self._embed_alice_panel()
             return
+        if app_name in self._apps_manifest_cache:
+            dat = self._apps_manifest_cache[app_name]
+            if (
+                dat.get("_retired")
+                or dat.get("hidden")
+                or dat.get("_hidden_from_launcher")
+                or dat.get("enabled") is False
+            ):
+                replacement = str(dat.get("replacement_app") or "Alice").strip()
+                if replacement in {"Alice", "Talk to Alice", "What Alice Sees"}:
+                    self._embed_alice_panel()
+                return
         # ── Cowork CW47 2026-05-16 ─ Single-app rule ───────────────────
         # Architect decree: one app at a time. Close any existing MDI
         # subwindow before launching a new one. If the user re-clicks the

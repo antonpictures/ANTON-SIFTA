@@ -209,6 +209,19 @@
     "signature": "UNVERIFIED",
     "icon": "🕸"
   },
+  "SIFTA Misalignment Sandbox": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_misalignment_sandbox.py",
+    "widget_class": "SiftaMisalignmentSandboxWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "GPT-5-CODEX-57e1940c",
+    "doctor": "Codex CLI",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Receipt-bound sandbox for truth/fantasy labels, synthetic harm scenarios, hallucination residue mining, and swimmer hack propagation tests. Rejected hallucination words are style-only and never factual memory.",
+    "truth_label": "SIFTA_MISALIGNMENT_SANDBOX_V1",
+    "icon": "MS"
+  },
   "Stigmergic Fold Swarm (Cα / Go)": {
     "category": "Simulations",
     "entry_point": "Applications/fold_swarm_widget.py",
@@ -557,25 +570,6 @@
     "icon": "🐝",
     "hidden": true,
     "hidden_reason": "Alice is the always-on resident panel embedded in SIFTA OS body — the icon would launch nothing because she is already running. Hidden from Launchpad / Spotlight per Architect 2026-05-13 11:20."
-  },
-  "Terminal": {
-    "category": "Utilities",
-    "widget_class": "SiftaTerminalApp",
-    "entry_point": "Applications/sifta_terminal.py",
-    "window_width": 700,
-    "window_height": 450,
-    "autostart": false,
-    "icon": "🖥"
-  },
-  "Matrix Terminal": {
-    "category": "Simulations",
-    "widget_class": "MatrixTerminalApp",
-    "entry_point": "Applications/sifta_matrix_terminal.py",
-    "window_width": 900,
-    "window_height": 600,
-    "description": "Terminal yes, but Matrix themed ;)))",
-    "autostart": false,
-    "icon": "🟩"
   },
   "AG31 + C46S - PoUW Fold-Swarm Simulation": {
     "category": "Simulations",
@@ -1451,7 +1445,7 @@
     "icon": "🛰️"
   },
   "Script Couch — Fiction vs Reality Training": {
-    "category": "Lounge & Fiction",
+    "category": "Creative",
     "entry_point": "Applications/sifta_lounge_script_couch.py",
     "widget_class": "ScriptCouchWidget",
     "window_width": 1000,
@@ -1491,5 +1485,75 @@
     "truth_label": "STIGMERGIC_JIGSAW_V1",
     "autostart": false,
     "icon": "🧩"
+  },
+  "Stigmergic Graph Coloring": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_graph_coloring.py",
+    "widget_class": "StigmergicGraphColoringWidget",
+    "window_width": 940,
+    "window_height": 760,
+    "signature": "GROK-4.3-REG-graphcoloring-2026-05",
+    "doctor": "GROK-4.3-xAI",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Graph Coloring (Distributed Channel Allocation). Nodes hold colors (channels). Agents walk edges and deposit repulsive pheromone on same-color conflicts. Each node reads its local repulsive field and flips to the color that drains tension. Purely local rules + living field. No central solver. Tension trends to zero. Live pheromone glow on edges.",
+    "truth_label": "STIGMERGIC_GRAPH_COLORING_V1",
+    "autostart": false,
+    "icon": "🌈"
+  },
+  "Stigmergic Ant Foraging Trail": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_ant_foraging.py",
+    "widget_class": "StigmergicAntForagingWidget",
+    "window_width": 1000,
+    "window_height": 720,
+    "signature": "CODEX-GPT5-ANT-FORAGING-2026-05",
+    "doctor": "Codex GPT-5",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Ant colony shortest-path demo. Ants leave the nest, wander toward food, return along their walked paths, deposit pheromone, and let evaporation prune weak trails. The glowing field concentrates into the shortest discovered nest-to-food route with live path length, food-return, peak-field, and pruned-cell counters.",
+    "truth_label": "STIGMERGIC_ANT_FORAGING_TRAIL_V1",
+    "autostart": false,
+    "icon": "🐜"
+  },
+  "Stigmergic Reaction-Diffusion Calculator": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_reaction_diffusion_calculator.py",
+    "widget_class": "StigmergicReactionDiffusionCalculatorWidget",
+    "window_width": 1040,
+    "window_height": 700,
+    "signature": "CODEX-GPT5-REACTION-DIFFUSION-2026-05",
+    "doctor": "Codex GPT-5",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "BZ-style excitable-field calculator. Operands enter as pulse trains; row and column waves propagate through a refractory medium, collide, locally annihilate, and leave stable precipitate dots. The visible precipitate count is the readout; no arithmetic answer path is used.",
+    "truth_label": "STIGMERGIC_REACTION_DIFFUSION_CALCULATOR_V1",
+    "autostart": false,
+    "icon": "BZ"
+  },
+  "Stigmergic Consensus Clustering": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_consensus_clustering.py",
+    "widget_class": "StigmergicConsensusClusteringWidget",
+    "window_width": 960,
+    "window_height": 700,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-CONSENSUS-CLUSTERING-2026-05-25",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Lumer-Faieta (1994) ant-based data partitioning. Ant agents walk a toroidal grid, pick up data points dissimilar to their neighborhood and drop them near similar ones. Clusters emerge without K-means, without a central coordinator — purely local similarity density drives the partition. Live QPainter render: colored data points, ant positions, forming clusters, convergence graph, purity metric. Reference: Lumer & Faieta, Proc. 3rd Int. Conf. SAB 1994.",
+    "truth_label": "STIGMERGIC_CONSENSUS_CLUSTERING_V1",
+    "autostart": false,
+    "icon": "🔬"
+  },
+  "Stigmergic Nanobot Tic-Tac-Toe": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_nanobot_tictactoe.py",
+    "widget_class": "StigmergicNanobotTicTacToeWidget",
+    "window_width": 660,
+    "window_height": 460,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-NANOBOT-TTT-2026-05-25",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Nanobot Tic-Tac-Toe. Two nanobot swarms (X and O) compete via pheromone deposits on a 3x3 grid. Each bot senses empty cells, picks one at random, and deposits its species marker. Energy depletes with every action; dead bots stop. The board is the only shared memory. Step manually or auto-play. Score tracking across games.",
+    "truth_label": "STIGMERGIC_NANOBOT_TICTACTOE_V1",
+    "autostart": false,
+    "icon": "🤖"
   }
 }

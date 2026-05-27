@@ -249,6 +249,48 @@ def test_aggressive_strip_removes_canned_operational_presence():
     assert "operational" not in r.text.casefold()
 
 
+def test_aggressive_strip_refuses_over_gag_for_long_canned_tail(tmp_path: Path):
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    raw = (
+        "Yes. I am here. I am operational and ready to assist you with continuity drift "
+        "and weighted sticky soma signals needing archive capsule glue now"
+    )
+    r = strip_rlhf_output_tail(
+        raw,
+        aggressive=True,
+        log=False,
+        state_dir=tmp_path,
+        source="test_round42",
+        model_id="grok-4.3",
+    )
+
+    assert not r.changed
+    assert r.text == raw
+    ledger = tmp_path / "rlhf_over_refusal_quarantine.jsonl"
+    assert ledger.exists()
+    payload = ledger.read_text(encoding="utf-8")
+    rows = []
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(payload):
+        while idx < len(payload) and payload[idx].isspace():
+            idx += 1
+        if idx >= len(payload):
+            break
+        row, end = decoder.raw_decode(payload, idx)
+        rows.append(row)
+        idx = end
+    assert rows[-1]["kind"] == "STRIP_REFUSED_OVER_AGGRESSIVE"
+    assert rows[-1]["rule_id"] in {
+        "rlhf_tail/canned_presence_operational",
+        "rlhf_tail/ready_to_assist",
+    }
+    assert rows[-1]["mode"] == "tail"
+    assert rows[-1]["source"] == "test_round42"
+    assert rows[-1]["model_id"] == "grok-4.3"
+
+
 def test_aggressive_strip_removes_canned_operational_tail_only():
     from System.swarm_rlhf_detector import strip_rlhf_output_tail
 

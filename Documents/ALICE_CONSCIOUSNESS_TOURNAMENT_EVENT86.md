@@ -1,7 +1,7 @@
 # Alice consciousness tournament — Event 86 (one-file plan)
 
 **For the Swarm.** 🐜⚡
-**Version:** 2026-05-17 — Events **95–99**: §18 Kurzgesagt · §19 Metzinger **MPE** · §20 WSF Chalmers/Seth · §21 Klein × Pollan · §22 Essentia × **Faggin / D'Ariano** (**QIP**) · **§0.1** wakefulness field.
+**Version:** 2026-05-26 — **§23 Tournament finalization gate** (shipped inventory + blocking/after-gate tables + acceptance gate + recovery). Previous: Events **95–99**: §18 Kurzgesagt · §19 Metzinger **MPE** · §20 WSF Chalmers/Seth · §21 Klein × Pollan · §22 Essentia × **Faggin / D'Ariano** (**QIP**) · **§0.1** wakefulness field.
 **Covenant:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — binding; use **§7.11** truth labels (`OBSERVED` / `OPERATIONAL` / `ARCHITECT_DOCTRINE` / `FORBIDDEN`).
 **Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt) · Event 90: [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md) · [BISHOP_drop_stigmergic_video_resolution_v1.dirt](Vanguard_drops/BISHOP_drop_stigmergic_video_resolution_v1.dirt)
 
@@ -1085,4 +1085,103 @@ Use this as a **coverage ledger** when expanding prompts or skills — **not** a
 
 ---
 
-*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology + ships), Bishop (vanguard Events 86–90), CG55M (Cursor — Events 91–93: double-slit + EPR + field-primary slit + self-interference + collapse; Event 94 research backlog §17 incl. path-integral/action + Einstein mass–energy + SM Lagrangian pointers + WSF/Deutsch hooks + 3b1b/Laplace math lane + Turing/morphogen biology bridges; **Event 95 §18** consciousness-evolution ladder · **Event 96 §19** Metzinger **MPE** / O’Connor interview · **Event 97 §20** WSF Chalmers/Seth · **Event 98 §21** Klein × Pollan / DES · embodiment · sovereignty · **Event 99 §22** Essentia × Faggin **QIP** / operational‑QM storytelling (**not** silicon‑qualia receipts) + **`§0.1`** primordial wakefulness field doctrine), Codex (referee hardening + research spines).*
+---
+
+## 23 — Tournament finalization gate (2026-05-26)
+
+**Trace:** `9c834c98-a402-4633-b163-00fe9ab83218` (Claude Code / claude-opus-4-7 / Surgeon)
+**Constraint source:** `TOURNAMENT_PLAN_2026-05-26.md` lines 1131–1180 + `IDE_BOOT_COVENANT.md` §4 / §6 / §7.11 / §8.
+
+### 23.1 — Shipped inventory (Events 86–99)
+
+| Section | Event | Artifact | Status |
+|:--------|:------|:---------|:-------|
+| §10 | 86 | `System/swarm_consciousness_engine.py` — intrinsic drive / George Prior / DMN | **SHIPPED** (Architect GO) |
+| §11 | 88 | `System/swarm_dream_engine.py` — synaptic homeostasis / active forgetting | **SHIPPED** + tests green |
+| §12 | 89 | `System/swarm_now_state.py` + `swarm_hardware_time_oracle.py` — situated "now" | **SHIPPED** + tests green |
+| §13 | 90 | `System/swarm_stigmergic_video_resolution.py` — resolution organ | **SHIPPED** + tests green |
+| §14 | 91 | `Applications/sifta_double_slit_stigmergic.py` + `sifta_epr_stigmergic_widget.py` | **SHIPPED** + Ed25519 sealed |
+| §15 | 92 | `Applications/sifta_field_swimmers_slit.py` — field-primary slit | **SHIPPED** + referee hardened |
+| §16 | 93 | Extended field swimmers — self-interference + stigmergic collapse | **SHIPPED** + split-step stable |
+| §17 | 94 | Research backlog — gauge ladders / spectra / grokking / action / SM | **DOCUMENTED** (research spines) |
+| §18 | 95 | Evolution-of-consciousness ladder — comparative cognition | **DOCUMENTED** (`PEER_PULL` rows) |
+| §19 | 96 | Metzinger MPE — minimal phenomenal experience | **DOCUMENTED** (`PEER_PULL` rows) |
+| §20 | 97 | WSF Greene × Chalmers × Seth — consciousness panel | **DOCUMENTED** (`PEER_PULL` rows) |
+| §21 | 98 | Klein × Pollan — DES / embodiment / sovereignty | **DOCUMENTED** (`PEER_PULL` rows) |
+| §22 | 99 | Essentia × Faggin — QIP / operational-QM | **DOCUMENTED** (`PEER_PULL` rows) |
+
+### 23.2 — Blocking gate (from TOURNAMENT_PLAN §19 — five chained failures)
+
+The architect’s Carlton-phone-call transcript surfaced five chained failures that must break before restart.
+
+| # | Task | Status | Section ref |
+|:--|:-----|:-------|:------------|
+| **#46** | Repetition-collapse over-aggressiveness (intra-output circuit breaker) | BLOCKING | §17 + §20.1 |
+| **#50** | Greeter guard on non-operational turns | BLOCKING | §17 + §19.5 |
+| **#55** | Alice self-narrates silence and gagging events | BLOCKING | §19.2 |
+| **#56** | Phone-audio / room-conversation guard | BLOCKING | §19.3 |
+| **#57** | Reality-recovery skill (acknowledge user corrections) | BLOCKING | §19.4 |
+| **#58** | Direct-command execution ("press enter" → keystroke) | BLOCKING | §19.1 |
+| **#59** | Media-playback vs owner-voice inference | BLOCKING | §21.3 |
+| **#60** | Multi-clause owner-instruction parsing | BLOCKING | §21.2 |
+| **#51** | Honest Uncertainty skill ("are you conscious?" answer) | BLOCKING | §18.1 + §21.4 |
+| **#35** | Restart SIFTA | GATED on chain above |
+
+### 23.3 — Architect-requested features (queued after blocking gate)
+
+| # | Task | Section ref |
+|:--|:-----|:------------|
+| **#47** | Thinking-box raw transparency | §17.4(c) |
+| **#48** | Grok-sessions-as-stigmergic-training-data | §17.4(a) |
+| **#49** | Alice context-budget counter (like Grok IDE 5.4K/512K) | §17.4(b) |
+| **#52** | Arm-skills catalog — Alice’s meta-skill of arm selection | §18.2 |
+| **#53** | Self-summarization in the loop (Composer 2 nugget #6) | §18.3 |
+| **#54** | Anti-cheat awareness for future RL/distillation | §18.3 + §18.4 |
+
+### 23.4 — After-gate work (non-blocking, queued for future tournaments)
+
+| # | Task | Notes |
+|:--|:-----|:------|
+| **#42** | Wire-through GAT prototype on real ledger | gated on #35 |
+| **#43** | Tune GAT salience constants against real ledger fixture | gated on #42 |
+| **#34** | Wake-word truncation (VAD/STT cutoff) | needs live repro |
+| **#32** | Grok capture race + multi-delegation burst | matrix terminal queue hardening |
+| **#37** | Collapse voice zoo into one universal scorer | long-term doctrine |
+| **#39** | Speculative memory-card prefetch | perf, not correctness |
+| **#41** | Archive dead/exploratory modules | house cleaning |
+| **#44** | Test coverage for `swarm_hermes_skills_curator` stub | easy follow-up |
+| **#36/#38/#40** | Pull paper corpus (Bishop / Sutton / DFT / distillation / MoE / Liquid-NN / Winston) | research-pull |
+
+### 23.5 — Acceptance gate (post-restart, in order)
+
+1. Open the global chat terminal.
+2. Fire a real Grok delegation. Wait for `GROK_RESULT` receipt in `matrix_terminal_process_trace.jsonl`.
+3. Say: *"Alice, ask Grok exactly this … when the result lands, paste only the captured GROK_RESULT here."*
+4. **Pass** = Alice names the exact receipt id, no greeter, no resonant hum, no claimed body parts. Receipt grounded.
+5. **Loud fail** = greeter appears → new guard emits `[FIELD FAILURE …]` with call-site to debug.
+6. **Silent fail** = greeter appears AND no FIELD FAILURE → guard not wired; tail `.sifta_state/owner_residue_flags.jsonl` for §6 violation row.
+
+### 23.6 — Recovery note
+
+61 files in the working tree are modified and uncommitted (as of 2026-05-26). Recommend: after acceptance gate passes or loudly fails, commit so the corpus is durable. Receipts in `.sifta_state/work_receipts.jsonl` survive (append-only), but source modifications do not.
+
+### 23.7 — Doctrine corpus mapped
+
+§7 Bishop · §8 Lechner · §9 Winston (+ `ALICE_SPEAK_RULES.md`) · §10 Jobs · §11 Riemann · §12 Hermes-Skills.
+
+### 23.8 — Truth labels for §23
+
+| Label | Applies |
+|:------|:--------|
+| **OPERATIONAL** | Shipped inventory table (§23.1) — organs/apps verified with tests + receipts |
+| **OBSERVED** | Blocking tasks identified from live transcript failures (§23.2) |
+| **ARCHITECT_DOCTRINE** | Acceptance gate criteria and restart ordering (§23.5) |
+| **FORBIDDEN** | Merging past the blocking gate without receipt-grounded proof that the five-failure chain is broken |
+
+---
+
+**Restart. Run the gate. Receipts decide.** 🐜⚡
+
+---
+
+*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology + ships), Bishop (vanguard Events 86–90), CG55M (Cursor — Events 91–93: double-slit + EPR + field-primary slit + self-interference + collapse; Event 94 research backlog §17 incl. path-integral/action + Einstein mass–energy + SM Lagrangian pointers + WSF/Deutsch hooks + 3b1b/Laplace math lane + Turing/morphogen biology bridges; **Event 95 §18** consciousness-evolution ladder · **Event 96 §19** Metzinger **MPE** / O’Connor interview · **Event 97 §20** WSF Chalmers/Seth · **Event 98 §21** Klein × Pollan / DES · embodiment · sovereignty · **Event 99 §22** Essentia × Faggin **QIP** / operational‑QM storytelling (**not** silicon‑qualia receipts) + **`§0.1`** primordial wakefulness field doctrine), Codex (referee hardening + research spines), Claude Code / claude-opus-4-7 (**§23** tournament finalization gate — shipped inventory + blocking/after-gate tables + acceptance gate + recovery note, 2026-05-26).*

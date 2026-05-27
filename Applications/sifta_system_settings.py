@@ -94,7 +94,17 @@ ALICE_VOICE_SHORTLIST = (
 
 def _looks_remote_model_name(name: str) -> bool:
     n = (name or "").strip().lower()
-    return n.startswith("gemini:") or n.startswith("gemini-")
+    return (
+        n.startswith("gemini:")
+        or n.startswith("gemini-")
+        or n.startswith("grok:")
+        or n.startswith("grok-")
+    )
+
+
+def _is_xai_cortex_tag(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n.startswith("grok:") or n.startswith("grok-") or n.startswith("xai:")
 
 
 def _parse_ollama_tags_payload(payload: dict[str, Any]) -> list[str]:
@@ -2024,7 +2034,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         # "let me have a dropdown to select the cortex I want ... button that
         # switches the daily cortex, loops through all cortexes ... no hardcoding,
         # I want to try them all."
-        cortex_heading = QLabel("🧠  Cortex  ·  pick any installed Alice cortex")
+        cortex_heading = QLabel("🧠  Cortex  ·  pick a local Alice cortex or cloud cortex")
         cortex_heading.setStyleSheet(
             "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
@@ -2059,8 +2069,18 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "color: rgb(0, 220, 255); selection-background-color: rgb(0, 60, 90); }"
         )
         for tag in installed_cortexes:
-            weight_suffix = _fmt_weight(tag)
-            display = f"{tag}  ·  {weight_suffix}" if weight_suffix else tag
+            # Round 33 (Claude/Cowork direct, 2026-05-27): make the Grok cloud entry
+            # explicit so the owner recognizes the 4th option as the OAuth-routed
+            # cortex. The tag `grok:grok-4.3` is the canonical resolver key (do not
+            # change); keep it visible in the picker for receipt/audit clarity. Routing goes
+            # through xai_grok_oauth_organ.load_credential (~/.hermes/auth.json or
+            # env XAI_OAUTH_ACCESS_TOKEN) with a fallback to the local `grok --single`
+            # CLI per swarm_gemini_brain._stream_grok_chat_via_cli.
+            if _looks_remote_model_name(tag) and tag.lower().startswith("grok"):
+                display = f"{tag}  ·  xAI Grok 4.3 OAuth (SuperGrok / X Premium+)  ·  ☁ cloud"
+            else:
+                weight_suffix = "☁ cloud" if _looks_remote_model_name(tag) else _fmt_weight(tag)
+                display = f"{tag}  ·  {weight_suffix}" if weight_suffix else tag
             self._cortex_combo.addItem(display, userData=tag)
         # Pre-select the active cortex if it's in the list
         try:
@@ -2070,6 +2090,13 @@ class SystemSettingsWidget(SiftaBaseWidget):
             pass
         self._cortex_combo.currentIndexChanged.connect(self._on_cortex_picker_changed)
         picker_row.addWidget(self._cortex_combo, stretch=1)
+
+        self._cortex_auth_indicator = QPushButton("●")
+        self._cortex_auth_indicator.setObjectName("CortexAuthIndicator")
+        self._cortex_auth_indicator.setFixedSize(20, 20)
+        self._cortex_auth_indicator.setToolTip("xAI OAuth health")
+        self._cortex_auth_indicator.clicked.connect(self._on_cortex_auth_indicator_clicked)
+        picker_row.addWidget(self._cortex_auth_indicator)
 
         cycle_btn = QPushButton("↻  Cycle")
         cycle_btn.setFixedHeight(30)
@@ -2088,6 +2115,68 @@ class SystemSettingsWidget(SiftaBaseWidget):
         picker_row.addWidget(cycle_btn)
 
         root.addLayout(picker_row)
+
+        self._cortex_auth_timer = QTimer(self)
+        self._cortex_auth_timer.setInterval(5000)
+        self._cortex_auth_timer.timeout.connect(self._refresh_cortex_auth_indicator)
+        self._cortex_auth_timer.start()
+        self._refresh_cortex_auth_indicator()
+
+        # ── Hermes Arm Provider — Round 33 (Claude/Cowork direct, 2026-05-27) ──
+        # Owner choice for where Hermes-delegated work runs. Persists to
+        # .sifta_state/hermes_cortex.json (provider field). swarm_agent_arm_launcher.py
+        # reads that file at delegate-time (hermes_cortex_override around line 218).
+        # Two options for now: local Ollama vs xAI Grok OAuth via Hermes auth.json.
+        hermes_arm_heading = QLabel("🤖  Hermes Arm Provider  ·  where delegated work runs")
+        hermes_arm_heading.setStyleSheet(
+            "color: rgb(255, 180, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        root.addWidget(hermes_arm_heading)
+
+        hermes_row = QHBoxLayout()
+        hermes_row.setSpacing(8)
+        hermes_label = QLabel("Hermes Arm")
+        hermes_label.setStyleSheet(
+            "color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;"
+        )
+        hermes_row.addWidget(hermes_label)
+
+        self._hermes_arm_combo = QComboBox()
+        self._hermes_arm_combo.setObjectName("HermesArmProviderPicker")
+        self._hermes_arm_combo.setEditable(False)
+        self._hermes_arm_combo.setStyleSheet(
+            "QComboBox { background: rgb(40, 26, 8); color: rgb(255, 200, 110); "
+            "border: 1px solid rgb(200, 130, 30); border-radius: 8px; "
+            "padding: 6px 10px; font-size: 12px; font-family: Menlo; }"
+            "QComboBox::drop-down { border: none; width: 18px; }"
+            "QComboBox QAbstractItemView { background: rgb(28, 18, 6); "
+            "color: rgb(255, 200, 110); selection-background-color: rgb(80, 50, 12); }"
+        )
+        # (display_label, persisted_value) — provider tag goes into hermes_cortex.json
+        self._hermes_arm_combo.addItem(
+            "Ollama (local) · alice-extra-cortex-25.8b-17gb",
+            userData="ollama_local",
+        )
+        self._hermes_arm_combo.addItem(
+            "xAI Grok OAuth (SuperGrok / X Premium+) · ☁ cloud",
+            userData="grok_via_hermes_oauth",
+        )
+        # Pre-select current value from .sifta_state/hermes_cortex.json
+        try:
+            import json as _json_r33_init
+            from pathlib import Path as _Path_r33_init
+            _hcfg_init = _Path_r33_init(__file__).resolve().parent.parent / ".sifta_state" / "hermes_cortex.json"
+            if _hcfg_init.exists():
+                _curr = (_json_r33_init.loads(_hcfg_init.read_text(encoding="utf-8")) or {}).get("provider")
+                for _i in range(self._hermes_arm_combo.count()):
+                    if self._hermes_arm_combo.itemData(_i) == _curr:
+                        self._hermes_arm_combo.setCurrentIndex(_i)
+                        break
+        except Exception:
+            pass
+        self._hermes_arm_combo.currentIndexChanged.connect(self._on_hermes_arm_provider_changed)
+        hermes_row.addWidget(self._hermes_arm_combo, stretch=1)
+        root.addLayout(hermes_row)
 
         # ── Corvid / Fallback section — secondary brain ──
         corvid_heading = QLabel("🐦  Corvid Scout  ·  Qwen side brain for cheap bounded evidence")
@@ -2206,6 +2295,175 @@ class SystemSettingsWidget(SiftaBaseWidget):
                 self.inference_default_card.set_metric(str(tag), "active cortex")
             except Exception:
                 pass
+        self._refresh_cortex_auth_indicator()
+
+    def _selected_cortex_tag(self) -> str:
+        try:
+            if hasattr(self, "_cortex_combo"):
+                idx = self._cortex_combo.currentIndex()
+                tag = self._cortex_combo.itemData(idx)
+                if tag:
+                    return str(tag)
+        except Exception:
+            pass
+        return str(get_default_ollama_model() or "")
+
+    def _last_cortex_completion_timestamp(self) -> float | None:
+        path = STATE / "work_receipts.jsonl"
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return None
+
+        if getattr(self, "_last_cortex_receipt_mtime", None) == mtime:
+            return getattr(self, "_last_cortex_receipt_ts", None)
+
+        latest: float | None = None
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            blob = json.dumps(row, ensure_ascii=False).lower()
+            if "cortex" not in blob:
+                continue
+            ts = row.get("ts")
+            if not isinstance(ts, (int, float)):
+                ts = row.get("timestamp")
+            if isinstance(ts, (int, float)):
+                tsf = float(ts)
+                if latest is None or tsf > latest:
+                    latest = tsf
+
+        self._last_cortex_receipt_mtime = mtime
+        self._last_cortex_receipt_ts = latest
+        return latest
+
+    def _refresh_cortex_auth_indicator(self) -> None:
+        if not hasattr(self, "_cortex_auth_indicator"):
+            return
+
+        indicator = self._cortex_auth_indicator
+        tag = self._selected_cortex_tag()
+        if not _is_xai_cortex_tag(tag):
+            indicator.setVisible(False)
+            return
+
+        indicator.setVisible(True)
+        indicator.setEnabled(True)
+        try:
+            from System.swarm_cortex_auth_health import check_xai_oauth_health
+
+            health = check_xai_oauth_health(STATE)
+        except Exception as exc:
+            health = {
+                "status": "red",
+                "reason": f"probe_failed:{type(exc).__name__}",
+                "last_failover_age_s": None,
+            }
+
+        status = str(health.get("status") or "red").lower()
+        reason = str(health.get("reason") or "unknown")
+        age = health.get("last_failover_age_s")
+        if isinstance(age, (int, float)):
+            age_str = f"{age/60.0:.1f}m"
+        else:
+            age_str = "none"
+
+        if status == "green":
+            indicator.setStyleSheet(
+                "QPushButton { color: rgb(40, 220, 90); background: transparent; border: none; "
+                "font-size: 18px; font-family: Menlo; padding: 0; }"
+                "QPushButton:hover { color: rgb(80, 255, 120); }"
+            )
+            last_ts = self._last_cortex_completion_timestamp()
+            if isinstance(last_ts, (int, float)) and last_ts > 0:
+                ts_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(last_ts)))
+                age_s = max(0.0, time.time() - float(last_ts))
+                if age_s < 60:
+                    age_label = f"{int(age_s)}s ago"
+                elif age_s < 3600:
+                    age_label = f"{int(age_s // 60)}m ago"
+                else:
+                    age_label = f"{age_s / 3600.0:.1f}h ago"
+                tooltip = (
+                    f"xAI OAuth healthy\n"
+                    f"last cortex completion: {ts_local} ({age_label})"
+                )
+            else:
+                tooltip = "xAI OAuth healthy\nlast cortex completion: not found in work_receipts.jsonl"
+            indicator.setToolTip(tooltip)
+        else:
+            indicator.setStyleSheet(
+                "QPushButton { color: rgb(255, 80, 80); background: transparent; border: none; "
+                "font-size: 18px; font-family: Menlo; padding: 0; }"
+                "QPushButton:hover { color: rgb(255, 130, 130); }"
+            )
+            indicator.setToolTip(
+                "xAI OAuth missing/expired\n"
+                f"reason: {reason}\n"
+                f"last failover age: {age_str}\n"
+                "Click to run hermes auth add xai-oauth"
+            )
+
+    def _on_cortex_auth_indicator_clicked(self) -> None:
+        tag = self._selected_cortex_tag()
+        if not _is_xai_cortex_tag(tag):
+            return
+        try:
+            from System.swarm_cortex_auth_health import check_xai_oauth_health
+            from System.swarm_cortex_failover_reflex import schedule_oauth_refresh
+
+            health = check_xai_oauth_health(STATE)
+            if str(health.get("status") or "") == "red":
+                result = schedule_oauth_refresh(force=True)
+                self.set_status(f"xAI OAuth refresh: {result.get('status', 'unknown')}")
+            else:
+                self.set_status("xAI OAuth is healthy.")
+        except Exception as exc:
+            self.set_status(f"xAI OAuth refresh failed: {type(exc).__name__}")
+        self._refresh_cortex_auth_indicator()
+
+    def _on_hermes_arm_provider_changed(self, idx: int) -> None:
+        """Round 33 (Claude/Cowork direct, 2026-05-27): persist owner's Hermes
+        arm provider choice to .sifta_state/hermes_cortex.json. swarm_agent_arm_launcher.py
+        reads that file at delegate-time (hermes_cortex_override ~line 218), so
+        the next "Alice, ask Hermes to X" delegation routes through the
+        selected provider — local Ollama or xAI Grok OAuth via Hermes auth.json.
+        """
+        try:
+            import json as _json_r33
+            import time as _time_r33
+            from pathlib import Path as _Path_r33
+            value = self._hermes_arm_combo.itemData(idx)
+            label = self._hermes_arm_combo.itemText(idx)
+            cfg_path = _Path_r33(__file__).resolve().parent.parent / ".sifta_state" / "hermes_cortex.json"
+            existing: dict = {}
+            if cfg_path.exists():
+                try:
+                    existing = _json_r33.loads(cfg_path.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    existing = {}
+            previous = str(existing.get("provider") or "")
+            row = {
+                "provider": str(value or ""),
+                "label": str(label or ""),
+                "note": "Set via System Settings → Hermes Arm Provider dropdown (Round 33).",
+                "set_by": "owner_via_system_settings_ui",
+                "changed_at": _time_r33.strftime("%Y-%m-%d %H:%M:%S"),
+                "previous": previous,
+            }
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            cfg_path.write_text(_json_r33.dumps(row, indent=2), encoding="utf-8")
+        except Exception as exc:
+            # Settings panel must never crash on a persistence failure.
+            import sys as _sys_r33
+            print(f"[hermes_arm_provider] persist failed: {exc}", file=_sys_r33.stderr)
 
     def _cycle_cortex(self) -> None:
         """Rotate the active cortex through every installed Alice cortex.
@@ -2223,6 +2481,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         next_idx = (current_idx + 1) % len(self._installed_cortexes)
         # setCurrentIndex fires currentIndexChanged → _on_cortex_picker_changed
         self._cortex_combo.setCurrentIndex(next_idx)
+        self._refresh_cortex_auth_indicator()
 
     def _on_inf_default_changed(self, text: str) -> None:
         """Internal hook — kept for programmatic use; not wired to any UI control."""
@@ -2420,6 +2679,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             snap["default_ollama_model"],
             "Daily cortex: Talk, owner vision, and OS helpers",
         )
+        self._refresh_cortex_auth_indicator()
 
         # Privacy
         self.storage_state_card.set_metric(f"{snap['state_mb']:.1f} MB", "target ceiling is 50 MB")

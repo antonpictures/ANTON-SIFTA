@@ -123,7 +123,9 @@ def test_kernel_scheduler_timer_ticks_inside_qt_app(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
 
     from PyQt6.QtWidgets import QApplication
+    import sifta_os_desktop as desktop_module
     from sifta_os_desktop import _install_kernel_scheduler_timer
+    monkeypatch.setattr(desktop_module, "_owner_heartbeat", None)
 
     app = QApplication.instance() or QApplication([])
 
@@ -266,7 +268,9 @@ def test_kernel_scheduler_timer_drives_desktop_attention_director(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
 
     from PyQt6.QtWidgets import QApplication
+    import sifta_os_desktop as desktop_module
     from sifta_os_desktop import _install_kernel_scheduler_timer
+    monkeypatch.setattr(desktop_module, "_owner_heartbeat", None)
 
     app = QApplication.instance() or QApplication([])
 
@@ -575,13 +579,13 @@ def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
         app.processEvents()
 
 
-def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
+def test_manifest_launches_are_singleton_and_retired_terminal_is_hidden(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
     monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
 
-    from PyQt6.QtWidgets import QApplication, QWidget
+    from PyQt6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
 
@@ -604,20 +608,17 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
             desktop._trigger_manifest_app("Terminal")
             app.processEvents()
         assert len(visible_subwindows()) == 1
-        assert desktop._open_windows.get("System Settings") is None
-        terminal_sub = desktop._open_windows.get("Terminal")
-        assert terminal_sub is not None
-        assert desktop.current_app_state()["active_app"] == "Terminal"
-        assert desktop.current_app_state()["open_apps"] == ["Terminal"]
+        assert desktop._open_windows.get("System Settings") is not None
+        assert desktop._open_windows.get("Terminal") is None
+        assert desktop.current_app_state()["open_apps"] == ["System Settings"]
 
-        terminal_widget = None
-        wrapper = terminal_sub.widget()
-        for child in wrapper.findChildren(QWidget):
-            if hasattr(child, "process"):
-                terminal_widget = child
-                break
-        assert terminal_widget is not None
-        assert terminal_widget.terminal.is_running()
+        for _ in range(5):
+            desktop._trigger_manifest_app("Matrix Terminal")
+            app.processEvents()
+        assert len(visible_subwindows()) == 1
+        assert desktop._open_windows.get("System Settings") is not None
+        assert desktop._open_windows.get("Matrix Terminal") is None
+        assert desktop.current_app_state()["open_apps"] == ["System Settings"]
 
         script_launch = {}
         original_script_launcher = desktop._launch_terminal_app
@@ -632,13 +633,6 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
             "title": "Circadian Rhythm",
             "entry": "Applications/circadian_rhythm.py",
         }
-
-        terminal_sub.close()
-        for _ in range(20):
-            app.processEvents()
-            if not terminal_widget.terminal.is_running():
-                break
-        assert not terminal_widget.terminal.is_running()
     finally:
         desktop.close()
 
@@ -778,9 +772,10 @@ def test_sandbox_desktop_launchpad_loads_manifest_before_render(monkeypatch):
             "Protein Colosseum",
             "PoUW Sim",
             "Assembly Theory",
-            "Terminal",
             "System Settings",
         } <= tooltips
+        assert "Terminal" not in tooltips
+        assert "Matrix Terminal" not in tooltips
         assert "Alice" not in tooltips
         assert "Alice Health" not in tooltips
         assert "What Alice Sees" not in tooltips

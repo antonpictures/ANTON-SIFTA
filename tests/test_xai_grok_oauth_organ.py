@@ -87,3 +87,56 @@ def test_token_file_is_local_and_chmod_600(tmp_path: Path) -> None:
     assert cred is not None
     assert cred.kind == "oauth_access_token"
     assert oct(token_file.stat().st_mode & 0o777) == "0o600"
+
+
+def test_hermes_auth_provider_token_is_accepted(tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "xai-oauth": {
+                        "tokens": {
+                            "access_token": "oauth-hermes-provider-abcdef",
+                            "refresh_token": "refresh-xyz",
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cred = organ.load_credential(
+        token_file=tmp_path / "missing_token.json",
+        hermes_auth_file=auth_file,
+        env={},
+    )
+    assert cred is not None
+    assert cred.kind == "oauth_access_token"
+    assert cred.value == "oauth-hermes-provider-abcdef"
+    assert "providers.tokens.access_token" in cred.source
+
+
+def test_hermes_auth_credential_pool_token_is_accepted(tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "credential_pool": {
+                    "xai-oauth": [
+                        {"access_token": "oauth-hermes-pool-123456", "label": "default"}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cred = organ.load_credential(
+        token_file=tmp_path / "missing_token.json",
+        hermes_auth_file=auth_file,
+        env={},
+    )
+    assert cred is not None
+    assert cred.kind == "oauth_access_token"
+    assert cred.value == "oauth-hermes-pool-123456"
+    assert "credential_pool" in cred.source

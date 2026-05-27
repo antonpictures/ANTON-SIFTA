@@ -238,7 +238,7 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
     "matrix_pty": ToolSpec(
         name="matrix_pty",
         description=(
-            "Acknowledge commands dispatched to the focused Matrix Terminal PTY. "
+            "Acknowledge commands dispatched to Alice global chat terminal's internal PTY service. "
             "Special READ_ONLY_GROK_DELEGATION clearance lane for bounded inspect/propose "
             "tasks that explicitly carry 'do not edit' + 'print answer with receipt'. "
             "Grok remains external cortex; Alice owns the body and receipts every surgery."
@@ -1113,6 +1113,32 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
             "alice_summary": f"agent_arm_research failed before launch: {type(exc).__name__}: {exc}",
         }
     output = result.output.strip()
+    # Deterministic code lander (George 2026-05-25): evidence mode captures the
+    # arm's text but never writes the app file. If the owner's prompt names a
+    # repo .py path and the arm streamed code, commit that code to disk and
+    # compile it — so Alice's own arm lands its own app. The code is the arm's;
+    # this only writes it. Never raises (covenant §6/§7.2 honest failure).
+    landed = None
+    landed_note = ""
+    try:
+        from System.swarm_arm_code_lander import land_arm_code
+
+        if result.ok:
+            landed = land_arm_code(
+                prompt=prompt,
+                output=result.output,
+                arm=result.arm_id,
+                receipt_id=result.receipt_id or "",
+            )
+            if landed.get("ok"):
+                landed_note = (
+                    f"\nLANDED {landed['rel_path']} "
+                    f"({landed['bytes']} bytes, compiled={landed['compiled']})"
+                )
+            elif landed.get("reason") != "no_target_path_in_prompt":
+                landed_note = f"\nNOT LANDED: {landed.get('reason')}"
+    except Exception:
+        landed = None
     if len(output) > 5000:
         output = output[:5000] + "\n...[truncated]"
     summary_header = (
@@ -1128,9 +1154,11 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
         "receipt_id": result.receipt_id,
         "artifact_path": result.artifact_path,
         "output": result.output,
+        "landed": landed,
         "alice_summary": (
             f"{summary_header}\n"
-            f"arm={result.arm_id} status={result.status} receipt={result.receipt_id}\n"
+            f"arm={result.arm_id} status={result.status} receipt={result.receipt_id}"
+            f"{landed_note}\n"
             f"{output_block}"
         ),
     }
@@ -1340,12 +1368,13 @@ def _exec_matrix_pty(params: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "ok": True,
         "status": "MATRIX_PTY_DISPATCHED",
+        "source": "alice_global_chat_terminal",
         "commands": commands_list,
         "truth_note": (
-            "The focused Matrix Terminal pane already wrote these commands to its live PTY; "
-            "this router result acknowledges that visible execution path."
+            "Alice global chat terminal's internal PTY service already accepted these commands; "
+            "this router result acknowledges the global-chat execution path."
         ),
-        "alice_summary": f"matrix_pty dispatched visible terminal command sequence: {preview}",
+        "alice_summary": f"alice_global_chat_terminal dispatched internal terminal command sequence: {preview}",
     }
 
 
@@ -1957,7 +1986,10 @@ def _kernel_tool_preflight(
                     bodies_present=["alice_tool_router"],
                     metadata={
                         "source": "execute_tool_call",
-                        "kernel_role": "deterministic_tool_router",
+                        # Round 45 (Architect 2026-05-27): retired word
+                        # "deterministic" replaced with covenant-correct
+                        # "cortex_receipted" per Round 40 doctrine.
+                        "kernel_role": "cortex_receipted_tool_router",
                     },
                 ),
                 receipt_id=f"tool_router_register:{call.tool_name}",
@@ -2708,7 +2740,12 @@ def _proof_tokens_from_result(result: Dict[str, Any], limit: int = 3) -> List[st
 
 
 def build_execution_receipt_reply(results: List[ToolResult]) -> str:
-    """Deterministic reply for tool turns: who executed, status, and proof tokens."""
+    """Receipt-bearing reply for tool turns: who executed, status, proof tokens.
+
+    Round 45 (Architect 2026-05-27): the executor label was renamed from
+    `deterministic_tool_router` (retired word per Round 40) to
+    `cortex_receipted_tool_router`. Same physics; doctrine-correct name.
+    """
     if not results:
         return ""
     lines = ["EXECUTION RECEIPTS"]
@@ -2717,7 +2754,7 @@ def build_execution_receipt_reply(results: List[ToolResult]) -> str:
         proofs = _proof_tokens_from_result(tr.result if isinstance(tr.result, dict) else {})
         proof_label = ", ".join(proofs) if proofs else "tool_router_trace"
         lines.append(
-            f"- tool={tr.tool_name} executor=deterministic_tool_router status={status} proof={proof_label}"
+            f"- tool={tr.tool_name} executor=cortex_receipted_tool_router status={status} proof={proof_label}"
         )
     return "\n".join(lines)
 

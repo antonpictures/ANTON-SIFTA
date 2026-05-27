@@ -3,7 +3,9 @@
 
 This module does not mint credentials. It consumes node-local credentials only:
 `XAI_API_KEY`, `XAI_OAUTH_ACCESS_TOKEN`, or a chmod-600 token file under
-`.sifta_state/secrets/`. Every attempted call writes a redacted local receipt.
+`.sifta_state/secrets/`. It can also reuse Hermes OAuth state from
+`~/.hermes/auth.json` when xAI OAuth is logged in there.
+Every attempted call writes a redacted local receipt.
 """
 
 from __future__ import annotations
@@ -25,7 +27,15 @@ _TRACE = _STATE / "ide_stigmergic_trace.jsonl"
 _LEDGER = _STATE / "xai_grok_oauth_calls.jsonl"
 _SECRET_DIR = _STATE / "secrets"
 _TOKEN_FILE = _SECRET_DIR / "xai_grok_oauth_token.json"
+_HERMES_AUTH_FILE = Path.home() / ".hermes" / "auth.json"
 _API_URL = "https://api.x.ai/v1/responses"
+_HERMES_XAI_PROVIDER_ALIASES = (
+    "xai-oauth",
+    "grok-oauth",
+    "x-ai-oauth",
+    "xai-grok-oauth",
+    "xai",
+)
 
 
 @dataclass(frozen=True)
@@ -89,6 +99,7 @@ def discover_official_grok_cli() -> Optional[str]:
 def load_credential(
     *,
     token_file: Path = _TOKEN_FILE,
+    hermes_auth_file: Path = _HERMES_AUTH_FILE,
     env: Optional[dict[str, str]] = None,
 ) -> Optional[XaiCredential]:
     env = os.environ if env is None else env
@@ -107,6 +118,63 @@ def load_credential(
         if isinstance(value, str) and value:
             kind = "oauth_access_token" if payload.get("access_token") else "api_key"
             return XaiCredential(kind, value, str(token_file))
+
+    # Hermes OAuth compatibility:
+    # If owner signed into xAI through Hermes, reuse that bearer token.
+    try:
+        if hermes_auth_file.exists():
+            raw = json.loads(hermes_auth_file.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                # 1) singleton providers map
+                providers = raw.get("providers")
+                if isinstance(providers, dict):
+                    for alias in _HERMES_XAI_PROVIDER_ALIASES:
+                        rec = providers.get(alias)
+                        if not isinstance(rec, dict):
+                            continue
+                        tokens = rec.get("tokens")
+                        if isinstance(tokens, dict):
+                            access_token = tokens.get("access_token")
+                            if isinstance(access_token, str) and access_token:
+                                return XaiCredential(
+                                    "oauth_access_token",
+                                    access_token,
+                                    f"{hermes_auth_file}:{alias}:providers.tokens.access_token",
+                                )
+                        access_token = rec.get("access_token")
+                        if isinstance(access_token, str) and access_token:
+                            return XaiCredential(
+                                "oauth_access_token",
+                                access_token,
+                                f"{hermes_auth_file}:{alias}:providers.access_token",
+                            )
+
+                # 2) credential pool map (provider -> list of rows)
+                pool = raw.get("credential_pool")
+                if isinstance(pool, dict):
+                    for alias in _HERMES_XAI_PROVIDER_ALIASES:
+                        rows = pool.get(alias)
+                        if isinstance(rows, list):
+                            for idx, row in enumerate(rows):
+                                if not isinstance(row, dict):
+                                    continue
+                                access_token = row.get("access_token")
+                                if isinstance(access_token, str) and access_token:
+                                    return XaiCredential(
+                                        "oauth_access_token",
+                                        access_token,
+                                        f"{hermes_auth_file}:{alias}:credential_pool[{idx}].access_token",
+                                    )
+                        elif isinstance(rows, dict):
+                            access_token = rows.get("access_token")
+                            if isinstance(access_token, str) and access_token:
+                                return XaiCredential(
+                                    "oauth_access_token",
+                                    access_token,
+                                    f"{hermes_auth_file}:{alias}:credential_pool.access_token",
+                                )
+    except Exception:
+        pass
     return None
 
 

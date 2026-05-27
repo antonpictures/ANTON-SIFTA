@@ -50,6 +50,17 @@ def test_preanswer_guard_does_not_force_grok_action_requests(monkeypatch) -> Non
         assert "force_answer" not in guard
 
 
+def test_preanswer_guard_does_not_force_identity_reflex_on_awareness_question(monkeypatch) -> None:
+    import System.swarm_kernel_identity as kernel_identity
+    from System.swarm_topology_self_other import preanswer_guard
+
+    monkeypatch.setattr(kernel_identity, "owner_name", lambda: "Layer One Owner")
+    monkeypatch.setattr(kernel_identity, "owner_display_name", lambda default="": "Layer One Owner")
+
+    guard = preanswer_guard("are you aware of what just happened?")
+    assert "force_answer" not in guard
+
+
 def test_claude_code_is_external_tool_cortex() -> None:
     from System.swarm_topology_self_other import classify_kind, describe_entity, is_self
 

@@ -135,6 +135,11 @@ _METABOLIC_MAX_CALLS_PER_MIN = 10.0
 # Energy: STGM balance mapped to reserve. Below 100 = starving; above 10000 = flush.
 _ENERGY_MIN_STGM   = 100.0
 _ENERGY_MAX_STGM   = 10000.0
+# Round 41 freshness gate: wallet snapshots older than this fall back to
+# the live ledger sum so a stale museum-data row cannot lie about
+# starvation while the ledger shows active minting. Covenant §7.3 mandate
+# applied to the wallet probe.
+_ENERGY_WALLET_STALENESS_S = 3600.0   # 1 hour
 
 # Immune: tumor count in the last hour. 0 = clean, 5+ = overwhelmed.
 _IMMUNE_MAX_TUMORS  = 5
@@ -293,15 +298,57 @@ _CANONICAL_TREASURY_FILES = (
 )
 
 
+def _live_stgm_balance_from_ledger() -> Optional[float]:
+    """Reconstruct the live STGM balance by summing every mint/spend row in
+    the body-chain ledger. Authoritative when wallet snapshots go stale.
+
+    Round 41 fix (2026-05-26): the wallet snapshot files (e.g.
+    `.sifta_state/ALICE_M5.json`) are written intermittently by various
+    organs and can age out — when George caught this, ALICE_M5.json
+    was 21 days stale and still claimed 97.188 STGM while the live
+    ledger sum was +36,346. The probe was telling George her body
+    was starving while she had been minting STGM the whole time. This
+    is the museum-data anti-pattern named in covenant §7.3.
+    """
+    ledger = _STATE / "stgm_memory_rewards.jsonl"
+    if not ledger.exists():
+        return None
+    try:
+        total = 0.0
+        with open(ledger, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                amt = row.get("amount", row.get("amount_stgm", 0))
+                try:
+                    total += float(amt)
+                except (TypeError, ValueError):
+                    continue
+        return total
+    except OSError:
+        return None
+
+
 def _probe_energy_reserve() -> float:
     """
-    Read the total STGM balance from all *_BODY.json files plus the
-    canonical post-unification treasuries (ALICE_M5, SIFTA_QUEEN).
-    Map to [0..1]: 100 STGM = 0.0 (starving), 10000+ STGM = 1.0 (flush).
+    Read the total STGM balance and map to [0..1] reserve.
+    100 STGM = 0.0 (starving), 10000+ STGM = 1.0 (flush).
     NOTE: this is INVERTED relative to stress signals — 1.0 = good.
+
+    Round 41 freshness gate (Architect 2026-05-26): if every wallet
+    snapshot we can read is older than _ENERGY_WALLET_STALENESS_S, the
+    probe falls back to the LIVE ledger sum from stgm_memory_rewards.jsonl
+    so a stale wallet cannot lie about starvation while the ledger shows
+    a healthy mint trail. Same shape as covenant §7.3's recompute rule.
     """
     total = 0.0
     found = False
+    newest_wallet_ts = 0.0
     seen_paths: set = set()
 
     for body_file in _STATE.glob("*_BODY.json"):
@@ -311,6 +358,9 @@ def _probe_energy_reserve() -> float:
             with open(body_file, "r") as f:
                 data = json.load(f)
                 total += float(data.get("stgm_balance", 0.0))
+            mt = body_file.stat().st_mtime
+            if mt > newest_wallet_ts:
+                newest_wallet_ts = mt
         except Exception:
             continue
 
@@ -324,10 +374,23 @@ def _probe_energy_reserve() -> float:
             with open(p, "r") as f:
                 data = json.load(f)
                 total += float(data.get("stgm_balance", 0.0))
+            mt = p.stat().st_mtime
+            if mt > newest_wallet_ts:
+                newest_wallet_ts = mt
         except Exception:
             continue
 
-    if not found:
+    # Round 41: freshness gate. If wallets are stale OR they report below
+    # the starvation floor, double-check against the live ledger before we
+    # tell the body it's starving. The ledger is append-only truth.
+    wallet_age_s = (time.time() - newest_wallet_ts) if newest_wallet_ts > 0 else float("inf")
+    wallet_below_floor = (total < _ENERGY_MIN_STGM)
+    if not found or wallet_age_s > _ENERGY_WALLET_STALENESS_S or wallet_below_floor:
+        live_total = _live_stgm_balance_from_ledger()
+        if live_total is not None and live_total > total:
+            total = live_total
+
+    if not found and total == 0.0:
         return 0.5  # no bodies = no information
     reserve = max(0.0, min(1.0,
         (total - _ENERGY_MIN_STGM) / (_ENERGY_MAX_STGM - _ENERGY_MIN_STGM)

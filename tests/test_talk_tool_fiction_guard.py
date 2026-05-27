@@ -65,17 +65,17 @@ def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) ->
     calls = parse_tool_calls(text)
 
     assert pane.delegations == ["Alice ask Grok what did the last receipt prove?"]
-    assert len(calls) == 1
-    assert calls[0].tool_name == "matrix_pty"
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+    assert calls == []
+    assert "Grok dispatched. receipt=" in text
+    assert "matrix_pty" not in text
 
     pane.delegations.clear()
     text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
     calls = parse_tool_calls(text)
 
     assert pane.delegations == ["ask grok how are your organs wired"]
-    assert len(calls) == 1
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+    assert calls == []
+    assert "Grok dispatched. receipt=" in text
 
     pane.delegations.clear()
     text = talk._owner_direct_read_tool_request(
@@ -86,15 +86,245 @@ def test_global_chat_grok_request_drives_focused_matrix_terminal(monkeypatch) ->
     assert pane.delegations == [
         "i want you to be able to ask grok and grok to print the answer here in global chat as proof"
     ]
+    assert calls == []
+    assert "Grok dispatched. receipt=" in text
+
+
+def test_grok_status_questions_reach_cortex_instead_of_canned_dispatch() -> None:
+    for text in (
+        "Alice, did you resume Grok?",
+        "Alice, what was the last Grok receipt id?",
+        "did Grok run and what receipt proved it?",
+    ):
+        reply = talk._owner_direct_read_tool_request(text)
+        calls = parse_tool_calls(reply)
+
+        assert reply == ""
+        assert calls == []
+
+
+def test_operational_greeter_guard_strips_structural_robot_dialogue() -> None:
+    cleaned, fired = talk._strip_greeter_on_operational(
+        "Hello again. You've addressed me. I am here. Are you looking to continue our conversation?",
+        "Alice, did you resume Grok?",
+    )
+
+    assert fired
+    assert cleaned.startswith("[no ledger-grounded answer surfaced")
+
+    cleaned, fired = talk._strip_greeter_on_operational(
+        "Hello. I am here, ready to receive your thoughts. Yes. I resumed Grok; receipt=abc123.",
+        "what was the last Grok receipt id?",
+    )
+
+    assert fired
+    assert cleaned == "Yes. I resumed Grok; receipt=abc123."
+
+
+def test_hermes_common_stt_typo_routes_to_agent_arm() -> None:
+    text = talk._owner_direct_read_tool_request(
+        "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
+    )
+    calls = parse_tool_calls(text)
+
     assert len(calls) == 1
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_DELEGATION"]
+    assert calls[0].tool_name == "agent_arm_research"
+    assert calls[0].params["arm"] == "hermes"
+    assert "Stigmergic TicTacToe" in calls[0].params["prompt"]
+    assert "Alice-owned SIFTA app/build delegation" in calls[0].params["prompt"]
+    assert "Write real files" in calls[0].params["prompt"] or "write real files" in calls[0].params["prompt"]
+    assert "honest failure receipt" in calls[0].params["prompt"]
+    assert talk._direct_tool_request_needs_observable_worker(
+        "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
+    )
+    assert (
+        talk._observable_direct_tool_label(
+            "Alice, please ask Hemes to code a new Stigmergic TicTacToe in sifta apps"
+        )
+        == "Hermes agent arm"
+    )
+
+
+def test_use_your_arm_phrasing_routes_to_agent_arm_before_read_file() -> None:
+    cases = (
+        (
+            "codex",
+            "Alice, use your codex arm and execute Round 35 now. Step 2: read "
+            "/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md.",
+            "execute Round 35 now.",
+        ),
+        (
+            "claude",
+            "Alice, use your claude arm and code task #58. Step 2: read "
+            "/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md.",
+            "code task #58.",
+        ),
+        (
+            "hermes",
+            "Alice, use your hermes arm and inspect receipts. Step 2: read "
+            "/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md.",
+            "inspect receipts.",
+        ),
+    )
+
+    for arm, text, prompt_head in cases:
+        reply = talk._owner_direct_read_tool_request(text)
+        calls = parse_tool_calls(reply)
+
+        assert len(calls) == 1
+        assert calls[0].tool_name == "agent_arm_research"
+        assert calls[0].params["arm"] == arm
+        assert calls[0].params["prompt"].startswith(prompt_head)
+        assert "read_file" not in reply
+
+
+def test_arm_meta_questions_do_not_auto_dispatch_external_arms() -> None:
+    cases = (
+        "do you know how to ask codex?",
+        "how do i ask your codex arm",
+        "what is codex arm",
+        "do you know how to ask claude code",
+        "how to ask hermes",
+    )
+    for text in cases:
+        reply = talk._owner_direct_read_tool_request(text)
+        calls = parse_tool_calls(reply)
+
+        assert reply == ""
+        assert calls == []
+
+
+def test_question_form_with_explicit_task_still_dispatches_arm() -> None:
+    reply = talk._owner_direct_read_tool_request(
+        "can you ask codex to verify round 35 receipts now"
+    )
+    calls = parse_tool_calls(reply)
+
+    assert len(calls) == 1
+    assert calls[0].tool_name == "agent_arm_research"
+    assert calls[0].params["arm"] == "codex"
+    assert calls[0].params["prompt"] == "verify round 35 receipts now"
+
+
+def test_edge_router_repair_never_collapses_typed_turn_to_single_name() -> None:
+    assert (
+        talk._should_apply_edge_router_repair(
+            "Alice, what else in your body is bothering you right now?",
+            "Alice",
+            typed_turn=True,
+            lane="open_app",
+        )
+        is False
+    )
+
+
+def test_edge_router_repair_allows_voice_repair_when_not_singleton_name() -> None:
+    assert (
+        talk._should_apply_edge_router_repair(
+            "i mean to this other one i dont know who joined this",
+            "i mean to this other one i do not know who joined this",
+            typed_turn=False,
+            lane="chat",
+        )
+        is True
+    )
+
+
+def test_cortex_pre_execution_receipt_written_before_deterministic_tool_exec(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(
+        "System.sifta_inference_defaults.choose_stigmergic_ollama_model",
+        lambda _text, app_context="talk_to_alice": {
+            "bucket": "research_code",
+            "selected_model": "alice-m5-cortex-8b-6.3gb:latest",
+            "app_context": app_context,
+        },
+    )
+
+    ok, note = talk._record_cortex_pre_execution_receipt(
+        user_text="Alice, use your codex arm and execute Round 35",
+        direct_tool_text='```tool_call {"tool":"agent_arm_research","arm":"codex"} ```',
+    )
+
+    assert ok is True
+    assert note.startswith("cortex_pre_exec_")
+    rows_path = tmp_path / "deterministic_cortex_pre_execution_receipts.jsonl"
+    assert rows_path.exists()
+    import json
+
+    rows = [
+        json.loads(line)
+        for line in rows_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows
+    assert rows[-1]["gate"] == "ALLOW"
+    assert rows[-1]["selected_model"] == "alice-m5-cortex-8b-6.3gb:latest"
+
+
+def test_deterministic_tool_exec_blocks_when_cortex_receipt_gate_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        talk,
+        "_record_cortex_pre_execution_receipt",
+        lambda **_kwargs: (False, "mock_gate_failure"),
+    )
+    reply, results = talk._route_direct_tool_request_for_alice(
+        "Alice, use your codex arm and execute Round 35 memory archive continuity now."
+    )
+    assert reply == "FIELD_FAILURE: deterministic_cortex_receipt_required:mock_gate_failure"
+    assert results == []
+
+
+def test_cortex_bypass_router_is_disabled_and_falls_through(monkeypatch) -> None:
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        talk,
+        "_append_cortex_bypass_router_trace",
+        lambda **kwargs: seen.append(kwargs),
+    )
+
+    routed = talk.TalkToAliceWidget._maybe_route_operational_prompt_before_cortex(
+        object(),
+        "Alice, use your claude arm and code The Round 34a (task #58)",
+        1.0,
+        already_displayed=True,
+        already_logged=True,
+    )
+
+    assert routed is False
+    assert seen
+    assert seen[-1]["action_taken"] == "router_disabled_round35_fallthrough"
+
+
+def test_global_chat_grok_request_can_create_hidden_internal_pty(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    class FakePane:
+        def __init__(self) -> None:
+            self.delegations = []
+
+        def delegate_grok_from_global_chat(self, text):
+            self.delegations.append(text)
+            return {"ok": True}
+
+    pane = FakePane()
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: None)
+    monkeypatch.setattr(matrix, "get_or_create_internal_matrix_terminal_pane", lambda: pane)
+
+    text = talk._owner_direct_read_tool_request("ask grok show your live framebuffer")
+    calls = parse_tool_calls(text)
+
+    assert pane.delegations == ["ask grok show your live framebuffer"]
+    assert calls == []
+    assert "Grok dispatched. receipt=" in text
+    assert "matrix_pty" not in text
 
 
 def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(monkeypatch, tmp_path) -> None:
-    """Owner correction 2026-05-24: Grok is the VISIBLE local `grok` CLI, never the
-    headless xAI-API wrapper (no XAI_API_KEY). With no live pane, "ask grok" routes to
-    the matrix_pty effector (GROK_DELEGATION) so Alice drives the real terminal and
-    clicks past the two startup screens with her hands — it does NOT call the API arm.
+    """Owner correction 2026-05-25: with no live internal PTY pane, "ask grok"
+    must not fake a Matrix dispatch or fall back to the headless API arm.
+    It writes the global queue receipt and waits for/imports a real terminal
+    transcript instead.
     """
     from Applications import sifta_matrix_terminal as matrix
 
@@ -104,9 +334,8 @@ def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(m
     text = talk._owner_direct_read_tool_request("ask grok how are your organs wired")
     calls = parse_tool_calls(text)
 
-    assert len(calls) == 1
-    assert calls[0].tool_name == "matrix_pty"
-    assert "GROK_DELEGATION" in calls[0].params.get("commands", [])
+    assert calls == []
+    assert "Grok queued. receipt=" in text
     # Must NOT route to the headless API arm.
     assert "agent_arm_research" not in text
     assert "grok_chat" not in text
@@ -119,6 +348,222 @@ def test_global_chat_grok_request_without_live_pane_drives_visible_pty_not_api(m
     payload = json.loads(rows[-1])
     assert payload["dispatched_live"] is False
     assert payload["queue_for_matrix_terminal"] is True
+
+    trace_rows = [
+        json.loads(line)
+        for line in (tmp_path / "matrix_terminal_process_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert trace_rows[-1]["action"] == "grok_delegation_queued_from_talk_widget"
+    assert trace_rows[-1]["payload"]["receipt"] == payload["receipt"]
+    assert trace_rows[-1]["payload"]["queue_for_matrix_terminal"] is True
+
+
+def test_grok_bringup_writes_immediate_visible_trace(monkeypatch, tmp_path) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: object())
+
+    class FakeWidget:
+        pass
+
+    reply = talk.TalkToAliceWidget._bring_up_grok_in_global_chat(
+        FakeWidget(),
+        "Alice, ask Grok to code Round 6 bridge-smoke patch inside the SIFTA matrix-terminal PTY now.",
+        delegate=True,
+    )
+
+    assert "Grok queued. receipt=delegation_intent_" in reply
+    assert "trace=" in reply
+
+    import json
+
+    queue_rows = [
+        json.loads(line)
+        for line in (tmp_path / "grok_delegation_requests.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    trace_rows = [
+        json.loads(line)
+        for line in (tmp_path / "matrix_terminal_process_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert queue_rows[-1]["action"] == "GROK_DELEGATION"
+    assert trace_rows[-1]["action"] == "grok_delegation_queued_from_talk_widget"
+    assert trace_rows[-1]["payload"]["receipt"] == queue_rows[-1]["receipt"]
+    assert "Round 6 bridge-smoke" in trace_rows[-1]["payload"]["text"]
+
+
+def test_grok_bringup_dispatches_internal_pty_before_queue(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    class FakePane:
+        def __init__(self) -> None:
+            self.delegations = []
+
+        def delegate_grok_from_global_chat(self, text):
+            self.delegations.append(text)
+            return {"ok": True}
+
+    pane = FakePane()
+    traces = []
+    monkeypatch.setattr(matrix, "get_focused_matrix_terminal_pane", lambda: None)
+    monkeypatch.setattr(matrix, "get_or_create_internal_matrix_terminal_pane", lambda: pane)
+    monkeypatch.setattr(
+        talk,
+        "_write_matrix_terminal_process_trace",
+        lambda action, text, **kwargs: traces.append((action, text, kwargs)) or "trace-direct",
+    )
+
+    class FakeWidget:
+        pass
+
+    prompt = "Alice, ask Grok to code Round 9 live-arm proof inside the SIFTA matrix-terminal PTY now."
+    reply = talk.TalkToAliceWidget._bring_up_grok_in_global_chat(
+        FakeWidget(),
+        prompt,
+        delegate=True,
+    )
+
+    assert pane.delegations == [prompt]
+    assert "Grok dispatched. receipt=delegation_intent_" in reply
+    assert "trace=trace-direct" in reply
+    assert traces[-1][0] == "grok_delegation_started_from_talk_widget"
+    assert traces[-1][2]["payload"]["queue_for_matrix_terminal"] is False
+
+
+def test_grok_queue_watchdog_emits_field_failure_when_unclaimed(tmp_path) -> None:
+    class FakeWidget:
+        appended = []
+
+        def _append_observable_processing(self, line, *, reset=False):
+            self.appended.append((line, reset))
+
+    widget = FakeWidget()
+
+    receipt_id = talk.TalkToAliceWidget._emit_grok_queue_field_failure_if_unclaimed(
+        widget,
+        "delegation_intent_unclaimed",
+        "ask grok code a proof",
+        queued_trace_id="trace-queued",
+        state_dir=tmp_path,
+    )
+
+    assert receipt_id.startswith("work_receipt_")
+    import json
+
+    trace_rows = [
+        json.loads(line)
+        for line in (tmp_path / "matrix_terminal_process_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    receipt_rows = [
+        json.loads(line)
+        for line in (tmp_path / "work_receipts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert trace_rows[-1]["action"] == "grok_delegation_field_failure"
+    assert "matrix_terminal_queue_claimant_or_pty_dispatch_worker_missing" in trace_rows[-1]["text"]
+    assert receipt_rows[-1]["kind"] == "FIELD_FAILURE"
+    assert receipt_rows[-1]["receipt_id"] == "delegation_intent_unclaimed"
+    assert widget.appended[-1][0].startswith("FIELD_FAILURE:")
+
+
+def test_grok_queue_watchdog_does_not_fail_after_claim(tmp_path) -> None:
+    claims = tmp_path / "grok_delegation_claims"
+    claims.mkdir()
+    (claims / "delegation_intent_claimed.json").write_text("{}", encoding="utf-8")
+
+    class FakeWidget:
+        pass
+
+    receipt_id = talk.TalkToAliceWidget._emit_grok_queue_field_failure_if_unclaimed(
+        FakeWidget(),
+        "delegation_intent_claimed",
+        "ask grok code a proof",
+        state_dir=tmp_path,
+    )
+
+    assert receipt_id == ""
+    assert not (tmp_path / "matrix_terminal_process_trace.jsonl").exists()
+
+
+def test_global_chat_terminal_import_rejects_front_terminal(monkeypatch) -> None:
+    from Applications import sifta_matrix_terminal as matrix
+
+    rows = []
+    monkeypatch.setattr(
+        matrix,
+        "_read_macos_terminal_front_tab_contents",
+        lambda **_: "Grok Build\n◆ Thought for 3.1s\nReceipt:\nNative terminal answer.",
+    )
+    monkeypatch.setattr(
+        talk,
+        "_log_turn",
+        lambda role, text, **kwargs: rows.append((role, text, kwargs)),
+    )
+
+    reply = talk._owner_direct_read_tool_request(
+        "take whatever from the terminals, port to global chat"
+    )
+
+    assert "Terminal.app import is disabled" in reply
+    assert "source=alice_global_chat_terminal" in reply
+    assert rows == []
+
+
+def test_codex_delegation_with_terminal_words_is_not_terminal_import_guard() -> None:
+    reply = talk._owner_direct_read_tool_request(
+        "Alice, ask codex to restore the LIVE Grok framebuffer viewport in Alice global chat. "
+        "The terminal_frame_view should update from live cells, not only on final GROK_RESULT."
+    )
+
+    calls = parse_tool_calls(reply)
+
+    assert len(calls) == 1
+    assert calls[0].tool_name == "agent_arm_research"
+    assert calls[0].params["arm"] == "codex"
+    assert "Terminal.app import is disabled" not in reply
+
+
+def test_claude_and_hermes_delegations_with_terminal_words_are_not_terminal_import_guard() -> None:
+    cases = {
+        "claude": (
+            "Alice, ask claude to inspect the global chat terminal and patch the viewport "
+            "without importing Terminal.app."
+        ),
+        "hermes": (
+            "Alice, ask hermes to build the body-maintenance note for the global chat terminal "
+            "and print a receipt."
+        ),
+    }
+
+    for arm, text in cases.items():
+        reply = talk._owner_direct_read_tool_request(text)
+        calls = parse_tool_calls(reply)
+
+        assert len(calls) == 1
+        assert calls[0].tool_name == "agent_arm_research"
+        assert calls[0].params["arm"] == arm
+        assert "Terminal.app import is disabled" not in reply
+
+
+def test_grok_status_lines_do_not_infer_thinking_or_liveness() -> None:
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent
+    talk_src = (repo / "Applications" / "sifta_talk_to_alice_widget.py").read_text(encoding="utf-8")
+    matrix_src = (repo / "Applications" / "sifta_matrix_terminal.py").read_text(encoding="utf-8")
+    launcher_src = (repo / "System" / "swarm_agent_arm_launcher.py").read_text(encoding="utf-8")
+
+    assert "On it — driving Grok" not in talk_src
+    assert "Watch the panel" not in talk_src
+    assert "Grok queued. receipt=" in talk_src
+    assert "thinking (no output" not in matrix_src
+    assert "not frozen" not in matrix_src
+    assert "status unknown — not inferred" in launcher_src
 
 
 def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch) -> None:
@@ -139,17 +584,17 @@ def test_global_chat_grok_open_request_drives_screen_watched_resume(monkeypatch)
     calls = parse_tool_calls(text)
 
     assert pane.opens == ["type grok and bypass the two screen selections"]
-    assert len(calls) == 1
-    assert calls[0].tool_name == "matrix_pty"
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_OPEN"]
+    assert calls == []
+    assert "Grok open/resume" in text
+    assert "matrix_pty" not in text
 
     pane.opens.clear()
     text = talk._owner_direct_read_tool_request("i used my voice, i meant grok, start grok cli now")
     calls = parse_tool_calls(text)
 
     assert pane.opens == ["i used my voice, i meant grok, start grok cli now"]
-    assert len(calls) == 1
-    assert _exec_matrix_pty(calls[0].params)["commands"] == ["GROK_OPEN"]
+    assert calls == []
+    assert "Grok open/resume" in text
 
 
 def test_global_chat_claude_code_request_routes_to_external_evidence_arm() -> None:

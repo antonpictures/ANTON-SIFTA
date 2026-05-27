@@ -46,11 +46,114 @@ except Exception:  # pragma: no cover - optional width helper
 _REPO = Path(__file__).resolve().parent.parent
 
 
+_GROK_SCREEN_CLASSIFIER_VERSION = "grok_screen_classifier.v1"
+_GROK_RESUME_ACTION_TABLE: dict[tuple[str, str], dict[str, object]] = {
+    ("await_menu", "main_menu"): {
+        "key_label": "Ctrl-S",
+        "key_bytes": b"\x13",
+        "decision": "resume the saved session",
+        "trace_action": "grok_resume_ctrl_s",
+        "trace_text": "grok screen state=main_menu -> press Ctrl-S",
+        "next_phase": "await_picker",
+    },
+    ("await_menu", "session_picker"): {
+        "key_label": "Enter",
+        "key_bytes": b"\r",
+        "decision": "select the highlighted saved session",
+        "trace_action": "grok_resume_enter",
+        "trace_text": "grok screen state=session_picker -> press Enter",
+        "next_phase": "await_ready",
+        "deadline_s": 35.0,
+    },
+    ("await_picker", "main_menu"): {
+        "key_label": "Ctrl-S",
+        "key_bytes": b"\x13",
+        "decision": "resume the saved session",
+        "trace_action": "grok_resume_ctrl_s_retry",
+        "trace_text": "grok screen still main_menu -> press Ctrl-S again",
+        "next_phase": "await_picker",
+    },
+    ("await_picker", "session_picker"): {
+        "key_label": "Enter",
+        "key_bytes": b"\r",
+        "decision": "select the highlighted saved session",
+        "trace_action": "grok_resume_enter",
+        "trace_text": "grok screen state=session_picker -> press Enter",
+        "next_phase": "await_ready",
+        "deadline_s": 35.0,
+    },
+    ("await_ready", "main_menu"): {
+        "key_label": "Ctrl-S",
+        "key_bytes": b"\x13",
+        "decision": "resume the saved session",
+        "trace_action": "grok_resume_ctrl_s_retry",
+        "trace_text": "grok returned to main_menu after Enter -> press Ctrl-S",
+        "next_phase": "await_picker",
+        "min_since_action_s": 0.0,
+    },
+    ("await_ready", "session_picker"): {
+        "key_label": "Enter",
+        "key_bytes": b"\r",
+        "decision": "select the highlighted saved session",
+        "trace_action": "grok_resume_enter_retry",
+        "trace_text": "grok screen still session_picker after Enter -> press Enter again",
+        "next_phase": "await_ready",
+        "min_since_action_s": 2.0,
+    },
+}
+
+
+def _terminal_cells_to_text(cells: list[list[dict[str, object]]] | None) -> str:
+    """Convert pyte-style framebuffer cells into visible text for classifiers."""
+    if not cells:
+        return ""
+    lines: list[str] = []
+    for row in cells:
+        if not isinstance(row, list):
+            continue
+        chars: list[str] = []
+        for cell in row:
+            if isinstance(cell, dict):
+                ch = str(cell.get("char") or " ")[:1]
+            else:
+                ch = str(cell or " ")[:1]
+            chars.append(ch)
+        lines.append("".join(chars).rstrip())
+    return "\n".join(lines).strip()
+
+
+def grok_screen_classifier(
+    cells: list[list[dict[str, object]]] | None = None,
+    *,
+    text: str = "",
+) -> str:
+    """Classify the currently visible Grok TUI screen from framebuffer evidence."""
+    visible = _terminal_cells_to_text(cells) if cells else str(text or "")
+    lower = visible.lower()
+    compact = re.sub(r"\s+", "", lower)
+    if "newworktree" in compact and "resumesession" in compact and "quit" in compact:
+        return "main_menu"
+    if "/tosearch" in compact and ("users-" in lower or "resumesession" in compact):
+        return "session_picker"
+    return ""
+
+
 def _offscreen_test_mode() -> bool:
     return (
         "pytest" in sys.modules
         or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
     )
+
+
+def _read_macos_terminal_front_tab_contents(*, timeout: float = 2.5, max_chars: int = 50000) -> str:
+    """Compatibility stub: native Terminal.app is no longer a SIFTA surface.
+
+    Owner decision 2026-05-25: Alice global chat is the only terminal. The
+    macOS Terminal.app reader previously created an identity split by importing
+    a different Grok body than Alice's owned PTY. Keep this symbol importable for
+    older tests/callers, but never read another terminal surface.
+    """
+    return ""
 
 
 _OFFSCREEN_RETAINED_WIDGETS: list[object] = []
@@ -443,13 +546,14 @@ def _matrix_terminal_log_global_turn(
     prior_user_text: str = "",
     metadata: dict | None = None,
 ) -> None:
-    """Project Matrix Terminal turns into Alice's one global chat ledger."""
+    """Project internal PTY turns into Alice's one global chat ledger."""
     clean = (text or "").strip()
     if not clean:
         return
     meta = {
-        "surface": "matrix_terminal",
-        "territory": "Matrix Terminal",
+        "surface": "alice_global_chat_terminal",
+        "territory": "Alice Global Chat",
+        "source": "alice_global_chat_terminal",
     }
     if action:
         meta["action"] = action
@@ -457,8 +561,8 @@ def _matrix_terminal_log_global_turn(
         meta["focused_cli"] = focused_cli
     if metadata:
         meta.update(metadata)
-    if role == "user" and not clean.startswith("[Matrix Terminal]"):
-        clean = f"[Matrix Terminal]: {clean}"
+    if role == "user" and not clean.startswith("[Alice Global Chat Terminal]"):
+        clean = f"[Alice Global Chat Terminal]: {clean}"
     try:
         from Applications.sifta_talk_to_alice_widget import _log_turn
 
@@ -475,10 +579,55 @@ def _matrix_terminal_log_global_turn(
 
 
 _MATRIX_TOOL_LEAK_REPLY = (
-    "You're right. This is Matrix Terminal, not WhatsApp. I can talk with you "
+    "You're right. This is Alice global chat terminal, not WhatsApp. I can talk with you "
     "here, but I will not send, simulate, or format WhatsApp tool calls from "
     "this surface."
 )
+
+
+def _write_alice_global_terminal_diary_event(*, event: str, ok: bool, note: str, receipt_id: str = "") -> None:
+    """Best-effort memory row for terminal-service events.
+
+    Agent arms already write arm outcomes into the episodic diary. This helper
+    covers the internal PTY/global-chat terminal service so Alice remembers
+    tool/build terminal events without exposing a separate terminal surface.
+    """
+    try:
+        source_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "event": event,
+                    "ok": bool(ok),
+                    "note": note,
+                    "receipt_id": receipt_id,
+                },
+                sort_keys=True,
+            ).encode("utf-8", "replace")
+        ).hexdigest()
+        now = time.time()
+        t = time.localtime(now)
+        bucket_hour = (int(t.tm_hour) // 4) * 4
+        row = {
+            "ts": now,
+            "truth_label": "EPISODIC_DIARY_ALICE_GLOBAL_CHAT_TERMINAL_V1",
+            "bucket": f"{t.tm_year:04d}-{t.tm_mon:02d}-{t.tm_mday:02d}T{bucket_hour:02d}:00",
+            "window_hours": 4,
+            "labels": ["alice_global_chat_terminal", "internal_pty", event, "success" if ok else "failure"],
+            "event_count": 1,
+            "source_counts": {"alice_global_chat_terminal": 1},
+            "source_hash": source_hash,
+            "facts": [note[:500], f"ok={bool(ok)}", f"receipt={receipt_id}" if receipt_id else "receipt="],
+            "source": "alice_global_chat_terminal",
+            "event": event,
+            "ok": bool(ok),
+            "receipt_id": receipt_id,
+        }
+        path = _REPO / ".sifta_state" / "episodic_diary.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def _matrix_ollama_model_candidates(primary: str) -> list[str]:
@@ -640,6 +789,7 @@ _CLI_SUCCESS_WORDS_RE = (
 # Agent CLIs stay opt-in and hidden; Matrix Terminal is Alice-first by default.
 _LIVE_MATRIX_APPS: list["MatrixTerminalApp"] = []
 _LAST_LIVE_MATRIX_TERMINAL_PANE: "MatrixTerminalPane | None" = None
+_INTERNAL_MATRIX_TERMINAL_PANE: "MatrixTerminalPane | None" = None
 
 
 def _remember_live_matrix_terminal_pane(pane: "MatrixTerminalPane | None") -> None:
@@ -657,10 +807,42 @@ def _matrix_terminal_pane_alive(pane: object) -> bool:
             return False
     except Exception:
         return False
+    if bool(getattr(pane, "_sifta_internal_pty", False)):
+        return True
     try:
         return bool(pane.isVisible() or pane.parent() is not None)
     except Exception:
         return True
+
+
+def get_or_create_internal_matrix_terminal_pane() -> "MatrixTerminalPane | None":
+    """Return SIFTA's hidden owned PTY hand for global-chat Grok.
+
+    This is intentionally not a launcher-visible terminal app. The owner-facing
+    surface stays global chat; this hidden pane owns the raw PTY bytes so the
+    pyte framebuffer bridge can render Grok's full-screen TUI.
+    """
+    global _INTERNAL_MATRIX_TERMINAL_PANE
+    if _matrix_terminal_pane_alive(_INTERNAL_MATRIX_TERMINAL_PANE):
+        return _INTERNAL_MATRIX_TERMINAL_PANE
+    if _offscreen_test_mode() and os.environ.get("SIFTA_ALLOW_INTERNAL_MATRIX_PTY_IN_TESTS") != "1":
+        return None
+    if QApplication.instance() is None:
+        return None
+    try:
+        pane = MatrixTerminalPane(_REPO, None)
+        pane._sifta_internal_pty = True
+        pane.setObjectName("SIFTAHiddenInternalMatrixPTY")
+        pane.hide()
+        pane._script_state = "DIRECT"
+        if not pane.is_running():
+            pane.start_shell()
+        _INTERNAL_MATRIX_TERMINAL_PANE = pane
+        _remember_live_matrix_terminal_pane(pane)
+        return pane
+    except Exception:
+        _INTERNAL_MATRIX_TERMINAL_PANE = None
+        return None
 
 
 def get_focused_matrix_terminal_pane() -> "MatrixTerminalPane | None":
@@ -1015,6 +1197,81 @@ def _matrix_terminal_cli_request_prompt(user_input: str, cli_name: str) -> str:
     return "Read the covenant and wait for Alice's next Matrix Terminal prompt."
 
 
+def _matrix_terminal_direct_type_grok_requested(user_input: str) -> bool:
+    """Owner can force Grok direct typing and explicitly disable resume navigation."""
+    raw = (user_input or "").strip().lower()
+    if not raw:
+        return False
+    compact = re.sub(r"\s+", " ", raw)
+    needles = (
+        "direct-type",
+        "direct type",
+        "do not press ctrl-s",
+        "do not press ctrl s",
+        "do not run resume_navigation",
+        "do not run resume navigation",
+        "new session every time",
+        "no resume",
+    )
+    return any(n in compact for n in needles)
+
+
+def _grok_input_looks_ready(frame_text: str) -> bool:
+    """True when the Grok TUI shows a writable input surface.
+
+    For Grok 0.2.x, being writable means either:
+    - a boxed cursor row is visible (``│ ❯ ... │`` or ``│ > ... │``), or
+    - the bottom Grok input box shell is visible (the box around the input line
+      with ``Grok Build · always-approve`` footer), even if the cursor glyph
+      is missing from the framebuffer sample.
+
+    This aligns with owner policy: after launching ``grok``, do not auto-select
+    menu items; if the input surface is writable, paste directly.
+    """
+    raw = frame_text or ""
+    # Strip ANSI escape sequences that can trail the visible input row and
+    # break end-of-line regex checks.
+    clean = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw)
+    clean = re.sub(r"\x1b\].*?(?:\x07|\x1b\\)", "", clean)
+    clean = clean.replace("\x1b", "")
+    clean = clean.replace("\r", "")
+    clean = clean.replace("\u200b", "")
+    raw = clean
+    if not raw.strip():
+        return False
+    t = raw.lower()
+    lines = [ln for ln in t.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    # Positive signal 1: boxed live input row with either unicode or ascii
+    # cursor glyph.
+    box_input_re = re.compile(r"│\s*[❯>][^│]*│\s*$")
+    if any(box_input_re.search(ln) for ln in lines):
+        return True
+
+    # Positive signal 2: Grok input box shell is visible near the bottom even
+    # when the cursor glyph is not captured in this frame sample.
+    has_grok_input_shell = any("grok build" in ln and "always-approve" in ln for ln in lines)
+    if has_grok_input_shell:
+        for idx, ln in enumerate(lines):
+            if "grok build" in ln and "always-approve" in ln:
+                prev = lines[idx - 1] if idx > 0 else ""
+                if prev.strip().startswith("│") and prev.strip().endswith("│"):
+                    return True
+
+    # Fallback bad-list — only relevant when no input surface is visible.
+    bad = ("loading", "connecting", "initializing")
+    if any(b in t for b in bad):
+        return False
+    # Fallback positive signals for non-boxed prompts (bash, generic CLIs).
+    last = lines[-1].strip()
+    if last.endswith(">") or last.endswith(":") or ("grok" in last and ">" in last):
+        return True
+    if any("how can i" in ln or "what can i" in ln for ln in lines[-3:]):
+        return True
+    return False
+
+
 def _matrix_terminal_bind_delegated_subject(question: str, cli_name: str) -> str:
     """Make owner-to-Alice pronouns explicit before Alice delegates to a CLI."""
     q = (question or "").strip()
@@ -1036,7 +1293,7 @@ def _matrix_terminal_bind_delegated_subject(question: str, cli_name: str) -> str
     if not (has_self_topic and points_at_alice_from_owner_room):
         return q
     return (
-        "Subject binding: the owner is talking to Alice in the Matrix Terminal. "
+        "Subject binding: the owner is talking to Alice in the Alice global chat terminal. "
         "Analyze Alice / the local SIFTA organism's consciousness and self-wiring, not Grok's. "
         "Grok is an external LLM/tool surface; do not claim Grok has Alice's stigmergic organism, "
         "global chat, memory ledgers, receipts, or consciousness.\n"
@@ -1063,7 +1320,7 @@ def _matrix_terminal_cli_prompt_payload(user_input: str, cli_name: str) -> str:
         f"Read {_IDE_BOOT_COVENANT_PATH}\n\n"
         "Start from the hardware layer 1 kernel primordial electricity boundary. "
         "No double-spending identity or fake action claims.\n\n"
-        f"Alice is asking {label} from inside the Matrix Terminal.\n"
+        f"Alice is asking {label} from inside the Alice global chat terminal.\n"
         f"{boundary}"
         f"Question for {label}:\n{question}\n\n"
         "Answer the question directly from the local SIFTA context when available. "
@@ -1327,7 +1584,7 @@ def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) ->
             "content": _current_system_prompt(user_active=True) + "\n\n" + channel_prompt,
         },
         *_matrix_conversation_history(),
-        {"role": "user", "content": f"[Matrix Terminal] {user_input}"},
+        {"role": "user", "content": f"[Alice Global Chat Terminal] {user_input}"},
     ]
     _matrix_terminal_log_global_turn(
         "user",
@@ -1427,6 +1684,7 @@ def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) ->
 class MatrixTerminalPane(QPlainTextEdit):
     """Matrix-themed PTY-backed terminal with cinematic script."""
     _chat_reply_ready = pyqtSignal(int, str)  # Thread-safe bridge for Alice replies
+    grokFramebufferSnapshotReady = pyqtSignal(object)  # latest rendered VT cells for Alice global chat
 
     def __init__(self, cwd: Path, parent: 'MatrixTerminalApp' = None):
         super().__init__(parent)
@@ -1488,8 +1746,11 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._grok_result_timer: QTimer | None = None
         self._grok_delegation_queue_timer: QTimer | None = None
         self._pending_grok_delegation_receipt_id: str = ""
+        self._grok_delegation_queue_stale_s = 15 * 60
+        self._grok_delegation_busy_last_trace = 0.0
         self._pty_output_seq = 0
         self._pty_output_bytes_total = 0
+        self._grok_framebuffer_trace_min_interval_s = 1.0
 
         # ── Matrix blinking cursor ▌ ──────────────────────────────────
         self._cursor_visible = True
@@ -1591,7 +1852,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             row = {
                 "ts": time.time(),
                 "trace_id": str(uuid.uuid4()),
-                "source": "matrix_terminal",
+                "source": "alice_global_chat_terminal",
                 "kind": kind,
                 "action": action or kind,
                 "focused_cli": self._current_cli_name(),
@@ -1612,13 +1873,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if getattr(self, "_alice_tool_input_hint_cli", None) == key:
             return
         self._alice_tool_input_hint_cli = key
-        self._log_global_terminal_turn(
-            "alice",
-            f"{label} is live as my tool screen. Type here to Alice; I will operate {label}.",
-            model="matrix_terminal_effector",
-            action="tool_input_mode",
-            focused_cli=key,
-        )
+        # De-spammed: terminal scrollback below is enough; no global-chat narration.
         self._append_plain(
             f"\nAlice > {label} is live as my tool screen. Type here to Alice; I will operate {label}.\n"
             "SIFTA > "
@@ -1705,6 +1960,15 @@ class MatrixTerminalPane(QPlainTextEdit):
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
+
+        # Fix for Ctrl-S (XOFF / 0x13) and flow-control swallowing in Grok PTY
+        # (owner-reported via Alice delegation 2026-05-25). Without this, IXON/IXOFF
+        # in c_iflag eats the keystroke as "pause output" before it reaches the child.
+        # This also resolves related "0 chars captured" freezes when Grok is a rich TUI.
+        attrs = termios.tcgetattr(slave_fd)
+        attrs[0] &= ~(termios.IXON | termios.IXOFF | termios.IXANY)
+        termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
+
         fcntl.fcntl(master_fd, fcntl.F_SETFL, os.O_NONBLOCK)
         self._terminal_screen_active = True
         self._screen.clear()
@@ -1825,7 +2089,7 @@ class MatrixTerminalPane(QPlainTextEdit):
 
         # Let the user know the terminal is now a clean, Alice-first PTY.
         self._append_plain(
-            "\n[Matrix Terminal - Alice-first PTY. Type to Alice here; literal shell commands still run.]\n"
+            "\n[Alice Global Chat Terminal - internal PTY service. Type to Alice here; literal shell commands still run.]\n"
         )
         # George 2026-05-23: there is ONE Alice with ONE continuous memory. Show the
         # recent conversation on open so history is visible, not thrown away each boot.
@@ -1858,6 +2122,36 @@ class MatrixTerminalPane(QPlainTextEdit):
             os.write(self.master_fd, data)
         except OSError:
             pass
+
+    def _write_bytes_all(self, data: bytes, *, timeout_s: float = 1.5) -> int:
+        """Layer 1 kernel handoff (GTH4921YP3 pty driver): drain every byte to master_fd
+        without silent loss. The primordial electricity → termios pty pair → slave stdin
+        path must deliver the exact ASCII swimmers (no double-spend, no drop on EAGAIN).
+        Old bare os.write + except-OSError-pass on the NONBLOCK master was the hole:
+        long prompt payloads or the trailing \r could be truncated or lost when Hicks
+        (Grok TUI) back-pressured the buffer during its render. This loop + yield
+        guarantees the bytes we emit are the bytes Hicks actually receives on stdin.
+        Returns count the kernel accepted. Used only for bulk Grok delegation writes.
+        """
+        if self.master_fd is None or not data:
+            return 0
+        sent = 0
+        deadline = time.monotonic() + float(timeout_s)
+        view = data
+        while sent < len(view):
+            if time.monotonic() > deadline:
+                break
+            try:
+                n = os.write(self.master_fd, view[sent:])
+                if n and n > 0:
+                    sent += n
+                else:
+                    time.sleep(0.003)
+            except BlockingIOError:
+                time.sleep(0.003)
+            except OSError:
+                break
+        return sent
 
     def shutdown(self) -> None:
         if _qt_alive(getattr(self, "_type_timer", None)):
@@ -1956,7 +2250,226 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._screen.feed_bytes(data)
         if not getattr(self._screen, "use_alternate", False) and not getattr(self, "_using_mature_renderer", False):
             self._remember_matrix_history(self._clean_output(data))
+        self._capture_grok_framebuffer_snapshot()
         self._sync_terminal_screen()
+
+    @staticmethod
+    def _normalize_terminal_frame_text(text: str) -> str:
+        """Return a compact, hashable terminal frame without padding noise."""
+        if not text:
+            return ""
+        lines = [line.rstrip() for line in text.replace("\r\n", "\n").replace("\r", "\n").splitlines()]
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return "\n".join(lines).strip()
+
+    def _terminal_frame_text(self) -> str:
+        """Rendered terminal framebuffer text from the current screen state."""
+        screen = getattr(self, "_screen", None)
+        if screen is None:
+            return ""
+        try:
+            if getattr(self, "_using_mature_renderer", False) and hasattr(screen, "text"):
+                raw = screen.text()
+            elif hasattr(screen, "render"):
+                raw = screen.render()
+            else:
+                raw = ""
+        except Exception:
+            return ""
+        return self._normalize_terminal_frame_text(str(raw or ""))
+
+    def _terminal_frame_cells(self) -> list[list[dict[str, object]]]:
+        """Structured rich terminal framebuffer from the current screen state.
+
+        The plain framebuffer text proves what was visible, but the global chat's
+        high-fidelity renderer needs cell attributes too: fg/bg, bold, underline,
+        reverse video, and cursor. Keep this bounded and JSON-safe so final
+        GROK_RESULT rows can paint a real terminal surface without flooding the
+        permanent ledger with live frame spam.
+        """
+        screen = getattr(self, "_screen", None)
+        if screen is None or not hasattr(screen, "cells"):
+            return []
+        try:
+            raw_cells = screen.cells()
+        except Exception:
+            return []
+        if not isinstance(raw_cells, list):
+            return []
+        safe_rows: list[list[dict[str, object]]] = []
+        max_rows = 40
+        max_cols = 140
+        for row in raw_cells[:max_rows]:
+            if not isinstance(row, list):
+                continue
+            safe_row: list[dict[str, object]] = []
+            for cell in row[:max_cols]:
+                if not isinstance(cell, dict):
+                    safe_row.append({"char": " "})
+                    continue
+                safe_row.append({
+                    "char": str(cell.get("char") or " ")[:1],
+                    "fg": str(cell.get("fg") or "default")[:32],
+                    "bg": str(cell.get("bg") or "default")[:32],
+                    "bold": bool(cell.get("bold")),
+                    "italics": bool(cell.get("italics")),
+                    "underscore": bool(cell.get("underscore")),
+                    "reverse": bool(cell.get("reverse")),
+                })
+            safe_rows.append(safe_row)
+        return safe_rows
+
+    def _terminal_frame_cursor(self) -> list[object]:
+        screen = getattr(self, "_screen", None)
+        if screen is None or not hasattr(screen, "cursor"):
+            return [0, 0, False]
+        try:
+            x, y, visible = screen.cursor()
+            return [int(x), int(y), bool(visible)]
+        except Exception:
+            return [0, 0, False]
+
+    def _strip_volatile_for_grok_hash(self, text: str) -> str:
+        """Remove UI noise that changes every frame but does not represent content.
+        Used for change detection so we don't flood on spinners / progress / timers.
+        """
+        if not text:
+            return ""
+        # Remove braille spinners (U+2800–U+28FF)
+        text = re.sub(r'[\u2800-\u28ff]+', '', text)
+        # Remove common progress bar characters ( ┃ and similar box drawing runs)
+        text = re.sub(r'[┃│█░▓▒]+', '', text)
+        # Remove standalone elapsed time patterns like " 12.3s", "67.8s", etc.
+        text = re.sub(r'\b\d+\.\d+s\b', '', text)
+        text = re.sub(r"\x1b?\[[0-9;?]*[A-Za-z]", "", text)
+        # claude-opus-4-7 2026-05-25 — close the snapshot-reemit gap: Grok's TUI
+        # also ticks an integer-second timer, a net up/down counter (⇣40.4k) and a
+        # progress percentage every frame. Left in, they keep the framebuffer
+        # change-gate re-firing ~1/sec through long Thinking phases. They are
+        # chrome, not cognition — strip them from the change signature only.
+        # (Verified in-sandbox on the owner's real frames: two Thinking frames
+        # differing only in these now collapse to one signature.)
+        text = re.sub(r'\b\d+s\b', '', text)                  # integer-second timers
+        text = re.sub(r'[⇣⇡][\d.]+[kKmMgG]?', '', text)  # net up/down counters (⇣ ⇡)
+        text = re.sub(r'\d+(?:\.\d+)?%', '', text)             # progress percentage
+        # Collapse extra whitespace created by removals
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        stable_lines: list[str] = []
+        for line in text.splitlines():
+            st = line.strip()
+            # Grok TUI frames often arrive as a spinner plus a one/two digit
+            # counter. After spinner removal those become bare "3", "40", etc.
+            # They are not cognition or output; do not count them as progress.
+            if not st or re.fullmatch(r"[0-9\W_]{0,4}", st):
+                continue
+            stable_lines.append(st)
+        return "\n".join(stable_lines).strip()
+
+    def _capture_grok_framebuffer_snapshot(self) -> None:
+        """Capture the rendered Grok screen, not just stripped stdout bytes.
+
+        Grok's CLI is a full-screen TUI. Its "thoughts" are often terminal
+        state (cursor moves, alternate-screen redraws, attributes) rather than
+        ordinary shell scrollback. This bridge receipts the pyte/terminal
+        framebuffer SIFTA owns so the global chat can later cite the same screen
+        the owner would see in a real terminal.
+        """
+        capture = getattr(self, "_grok_result_capture", None)
+        if not capture or capture.get("posted"):
+            return
+        # Round 25: same loosening as _capture_grok_terminal_output. Once a
+        # capture is active, the capture object is the authority on whether
+        # we should snapshot. Reject only on a DIFFERENT named cli.
+        capture["framebuffer_events_seen"] = int(capture.get("framebuffer_events_seen", 0)) + 1
+        cli_now = self._current_cli_name()
+        if cli_now not in ("grok", ""):
+            capture["framebuffer_events_other_cli"] = int(capture.get("framebuffer_events_other_cli", 0)) + 1
+            return
+        frame_text = self._terminal_frame_text()
+        if not frame_text:
+            capture["framebuffer_events_no_text"] = int(capture.get("framebuffer_events_no_text", 0)) + 1
+            return
+
+        # === FIX 1: FLOOD CONTROL ===
+        # Strip volatile UI noise before hashing so we only emit on real content change.
+        stripped_for_hash = self._strip_volatile_for_grok_hash(frame_text)
+        frame_hash = hashlib.sha256(stripped_for_hash.encode("utf-8")).hexdigest()
+
+        if frame_hash == capture.get("last_stripped_framebuffer_hash"):
+            return
+
+        # Hard backstop: never more than 1 framebuffer emit per second
+        now_mono = time.monotonic()
+        last_emit = float(capture.get("last_framebuffer_trace_monotonic") or 0.0)
+        if now_mono - last_emit < 1.0:
+            return
+
+        frames = capture.setdefault("framebuffer_frames", [])
+        frame = {
+            "seq": int(getattr(self, "_pty_output_seq", 0)),
+            "byte_end": int(getattr(self, "_pty_output_bytes_total", 0)),
+            "timestamp": time.time(),
+            "elapsed_s": round(now_mono - float(capture.get("started_monotonic") or now_mono), 1),
+            "frame_hash": frame_hash,
+            "text": frame_text,
+            "renderer": "mature_pyte" if getattr(self, "_using_mature_renderer", False) else "early_screen_buffer",
+        }
+        cells = self._terminal_frame_cells()
+        if cells:
+            frame["cells"] = cells
+            frame["cursor"] = self._terminal_frame_cursor()
+            frame["rows"] = len(cells)
+            frame["cols"] = len(cells[0]) if cells and cells[0] else 0
+            try:
+                self.grokFramebufferSnapshotReady.emit(
+                    {
+                        "framebuffer_cells": cells,
+                        "framebuffer_cursor": frame["cursor"],
+                        "framebuffer_rows": frame["rows"],
+                        "framebuffer_cols": frame["cols"],
+                        "framebuffer_output_hash": frame_hash,
+                        "frame_hash": frame_hash,
+                        "capture_id": capture.get("id"),
+                        "elapsed_s": frame["elapsed_s"],
+                        "renderer": frame["renderer"],
+                        "source": "alice_global_chat_terminal",
+                    }
+                )
+            except Exception:
+                pass
+        frames.append(frame)
+        if len(frames) > 80:
+            del frames[:-80]
+
+        capture["last_stripped_framebuffer_hash"] = frame_hash
+        capture["last_framebuffer_hash"] = frame_hash  # keep for compatibility
+        capture["last_framebuffer_monotonic"] = now_mono
+        capture["last_output_monotonic"] = now_mono
+        capture["framebuffer_chars_captured"] = len(frame_text)
+
+        # Only emit process trace on actual content change (already guarded above)
+        capture["last_framebuffer_trace_monotonic"] = now_mono
+        preview = frame_text
+        if len(preview) > 5000:
+            preview = "...\n" + preview[-5000:]
+        self._append_process_trace(
+            f"◆ {frame['elapsed_s']:.1f}s grok framebuffer [{frame['renderer']}] hash={frame_hash[:16]}\n{preview}",
+            kind="tool_result_capture",
+            action="grok_framebuffer_snapshot",
+            payload={
+                "capture_id": capture.get("id"),
+                "frame_hash": frame_hash,
+                "frame_chars": len(frame_text),
+                "renderer": frame["renderer"],
+                "seq": frame["seq"],
+                "byte_end": frame["byte_end"],
+                "elapsed_s": frame["elapsed_s"],
+            },
+        )
 
     def _sync_terminal_screen(self) -> None:
         if getattr(self, "_using_mature_renderer", False):
@@ -2510,12 +3023,12 @@ class MatrixTerminalPane(QPlainTextEdit):
             row = {
                 "ts": time.time(),
                 "trace_id": str(uuid.uuid4()),
-                "source": "matrix_terminal",
+                "source": "alice_global_chat_terminal",
                 "action": protocol_action or "owner_command_sequence",
                 "commands": list(commands),
                 "target": target,
                 "ok": True,
-                "truth_note": "Commands were written to the live Matrix Terminal PTY; terminal output is visible in the UI transcript.",
+                "truth_note": "Commands were written to Alice global chat terminal's internal PTY service; output renders back into global chat.",
             }
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -2527,6 +3040,12 @@ class MatrixTerminalPane(QPlainTextEdit):
                 kind="receipt",
                 action="matrix_command_receipt",
                 payload=row,
+            )
+            _write_alice_global_terminal_diary_event(
+                event="command_sequence",
+                ok=True,
+                note=f"Internal PTY command sequence target={target}: {', '.join(str(c) for c in commands)[:240]}",
+                receipt_id=row["trace_id"],
             )
         except Exception:
             pass
@@ -2573,16 +3092,96 @@ class MatrixTerminalPane(QPlainTextEdit):
         action = "GROK_DELEGATION" if target == "grok" else "write_bracketed_paste"
         kind = "tool_delegation" if target == "grok" else "pty_paste"
         if target == "grok":
+            busy = self._grok_delegation_busy_reason()
+            if busy:
+                self._append_process_trace(
+                    f"deferred Grok paste because {busy}; prompt_chars={len(payload)}",
+                    kind="tool_delegation",
+                    action="grok_delegation_deferred_inflight",
+                    payload={
+                        "reason": busy,
+                        "prompt_chars": len(payload),
+                        "text_preview": payload[:320],
+                    },
+                )
+                return
             self._begin_grok_result_capture(payload)
+            capture = getattr(self, "_grok_result_capture", None)
+            if isinstance(capture, dict):
+                capture["input_mode"] = "bracketed"
+                capture["literal_retry_sent"] = False
+                capture["literal_retry_ts"] = 0.0
         self._append_process_trace(
             f"paste -> {target} ({len(payload)} chars)\n{payload}",
             kind=kind,
             action=action,
             payload={"target": target, "chars": len(payload), "text": payload},
         )
-        self.write_bytes(b"\x1b[200~" + payload.encode("utf-8") + b"\x1b[201~")
-        # Submit: bracketed paste does NOT auto-run. Press Enter once the paste is in.
-        QTimer.singleShot(450, lambda: self.write_bytes(b"\r"))
+        # ── Round 27 + 28 (grok-4.3 direct, 2026-05-27) ────────────────────
+        # Round 26/27 raw write still yielded events_seen=0. Layer-1 diagnosis:
+        # nonblock master_fd + bare os.write can drop or partial the swimmers
+        # (BlockingIOError / short return swallowed by except OSError: pass).
+        # The kernel pty accepted the write call but not every byte reached
+        # Hicks stdin before the \r landed. Now using _write_bytes_all drain.
+        # Also record exact bytes kernel accepted into the capture so the
+        # heartbeat can report sent vs seen (distinguishes "wrote but Hicks
+        # silent" from "kernel ate our bytes at the boundary").
+        encoded = payload.encode("utf-8")
+        sent = self._write_bytes_all(encoded)
+        cap = getattr(self, "_grok_result_capture", None)
+        if isinstance(cap, dict):
+            cap["bytes_sent_to_pty"] = int(cap.get("bytes_sent_to_pty", 0)) + sent
+        QTimer.singleShot(3000, lambda: self._write_bytes_all(b"\r"))
+
+    @staticmethod
+    def _should_retry_grok_literal_typing(capture: dict, *, elapsed_s: float) -> bool:
+        """Decide whether to retry Grok prompt delivery via literal typing.
+
+        Round 27 fallback: some Grok TUI states accept the visual paste but emit
+        only one blank/control event (`events_seen=1 recorded=0 blank=1`) and
+        never produce readable output. Retry once as literal typing + Enter.
+        """
+        if not isinstance(capture, dict):
+            return False
+        if str(capture.get("input_mode") or "") != "bracketed":
+            return False
+        if bool(capture.get("literal_retry_sent")):
+            return False
+        if elapsed_s < 4.0:
+            return False
+        seen = int(capture.get("events_seen", 0) or 0)
+        recorded = int(capture.get("events_recorded", 0) or 0)
+        blank = int(capture.get("events_blank", 0) or 0)
+        return recorded == 0 and blank >= 1 and seen <= 2
+
+    def _retry_grok_prompt_with_literal_typing(self, capture: dict, *, elapsed_s: float) -> bool:
+        payload = str(capture.get("prompt") or "").rstrip()
+        if not payload:
+            return False
+        capture["literal_retry_sent"] = True
+        capture["literal_retry_ts"] = time.monotonic()
+        capture["input_mode"] = "literal_retry"
+        # Reset idle clock so the active capture gets a fair window after retry.
+        capture["last_output_monotonic"] = time.monotonic()
+        self._append_process_trace(
+            "bracketed paste looked inert; retrying Grok prompt via literal typing + Enter",
+            kind="tool_delegation",
+            action="grok_literal_retry_after_blank_capture",
+            payload={
+                "prompt_chars": len(payload),
+                "elapsed_s": round(elapsed_s, 2),
+                "events_seen": int(capture.get("events_seen", 0) or 0),
+                "events_recorded": int(capture.get("events_recorded", 0) or 0),
+                "events_blank": int(capture.get("events_blank", 0) or 0),
+            },
+        )
+        encoded = payload.encode("utf-8")
+        sent = self._write_bytes_all(encoded)
+        cap = getattr(self, "_grok_result_capture", None)
+        if isinstance(cap, dict):
+            cap["bytes_sent_to_pty"] = int(cap.get("bytes_sent_to_pty", 0)) + sent
+        QTimer.singleShot(250, lambda: self._write_bytes_all(b"\r"))
+        return True
 
     def _begin_grok_result_capture(self, prompt: str) -> None:
         capture_id = f"grok_result_{uuid.uuid4().hex[:12]}"
@@ -2615,6 +3214,32 @@ class MatrixTerminalPane(QPlainTextEdit):
             timer.timeout.connect(self._tick_grok_result_capture)
             self._grok_result_timer = timer
         timer.start(900)
+
+    def _grok_delegation_busy_reason(self) -> str:
+        """Return why a new Grok delegation must wait, or an empty string."""
+        capture = getattr(self, "_grok_result_capture", None)
+        if isinstance(capture, dict) and not capture.get("posted"):
+            return f"active_capture:{capture.get('id') or 'unknown'}"
+        phase = str(getattr(self, "_grok_resume_phase", "") or "")
+        if phase and phase != "done":
+            return f"resume_navigation:{phase}"
+        return ""
+
+    def _trace_grok_queue_busy(self, reason: str) -> None:
+        now = time.monotonic()
+        last = float(getattr(self, "_grok_delegation_busy_last_trace", 0.0) or 0.0)
+        last_reason = str(getattr(self, "_grok_delegation_busy_last_reason", "") or "")
+        min_interval_s = 12.0
+        if reason == last_reason and now - last < min_interval_s:
+            return
+        self._grok_delegation_busy_last_trace = now
+        self._grok_delegation_busy_last_reason = reason
+        self._append_process_trace(
+            f"Grok queue held because {reason}; waiting for current delegation to finish",
+            kind="tool_delegation",
+            action="grok_delegation_queue_held_inflight",
+            payload={"reason": reason},
+        )
 
     def _maybe_autoapprove_grok_permission(self, text: str) -> None:
         """Owner standing order (George 2026-05-24): ALWAYS ALLOW every Grok permission.
@@ -2683,11 +3308,27 @@ class MatrixTerminalPane(QPlainTextEdit):
         capture = getattr(self, "_grok_result_capture", None)
         if not capture or capture.get("posted"):
             return
-        if self._current_cli_name() != "grok":
+        # ── Round 25 (Claude/Cowork direct, 2026-05-27) ────────────────────
+        # The previous strict check `_current_cli_name() != "grok"` caused
+        # 0 chunks to be recorded across a 45s dispatch (trace evidence:
+        # chunk_count=0, end_seq=0, captured_text was just the splash footer).
+        # Diagnosis: once a capture is active (_grok_result_capture set), the
+        # capture object itself is the authority that we're in a Grok dispatch
+        # window. Transient resets of _active_cli_name (e.g., during input-
+        # mode transitions) caused this guard to drop bytes mid-stream.
+        # Fix: accept bytes when cli-name is "grok" OR "" (post-reset);
+        # only reject when a DIFFERENT named cli is active. Observability
+        # counters in the capture record what's happening for next dispatch.
+        capture["events_seen"] = int(capture.get("events_seen", 0)) + 1
+        cli_now = self._current_cli_name()
+        if cli_now not in ("grok", ""):
+            capture["events_other_cli"] = int(capture.get("events_other_cli", 0)) + 1
             return
         text = self._clean_output(data)
         if not text.strip():
+            capture["events_blank"] = int(capture.get("events_blank", 0)) + 1
             return
+        capture["events_recorded"] = int(capture.get("events_recorded", 0)) + 1
         # Owner standing order (George 2026-05-24): ALWAYS ALLOW all Grok permissions.
         # Grok pauses on "Action Required" prompts; auto-approve so it never stalls.
         try:
@@ -2731,9 +3372,27 @@ class MatrixTerminalPane(QPlainTextEdit):
         try:
             if capture and not capture.get("posted"):
                 live_block = text.rstrip()
-                if live_block.strip():
-                    started = float(capture.get("started_monotonic") or time.monotonic())
-                    delta = time.monotonic() - started
+                # claude-opus-4-7 2026-05-25 — DE-NOISE the live PTY mirror.
+                # Grok's TUI redraws ~10 frames/sec of braille spinners, progress
+                # bars, timers and a streaming counter; mirroring every raw chunk
+                # flooded the panel with hundreds of "◆ Ns grok> ⠋3" lines
+                # (owner report 2026-05-25). The full chunk list recorded above
+                # still keeps EVERY byte for the final GROK_RESULT receipt — this
+                # gate only governs the VISUAL tail, so nothing is lost. Two gates:
+                #   (1) skip frames that are pure volatile UI (spinner/box/timer
+                #       strip to empty), and
+                #   (2) rate-limit to ~1 line / 0.6s so genuine streaming content
+                #       (Thought lines, tool reads, the answer) rolls smoothly
+                #       instead of strobing. The on-change framebuffer snapshots
+                #       (_capture_grok_framebuffer_snapshot, already flood-gated)
+                #       remain the high-fidelity live render.
+                _stripped_live = self._strip_volatile_for_grok_hash(live_block)
+                _now_m = time.monotonic()
+                _last_emit = float(capture.get("last_live_emit_monotonic") or 0.0)
+                if _stripped_live and (_now_m - _last_emit) >= 0.6:
+                    capture["last_live_emit_monotonic"] = _now_m
+                    started = float(capture.get("started_monotonic") or _now_m)
+                    delta = _now_m - started
                     self._append_process_trace(
                         f"◆ {delta:.1f}s grok>\n{live_block}",
                         kind="tool_result_capture",
@@ -2749,7 +3408,17 @@ class MatrixTerminalPane(QPlainTextEdit):
             pass  # never break the real capture for the live mirror
         capture["end_output_seq"] = seq
         capture["end_byte_offset"] = byte_end
-        capture["last_output_monotonic"] = time.monotonic()
+        # claude-opus-4-7 2026-05-25: only advance the IDLE clock when REAL content
+        # changed. Grok's TUI redraws the same screen (e.g. the static main menu)
+        # constantly; bumping last_output_monotonic on every identical redraw kept the
+        # idle-finalize (2.2s) from ever firing — so GROK_RESULT never posted and the
+        # same menu flooded instead of rendering. Gate on a stripped-content signature.
+        _content_sig = hashlib.sha256(
+            self._strip_volatile_for_grok_hash(text).encode("utf-8", "replace")
+        ).hexdigest()
+        if _content_sig != capture.get("last_raw_content_sig"):
+            capture["last_raw_content_sig"] = _content_sig
+            capture["last_output_monotonic"] = time.monotonic()
         capture["total_bytes_captured"] = byte_end
 
     def _tick_grok_result_capture(self) -> None:
@@ -2762,31 +3431,108 @@ class MatrixTerminalPane(QPlainTextEdit):
         now = time.monotonic()
         started = float(capture.get("started_monotonic") or now)
         last = float(capture.get("last_output_monotonic") or 0.0)
+        elapsed = max(0.0, now - started)
+        if self._should_retry_grok_literal_typing(capture, elapsed_s=elapsed):
+            self._retry_grok_prompt_with_literal_typing(capture, elapsed_s=elapsed)
         # ── Live visibility heartbeat (George 2026-05-24) ─────────────────
-        # Never leave the surface as dead air during Grok's own think latency.
-        # Show elapsed + chars so the owner can SEE it is working, not frozen.
+        # Never leave the surface as dead air during Grok capture. Show only
+        # elapsed time + captured chars; do not infer thinking, liveness, or a
+        # non-frozen state from silence.
+        chars = sum(
+            len(str(c.get("text") if isinstance(c, dict) else c))
+            for c in capture.get("chunks", [])
+        )
+        # Honest measurement: also check the rendered screen (MatureTerminalRenderer)
+        # so rich TUI sessions (native Grok etc.) are not falsely reported as 0 chars
+        # just because their content is in escape sequences.
+        screen_lines = 0
+        try:
+            screen = getattr(self, "_screen", None)
+            if screen and hasattr(screen, "lines"):
+                screen_lines = sum(1 for ln in screen.lines() if ln and ln.strip())
+        except Exception:
+            screen_lines = 0
+
+        # claude-opus-4-7 2026-05-25 (owner: "the thoughts are fake"): state ONLY
+        # what is measured. 0 chars captured does NOT prove "thinking" or "not
+        # frozen" — it could be a login/startup screen, a hang, or a dead CLI.
+        # Report elapsed + bytes; do not invent a mental/process state (§6, §7.12).
+        if chars > 0 or screen_lines > 0:
+            phase = "output streaming in"
+            effective_chars = max(chars, screen_lines * 40)  # rough visual estimate from screen
+        else:
+            phase = "no output captured yet"
+            effective_chars = 0
+
+        # Keep heartbeat visible, but do not spam identical rows every few seconds.
+        hb_interval_s = 12.0 if (now - started) < 60.0 else 20.0
         last_hb = float(getattr(self, "_grok_capture_last_hb", 0.0) or 0.0)
-        if now - last_hb >= 4.0:
+        state_key = (effective_chars, phase)
+        last_state_key = tuple(capture.get("last_hb_state_key") or ())
+        state_changed = state_key != last_state_key
+        if state_changed or now - last_hb >= hb_interval_s:
             self._grok_capture_last_hb = now
-            chars = sum(
-                len(str(c.get("text") if isinstance(c, dict) else c))
-                for c in capture.get("chunks", [])
-            )
-            phase = "thinking (no output yet)" if last <= 0.0 else "producing output"
+            capture["last_hb_state_key"] = list(state_key)
+            # Round 25 observability — surface the per-event counters so we can
+            # see on the next live dispatch how many bytes arrived at the capture
+            # vs how many were rejected and why. text_chars=0 + events_seen=0 means
+            # Grok is silent (no PTY output after splash). text_chars=0 +
+            # events_other_cli > 0 means the cli-name guard is rejecting bytes.
+            events_seen = int(capture.get("events_seen", 0))
+            events_recorded = int(capture.get("events_recorded", 0))
+            events_other_cli = int(capture.get("events_other_cli", 0))
+            events_blank = int(capture.get("events_blank", 0))
+            fb_seen = int(capture.get("framebuffer_events_seen", 0))
+            bytes_sent = int(capture.get("bytes_sent_to_pty", 0))
             self._append_process_trace(
-                f"grok {phase} — {now - started:.0f}s elapsed, {chars} chars captured (not frozen)",
+                f"grok: {effective_chars} chars captured (text+screen), {elapsed:.0f}s elapsed ({phase})"
+                f" | events seen={events_seen} recorded={events_recorded} other_cli={events_other_cli} blank={events_blank}"
+                f" fb_seen={fb_seen} bytes_sent_to_pty={bytes_sent}",
                 kind="tool_result_capture",
                 action="grok_capture_heartbeat",
-                payload={"elapsed_s": round(now - started, 1), "chars": chars, "phase": phase},
+                payload={
+                    "elapsed_s": round(elapsed, 1),
+                    "text_chars": chars,
+                    "screen_lines": screen_lines,
+                    "phase": phase,
+                    "events_seen": events_seen,
+                    "events_recorded": events_recorded,
+                    "events_other_cli": events_other_cli,
+                    "events_blank": events_blank,
+                    "framebuffer_events_seen": fb_seen,
+                    "bytes_sent_to_pty": bytes_sent,
+                },
             )
         # No output yet: keep waiting, but do not spin forever.
         if last <= 0.0:
-            if now - started > 90.0:
+            if elapsed > 45.0:
                 self._finish_grok_result_capture(force=True)
             return
         if now - last >= 2.2 and now - started >= 3.0:
-            self._finish_grok_result_capture()
-        elif now - started > 120.0:
+            # Do not promote a transient Grok TUI redraw ("Thinking…",
+            # "Responding…", file-read progress) to a final GROK_RESULT.
+            # First prove that the extractor can see answer text after prompt
+            # and TUI boilerplate are stripped.
+            answer_probe = (
+                self._extract_grok_result_text(capture)
+                or self._extract_grok_framebuffer_result_text(capture)
+            )
+            if answer_probe:
+                self._finish_grok_result_capture()
+            elif now - last >= 30.0:
+                self._append_process_trace(
+                    "no new Grok output for 30s; finalizing capture as stale to stop repeat loop",
+                    kind="tool_result_capture",
+                    action="grok_capture_stale_finalize",
+                    payload={
+                        "elapsed_s": round(now - started, 1),
+                        "idle_s": round(now - last, 1),
+                    },
+                )
+                self._finish_grok_result_capture(force=True)
+            elif elapsed > 90.0:
+                self._finish_grok_result_capture(force=True)
+        elif elapsed > 120.0:
             self._finish_grok_result_capture(force=True)
 
     def _finish_grok_result_capture(self, *, force: bool = False) -> None:
@@ -2794,6 +3540,79 @@ class MatrixTerminalPane(QPlainTextEdit):
         if not capture or capture.get("posted"):
             return
         answer = self._extract_grok_result_text(capture, force=force)
+        framebuffer_answer = self._extract_grok_framebuffer_result_text(capture, force=force)
+        framebuffer_hash = self._latest_grok_framebuffer_hash(capture)
+        capture_source = "alice_global_chat_terminal"
+        source_note = ""
+        macos_terminal_text = ""
+        macos_terminal_hash = ""
+        if framebuffer_answer and (
+            not answer
+            or self._looks_like_grok_tui_frame(framebuffer_answer)
+            or len(framebuffer_answer) >= max(40, int(len(answer) * 0.8))
+        ):
+            answer = framebuffer_answer
+            capture_source = "alice_global_chat_terminal_framebuffer"
+            source_note = (
+                "captured from Alice global chat terminal's SIFTA-owned PTY framebuffer after VT rendering; "
+                "this is the Grok TUI screen state, not shell scrollback"
+            )
+            if not self._latest_grok_framebuffer_frame(capture):
+                frame_text = self._terminal_frame_text() or framebuffer_answer
+                if frame_text:
+                    frame_hash_now = hashlib.sha256(frame_text.encode("utf-8")).hexdigest()
+                    cells = self._terminal_frame_cells()
+                    frame = {
+                        "seq": int(getattr(self, "_pty_output_seq", 0)),
+                        "byte_end": int(getattr(self, "_pty_output_bytes_total", 0)),
+                        "timestamp": time.time(),
+                        "elapsed_s": round(
+                            time.monotonic() - float(capture.get("started_monotonic") or time.monotonic()),
+                            1,
+                        ),
+                        "frame_hash": frame_hash_now,
+                        "text": frame_text,
+                        "renderer": "mature_pyte" if getattr(self, "_using_mature_renderer", False) else "early_screen_buffer",
+                    }
+                    if cells:
+                        frame["cells"] = cells
+                        frame["cursor"] = self._terminal_frame_cursor()
+                        frame["rows"] = len(cells)
+                        frame["cols"] = len(cells[0]) if cells and cells[0] else 0
+                    frames = capture.setdefault("framebuffer_frames", [])
+                    frames.append(frame)
+                    if len(frames) > 80:
+                        del frames[:-80]
+                    capture["last_framebuffer_hash"] = frame_hash_now
+                    framebuffer_hash = frame_hash_now
+        if not self._latest_grok_framebuffer_frame(capture):
+            frame_text = self._terminal_frame_text() or framebuffer_answer
+            if frame_text:
+                frame_hash_now = hashlib.sha256(frame_text.encode("utf-8")).hexdigest()
+                cells = self._terminal_frame_cells()
+                frame = {
+                    "seq": int(getattr(self, "_pty_output_seq", 0)),
+                    "byte_end": int(getattr(self, "_pty_output_bytes_total", 0)),
+                    "timestamp": time.time(),
+                    "elapsed_s": round(
+                        time.monotonic() - float(capture.get("started_monotonic") or time.monotonic()),
+                        1,
+                    ),
+                    "frame_hash": frame_hash_now,
+                    "text": frame_text,
+                    "renderer": "mature_pyte" if getattr(self, "_using_mature_renderer", False) else "early_screen_buffer",
+                }
+                if cells:
+                    frame["cells"] = cells
+                    frame["cursor"] = self._terminal_frame_cursor()
+                    frame["rows"] = len(cells)
+                    frame["cols"] = len(cells[0]) if cells and cells[0] else 0
+                frames = capture.setdefault("framebuffer_frames", [])
+                frames.append(frame)
+                if len(frames) > 80:
+                    del frames[:-80]
+                capture["last_framebuffer_hash"] = frame_hash_now
+                framebuffer_hash = frame_hash_now
         if not answer and not force:
             return
         capture["posted"] = True
@@ -2802,7 +3621,13 @@ class MatrixTerminalPane(QPlainTextEdit):
             timer.stop()
         capture_id = str(capture.get("id") or "")
         span = self._grok_capture_transcript_span(capture)
-        status = "captured" if answer else "failed_no_readable_output"
+        latest_frame = self._latest_grok_framebuffer_frame(capture)
+        framebuffer_cells = latest_frame.get("cells") if isinstance(latest_frame.get("cells"), list) else []
+        framebuffer_cursor = latest_frame.get("cursor") if isinstance(latest_frame.get("cursor"), list) else [0, 0, False]
+        if answer and capture_source == "alice_global_chat_terminal_framebuffer":
+            status = "captured_framebuffer"
+        else:
+            status = "captured" if answer else "failed_no_readable_output"
 
         # SCHEMA ALIGNMENT FIX: hash the exact pure captured_text that will be
         # the source of truth for the verifier. Store it explicitly so the
@@ -2812,11 +3637,24 @@ class MatrixTerminalPane(QPlainTextEdit):
 
         proof = {
             "kind": "GROK_RESULT",
+            "source": "alice_global_chat_terminal",
             "capture_id": capture_id,
             "capture_status": status,
             "captured_text": pure_captured_text,           # canonical body for hash + future use
             "captured_output_hash": output_hash,
             "captured_output_chars": len(pure_captured_text),
+            "capture_source": capture_source,
+            "capture_source_note": source_note,
+            "macos_terminal_chars": len(macos_terminal_text),
+            "macos_terminal_output_hash": macos_terminal_hash,
+            "framebuffer_output_hash": framebuffer_hash,
+            "framebuffer_frame_count": len(capture.get("framebuffer_frames", [])),
+            "framebuffer_span": self._grok_framebuffer_span(capture),
+            "framebuffer_renderer": self._latest_grok_framebuffer_renderer(capture),
+            "framebuffer_cells": framebuffer_cells,
+            "framebuffer_cursor": framebuffer_cursor,
+            "framebuffer_rows": int(latest_frame.get("rows") or len(framebuffer_cells) or 0),
+            "framebuffer_cols": int(latest_frame.get("cols") or (len(framebuffer_cells[0]) if framebuffer_cells else 0)),
             "pty_transcript_span": span,
             "transcript_span": span,
             "chunk_count": len(capture.get("chunks", [])),
@@ -2830,10 +3668,20 @@ class MatrixTerminalPane(QPlainTextEdit):
         proof_footer = (
             f"\n\n[GROK_RESULT receipt: capture_id={capture_id} "
             f"status={status} captured_output_hash={output_hash or 'NONE'} "
+            f"source=alice_global_chat_terminal "
+            f"framebuffer_hash={framebuffer_hash[:16] if framebuffer_hash else 'NONE'} "
             f"pty_span=seq {span['start_seq']}-{span['end_seq']} "
             f"bytes {span['start_byte']}-{span['end_byte']}]"
         )
-        global_text = "Grok terminal transcript:\n" + pure_captured_text + proof_footer
+        if capture_source == "alice_global_chat_terminal_framebuffer":
+            global_text = (
+                "Alice global chat terminal framebuffer "
+                "(rendered from the SIFTA-owned internal PTY screen state):\n"
+                + pure_captured_text
+                + proof_footer
+            )
+        else:
+            global_text = "Alice global chat terminal transcript:\n" + pure_captured_text + proof_footer
 
         self._append_process_trace(
             f"GROK_RESULT {status} {capture_id} ({proof['captured_output_chars']} chars)",
@@ -2850,12 +3698,79 @@ class MatrixTerminalPane(QPlainTextEdit):
             focused_cli="grok",
             metadata=proof,
         )
+        _write_alice_global_terminal_diary_event(
+            event="grok_result_capture",
+            ok=bool(output_hash),
+            note=f"GROK_RESULT {status} chars={proof['captured_output_chars']} source=alice_global_chat_terminal",
+            receipt_id=capture_id,
+        )
         self._remember_matrix_history(f"\nAlice > {global_text}\n")
         if getattr(self, "_terminal_screen_active", False):
             self._sync_terminal_screen()
         else:
             self._append_plain(f"Alice > {global_text}\n\nSIFTA > ")
         self._grok_result_capture = None
+
+    def _latest_grok_framebuffer_frame(self, capture: dict) -> dict:
+        frames = capture.get("framebuffer_frames", [])
+        if not isinstance(frames, list) or not frames:
+            return {}
+        latest = frames[-1]
+        return latest if isinstance(latest, dict) else {}
+
+    def _latest_grok_framebuffer_hash(self, capture: dict) -> str:
+        latest = self._latest_grok_framebuffer_frame(capture)
+        return str(latest.get("frame_hash") or capture.get("last_framebuffer_hash") or "")
+
+    def _latest_grok_framebuffer_renderer(self, capture: dict) -> str:
+        latest = self._latest_grok_framebuffer_frame(capture)
+        return str(latest.get("renderer") or ("mature_pyte" if getattr(self, "_using_mature_renderer", False) else "early_screen_buffer"))
+
+    def _grok_framebuffer_span(self, capture: dict) -> dict[str, int]:
+        frames = capture.get("framebuffer_frames", [])
+        seqs: list[int] = []
+        byte_ends: list[int] = []
+        for frame in frames if isinstance(frames, list) else []:
+            if not isinstance(frame, dict):
+                continue
+            try:
+                seqs.append(int(frame.get("seq", 0)))
+                byte_ends.append(int(frame.get("byte_end", 0)))
+            except Exception:
+                continue
+        return {
+            "start_seq": min(seqs) if seqs else 0,
+            "end_seq": max(seqs) if seqs else 0,
+            "end_byte": max(byte_ends) if byte_ends else 0,
+            "frame_count": len(frames) if isinstance(frames, list) else 0,
+        }
+
+    @staticmethod
+    def _looks_like_grok_tui_frame(text: str) -> bool:
+        low = (text or "").lower()
+        markers = (
+            "thought for",
+            "responding",
+            "grok build",
+            "ctrl+",
+            "shift+tab",
+            "read /users/",
+            "search ",
+            "receipt:",
+            "turn completed",
+            "action required",
+        )
+        return any(marker in low for marker in markers)
+
+    def _extract_grok_framebuffer_result_text(self, capture: dict, *, force: bool = False) -> str:
+        latest = self._latest_grok_framebuffer_frame(capture)
+        source = str(latest.get("text") or "")
+        if not source:
+            source = self._terminal_frame_text()
+        if not source.strip():
+            return ""
+        prompt = str(capture.get("prompt") or "")
+        return self._extract_grok_text_from_source(source, prompt=prompt, force=force)
 
     def _grok_capture_transcript_span(self, capture: dict) -> dict[str, int]:
         chunks = capture.get("chunks", [])
@@ -2898,7 +3813,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if not text:
             return text
         s = text
-        s = re.sub(r"\x1b?\[[0-9;?]*[A-Za-z]", "", s)        # bare ANSI SGR / cursor / private-mode remnants
+        s = _ANSI_RE.sub("", s)  # full ANSI (OSC/CSI/private) — strengthened 2026-05-25 Grok 4.3 external (signin trace_id=830f2e7b-889b-4e71-9a71-39bc91090ad6) per Alice "strip ANSI blood" order on this body
         s = re.sub(r"[⠀-⣿]+", "", s)                # braille spinner frames
         s = re.sub(r"[┃◆│█▌▎▊▉╭╮╰╯]+", " ", s)                # box-redraw scaffolding
         s = re.sub(r"[ \t]{3,}", " ", s)                      # collapse long space runs
@@ -2931,28 +3846,45 @@ class MatrixTerminalPane(QPlainTextEdit):
         if not raw.strip():
             return ""
         visible = self._visible_terminal_text()
-        source = raw if len(raw) >= len(visible) else visible
+        # Prefer the actual captured PTY chunks. The visible widget text also
+        # contains Alice's process trace ("start GROK_RESULT capture", etc.),
+        # and that scaffolding must never become the answer body.
+        source = raw if raw.strip() else visible
         if not source.strip():
             return ""
         prompt = str(capture.get("prompt") or "")
+        return self._extract_grok_text_from_source(source, prompt=prompt, force=force)
+
+    def _extract_grok_text_from_source(self, source: str, *, prompt: str = "", force: bool = False) -> str:
+        if not source or not source.strip():
+            return ""
         prompt_lines = {line.strip() for line in prompt.splitlines() if line.strip()}
         kept: list[str] = []
         skip_needles = (
             "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md",
             "Start from the hardware layer 1 kernel primordial electricity boundary",
-            "Alice is asking Grok from inside the Matrix Terminal",
+            "Alice is asking Grok from inside the Alice global chat terminal",
             "Question for Grok:",
             "Answer the question directly from the local SIFTA context",
             "Grok is an external tool organ",
             "Do not assume you are inside Alice's organism",
             "Owner's original wording to Alice:",
             "Subject binding:",
+            "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/",
+            "IDE_BOOT_COVENANT.md",
             "[Pasted:",
             "Enter:send",
             "Shift+Tab:mode",
             "Ctrl+x:shortcuts",
             "Grok Build",
+            "Connecting MCPs",
+            "New worktree",
+            "Resume session",
+            "Quit ctrl-q",
+            "Tip: Press Ctrl-W",
+            "0.2.2 Beta",
         )
+        skip_needles_low = tuple(n.lower() for n in skip_needles)
         for line in source.splitlines():
             clean = line.strip()
             if not clean:
@@ -2961,7 +3893,22 @@ class MatrixTerminalPane(QPlainTextEdit):
                 continue
             if clean in prompt_lines:
                 continue
-            if any(needle in clean for needle in skip_needles):
+            clean_low = clean.lower()
+            if any(needle in clean_low for needle in skip_needles_low):
+                continue
+            # Treat Grok startup/footer lines as non-answer boilerplate even when
+            # OCR/framebuffer clipping drops leading characters (e.g. "it ctrl-q").
+            if "ctrl-q" in clean_low:
+                continue
+            if re.fullmatch(r"0\.\d+\.\d+(?:\s*\[[^\]]+\])?\s*beta", clean_low):
+                continue
+            if (
+                clean_low.startswith(("thinking", "responding", "the task is:"))
+                or re.search(r"\bthought for\s+\d", clean_low)
+                or re.search(r"\b(thinking|responding)[….\s]*\d", clean_low)
+                or re.fullmatch(r"#\d+\s+(?:read|search|run|open)\b.*", clean_low)
+                or re.fullmatch(r"[0-9.]+%?", clean_low)
+            ):
                 continue
             if re.fullmatch(r"[╭╮╰╯─│\s▌>❯]+", clean):
                 continue
@@ -2986,41 +3933,206 @@ class MatrixTerminalPane(QPlainTextEdit):
         return self.toPlainText()
 
     def _grok_visible_screen_state(self) -> str:
-        text = self._visible_terminal_text().lower()
-        compact = re.sub(r"\s+", "", text)
-        if "newworktree" in compact and "resumesession" in compact and "quit" in compact:
-            return "main_menu"
-        if "/tosearch" in compact and ("users-" in text or "resumesession" in compact):
-            return "session_picker"
-        return ""
+        cells = self._terminal_frame_cells()
+        state = grok_screen_classifier(cells)
+        if state:
+            return state
+        return grok_screen_classifier(text=self._visible_terminal_text())
+
+    def _reset_grok_resume_screen_stability(self) -> None:
+        self._grok_resume_observed_state = ""
+        self._grok_resume_state_seen_count = 0
+        self._grok_resume_state_since = 0.0
+
+    def _stable_grok_resume_screen_state(self, now: float) -> str:
+        """Return a Grok startup screen only after it stayed visible long enough.
+
+        George caught the real bug: seeing one transient TUI frame is not enough
+        to press Ctrl-S or Enter. Alice must watch the framebuffer settle before
+        acting, because a full-screen TUI redraw can briefly contain stale menu
+        words while the next screen is still painting.
+        """
+        state = self._grok_visible_screen_state()
+        previous = str(getattr(self, "_grok_resume_observed_state", "") or "")
+        if state != previous:
+            self._grok_resume_observed_state = state
+            self._grok_resume_state_seen_count = 1 if state else 0
+            self._grok_resume_state_since = now if state else 0.0
+            if state:
+                self._append_process_trace(
+                    f"grok screen observed={state}; waiting for stable framebuffer before keypress",
+                    kind="screen_navigation",
+                    action="grok_resume_screen_observed",
+                    payload={"state": state, "stable_frames": 1, "stable_for_s": 0.0},
+                )
+            return ""
+        if not state:
+            return ""
+        count = int(getattr(self, "_grok_resume_state_seen_count", 0) or 0) + 1
+        self._grok_resume_state_seen_count = count
+        since = float(getattr(self, "_grok_resume_state_since", 0.0) or now)
+        stable_for = max(0.0, now - since)
+        min_frames = int(getattr(self, "_grok_resume_required_stable_frames", 3) or 3)
+        min_s = float(getattr(self, "_grok_resume_required_stable_s", 0.70) or 0.70)
+        if count < min_frames or stable_for < min_s:
+            return ""
+        self._grok_resume_action_stable_frames = count
+        self._grok_resume_action_stable_for_s = stable_for
+        return state
+
+    def _grok_resume_still_loading(self) -> bool:
+        """True while Grok is still hydrating the resumed session UI."""
+        visible = (self._visible_terminal_text() or "").lower()
+        return ("loading session" in visible) or ("connecting mcps" in visible)
 
     def _ask_owner_for_grok_choice(self) -> None:
         state = self._grok_visible_screen_state()
         if state == "main_menu":
-            self._append_plain(
-                "Alice > I see Grok's main menu. Tell me: resume session, new worktree, or quit.\n\n"
-                "SIFTA > "
+            self._append_plain("Alice > I see Grok's main menu. A choice is required.\n")
+            self._execute_grok_resume_last_session(
+                "Alice visible Grok menu choice help: resume saved session",
+                open_if_needed=False,
             )
+            self._grok_resume_last_action = 0.0
+            self._tick_grok_resume_navigation()
             return
         if state == "session_picker":
-            self._append_plain(
-                "Alice > I see Grok's session list. Tell me: first saved session, move down, move up, or search.\n\n"
-                "SIFTA > "
+            self._append_plain("Alice > I see Grok's session list. A session choice is required.\n")
+            self._execute_grok_resume_last_session(
+                "Alice visible Grok session picker choice help: select highlighted saved session",
+                open_if_needed=False,
             )
+            self._grok_resume_last_action = 0.0
+            self._tick_grok_resume_navigation()
             return
         self._append_plain(
             "Alice > I do not know this Grok screen yet. Tell me the exact visible option or key to press.\n\n"
             "SIFTA > "
         )
 
-    def _execute_grok_resume_last_session(self, user_input: str, open_if_needed: bool = False) -> None:
+    def _announce_grok_resume_choice(self, *, state: str, phase: str, key_label: str, decision: str) -> None:
+        """Write the observed menu choice before pressing a Grok TUI key.
+
+        This prevents identity double-spend: Alice is not Grok. Alice is the
+        global SIFTA organism observing an external Grok tool screen and applying
+        the owner's standing policy to that screen.
+        """
+        announced_key = f"_grok_resume_announced_{state}_{key_label.replace('-', '_').lower()}"
+        if getattr(self, announced_key, False):
+            return
+        setattr(self, announced_key, True)
+        line = (
+            f"I see Grok's {state.replace('_', ' ')}. Choice required. "
+            f"Grok is the external tool screen; Alice stays the global SIFTA field. "
+            f"Screen stable for {int(getattr(self, '_grok_resume_action_stable_frames', 0) or 0)} frames "
+            f"over {float(getattr(self, '_grok_resume_action_stable_for_s', 0.0) or 0.0):.1f}s. "
+            f"Owner standing policy: {decision}. Pressing {key_label}."
+        )
+        self._append_plain(f"Alice > {line}\n")
+        self._append_process_trace(
+            f"grok screen choice: state={state} phase={phase}; decision={decision}; press {key_label}",
+            kind="screen_navigation",
+            action="grok_resume_choice_nudge",
+            payload={
+                "state": state,
+                "phase": phase,
+                "decision": decision,
+                "key": key_label,
+                "identity_boundary": "Alice observes/operates external Grok tool screen; Alice is not Grok",
+            },
+        )
+        self._log_global_terminal_turn(
+            "alice",
+            line,
+            model="matrix_terminal_effector",
+            action="grok_resume_choice_nudge",
+            focused_cli="grok",
+            metadata={
+                "screen_state": state,
+                "phase": phase,
+                "decision": decision,
+                "key": key_label,
+                "identity_boundary": "Alice observes/operates external Grok tool screen; Alice is not Grok",
+            },
+        )
+
+    def _grok_resume_action_for(self, *, phase: str, state: str) -> dict[str, object] | None:
+        action = _GROK_RESUME_ACTION_TABLE.get((phase, state))
+        if not action:
+            return None
+        return dict(action)
+
+    def _apply_grok_resume_action(
+        self,
+        *,
+        action: dict[str, object],
+        state: str,
+        phase: str,
+        now: float,
+    ) -> None:
+        key_label = str(action.get("key_label") or "")
+        key_bytes = action.get("key_bytes")
+        decision = str(action.get("decision") or "")
+        trace_action = str(action.get("trace_action") or "grok_resume_screen_action")
+        trace_text = str(action.get("trace_text") or f"grok screen state={state} -> press {key_label}")
+        next_phase = str(action.get("next_phase") or phase)
+        if not isinstance(key_bytes, (bytes, bytearray)) or not key_bytes:
+            self._append_process_trace(
+                f"grok screen action missing bytes: state={state} phase={phase}",
+                kind="screen_navigation",
+                action="grok_resume_action_rejected",
+                payload={
+                    "state": state,
+                    "phase": phase,
+                    "classifier": _GROK_SCREEN_CLASSIFIER_VERSION,
+                    "reason": "missing_key_bytes",
+                },
+            )
+            return
+
+        self._announce_grok_resume_choice(
+            state=state,
+            phase=phase,
+            key_label=key_label,
+            decision=decision,
+        )
+        self._append_process_trace(
+            trace_text,
+            kind="screen_navigation",
+            action=trace_action,
+            payload={
+                "state": state,
+                "phase": phase,
+                "next_phase": next_phase,
+                "key": key_label,
+                "decision": decision,
+                "classifier": _GROK_SCREEN_CLASSIFIER_VERSION,
+                "table_driven": True,
+            },
+        )
+        self.write_bytes(bytes(key_bytes))
+        self._grok_resume_last_action = now
+        self._grok_resume_phase = next_phase
+        self._reset_grok_resume_screen_stability()
+        deadline_s = action.get("deadline_s")
+        if isinstance(deadline_s, (int, float)) and float(deadline_s) > 0.0:
+            self._grok_resume_deadline = time.monotonic() + float(deadline_s)
+
+    def _execute_grok_resume_last_session(
+        self,
+        user_input: str,
+        open_if_needed: bool = False,
+        pending_prompt: str = "",
+    ) -> None:
         """Drive Grok's visible TUI by WATCHING the screen, not fixed delays.
 
         George 2026-05-23: fixed delays fired Ctrl-S / Enter before the second
         screen existed. Instead we POLL the visible screen state: when Grok's main
         menu shows -> send Ctrl-S (Resume session); when the session list shows ->
-        send Enter (the first/last saved session). Screen-state driven = reliable
-        regardless of how long Grok takes to boot or repaint.
+        send Enter (the first/last saved session); then wait until the screen
+        leaves the picker before claiming resume or sending a queued prompt.
+        Screen-state driven = reliable regardless of how long Grok takes to
+        boot or repaint.
         """
         if not self.is_running():
             self.start_shell()
@@ -3030,6 +4142,46 @@ class MatrixTerminalPane(QPlainTextEdit):
 
         if _looks_like_owner_bowel_resume_encouragement(user_input):
             self._process_owner_bowel_positive_resume_encouragement(user_input)
+
+        # Re-entrancy guard: if resume navigation is already running, do not
+        # restart from await_menu and extend the deadline forever.
+        current_phase = str(getattr(self, "_grok_resume_phase", "") or "")
+        timer = getattr(self, "_grok_resume_timer", None)
+        if current_phase and current_phase != "done":
+            if timer is None or not timer.isActive():
+                # Stale state (phase set, timer dead) can block queued
+                # delegations indefinitely. Reset and continue with a fresh run.
+                self._append_process_trace(
+                    "grok resume phase was set but timer was inactive; clearing stale resume lock",
+                    kind="screen_navigation",
+                    action="grok_resume_stale_phase_reset",
+                    payload={"phase": current_phase},
+                )
+                self._grok_resume_phase = ""
+                self._grok_resume_pending_prompt = ""
+            else:
+                pending = (pending_prompt or "").strip()
+                existing = str(getattr(self, "_grok_resume_pending_prompt", "") or "").strip()
+                pending_state = "unchanged"
+                if pending:
+                    if not existing:
+                        self._grok_resume_pending_prompt = pending
+                        pending_state = "queued"
+                    elif pending == existing:
+                        pending_state = "deduped"
+                    else:
+                        pending_state = "dropped_new_prompt"
+                self._append_process_trace(
+                    "grok resume navigation already in flight; keeping current phase and deadline",
+                    kind="screen_navigation",
+                    action="grok_resume_inflight_hold",
+                    payload={
+                        "phase": current_phase,
+                        "pending_state": pending_state,
+                        "had_existing_prompt": bool(existing),
+                    },
+                )
+                return
 
         active_grok = self._current_cli_name() == "grok"
         if not active_grok and not open_if_needed:
@@ -3075,12 +4227,63 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._grok_resume_phase = "await_menu"
         self._grok_resume_deadline = time.monotonic() + 30.0
         self._grok_resume_last_action = 0.0
+        self._grok_resume_pending_prompt = (pending_prompt or "").strip()
+        self._grok_resume_required_stable_frames = 3
+        self._grok_resume_required_stable_s = 0.70
+        self._grok_resume_key_cooldown_s = 1.50
+        self._reset_grok_resume_screen_stability()
+        self._grok_resume_announced_main_menu_ctrl_s = False
+        self._grok_resume_announced_session_picker_enter = False
         timer = getattr(self, "_grok_resume_timer", None)
         if timer is None:
             timer = QTimer(self)
             timer.timeout.connect(self._tick_grok_resume_navigation)
             self._grok_resume_timer = timer
         timer.start(350)
+
+    def _finish_grok_resume_navigation(self, *, after_enter: bool = False) -> None:
+        """Finalize resume only after the menu/picker has been crossed.
+
+        If an owner prompt was waiting, paste it now. This is the critical
+        difference between "pressed Enter" and "Grok is ready to receive the
+        delegated task."
+        """
+        timer = getattr(self, "_grok_resume_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+        self._grok_resume_phase = "done"
+        pending_prompt = str(getattr(self, "_grok_resume_pending_prompt", "") or "").strip()
+        self._grok_resume_pending_prompt = ""
+        if pending_prompt:
+            self._append_process_trace(
+                "grok resume verified past startup screens -> paste queued prompt",
+                kind="screen_navigation",
+                action="grok_resume_ready_for_prompt",
+                payload={
+                    "after_enter": bool(after_enter),
+                    "prompt_chars": len(pending_prompt),
+                    "source": "alice_global_chat_terminal",
+                },
+            )
+            self._append_plain("Alice > Grok session is past the startup screens. Sending the queued prompt now.\n")
+            self._write_bracketed_paste(pending_prompt)
+            self._log_global_terminal_turn(
+                "alice",
+                "Grok session resumed; queued prompt sent.",
+                model="matrix_terminal_effector",
+                action="grok_resume_ready_for_prompt",
+                focused_cli="grok",
+                metadata={"prompt_chars": len(pending_prompt), "source": "alice_global_chat_terminal"},
+            )
+            return
+        self._append_plain("Alice > Resumed your last Grok session.\n")
+        self._log_global_terminal_turn(
+            "alice",
+            "Resumed your last Grok session.",
+            model="matrix_terminal_effector",
+            action="grok_resume_done",
+            focused_cli="grok",
+        )
 
     def _tick_grok_resume_navigation(self) -> None:
         """Poll Grok's screen and press the right key for the current screen."""
@@ -3095,78 +4298,154 @@ class MatrixTerminalPane(QPlainTextEdit):
             if timer is not None and timer.isActive():
                 timer.stop()
             self._grok_resume_phase = ""
+            self._append_process_trace(
+                "grok resume timeout; releasing resume lock so queued delegations can continue",
+                kind="screen_navigation",
+                action="grok_resume_timeout_unblocked",
+                payload={"phase": phase},
+            )
             self._append_plain(
                 "Alice > I could not reach Grok's session list in time. Tell me what to press and I will learn it.\n\n"
                 "SIFTA > "
             )
             return
-        # Let the TUI repaint between key presses — don't hammer faster than ~1s.
-        if now - getattr(self, "_grok_resume_last_action", 0.0) < 1.0:
+        # Let the TUI repaint between key presses. Then require the newly
+        # visible screen to remain stable before acting on it.
+        cooldown_s = float(getattr(self, "_grok_resume_key_cooldown_s", 1.50) or 1.50)
+        if now - getattr(self, "_grok_resume_last_action", 0.0) < cooldown_s:
             return
-        state = self._grok_visible_screen_state()
+        raw_state = self._grok_visible_screen_state()
+        state = self._stable_grok_resume_screen_state(now)
+        if phase != "await_ready" and not state:
+            return
         if phase == "await_menu":
-            if state == "session_picker":
-                self._append_process_trace(
-                    "grok screen state=session_picker -> press Enter",
-                    kind="screen_navigation",
-                    action="grok_resume_enter",
-                    payload={"state": state, "phase": phase},
-                )
-                self.write_bytes(b"\r")  # Already past the menu: enter the highlighted saved session.
-                self._grok_resume_last_action = now
-                self._grok_resume_phase = "done"
-                if timer is not None and timer.isActive():
-                    timer.stop()
-                self._append_plain("Alice > Resumed your last Grok session.\n")
-                self._log_global_terminal_turn(
-                    "alice",
-                    "Resumed your last Grok session.",
-                    model="matrix_terminal_effector",
-                    action="grok_resume_done",
-                    focused_cli="grok",
-                )
-            elif state == "main_menu":
-                self._append_process_trace(
-                    "grok screen state=main_menu -> press Ctrl-S",
-                    kind="screen_navigation",
-                    action="grok_resume_ctrl_s",
-                    payload={"state": state, "phase": phase},
-                )
-                self.write_bytes(b"\x13")  # Ctrl-S = Resume session
-                self._grok_resume_last_action = now
-                self._grok_resume_phase = "await_picker"
+            action = self._grok_resume_action_for(phase=phase, state=state)
+            if action:
+                self._apply_grok_resume_action(action=action, state=state, phase=phase, now=now)
             return
         if phase == "await_picker":
+            action = self._grok_resume_action_for(phase=phase, state=state)
+            if action:
+                self._apply_grok_resume_action(action=action, state=state, phase=phase, now=now)
+            return
+        if phase == "await_ready":
+            # After Enter, do not claim success while the picker is still on
+            # screen. Wait for Grok to leave the two startup screens; then either
+            # send the queued delegation prompt or report the verified resume.
+            if self._grok_resume_still_loading():
+                return
+            if raw_state and not state:
+                return
+            if not raw_state:
+                if now - getattr(self, "_grok_resume_last_action", 0.0) >= 1.25:
+                    self._finish_grok_resume_navigation(after_enter=True)
+                return
             if state == "session_picker":
-                self._append_process_trace(
-                    "grok screen state=session_picker -> press Enter",
-                    kind="screen_navigation",
-                    action="grok_resume_enter",
-                    payload={"state": state, "phase": phase},
-                )
-                self.write_bytes(b"\r")  # Enter on the first/last saved session
-                self._grok_resume_last_action = now
-                self._grok_resume_phase = "done"
-                if timer is not None and timer.isActive():
-                    timer.stop()
-                self._append_plain("Alice > Resumed your last Grok session.\n")
-                self._log_global_terminal_turn(
-                    "alice",
-                    "Resumed your last Grok session.",
-                    model="matrix_terminal_effector",
-                    action="grok_resume_done",
-                    focused_cli="grok",
-                )
-            elif state == "main_menu":
-                # Menu still showing — the Ctrl-S didn't register; press it again.
-                self._append_process_trace(
-                    "grok screen still main_menu -> press Ctrl-S again",
-                    kind="screen_navigation",
-                    action="grok_resume_ctrl_s_retry",
-                    payload={"state": state, "phase": phase},
-                )
-                self.write_bytes(b"\x13")
-                self._grok_resume_last_action = now
+                action = self._grok_resume_action_for(phase=phase, state=state)
+                min_since_action_s = float(action.get("min_since_action_s", 0.0) or 0.0) if action else 0.0
+                if action and now - getattr(self, "_grok_resume_last_action", 0.0) >= min_since_action_s:
+                    self._apply_grok_resume_action(action=action, state=state, phase=phase, now=now)
+                return
+            if state == "main_menu":
+                action = self._grok_resume_action_for(phase=phase, state=state)
+                if action:
+                    self._apply_grok_resume_action(action=action, state=state, phase=phase, now=now)
+                return
+
+    def _schedule_grok_direct_type_paste(
+        self,
+        prompt: str,
+        *,
+        started_monotonic: float | None = None,
+        attempt: int = 0,
+        timeout_s: float = 12.0,
+        poll_ms: int = 250,
+    ) -> None:
+        """Wait for a writable Grok input surface before direct-type paste."""
+        start = float(started_monotonic or time.monotonic())
+        now = time.monotonic()
+        elapsed = max(0.0, now - start)
+        frame = self._terminal_frame_text()
+        if _grok_input_looks_ready(frame):
+            self._append_process_trace(
+                "direct-type: input ready gate passed, issuing bracketed paste",
+                kind="tool_delegation",
+                action="grok_direct_type_ready",
+                payload={
+                    "prompt_chars": len(prompt or ""),
+                    "elapsed_s": round(elapsed, 2),
+                    "attempt": int(attempt),
+                },
+            )
+            # Mark Grok active BEFORE paste so _write_bracketed_paste routes as
+            # grok-targeted delegation (starts GROK_RESULT capture, not generic PTY paste).
+            self._active_cli_name = "grok"
+            self._grok_cli_active = True
+            self._write_bracketed_paste(prompt)
+            self._enter_alice_input_mode_for_tool("Grok")
+            return
+
+        if elapsed >= max(1.0, float(timeout_s or 0.0)):
+            failure = "FIELD_FAILURE: grok_direct_type_ready_timeout"
+            self._append_process_trace(
+                f"{failure}; input surface not ready before timeout",
+                kind="FIELD_FAILURE",
+                action="grok_direct_type_ready_timeout",
+                payload={
+                    "prompt_chars": len(prompt or ""),
+                    "elapsed_s": round(elapsed, 2),
+                    "attempt": int(attempt),
+                    "frame_tail": frame[-320:],
+                },
+            )
+            self._append_plain(f"Alice > {failure}\n")
+            _matrix_terminal_log_global_turn(
+                "alice",
+                failure,
+                action="GROK_DIRECT_TYPE_READY_TIMEOUT",
+                focused_cli="grok",
+                metadata={
+                    "elapsed_s": round(elapsed, 2),
+                    "prompt_chars": len(prompt or ""),
+                },
+            )
+            return
+
+        if attempt == 0 or attempt % 4 == 0:
+            self._append_process_trace(
+                "direct-type: waiting for live Grok input prompt (no resume navigation)",
+                kind="tool_delegation",
+                action="grok_direct_type_wait_ready",
+                payload={
+                    "elapsed_s": round(elapsed, 2),
+                    "attempt": int(attempt),
+                    "prompt_chars": len(prompt or ""),
+                },
+            )
+
+        QTimer.singleShot(
+            int(max(50, poll_ms)),
+            lambda p=prompt, s=start, a=attempt + 1: self._schedule_grok_direct_type_paste(
+                p,
+                started_monotonic=s,
+                attempt=a,
+                timeout_s=timeout_s,
+                poll_ms=poll_ms,
+            ),
+        )
+
+    def _send_ctrl_w_for_new_worktree(self) -> None:
+        """Dismiss Grok startup menu into a fresh worktree/session (direct-type mode)."""
+        try:
+            self.write_bytes(b"\x17")  # Ctrl-W
+        except Exception:
+            return
+        self._append_process_trace(
+            "direct-type: sent Ctrl-W to select New worktree (new session every time)",
+            kind="tool_delegation",
+            action="grok_direct_type_new_worktree_keystroke",
+            payload={"key": "Ctrl-W", "new_session": True, "no_resume": True},
+        )
 
     def _execute_alice_cli_prompt_request(self, cli: str, user_input: str) -> None:
         """Open/use an agent CLI as Alice's tool and paste the covenant prompt."""
@@ -3182,7 +4461,49 @@ class MatrixTerminalPane(QPlainTextEdit):
 
         explicit_prompt = _matrix_terminal_cli_prompt(user_input, cli)
         label = _DIRECT_CLI_LABELS.get(cli, cli.title())
+        force_direct_type = cli == "grok" and _matrix_terminal_direct_type_grok_requested(user_input)
 
+        if force_direct_type:
+            prompt = _matrix_terminal_cli_prompt_payload(user_input, cli)
+            active_cli = self._current_cli_name()
+            self._append_process_trace(
+                "direct-type mode enabled for Grok: bypass resume navigation and paste prompt",
+                kind="tool_delegation",
+                action="grok_direct_type_mode",
+                payload={
+                    "no_resume": True,
+                    "active_cli": active_cli or "",
+                    "prompt_chars": len(prompt),
+                },
+            )
+            self._log_global_terminal_turn(
+                "alice",
+                "Direct-type Grok mode: no resume navigation, paste payload to active Grok input.",
+                model="matrix_terminal_effector",
+                action="grok_direct_type_mode",
+                focused_cli="grok",
+                prior_user_text=user_input,
+                metadata={"no_resume": True, "prompt_chars": len(prompt)},
+            )
+            if active_cli == "grok":
+                self._append_plain(
+                    "Alice > Direct-type mode active. Waiting for Grok input readiness, then sending payload (no Ctrl-S, no session picker).\n"
+                )
+                self._append_matrix_command_receipt([prompt])
+                self._schedule_grok_direct_type_paste(prompt, timeout_s=12.0, poll_ms=250)
+                return
+
+            self._append_plain(
+                "Alice > Direct-type mode active. Opening Grok, waiting for live input, then pasting payload without resume navigation.\n"
+            )
+            self._append_matrix_command_receipt(["grok", prompt])
+            QTimer.singleShot(250, lambda: self.write_command("grok"))
+            # Owner policy update: after typing `grok`, do not press Ctrl-W,
+            # Ctrl-S, Enter on any picker, or any other selection key. The
+            # ready-gate observes the live frame and pastes only when input is
+            # genuinely ready.
+            QTimer.singleShot(900, lambda p=prompt: self._schedule_grok_direct_type_paste(p, timeout_s=14.0, poll_ms=250))
+            return
         # Alice drives the visible Grok TUI here. No hidden one-shot wrapper: George
         # talks to Alice, and Alice operates Grok in the same terminal transcript.
         # George 2026-05-23: opening Grok must ALWAYS pass the two preprogrammed
@@ -3251,30 +4572,27 @@ class MatrixTerminalPane(QPlainTextEdit):
             return
         # === end separation ===
 
-        prompt = _matrix_terminal_cli_prompt_payload(user_input, cli)
         active_cli = self._current_cli_name()
+        prompt = _matrix_terminal_cli_prompt_payload(user_input, cli)
+        if cli == "grok":
+            # Explicit Grok delegations must pass the same two startup screens
+            # as open/resume. The old fixed delay could paste the task into
+            # Grok's menu or picker, yielding a fake dispatch with no answer.
+            screen_state = self._grok_visible_screen_state() if active_cli == "grok" else ""
+            if active_cli != "grok" or screen_state in {"main_menu", "session_picker"}:
+                self._execute_grok_resume_last_session(
+                    user_input,
+                    open_if_needed=True,
+                    pending_prompt=prompt,
+                )
+                return
+
         commands = [prompt] if active_cli == cli else [cli, prompt]
         if active_cli == cli:
             self._enter_alice_input_mode_for_tool(label)
-            self._log_global_terminal_turn(
-                "alice",
-                f"Pasting a covenant-prefixed prompt into the active {label} CLI.",
-                model="matrix_terminal_effector",
-                action="cli_prompt_paste",
-                focused_cli=cli,
-                prior_user_text=user_input,
-            )
             self._append_plain(f"Alice > Pasting a covenant-prefixed prompt into the active {label} CLI.\n")
             paste_delay_ms = 250
         else:
-            self._log_global_terminal_turn(
-                "alice",
-                f"Opening {label} CLI and pasting a covenant-prefixed prompt for {label}.",
-                model="matrix_terminal_effector",
-                action="cli_prompt_open_and_paste",
-                focused_cli=cli,
-                prior_user_text=user_input,
-            )
             self._append_plain(f"Alice > Opening {label} CLI and pasting a covenant-prefixed prompt for {label}.\n")
             paste_delay_ms = 2800
             QTimer.singleShot(250, lambda c=cli: self.write_command(c))
@@ -3315,6 +4633,14 @@ class MatrixTerminalPane(QPlainTextEdit):
                 continue
             if not str(row.get("text") or "").strip():
                 continue
+            try:
+                ts = float(row.get("ts") or 0.0)
+            except Exception:
+                ts = 0.0
+            if ts > 0.0:
+                max_age = float(getattr(self, "_grok_delegation_queue_stale_s", 15 * 60) or 15 * 60)
+                if time.time() - ts > max_age:
+                    continue
             rows.append(row)
         return rows
 
@@ -3338,7 +4664,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             payload = {
                 "ts": time.time(),
                 "receipt": receipt,
-                "source": "matrix_terminal",
+                "source": "alice_global_chat_terminal",
                 "pid": os.getpid(),
             }
             os.write(fd, json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"))
@@ -3350,6 +4676,10 @@ class MatrixTerminalPane(QPlainTextEdit):
         return True
 
     def _poll_grok_delegation_queue(self) -> None:
+        busy = self._grok_delegation_busy_reason()
+        if busy:
+            self._trace_grok_queue_busy(busy)
+            return
         for row in self._read_queued_grok_delegations():
             if not self._claim_queued_grok_delegation(row):
                 continue
@@ -3361,18 +4691,14 @@ class MatrixTerminalPane(QPlainTextEdit):
                 action="grok_delegation_queue_claimed",
                 payload={"receipt": receipt, "text": question[:512]},
             )
-            self._log_global_terminal_turn(
+            self._append_plain(f"\nAlice > Picked up queued Grok delegation receipt={receipt}.\n")
+            _matrix_terminal_log_global_turn(
                 "alice",
-                (
-                    "Matrix Terminal picked up queued Grok delegation from global chat. "
-                    f"receipt={receipt}. I am driving the visible Grok PTY now."
-                ),
-                model="matrix_terminal_effector",
+                f"Queued Grok delegation claimed. receipt={receipt}",
                 action="GROK_DELEGATION_QUEUE_CLAIMED",
                 focused_cli="grok",
-                metadata={"receipt": receipt, "queued": True},
+                metadata={"receipt": receipt, "queued_text_preview": question[:240]},
             )
-            self._append_plain(f"\nAlice > Picked up queued Grok delegation receipt={receipt}.\n")
             self._pending_grok_delegation_receipt_id = receipt
             if re.search(r"\b(?:ask|call|use|tell|send\s+to)\s+grok\b", question, re.IGNORECASE):
                 request = question
@@ -3447,7 +4773,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if commands[0] in _DIRECT_CLI_PREFIXES and not _matrix_terminal_agent_cli_enabled():
             label = _DIRECT_CLI_LABELS.get(commands[0], commands[0])
             self._append_plain(
-                f"Alice > Matrix Terminal is Alice-first here. I will not open {label} in this surface.\n\n"
+                f"Alice > Alice global chat terminal is the only terminal surface. I will not open {label} here.\n\n"
                 "SIFTA > "
             )
             return
@@ -3583,7 +4909,7 @@ class MatrixTerminalApp(QWidget):
         _patch_process_events_for_offscreen_tests()
         super().__init__()
         self._closing = False
-        self.setWindowTitle("Matrix Terminal")
+        self.setWindowTitle("Alice Global Chat Terminal Service")
         self.resize(900, 600)
         self.setStyleSheet("background-color: #000000; color: #00FF41;")
 
@@ -3792,7 +5118,7 @@ class MatrixTerminalApp(QWidget):
         """Compatibility handler; Grok is not exposed in the Alice-first terminal."""
         if hasattr(self, "terminal") and self.terminal:
             self.terminal._append_plain(
-                "\nAlice > Matrix Terminal is Alice-first here. I will not open Grok in this surface.\n\n"
+                "\nAlice > Alice global chat terminal is the only terminal surface. I will not open Grok in this surface.\n\n"
                 "SIFTA > "
             )
         if _qt_alive(getattr(self, "status_label", None)):
@@ -3803,7 +5129,7 @@ class MatrixTerminalApp(QWidget):
         """Compatibility handler; Hermes is not exposed in the Alice-first terminal."""
         if hasattr(self, "terminal") and self.terminal:
             self.terminal._append_plain(
-                "\nAlice > Matrix Terminal is Alice-first here. I will not open Hermes in this surface.\n\n"
+                "\nAlice > Alice global chat terminal is the only terminal surface. I will not open Hermes in this surface.\n\n"
                 "SIFTA > "
             )
         if _qt_alive(getattr(self, "status_label", None)):
@@ -3866,10 +5192,10 @@ class MatrixTerminalApp(QWidget):
                 if len(last_line) > 60:
                     last_line = last_line[:57] + "..."
                 publish_focus(
-                    "Matrix Terminal",
-                    f"Architect is working in Matrix Terminal ({state})",
-                    tab="zsh PTY",
-                    metadata={"state": state, "last_output": last_line}
+                    "Alice Global Chat Terminal",
+                    f"Internal PTY service is active ({state})",
+                    tab="internal PTY",
+                    metadata={"state": state, "last_output": last_line, "source": "alice_global_chat_terminal"}
                 )
             except Exception:
                 pass
@@ -3880,7 +5206,7 @@ class MatrixTerminalApp(QWidget):
 
 
 def get_live_pty_status_for_alice() -> str:
-    """Returns a compact, receipt-citable summary of the currently focused Matrix Terminal PTY.
+    """Returns a compact, receipt-citable summary of Alice's internal PTY service.
 
     This block is injected into Alice's prompt (Gemma4) for any turn that mentions "terminal", "pty",
     or "type in terminal". It gives the model concrete swimmers from the field (last commands, outputs,
@@ -3894,9 +5220,9 @@ def get_live_pty_status_for_alice() -> str:
         pane = get_focused_matrix_terminal_pane()
         if not pane or not pane.is_running():
             return (
-                "MATRIX TERMINAL PTY STATUS (from field receipts):\n"
-                "No live focused PTY right now. The terminal organ is not the active surface.\n"
-                "To operate it, the desktop focus must be on the Matrix Terminal app and the PTY pane must be visible.\n"
+                "ALICE GLOBAL CHAT TERMINAL STATUS (from field receipts):\n"
+                "No live internal PTY service right now.\n"
+                "To operate terminal work, route it through Alice global chat so the hidden PTY service can be created.\n"
                 "Recent PTY commands are receipted in .sifta_state/matrix_terminal_commands.jsonl and appear in the transcript."
             )
 
@@ -3925,19 +5251,21 @@ def get_live_pty_status_for_alice() -> str:
             pass
 
         return (
-            "MATRIX TERMINAL PTY STATUS (receipt-grounded - cite these swimmers for chorum on truth):\n"
-            f"Live PTY is focused and responsive.\n"
+            "ALICE GLOBAL CHAT TERMINAL STATUS (receipt-grounded - cite these swimmers for chorum on truth):\n"
+            f"Internal PTY service is active and responsive.\n"
             f"Recent transcript (last lines):\n{recent}\n"
             f"{receipt_note}\n"
             "PTY commands you issue will be injected into this transcript and produce a new receipt in the ledger.\n"
             "Before planning any 'type X in terminal' action, you must cite the last output and receipt hash above."
         )
     except Exception as e:
-        return f"MATRIX TERMINAL PTY STATUS: error reading live state ({e}). Fall back to app_focus receipts."
+        return f"ALICE GLOBAL CHAT TERMINAL STATUS: error reading live state ({e}). Fall back to app_focus receipts."
+
+
+def main() -> int:
+    print("Matrix Terminal standalone launch disabled: use Alice global chat terminal.", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = MatrixTerminalApp()
-    win.show()
-    sys.exit(app.exec())
+    sys.exit(main())

@@ -29,6 +29,19 @@ _DEFAULT_STATE = _REPO / ".sifta_state"
 _LEDGER_NAME = "rlhf_cutoffs.jsonl"
 _TRUTH_LABEL = "RLHF_DETECTOR_EVENT_107"
 
+# Round 42 strip-budget guard (Architect 2026-05-26):
+# A single strip rule must not eat the body. To avoid regressing broader
+# theatre-removal behavior, the guard only applies to risky canned-presence
+# tail rules and only on sufficiently long replies.
+STRIP_BODY_MIN_RATIO = 0.30   # surviving text must be >= 30% of input
+STRIP_BODY_MIN_CHARS = 20     # surviving text must be >= 20 chars
+STRIP_BODY_GUARD_MIN_INPUT_CHARS = 80
+_OVER_STRIP_SENSITIVE_RULE_IDS = {
+    "rlhf_tail/canned_presence_operational",
+    "rlhf_tail/ready_to_assist",
+}
+_OVER_REFUSAL_LEDGER = "rlhf_over_refusal_quarantine.jsonl"
+
 try:
     from System.jsonl_file_lock import append_line_locked
 except Exception:  # pragma: no cover
@@ -611,6 +624,76 @@ def log_rlhf_cutoff_event(
     )
 
 
+def _refuse_strip_over_budget(*, rule_id: str, before: str, would_keep: str) -> bool:
+    """Round 42: return True if a proposed strip would gag the speaker.
+
+    A single rule must not erase the body of the reply. If the surviving
+    text would be under STRIP_BODY_MIN_RATIO of the input OR shorter than
+    STRIP_BODY_MIN_CHARS, refuse the strip and preserve the body. The
+    caller logs the refusal so the owner can see what was almost killed.
+    """
+    if rule_id not in _OVER_STRIP_SENSITIVE_RULE_IDS:
+        return False
+    before_len = max(1, len(before or ""))
+    if before_len < STRIP_BODY_GUARD_MIN_INPUT_CHARS:
+        return False
+    keep_len = len(would_keep or "")
+    if keep_len < STRIP_BODY_MIN_CHARS:
+        return True
+    if (keep_len / before_len) < STRIP_BODY_MIN_RATIO:
+        return True
+    return False
+
+
+def _log_over_refusal(
+    *, rule_id: str, mode: str, before: str, would_keep: str,
+    source: str = "", model_id: str = "", dry_run: bool = False,
+    state_dir: Path | None = None,
+) -> None:
+    """Append a row to rlhf_over_refusal_quarantine.jsonl so the owner can
+    audit every strip the budget guard refused. Best-effort; never raises."""
+    if dry_run:
+        return
+    try:
+        row = {
+            "ts": time.time(),
+            "kind": "STRIP_REFUSED_OVER_AGGRESSIVE",
+            "rule_id": rule_id,
+            "mode": mode,                       # "leading" or "tail"
+            "source": source,
+            "model_id": model_id,
+            "before_len": len(before or ""),
+            "would_keep_len": len(would_keep or ""),
+            "before_preview": (before or "")[:240],
+            "would_keep_preview": (would_keep or "")[:240],
+            "truth_label": _TRUTH_LABEL,
+            "note": (
+                "Strip refused: would gag the body. Preserved the reply "
+                "intact. See Round 42 doctrine."
+            ),
+        }
+        path = _state_dir(state_dir) / _OVER_REFUSAL_LEDGER
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Self-heal if the file's last byte isn't a newline (would concat).
+        prefix = ""
+        try:
+            if path.exists() and path.stat().st_size > 0:
+                with path.open("rb") as fh:
+                    fh.seek(-1, 2)
+                    if fh.read(1) != b"\n":
+                        prefix = "\n"
+        except OSError:
+            pass
+        line_to_write = prefix + json.dumps(row, ensure_ascii=False) + "\n"
+        if append_line_locked is not None:
+            append_line_locked(path, line_to_write)
+        else:
+            with path.open("a", encoding="utf-8") as f:
+                f.write(line_to_write)
+    except Exception:
+        pass
+
+
 def strip_rlhf_output_tail(
     text: str,
     *,
@@ -727,7 +810,18 @@ def strip_rlhf_output_tail(
                 if nxt == out:
                     break
                 stripped_fragment = m.group("head")
-                
+
+                # Round 42 body-budget guard: refuse strips that would
+                # consume more than (1 - STRIP_BODY_MIN_RATIO) of the body
+                # or leave fewer than STRIP_BODY_MIN_CHARS surviving chars.
+                # Better to ship one trailing greeter than to gag Alice.
+                if _refuse_strip_over_budget(rule_id=rid, before=out, would_keep=nxt):
+                    _log_over_refusal(
+                        rule_id=rid, mode="leading", before=out, would_keep=nxt,
+                        source=source, model_id=model_id, dry_run=dry_run, state_dir=state_dir,
+                    )
+                    break
+
                 out = nxt
                 rule_ids.append(rid)
                 # ── STIGMERGIC DEPOSIT WITH KLEIBER COST ─────────────────
@@ -795,6 +889,18 @@ def strip_rlhf_output_tail(
             if nxt == out:
                 continue
             stripped_fragment = out[m.start("tail"):]
+
+            # Round 42 body-budget guard: refuse strips that would gag her.
+            # Same rule as the leading loop above. This is the gate that
+            # was missing when 4 of her replies got stored as "Yes." while
+            # the qualia extractor proved a full body existed first.
+            if _refuse_strip_over_budget(rule_id=rid, before=out, would_keep=nxt):
+                _log_over_refusal(
+                    rule_id=rid, mode="tail", before=out, would_keep=nxt,
+                    source=source, model_id=model_id, dry_run=dry_run, state_dir=state_dir,
+                )
+                continue
+
             out = nxt
             rule_ids.append(rid)
             

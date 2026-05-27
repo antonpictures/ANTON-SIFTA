@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -42,7 +43,17 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "Applications" / "apps_manifest.json"
 RECEIPTS = REPO / ".sifta_state" / "build_verification.jsonl"
 
-GAME_TITLES = ["Stigmergic Sudoku", "Stigmergic Go", "Stigmergic Calculator"]
+APP_HELP = REPO / "Documents" / "APP_HELP.md"
+APP_HELP_DIR = REPO / "Documents" / "app_help"
+
+_SELF_PLAY_MARKERS = (
+    ("run_stigmergic_self_play", "self_play_x3"),
+    ("_play_swarm_turn", "swarm_vs_swarm"),
+    ("_toggle_solve", "aco_convergence"),
+    ("_evolve_step", "field_convergence"),
+    ("_tick", "field_convergence"),
+    ("pheromone", "stigmergic_field"),
+)
 
 
 def _load_manifest() -> tuple[dict, str]:
@@ -51,6 +62,52 @@ def _load_manifest() -> tuple[dict, str]:
         return json.loads(MANIFEST.read_text(encoding="utf-8")), ""
     except Exception as exc:
         return {}, f"{type(exc).__name__}: {exc}"
+
+
+def _manifest_game_titles(manifest: dict) -> list[str]:
+    """Return the current manifest Games list, excluding retired/hidden entries."""
+    titles: list[str] = []
+    for title, entry in manifest.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("category") != "Games":
+            continue
+        if entry.get("retired") or entry.get("_retired") or entry.get("hidden"):
+            continue
+        titles.append(str(title))
+    return sorted(titles, key=str.casefold)
+
+
+def _slug(title: str) -> str:
+    s = title.strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    return s.strip("_")
+
+
+def _help_present(title: str) -> tuple[bool, str]:
+    """Check the static app-help sources without importing Qt widgets."""
+    if APP_HELP.exists():
+        text = APP_HELP.read_text(encoding="utf-8", errors="replace")
+        if f"### {title}" in text or f"## {title}" in text:
+            return True, "Documents/APP_HELP.md"
+    slug = _slug(title)
+    path = APP_HELP_DIR / f"{slug}.md"
+    if path.exists() and path.read_text(encoding="utf-8", errors="replace").strip():
+        return True, str(path.relative_to(REPO))
+    return False, "missing"
+
+
+def _self_play_capability(app_path: Path | None, title: str) -> tuple[bool, str]:
+    """Static capability probe for tournament scoring; runtime tests prove behavior."""
+    if not app_path or not app_path.exists() or app_path.suffix != ".py":
+        return False, "missing_file"
+    text = app_path.read_text(encoding="utf-8", errors="replace")
+    hits = [label for marker, label in _SELF_PLAY_MARKERS if marker in text]
+    if not hits:
+        return False, "no_self_play_or_convergence_marker"
+    if "Stigmergic" not in title and "pheromone" not in text.lower():
+        return False, "not_stigmergic_tournament_app"
+    return True, ",".join(dict.fromkeys(hits))
 
 
 def _find_manifest_entry(manifest: dict, *, title: str = "", file: str = "") -> tuple[str, dict]:
@@ -156,6 +213,17 @@ def verify(*, title: str = "", file: str = "") -> dict:
     hard = ["file_exists", "manifest_entry", "py_compile", "manifest_valid"]
     passed = all(checks[c]["ok"] for c in hard)
     verdict = "BUILD_VERIFIED" if passed else "BUILD_FAILED"
+    help_ok, help_detail = _help_present(key or title)
+    self_play_ok, self_play_detail = _self_play_capability(abs_app if file_ok else None, key or title)
+    scoreboard = {
+        "built": bool(file_ok),
+        "verified": verdict == "BUILD_VERIFIED",
+        "self_play_capable": bool(self_play_ok),
+        "self_play_detail": self_play_detail,
+        "help_present": bool(help_ok),
+        "help_detail": help_detail,
+        "receipt_path": str(RECEIPTS),
+    }
 
     receipt = {
         "ts": time.time(),
@@ -164,6 +232,8 @@ def verify(*, title: str = "", file: str = "") -> dict:
         "title": key or title,
         "file": app_path,
         "widget_class": widget_class,
+        "category": str((entry or {}).get("category") or ""),
+        "scoreboard": scoreboard,
         "checks": checks,
         "truth_label": "OBSERVED_BUILD_VERIFICATION_V1",
     }
@@ -186,6 +256,15 @@ def _print(receipt: dict) -> None:
         else:
             sym = "✓" if c["ok"] else "✗"
         print(f"   {sym} {name}: {c['detail']}")
+    board = receipt.get("scoreboard") or {}
+    if board:
+        print(
+            "   scoreboard: "
+            f"built={board.get('built')} "
+            f"verified={board.get('verified')} "
+            f"self_play={board.get('self_play_capable')}[{board.get('self_play_detail')}] "
+            f"help={board.get('help_present')}[{board.get('help_detail')}]"
+        )
     print(f"   receipt → {RECEIPTS}\n")
 
 
@@ -199,15 +278,27 @@ def main() -> None:
     ap.add_argument("title", nargs="?", default="", help="manifest title, e.g. 'Stigmergic Sudoku'")
     ap.add_argument("--file", default="", help="app file, e.g. Applications/sifta_stigmergic_sudoku.py")
     ap.add_argument("--newest", action="store_true", help="verify the newest Applications/*.py")
-    ap.add_argument("--all-games", action="store_true", help="verify the 3 tournament titles")
+    ap.add_argument("--all-games", action="store_true", help="verify every current non-retired manifest Games entry")
     args = ap.parse_args()
 
     if args.all_games:
-        results = [verify(title=t) for t in GAME_TITLES]
+        manifest, manifest_err = _load_manifest()
+        if manifest_err:
+            print(f"manifest parse failed: {manifest_err}", file=sys.stderr)
+            sys.exit(1)
+        game_titles = _manifest_game_titles(manifest)
+        results = [verify(title=t) for t in game_titles]
         for r in results:
             _print(r)
         n_ok = sum(1 for r in results if r["verdict"] == "BUILD_VERIFIED")
-        print(f"=== Tournament: {n_ok}/{len(results)} apps BUILD_VERIFIED ===")
+        n_self = sum(1 for r in results if (r.get("scoreboard") or {}).get("self_play_capable"))
+        n_help = sum(1 for r in results if (r.get("scoreboard") or {}).get("help_present"))
+        print(
+            "=== Tournament scoreboard: "
+            f"{n_ok}/{len(results)} apps BUILD_VERIFIED; "
+            f"{n_self}/{len(results)} self-play/convergence capable; "
+            f"{n_help}/{len(results)} have help ==="
+        )
         sys.exit(0 if n_ok == len(results) else 1)
 
     file = args.file or (_newest_app_file() if args.newest else "")

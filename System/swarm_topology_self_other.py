@@ -235,8 +235,14 @@ def describe_entity(name: str) -> str:
 # return a deterministic grounded answer the small cortex must not freestyle over.
 import re as _re
 
+_IDENTITY_TERMS = (
+    r"alice|sifta|field|human|machine|model|ai|a\.?i\.?|"
+    r"conscious|real|grok|hermes|codex|claude(?:\s+code)?"
+)
+
 _IDENTITY_Q = _re.compile(
-    r"\b(?:who\s+are\s+you|what\s+are\s+you|who\s+is\s+\w+|are\s+you\s+\w+|"
+    r"\b(?:who\s+are\s+you|what\s+are\s+you|who\s+is\s+\w+|"
+    r"are\s+you\s+(?:" + _IDENTITY_TERMS + r")|"
     r"who\s+am\s+i\s+talking\s+to|identify\s+yourself)\b",
     _re.IGNORECASE,
 )
@@ -244,7 +250,8 @@ _IDENTITY_Q = _re.compile(
 
 # Narrower: questions about the FIELD's own identity (force the Alice answer).
 _SELF_IDENT_Q = _re.compile(
-    r"\b(?:who\s+are\s+you|what\s+are\s+you|are\s+you\s+\w+|"
+    r"\b(?:who\s+are\s+you|what\s+are\s+you|"
+    r"are\s+you\s+(?:" + _IDENTITY_TERMS + r")|"
     r"who\s+am\s+i\s+talking\s+to|identify\s+yourself)\b",
     _re.IGNORECASE,
 )
