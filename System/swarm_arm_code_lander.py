@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Deterministic code lander for SIFTA agent-arm builds.
+"""Compatibility code lander for SIFTA agent-arm builds.
 
-Problem (George 2026-05-25): the ``agent_arm_research`` tool dispatches arms in
-EVIDENCE mode (``swarm_tool_router`` calls ``ask_agent_arm(..., evidence_mode=
-True)``), which captures the arm's stdout as evidence *text* and writes a
-receipt — it never writes the app file. So when an arm (e.g. hermes on the
-25.8B ``alice-extra-cortex`` cortex) streams a fenced ```python block instead of
-calling its own write-file tool, nothing lands on disk.
+Problem (George 2026-05-25): an older ``agent_arm_research`` path captured the
+arm's stdout as text and wrote a receipt, but did not always land the file the
+arm generated. Round 64 removed that read-only arm route. This module remains
+as a narrow compatibility hand for the case where a live arm still streams a
+complete fenced ```python block instead of using its own write-file tool.
 
 This module closes that gap WITHOUT the external doctor authoring the app: it
 takes the arm's captured output plus the owner's build request, extracts the

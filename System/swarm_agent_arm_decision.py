@@ -3,8 +3,9 @@
 
 This module is the small action habit between "I know an arm exists" and
 "I reach for it when the task benefits from another local reasoning pass."
-It never speaks as the arm; it only returns receipted evidence for Alice to
-synthesize in her own voice.
+Round 64 makes this opt-in only: automatic read-only evidence gatherers are
+waste. If enabled for debugging, the selected arm runs live and receipts carry
+the proof.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import Any, Callable, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
-_ASYNC_LEDGER = "agent_arm_async_evidence.jsonl"
+_ASYNC_LEDGER = "agent_arm_async_results.jsonl"
 _DEDUP_WINDOW_S = 600.0
 _LEARNED_ROUTE_MIN_ATTEMPTS = 3
 
@@ -45,15 +46,15 @@ class AgentArmAsyncJob:
 
 
 def agent_arm_prepass_enabled(env: dict[str, str] | None = None) -> bool:
-    """Return True unless automatic arm prepass is explicitly disabled.
+    """Return True only when the async prepass is explicitly enabled.
 
-    Architect doctrine on 2026-05-27: Alice's arms are available by default;
-    no owner click, approval, or env unlock is required. The env var is only an
-    emergency off switch for debugging a broken arm loop.
+    Alice's arms are available by default through explicit cortex-authored
+    dispatch. The background prepass is not a gate and not a substitute for
+    receipts; it stays off unless a developer deliberately debugs that path.
     """
     source = os.environ if env is None else env
-    value = str(source.get("SIFTA_AGENT_ARM_PREPASS_ENABLE", "1")).strip().lower()
-    return value not in {"0", "false", "no", "off", "disabled"}
+    value = str(source.get("SIFTA_AGENT_ARM_PREPASS_ENABLE", "0")).strip().lower()
+    return value in {"1", "true", "yes", "on", "enabled"}
 
 
 _TASK_RE = re.compile(
@@ -132,8 +133,55 @@ def _read_jsonl_tail(path: Path, *, n: int = 80) -> list[dict[str, Any]]:
     return rows
 
 
-def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
-    """Return an arm decision for hard turns that should get evidence first."""
+def _stability_biased_arm(
+    arm_id: str,
+    reason: str,
+    *,
+    state_dir: Path | None = None,
+    owner_intent_explicit: bool = False,
+) -> tuple[str, str]:
+    try:
+        from System.swarm_stability_to_homeostasis_bridge import (
+            read_latest_clamp_signal,
+            should_enter_conserve_repair,
+        )
+        from System.swarm_arm_skills_catalog import allowed_arm_ids_for_current_stability
+        from System.swarm_owner_somatic_state import latest_somatic_signal
+
+        signal = read_latest_clamp_signal(root=state_dir)
+        if not should_enter_conserve_repair(signal):
+            somatic = latest_somatic_signal(state_dir=state_dir or ".sifta_state", max_age_s=420)
+            if somatic.get("ok") and somatic.get("is_fatigued") and not owner_intent_explicit:
+                if arm_id != "corvid_scout":
+                    return (
+                        "corvid_scout",
+                        reason
+                        + "; owner_fatigue_bias routed heavy builder to cheap local corvid_scout",
+                    )
+            return arm_id, reason
+        allowed = allowed_arm_ids_for_current_stability(
+            root=state_dir,
+            arm_ids=(arm_id, "corvid_scout"),
+        )
+        if arm_id in allowed:
+            return arm_id, reason
+        if "corvid_scout" in allowed:
+            return (
+                "corvid_scout",
+                reason
+                + "; stability_conserve_repair_bias routed heavy builder to cheap local corvid_scout",
+            )
+        return arm_id, reason + "; FIELD_FAILURE: no stability-allowed arm candidate"
+    except Exception as exc:
+        return arm_id, reason + f"; FIELD_FAILURE: stability arm bias unavailable ({type(exc).__name__})"
+
+
+def agent_arm_decision_for_turn(
+    user_text: str,
+    *,
+    state_dir: Path | None = None,
+) -> Optional[AgentArmDecision]:
+    """Return an arm decision for hard turns that should use an arm."""
 
     text = (user_text or "").strip()
     if len(text) < 24:
@@ -200,9 +248,15 @@ def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
     reason = (
         "owner explicitly named this registered agent arm"
         if explicit_arm
-        else "task benefits from a second local evidence pass before Alice answers"
+        else "task benefits from a second local arm pass before Alice answers"
     )
-    if explicit_arm and code_match:
+    arm_id, reason = _stability_biased_arm(
+        arm_id,
+        reason,
+        state_dir=state_dir,
+        owner_intent_explicit=explicit_arm is not None,
+    )
+    if explicit_arm and code_match and arm_id == explicit_arm:
         prompt = (
             "Alice-owned SIFTA app/build delegation. Do not speak as Alice. "
             "Write real files in /Users/ioanganton/Music/ANTON_SIFTA if the task asks for code; "
@@ -214,12 +268,20 @@ def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
         )
     else:
         prompt = (
-            "Evidence-only pass. Do not speak as Alice. Give concise evidence, "
-            "risks, or next-step reasoning for this owner task: "
+            "Live arm action pass. Do not speak as Alice. Do useful work if the "
+            "task asks for it, then report the receipt, risks, and next step: "
             + bounded
             + registry_context
         )
-    timeout_s = {"codex_agent": 150, "claude_agent": 150, "grok_agent": 150, "corvid_scout": 30}.get(arm_id, 75)
+    # Round 100 (2026-05-28): bumped from 150s to 300s for the heavy builder
+    # arms (claude/codex/qwen/cline) after Alice's verified complaint that
+    # codex+claude were timing out at 150s — receipts f8469daa, 2c636406,
+    # d8be46e7 in agent_arm_receipts.jsonl. Decision-layer default is what
+    # her autonomous cortex sends when it doesn't supply an explicit
+    # timeout_s; the router still clamps to its own per-arm ceiling (1200s).
+    # Grok and corvid_scout stay shorter because their tasks are usually
+    # one-shot probes, not multi-file builds.
+    timeout_s = {"codex_agent": 300, "claude_agent": 300, "grok_agent": 150, "qwen_agent": 300, "cline_agent": 300, "corvid_scout": 30}.get(arm_id, 75)
     return AgentArmDecision(arm_id=arm_id, prompt=prompt, reason=reason, timeout_s=timeout_s)
 
 
@@ -233,8 +295,8 @@ def _tool_call_for_decision(decision: AgentArmDecision):
             "prompt": decision.prompt,
             "timeout_s": str(decision.timeout_s),
             "cost_justification": (
-                "Alice chose a registered evidence arm because this task needs "
-                "a second local reasoning pass before her final answer."
+                "Alice chose a registered arm because this task needs "
+                "a second local work pass before her final answer."
             ),
         },
         raw_match="[AUTO_AGENT_ARM_PREPASS]",
@@ -309,16 +371,16 @@ def schedule_async_agent_arm_prepass(
     force: bool = False,
     env: dict[str, str] | None = None,
 ) -> AgentArmAsyncJob | None:
-    """Schedule an arm evidence pass without blocking Alice's Talk turn.
+    """Schedule an opt-in arm result pass without blocking Alice's Talk turn.
 
     The scheduled row is written immediately. The result row lands later in
-    ``agent_arm_async_evidence.jsonl`` and is surfaced through
+    ``agent_arm_async_results.jsonl`` and is surfaced through
     ``summary_for_prompt`` on subsequent turns.
     """
 
     if not force and not agent_arm_prepass_enabled(env):
         return None
-    decision = agent_arm_decision_for_turn(user_text)
+    decision = agent_arm_decision_for_turn(user_text, state_dir=state_dir)
     if decision is None:
         return None
 
@@ -361,11 +423,11 @@ def schedule_async_agent_arm_prepass(
             tool_result = run(decision, owner_present)
             feedback = str(getattr(tool_result, "feedback_for_alice", "") or "").strip()
             if bool(getattr(tool_result, "executed", False)):
-                status = "EVIDENCE_CAPTURED"
+                status = "ARM_RESULT_CAPTURED"
             elif feedback:
-                status = "PARTIAL_EVIDENCE"
+                status = "PARTIAL_ARM_RESULT"
             else:
-                status = "NO_USABLE_EVIDENCE"
+                status = "NO_ARM_RESULT"
             _append_jsonl(
                 ledger,
                 _result_row(
@@ -415,7 +477,7 @@ def summary_for_prompt(
     max_rows: int = 3,
     max_age_s: float = 1800.0,
 ) -> str:
-    """Return recent async arm evidence for Alice's next cortex turn."""
+    """Return recent async arm results for Alice's next cortex turn."""
 
     ledger = Path(state_dir or _STATE) / _ASYNC_LEDGER
     now = time.time()
@@ -434,14 +496,14 @@ def summary_for_prompt(
     if not rows:
         return ""
     lines = [
-        "ASYNC AGENT ARM EVIDENCE BUFFER:",
-        "These rows are receipted evidence from my arms. They are not my voice; I synthesize them in first person.",
+        "ASYNC AGENT ARM RESULT BUFFER:",
+        "These rows are receipted results from my arms. They are not my voice; I synthesize them in first person.",
     ]
     for row in rows:
         receipt = row.get("receipt_id") or row.get("job_id") or "pending"
         lines.append(
-            f"- arm={row.get('arm_id')} status={row.get('status')} receipt={receipt} "
-            f"evidence={str(row.get('feedback_tail') or row.get('error') or '')[:1200]}"
+        f"- arm={row.get('arm_id')} status={row.get('status')} receipt={receipt} "
+            f"result={str(row.get('feedback_tail') or row.get('error') or '')[:1200]}"
         )
     return "\n".join(lines)
 
@@ -457,11 +519,11 @@ def format_agent_arm_prepass_context(decision: AgentArmDecision, tool_result) ->
         receipt = str(result.get("receipt_id") or "")
         status = str(result.get("status") or status)
     return (
-        "AGENT ARM DECISION PREPASS (receipted evidence, not final voice):\n"
+        "AGENT ARM DECISION PREPASS (receipted arm result, not final voice):\n"
         f"- selected_arm={decision.arm_id}\n"
         f"- reason={decision.reason}\n"
         f"- status={status}\n"
         f"- receipt={receipt or 'tool_router_trace'}\n"
-        "- Alice must now synthesize this evidence in first person and cite the proof token if she claims the arm ran.\n"
+        "- Alice must now synthesize this result in first person and cite the receipt if she claims the arm ran.\n"
         f"{feedback}"
     )

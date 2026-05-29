@@ -89,7 +89,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 import numpy as np
 
@@ -98,15 +98,17 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.swarm_kernel_config import *
+from System.swarm_stigmergic_computer_use import get_recent_computer_use_traces
 from PyQt6.QtCore import Qt, QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QTextBlockFormat, QPixmap, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
+    QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
     QLineEdit, QPushButton, QSizePolicy, QSplitter, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_global_chat_view_model import collapse_text_after_paragraphs
 from System.swarm_kernel_identity import owner_display_name, owner_name, preferred_camera_label
 try:
     from System.high_fidelity_terminal_view import HighFidelityTerminalView
@@ -280,6 +282,8 @@ class _WallpaperTextEdit(QTextEdit):
     selection, scrolling, and text rendering.
     """
 
+    localAnchorClicked = pyqtSignal(str)
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._wallpaper_pixmap = QPixmap()
@@ -315,12 +319,29 @@ class _WallpaperTextEdit(QTextEdit):
                 x = (rect.width() - scaled.width()) // 2
                 y = (rect.height() - scaled.height()) // 2
                 painter.drawPixmap(x, y, scaled)
-                # Mild wash for transcript readability; transparent enough
-                # that the image remains visible.
-                painter.fillRect(rect, QColor(4, 6, 12, 78))
+                # Round 58 readability: the wallpaper is identity, not the
+                # transcript surface. Keep a faint trace of it, but put an
+                # IDE-grade dark plate behind every chat line so text never
+                # fights the bright matrix image.
+                painter.fillRect(rect, QColor(5, 7, 14, 218))
             finally:
                 painter.end()
         super().paintEvent(event)
+
+    def mouseReleaseEvent(self, event: Any) -> None:  # type: ignore[override]
+        try:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            anchor = str(self.anchorAt(pos) or "")
+        except Exception:
+            anchor = ""
+        if anchor:
+            try:
+                self.localAnchorClicked.emit(anchor)
+                event.accept()
+                return
+            except Exception:
+                pass
+        super().mouseReleaseEvent(event)
 
 
 def _json_tool_call_block(tool_name: str, params: Dict[str, Any]) -> str:
@@ -433,6 +454,77 @@ def _allow_pre_cortex_chat_reflexes() -> bool:
         "yes",
         "on",
     }
+
+
+def _typed_direct_key_command_to_matrix_pty(
+    user_text: str,
+    *,
+    typed_turn: bool,
+    pane: Any = None,
+) -> dict[str, Any]:
+    """Route a typed owner keystroke command to the focused Matrix PTY.
+
+    This is an effector handoff, not a chat reply. Spoken turns stay with the
+    cortex because "press enter" is too easy for STT to hallucinate.
+    """
+    if not typed_turn:
+        return {"executed": False, "reason": "not_typed_turn"}
+    try:
+        from System.swarm_direct_command_router import classify_as_direct_command
+
+        command = classify_as_direct_command(user_text)
+    except Exception as exc:
+        return {
+            "executed": False,
+            "reason": "router_unavailable",
+            "error": type(exc).__name__,
+        }
+    if not getattr(command, "is_direct", False):
+        return {"executed": False, "reason": "not_direct_key_command"}
+    if getattr(command, "command_type", "") != "keystroke":
+        return {"executed": False, "reason": "not_keystroke_command"}
+    key_text = str(getattr(command, "key_or_text", "") or "")
+    if not key_text:
+        return {"executed": False, "reason": "empty_keystroke"}
+
+    if pane is None:
+        try:
+            from Applications.sifta_matrix_terminal import get_focused_matrix_terminal_pane
+
+            pane = get_focused_matrix_terminal_pane()
+        except Exception as exc:
+            return {
+                "executed": False,
+                "reason": "matrix_terminal_unavailable",
+                "error": type(exc).__name__,
+            }
+    if pane is None:
+        return {"executed": False, "reason": "no_focused_matrix_pty"}
+
+    payload = {
+        "raw_input": user_text,
+        "command_type": getattr(command, "command_type", ""),
+        "key_repr": repr(key_text),
+        "source": "talk_widget_typed_turn",
+    }
+    try:
+        append_trace = getattr(pane, "_append_process_trace", None)
+        if callable(append_trace):
+            append_trace(
+                f"Talk direct key -> Matrix PTY: {user_text}",
+                kind="direct_key",
+                action="talk_direct_key_command",
+                payload=payload,
+            )
+        pane.write_bytes(key_text.encode("utf-8", "replace"))
+    except Exception as exc:
+        return {
+            "executed": False,
+            "reason": "pty_write_failed",
+            "error": type(exc).__name__,
+            "payload": payload,
+        }
+    return {"executed": True, "reason": "direct_key_written", "payload": payload}
 
 
 def _owner_direct_read_tool_request(user_text: str) -> str:
@@ -696,9 +788,9 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
     # George 2026-05-24: "Alice should be able to talk to Hermes." Hermes is an
     # external AGENT ARM, not a Matrix PTY surface (start_hermes_cli is Alice-first
     # and deliberately refuses to open Hermes there). Alice reaches it through the
-    # receipt-first launcher: agent_arm_research → ask_agent_arm("hermes_agent",
-    # evidence_mode=True), which runs `hermes chat -Q ... --query <prompt>` and
-    # captures Hermes' output as EVIDENCE (Hermes' voice, never claimed as Alice's).
+    # receipt-first launcher: agent_arm_research → ask_agent_arm("hermes_agent"),
+    # which runs `hermes chat -Q ... --query <prompt>` live and captures receipts
+    # plus output (Hermes' voice, never claimed as Alice's).
     # Deterministic route so "ask hermes <question>" reliably fires the tool instead
     # of depending on the cortex to choose it (the same fix that made Grok reliable).
     # ER=EPR bridge, not identity merge: Hermes stays an external cortex organ.
@@ -1540,7 +1632,7 @@ def _append_cortex_bypass_router_trace(
     action_taken: str,
     reply_head: str = "",
 ) -> None:
-    """Append deterministic router decisions for replay and audit."""
+    """Append legacy bypass-router decisions for replay and audit."""
     try:
         root = _state_root()
         root.mkdir(parents=True, exist_ok=True)
@@ -1657,8 +1749,8 @@ def _tool_fiction_guard_reply(user_text: str, brain_text: str) -> str:
         )
     return (
         "No action receipt yet: I did not execute that tool action because my brain "
-        "reply contained prose instead of a real TOOL_CALL. I need the deterministic "
-        "router to perform it and leave a receipt."
+        "reply contained prose instead of a real TOOL_CALL. I need the receipt-backed "
+        "tool path to perform it and leave a receipt."
     )
 
 
@@ -4205,6 +4297,29 @@ _BROCA_LOG  = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
 _WERN_LOG   = _REPO / ".sifta_state" / "wernicke_semantics.jsonl"
 _NUTRIENT_LOG = _REPO / ".sifta_state" / "digested_nutrients.jsonl"
 _CORTEX_FIELD_PATH = _REPO / ".sifta_state" / "cortex_routing_field.json"
+
+# r137 — Computer use as first-class stigmergic context for the cortex
+_COMPUTER_USE_LOG = _REPO / ".sifta_state" / "stigmergic_computer_use.jsonl"
+
+
+def _get_recent_computer_use_context(limit: int = 8) -> str:
+    """
+    r137 wiring: Pull recent owner UI actions from the stigmergic computer use organ
+    so the cortex sees what the human has actually been doing on the machine.
+    This turns the owner's computer use into readable context for the brain,
+    exactly as visual_stigmergy and broca logs are used.
+    """
+    traces = get_recent_computer_use_traces(limit)
+    if not traces:
+        return ""
+    lines = ["Recent owner computer use (stigmergic traces from the environment):"]
+    for t in traces:
+        ts = t.get("ts")
+        action = t.get("action")
+        target = t.get("target") or ""
+        intent = t.get("intent") or ""
+        lines.append(f"- {action} on {target[:60]} (inferred: {intent})")
+    return "\n".join(lines) + "\n\n"
 
 # ── Cortex routing field (CG55M 2026-05-11, deepened) ─────────────
 # Tracks model × query-type combinations with latency awareness.
@@ -7150,10 +7265,50 @@ def _current_system_prompt(
             repo_root=_REPO,
             sanitize_engrams=_sanitize_memory_block_for_alice,
         )
-        _remember_memory_card_relevance(user_text or "", _memory_card)
+        _memory_card_has_relevant = _remember_memory_card_relevance(user_text or "", _memory_card)
         _memory_block = _format_memory_card(_memory_card)
         if _memory_block:
             parts.append(_memory_block)
+        try:
+            from System.swarm_honest_uncertainty import (
+                evaluate as _honest_uncertainty_evaluate,
+                write_unknown as _honest_uncertainty_write_unknown,
+            )
+
+            _hu_signal = _honest_uncertainty_evaluate(
+                user_text=user_text or "",
+                memory_card_has_relevant=bool(_memory_card_has_relevant),
+                memory_card_excerpts=_memory_block,
+            )
+            if _hu_signal.is_uncertain and _hu_signal.block_text:
+                if _hu_signal.question_shape in ("metabolic_state", "sensor_state", "cortex_state"):
+                    _hu_suggested_arm = "corvid_scout"
+                elif _hu_signal.question_shape in ("schedule_lookup", "next_event_lookup"):
+                    _hu_suggested_arm = "codex_agent"
+                elif _hu_signal.suggested_action == "dispatch_arm":
+                    _hu_suggested_arm = "codex_agent"
+                else:
+                    _hu_suggested_arm = None
+                _unknown_receipt = _honest_uncertainty_write_unknown(
+                    _state_root(),
+                    topic=_hu_signal.question_shape,
+                    owner_text=user_text or "",
+                    attempted_sources=[
+                        "memory_card",
+                        "work_receipts.jsonl",
+                        "agent_arm_receipts.jsonl",
+                        "matrix_terminal_process_trace.jsonl",
+                    ],
+                    suggested_arm=_hu_suggested_arm,
+                    cortex_label="talk_sysprompt_honest_uncertainty",
+                )
+                parts.append(
+                    _hu_signal.block_text
+                    + f"\nUNKNOWN_LEDGER_RECEIPT: {_unknown_receipt}"
+                )
+        except Exception:
+            pass
+        if _memory_block:
             _skills_doctrine = (
                 "ARM SKILL FILE DOCTRINE:\n"
                 "You have arms. Each arm has a skill file in skills/. "
@@ -7236,6 +7391,48 @@ def _current_system_prompt(
         _field_slo = _field_slo_summary().strip()
         if _field_slo:
             parts.append(_field_slo)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_pheromone_freshness_loop import (
+            summary_for_prompt as _pheromone_freshness_summary,
+        )
+
+        _pheromone_freshness = _pheromone_freshness_summary(_state_root()).strip()
+        if _pheromone_freshness:
+            parts.append(_pheromone_freshness)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_body_writer_tick import (
+            summary_for_prompt as _body_writer_tick_summary,
+        )
+
+        _body_writer_tick = _body_writer_tick_summary(_state_root()).strip()
+        if _body_writer_tick:
+            parts.append(_body_writer_tick)
+    except Exception:
+        pass
+
+    # Round 83 — Stigmergic memory field: the act of looking IS the receipt.
+    # We call associative_recall_prompt_block on EVERY turn (no structural
+    # gate). Internally it always writes a row to
+    # .sifta_state/hippocampus/recall_attempts.jsonl, and emits either:
+    #   - the full match block when top_score crosses inject_threshold, OR
+    #   - a one-line "attempt receipted, no strong match" self-narrate.
+    # Either way the cortex sees what the hippocampus did. The miss is data.
+    try:
+        from System.swarm_hippocampus import associative_recall_prompt_block
+
+        _recall_block = associative_recall_prompt_block(
+            query=user_text or "",
+            state_dir=_state_root(),
+            k=3,
+        ).strip()
+        if _recall_block:
+            parts.append(_recall_block)
     except Exception:
         pass
 
@@ -8918,6 +9115,10 @@ def _is_primary_cortex_model(model_id: str = "") -> bool:
         or mid.startswith(local_prefix)
         or mid.startswith("grok:")
         or mid.startswith("grok-")
+        or mid.startswith("claude:")
+        or mid.startswith("claude-")
+        or mid.startswith("codex:")
+        or mid.startswith("codex-")
         or any(mid.startswith(tag) for tag in clean_alice_tags)
         or upstream_family in mid
     )
@@ -8935,7 +9136,14 @@ def _is_unfiltered_dialogue_model(model_id: str = "") -> bool:
         "alice-m5-cortex-8b-6.3gb",
         "alice-extra-cortex-25.8b-17gb",
     )
-    if mid.startswith("grok:") or mid.startswith("grok-"):
+    if (
+        mid.startswith("grok:")
+        or mid.startswith("grok-")
+        or mid.startswith("claude:")
+        or mid.startswith("claude-")
+        or mid.startswith("codex:")
+        or mid.startswith("codex-")
+    ):
         return True
     return any(mid.startswith(tag) for tag in clean_alice_tags) or _is_external_uncensored_limb(mid) or any(
         marker in mid for marker in ("uncensored", "aggressive", "abliterated")
@@ -11319,9 +11527,38 @@ class _TTSWorker(QThread):
                         self.failed.emit(f"voice backend crashed: {exc}")
                         return
                     if not ok:
-                        self.failed.emit(
-                            f"voice backend {getattr(backend, 'name', '?')} returned no speech"
-                        )
+                        # Round 111 — pull the real failure reason if the
+                        # backend exposes it, AND rate-limit identical repeats
+                        # so a persistent TTS bug doesn't drown out Alice.
+                        try:
+                            reason = ""
+                            if hasattr(backend, "last_failure_reason"):
+                                reason = (backend.last_failure_reason() or "").strip()
+                        except Exception:
+                            reason = ""
+                        name = getattr(backend, "name", "?")
+                        if reason:
+                            full_msg = f"voice backend {name} returned no speech ({reason})"
+                        else:
+                            full_msg = f"voice backend {name} returned no speech"
+                        # Suppress the chat-emit if the SAME failure was
+                        # surfaced within the last 30s. The console log still
+                        # gets every event via _log_failure inside the backend.
+                        try:
+                            last_msg = getattr(self, "_last_voice_failure_msg", "")
+                            last_ts = float(getattr(self, "_last_voice_failure_ts", 0.0))
+                            now_ts = time.time() if "time" in dir() else 0.0
+                        except Exception:
+                            last_msg, last_ts, now_ts = "", 0.0, 0.0
+                        try:
+                            import time as _time
+                            now_ts = _time.time()
+                        except Exception:
+                            pass
+                        if full_msg != last_msg or (now_ts - last_ts) >= 30.0:
+                            self._last_voice_failure_msg = full_msg
+                            self._last_voice_failure_ts = now_ts
+                            self.failed.emit(full_msg)
                         return
                     self.spoken.emit(True)
                     return
@@ -11480,6 +11717,16 @@ def _build_swarm_context(user_text: str = "") -> str:
         thermo_context = _thermo_prompt_context()
         if thermo_context:
             chunks.append("  processing thermodynamics: " + thermo_context[:420])
+    except Exception:
+        pass
+
+    # r138 — Computer use stigmergic traces (Codex r131 doctrine, r136 organ, r137 reader).
+    # The owner's UI actions are now first-class context for the cortex through this
+    # live call site. Keep this wired; the helper alone is not enough.
+    try:
+        cu_ctx = _get_recent_computer_use_context(limit=8)
+        if cu_ctx:
+            chunks.append("  " + cu_ctx.rstrip()[:600])
     except Exception:
         pass
 
@@ -12407,6 +12654,50 @@ def _log_turn(
             )
     except Exception:
         pass
+
+
+def _markdown_to_html(text: str) -> str:
+    import html
+    import re
+
+    # Escape HTML to prevent injection
+    escaped = html.escape(text)
+
+    # 1. Code blocks: ```language ... ```
+    def replace_code_block(match):
+        lang = match.group(1) or ""
+        code = match.group(2)
+        # Keep clean monospace
+        return f'<pre style="background-color: #0d0f18; color: #a9b1d6; border: 1px solid #2d2a41; padding: 10px; font-family: \'Menlo\', \'Monaco\', \'Consolas\', monospace; font-size: 13px; line-height: 1.4; margin: 6px 0px; border-radius: 4px;">{code}</pre>'
+
+    escaped = re.sub(r'```(?:[a-zA-Z0-9_\-]+)?\n(.*?)\n```', replace_code_block, escaped, flags=re.DOTALL)
+    escaped = re.sub(r'```(.*?)\n```', replace_code_block, escaped, flags=re.DOTALL)
+
+    # 2. Inline code: `code`
+    escaped = re.sub(r'`(.*?)`', r'<code style="background-color: #1a1b26; color: #f7768e; padding: 2px 4px; font-family: \'Menlo\', monospace; font-size: 12px; border-radius: 3px; border: 1px solid #2d2a41;">\1</code>', escaped)
+
+    # 3. Bold: **text**
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+
+    # 4. Italic: *text*
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+
+    # 5. Receipt chips: e.g. r57-bac2d2e29b0 or UUIDs
+    def replace_receipt(match):
+        r_id = match.group(0)
+        return f'<span style="background-color: #1e1e2e; color: #73daca; border: 1px solid #414868; padding: 2px 6px; font-family: \'Menlo\', monospace; font-size: 11px; border-radius: 3px;">{r_id}</span>'
+
+    escaped = re.sub(r'\b(r\d+-[a-f0-9]+)\b', replace_receipt, escaped)
+    escaped = re.sub(r'\b([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\b', replace_receipt, escaped)
+
+    # 6. Paragraph lines: convert newlines to <br/> (but not inside <pre>)
+    parts = re.split(r'(<pre.*?>.*?</pre>)', escaped, flags=re.DOTALL)
+    for i in range(len(parts)):
+        if not parts[i].startswith('<pre'):
+            parts[i] = parts[i].replace('\n', '<br/>')
+    escaped = "".join(parts)
+
+    return escaped
 
 
 def _global_chat_payload_from_line(line: str) -> Optional[Dict[str, Any]]:
@@ -13341,6 +13632,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── Toolbar: conversation controls ─────────────────────────────────
         bar = QHBoxLayout()
 
+        self._planning_mode_toggle = QCheckBox("Plan")
+        self._planning_mode_toggle.setObjectName("planning_mode_toggle")
+        self._planning_mode_toggle.setChecked(False)
+        self._planning_mode_toggle.setToolTip(
+            "Planning Mode: Alice's cortex composes an append-only plan before major work. "
+            "This is not an approval gate."
+        )
+        self._planning_mode_toggle.setStyleSheet(
+            "QCheckBox { color: rgb(210,220,255); font-size: 12px; padding: 2px 8px; }"
+            "QCheckBox::indicator { width: 14px; height: 14px; }"
+        )
+        bar.addWidget(self._planning_mode_toggle)
+
         bar.addStretch(1)
 
         # Architect 2026-05-14 — Awareness Mirror moved to bottom-left
@@ -13363,8 +13667,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── Splitter: chat transcript (big) + side info (narrow) ───────────
         split = QSplitter(Qt.Orientation.Horizontal)
 
+        self._rendered_messages = []
+        self._loading_history = False
         self._chat = _WallpaperTextEdit()
         self._chat.setReadOnly(True)
+        # QTextBrowser exposes setOpenExternalLinks()/anchorClicked; QTextEdit
+        # does not on all PyQt6 builds. Guard these optional browser hooks so
+        # receipt-link support cannot abort the whole Alice panel at startup.
+        if hasattr(self._chat, "setOpenExternalLinks"):
+            self._chat.setOpenExternalLinks(False)
+        if hasattr(self._chat, "anchorClicked"):
+            self._chat.anchorClicked.connect(self._on_chat_anchor_clicked)
+        if hasattr(self._chat, "localAnchorClicked"):
+            self._chat.localAnchorClicked.connect(self._on_chat_anchor_clicked)
         # Architect 2026-05-13 — owner reports he cannot copy-paste from the
         # chat history ("we need a copy paste way"). setReadOnly(True) was
         # leaving the QTextEdit in default-flag state which Qt sometimes
@@ -13396,22 +13711,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._chat.setPalette(_chat_palette)
         except Exception:
             pass
-        # Architect 2026-05-13 09:45 — third attempt. Earlier tries failed
-        # because Qt's stylesheet `background-color` overrides the
-        # palette brush; if we leave any background in the stylesheet
-        # for QTextEdit, the QPixmap never paints. Fix: stylesheet only
-        # owns text styling + border + padding (NO background-color or
-        # -image), and the QPixmap goes onto the viewport's palette Base
-        # brush. Stylesheet on the viewport child is cleared explicitly
-        # so it can't fight the brush either.
+        # Architect 2026-05-27 — clean styling closer to VS Code/Cursor
+        # default font size is 14px normal instead of 20px bold.
+        # Round 88 — OLED black + single cyan-green accent (#00d4aa).
+        # Steve Jobs minimal: true black, hairline borders, generous padding,
+        # one accent color reserved for focus / active / send. Kept transparent
+        # so the optional wallpaper still shows through; bg color is the
+        # fallback when no wallpaper loads.
         self._chat.setStyleSheet(
             "QTextEdit { "
-            "background: transparent; "
-            "color: rgb(255, 255, 255); "
-            "border: 1px solid rgb(45,42,65); border-radius: 6px; "
-            "font-family: 'Helvetica Neue'; font-size: 20px; "
-            "font-weight: 700; "
-            "padding: 12px; "
+            "background: #000000; "
+            "color: #e8e8e8; "
+            "border: 1px solid #1f1f1f; border-radius: 12px; "
+            "font-family: 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; "
+            "font-weight: normal; "
+            "padding: 18px; "
             "}"
         )
         try:
@@ -13429,10 +13743,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         self._side.setMaximumBlockCount(200)
+        # Round 88 — process trace panel: pure black, dim mono, hairline border.
         self._side.setStyleSheet(
-            "QPlainTextEdit { background: rgb(6,8,14); color: rgb(170,180,210); "
-            "border: 1px solid rgb(45,42,65); border-radius: 6px; "
-            "font-family: 'Menlo'; font-size: 11px; padding: 6px; }"
+            "QPlainTextEdit { background: #0a0a0a; color: #888888; "
+            "border: 1px solid #1f1f1f; border-radius: 8px; "
+            "font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px; padding: 10px; }"
         )
         split.addWidget(self._side)
         split.setStretchFactor(0, 4)
@@ -13451,11 +13766,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # otherwise. Architect can collapse with the toggle.
         self._thinking_header_btn = QPushButton("💭  hide thinking")
         self._thinking_header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Round 88 — thinking toggle: monochrome restful, accent on hover only.
         self._thinking_header_btn.setStyleSheet(
-            "QPushButton { background: rgba(28,22,56,0.7); color: #BB9AF7; "
-            "border: 1px solid #5d4a87; border-radius: 8px; padding: 4px 12px; "
+            "QPushButton { background: #0a0a0a; color: #888888; "
+            "border: 1px solid #1f1f1f; border-radius: 8px; padding: 4px 12px; "
             "font-size: 11px; font-weight: 600; text-align: left; }"
-            "QPushButton:hover { background: rgba(187,154,247,0.18); }"
+            "QPushButton:hover { background: #111111; color: #00d4aa; border: 1px solid #00d4aa; }"
         )
         self._thinking_header_btn.clicked.connect(self._toggle_thinking_panel)
         layout.addWidget(self._thinking_header_btn)
@@ -13477,12 +13793,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         # George 2026-05-24: the grey italic trace was hard to read. Bright,
         # high-contrast, non-italic, slightly larger + darker backing for legibility.
+        # Round 88 — thinking panel: deep black, white text, hairline.
         self._thinking_panel.setStyleSheet(
-            "QPlainTextEdit { background: rgba(8,10,18,0.92); "
-            "color: rgb(215,242,255); "
-            "border: 1px solid #4a6b7a; border-radius: 6px; "
-            "font-family: 'Helvetica Neue'; font-size: 14px; "
-            "font-style: normal; line-height: 1.4; padding: 10px; }"
+            "QPlainTextEdit { background: rgba(10,10,10,0.95); "
+            "color: #e8e8e8; "
+            "border: 1px solid #1f1f1f; border-left: 2px solid #00d4aa; border-radius: 8px; "
+            "font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 13px; "
+            "font-style: normal; line-height: 1.5; padding: 12px 14px; }"
         )
         self._thinking_panel.setFixedHeight(140)
         self._thinking_panel.setVisible(True)   # George 2026-05-23: thoughts VISIBLE by default — show her reasoning, not a spinner
@@ -13493,9 +13810,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._terminal_frame_label = QLabel(
             "Focused terminal viewport inside Alice global chat (live, not a separate window)"
         )
+        # Round 88 — terminal viewport label: accent, mono, no chrome.
         self._terminal_frame_label.setStyleSheet(
-            "QLabel { color: rgb(190,225,255); font-family: 'Menlo'; "
-            "font-size: 11px; font-weight: 700; padding: 2px 4px; }"
+            "QLabel { color: #00d4aa; font-family: 'SF Mono', 'Menlo', monospace; "
+            "font-size: 11px; font-weight: 600; padding: 2px 4px; letter-spacing: 0.5px; }"
         )
         self._terminal_frame_label.setVisible(False)
         layout.addWidget(self._terminal_frame_label)
@@ -13550,11 +13868,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._text_input = QLineEdit()
         self._text_input.setPlaceholderText("Type to Alice…")
         self._text_input.setMinimumHeight(36)
+        # Round 88 — composer: OLED black, hairline default, accent on focus.
         self._text_input.setStyleSheet(
-            "QLineEdit { background: rgb(8,10,18); color: rgb(235,240,255); "
-            "border: 1px solid rgb(65,70,100); border-radius: 8px; "
-            "font-family: 'Helvetica Neue'; font-size: 14px; padding: 8px 10px; }"
-            "QLineEdit:focus { border: 1px solid rgb(122,162,247); }"
+            "QLineEdit { background: #0a0a0a; color: #e8e8e8; "
+            "border: 1px solid #2a2a2a; border-radius: 10px; "
+            "font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 14px; padding: 10px 14px; }"
+            "QLineEdit:focus { border: 1px solid #00d4aa; }"
         )
         self._text_input.returnPressed.connect(self._submit_text_input)
         text_row.addWidget(self._text_input, 1)
@@ -13567,11 +13886,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._attach_btn.setToolTip(
             "Drag an image onto the chat — or click to open a file picker."
         )
+        # Round 88 — drop button: monochrome restful, accent on hover.
         self._attach_btn_default_style = (
-            "QPushButton { background: rgb(45,42,65); color: rgb(200,210,230); "
-            "font-weight: 700; border-radius: 6px; padding: 0 10px; "
+            "QPushButton { background: #0a0a0a; color: #888888; "
+            "border: 1px solid #2a2a2a; "
+            "font-weight: 600; border-radius: 8px; padding: 0 12px; "
             "font-size: 12px; }"
-            "QPushButton:hover { background: rgb(65,62,85); }"
+            "QPushButton:hover { background: #111111; color: #00d4aa; border: 1px solid #00d4aa; }"
         )
         self._attach_btn.setMinimumHeight(36)
         self._attach_btn.setMaximumHeight(36)
@@ -13584,12 +13905,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._send_btn.setMinimumHeight(36)
         self._send_btn.setMaximumHeight(36)
         self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Round 88 — send button: solid cyan-green accent, black text. The ONE
+        # spot of color in the whole composer row.
         self._send_btn.setStyleSheet(
-            "QPushButton { background: rgb(56,101,190); color: white; "
-            "font-weight: 700; border-radius: 6px; padding: 0 14px; "
-            "font-size: 12px; }"
-            "QPushButton:hover { background: rgb(79,127,226); }"
-            "QPushButton:disabled { background: rgb(45,42,65); color: rgb(120,130,160); }"
+            "QPushButton { background: #00d4aa; color: #000000; "
+            "font-weight: 700; border-radius: 8px; padding: 0 18px; "
+            "font-size: 12px; letter-spacing: 0.3px; }"
+            "QPushButton:hover { background: #00f0c0; }"
+            "QPushButton:disabled { background: #0a0a0a; color: #4a4a4a; border: 1px solid #1f1f1f; }"
         )
         self._send_btn.clicked.connect(self._submit_text_input)
         text_row.addWidget(self._send_btn)
@@ -13620,10 +13943,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._level.setValue(0)
         self._level.setTextVisible(False)
         self._level.setMaximumHeight(40)
+        # Round 88 — VAD level meter: black trough, cyan-green accent fill.
         self._level.setStyleSheet(
-            "QProgressBar { background: rgb(8,10,18); border: 1px solid rgb(45,42,65); "
-            "border-radius: 6px; }"
-            "QProgressBar::chunk { background: rgb(0,255,200); border-radius: 4px; }"
+            "QProgressBar { background: #0a0a0a; border: 1px solid #1f1f1f; "
+            "border-radius: 8px; }"
+            "QProgressBar::chunk { background: #00d4aa; border-radius: 6px; }"
         )
         bottom.addWidget(self._level, 2)
 
@@ -13784,6 +14108,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.make_timer(2000, self._poll_whatsapp_inbox)
         # Event 86: Poll Internal Drives generated by the Consciousness Engine
         self.make_timer(5000, self._poll_internal_drives)
+        # Round 79: field freshness heartbeat. The append-only pheromone
+        # freshness row lets Alice see which ledgers are hot or cold without
+        # turning that observation into a chat template or approval gate.
+        self.make_timer(60000, self._pheromone_freshness_tick)
+        # Round 85: body writer tick heartbeat. This is the missing nerve
+        # for Round 84's producer organ: basal_ganglia + fractal_pheromone
+        # write their own receipts, then the Round 79 freshness reader has
+        # live rows to smell. This timer is self-rescheduling so its rhythm
+        # can follow the last tick receipt instead of being a fixed law.
+        self._body_writer_tick_timer = QTimer(self)
+        self._body_writer_tick_timer.setSingleShot(True)
+        self._body_writer_tick_timer.timeout.connect(self._body_writer_tick)
+        self._schedule_body_writer_tick(initial=True)
         self._level_target = 0.0
         self._level_current = 0.0
 
@@ -13830,6 +14167,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _load_global_chat_history_on_open(self, limit: int = 18) -> None:
         """Render recent shared Alice ledger rows so Talk never opens empty."""
+        self._loading_history = True
         try:
             if not _CONVO_LOG.exists():
                 _CONVO_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -13851,6 +14189,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._global_chat_offset = _CONVO_LOG.stat().st_size
         except Exception:
             self._global_chat_offset = 0
+        finally:
+            self._loading_history = False
+            self._render_all_messages()
 
     def _poll_global_chat_ledger(self) -> None:
         """Live-tail external turns from the one shared conversation ledger."""
@@ -13879,6 +14220,127 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if not surface or surface in {"talk_to_alice", "talk to alice", "alice"}:
                 continue
             self._render_global_chat_payload(payload, source="poll")
+
+    def _render_all_messages(self) -> None:
+        """Compatibility hook for the future card renderer.
+
+        The current QTextEdit path renders rows as they arrive. A peer patch
+        introduced `_rendered_messages` and calls this after startup history;
+        keeping this no-op prevents a startup crash until the full QListView /
+        card renderer replaces the append path.
+        """
+        return None
+
+    def _on_chat_anchor_clicked(self, url: Any) -> None:
+        """Open safe chat anchors without crashing the Talk surface."""
+        try:
+            target = url.toString() if hasattr(url, "toString") else str(url)
+            local = url.toLocalFile() if hasattr(url, "toLocalFile") else ""
+        except Exception:
+            target = str(url)
+            local = ""
+        try:
+            if target.startswith("sifta://alice-extend/"):
+                key = unquote_plus(target.rsplit("/", 1)[-1])
+                self._append_alice_extension_for_key(key)
+                return
+            if target.startswith("sifta://copy-message/"):
+                # Round 127 — Architect 2026-05-28 ~22:30 named the copy-paste
+                # friction. Each rendered chat message gets a clickable
+                # [📋 Copy] anchor whose href is sifta://copy-message/<id>.
+                # The handler resolves <id> to the verbatim message body
+                # (registered at render time) and writes it to the system
+                # clipboard. A side-channel ack lands in the side panel so
+                # the Architect sees the copy fired.
+                msg_id = unquote_plus(target.rsplit("/", 1)[-1])
+                bodies = getattr(self, "_chat_message_bodies", {}) or {}
+                body = str(bodies.get(msg_id, "") or "")
+                if body:
+                    try:
+                        from PyQt6.QtWidgets import QApplication
+                        clip = QApplication.clipboard()
+                        if clip is not None:
+                            clip.setText(body)
+                        if hasattr(self, "_side"):
+                            self._side.appendPlainText(
+                                f"{time.strftime('%H:%M:%S')}  COPIED  "
+                                f"{len(body)} chars  [{msg_id}]"
+                            )
+                    except Exception:
+                        pass
+                return
+            if local:
+                subprocess.Popen(["open", local], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            if target.startswith(("https://", "http://", "file://")):
+                subprocess.Popen(["open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            if hasattr(self, "_side"):
+                self._side.appendPlainText(f"{time.strftime('%H:%M:%S')}  CHAT_ANCHOR  {target[:160]}")
+        except Exception:
+            pass
+
+    def _append_alice_extension_for_key(self, key: str) -> None:
+        """Render the hidden continuation for a collapsed imported Alice row."""
+        blocks = getattr(self, "_alice_extend_blocks", None)
+        if not isinstance(blocks, dict):
+            return
+        block = blocks.pop(key, None)
+        if not isinstance(block, dict):
+            return
+        hidden_text = str(block.get("hidden_text") or "").strip()
+        if not hidden_text:
+            return
+        surface_tag = str(block.get("surface_tag") or "").strip()
+        self._append_global_alice_line(
+            hidden_text,
+            surface_tag=f"{surface_tag} [extended]".rstrip(),
+            collapse_long=False,
+        )
+
+    def _prepare_alice_visible_text(
+        self,
+        text: str,
+        *,
+        surface_tag: str = "",
+        collapse_long: bool = True,
+    ) -> tuple[str, str, int]:
+        """Return display text plus optional extension key/count for Alice rows."""
+        raw_text = str(text or "")
+        if not collapse_long:
+            return raw_text, "", 0
+        preview = collapse_text_after_paragraphs(raw_text, max_paragraphs=4)
+        visible_text = preview.visible_text if preview.is_collapsed else raw_text
+        extend_key = ""
+        hidden_count = 0
+        if preview.is_collapsed:
+            hidden_count = preview.hidden_paragraph_count
+            extend_key = f"alice_{uuid.uuid4().hex[:12]}"
+            blocks = getattr(self, "_alice_extend_blocks", None)
+            if not isinstance(blocks, dict):
+                blocks = {}
+                self._alice_extend_blocks = blocks
+            blocks[extend_key] = {
+                "hidden_text": preview.hidden_text,
+                "surface_tag": surface_tag,
+            }
+        return self._global_chat_visible_text(visible_text, "alice"), extend_key, hidden_count
+
+    def _insert_alice_extend_control(self, cur: QTextCursor, extend_key: str, hidden_count: int) -> None:
+        """Insert a clickable continuation affordance into the QTextEdit row."""
+        if not extend_key:
+            return
+        cur.insertBlock(self._subtitle_body_block_format())
+        cur.insertHtml(
+            '<a href="sifta://alice-extend/'
+            + quote_plus(extend_key)
+            + '" style="color:#73daca; background-color:#101827; '
+            + 'border:1px solid #35566b; padding:4px 8px; '
+            + 'text-decoration:none; font-family:Menlo, monospace; '
+            + 'font-size:12px;">'
+            + f"[ Extend Alice answer - {hidden_count} more paragraphs ]"
+            + "</a>"
+        )
 
     def _render_global_chat_payload(self, payload: Dict[str, Any], *, source: str) -> None:
         key = _global_chat_turn_key(payload)
@@ -13921,8 +14383,57 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
         self._append_system_line(f"{role.upper()}{surface_tag}: {text}")
 
-    def _append_global_alice_line(self, text: str, *, surface_tag: str = "") -> None:
+    def _register_chat_copy_anchor(self, body: str) -> str:
+        """Round 127 — register `body` as a copy-able chat message and return
+        its href. Each rendered chat row (Alice or George) gets one of these
+        anchors at the end so the Architect can click [📋 Copy] and the
+        verbatim body lands on the system clipboard."""
+        if not hasattr(self, "_chat_message_bodies"):
+            self._chat_message_bodies = {}
+        if not hasattr(self, "_chat_message_counter"):
+            self._chat_message_counter = 0
+        self._chat_message_counter += 1
+        msg_id = f"m{self._chat_message_counter}"
+        try:
+            self._chat_message_bodies[msg_id] = str(body or "")
+            # Keep the registry from growing without bound across a long
+            # session. The most recent ~512 messages are enough for any
+            # back-paste workflow.
+            if len(self._chat_message_bodies) > 512:
+                keys = list(self._chat_message_bodies.keys())[:-512]
+                for k in keys:
+                    self._chat_message_bodies.pop(k, None)
+        except Exception:
+            pass
+        return f"sifta://copy-message/{msg_id}"
+
+    def _copy_anchor_html(self, body: str) -> str:
+        """Build the styled [📋 Copy] anchor HTML for the end of a chat row."""
+        href = self._register_chat_copy_anchor(body)
+        return (
+            '<a href="'
+            + href
+            + '" style="color:#a8c8e0; background-color:#0c1620; '
+            + 'border:1px solid #2a4258; padding:2px 7px; '
+            + 'text-decoration:none; font-family:Menlo, monospace; '
+            + 'font-size:11px;">'
+            + '[ 📋 Copy ]'
+            + '</a>'
+        )
+
+    def _append_global_alice_line(
+        self,
+        text: str,
+        *,
+        surface_tag: str = "",
+        collapse_long: bool = True,
+    ) -> None:
         """Render imported Alice rows without re-running mouth/ledger side effects."""
+        visible_text, extend_key, hidden_count = self._prepare_alice_visible_text(
+            text,
+            surface_tag=surface_tag,
+            collapse_long=collapse_long,
+        )
         cur = self._chat.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
@@ -13934,12 +14445,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         body_fmt.setForeground(QColor(220, 225, 245))
         try:
             body_fmt.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            body_fmt.setFontPointSize(19.0)
+            body_fmt.setFontPointSize(16.0)
             body_fmt.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
-            body_fmt.setFontWeight(QFont.Weight.DemiBold)
+            body_fmt.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass
-        cur.insertText(text, body_fmt)
+        cur.insertText(visible_text, body_fmt)
+        self._insert_alice_extend_control(cur, extend_key, hidden_count)
+        # Round 127 — per-message [📋 Copy] anchor at the end of every Alice
+        # row. Copies the raw uncollapsed body to the system clipboard so
+        # the Architect can paste Alice's full reply back into Cowork in one
+        # click instead of triple-click-and-Cmd-C across paragraph breaks.
+        try:
+            cur.insertText("  ")
+            cur.insertHtml(self._copy_anchor_html(raw_text))
+        except Exception:
+            pass
         cur.insertBlock(QTextBlockFormat())
         cur.insertText("\n")
         self._chat.setTextCursor(cur)
@@ -14600,6 +15121,123 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception as e:
             print(f"Error polling internal drives: {e}")
 
+    def _pheromone_freshness_tick(self) -> None:
+        """Append one ledger freshness gradient row; never speaks by itself."""
+        try:
+            from System.swarm_pheromone_freshness_loop import write_freshness_tick
+
+            write_freshness_tick(_state_root())
+        except Exception as e:
+            print(f"Error writing pheromone freshness tick: {e}")
+
+    def _body_writer_tick_delay_ms(self) -> int:
+        """Choose the next writer tick delay from the last tick receipt."""
+        path = _state_root() / "body_writer_tick.jsonl"
+        base_delay_ms = 30_000
+        stale_threshold_ms = 90_000
+        slow_fail_ms = 30_000
+        critical_miss_ms = 20_000
+        no_write_ms = 120_000
+        has_data_ms = 60_000
+        initial_ms = 15_000
+        if not path.exists():
+            return initial_ms
+        try:
+            last = ""
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.strip():
+                        last = line
+            row = json.loads(last) if last else {}
+            producers = row.get("producers") or []
+            bytes_added = 0
+            flush_miss = False
+            stale_tick = False
+            for item in producers:
+                if isinstance(item, dict):
+                    try:
+                        bytes_added += int(item.get("bytes_added") or 0)
+                    except Exception:
+                        pass
+                    if item.get("flush") == "missed":
+                        producer_name = str(item.get("producer") or "")
+                        if producer_name in {"field_slo", "body_brain_loop"}:
+                            flush_miss = True
+                    producer_name = str(item.get("producer") or "")
+                    if producer_name in {"field_slo", "body_brain_loop"}:
+                        for key in ("field_slo_age_s", "body_brain_age_s"):
+                            try:
+                                if float(item.get(key) or 0.0) > 90.0:
+                                    stale_tick = True
+                            except Exception:
+                                pass
+            if int(row.get("fail_count") or 0) > 0:
+                return slow_fail_ms
+            if flush_miss:
+                return critical_miss_ms
+            if stale_tick:
+                return base_delay_ms
+            if int(row.get("ok_count") or 0) <= 0:
+                return stale_threshold_ms
+            if bytes_added > 0:
+                return has_data_ms
+            return no_write_ms
+        except Exception:
+            return base_delay_ms
+
+    def _schedule_body_writer_tick(self, *, initial: bool = False) -> None:
+        """Schedule the next writer tick without speaking into chat."""
+        try:
+            timer = getattr(self, "_body_writer_tick_timer", None)
+            if timer is None:
+                return
+            delay = 15_000 if initial else self._body_writer_tick_delay_ms()
+            timer.start(max(5_000, min(int(delay), 300_000)))
+        except Exception as e:
+            print(f"Error scheduling body writer tick: {e}")
+
+    def _body_writer_tick(self) -> None:
+        """Round 93 (2026-05-27) — run the producer tick on a background
+        daemon thread so the heavy producers (Round 91 body_brain_loop +
+        Round 84 fractal_walker) don't beachball the Qt main thread.
+
+        The tick was previously synchronous on the main thread. With four
+        producers active — basal_ganglia (fast), fractal_pheromone (~2s),
+        field_slo (medium), body_brain_loop (~5s full physiology cycle) —
+        each tick froze the UI for ~7s. George observed live beachball.
+
+        The next tick is scheduled IMMEDIATELY from the main thread (don't
+        wait for the worker — cadence is preserved). An in-flight guard
+        prevents stacking workers if the previous one is still running.
+        """
+        import threading
+
+        if getattr(self, "_body_writer_tick_in_flight", False):
+            # Previous worker still running; skip this tick and let the
+            # next QTimer fire pick up. Avoids unbounded thread accumulation
+            # if the body brain loop is slower than the schedule.
+            self._schedule_body_writer_tick()
+            return
+
+        self._body_writer_tick_in_flight = True
+
+        def _worker() -> None:
+            try:
+                from System.swarm_body_writer_tick import tick_writer_organs
+
+                tick_writer_organs(state_dir=_state_root())
+            except Exception as e:
+                print(f"Error writing body writer tick: {e}")
+            finally:
+                self._body_writer_tick_in_flight = False
+
+        threading.Thread(
+            target=_worker, daemon=True, name="body_writer_tick"
+        ).start()
+        # Reschedule the next tick from the main thread immediately so the
+        # cadence is preserved regardless of how long the worker takes.
+        self._schedule_body_writer_tick()
+
     def _start_listener(self) -> None:
         if self._listener is not None:
             return
@@ -14654,6 +15292,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _on_listener_state(self, state: str) -> None:
         self._listener_state = state
         self._publish_ear_live_state(state)
+        try:
+            from System.swarm_owner_somatic_state import update_from_voice
+
+            update_from_voice(
+                {
+                    "is_speaking": state == "speaking",
+                    "energy": float(getattr(self, "_level_target", 0.0) or 0.0),
+                    "stt_conf": 0.0,
+                    "vad_state": state,
+                }
+            )
+        except Exception:
+            pass
         if self._busy:
             return  # don't override "thinking"/"alice" pills
         if state == "speaking":
@@ -16756,7 +17407,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         already_displayed: bool,
         already_logged: bool = False,
     ) -> bool:
-        """Pre-LLM deterministic router for operational arm requests.
+        """Retired pre-cortex bypass router for operational arm requests.
 
         If operational tokens + a named arm are present, skip LLM completion
         entirely and execute the arm entrypoint from its skill contract.
@@ -16829,6 +17480,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._tts.spoken.connect(self._on_tts_done)
                 self._tts.failed.connect(self._on_tts_failed)
                 self._tts.start()
+                self._busy = False
+                self._return_to_listening()
+                return
+
+            direct_key = _typed_direct_key_command_to_matrix_pty(
+                text,
+                typed_turn=_typed_turn,
+            )
+            if direct_key.get("executed"):
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
                 self._busy = False
                 self._return_to_listening()
                 return
@@ -16938,15 +17602,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     pass
                 return
 
-            if chat_reflexes_enabled and not _grok_side_effect_started and self._maybe_start_observable_direct_tool_request(
+            if (
+                not self._planning_mode_active()
+                and chat_reflexes_enabled
+                and not _grok_side_effect_started
+                and self._maybe_start_observable_direct_tool_request(
                 text,
                 conf,
                 already_displayed=already_displayed,
                 already_logged=False,
+                )
             ):
                 return
 
             if _grok_side_effect_started:
+                tool_reply, tool_results = "", []
+            elif self._planning_mode_active():
                 tool_reply, tool_results = "", []
             elif not chat_reflexes_enabled and "[TOOL_CALL:" not in text:
                 tool_reply, tool_results = "", []
@@ -17224,6 +17895,38 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 pass
+
+        # ── Round 67 (2026-05-27): phone-audio / side-conversation guard ──
+        # This is an ingress sensor guard, not a conversational reflex. It only
+        # fires on spoken turns that look like room/phone audio not addressed to
+        # Alice. Typed turns and wake-word turns stay on the cortex path.
+        if text and not _typed_turn and not _owner_sensor_effector_fired:
+            try:
+                from System.swarm_phone_audio_guard import detect_environmental_audio
+
+                _phone_audio_signal = detect_environmental_audio(
+                    text,
+                    stt_conf=_effective_conf,
+                    modality="spoken",
+                    owner_label=_owner_label(),
+                )
+            except Exception:
+                _phone_audio_signal = None
+            if _phone_audio_signal and getattr(_phone_audio_signal, "is_environmental", False):
+                _phone_audio_probe = (
+                    getattr(_phone_audio_signal, "suggested_reply", "") or
+                    '(I caught audio but it sounded like a side conversation — not me. Say "Alice" if you want me.)'
+                )
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": "(silent: phone_audio_guard)"})
+                _log_turn("alice", _phone_audio_probe, model="phone_audio_guard")
+                self._append_system_line(_phone_audio_probe, error=False)
+                self._busy = False
+                self._return_to_listening()
+                return
 
         try:
             from System.swarm_owner_teaching_moments import (
@@ -17852,7 +18555,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # tool" must execute deterministically. Waiting for the cortex to
         # choose exact [TOOL_CALL] syntax creates the observed "nothing
         # happened" failure mode.
-        if self._maybe_start_observable_direct_tool_request(
+        if not self._planning_mode_active() and self._maybe_start_observable_direct_tool_request(
             text,
             conf,
             already_displayed=True,
@@ -17860,11 +18563,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         ):
             return
 
-        _reply, _tool_results = _route_direct_tool_request_for_alice(
-            text,
-            owner_present=True,
-            autonomous=False,
-        )
+        if self._planning_mode_active():
+            _reply, _tool_results = "", []
+        else:
+            _reply, _tool_results = _route_direct_tool_request_for_alice(
+                text,
+                owner_present=True,
+                autonomous=False,
+            )
         if _reply or _tool_results:
             self._history.append({"role": "user", "content": text})
             for _tr in _tool_results:
@@ -18920,32 +19626,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # AG31 2026-04-27: Removed whatsapp_full_send_parse and bare_whatsapp_send_target interception.
         # Let Alice handle WhatsApp messages dynamically via her LLM rather than hardcoded logic.
 
-        # ── Agent-arm decision prepass ─────────────────────────────────────
-        # This is the missing habit between "I know I have arms" and "I use
-        # one when a hard task benefits from another local reasoning pass."
-        try:
-            from System.swarm_agent_arm_decision import (
-                agent_arm_prepass_enabled,
-                schedule_async_agent_arm_prepass,
-            )
-
-            _arm_job = None
-            if agent_arm_prepass_enabled():
-                _arm_job = schedule_async_agent_arm_prepass(
-                    text,
-                    owner_present=True,
-                )
-            if _arm_job is not None:
-                self._append_system_line(
-                    f"🦾 Agent arm [{_arm_job.decision.arm_id}] evidence {str(_arm_job.status).lower()} "
-                    f"receipt_job={_arm_job.job_id}",
-                    error=False,
-                )
-        except Exception as _arm_prepass_exc:
-            self._append_system_line(
-                f"(agent arm decision prepass failed: {_arm_prepass_exc})",
-                error=True,
-            )
+        # ── Round 62 (2026-05-27) — agent-arm decision prepass REMOVED.
+        # Architect doctrine: "our receipts are the evidence, that is no
+        # evidence pls remove that waste of time". The prepass fired an
+        # arm in evidence_mode on every owner turn, ran for ~150s
+        # reading the codebase, wrote a placeholder receipt saying
+        # "considered using arm X", then timed out without producing
+        # any real work. Covenant §6 already establishes work_receipts
+        # as the audit trail; an "evidence" run that does not do the
+        # work is parasitic. When the owner says "use your X arm",
+        # that turn dispatches LIVE through the cortex's TOOL_CALL
+        # emission and the launcher's exact (non-evidence) mode.
 
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
@@ -18956,6 +19647,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # which is what we just appended at line 2153 above.
         user_active = bool(history) and history[-1].get("role") == "user"
         sysprompt = _current_system_prompt(user_active=user_active, user_text=text)
+        if self._planning_mode_active():
+            try:
+                from System.swarm_planning_mode import planning_prompt_block
+
+                _planning_context = planning_prompt_block(_state_root()).strip()
+            except Exception:
+                _planning_context = ""
+            if _planning_context:
+                sysprompt = sysprompt + "\n\n" + _planning_context
         if _alice_grounding_enabled():
             ctx = _build_swarm_context(text)
             if ctx:
@@ -19345,10 +20045,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._observable_processing_last_ts = now
         except RuntimeError:
             pass
-        try:
-            self._append_global_cognition_stream(clean, reset=reset)
-        except Exception:
-            pass
+        # Round 57 (Architect 2026-05-27): do not mirror the observable
+        # processing stream into the global chat by default. If George can see
+        # an arm/PTY line in the thinking panel, replaying the same bytes in the
+        # chat/terminal viewport is duplicate noise. Keep the old mirror as an
+        # explicit debug switch only.
+        mirror_to_chat = str(os.environ.get("SIFTA_OBSERVABLE_MIRROR_TO_CHAT", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if mirror_to_chat:
+            try:
+                self._append_global_cognition_stream(clean, reset=reset)
+            except Exception:
+                pass
         if not hasattr(self, "_thinking_buffer"):
             self._thinking_buffer = []
         if reset or not getattr(self, "_thinking_stream_active", False):
@@ -19496,9 +20208,33 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 f"hash={output_hash}; {span_text}. Global chat should show GROK_RESULT."
             )
 
-        if action in {"grok_framebuffer_snapshot", "agent_arm_framebuffer_snapshot"}:
+        if action == "agent_arm_framebuffer_snapshot":
             metadata: Dict[str, Any] = dict(payload)
-            metadata.setdefault("focused_cli", row.get("focused_cli") or ("grok" if action.startswith("grok") else "agent"))
+            metadata.setdefault("focused_cli", row.get("focused_cli") or "agent")
+            focused = str(metadata.get("focused_cli") or "agent").casefold()
+            output_hash = str(metadata.get("framebuffer_output_hash") or "")[:16]
+            mirror_frame_to_chat = str(os.environ.get("SIFTA_AGENT_ARM_FRAMEBUFFER_IN_CHAT", "")).strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            if mirror_frame_to_chat:
+                rendered = self._render_grok_terminal_frame_from_metadata(metadata, live=True)
+                if rendered:
+                    return (
+                        f"{clock} Matrix/{focused}: framebuffer rendered in Alice global chat "
+                        "(pyte cells + cursor); "
+                        f"hash={output_hash}"
+                    )
+            return (
+                f"{clock} Matrix/{focused}: framebuffer received hash={output_hash}; "
+                "chat mirror suppressed because observable processing already shows the arm stream."
+            )
+
+        if action == "grok_framebuffer_snapshot":
+            metadata: Dict[str, Any] = dict(payload)
+            metadata.setdefault("focused_cli", row.get("focused_cli") or "grok")
             rendered = self._render_grok_terminal_frame_from_metadata(metadata, live=True)
             focused = str(metadata.get("focused_cli") or "grok").casefold()
             if rendered:
@@ -19623,6 +20359,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._format_matrix_process_trace_for_thinking(row),
                 reset=reset_stream,
             )
+
+    def _planning_mode_active(self) -> bool:
+        toggle = getattr(self, "_planning_mode_toggle", None)
+        if toggle is None:
+            return False
+        try:
+            return bool(toggle.isChecked())
+        except Exception:
+            return False
 
     def _toggle_thinking_panel(self) -> None:
         """Show/hide Alice's live thinking panel. Architect's eye-to-eye
@@ -21439,6 +22184,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         return block
 
     def _append_user_line(self, text: str, conf: float, input_modality: "Optional[str]" = None) -> None:
+        raw_text = str(text or "")
+        visible_text = self._global_chat_visible_text(raw_text, "owner")
         cur = self._chat.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
         # Architect 2026-05-13 — live colours from owner_chat_prefs.json
@@ -21500,20 +22247,123 @@ class TalkToAliceWidget(SiftaBaseWidget):
         fmt3.setForeground(QColor(*body_rgb))
         try:
             fmt3.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            fmt3.setFontPointSize(19.0)
+            fmt3.setFontPointSize(16.0)
             # Crisp sans-serif — same family YouTube uses for CC default
             fmt3.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
-            fmt3.setFontWeight(QFont.Weight.DemiBold)
+            fmt3.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass
-        cur.insertText(text, fmt3)
+        cur.insertText(visible_text, fmt3)
+        # Round 127 — per-message [📋 Copy] anchor on every Architect line.
+        # Copies the raw_text George typed (verbatim) so he can paste it back
+        # into Cowork without selecting across paragraph breaks in QTextEdit.
+        try:
+            cur.insertText("  ")
+            cur.insertHtml(self._copy_anchor_html(raw_text))
+        except Exception:
+            pass
         # Close the subtitle block and reset to default block format so
         # the next message header doesn't inherit the background.
         cur.insertBlock(QTextBlockFormat())
         cur.insertText("\n")
         self._chat.setTextCursor(cur)
         self._chat.ensureCursorVisible()
-        self._side.appendPlainText(time.strftime("%H:%M:%S") + "  YOU  " + text[:90])
+        self._side.appendPlainText(time.strftime("%H:%M:%S") + "  YOU  " + raw_text[:90])
+
+    def _global_chat_visible_text(self, text: str, speaker: str) -> str:
+        """Display-only shaping for the global chat transcript.
+
+        The raw conversation ledger keeps the whole turn. This function only
+        keeps the visible QTextEdit surface readable until the full card
+        renderer lands: long bodies collapse to a paragraph-grouped preview,
+        and receipt ids are surfaced as a compact footer so George can see
+        proof without reading a wall of JSON-shaped prose.
+
+        Round r124 (Architect 2026-05-28 ~22:00): Alice's self-portrait got
+        gagged at 3444 chars — the old line-based 12-line / 1200-char cap was
+        too aggressive. Switched to paragraph-based collapse: show the first
+        4 paragraphs in full, then group remaining paragraphs into 4-paragraph
+        chunks each marked with its own expand marker so the architect can
+        see what's been folded and approximately where.
+        """
+        body = str(text or "")
+        if not body:
+            return ""
+        # Paragraph-based collapse. Split on blank-line paragraph breaks; if
+        # the body is a single block of prose, fall back to wrapping on long
+        # single lines so we still produce something useful.
+        preview_paragraphs = int(os.environ.get("SIFTA_CHAT_PREVIEW_PARAGRAPHS", "4") or "4")
+        chunk_paragraphs = int(os.environ.get("SIFTA_CHAT_CHUNK_PARAGRAPHS", "4") or "4")
+        hard_char_cap = int(os.environ.get("SIFTA_CHAT_HARD_CHAR_CAP", "8000") or "8000")
+        paragraphs = [p for p in body.split("\n\n") if p.strip()]
+        if not paragraphs:
+            paragraphs = [body]
+        # When the message fits in the preview budget AND we're not over the
+        # hard char cap, render the whole thing — no collapse, no markers.
+        if len(paragraphs) <= preview_paragraphs and len(body) <= hard_char_cap:
+            visible = body
+        else:
+            head = "\n\n".join(paragraphs[:preview_paragraphs])
+            tail_paragraphs = paragraphs[preview_paragraphs:]
+            # Group the remaining paragraphs into chunks with per-chunk
+            # expand markers so the architect sees where the folds live.
+            chunk_markers: list[str] = []
+            idx = 0
+            chunk_n = 1
+            while idx < len(tail_paragraphs):
+                end = min(idx + chunk_paragraphs, len(tail_paragraphs))
+                chunk_paras = tail_paragraphs[idx:end]
+                chunk_char_count = sum(len(p) for p in chunk_paras) + max(0, (len(chunk_paras) - 1)) * 2
+                first_words = " ".join((chunk_paras[0] if chunk_paras else "").split()[:6])
+                if first_words:
+                    first_words = first_words.strip(" .") + "…"
+                else:
+                    first_words = "…"
+                chunk_markers.append(
+                    f"[▸ chunk {chunk_n}: paragraphs {preview_paragraphs + idx + 1}-"
+                    f"{preview_paragraphs + end} · {len(chunk_paras)} paragraphs · "
+                    f"{chunk_char_count} chars · starts with: {first_words}]"
+                )
+                idx = end
+                chunk_n += 1
+            chunks_text = "\n".join(chunk_markers) if chunk_markers else ""
+            footer = (
+                f"\n\n{chunks_text}\n"
+                f"[full turn remains in .sifta_state/alice_conversation.jsonl "
+                f"— total {len(paragraphs)} paragraphs / {len(body)} chars]"
+            )
+            visible = head + footer
+        try:
+            from System.swarm_global_chat_view_model import extract_receipt_refs as _extract_refs
+            refs = tuple(_extract_refs(body))
+        except Exception:
+            refs = ()
+        if refs:
+            shown = ", ".join(refs[:4])
+            if len(refs) > 4:
+                shown += f", +{len(refs) - 4} more"
+            visible = f"{visible}\n\n[receipts: {shown}]"
+        return visible
+
+    def _suppress_visible_alice_duplicate(self, text: str) -> bool:
+        """Suppress exact repeated Alice display rows in a short window.
+
+        The ledger still records the turn where upstream code writes it. This
+        guard only prevents the visual double-print that George keeps seeing
+        with short status lines such as "Online.".
+        """
+        body = " ".join(str(text or "").split())
+        if not body:
+            return False
+        window_s = float(os.environ.get("SIFTA_CHAT_DUPLICATE_WINDOW_S", "3.0") or "3.0")
+        now = time.time()
+        last_body = getattr(self, "_last_visible_alice_body", None)
+        last_ts = float(getattr(self, "_last_visible_alice_ts", 0.0) or 0.0)
+        if body == last_body and (now - last_ts) <= window_s:
+            return True
+        self._last_visible_alice_body = body
+        self._last_visible_alice_ts = now
+        return False
 
     # ── Owner chat-pref skill: live colours + natural-language intent ──────
     def _current_owner_colors(self) -> Tuple[Tuple[int, int, int], Tuple[int, int, int]]:
@@ -21916,6 +22766,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+        if self._suppress_visible_alice_duplicate(text):
+            return
+        visible_text, extend_key, hidden_count = self._prepare_alice_visible_text(text)
+
         if self.window():
             QApplication.alert(self.window(), 0)
         cur = self._chat.textCursor()
@@ -21932,12 +22786,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         fmt2.setForeground(QColor(235, 240, 255))
         try:
             fmt2.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            fmt2.setFontPointSize(19.0)
+            fmt2.setFontPointSize(16.0)
             fmt2.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
-            fmt2.setFontWeight(QFont.Weight.DemiBold)
+            fmt2.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass
-        cur.insertText(text, fmt2)
+        cur.insertText(visible_text, fmt2)
+        self._insert_alice_extend_control(cur, extend_key, hidden_count)
         # Close the subtitle block so the next speaker header sits clean.
         cur.insertBlock(QTextBlockFormat())
         cur.insertText("\n")
@@ -22088,6 +22943,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # rather than a confusing empty Alice block.
                 if not visible:
                     visible = "(silent)"
+                visible_for_chat, extend_key, hidden_count = self._prepare_alice_visible_text(visible)
                 cur = self._chat.textCursor()
                 cur.setPosition(body_start)
                 cur.movePosition(
@@ -22099,7 +22955,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     fmt.setForeground(QColor(255, 50, 50))
                 else:
                     fmt.setForeground(QColor(220, 225, 245))
-                cur.insertText(visible, fmt)
+                cur.insertText(visible_for_chat, fmt)
+                self._insert_alice_extend_control(cur, extend_key, hidden_count)
                 self._chat.setTextCursor(cur)
             except Exception:
                 # Display sanitization is cosmetic — never block the turn.

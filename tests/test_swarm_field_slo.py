@@ -21,22 +21,33 @@ def _field_row(
     unknowns: int = 0,
     connected: int = 17,
     density: float = 0.86,
+    ts: float | None = None,
 ) -> dict:
+    payload = {
+        "field_completeness": completeness,
+        "unknown_vector_count": unknowns,
+        "connected_organ_count": connected,
+        "coupling_density": density,
+    }
+    if ts is not None:
+        payload["ts"] = ts
     return {
         "payload": {
-            "field_completeness": completeness,
-            "unknown_vector_count": unknowns,
-            "connected_organ_count": connected,
-            "coupling_density": density,
+            **payload,
         }
     }
 
 
-def _truth_row(*, score: float = 1.0, flags: list[str] | None = None) -> dict:
+def _truth_row(*, score: float = 1.0, flags: list[str] | None = None, ts: float | None = None) -> dict:
+    payload = {
+        "continuity_score": score,
+        "drift_flags": flags or [],
+    }
+    if ts is not None:
+        payload["ts"] = ts
     return {
         "payload": {
-            "continuity_score": score,
-            "drift_flags": flags or [],
+            **payload,
         }
     }
 
@@ -133,8 +144,8 @@ def test_state_dir_audit_fails_when_no_field_rows(tmp_path: Path) -> None:
 def test_append_state_dir_report_writes_operational_receipt(tmp_path: Path) -> None:
     field_path = tmp_path / "organ_field_vector.jsonl"
     truth_path = tmp_path / "truth_continuity_events.jsonl"
-    field_path.write_text(json.dumps(_field_row()) + "\n", encoding="utf-8")
-    truth_path.write_text(json.dumps(_truth_row()) + "\n", encoding="utf-8")
+    field_path.write_text(json.dumps(_field_row(ts=100.0)) + "\n", encoding="utf-8")
+    truth_path.write_text(json.dumps(_truth_row(ts=100.0)) + "\n", encoding="utf-8")
 
     row = append_state_dir_report(tmp_path)
     receipt_path = tmp_path / "unified_field_slo.jsonl"
@@ -144,4 +155,37 @@ def test_append_state_dir_report_writes_operational_receipt(tmp_path: Path) -> N
     assert receipt_path.exists()
     written = json.loads(receipt_path.read_text(encoding="utf-8").splitlines()[-1])
     assert written["schema"] == SLO_SCHEMA_LITERAL
+    assert "freshness" in written
+    assert written["freshness"]["latest_field_ts"] is not None
     assert written["report"]["boundary"].startswith("alive_real=OPERATIONAL_UNDER_POWER")
+
+
+def test_summary_for_prompt_marks_stale_field_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("System.swarm_field_slo.time.time", lambda: 10_000.0)
+    field_path = tmp_path / "organ_field_vector.jsonl"
+    truth_path = tmp_path / "truth_continuity_events.jsonl"
+    field_path.write_text(json.dumps(_field_row(ts=1_000.0)) + "\n", encoding="utf-8")
+    truth_path.write_text(json.dumps(_truth_row(ts=9_980.0)) + "\n", encoding="utf-8")
+
+    prompt = summary_for_prompt(tmp_path)
+
+    assert "field_latest_age=2.5h" in prompt
+    assert "truth_latest_age=20s" in prompt
+    assert "field_freshness=STALE_DO_NOT_CALL_LIVE" in prompt
+    assert "last field snapshot, not this-turn live health" in prompt
+
+
+def test_summary_for_prompt_wraps_day_old_values_as_last_snapshot(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("System.swarm_field_slo.time.time", lambda: 400_000.0)
+    field_path = tmp_path / "organ_field_vector.jsonl"
+    truth_path = tmp_path / "truth_continuity_events.jsonl"
+    old_ts = 400_000.0 - 105 * 3600
+    field_rows = [_field_row(completeness=1.0, ts=old_ts) for _ in range(467)]
+    field_rows.extend(_field_row(completeness=0.0, ts=old_ts) for _ in range(533))
+    field_path.write_text("\n".join(json.dumps(row) for row in field_rows) + "\n", encoding="utf-8")
+    truth_path.write_text(json.dumps(_truth_row(ts=399_990.0)) + "\n", encoding="utf-8")
+
+    prompt = summary_for_prompt(tmp_path)
+
+    assert "completeness_rate=<last snapshot 105 hours ago, was 0.467>" in prompt
+    assert "min_connected_organs=<last snapshot 105 hours ago" in prompt

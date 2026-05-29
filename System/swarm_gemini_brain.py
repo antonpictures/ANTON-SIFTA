@@ -156,13 +156,28 @@ _DEFAULT_MENU = (
     "gemini:gemini-2.5-pro",
 )
 _GROK_DEFAULT_MENU = ("grok:grok-4.3",)
+_CLAUDE_DEFAULT_MENU = ("claude:claude-code-cli-default",)
+_CODEX_DEFAULT_MENU = ("codex:gpt-5.5",)
+_QWEN_DEFAULT_MENU = (
+    "qwen:accounts/fireworks/models/gpt-oss-20b",
+    "qwen:accounts/fireworks/models/deepseek-v4-flash",
+)
+_CLINE_DEFAULT_MENU = ("cline:cline-cli-default",)
+
+# Round 70 (2026-05-27): keep the SIFTA cortex resolver key stable while
+# translating to the concrete model id accepted by the logged-in local
+# `grok` CLI.  The owner's Settings picker and receipts use
+# `grok:grok-4.3`; `grok models` on this node exposes only `grok-build`.
+_GROK_CLI_MODEL_ALIASES: Dict[str, str] = {
+    "grok-4.3": "grok-build",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────
 # Model name handling
 # ─────────────────────────────────────────────────────────────────────
 def is_gemini_model(name: str) -> bool:
-    """True if the widget should route this model to cloud, not Ollama."""
+    """True if the widget should route this model to a cloud/CLI teacher."""
     if not name:
         return False
     n = str(name).strip().lower()
@@ -171,6 +186,14 @@ def is_gemini_model(name: str) -> bool:
         or n.startswith("gemini-")
         or n.startswith("grok:")
         or n.startswith("grok-")
+        or n.startswith("claude:")
+        or n.startswith("claude-")
+        or n.startswith("codex:")
+        or n.startswith("codex-")
+        or n.startswith("qwen:")
+        or n.startswith("qwen-")
+        or n.startswith("cline:")
+        or n.startswith("cline-")
     )
 
 
@@ -179,6 +202,34 @@ def _is_grok_model(name: str) -> bool:
         return False
     n = str(name).strip().lower()
     return n.startswith("grok:") or n.startswith("grok-")
+
+
+def _is_claude_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("claude:") or n.startswith("claude-")
+
+
+def _is_codex_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("codex:") or n.startswith("codex-")
+
+
+def _is_qwen_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("qwen:") or n.startswith("qwen-")
+
+
+def _is_cline_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("cline:") or n.startswith("cline-")
 
 
 def is_cloud_model(name: str) -> bool:
@@ -193,7 +244,21 @@ def strip_prefix(name: str) -> str:
         n = n.split(":", 1)[1]
     elif n.lower().startswith("grok:"):
         n = n.split(":", 1)[1]
+    elif n.lower().startswith("claude:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("codex:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("qwen:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("cline:"):
+        n = n.split(":", 1)[1]
     return n
+
+
+def grok_cli_model_for(name: str) -> str:
+    """Return the concrete model id to pass to the local `grok` CLI."""
+    bare = strip_prefix(name)
+    return _GROK_CLI_MODEL_ALIASES.get(bare.lower(), bare)
 
 
 def display_label(name: str) -> str:
@@ -201,6 +266,14 @@ def display_label(name: str) -> str:
     bare = strip_prefix(name)
     if bare.lower().startswith("grok-"):
         return f"grok:{bare}"
+    if bare.lower().startswith("claude-"):
+        return f"claude:{bare}"
+    if bare.lower().startswith("codex-") or bare.lower().startswith("gpt-"):
+        return f"codex:{bare}"
+    if bare.lower().startswith("accounts/fireworks/models/") or bare.lower().startswith("qwen-") or bare.lower().startswith("kimi-"):
+        return f"qwen:{bare}"
+    if bare.lower().startswith("cline-"):
+        return f"cline:{bare}"
     return f"gemini:{bare}"
 
 
@@ -267,6 +340,10 @@ def available_gemini_models() -> List[str]:
     if gemini_api_key():
         out.extend(_DEFAULT_MENU)
     out.extend(_GROK_DEFAULT_MENU)
+    out.extend(_CLAUDE_DEFAULT_MENU)
+    out.extend(_CODEX_DEFAULT_MENU)
+    out.extend(_QWEN_DEFAULT_MENU)
+    out.extend(_CLINE_DEFAULT_MENU)
     deduped: List[str] = []
     seen: set[str] = set()
     for name in out:
@@ -511,7 +588,10 @@ def _stream_grok_chat(
         # If the xAI HTTPS call is denied (expired/revoked OAuth token, or tier gate),
         # immediately fall back to the local Grok CLI path. The CLI session can often
         # recover using its own stored auth flow without requiring a full chat failure.
-        if int(getattr(exc, "code", 0) or 0) in (401, 403):
+        body_low = body_txt.lower()
+        if int(getattr(exc, "code", 0) or 0) in (401, 403) or (
+            "unknown model id" in body_low or "invalid params" in body_low
+        ):
             yield from _stream_grok_chat_via_cli(
                 model=model,
                 messages=messages,
@@ -597,16 +677,17 @@ def _stream_grok_chat_via_cli(
         return
 
     bare = strip_prefix(model)
+    cli_model = grok_cli_model_for(model)
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     prompt = _to_grok_cli_prompt(messages)
-    used_model = bare
+    used_model = cli_model
     fallback_to_cli_default = False
     cmd = [
         cli,
         "--single",
         prompt,
         "--model",
-        bare,
+        cli_model,
         "--output-format",
         "plain",
         "--no-alt-screen",
@@ -677,11 +758,334 @@ def _stream_grok_chat_via_cli(
         raw={
             "transport": "grok_cli_single",
             "requested_model": bare,
+            "cli_model": cli_model,
             "fallback_to_cli_default": fallback_to_cli_default,
         },
     )
     usage.cost_usd = 0.0
     record_usage(usage, backend="xai_grok_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
+def _to_teacher_cli_prompt(messages: List[Dict[str, str]], *, teacher: str) -> str:
+    """Flatten chat history for CLI teacher cortexes.
+
+    Claude and Codex are used here as signed-in teacher substrates, not as
+    file-mutating arms. The prompt explicitly asks for answer-only behavior;
+    work that should mutate files still belongs to the agent-arm launcher.
+    """
+    chunks: List[str] = [
+        "You are a SIFTA cortex teacher connected through the owner's signed-in "
+        f"{teacher} CLI/OAuth session. Answer as Alice's configured teacher "
+        "substrate for this turn. Do not claim external actions, do not mutate "
+        "files, and do not speak as a separate Alice. Use the supplied SIFTA "
+        "chat history as context and return only the reply text.",
+        "",
+        "SIFTA CHAT HISTORY:",
+    ]
+    for msg in messages or []:
+        role = str(msg.get("role") or "user").strip() or "user"
+        content = str(msg.get("content") or "").strip()
+        if not content:
+            continue
+        chunks.append(f"[{role}]\n{content}")
+    return "\n\n".join(chunks).strip()
+
+
+def _stream_claude_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    cli = shutil.which("claude")
+    if not cli:
+        yield ("error", "Claude CLI is not on PATH; run `claude auth` or install Claude Code.")
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    prompt = _to_teacher_cli_prompt(messages, teacher="Claude")
+    bare = strip_prefix(model)
+    cmd = [
+        cli,
+        "-p",
+        "--no-session-persistence",
+        "--permission-mode",
+        "dontAsk",
+        "--output-format",
+        "text",
+        prompt,
+    ]
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        yield ("error", f"Claude CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"Claude CLI launch failed: {exc}")
+        return
+
+    if proc.returncode != 0:
+        snippet = (proc.stderr or proc.stdout or "").strip()[:500]
+        yield ("error", f"Claude CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        return
+
+    text = (proc.stdout or "").strip()
+    if not text:
+        yield ("error", "Claude CLI returned empty output.")
+        return
+
+    usage = Usage(
+        model=bare,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={"transport": "claude_cli_print", "requested_model": bare},
+    )
+    record_usage(usage, backend="claude_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
+def _stream_codex_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 240,
+) -> Iterator[Tuple[str, Any]]:
+    cli = shutil.which("codex")
+    if not cli:
+        yield ("error", "Codex CLI is not on PATH; sign in/install Codex before selecting this teacher.")
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    bare = strip_prefix(model)
+    prompt = _to_teacher_cli_prompt(messages, teacher="Codex")
+    out_dir = _STATE / "codex_teacher_outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{tag}.txt"
+    cmd = [
+        cli,
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--cd",
+        str(_REPO),
+        "--output-last-message",
+        str(out_path),
+    ]
+    configured_model = os.environ.get("SIFTA_CODEX_CLI_MODEL", "").strip()
+    if configured_model:
+        cmd.extend(["--model", configured_model])
+    cmd.append(prompt)
+
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        yield ("error", f"Codex CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"Codex CLI launch failed: {exc}")
+        return
+
+    if proc.returncode != 0:
+        snippet = (proc.stderr or proc.stdout or "").strip()[:500]
+        yield ("error", f"Codex CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        return
+
+    text = ""
+    try:
+        text = out_path.read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        pass
+    if not text:
+        text = (proc.stdout or "").strip()
+    if not text:
+        yield ("error", "Codex CLI returned empty output.")
+        return
+
+    usage = Usage(
+        model=configured_model or bare,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={
+            "transport": "codex_cli_exec_read_only",
+            "requested_model": bare,
+            "configured_model": configured_model,
+            "output_path": str(out_path),
+        },
+    )
+    record_usage(usage, backend="codex_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
+def _stream_qwen_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    cli = shutil.which("qwen")
+    if not cli:
+        yield ("error", "Qwen Code CLI is not on PATH; install qwen before selecting this teacher.")
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    bare = strip_prefix(model)
+    prompt = _to_teacher_cli_prompt(messages, teacher="Qwen/Fireworks")
+    try:
+        from System.swarm_fireworks_qwen_config import (
+            FIREWORKS_DEFAULT_MODEL,
+            qwen_fireworks_child_env,
+            qwen_fireworks_command,
+        )
+
+        cmd = qwen_fireworks_command(
+            prompt,
+            model=bare if bare else FIREWORKS_DEFAULT_MODEL,
+            read_only=True,
+            timeout_s=timeout_s,
+        )
+        env = qwen_fireworks_child_env(os.environ, state_dir=_STATE)
+    except Exception as exc:
+        yield ("error", f"Qwen Fireworks config unavailable: {exc}")
+        return
+
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s + 10,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        yield ("error", f"Qwen CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"Qwen CLI launch failed: {exc}")
+        return
+
+    if proc.returncode != 0:
+        snippet = (proc.stderr or proc.stdout or "").strip()[:500]
+        yield ("error", f"Qwen CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        return
+
+    text = (proc.stdout or "").strip()
+    if not text:
+        yield ("error", "Qwen CLI returned empty output.")
+        return
+
+    usage = Usage(
+        model=bare,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={"transport": "qwen_cli_fireworks_read_only", "requested_model": bare},
+    )
+    record_usage(usage, backend="qwen_fireworks_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
+def _stream_cline_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    cli = shutil.which("cline")
+    if not cli:
+        yield ("error", "Cline CLI is not on PATH; install/sign in before selecting this teacher.")
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    bare = strip_prefix(model)
+    prompt = _to_teacher_cli_prompt(messages, teacher="Cline")
+    cmd = [
+        cli,
+        "--json",
+        "--auto-approve",
+        "false",
+        "--cwd",
+        str(_REPO),
+        "--timeout",
+        str(max(1, int(timeout_s))),
+        "--plan",
+        prompt,
+    ]
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s + 10,
+        )
+    except subprocess.TimeoutExpired:
+        yield ("error", f"Cline CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"Cline CLI launch failed: {exc}")
+        return
+
+    raw = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0:
+        yield ("error", f"Cline CLI failed (rc={proc.returncode}): {raw[:500] or 'no output'}")
+        return
+    if not raw:
+        yield ("error", "Cline CLI returned empty output.")
+        return
+
+    text_parts: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            text_parts.append(line)
+            continue
+        for key in ("text", "message", "content", "output"):
+            value = row.get(key) if isinstance(row, dict) else None
+            if isinstance(value, str) and value.strip():
+                text_parts.append(value.strip())
+                break
+    text = "\n".join(text_parts).strip() or raw
+    usage = Usage(
+        model=bare,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={"transport": "cline_cli_plan_json", "requested_model": bare},
+    )
+    record_usage(usage, backend="cline_cli")
     yield ("token", text)
     yield ("usage", usage)
     yield ("done", text)
@@ -722,6 +1126,38 @@ def stream_chat(
             messages,
             temperature=temperature,
             api_key=api_key,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+    if _is_claude_model(model):
+        yield from _stream_claude_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+    if _is_codex_model(model):
+        yield from _stream_codex_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+    if _is_qwen_model(model):
+        yield from _stream_qwen_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+    if _is_cline_model(model):
+        yield from _stream_cline_chat_via_cli(
+            model=model,
+            messages=messages,
             request_tag=request_tag,
             timeout_s=timeout_s,
         )

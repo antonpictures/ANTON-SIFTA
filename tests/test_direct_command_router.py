@@ -33,6 +33,11 @@ class TestClassifyAsDirectCommand:
         assert cmd.is_direct is True
         assert cmd.key_or_text == "\t"
 
+    def test_tap_escape(self):
+        cmd = classify_as_direct_command("tap escape")
+        assert cmd.is_direct is True
+        assert cmd.key_or_text == "\x1b"
+
     def test_ctrl_c(self):
         cmd = classify_as_direct_command("press ctrl-c")
         assert cmd.is_direct is True
@@ -59,6 +64,10 @@ class TestClassifyAsDirectCommand:
         cmd = classify_as_direct_command(
             "Alice, ask Grok to code the tournament"
         )
+        assert cmd.is_direct is False
+
+    def test_ambiguous_press_on_is_not_direct(self):
+        cmd = classify_as_direct_command("I will press on with the work")
         assert cmd.is_direct is False
 
     def test_empty_text_not_direct(self):

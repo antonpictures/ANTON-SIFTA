@@ -1422,3 +1422,10 @@ layout.addWidget(mirror)
 
 #### Truth-class
 **OPERATIONAL.** Every render is a direct read of the canonical worker's frame file — no synthesis, no recording, no extra writes. If the file is missing or stale, the widget says so plainly.
+
+### Cortex Wake Lab
+
+- **Purpose:** Compare Alice cortex substrates with the same receipt-backed wake question set: experience, observer/observed, embodiment, swimmers/organs, and minimal wake context.
+- **Models:** Lists canonical Grok, Claude, and Codex teacher cortexes plus the local Alice Gemma4 student cortexes when available. Live calls are optional; dry-run mode writes real comparison rows without spending tokens.
+- **Ledger:** Results append to `.sifta_state/cortex_comparison.jsonl` with latency, grounding score, expected-term hits, missing terms, and drift flags.
+- **Entry:** `Applications/sifta_cortex_wake_lab.py` · engine `System/swarm_cortex_wake_probe.py`.

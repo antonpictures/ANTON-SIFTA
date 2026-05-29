@@ -190,13 +190,13 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
     "agent_arm_research": ToolSpec(
         name="agent_arm_research",
         description=(
-            "Ask Alice's registered coding/research arm for evidence on a hard "
+            "Ask Alice's registered coding/research arm to do live receipted work on a hard "
             "software, research, planning, or comparison task. Use this when a "
             "second local reasoning pass would help; George does not need to name the arm."
         ),
         required_params=("prompt",),
         optional_params=("arm", "timeout_s"),
-        write_action=False,
+        write_action=True,
         requires_autonomy_gate=False,
     ),
     "organ_registry_lookup": ToolSpec(
@@ -204,6 +204,28 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         description="Map a query to Alice's canonical organs and ledgers (read-only)",
         required_params=("query",),
         optional_params=("write_receipt",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "set_cortex_alias": ToolSpec(
+        name="set_cortex_alias",
+        description=(
+            "Switch Alice's current thinking cortex by short alias (cheap, kimi, long, local, tiny, etc.). "
+            "This is the voice-controlled way to change which brain she is using right now."
+        ),
+        required_params=("name",),
+        optional_params=(),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "alice_body_snapshot": ToolSpec(
+        name="alice_body_snapshot",
+        description=(
+            "Read-only snapshot of Alice's current body: cortex, arms, energy, arm selection reasoning, "
+            "and recent receipt chain. This is the single function she uses to answer questions about herself."
+        ),
+        required_params=(),
+        optional_params=(),
         write_action=False,
         requires_autonomy_gate=False,
     ),
@@ -521,7 +543,7 @@ def capabilities_for_alice_prompt() -> str:
         "- Learned skills are loaded as procedures to shape your reasoning and composition (never auto-execute third-party code).",
         "- Always include a real cost_justification. The field must remain profitable.",
         "- External/social write tools require owner_consent=true when autonomous; without it the router records a silence/refusal receipt instead of pretending action happened.",
-        "- Registered agent arms for agent_arm_research: hermes_agent, codex_agent, corvid_scout, grok_agent, claude_agent.",
+        "- Registered agent arms for agent_arm_research: hermes_agent, codex_agent, corvid_scout, grok_agent, claude_agent, qwen_agent, cline_agent.",
         "- run_local_command is allowlisted argv execution; web_research and repo_patch are bounded external/repo effectors.",
         "- When George asks what you can do, call capability_field_status or skill_library_status first.",
         "- Before any effector autonomy, call edge_intent_eval and confirm accuracy >= 0.80 on the fixed suite.",
@@ -1047,7 +1069,7 @@ def _exec_consumer_surface_status(params: Dict[str, str]) -> Dict[str, Any]:
 
 
 def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
-    """Read-only: delegate one bounded evidence pass to a registered arm."""
+    """Delegate one bounded live pass to a registered arm."""
     prompt = str(params.get("prompt") or "").strip()
     arm = str(params.get("arm") or "hermes_agent").strip() or "hermes_agent"
     aliases = {
@@ -1063,6 +1085,13 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
         "claude": "claude_agent",
         "claude_agent": "claude_agent",
         "claude_code": "claude_agent",
+        "qwen": "qwen_agent",
+        "qwen_agent": "qwen_agent",
+        "qwen_code": "qwen_agent",
+        "kimi": "qwen_agent",  # legacy alias — the qwen arm default is Fireworks gpt-oss-20b
+        "cline": "cline_agent",
+        "cline_agent": "cline_agent",
+        "clinebot": "cline_agent",  # alias — Cline Bot Inc.
     }
     arm = aliases.get(arm.casefold(), arm)
     # Hermes default raised 60->240 (George 2026-05-24): a large local cortex like
@@ -1078,8 +1107,8 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
     # Hermes is now an uncaged builder (file+code tools, 30 turns) — George 2026-05-24
     # — so it needs builder-class time like Claude/Codex (granite4.1:30b timed out at
     # the old 420s while actually using tools). 900s default, 1200s ceiling.
-    _arm_default = {"corvid_scout": "30", "claude_agent": "900", "codex_agent": "900", "hermes_agent": "900"}.get(arm, "420")
-    _arm_ceiling = 1200 if arm in {"claude_agent", "codex_agent", "hermes_agent"} else (900 if arm == "grok_agent" else 300)
+    _arm_default = {"corvid_scout": "30", "claude_agent": "900", "codex_agent": "900", "hermes_agent": "900", "qwen_agent": "900", "cline_agent": "900"}.get(arm, "420")
+    _arm_ceiling = 1200 if arm in {"claude_agent", "codex_agent", "hermes_agent", "qwen_agent", "cline_agent"} else (900 if arm == "grok_agent" else 300)
     try:
         timeout_s = max(5, min(_arm_ceiling, int(str(params.get("timeout_s") or _arm_default))))
     except ValueError:
@@ -1098,13 +1127,129 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
             "status": "UNKNOWN_ARM",
             "alice_summary": (
                 f"agent_arm_research: unknown arm {arm!r}; "
-                f"registered evidence arms are {registered}."
+                f"registered arms are {registered}."
             ),
         }
     try:
         from System.swarm_agent_arm_launcher import ask_agent_arm
 
-        result = ask_agent_arm(arm, prompt, timeout_s=timeout_s, evidence_mode=True)
+        # Round 62 (2026-05-27): evidence_mode killed per Architect doctrine
+        # ("receipts are the evidence"). agent_arm_research now dispatches
+        # LIVE; the arm writes the file itself instead of being captured by
+        # the now-redundant swarm_arm_code_lander workaround.
+        result = ask_agent_arm(arm, prompt, timeout_s=timeout_s, evidence_mode=False)
+    except subprocess.TimeoutExpired as exc:
+        # §2.C (2026-05-28) — Local Gemma fallback for heavy builder arms.
+        # When a heavy arm (claude/codex/qwen/cline) hits its decision-layer cap,
+        # we do not silently fail the turn. We receipt the timeout, then retry
+        # the exact same prompt against a fast local gemma3-small with a short
+        # budget. Both the timeout receipt and the fallback result are returned
+        # so Alice can speak the honest chain.
+        heavy_arms = {"claude_agent", "codex_agent", "qwen_agent", "cline_agent"}
+        if arm in heavy_arms:
+            timeout_receipt = {
+                "ts": time.time(),
+                "truth_label": "AGENT_ARM_TIMEOUT_FALLBACK",
+                "kind": "AGENT_ARM_TIMEOUT",
+                "arm_id": arm,
+                "timeout_s": timeout_s,
+                "prompt_sha": hashlib.sha256(prompt.encode()).hexdigest()[:16],
+                "status": "TIMEOUT",
+                "fallback_triggered": True,
+            }
+            try:
+                from System.swarm_predator_gate_writer import write_ide_surgery_receipt
+                write_ide_surgery_receipt(
+                    action="agent_arm_timeout_fallback",
+                    arm_id=arm,
+                    receipt_id=str(uuid.uuid4()),
+                    extra={"timeout_receipt": timeout_receipt},
+                )
+            except Exception:
+                pass
+
+            # Round 117 (2026-05-28 PM) — Architect named the failure: a
+            # hardcoded gemma fallback ignores the swarm's own trail. The
+            # picker now reads which arm has been succeeding recently and
+            # falls back to that one. The body picks its own healer from
+            # its own pheromone.
+            try:
+                from System.swarm_agent_arm_launcher import ask_agent_arm as _fallback_ask
+                from System.swarm_stigmergic_arm_fallback import pick_fallback_arm
+                from System.swarm_agent_arm_registry import list_agent_arms as _list_arms
+
+                _available = tuple(a.arm_id for a in _list_arms() if getattr(a, "enabled", True))
+                _pick = pick_fallback_arm(
+                    Path(".sifta_state"),
+                    exclude=(arm,),
+                    available=_available,
+                )
+                fallback_arm_id = str(_pick.get("arm_id") or "corvid_scout")
+
+                fallback_result = _fallback_ask(
+                    fallback_arm_id,
+                    prompt,
+                    timeout_s=60,
+                    evidence_mode=False,
+                )
+
+                fallback_receipt = {
+                    "ts": time.time(),
+                    "truth_label": "AGENT_ARM_FALLBACK_RESULT",
+                    "kind": "AGENT_ARM_FALLBACK",
+                    "original_arm": arm,
+                    "fallback_arm": fallback_arm_id,
+                    "fallback_reason": _pick.get("reason"),
+                    "fallback_recent_success_rate": _pick.get("success_rate"),
+                    "fallback_recent_successes": _pick.get("successes"),
+                    "original_timeout_s": timeout_s,
+                    "fallback_timeout_s": 60,
+                    "status": fallback_result.status,
+                    "ok": fallback_result.ok,
+                }
+
+                try:
+                    from System.swarm_predator_gate_writer import write_ide_surgery_receipt
+                    write_ide_surgery_receipt(
+                        action="agent_arm_gemma_fallback",
+                        arm_id=arm,
+                        receipt_id=str(uuid.uuid4()),
+                        extra={"fallback_receipt": fallback_receipt},
+                    )
+                except Exception:
+                    pass
+
+                return {
+                    "ok": fallback_result.ok,
+                    "status": "FALLBACK_AFTER_TIMEOUT",
+                    "arm_id": arm,
+                    "timeout_receipt": timeout_receipt,
+                    "fallback_receipt": fallback_receipt,
+                    "receipt_id": fallback_result.receipt_id,
+                    "output": fallback_result.output,
+                    "alice_summary": (
+                        f"{arm} timed out at {timeout_s}s. "
+                        f"Fell back to local gemma (corvid_scout path). "
+                        f"Fallback status={fallback_result.status}. "
+                        f"Timeout + fallback receipts in the four ledgers."
+                    ),
+                }
+            except Exception as fb_exc:
+                return {
+                    "ok": False,
+                    "status": "FALLBACK_FAILED",
+                    "original_status": "TIMEOUT",
+                    "arm_id": arm,
+                    "error": str(fb_exc),
+                    "alice_summary": f"{arm} timed out at {timeout_s}s. Local gemma fallback also failed: {fb_exc}",
+                }
+        # Non-heavy arm or not in fallback set → normal error path
+        return {
+            "ok": False,
+            "status": "TIMEOUT",
+            "arm_id": arm,
+            "alice_summary": f"agent_arm_research timed out after {timeout_s}s for arm {arm}",
+        }
     except Exception as exc:
         return {
             "ok": False,
@@ -1113,11 +1258,9 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
             "alice_summary": f"agent_arm_research failed before launch: {type(exc).__name__}: {exc}",
         }
     output = result.output.strip()
-    # Deterministic code lander (George 2026-05-25): evidence mode captures the
-    # arm's text but never writes the app file. If the owner's prompt names a
-    # repo .py path and the arm streamed code, commit that code to disk and
-    # compile it — so Alice's own arm lands its own app. The code is the arm's;
-    # this only writes it. Never raises (covenant §6/§7.2 honest failure).
+    # Compatibility hand: if an arm streams a complete fenced Python file
+    # instead of using its own file tool, commit that arm-produced code to disk
+    # and compile it. Receipts remain the proof; this is not a read-only pass.
     landed = None
     landed_note = ""
     try:
@@ -1142,9 +1285,9 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
     if len(output) > 5000:
         output = output[:5000] + "\n...[truncated]"
     summary_header = (
-        "agent_arm_research evidence captured"
+        "agent_arm_research live receipt captured"
         if result.ok
-        else "agent_arm_research returned no usable evidence"
+        else "agent_arm_research returned no successful receipt"
     )
     output_block = output if output else ""
     return {
@@ -1202,6 +1345,70 @@ def _exec_organ_registry_lookup(params: Dict[str, str]) -> Dict[str, Any]:
         "status": "ORGAN_REGISTRY_LOOKUP",
         "query_map": query_map,
         "alice_summary": "\n".join(lines),
+    }
+
+
+def _exec_set_cortex_alias(params: Dict[str, str]) -> Dict[str, Any]:
+    """§2.B — Allow Alice to switch her current cortex by short alias via tool call."""
+    name = str(params.get("name") or "").strip().lower()
+    if not name:
+        return {
+            "ok": False,
+            "status": "MISSING_ALIAS",
+            "alice_summary": "set_cortex_alias requires a name (cheap, kimi, long, local, etc).",
+        }
+
+    try:
+        from System.swarm_cortex_aliases import set_cortex_by_alias
+        result = set_cortex_by_alias(name)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "ALIAS_ERROR",
+            "error": str(exc),
+            "alice_summary": f"set_cortex_alias failed for '{name}': {exc}",
+        }
+
+    if not result.get("ok"):
+        return {
+            "ok": False,
+            "status": "ALIAS_FAILED",
+            "alias": name,
+            "alice_summary": result.get("error", f"Could not switch to alias '{name}'"),
+        }
+
+    return {
+        "ok": True,
+        "status": "CORTEX_SWITCHED",
+        "alias": name,
+        "model": result.get("model"),
+        "receipt": result.get("receipt"),
+        "alice_summary": (
+            f"Switched to alias '{name}'. Now thinking through {result.get('model')}. "
+            f"Receipt: {result.get('receipt', '')[:16]}"
+        ),
+    }
+
+
+def _exec_alice_body_snapshot(params: Dict[str, str]) -> Dict[str, Any]:
+    """§2.D — The single read-only body introspection surface for the investor demo."""
+    try:
+        from System.swarm_body_introspect import alice_body_snapshot, render_for_alice
+        snap = alice_body_snapshot()
+        rendered = render_for_alice(snap)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "INTROSPECTION_ERROR",
+            "error": str(exc),
+            "alice_summary": f"alice_body_snapshot failed: {exc}",
+        }
+
+    return {
+        "ok": True,
+        "status": "BODY_SNAPSHOT",
+        "snapshot": snap,
+        "alice_summary": rendered,
     }
 
 
@@ -1894,6 +2101,8 @@ _EXECUTORS = {
     "consumer_surface_status": _exec_consumer_surface_status,
     "agent_arm_research": _exec_agent_arm_research,
     "organ_registry_lookup": _exec_organ_registry_lookup,
+    "set_cortex_alias": _exec_set_cortex_alias,
+    "alice_body_snapshot": _exec_alice_body_snapshot,
     "self_improvement_status": _exec_self_improvement_status,
     "physical_effector_demo": _exec_physical_effector_demo,
     # Hermes surface parity (Event 120 hardened)
@@ -2156,6 +2365,11 @@ def _kernel_tool_heartbeat(
     if table is None or not pid:
         return ""
     rid = receipt_id or f"receipt_{uuid.uuid4()}"
+    if ok and hasattr(table, "sys_success_credit"):
+        try:
+            table.sys_success_credit(pid)
+        except Exception:
+            pass
     table.heartbeat(
         pid,
         health=1.0 if ok else 0.55,
@@ -2488,7 +2702,7 @@ def execute_tool_call(
         return kernel_rejection
 
     cerebellum_preflight = None
-    if spec.write_action:
+    if spec.write_action and call.tool_name != "agent_arm_research":
         cerebellum_preflight = _cerebellum_preflight(call.tool_name, call.params)
         if cerebellum_preflight.get("delay_s", 0.0) > 0.0:
             exec_result = {

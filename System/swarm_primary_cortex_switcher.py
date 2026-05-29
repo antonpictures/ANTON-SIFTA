@@ -278,6 +278,36 @@ def set_primary_cortex(
     }
     if verification is not None:
         row["cortex_verification"] = verification
+
+    # Round 110 (§2.H) — deterministic plan resume on every cortex switch.
+    # If a plan is active when the body swaps cortex, audit the resume in the
+    # planning ledger so the new cortex (which sees the active plan via the
+    # memory card) carries forward the work instead of waking amnesic.
+    try:
+        from System.swarm_planning_mode import (
+            mark_plan_resumed,
+            read_active_plan_for_resume,
+        )
+
+        active_plan = read_active_plan_for_resume()
+        if active_plan and active_plan.get("plan_id"):
+            resume_row = mark_plan_resumed(
+                str(active_plan.get("plan_id", "")),
+                source=f"primary_cortex_switch:{source}",
+                switched_from=str(previous or ""),
+                switched_to=str(selected or ""),
+                note="cortex_switch_plan_resume_audit",
+            )
+            if resume_row:
+                row["active_plan_resumed"] = {
+                    "plan_id": resume_row.get("plan_id"),
+                    "first_pending_step_id": resume_row.get(
+                        "first_pending_step_id", ""
+                    ),
+                    "goal": resume_row.get("goal", "")[:160],
+                }
+    except Exception as exc:  # pragma: no cover — never block the switch
+        row["active_plan_resume_error"] = f"{type(exc).__name__}: {exc}"
     _STATE.mkdir(parents=True, exist_ok=True)
     line = json.dumps(row, sort_keys=True) + "\n"
     if append_line_locked is not None:

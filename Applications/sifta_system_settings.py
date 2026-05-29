@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -45,6 +46,9 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_app_catalog import group_manifest, normalize_category
 from System.sifta_inference_defaults import (
+    CANONICAL_CLOUD_CLAUDE,
+    CANONICAL_CLOUD_CODEX,
+    CANONICAL_CLOUD_GROK,
     CANONICAL_OLLAMA_DAILY,
     CANONICAL_OLLAMA_EXTRA,
     CANONICAL_OLLAMA_FALLBACK,
@@ -70,6 +74,10 @@ from System.sifta_desktop_themes import (
     save_custom_wallpaper_path,
 )
 from System.swarm_camera_unified_field_proof import build_camera_unified_field_proof
+from System.swarm_fireworks_qwen_config import (
+    install_qwen_fireworks_settings,
+    read_fireworks_api_key,
+)
 
 STATE = _REPO / ".sifta_state"
 MANIFEST = _REPO / "Applications" / "apps_manifest.json"
@@ -99,12 +107,46 @@ def _looks_remote_model_name(name: str) -> bool:
         or n.startswith("gemini-")
         or n.startswith("grok:")
         or n.startswith("grok-")
+        or n.startswith("claude:")
+        or n.startswith("claude-")
+        or n.startswith("codex:")
+        or n.startswith("codex-")
+        or n.startswith("qwen:")
+        or n.startswith("qwen-")
+        or n.startswith("cline:")
+        or n.startswith("cline-")
     )
 
 
 def _is_xai_cortex_tag(name: str) -> bool:
     n = (name or "").strip().lower()
     return n.startswith("grok:") or n.startswith("grok-") or n.startswith("xai:")
+
+
+def _is_qwen_cortex_tag(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n.startswith("qwen:") or n.startswith("qwen-")
+
+
+def _is_cline_cortex_tag(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n.startswith("cline:") or n.startswith("cline-")
+
+
+def _qwen_api_key_masked(*, state_dir: str | Path | None = None) -> str:
+    key = read_fireworks_api_key(state_dir=state_dir)
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return f"{key[:4]}...{key[-4:]}"
+
+
+def _cline_cli_available() -> str | None:
+    try:
+        return shutil.which("cline")
+    except Exception:
+        return None
 
 
 def _parse_ollama_tags_payload(payload: dict[str, Any]) -> list[str]:
@@ -2069,15 +2111,34 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "color: rgb(0, 220, 255); selection-background-color: rgb(0, 60, 90); }"
         )
         for tag in installed_cortexes:
-            # Round 33 (Claude/Cowork direct, 2026-05-27): make the Grok cloud entry
-            # explicit so the owner recognizes the 4th option as the OAuth-routed
-            # cortex. The tag `grok:grok-4.3` is the canonical resolver key (do not
-            # change); keep it visible in the picker for receipt/audit clarity. Routing goes
-            # through xai_grok_oauth_organ.load_credential (~/.hermes/auth.json or
-            # env XAI_OAUTH_ACCESS_TOKEN) with a fallback to the local `grok --single`
-            # CLI per swarm_gemini_brain._stream_grok_chat_via_cli.
+            # Round 33/70: make the Grok cloud entry explicit. The tag
+            # `grok:grok-4.3` is the canonical SIFTA resolver key (receipt/audit
+            # clarity). Round 70 maps that key to the concrete local CLI model
+            # `grok-build` at the Grok CLI boundary because `grok models` on
+            # this node exposes only `grok-build`.
             if _looks_remote_model_name(tag) and tag.lower().startswith("grok"):
-                display = f"{tag}  ·  xAI Grok 4.3 OAuth (SuperGrok / X Premium+)  ·  ☁ cloud"
+                display = f"{tag}  ·  xAI Grok OAuth (CLI: grok-build)  ·  ☁ cloud"
+            elif _looks_remote_model_name(tag) and tag.lower().startswith("claude"):
+                display = f"{tag}  ·  Claude Code OAuth teacher  ·  ☁ cloud"
+            elif _looks_remote_model_name(tag) and tag.lower().startswith("codex"):
+                display = f"{tag}  ·  Codex CLI OAuth teacher  ·  ☁ cloud"
+            elif _looks_remote_model_name(tag) and tag.lower().startswith("qwen"):
+                # Qwen Code CLI cortexes route through Fireworks. Name the
+                # concrete model so gpt-oss, DeepSeek Flash, and legacy Kimi
+                # do not appear as duplicate "Kimi" rows in the picker.
+                low_tag = tag.lower()
+                if "deepseek-v4-flash" in low_tag:
+                    qwen_label = "DeepSeek V4 Flash via Fireworks"
+                elif "gpt-oss-20b" in low_tag:
+                    qwen_label = "gpt-oss-20b via Fireworks"
+                elif "kimi-k2p6" in low_tag:
+                    qwen_label = "Kimi K2.6 via Fireworks"
+                else:
+                    qwen_label = "Fireworks"
+                display = f"{tag}  ·  Qwen Code ({qwen_label}) teacher  ·  ☁ cloud"
+            elif _looks_remote_model_name(tag) and tag.lower().startswith("cline"):
+                # Round 89 — Cline open-source CLI cortex (Apache 2.0, multi-provider).
+                display = f"{tag}  ·  Cline OAuth teacher (open-source)  ·  ☁ cloud"
             else:
                 weight_suffix = "☁ cloud" if _looks_remote_model_name(tag) else _fmt_weight(tag)
                 display = f"{tag}  ·  {weight_suffix}" if weight_suffix else tag
@@ -2094,7 +2155,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self._cortex_auth_indicator = QPushButton("●")
         self._cortex_auth_indicator.setObjectName("CortexAuthIndicator")
         self._cortex_auth_indicator.setFixedSize(20, 20)
-        self._cortex_auth_indicator.setToolTip("xAI OAuth health")
+        self._cortex_auth_indicator.setToolTip("Cortex auth health")
         self._cortex_auth_indicator.clicked.connect(self._on_cortex_auth_indicator_clicked)
         picker_row.addWidget(self._cortex_auth_indicator)
 
@@ -2154,7 +2215,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         # (display_label, persisted_value) — provider tag goes into hermes_cortex.json
         self._hermes_arm_combo.addItem(
-            "Ollama (local) · alice-extra-cortex-25.8b-17gb",
+            "Ollama (local) · alice-m5-cortex-8b-6.3gb",
             userData="ollama_local",
         )
         self._hermes_arm_combo.addItem(
@@ -2351,6 +2412,56 @@ class SystemSettingsWidget(SiftaBaseWidget):
         indicator = self._cortex_auth_indicator
         tag = self._selected_cortex_tag()
         if not _is_xai_cortex_tag(tag):
+            if _is_qwen_cortex_tag(tag):
+                key = _qwen_api_key_masked(state_dir=STATE)
+                if key:
+                    indicator.setVisible(True)
+                    indicator.setEnabled(True)
+                    indicator.setStyleSheet(
+                        "QPushButton { color: rgb(40, 220, 90); background: transparent; border: none; "
+                        "font-size: 18px; font-family: Menlo; padding: 0; }"
+                        "QPushButton:hover { color: rgb(80, 255, 120); }"
+                    )
+                    indicator.setToolTip(f"Qwen/Fireworks key present: {key}")
+                else:
+                    indicator.setVisible(True)
+                    indicator.setEnabled(True)
+                    indicator.setStyleSheet(
+                        "QPushButton { color: rgb(255, 120, 80); background: transparent; border: none; "
+                        "font-size: 18px; font-family: Menlo; padding: 0; }"
+                        "QPushButton:hover { color: rgb(255, 170, 120); }"
+                    )
+                    indicator.setToolTip(
+                        "Qwen/Fireworks key missing.\n"
+                        "Click to set FIREWORKS_API_KEY and write qwen settings."
+                    )
+                return
+
+            if _is_cline_cortex_tag(tag):
+                cli = _cline_cli_available()
+                if cli:
+                    indicator.setVisible(True)
+                    indicator.setEnabled(True)
+                    indicator.setStyleSheet(
+                        "QPushButton { color: rgb(40, 220, 90); background: transparent; border: none; "
+                        "font-size: 18px; font-family: Menlo; padding: 0; }"
+                        "QPushButton:hover { color: rgb(80, 255, 120); }"
+                    )
+                    indicator.setToolTip("Cline CLI detected.")
+                else:
+                    indicator.setVisible(True)
+                    indicator.setEnabled(True)
+                    indicator.setStyleSheet(
+                        "QPushButton { color: rgb(255, 120, 80); background: transparent; border: none; "
+                        "font-size: 18px; font-family: Menlo; padding: 0; }"
+                        "QPushButton:hover { color: rgb(255, 170, 120); }"
+                    )
+                    indicator.setToolTip(
+                        "Cline CLI not found on PATH.\n"
+                        "Install cline (`brew install cline` or install release package)."
+                    )
+                return
+
             indicator.setVisible(False)
             return
 
@@ -2414,6 +2525,60 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _on_cortex_auth_indicator_clicked(self) -> None:
         tag = self._selected_cortex_tag()
         if not _is_xai_cortex_tag(tag):
+            if _is_qwen_cortex_tag(tag):
+                try:
+                    current_key = _qwen_api_key_masked(state_dir=STATE)
+                    hint = (
+                        "Current key is already set."
+                        if current_key
+                        else "No key set."
+                    )
+                    new_key, accepted = QInputDialog.getText(
+                        self,
+                        "Qwen/Fireworks API Key",
+                        "Set FIREWORKS_API_KEY for qwen:qwen model routing.\n"
+                        f"{hint}\n\n"
+                        "Tip: keep your key in .sifta_state/secrets/fireworks_api_key by saving here.",
+                        QLineEdit.EchoMode.Password,
+                        "",
+                    )
+                except Exception as exc:
+                    self.set_status(f"Qwen key dialog failed: {type(exc).__name__}")
+                    self._refresh_cortex_auth_indicator()
+                    return
+
+                if not accepted:
+                    self.set_status("Qwen key update cancelled.")
+                    self._refresh_cortex_auth_indicator()
+                    return
+
+                raw_key = (new_key or "").strip()
+                if not raw_key:
+                    self.set_status("Qwen key is empty — no changes.")
+                    self._refresh_cortex_auth_indicator()
+                    return
+
+                try:
+                    install_qwen_fireworks_settings(
+                        raw_key,
+                        state_dir=STATE,
+                        qwen_home=Path.home() / ".qwen",
+                    )
+                    self.set_status("Qwen key saved to .sifta_state/secrets/fireworks_api_key.")
+                except Exception as exc:
+                    self.set_status(f"Qwen key save failed: {type(exc).__name__}")
+                self._refresh_cortex_auth_indicator()
+                return
+
+            if _is_cline_cortex_tag(tag):
+                cli = _cline_cli_available()
+                if cli:
+                    self.set_status("Cline CLI is installed. Run `cline auth` if it asks you to authenticate.")
+                else:
+                    self.set_status("Cline CLI not found on PATH. Install it first, then run `cline auth`.")
+                self._refresh_cortex_auth_indicator()
+                return
+
             return
         try:
             from System.swarm_cortex_auth_health import check_xai_oauth_health

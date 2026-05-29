@@ -10,7 +10,7 @@ short-term memory, not as an external mystery:
   - .sifta_state/agent_arm_receipts.jsonl
   - .sifta_state/alice_agent_arm_briefings.jsonl
   - .sifta_state/agent_arm_async_evidence.jsonl
-  - .sifta_state/matrix_terminal_process_trace.jsonl   (GROK_RESULT events)
+  - .sifta_state/matrix_terminal_process_trace.jsonl   (result + bounded in-flight events)
 
 The block is consumed by `swarm_memory_card.compose_memory_card` as a
 new section (`arm_session_block`). When the owner asks "what did Codex
@@ -43,9 +43,19 @@ DEFAULT_MAX_N = 12
 _GROK_RESULT_EVENTS = (
     "GROK_RESULT",
     "GROK_FINAL",
-    "HICKS_RESULT",
+    # Removed a Round 50 scaffolding allow-list entry on 2026-05-28
+    # that had no live writer on disk. The remaining three entries are
+    # the real production capstone events.
     "ARM_OUTPUT_LANDED",
 )
+
+# Round 112 (2026-05-28): expose bounded in-flight arm stream lines so the
+# memory card can show active progress, not only final landed rows.
+_IN_FLIGHT_EVENTS = (
+    "AGENT_ARM_LIVE",
+)
+
+_MAX_IN_FLIGHT_PER_ARM = 3
 
 
 def _read_tail(path: Path, *, max_lines: int = 400) -> list[dict[str, Any]]:
@@ -159,20 +169,42 @@ def _summarise_matrix_trace_event(row: dict[str, Any]) -> Optional[dict[str, Any
     if ts is None:
         return None
     event = str(row.get("event") or row.get("kind") or "").upper().strip()
-    if event not in _GROK_RESULT_EVENTS:
-        return None
-    text = str(row.get("text") or row.get("result_text") or row.get("body") or "").strip()
-    if len(text) > 240:
-        text = text[:237] + "..."
-    return {
-        "ts": ts,
-        "kind": event.lower(),
-        "arm": str(row.get("arm") or row.get("cli") or "grok_pty"),
-        "model": str(row.get("model") or "grok").strip(),
-        "receipt_id": str(row.get("event_id") or row.get("id") or "").strip(),
-        "truth_label": event,
-        "summary_text": text,
-    }
+    if event in _GROK_RESULT_EVENTS:
+        text = str(row.get("text") or row.get("result_text") or row.get("body") or "").strip()
+        if len(text) > 240:
+            text = text[:237] + "..."
+        return {
+            "ts": ts,
+            "kind": event.lower(),
+            "arm": str(row.get("arm") or row.get("cli") or "grok_pty"),
+            "model": str(row.get("model") or "grok").strip(),
+            "receipt_id": str(row.get("event_id") or row.get("id") or "").strip(),
+            "truth_label": event,
+            "summary_text": text,
+        }
+    if event in _IN_FLIGHT_EVENTS:
+        text = str(row.get("text") or "").strip()
+        if not text:
+            return None
+        if len(text) > 240:
+            text = text[:237] + "..."
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        return {
+            "ts": ts,
+            "kind": "agent_arm_live",
+            "arm": str(
+                payload.get("arm_id")
+                or row.get("focused_cli")
+                or row.get("arm")
+                or row.get("cli")
+                or "agent_arm"
+            ),
+            "model": str(payload.get("model") or row.get("model") or "").strip(),
+            "receipt_id": str(row.get("trace_id") or row.get("event_id") or row.get("id") or "").strip(),
+            "truth_label": "IN_FLIGHT",
+            "summary_text": text,
+        }
+    return None
 
 
 def fetch_arm_session_block(
@@ -192,7 +224,7 @@ def fetch_arm_session_block(
       - agent_arm_receipts.jsonl
       - alice_agent_arm_briefings.jsonl
       - agent_arm_async_evidence.jsonl
-      - matrix_terminal_process_trace.jsonl  (GROK_RESULT only)
+      - matrix_terminal_process_trace.jsonl  (GROK_RESULT + bounded agent_arm_live)
 
     `user_text` is currently unused but accepted so the memory card
     fetcher signature is unified with the other section fetchers; a
@@ -242,10 +274,25 @@ def fetch_arm_session_block(
         unique.append(ev)
 
     unique.sort(key=lambda e: float(e.get("ts", 0.0)), reverse=True)
-    selected = unique[:max_n]
+
+    # Bound live stream rows per arm so one long PTY session cannot starve
+    # final landed receipts from the memory-card budget.
+    in_flight_counts: dict[str, int] = {}
+    bounded: list[dict[str, Any]] = []
+    for ev in unique:
+        if ev.get("kind") == "agent_arm_live":
+            arm = str(ev.get("arm") or "agent_arm")
+            count = in_flight_counts.get(arm, 0)
+            if count >= _MAX_IN_FLIGHT_PER_ARM:
+                continue
+            in_flight_counts[arm] = count + 1
+        bounded.append(ev)
+    selected = bounded[:max_n]
 
     lines: list[str] = []
     lines.append("ARM SESSIONS — what your arms have been doing (read-only ledger evidence):")
+    if any(ev.get("kind") == "agent_arm_live" for ev in selected):
+        lines.append("  NOTE: [agent_arm_live] rows are in-flight progress, not final landed receipts.")
     for ev in selected:
         rel = _fmt_relative(ev["ts"], now_ts=now)
         kind = ev.get("kind", "")

@@ -84,12 +84,41 @@ def select_action(
     except Exception:
         pass
 
+    stability_signal: Dict[str, Any] = {}
+    stability_bias: Dict[str, Any] = {
+        "applied": False,
+        "reason": "stability_bridge_unavailable",
+        "suppressed_candidates": [],
+        "boosted_candidates": [],
+    }
+    somatic_signal: Dict[str, Any] = {
+        "ok": False,
+        "reason": "owner_somatic_unavailable",
+    }
+    try:
+        from System.swarm_stability_to_homeostasis_bridge import (
+            bias_basal_ganglia_loops,
+            read_latest_clamp_signal,
+        )
+        from System.swarm_owner_somatic_state import latest_somatic_signal
+
+        stability_signal = read_latest_clamp_signal(root=root)
+        available_loops, stability_bias = bias_basal_ganglia_loops(
+            available_loops,
+            stability_signal,
+        )
+        somatic_signal = latest_somatic_signal(state_dir=root, max_age_s=420)
+    except Exception:
+        stability_signal = {}
+        somatic_signal = {}
+
     best_name = "idle"
     best_score = float("-inf")
     scored: List[Tuple[str, float, Dict[str, Any]]] = []
 
     for loop in available_loops:
         name = str(loop.get("name") or "unnamed").strip() or "unnamed"
+        name_l = name.lower()
         try:
             sal = float(loop.get("salience", 0.5))
             cost = float(loop.get("cost", 0.3))
@@ -107,6 +136,15 @@ def select_action(
         # High autonomic tone from electric field lowers action cost globally
         if electric_autonomic_tone > 0.6:
             cost = max(0.0, cost - 0.15)
+
+        if somatic_signal.get("is_fatigued"):
+            if any(key in name_l for key in ("repair", "sustain", "guard", "defend", "throttle", "recover")):
+                sal += 0.25
+            elif any(key in name_l for key in ("explore", "research", "curious", "observe", "scan", "coach")):
+                cost += 0.2
+
+        if somatic_signal.get("is_high_energy") and "grok" in name_l:
+            cost = max(0.0, cost - 0.25)
             
         net = sal + da * rp - cost
         scored.append((name, net, loop))
@@ -124,7 +162,25 @@ def select_action(
         "competing_loops": len(available_loops),
         "biological_modifiers": {
             "cuttlefish_alarm": alarm_active,
-            "electric_tone": round(electric_autonomic_tone, 4)
+            "electric_tone": round(electric_autonomic_tone, 4),
+            "stability_homeostasis": {
+                "clamp_level": stability_signal.get("clamp_level", "NONE"),
+                "energy": stability_signal.get("energy", 0.0),
+                "suppress_new_arms": bool(stability_signal.get("suppress_new_arms", False)),
+                "conserve_repair": bool(stability_signal.get("conserve_repair", False)),
+                "reason": stability_signal.get("reason", "no_stability_signal"),
+                "bias": stability_bias,
+            },
+            "owner_somatic": {
+                "source": somatic_signal.get("source"),
+                "energy_level": somatic_signal.get("energy_level", "medium"),
+                "energy_score": somatic_signal.get("energy_score"),
+                "posture": somatic_signal.get("posture"),
+                "movement_quality": somatic_signal.get("movement_quality"),
+                "is_fatigued": bool(somatic_signal.get("is_fatigued")),
+                "is_high_energy": bool(somatic_signal.get("is_high_energy")),
+                "age_s": somatic_signal.get("age_s"),
+            },
         },
         "candidates": [
             {"name": n, "net_score": round(s, 4)} for n, s, _ in scored

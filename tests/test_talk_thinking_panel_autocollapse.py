@@ -67,9 +67,30 @@ def test_talk_tails_matrix_process_trace_into_thinking_panel():
     assert "Global chat received GROK_RESULT" in src
 
 
-def test_observable_processing_mirrors_into_global_chat_cognition_stream():
+def test_observable_processing_does_not_mirror_into_global_chat_by_default(monkeypatch):
     from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
 
+    monkeypatch.delenv("SIFTA_OBSERVABLE_MIRROR_TO_CHAT", raising=False)
+    widget = type("FakeTalkWidget", (), {})()
+    mirrored = []
+    widget._trim_thinking_buffer_for_body_economy = lambda: False
+    widget._append_global_cognition_stream = (
+        lambda line, reset=False: mirrored.append((line, reset))
+    )
+
+    TalkToAliceWidget._append_observable_processing(
+        widget,
+        "Tool worker: dispatching agent_arm_research",
+        reset=True,
+    )
+
+    assert mirrored == []
+
+
+def test_observable_processing_debug_mirror_requires_env(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.setenv("SIFTA_OBSERVABLE_MIRROR_TO_CHAT", "1")
     widget = type("FakeTalkWidget", (), {})()
     mirrored = []
     widget._trim_thinking_buffer_for_body_economy = lambda: False
@@ -89,6 +110,7 @@ def test_observable_processing_mirrors_into_global_chat_cognition_stream():
 def test_observable_processing_suppresses_exact_duplicate_rows(monkeypatch):
     from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
 
+    monkeypatch.setenv("SIFTA_OBSERVABLE_MIRROR_TO_CHAT", "1")
     widget = type("FakeTalkWidget", (), {})()
     mirrored = []
     widget._trim_thinking_buffer_for_body_economy = lambda: False
@@ -105,6 +127,105 @@ def test_observable_processing_suppresses_exact_duplicate_rows(monkeypatch):
     TalkToAliceWidget._append_observable_processing(widget, line)
 
     assert mirrored == [(line, False)]
+
+
+def test_global_chat_visible_text_collapses_long_prompts(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.setenv("SIFTA_CHAT_COLLAPSE_LINES", "4")
+    monkeypatch.setenv("SIFTA_CHAT_PREVIEW_LINES", "2")
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+
+    body = "\n".join(f"line {idx}" for idx in range(10))
+    visible = TalkToAliceWidget._global_chat_visible_text(widget, body, "owner")
+
+    assert "line 0\nline 1" in visible
+    assert "line 7" not in visible
+    assert "collapsed in chat: 10 lines" in visible
+    assert "full turn remains in alice_conversation.jsonl" in visible
+
+
+def test_global_chat_visible_text_surfaces_receipt_refs():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    visible = TalkToAliceWidget._global_chat_visible_text(
+        widget,
+        "Round done. Receipt r58-src-e04da72a3c landed.",
+        "alice",
+    )
+
+    assert "[receipts: r58-src-e04da72a3c]" in visible
+
+
+def test_chat_anchor_and_render_all_messages_hooks_exist():
+    src = _src()
+    assert "def _on_chat_anchor_clicked" in src
+    assert "def _render_all_messages" in src
+    assert 'hasattr(self._chat, "setOpenExternalLinks")' in src
+    assert 'hasattr(self._chat, "anchorClicked")' in src
+    assert "anchorClicked.connect(self._on_chat_anchor_clicked)" in src
+
+
+def test_planning_mode_toggle_injects_cortex_prompt_block():
+    src = _src()
+    assert "self._planning_mode_toggle = QCheckBox(\"Plan\")" in src
+    assert "def _planning_mode_active" in src
+    assert "from System.swarm_planning_mode import planning_prompt_block" in src
+    assert "sysprompt = sysprompt + \"\\n\\n\" + _planning_context" in src
+
+
+def test_planning_mode_skips_pre_cortex_direct_tool_and_arm_prepass():
+    src = _src()
+    assert "not self._planning_mode_active() and self._maybe_start_observable_direct_tool_request" in src
+    assert "elif self._planning_mode_active():" in src
+    assert "if self._planning_mode_active():\n            _reply, _tool_results = \"\", []" in src
+    assert "agent-arm decision prepass REMOVED" in src
+    assert "schedule_async_agent_arm_prepass" not in src
+
+
+def test_planning_mode_does_not_parse_or_write_plans_inside_chat_widget():
+    src = _src()
+    assert "parse_plan(" not in src
+    assert "write_plan(" not in src
+    assert "update_plan_step(" not in src
+
+
+def test_round67_honest_uncertainty_injects_prompt_context_not_chat_template():
+    src = _src()
+    assert "from System.swarm_honest_uncertainty import (" in src
+    assert "evaluate as _honest_uncertainty_evaluate" in src
+    assert "write_unknown as _honest_uncertainty_write_unknown" in src
+    assert "_memory_card_has_relevant = _remember_memory_card_relevance" in src
+    assert "UNKNOWN_LEDGER_RECEIPT" in src
+    assert "parts.append(\n                    _hu_signal.block_text" in src
+
+
+def test_round67_phone_audio_guard_is_ingress_guard_before_execute_trigger():
+    src = _src()
+    guard_start = src.index("Round 67 (2026-05-27): phone-audio")
+    execute_start = src.index("EXECUTE TRIGGER WORD")
+    assert guard_start < execute_start
+    guard_block = src[guard_start:execute_start]
+    assert "from System.swarm_phone_audio_guard import detect_environmental_audio" in guard_block
+    assert "modality=\"spoken\"" in guard_block
+    assert "owner_label=_owner_label()" in guard_block
+    assert 'self._history.append({"role": "assistant", "content": "(silent: phone_audio_guard)"})' in guard_block
+    assert "_append_system_line(_phone_audio_probe" in guard_block
+    assert "_BrainWorker(" not in guard_block
+
+
+def test_visible_alice_duplicate_guard_short_window(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = type("FakeTalkWidget", (), {})()
+    monkeypatch.setattr(
+        "Applications.sifta_talk_to_alice_widget.time.time",
+        lambda: 1000.0,
+    )
+
+    assert TalkToAliceWidget._suppress_visible_alice_duplicate(widget, "Online.") is False
+    assert TalkToAliceWidget._suppress_visible_alice_duplicate(widget, "Online.") is True
 
 
 def test_global_chat_cognition_stream_buffer_is_capped():
@@ -140,7 +261,7 @@ def test_global_chat_cognition_stream_is_visible_main_chat_not_ledger_spam():
     src = _src()
     assert "Alice visible cognition stream" in src
     assert "def _append_global_cognition_stream" in src
-    assert "_append_global_cognition_stream(clean, reset=reset)" in src
+    assert "SIFTA_OBSERVABLE_MIRROR_TO_CHAT" in src
     assert "_global_cognition_stream_pending_render_line" in src
     assert "reset_stream = action in {" in src
     assert "does not write synthetic thoughts into alice_conversation.jsonl" in src
@@ -260,8 +381,68 @@ def test_talk_live_grok_framebuffer_signal_feeds_view_and_label():
     assert "livehash12345678" in widget._terminal_frame_label.text
 
 
-def test_talk_agent_arm_framebuffer_snapshot_feeds_same_terminal_view():
+def test_talk_agent_arm_framebuffer_snapshot_suppresses_chat_view_by_default(monkeypatch):
     from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.delenv("SIFTA_AGENT_ARM_FRAMEBUFFER_IN_CHAT", raising=False)
+
+    class FakeView:
+        def __init__(self):
+            self.cells = None
+            self.cursor = None
+            self.visible = None
+
+        def set_cells(self, cells, cursor):
+            self.cells = cells
+            self.cursor = cursor
+
+        def setVisible(self, value):
+            self.visible = value
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = ""
+            self.visible = None
+
+        def setText(self, text):
+            self.text = text
+
+        def setVisible(self, value):
+            self.visible = value
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    widget._terminal_frame_view = FakeView()
+    widget._terminal_frame_label = FakeLabel()
+
+    line = TalkToAliceWidget._format_matrix_process_trace_for_thinking(
+        widget,
+        {
+            "ts": 1779650000.0,
+            "action": "agent_arm_framebuffer_snapshot",
+            "focused_cli": "codex",
+            "text": "codex framebuffer",
+            "payload": {
+                "focused_cli": "codex",
+                "terminal_label": "Codex",
+                "framebuffer_cells": [[{"char": "C", "fg": "green", "bg": "default"}]],
+                "framebuffer_cursor": [0, 0, True],
+                "framebuffer_rows": 1,
+                "framebuffer_cols": 1,
+                "framebuffer_output_hash": "codexhash1234567890",
+            },
+        },
+    )
+
+    assert "Matrix/codex: framebuffer received" in line
+    assert "chat mirror suppressed" in line
+    assert widget._terminal_frame_view.cells is None
+    assert widget._terminal_frame_label.text == ""
+
+
+def test_talk_agent_arm_framebuffer_snapshot_can_debug_mirror_to_chat(monkeypatch):
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    monkeypatch.setenv("SIFTA_AGENT_ARM_FRAMEBUFFER_IN_CHAT", "1")
 
     class FakeView:
         def __init__(self):
@@ -312,10 +493,7 @@ def test_talk_agent_arm_framebuffer_snapshot_feeds_same_terminal_view():
 
     assert "Matrix/codex: framebuffer rendered in Alice global chat" in line
     assert widget._terminal_frame_view.cells[0][0]["char"] == "C"
-    assert widget._terminal_frame_view.cursor == (0, 0, True)
-    assert widget._terminal_frame_view.visible is True
     assert "Focused Codex viewport inside Alice global chat" in widget._terminal_frame_label.text
-    assert "live, not a separate window" in widget._terminal_frame_label.text
 
 
 def test_observable_trace_buffer_is_capped_by_body_economy():
@@ -383,7 +561,7 @@ def test_long_external_tools_have_observable_worker_lane():
     src = _src()
     assert "class _DirectToolWorker(QThread)" in src
     assert "_maybe_start_observable_direct_tool_request" in src
-    assert "still waiting for tool receipt" in src
+    assert "tool receipt in flight" in src
     assert "_direct_tool_last_stream_ts" in src
     assert "Tool worker:" in src
     assert "Owner-named external arms are action requests, not greetings." in src
@@ -433,7 +611,7 @@ def test_external_cortex_requests_are_observable_direct_tool_requests():
         status = "TIMEOUT"
         executed = False
         result = {"arm_id": "claude_agent", "receipt_id": "r-123"}
-        feedback_for_alice = "agent_arm_research returned no usable evidence"
+        feedback_for_alice = "agent_arm_research returned no successful receipt"
 
     line = _observable_tool_result_line(FakeResult())
     assert "Tool agent_arm_research" in line

@@ -30,3 +30,40 @@ def test_disable_env(tmp_path: Path, monkeypatch) -> None:
     n, s = bg.select_action([{"name": "x", "salience": 1.0, "cost": 0.0, "reward_potential": 1.0}], root=tmp_path)
     assert n == "idle" and s == 0.0
     assert not bg.selection_log_path(tmp_path).exists()
+
+
+def test_fatigued_owner_signal_biases_selection_and_records_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(bg, "state_dir", lambda explicit=None: tmp_path)
+
+    monkeypatch.setattr(
+        "System.swarm_stability_to_homeostasis_bridge.read_latest_clamp_signal",
+        lambda **_: {"clamp_level": "NONE", "reason": "stability_clear"},
+    )
+    monkeypatch.setattr(
+        "System.swarm_owner_somatic_state.latest_somatic_signal",
+        lambda *_, **__: {
+            "ok": True,
+            "is_fatigued": True,
+            "energy_score": 0.19,
+            "energy_level": "low",
+            "posture": "fatigued",
+            "source": "owner_voice",
+        },
+    )
+
+    loops = [
+        {"name": "research_exploration", "salience": 0.9, "cost": 0.1, "reward_potential": 0.9},
+        {"name": "repair_guard_loop", "salience": 0.65, "cost": 0.35, "reward_potential": 0.5},
+    ]
+
+    name, score = bg.select_action(loops, dopamine_level=0.0, root=tmp_path, write_ledger=True)
+
+    assert name == "repair_guard_loop"
+    assert score > 0.0
+    row = json.loads(bg.selection_log_path(tmp_path).read_text(encoding="utf-8").strip().splitlines()[-1])
+    owner = row["biological_modifiers"]["owner_somatic"]
+    assert owner["is_fatigued"] is True
+    assert owner["energy_level"] == "low"
+    assert owner["source"] == "owner_voice"

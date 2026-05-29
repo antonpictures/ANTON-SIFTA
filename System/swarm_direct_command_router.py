@@ -42,7 +42,7 @@ _KEY_MAP = {
 }
 
 _PRESS_KEY_PATTERN = re.compile(
-    r"^(?:now\s+)?(?:press|hit|push|send|type)\s+(enter|return|tab|escape|esc|space|"
+    r"^(?:now\s+)?(?:press|hit|push|send|tap|type)\s+(enter|return|tab|escape|esc|space|"
     r"backspace|delete|up|down|left|right|ctrl[- ][a-z])\s*$",
     re.IGNORECASE,
 )

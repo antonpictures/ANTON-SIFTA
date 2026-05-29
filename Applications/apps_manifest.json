@@ -1031,6 +1031,44 @@
     "_retired": true,
     "hidden": true
   },
+  "Code Knowledge Graph": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_code_graph_viewer.py",
+    "widget_class": "CodeKnowledgeGraphWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "signature": "CODEX-ROUND74-CODE-GRAPH-VIEWER-20260527",
+    "doctor": "Codex Desktop",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Qt MDI viewer for Alice's code knowledge graph. Renders the existing code_graph_nodes/code_graph_edges ledgers through the pure-Python force-directed layout organ; includes search, layer filtering, fit-to-view, body-profile summary, and node metadata inspection.",
+    "autostart": false,
+    "icon": "🧬",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "CODE_KNOWLEDGE_GRAPH_VIEWER_V1"
+  },
+  "Cortex Wake Lab": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_cortex_wake_lab.py",
+    "widget_class": "CortexWakeLabWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "CODEX-ROUND76-CORTEX-WAKE-LAB-20260527",
+    "doctor": "Codex Desktop",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Runs the same receipt-backed consciousness, qualia, observer/observed, embodiment, swimmer, and wake-context question set across Grok/Claude/Codex teacher cortexes and local Gemma4 student cortexes. Appends comparison rows to .sifta_state/cortex_comparison.jsonl so smaller models can learn the minimal wake spine.",
+    "autostart": false,
+    "icon": "🧠",
+    "requires": [
+      "PyQt6",
+      "Ollama optional",
+      "Grok CLI optional",
+      "Claude CLI optional",
+      "Codex CLI optional"
+    ],
+    "truth_label": "CORTEX_WAKE_LAB_V1"
+  },
   "STGM Immune Economy": {
     "category": "Economy",
     "entry_point": "Applications/sifta_immune_economy_widget.py",

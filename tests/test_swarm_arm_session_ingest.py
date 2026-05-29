@@ -79,6 +79,8 @@ def test_grok_result_from_matrix_trace_appears(tmp_path):
     _write_jsonl(tmp_path / "matrix_terminal_process_trace.jsonl", [
         {"ts": 95.0, "event": "GROK_RESULT", "arm": "grok_pty",
          "model": "grok", "text": "All systems nominal."},
+        {"ts": 95.5, "kind": "agent_arm_live", "focused_cli": "codex",
+         "text": "◆ codex working on module", "trace_id": "live-1"},
         # Non-result events should NOT appear.
         {"ts": 96.0, "event": "GROK_KEYSTROKE", "arm": "grok_pty",
          "text": "ls\n"},
@@ -86,6 +88,9 @@ def test_grok_result_from_matrix_trace_appears(tmp_path):
     block = ingest.fetch_arm_session_block(tmp_path, now_ts=100.0)
     assert "[grok_result]" in block
     assert "All systems nominal." in block
+    assert "[agent_arm_live]" in block
+    assert "truth=IN_FLIGHT" in block
+    assert "in-flight progress, not final landed receipts" in block
     assert "GROK_KEYSTROKE" not in block
     assert "[grok_keystroke]" not in block
 
@@ -145,6 +150,28 @@ def test_max_n_cap(tmp_path):
     assert "event_16" in block
     assert "event_5" not in block
     assert "event_0" not in block
+
+
+def test_agent_arm_live_is_bounded_per_arm(tmp_path):
+    rows = []
+    for i in range(10):
+        rows.append(
+            {
+                "ts": 90.0 + i,
+                "kind": "agent_arm_live",
+                "focused_cli": "codex",
+                "text": f"live_line_{i}",
+                "trace_id": f"line-{i}",
+            }
+        )
+    _write_jsonl(tmp_path / "matrix_terminal_process_trace.jsonl", rows)
+    block = ingest.fetch_arm_session_block(tmp_path, max_n=20, now_ts=100.0)
+    # max 3 in-flight rows per arm
+    assert block.count("truth=IN_FLIGHT") == 3
+    assert "live_line_9" in block
+    assert "live_line_8" in block
+    assert "live_line_7" in block
+    assert "live_line_6" not in block
 
 
 def test_malformed_rows_skipped(tmp_path):

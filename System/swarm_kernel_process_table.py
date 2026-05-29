@@ -367,6 +367,81 @@ class KernelProcessTable:
                 "profitability_score": round(profitability_score, 6),
             }
 
+    def sys_success_credit(self, pid: str, n: int = 1) -> None:
+        """Apply N successful-call credits, decrement failure_count floor 0."""
+        credits = max(0, int(n))
+        with self._lock:
+            if pid not in self.table:
+                raise KernelRegistrationError(f"unregistered process {pid}")
+            proc = self.table[pid]
+            before = proc.failure_count
+            proc.failure_count = max(0, before - credits)
+            proc.metadata["last_success_credit_ts"] = str(time.time())
+            proc.metadata["last_success_credit_n"] = str(credits)
+            proc.last_heartbeat_ts = time.time()
+            self._append_receipt(
+                "sys_success_credit",
+                proc,
+                failure_count_before=before,
+                failure_count_after=proc.failure_count,
+                credits=credits,
+            )
+            self._write_snapshot()
+
+    def sys_decay_failures(self, decay: float = 0.95) -> None:
+        """Per maintenance-tick multiplicative decay, floor 0."""
+        try:
+            rate = float(decay)
+        except (TypeError, ValueError):
+            rate = 0.95
+        rate = max(0.0, min(1.0, rate))
+        now = time.time()
+        with self._lock:
+            decayed_count = 0
+            total_before = 0
+            total_after = 0
+            for proc in self.table.values():
+                before = max(0, int(proc.failure_count))
+                total_before += before
+                after = int(before * rate)
+                if after != before:
+                    proc.failure_count = max(0, after)
+                    proc.metadata["last_failure_decay_ts"] = str(now)
+                    proc.metadata["last_failure_decay_rate"] = f"{rate:.6f}"
+                    decayed_count += 1
+                total_after += proc.failure_count
+            kernel_proc = self.table.get("kernel:self_maintenance")
+            if kernel_proc is None:
+                kernel_proc = OrganProcess(
+                    pid="kernel:self_maintenance",
+                    organ_id="kernel/process_table/self_maintenance",
+                    ring=0,
+                    health=1.0,
+                    stgm_balance=0.0,
+                    current_job="failure_decay",
+                    last_receipt_id="",
+                    failure_count=0,
+                    last_heartbeat_ts=now,
+                    location="kernel",
+                    bodies_present=["sifta_kernel"],
+                    metadata={"autopoietic_role": "maintains_process_table"},
+                )
+                self.table[kernel_proc.pid] = kernel_proc
+            kernel_proc.current_job = f"failure_decay decayed={decayed_count}"
+            kernel_proc.last_heartbeat_ts = now
+            kernel_proc.metadata["last_failure_decay_ts"] = str(now)
+            kernel_proc.metadata["last_failure_decay_rate"] = f"{rate:.6f}"
+            kernel_proc.metadata["last_failure_decay_count"] = str(decayed_count)
+            self._append_receipt(
+                "sys_decay_failures",
+                kernel_proc,
+                decay_rate=rate,
+                decayed_count=decayed_count,
+                total_failure_count_before=total_before,
+                total_failure_count_after=total_after,
+            )
+            self._write_snapshot()
+
     def sys_spend(self, pid: str, amount: float, purpose: str) -> str:
         """Minimal syscall ABI: spend STGM from a ring-0/1 process and receipt it."""
         amount_f = float(amount)
@@ -661,6 +736,7 @@ class KernelProcessTable:
             kernel_proc.current_job = f"self_maintenance actions={actions_taken}"
             kernel_proc.last_heartbeat_ts = now
             self.decay_routing_field(rate=0.95)
+            self.sys_decay_failures(decay=0.95)
             kernel_proc.metadata["last_self_maintenance_ts"] = str(now)
             kernel_proc.metadata["last_self_maintenance_actions"] = str(actions_taken)
 
@@ -1233,6 +1309,15 @@ def get_kernel_process_table(*, state_root: Path | str = DEFAULT_STATE_ROOT) -> 
     global _GLOBAL_TABLE
     if _GLOBAL_TABLE is None or Path(state_root) != _GLOBAL_TABLE.state_root:
         _GLOBAL_TABLE = KernelProcessTable(state_root=state_root)
+        try:
+            if (
+                Path(state_root).resolve() == DEFAULT_STATE_ROOT.resolve()
+                and any(proc.failure_count > 0 for proc in _GLOBAL_TABLE.table.values())
+            ):
+                for _ in range(3):
+                    _GLOBAL_TABLE.sys_decay_failures(decay=0.95)
+        except Exception:
+            pass
     return _GLOBAL_TABLE
 
 
@@ -1287,6 +1372,23 @@ def sys_budget_state(
         pid,
         requested_spend=requested_spend,
     )
+
+
+def sys_success_credit(
+    pid: str,
+    n: int = 1,
+    *,
+    state_root: Path | str = DEFAULT_STATE_ROOT,
+) -> None:
+    return get_kernel_process_table(state_root=state_root).sys_success_credit(pid, n=n)
+
+
+def sys_decay_failures(
+    decay: float = 0.95,
+    *,
+    state_root: Path | str = DEFAULT_STATE_ROOT,
+) -> None:
+    return get_kernel_process_table(state_root=state_root).sys_decay_failures(decay=decay)
 
 
 def sys_spend(

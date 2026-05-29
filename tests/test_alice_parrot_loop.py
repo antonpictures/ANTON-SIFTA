@@ -377,25 +377,22 @@ def test_state_root_recovers_from_missing_global():
             mod.__dict__["_STATE_DIR"] = original
 
 
-def test_owner_ollama_tool_request_maps_to_readonly_router_call():
+def test_owner_ollama_tool_request_does_not_emit_precortex_template():
     mod = _load_widget_module()
     tool_text = mod._owner_direct_read_tool_request(
         "List the installed ollama models using the tool."
     )
 
-    assert "TOOL_CALL: ollama_inventory" in tool_text
-    assert "cost_justification=" in tool_text
+    assert tool_text == ""
 
 
-def test_owner_memory_digest_request_maps_to_architect_digest_tool():
+def test_owner_memory_digest_request_does_not_emit_precortex_template():
     mod = _load_widget_module()
     tool_text = mod._owner_direct_read_tool_request(
         "Alice, what did I teach you today?"
     )
 
-    assert "TOOL_CALL: architect_memory_digest" in tool_text
-    assert "period=today" in tool_text
-    assert "cost_justification=" in tool_text
+    assert tool_text == ""
 
 
 def test_unresolved_memory_recall_gets_anchor_request_not_fabrication():
@@ -415,15 +412,13 @@ def test_unresolved_memory_recall_does_not_capture_previous_message_query():
     assert mod._unresolved_memory_recall_reply("What did I just say?") == ""
 
 
-def test_owner_self_vector_request_maps_to_alice_self_vector_tool():
+def test_owner_self_vector_request_does_not_emit_precortex_template():
     mod = _load_widget_module()
     tool_text = mod._owner_direct_read_tool_request(
         "Alice, what do you know right now?"
     )
 
-    assert "TOOL_CALL: alice_self_vector" in tool_text
-    assert "window_hours=24" in tool_text
-    assert "cost_justification=" in tool_text
+    assert tool_text == ""
 
 
 def test_owner_literal_write_tool_call_is_not_directly_executed():

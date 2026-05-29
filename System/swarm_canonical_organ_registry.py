@@ -233,6 +233,24 @@ CANONICAL_ORGANS: tuple[OrganSpec, ...] = (
         write_action=True,
         aliases=("self_improvement", "weight", "candidate", "fine_tune"),
     ),
+    OrganSpec(
+        "cortex_resource",
+        "Cortex / Local Thinking Organ Resource Health",
+        "cognition",
+        (
+            "System/swarm_primary_cortex_switcher.py",
+            "System/swarm_cortex_resource_field.py",  # the new writer we are adding
+        ),
+        (
+            "primary_cortex_switches.jsonl",
+            "cortex_resource_field.jsonl",
+            "alice_cortex_raw.jsonl",
+        ),
+        ("cortex_load", "vram_pressure", "warm_up_cost", "inference_latency", "cold_start_health"),
+        ("cortex", "brain", "thinking", "ollama", "model load", "vram", "timeout", "cold"),
+        owner_sensitive=False,
+        aliases=("primary brain", "local cortex", "ollama brain", "thinking organ"),
+    ),
 )
 
 

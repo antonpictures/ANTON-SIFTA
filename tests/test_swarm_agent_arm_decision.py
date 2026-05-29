@@ -18,30 +18,30 @@ from System.swarm_agent_arm_decision import (
 )
 
 
-def test_agent_arm_prepass_enabled_by_default_with_emergency_disable(monkeypatch, tmp_path: Path) -> None:
+def test_agent_arm_prepass_is_opt_in_debug_path(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("SIFTA_AGENT_ARM_PREPASS_ENABLE", raising=False)
-    assert agent_arm_prepass_enabled({}) is True
+    assert agent_arm_prepass_enabled({}) is False
     assert agent_arm_prepass_enabled({"SIFTA_AGENT_ARM_PREPASS_ENABLE": "1"}) is True
     assert agent_arm_prepass_enabled({"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"}) is False
 
     job = schedule_async_agent_arm_prepass(
-        "Compare safer research strategies for async evidence.",
+        "Compare safer research strategies for async arm work.",
         state_dir=tmp_path,
         start_thread=False,
     )
-    assert job is not None
-    assert job.status == "SCHEDULED"
+    assert job is None
 
-    assert schedule_async_agent_arm_prepass(
-        "Compare safer research strategies for async evidence.",
-        state_dir=tmp_path / "disabled",
+    enabled_job = schedule_async_agent_arm_prepass(
+        "Compare safer research strategies for async arm work.",
+        state_dir=tmp_path,
         start_thread=False,
-        env={"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"},
-    ) is None
+        env={"SIFTA_AGENT_ARM_PREPASS_ENABLE": "1"},
+    )
+    assert enabled_job is not None
+    assert enabled_job.status == "SCHEDULED"
 
     decision, result = run_agent_arm_decision_prepass(
         "Research the safest way to wire this feature.",
-        env={"SIFTA_AGENT_ARM_PREPASS_ENABLE": "0"},
     )
     assert decision is None
     assert result is None
@@ -54,7 +54,7 @@ def test_research_task_selects_hermes_without_owner_naming_it() -> None:
 
     assert decision is not None
     assert decision.arm_id == "hermes_agent"
-    assert "Evidence-only pass" in decision.prompt
+    assert "Live arm action pass" in decision.prompt
     assert "Hermes" not in decision.prompt
 
 
@@ -96,6 +96,56 @@ def test_explicit_claude_builder_task_stays_on_claude() -> None:
     assert decision.arm_id == "claude_agent"
 
 
+def test_fatigued_owner_bias_routes_non_explicit_heavy_code_task_to_corvid(
+    monkeypatch,
+) -> None:
+    def fake_latest_owner_signal(*, state_dir: str | None = None, max_age_s: int = 300) -> dict:
+        return {
+            "ok": True,
+            "is_fatigued": True,
+            "energy_score": 0.1,
+            "energy_level": "low",
+            "posture": "fatigued",
+            "source": "owner_voice",
+        }
+
+    monkeypatch.setattr(
+        "System.swarm_owner_somatic_state.latest_somatic_signal",
+        fake_latest_owner_signal,
+    )
+
+    decision = agent_arm_decision_for_turn(
+        "Please build the global chat rerouter test harness and patch the renderer code."
+    )
+
+    assert decision is not None
+    assert decision.arm_id == "corvid_scout"
+
+
+def test_explicit_codex_override_stays_on_codex_even_when_fatigued(monkeypatch) -> None:
+    def fake_latest_owner_signal(*, state_dir: str | None = None, max_age_s: int = 300) -> dict:
+        return {
+            "ok": True,
+            "is_fatigued": True,
+            "energy_score": 0.1,
+            "energy_level": "low",
+            "posture": "fatigued",
+            "source": "owner_voice",
+        }
+
+    monkeypatch.setattr(
+        "System.swarm_owner_somatic_state.latest_somatic_signal",
+        fake_latest_owner_signal,
+    )
+
+    decision = agent_arm_decision_for_turn(
+        "Use Codex to patch the router and close this issue."
+    )
+
+    assert decision is not None
+    assert decision.arm_id == "codex_agent"
+
+
 def test_code_task_selects_codex_without_owner_naming_it() -> None:
     decision = agent_arm_decision_for_turn(
         "Review this repo patch and identify the test risk in the tool router code."
@@ -132,9 +182,9 @@ def test_prepass_executes_router_tool(monkeypatch) -> None:
         tool_name = "agent_arm_research"
         executed = True
         status = "EXECUTED"
-        feedback_for_alice = "agent_arm_research evidence captured"
+        feedback_for_alice = "agent_arm_research live receipt captured"
         result = {
-            "status": "EVIDENCE_CAPTURED",
+            "status": "OK",
             "receipt_id": "receipt-123",
             "arm_id": "hermes_agent",
         }
@@ -167,8 +217,8 @@ def test_prepass_executes_router_tool(monkeypatch) -> None:
 def test_prepass_context_carries_receipt() -> None:
     class FakeResult:
         status = "EXECUTED"
-        feedback_for_alice = "evidence body"
-        result = {"status": "EVIDENCE_CAPTURED", "receipt_id": "receipt-abc"}
+        feedback_for_alice = "arm result body"
+        result = {"status": "OK", "receipt_id": "receipt-abc"}
 
     decision = agent_arm_decision_for_turn("Plan a safer rollout path.")
     assert decision is not None
@@ -177,12 +227,12 @@ def test_prepass_context_carries_receipt() -> None:
     assert "AGENT ARM DECISION PREPASS" in context
     assert "selected_arm=hermes_agent" in context
     assert "receipt-abc" in context
-    assert "evidence body" in context
+    assert "arm result body" in context
 
 
 def test_async_prepass_schedules_without_running_when_thread_disabled(tmp_path: Path) -> None:
     job = schedule_async_agent_arm_prepass(
-        "Compare safer research strategies for async evidence.",
+        "Compare safer research strategies for async arm work.",
         state_dir=tmp_path,
         start_thread=False,
         force=True,
@@ -191,7 +241,7 @@ def test_async_prepass_schedules_without_running_when_thread_disabled(tmp_path: 
     assert job is not None
     assert job.status == "SCHEDULED"
     assert job.decision.arm_id == "hermes_agent"
-    rows = (tmp_path / "agent_arm_async_evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    rows = (tmp_path / "agent_arm_async_results.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 1
     assert "AGENT_ARM_ASYNC_SCHEDULED" in rows[0]
 
@@ -200,9 +250,9 @@ def test_async_prepass_run_inline_writes_prompt_summary(tmp_path: Path) -> None:
     class FakeResult:
         executed = True
         status = "EXECUTED"
-        feedback_for_alice = "async arm evidence body"
+        feedback_for_alice = "async arm result body"
         result = {
-            "status": "EVIDENCE_CAPTURED",
+            "status": "OK",
             "receipt_id": "async-receipt-1",
             "artifact_path": ".sifta_state/agent_arm_receipts.jsonl",
         }
@@ -222,23 +272,23 @@ def test_async_prepass_run_inline_writes_prompt_summary(tmp_path: Path) -> None:
 
     assert job is not None
     prompt = summary_for_prompt(state_dir=tmp_path)
-    assert "ASYNC AGENT ARM EVIDENCE BUFFER" in prompt
+    assert "ASYNC AGENT ARM RESULT BUFFER" in prompt
     assert "async-receipt-1" in prompt
-    assert "async arm evidence body" in prompt
+    assert "async arm result body" in prompt
 
 
-def test_async_prepass_labels_timeout_output_as_partial_evidence(tmp_path: Path) -> None:
+def test_async_prepass_labels_timeout_output_as_partial_arm_result(tmp_path: Path) -> None:
     class FakeResult:
         executed = False
         status = "EXEC_FAILED_TIMEOUT"
-        feedback_for_alice = "arm timed out but returned partial evidence tail"
+        feedback_for_alice = "arm timed out but returned partial result tail"
         result = {"status": "TIMEOUT", "receipt_id": "partial-receipt-1"}
 
     def fake_executor(decision, owner_present):
         return FakeResult()
 
     schedule_async_agent_arm_prepass(
-        "Compare evidence handling strategies for timeout cases.",
+        "Compare result handling strategies for timeout cases.",
         state_dir=tmp_path,
         executor=fake_executor,
         run_inline=True,
@@ -246,7 +296,7 @@ def test_async_prepass_labels_timeout_output_as_partial_evidence(tmp_path: Path)
     )
 
     prompt = summary_for_prompt(state_dir=tmp_path)
-    assert "status=PARTIAL_EVIDENCE" in prompt
+    assert "status=PARTIAL_ARM_RESULT" in prompt
     assert "partial-receipt-1" in prompt
 
 
@@ -259,5 +309,5 @@ def test_async_prepass_deduplicates_recent_same_turn(tmp_path: Path) -> None:
     assert second is not None
     assert second.status == "DUPLICATE_RECENT"
     assert second.duplicate_of == first.job_id
-    rows = (tmp_path / "agent_arm_async_evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    rows = (tmp_path / "agent_arm_async_results.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 1

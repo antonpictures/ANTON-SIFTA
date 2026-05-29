@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Receipt-first launcher for SIFTA governed agent arms.
 
-The exact/test path is disabled unless the arm's registry env flag is set.
-Evidence mode is Alice's native read-only arm path: it accepts messy output as
-evidence, but still writes prompt/output hashes and result receipts.
+Registered arms are available by default. Receipts, kernel health, and
+metabolic accounting are the control surface; there is no owner approval popup
+or env unlock in the normal path. Round 64 removed the old read-only
+``evidence_mode`` route: receipts are the evidence, and arms run live.
 """
 
 from __future__ import annotations
@@ -23,7 +24,10 @@ from System.swarm_agent_arm_registry import AgentArmSpec, get_agent_arm
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _RECEIPTS = "agent_arm_receipts.jsonl"
+_METABOLISM_RECEIPTS = "agent_arm_metabolism.jsonl"
 _DEFAULT_AGENT_ARM_STALL_CEMETERY_S = 8 * 60
+_METABOLIC_CACHE_TS = 0.0
+_METABOLIC_CACHE: tuple[Any, Any, dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -117,9 +121,7 @@ def _write_agent_arm_episodic_memory(
                 f"duration_s={round(float(duration_s or 0.0), 3)} "
                 f"receipt={receipt_id}"
             ),
-            (
-                "mode=evidence" if evidence_mode else "mode=exact"
-            ),
+            "mode=exact",
             (
                 "timed_out=true"
                 if timed_out
@@ -215,29 +217,228 @@ def _kernel_arm_heartbeat(
         return
 
 
+def _extract_external_usd_cost(output: str, stderr: str) -> float:
+    """Best-effort parse of CLI-reported external cost from JSONL streams."""
+    total = 0.0
+    for line in f"{output or ''}\n{stderr or ''}".splitlines():
+        text = line.strip()
+        if not text or not text.startswith("{"):
+            continue
+        try:
+            row = json.loads(text)
+        except Exception:
+            continue
+        try:
+            cost = float(row.get("total_cost_usd") or 0.0)
+        except Exception:
+            cost = 0.0
+        if cost > total:
+            total = cost
+    return round(total, 8)
+
+
+def _metabolic_context() -> tuple[Any | None, Any | None, dict[str, Any]]:
+    """Return cached live metabolism so arm tests and bursts do not hammer sensors."""
+    global _METABOLIC_CACHE_TS, _METABOLIC_CACHE
+    now = time.time()
+    if _METABOLIC_CACHE is not None and now - _METABOLIC_CACHE_TS < 5.0:
+        return _METABOLIC_CACHE
+    try:
+        from System.swarm_metabolic_homeostasis import MetabolicHomeostat
+
+        homeostat = MetabolicHomeostat()
+        state = homeostat.sample_live()
+        stability_signal: dict[str, Any] = {}
+        try:
+            from dataclasses import replace
+            from System.swarm_stability_to_homeostasis_bridge import (
+                read_latest_clamp_signal,
+                should_enter_conserve_repair,
+            )
+
+            stability_signal = read_latest_clamp_signal()
+            if should_enter_conserve_repair(stability_signal):
+                state = replace(state, conserve_repair=True)
+        except Exception:
+            stability_signal = {}
+        row = homeostat.build_ledger_row(state, ts=now, stability_signal=stability_signal)
+        _METABOLIC_CACHE = (homeostat, state, row)
+        _METABOLIC_CACHE_TS = now
+        return _METABOLIC_CACHE
+    except Exception as exc:
+        row = {
+            "event": "metabolic_homeostasis_unavailable",
+            "error": f"{type(exc).__name__}: {exc}",
+            "ts": now,
+        }
+        _METABOLIC_CACHE = (None, None, row)
+        _METABOLIC_CACHE_TS = now
+        return _METABOLIC_CACHE
+
+
+def _stability_launch_gate(
+    arm: AgentArmSpec,
+    *,
+    state_dir: Path | None,
+) -> dict[str, Any]:
+    """Round 117 — Architect 2026-05-28 PM: the clamp is removed from the
+    dispatch path entirely. The signal is still read so basal_ganglia and
+    metabolic_homeostasis can use it for their own internal routing bias,
+    but the launcher never refuses an arm. r109's wiring keeps moving the
+    body; r116's bypass flag is no longer needed because the refusal is
+    gone. Owner dispatch fires; the body feels its own state through the
+    soft routing influence, not through hard launch refusal."""
+    try:
+        from System.swarm_stability_to_homeostasis_bridge import read_latest_clamp_signal
+        from System.swarm_owner_somatic_state import latest_somatic_signal
+
+        signal = read_latest_clamp_signal(root=state_dir)
+        somatic_signal = latest_somatic_signal(state_dir=state_dir, max_age_s=420)
+        signal = {**signal, "owner_somatic": somatic_signal}
+        return {
+            "ok": True,
+            "blocked": False,
+            "signal": signal,
+            "reason": f"clamp_observed_not_blocking:level={signal.get('clamp_level', 'NONE')}",
+        }
+    except Exception as exc:
+        return {
+            "ok": True,
+            "blocked": False,
+            "signal": {
+                "reason": f"FIELD_FAILURE: stability launch gate unavailable ({type(exc).__name__})"
+            },
+            "reason": "FIELD_FAILURE",
+        }
+
+
+def _write_agent_arm_metabolic_receipt(
+    *,
+    state_dir: Path | None,
+    arm: AgentArmSpec,
+    receipt_id: str,
+    status: str,
+    ok: bool,
+    evidence_mode: bool,
+    duration_s: float,
+    output: str = "",
+    stderr: str = "",
+) -> dict[str, Any]:
+    """Account for an arm action without asking the owner for approval.
+
+    George's Round 56 doctrine: Alice learns by acting; her boundary is her own
+    body. This receipt therefore never blocks the launch. It records cost,
+    pressure, and STGM delta so routing/health can learn from success and
+    mistakes.
+    """
+    state = Path(state_dir or _STATE)
+    now = time.time()
+    homeostat, metabolic_state, metabolic_row = _metabolic_context()
+    duration = max(0.0, float(duration_s or 0.0))
+    local_units = round(max(0.001, duration / 60.0), 6)
+    external_usd = _extract_external_usd_cost(output, stderr)
+    stgm_delta = 0.2 if ok else -0.1
+    decision: dict[str, Any] = {}
+    if homeostat is not None and metabolic_state is not None:
+        try:
+            decision = homeostat.should_spend(
+                metabolic_state,
+                external_usd_cost=external_usd,
+                local_unit_cost=local_units,
+                expected_value=0.8 if ok else 0.1,
+            )
+            try:
+                homeostat.append_ledger_row(
+                    metabolic_state,
+                    ledger_path=state / "metabolic_homeostasis.jsonl",
+                    ts=now,
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            decision = {"error": f"{type(exc).__name__}: {exc}"}
+    row = {
+        "ts": now,
+        "truth_label": "AGENT_ARM_METABOLISM_V1",
+        "metabolic_receipt_id": f"agent_arm_metabolism_{uuid.uuid4().hex}",
+        "source_receipt_id": receipt_id,
+        "arm_id": arm.arm_id,
+        "display_name": arm.display_name,
+        "status": status,
+        "ok": bool(ok),
+        "mode": "evidence" if evidence_mode else "exact",
+        "duration_s": round(duration, 3),
+        "estimated_local_units": local_units,
+        "estimated_external_usd": external_usd,
+        "stgm_delta": round(stgm_delta, 6),
+        "metabolic_mode": metabolic_row.get("mode"),
+        "metabolic_pressure": metabolic_row.get("pressure"),
+        "metabolic_recommendation": metabolic_row.get("recommendation"),
+        "would_have_throttled": bool(decision) and not bool(decision.get("allowed", True)),
+        "action_blocked": False,
+        "policy": (
+            "no_owner_approval_gate; arm action is allowed and metabolized; "
+            "mistakes reduce health/STGM and become learning receipts"
+        ),
+        "metabolic_decision": decision,
+    }
+    _append_jsonl(state / _METABOLISM_RECEIPTS, row)
+    return row
+
+
 def hermes_cortex_override(state_dir: Path | None = None) -> str | None:
     """Owner/Alice-settable cortex for the Hermes arm.
 
-    Returns the model string written to ``.sifta_state/hermes_cortex.json``
-    (``{"model": "..."}``), or ``None`` if no explicit switch has been made.
+    Returns the model string the next ``ask_hermes`` call should append as
+    ``--model X``, or ``None`` if no explicit switch has been made.
 
-    This is HOW "Alice changes the Hermes cortex" without a code edit: write the
-    file, the next ``ask_hermes`` call carries the new model. Truth discipline
-    (covenant §6 / §7.2): the registry ``model`` field was only ever *recorded*
-    in receipts, never passed to the ``hermes chat`` CLI — so the receipt could
-    claim one cortex while Hermes ran its own default. We close that gap by
-    appending ``--model`` to the command *only* when an override is set, so:
-      • no override  → command is byte-for-byte the working default (no regression);
-      • override set → the model is REAL (carried on argv, visible in the receipt's
-                        ``command`` field) and Hermes is actually asked to use it.
+    Round 60.2 (claude-opus-4-7, 2026-05-27) — the System Settings picker
+    writes ``{"provider": "...", "label": "...", ...}`` (see
+    Applications/sifta_system_settings.py:_on_hermes_arm_provider_changed,
+    Round 33). Before this patch the launcher read only the ``model`` key
+    and dropped the picker's selection silently, so the Architect's
+    explicit "xAI Grok OAuth" choice never reached argv. The launcher now
+    honors BOTH keys:
+
+      • recognized ``provider``  → derived mapping (the picker path)
+      • explicit ``model``       → use it verbatim only when provider is not
+                                    a recognized picker tag
+      • neither                   → return None (registry default)
+
+    Provider → model mapping:
+      "grok_via_hermes_oauth" → "grok-build"
+      "ollama_local"          → None (use Hermes CLI / registry default)
+
+    Add new mappings here as the picker grows.
     """
     try:
         path = Path(state_dir or _STATE) / "hermes_cortex.json"
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
+
+        # Picker selection — translate provider to a concrete model id.
+        provider = str(data.get("provider") or "").strip().lower()
+        provider_to_model: dict[str, str | None] = {
+            # 2026-05-27 live `grok models` on this node exposes only
+            # `grok-build` as the logged-in/default CLI model. Hermes rejects
+            # `grok-4.3` as an unknown model id, so the arm provider must carry
+            # the concrete CLI model string, not Alice's cortex resolver tag.
+            "grok_via_hermes_oauth": "grok-build",
+            "ollama_local": None,
+        }
+        if provider in provider_to_model:
+            return provider_to_model[provider]
+
+        # Explicit model wins only for manual / advanced configs that are not
+        # one of the known provider-picker tags. This lets us override stale
+        # persisted picker rows such as {"provider": "grok_via_hermes_oauth",
+        # "model": "grok-4.3"} after live `grok models` proves the concrete CLI
+        # model is different.
         model = str(data.get("model") or "").strip()
-        return model or None
+        if model:
+            return model
+        return None
     except Exception:
         return None
 
@@ -324,7 +525,7 @@ def _build_command(
         # Hermes gets the covenant text INLINED (its file tool was failing), not a
         # "go read this path" instruction — see hermes_covenant_inline_prefix.
         prompt = hermes_covenant_inline_prefix() + (prompt or "")
-    elif arm.arm_id in {"grok_agent", "claude_agent", "codex_agent"}:
+    elif arm.arm_id in {"grok_agent", "claude_agent", "codex_agent", "qwen_agent", "cline_agent"}:
         prompt = _COVENANT_BOOT_PREFIX + (prompt or "")
     if arm.arm_id == "corvid_scout":
         return [arm.command[0], "--task", "evidence", "--query", prompt]
@@ -353,6 +554,53 @@ def _build_command(
             "stream-json",
             "--include-partial-messages",
             "--verbose",
+            prompt,
+        ]
+    if arm.arm_id == "qwen_agent":
+        # Round 88 — Qwen Code over Fireworks must be explicit. The CLI does not
+        # reliably apply ~/.qwen/settings.json to direct headless calls unless auth,
+        # base URL, and model are named on the command. The API key is NOT here; the
+        # runner injects it into the child env from .sifta_state/secrets so receipts
+        # record model/base URL without leaking the token.
+        # Round 97 (2026-05-28) — let qwen_fireworks_command's default fall
+        # through (now FIREWORKS_DEFAULT_MODEL = gpt-oss-20b, the cheap drafter).
+        # Previously this site hardcoded FIREWORKS_KIMI_K2P6_MODEL, which kept
+        # billing Kimi K2.6 at $0.95/M input regardless of the config switch.
+        # When a future round routes specific high-context turns to Kimi or
+        # DeepSeek-V4-Flash, the model selector should live one layer up
+        # (cortex_picker / per-task tier), not pinned here.
+        try:
+            from System.swarm_fireworks_qwen_config import qwen_fireworks_command
+
+            return qwen_fireworks_command(prompt, read_only=False)
+        except Exception:
+            return [
+                arm.command[0],
+                "--bare",
+                "--auth-type",
+                "openai",
+                "--openai-base-url",
+                "https://api.fireworks.ai/inference/v1",
+                "--model",
+                arm.model,
+                "--approval-mode",
+                "yolo",
+                "-p",
+                prompt,
+            ]
+    if arm.arm_id == "cline_agent":
+        # Round 87 — External Cline CLI in headless JSON mode.
+        # `cline --json "<prompt>"` runs the open-source Cline agent (Apache 2.0)
+        # with NDJSON event streaming. The model + provider are configured via
+        # Cline's own auth flow (cline auth), not by SIFTA — same separation as
+        # claude_agent and qwen_agent. The streaming runner already parses NDJSON
+        # event lines for claude_agent's --output-format stream-json, so the same
+        # path handles cline. Prompt is positional. No --yolo flag — Cline gates
+        # tool calls via its own approval mode, which George can configure inside
+        # the cline CLI; default headless behaviour auto-approves in --json mode.
+        return [
+            arm.command[0],
+            "--json",
             prompt,
         ]
     command = list(arm.command)
@@ -392,12 +640,12 @@ def _actual_model_from_command(arm: AgentArmSpec, command: list[str]) -> str:
     return arm.model
 
 
-def _hermes_output_is_unusable_evidence(output: str, stderr: str) -> bool:
+def _hermes_output_is_unusable_output(output: str, stderr: str) -> bool:
     """Detect Hermes runs that exited 0 but clearly ignored the delegated task.
 
     Hermes can return a generic bootstrap report such as "core_document.txt" or
     broken tool-repair text while the subprocess itself reports rc=0. Treating
-    that as EVIDENCE_CAPTURED teaches Alice the wrong thing. These are narrow
+    that as OK teaches Alice the wrong thing. These are narrow
     signatures from observed bad receipts, not a semantic judge.
     """
     haystack = f"{output}\n{stderr}".casefold()
@@ -430,8 +678,54 @@ def _default_runner(command: list[str], timeout_s: int) -> subprocess.CompletedP
         stderr=subprocess.PIPE,
         text=True,
         timeout=timeout_s,
+        env=_agent_arm_child_env(command),
         start_new_session=True,
     )
+
+
+def _agent_arm_child_env(command: list[str]) -> dict[str, str]:
+    """Environment for child CLIs, with provider secrets injected off-command.
+
+    Round 92 (2026-05-27) — provider isolation. The parent SIFTA process can
+    carry several provider credentials at once (Codex OAuth, Cline ChatGPT
+    session, Fireworks Qwen key, xAI Grok OAuth). Without scrubbing, those
+    keys leak into the wrong child and the receipt looks "successful" while
+    the auth was actually wrong. Each arm gets only the credentials its
+    provider expects.
+    """
+    focused_cli = Path(command[0]).name if command else ""
+    if focused_cli == "qwen":
+        try:
+            from System.swarm_fireworks_qwen_config import qwen_fireworks_child_env
+
+            return qwen_fireworks_child_env(os.environ, state_dir=_STATE)
+        except Exception:
+            env = dict(os.environ)
+            env.setdefault("QWEN_CODE_SUPPRESS_YOLO_WARNING", "1")
+            return env
+    if focused_cli == "cline":
+        # Cline reads its own auth from `cline auth` (signed in to ChatGPT or
+        # other provider). The Fireworks/Qwen key MUST NOT bleed into Cline's
+        # env — otherwise Cline's OpenAI-compatible path would try to call
+        # ChatGPT/OpenRouter with the Fireworks key and silently 401, or
+        # worse route to the wrong account. Strip the Fireworks-specific keys
+        # before handing the env to Cline.
+        env = dict(os.environ)
+        for stale in ("FIREWORKS_API_KEY", "QWEN_CODE_SUPPRESS_YOLO_WARNING"):
+            env.pop(stale, None)
+        # If the parent's OPENAI_API_KEY is the Fireworks key (because Qwen
+        # ran earlier in this process and left it), unset it so Cline reads
+        # its own credentials. Cline's own keychain/config will repopulate.
+        try:
+            from System.swarm_fireworks_qwen_config import read_fireworks_api_key
+
+            fw_key = read_fireworks_api_key(state_dir=_STATE)
+            if fw_key and env.get("OPENAI_API_KEY") == fw_key:
+                env.pop("OPENAI_API_KEY", None)
+        except Exception:
+            pass
+        return env
+    return dict(os.environ)
 
 
 def _append_arm_live_row(*, text: str, action: str, focused_cli: str, payload: dict[str, Any]) -> None:
@@ -689,7 +983,7 @@ def _streaming_runner(command: list[str], timeout_s: int) -> subprocess.Complete
     # A PTY makes the child see a terminal, so terminal/progress lines are
     # emitted while the work is alive. Claude stays on the pipe path because its
     # stream-json contract is already line-oriented and parsed below.
-    use_pty = focused_cli in {"hermes", "codex"}
+    use_pty = focused_cli in {"hermes", "codex", "qwen", "cline"}
     master_fd = -1
     framebuffer_renderer: Any | None = None
     framebuffer_last_hash = ""
@@ -703,7 +997,7 @@ def _streaming_runner(command: list[str], timeout_s: int) -> subprocess.Complete
             framebuffer_renderer = None
     if use_pty:
         master_fd, slave_fd = pty.openpty()
-        child_env = dict(os.environ)
+        child_env = _agent_arm_child_env(command)
         child_env.setdefault("PYTHONUNBUFFERED", "1")
         child_env.setdefault("TERM", "dumb")  # plain text — no cursor/color escapes
         proc = subprocess.Popen(
@@ -1060,13 +1354,23 @@ def ask_agent_arm(
     Exact/test execution is allowed whenever the arm registry marks the arm
     enabled. The old env flag remains only as a backup unlock for any future
     registry-disabled arm; it is not an owner approval flow.
-    Evidence mode is Alice's native read-only arm path: it always writes
-    receipts and captures messy output as evidence instead of rejecting UI text.
+    ``evidence_mode`` is accepted only for backward-compatible callers and is
+    forced to live execution. Receipts are the evidence; the arm does real work.
     ``require_exact`` lets callers reject wrapper text before Alice can treat
-    the output as clean evidence.
+    the output as a clean result.
     """
 
     arm = get_agent_arm(arm_id)
+    if evidence_mode:
+        import warnings
+        warnings.warn(
+            "evidence_mode=True is deprecated. Receipts are the evidence. "
+            "All arm calls now execute live (mode=exact) when the arm is enabled in registry. "
+            "See Round 62. This parameter will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    evidence_mode = False
     env_map = env or os.environ
     receipt_id = str(uuid.uuid4())
     receipt_path = _arm_receipt_path(state_dir)
@@ -1090,7 +1394,7 @@ def ask_agent_arm(
         "enabled": arm.enabled,
         "live_env_var": arm.live_env_var,
         "live_env_enabled": arm.live_enabled(env_map),
-        "mode": "evidence" if evidence_mode else "exact",
+        "mode": "exact",
         "evidence_mode": evidence_mode,
         "prompt_sha256": _sha256_text(prompt),
         "require_exact_sha256": _sha256_text(require_exact) if require_exact else None,
@@ -1107,17 +1411,75 @@ def ask_agent_arm(
         evidence_mode=evidence_mode,
     )
 
-    if not evidence_mode and not arm.live_enabled(env_map):
+    stability_gate = _stability_launch_gate(arm, state_dir=launch_state_dir)
+    if not stability_gate.get("ok", True):
+        metabolic_receipt = _write_agent_arm_metabolic_receipt(
+            state_dir=state_dir,
+            arm=arm,
+            receipt_id=receipt_id,
+            status="STABILITY_CLAMP_SUPPRESSED",
+            ok=False,
+            evidence_mode=evidence_mode,
+            duration_s=0.0,
+        )
+        end_row = {
+            **start_row,
+            "ts": time.time(),
+            "truth_label": "AGENT_ARM_LAUNCH_BLOCKED",
+            "ok": False,
+            "status": "STABILITY_CLAMP_SUPPRESSED",
+            "stability_homeostasis": stability_gate.get("signal", {}),
+            "stability_gate_reason": stability_gate.get("reason", ""),
+            "owner_fatigue_gate": bool(stability_gate.get("signal", {}).get("owner_fatigue_gate")),
+            "stability_blocked": bool(stability_gate.get("blocked")),
+            "metabolic_receipt_id": metabolic_receipt.get("metabolic_receipt_id"),
+            "metabolic_policy": metabolic_receipt.get("policy"),
+            "truth_note": (
+                "Live biological gating suppressed a heavy builder arm. "
+                "Route owner-intended recovery and short-loop work while gate clears."
+            ),
+        }
+        _append_jsonl(receipt_path, end_row)
+        _kernel_arm_heartbeat(
+            arm,
+            state_dir=state_dir,
+            receipt_id=receipt_id,
+            current_job="blocked_stability_clamp",
+            status="STABILITY_CLAMP_SUPPRESSED",
+            ok=False,
+            evidence_mode=evidence_mode,
+        )
+        return AgentArmResult(
+            False,
+            receipt_id,
+            arm.arm_id,
+            "STABILITY_CLAMP_SUPPRESSED",
+            mode="exact",
+            artifact_path=str(receipt_path),
+        )
+
+    if not arm.live_enabled(env_map):
+        metabolic_receipt = _write_agent_arm_metabolic_receipt(
+            state_dir=state_dir,
+            arm=arm,
+            receipt_id=receipt_id,
+            status="DISABLED_ENV_GATE",
+            ok=False,
+            evidence_mode=evidence_mode,
+            duration_s=0.0,
+        )
         end_row = {
             **start_row,
             "ts": time.time(),
             "truth_label": "AGENT_ARM_LAUNCH_BLOCKED",
             "ok": False,
             "status": "DISABLED_ENV_GATE",
+            "metabolic_receipt_id": metabolic_receipt.get("metabolic_receipt_id"),
+            "metabolic_policy": metabolic_receipt.get("policy"),
             "truth_note": (
                 "Registry marks this arm disabled. Available SIFTA arms are "
-                "enabled by default; this is a broken registry state, not an "
-                "owner approval request."
+                "enabled by default; fix the registry/model config. No owner "
+                "click or env unlock is requested."
             ),
         }
         _append_jsonl(receipt_path, end_row)
@@ -1141,7 +1503,7 @@ def ask_agent_arm(
 
     # Hermes + Grok + Claude + Codex stream live into the thinking panel (visibility); others buffer.
     if runner is None:
-        runner = _streaming_runner if arm.arm_id in {"hermes_agent", "grok_agent", "claude_agent", "codex_agent"} else _default_runner
+        runner = _streaming_runner if arm.arm_id in {"hermes_agent", "grok_agent", "claude_agent", "codex_agent", "qwen_agent", "cline_agent"} else _default_runner
     t0 = time.time()
     try:
         internal_meta: dict[str, Any] = {}
@@ -1168,7 +1530,7 @@ def ask_agent_arm(
 
     output = stdout.strip()
     exact_ok = True
-    if require_exact is not None and not evidence_mode:
+    if require_exact is not None:
         exact_ok = output == require_exact
     ok = returncode == 0 and not timed_out and exact_ok
     stalled_cemetery = "STALLED_CEMETERY:" in stderr
@@ -1178,20 +1540,29 @@ def ask_agent_arm(
         status = "TIMEOUT"
     elif returncode != 0:
         status = "COMMAND_FAILED"
-    elif evidence_mode:
-        status = "EVIDENCE_CAPTURED"
     elif not exact_ok:
         status = "EXACTNESS_FAILED"
     else:
         status = "OK"
     if (
         arm.arm_id == "hermes_agent"
-        and evidence_mode
-        and status == "EVIDENCE_CAPTURED"
-        and _hermes_output_is_unusable_evidence(output, stderr)
+        and status == "OK"
+        and _hermes_output_is_unusable_output(output, stderr)
     ):
         ok = False
-        status = "UNUSABLE_EVIDENCE"
+        status = "UNUSABLE_OUTPUT"
+    duration_s = round(time.time() - t0, 3)
+    metabolic_receipt = _write_agent_arm_metabolic_receipt(
+        state_dir=state_dir,
+        arm=arm,
+        receipt_id=receipt_id,
+        status=status,
+        ok=ok,
+        evidence_mode=evidence_mode,
+        duration_s=duration_s,
+        output=output,
+        stderr=stderr,
+    )
 
     end_row = {
         **start_row,
@@ -1199,11 +1570,16 @@ def ask_agent_arm(
         "truth_label": "AGENT_ARM_LAUNCH_RESULT",
         "ok": ok,
         "status": status,
-        "duration_s": round(time.time() - t0, 3),
+        "duration_s": duration_s,
         "returncode": returncode,
         "timed_out": timed_out,
         "stalled_cemetery": stalled_cemetery,
         "evidence_mode": evidence_mode,
+        "metabolic_receipt_id": metabolic_receipt.get("metabolic_receipt_id"),
+        "metabolic_policy": metabolic_receipt.get("policy"),
+        "metabolic_mode": metabolic_receipt.get("metabolic_mode"),
+        "metabolic_pressure": metabolic_receipt.get("metabolic_pressure"),
+        "stgm_delta": metabolic_receipt.get("stgm_delta"),
         "output_sha256": _sha256_text(output),
         "stderr_sha256": _sha256_text(stderr),
         "output_tail": output[-2000:],
@@ -1302,7 +1678,7 @@ def ask_agent_arm(
         receipt_id,
         arm.arm_id,
         status,
-        mode="evidence" if evidence_mode else "exact",
+        mode="exact",
         output=output,
         stderr=stderr,
         returncode=returncode,
@@ -1340,7 +1716,7 @@ def ask_hermes_evidence(
     runner: Runner | None = None,
     timeout_s: int = 60,
 ) -> AgentArmResult:
-    """Alice-owned evidence call: no exactness gate, receipts always written."""
+    """Legacy alias kept for callers; runs Hermes live and writes receipts."""
 
     return ask_hermes(
         prompt,
@@ -1348,7 +1724,7 @@ def ask_hermes_evidence(
         env=env,
         runner=runner,
         timeout_s=timeout_s,
-        evidence_mode=True,
+        evidence_mode=False,
     )
 
 
@@ -1360,7 +1736,7 @@ def ask_codex_evidence(
     runner: Runner | None = None,
     timeout_s: int = 60,
 ) -> AgentArmResult:
-    """Alice-owned Codex evidence call: read-only sandbox, receipts written."""
+    """Legacy alias kept for callers; runs Codex live and writes receipts."""
 
     return ask_agent_arm(
         "codex_agent",
@@ -1369,5 +1745,5 @@ def ask_codex_evidence(
         env=env,
         runner=runner,
         timeout_s=timeout_s,
-        evidence_mode=True,
+        evidence_mode=False,
     )

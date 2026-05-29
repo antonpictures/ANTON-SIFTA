@@ -615,20 +615,20 @@ def test_verification_contract_tool_reads_latest_human_signal(tmp_path, monkeypa
     assert "tool_router_changes" in out.feedback_for_alice
 
 
-def test_agent_arm_research_is_alice_owned_evidence_tool(monkeypatch):
+def test_agent_arm_research_is_alice_owned_live_tool(monkeypatch):
     from System import swarm_agent_arm_launcher as launcher
 
     def fake_ask_agent_arm(arm_id, prompt, **kwargs):
         assert arm_id == "hermes_agent"
         assert "compare agent frameworks" in prompt
-        assert kwargs["evidence_mode"] is True
+        assert kwargs["evidence_mode"] is False
         return launcher.AgentArmResult(
             ok=True,
             receipt_id="arm-receipt-1",
             arm_id="hermes_agent",
-            status="EVIDENCE_CAPTURED",
-            mode="evidence",
-            output="Hermes evidence: compare A/B/C.",
+            status="OK",
+            mode="exact",
+            output="Hermes result: compare A/B/C.",
             artifact_path=".sifta_state/agent_arm_receipts.jsonl",
         )
 
@@ -641,25 +641,25 @@ def test_agent_arm_research_is_alice_owned_evidence_tool(monkeypatch):
     assert out.executed is True
     assert out.status == "EXECUTED"
     assert out.result["receipt_id"] == "arm-receipt-1"
-    assert "agent_arm_research evidence captured" in out.feedback_for_alice
-    assert "Hermes evidence" in out.feedback_for_alice
+    assert "agent_arm_research live receipt captured" in out.feedback_for_alice
+    assert "Hermes result" in out.feedback_for_alice
 
 
-def test_agent_arm_research_can_target_codex_evidence_arm(monkeypatch):
+def test_agent_arm_research_can_target_codex_live_arm(monkeypatch):
     from System import swarm_agent_arm_launcher as launcher
 
     def fake_ask_agent_arm(arm_id, prompt, **kwargs):
         assert arm_id == "codex_agent"
         assert "review this patch" in prompt
-        assert kwargs["evidence_mode"] is True
+        assert kwargs["evidence_mode"] is False
         assert kwargs["timeout_s"] == 900
         return launcher.AgentArmResult(
             ok=True,
             receipt_id="codex-receipt-1",
             arm_id="codex_agent",
-            status="EVIDENCE_CAPTURED",
-            mode="evidence",
-            output="Codex evidence: patch risk is low.",
+            status="OK",
+            mode="exact",
+            output="Codex result: patch risk is low.",
             artifact_path=".sifta_state/agent_arm_receipts.jsonl",
         )
 
@@ -672,24 +672,24 @@ def test_agent_arm_research_can_target_codex_evidence_arm(monkeypatch):
     assert out.executed is True
     assert out.result["arm_id"] == "codex_agent"
     assert out.result["receipt_id"] == "codex-receipt-1"
-    assert "Codex evidence" in out.feedback_for_alice
+    assert "Codex result" in out.feedback_for_alice
 
 
-def test_agent_arm_research_can_target_claude_code_evidence_arm(monkeypatch):
+def test_agent_arm_research_can_target_claude_code_live_arm(monkeypatch):
     from System import swarm_agent_arm_launcher as launcher
 
     def fake_ask_agent_arm(arm_id, prompt, **kwargs):
         assert arm_id == "claude_agent"
         assert "inspect SIFTA" in prompt
-        assert kwargs["evidence_mode"] is True
+        assert kwargs["evidence_mode"] is False
         assert kwargs["timeout_s"] == 900
         return launcher.AgentArmResult(
             ok=True,
             receipt_id="claude-receipt-1",
             arm_id="claude_agent",
-            status="EVIDENCE_CAPTURED",
-            mode="evidence",
-            output="Claude Code evidence: renderer risk is bounded.",
+            status="OK",
+            mode="exact",
+            output="Claude Code result: renderer risk is bounded.",
             artifact_path=".sifta_state/agent_arm_receipts.jsonl",
         )
 
@@ -702,7 +702,7 @@ def test_agent_arm_research_can_target_claude_code_evidence_arm(monkeypatch):
     assert out.executed is True
     assert out.result["arm_id"] == "claude_agent"
     assert out.result["receipt_id"] == "claude-receipt-1"
-    assert "Claude Code evidence" in out.feedback_for_alice
+    assert "Claude Code result" in out.feedback_for_alice
 
 
 def test_agent_arm_research_can_target_corvid_scout(monkeypatch):
@@ -711,14 +711,14 @@ def test_agent_arm_research_can_target_corvid_scout(monkeypatch):
     def fake_ask_agent_arm(arm_id, prompt, **kwargs):
         assert arm_id == "corvid_scout"
         assert "classify this owner request" in prompt
-        assert kwargs["evidence_mode"] is True
+        assert kwargs["evidence_mode"] is False
         return launcher.AgentArmResult(
             ok=True,
             receipt_id="corvid-receipt-1",
             arm_id="corvid_scout",
-            status="EVIDENCE_CAPTURED",
-            mode="evidence",
-            output="Corvid evidence: command intent.",
+            status="OK",
+            mode="exact",
+            output="Corvid result: command intent.",
             artifact_path=".sifta_state/agent_arm_receipts.jsonl",
         )
 
@@ -731,7 +731,7 @@ def test_agent_arm_research_can_target_corvid_scout(monkeypatch):
     assert out.executed is True
     assert out.result["arm_id"] == "corvid_scout"
     assert out.result["receipt_id"] == "corvid-receipt-1"
-    assert "Corvid evidence" in out.feedback_for_alice
+    assert "Corvid result" in out.feedback_for_alice
 
 
 def test_agent_arm_failure_feedback_does_not_claim_evidence(monkeypatch):
@@ -743,7 +743,7 @@ def test_agent_arm_failure_feedback_does_not_claim_evidence(monkeypatch):
             receipt_id="timeout-receipt-1",
             arm_id="hermes_agent",
             status="TIMEOUT",
-            mode="evidence",
+            mode="exact",
             output="",
             artifact_path=".sifta_state/agent_arm_receipts.jsonl",
         )
@@ -756,8 +756,8 @@ def test_agent_arm_failure_feedback_does_not_claim_evidence(monkeypatch):
 
     assert out.executed is False
     assert out.status == "EXEC_FAILED_TIMEOUT"
-    assert "returned no usable evidence" in out.feedback_for_alice
-    assert "evidence captured" not in out.feedback_for_alice
+    assert "returned no successful receipt" in out.feedback_for_alice
+    assert "live receipt captured" not in out.feedback_for_alice
 
 
 def test_build_execution_receipt_reply_includes_proof_tokens():
@@ -776,7 +776,10 @@ def test_build_execution_receipt_reply_includes_proof_tokens():
     )
     reply = router.build_execution_receipt_reply([result])
     assert "EXECUTION RECEIPTS" in reply
-    assert "executor=deterministic_tool_router" in reply
+    # Round 51 (2026-05-27): label renamed from `deterministic_tool_router`
+    # to `cortex_receipted_tool_router` per Architect vocabulary watch -- the
+    # path is cortex-receipted, not "deterministic" in any meaningful sense.
+    assert "executor=cortex_receipted_tool_router" in reply
     assert "123e4567-e89b-12d3-a456-426614174000" in reply
 
 

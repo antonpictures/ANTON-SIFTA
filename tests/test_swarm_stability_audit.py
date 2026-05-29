@@ -40,6 +40,7 @@ def test_stability_audit_high_energy_is_unstable(tmp_path):
 def test_stability_audit_delta_can_mark_unstable(tmp_path, monkeypatch):
     monkeypatch.setenv("STABILITY_AUDIT_MAX_ENERGY", "10")
     monkeypatch.setenv("STABILITY_AUDIT_MAX_DELTA", "0.01")
+    monkeypatch.setenv("STABILITY_ENERGY_DECAY", "0")
     first = compute_stability_snapshot(root=tmp_path, multi_gate_norm=0.1)
     second = compute_stability_snapshot(root=tmp_path, multi_gate_norm=1.0)
 

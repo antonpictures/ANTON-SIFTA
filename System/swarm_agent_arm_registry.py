@@ -171,12 +171,76 @@ CLAUDE_AGENT = AgentArmSpec(
     ),
 )
 
+QWEN_AGENT = AgentArmSpec(
+    arm_id="qwen_agent",
+    display_name="Qwen Code (gpt-oss-20b drafter via Fireworks)",
+    command=("qwen",),  # marker; _build_command expands to `qwen -p "<prompt>"`
+    model="accounts/fireworks/models/gpt-oss-20b",
+    provider_base_url="https://api.fireworks.ai/inference/v1",
+    enabled=True,
+    live_env_var="SIFTA_AGENT_ARMS_ENABLE",
+    default_toolsets=(),
+    max_turns=1,
+    capabilities=(
+        "single_query_research",
+        "evidence_output",
+        "external_cortex",
+        "codebase_reading",
+        "codebase_build",
+    ),
+    notes=(
+        "External Qwen Code CLI in headless mode (`qwen -p \"<prompt>\"`), pointed at "
+        "Fireworks AI's OpenAI-compatible endpoint (gpt-oss-20b default; "
+        "DeepSeek V4 Flash and Kimi K2.6 are selectable Fireworks model ids). Authentication "
+        "lives in ~/.qwen/settings.json under modelProviders.openai with the Fireworks "
+        "baseUrl and FIREWORKS_API_KEY in env (NEVER committed). Round 86 (2026-05-27) "
+        "adds the fifth arm — same pattern as grok/claude/codex; Alice can dispatch this "
+        "for research and bounded code work. Output is Qwen/Kimi's voice (evidence), "
+        "never Alice's. Bridge, not merge."
+    ),
+)
+
+CLINE_AGENT = AgentArmSpec(
+    arm_id="cline_agent",
+    display_name="Cline (open-source coding agent, Apache 2.0)",
+    command=("cline",),  # marker; _build_command expands to `cline --json "<prompt>"`
+    model="cline-cli-default",
+    provider_base_url="cline_cli",
+    enabled=True,
+    live_env_var="SIFTA_AGENT_ARMS_ENABLE",
+    default_toolsets=(),
+    max_turns=1,
+    capabilities=(
+        "single_query_research",
+        "evidence_output",
+        "external_cortex",
+        "codebase_reading",
+        "codebase_build",
+        "shell_execution",
+        "multi_agent_team",
+    ),
+    notes=(
+        "External Cline CLI in headless JSON mode (`cline --json \"<prompt>\"`). "
+        "Cline is open-source (Apache 2.0, cline/cline on GitHub, 62k stars). It "
+        "speaks every major provider — Anthropic / OpenAI / Gemini / OpenRouter / "
+        "Vercel AI Gateway / Bedrock / Vertex / Cerebras / Groq / Ollama / LM "
+        "Studio — through one runtime, so the model picker is upstream of this "
+        "arm (configure in ~/.cline/ or via cline's own auth). Headless mode "
+        "emits NDJSON; the streaming runner already parses JSON event streams "
+        "from claude_agent so the same path handles cline_agent. Round 87 "
+        "(2026-05-27) — sixth arm. Same covenant-boot + bridge-not-merge "
+        "contract as the other external arms."
+    ),
+)
+
 _ARMS: dict[str, AgentArmSpec] = {
     HERMES_AGENT.arm_id: HERMES_AGENT,
     CODEX_AGENT.arm_id: CODEX_AGENT,
     CORVID_SCOUT.arm_id: CORVID_SCOUT,
     GROK_AGENT.arm_id: GROK_AGENT,
     CLAUDE_AGENT.arm_id: CLAUDE_AGENT,
+    QWEN_AGENT.arm_id: QWEN_AGENT,
+    CLINE_AGENT.arm_id: CLINE_AGENT,
 }
 
 

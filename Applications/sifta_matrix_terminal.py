@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
 from PyQt6 import sip
 from PyQt6.QtCore import QSocketNotifier, Qt, QTimer, pyqtSignal
@@ -2128,9 +2129,9 @@ class MatrixTerminalPane(QPlainTextEdit):
         without silent loss. The primordial electricity → termios pty pair → slave stdin
         path must deliver the exact ASCII swimmers (no double-spend, no drop on EAGAIN).
         Old bare os.write + except-OSError-pass on the NONBLOCK master was the hole:
-        long prompt payloads or the trailing \r could be truncated or lost when Hicks
-        (Grok TUI) back-pressured the buffer during its render. This loop + yield
-        guarantees the bytes we emit are the bytes Hicks actually receives on stdin.
+        long prompt payloads or the trailing \r could be truncated or lost when the
+        Grok TUI back-pressured the buffer during its render. This loop + yield
+        guarantees the bytes we emit are the bytes the Grok TUI actually receives on stdin.
         Returns count the kernel accepted. Used only for bulk Grok delegation writes.
         """
         if self.master_fd is None or not data:
@@ -3122,9 +3123,9 @@ class MatrixTerminalPane(QPlainTextEdit):
         # nonblock master_fd + bare os.write can drop or partial the swimmers
         # (BlockingIOError / short return swallowed by except OSError: pass).
         # The kernel pty accepted the write call but not every byte reached
-        # Hicks stdin before the \r landed. Now using _write_bytes_all drain.
+        # the Grok TUI stdin before the \r landed. Now using _write_bytes_all drain.
         # Also record exact bytes kernel accepted into the capture so the
-        # heartbeat can report sent vs seen (distinguishes "wrote but Hicks
+        # heartbeat can report sent vs seen (distinguishes "wrote but the Grok TUI
         # silent" from "kernel ate our bytes at the boundary").
         encoded = payload.encode("utf-8")
         sent = self._write_bytes_all(encoded)
@@ -4882,6 +4883,54 @@ class MatrixTerminalPane(QPlainTextEdit):
         self.write_command(cmd)
         # After execution, show the prompt again with a delay
         QTimer.singleShot(1500, lambda: self._append_plain("\nSIFTA > "))
+
+    def execute_swimmer_command(self, cmd: str, *, swimmer_mode: bool = False, owner_consent: bool = True, trace_id: str | None = None) -> dict[str, Any]:
+        """Yin/Yang Terminal Swimmer Phase 2 shim (inside desktop process only).
+
+        When swimmer_mode=True, routes through TerminalSwimmerForge for:
+        - covenant filters (secrets, fullscreen TUIs, consent)
+        - auto-receipt to work_receipts + swimmer_forge_flux.jsonl
+        - three-trial validation path for admission
+
+        Keeps the forge inside the Qt desktop process. No detach, no external PTY spawn.
+        The PTY surface (this pane) remains the single source of truth for the owner's terminal.
+        """
+        if not swimmer_mode:
+            # fall back to normal safe shell path
+            self._execute_shell_from_alice(cmd)
+            return {"status": "delegated_to_normal_shell", "swimmer_mode": False}
+
+        from pathlib import Path
+        from System.swarm_terminal_swimmer_forge import TerminalSwimmerForge
+
+        state_dir = Path(".sifta_state")
+        forge = TerminalSwimmerForge(state_dir=state_dir)
+
+        def _matrix_pty_runner(command: str, cwd: str | None, timeout_s: int) -> dict[str, Any]:
+            """Runner that prefers this live PTY when available (still inside the same process)."""
+            if self.is_running():
+                self.write_command(command + "\n")
+                # For validated swimmer tasks the forge still records the wrapper receipt;
+                # full stdout capture can be layered later via the existing _read_ready path.
+                return {
+                    "type": "TERMINAL_EXECUTION",
+                    "source": "matrix_terminal_pty_swimmer",
+                    "command": command,
+                    "stdout": "SWIMMER_MODE_PTY_DELEGATED",
+                    "exit_code": 0,
+                }
+            return {"type": "TERMINAL_EXECUTION", "exit_code": 1, "stdout": "", "stderr": "pty not running"}
+
+        receipt = forge.run_alice_global_chat_command(
+            cmd,
+            owner_consent=owner_consent,
+            trace_id=trace_id or str(uuid.uuid4()),
+            cwd=str(getattr(self, "cwd", Path.cwd())),
+            timeout_s=45,
+            terminal_runner=_matrix_pty_runner,
+        )
+        # The forge already appended the COMMAND_WRAPPER and work receipt
+        return receipt
 
     def run_hack_1(self):
         if self._script_state == "WAIT_BTN_1":

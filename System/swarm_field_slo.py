@@ -103,6 +103,34 @@ def _as_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _row_ts(row: Mapping[str, Any]) -> Optional[float]:
+    """Return the best timestamp for a JSONL row/payload, if one exists."""
+    candidates: List[Any] = []
+    payload = row.get("payload")
+    if isinstance(payload, Mapping):
+        candidates.append(payload.get("ts"))
+    candidates.append(row.get("ts"))
+    for value in candidates:
+        try:
+            ts = float(value)
+        except (TypeError, ValueError):
+            continue
+        if ts == ts and ts not in (float("inf"), float("-inf")):
+            return ts
+    return None
+
+
+def _format_age(ts: Optional[float], *, now: Optional[float] = None) -> str:
+    if ts is None:
+        return "n/a"
+    age_s = max(0.0, float(now if now is not None else time.time()) - float(ts))
+    if age_s < 120.0:
+        return f"{age_s:.0f}s"
+    if age_s < 48 * 3600.0:
+        return f"{age_s / 3600.0:.1f}h"
+    return f"{age_s / 86400.0:.1f}d"
+
+
 def read_jsonl_tail(path: Path, *, limit: int) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
@@ -256,14 +284,31 @@ def append_state_dir_report(
     config: FieldSLOConfig = FieldSLOConfig(),
 ) -> Dict[str, Any]:
     """Evaluate and append one falsifiable SLO receipt for the current field."""
+    field_rows = read_jsonl_tail(state_dir / "organ_field_vector.jsonl", limit=config.max_field_rows)
+    truth_rows = read_jsonl_tail(state_dir / "truth_continuity_events.jsonl", limit=config.max_truth_rows)
+    latest_field_ts = _row_ts(field_rows[-1]) if field_rows else None
+    latest_truth_ts = _row_ts(truth_rows[-1]) if truth_rows else None
     report = evaluate_state_dir(state_dir, config=config)
+    now = time.time()
     row: Dict[str, Any] = {
         "schema": SLO_SCHEMA_LITERAL,
-        "ts": time.time(),
+        "ts": now,
         "truth_label": "OPERATIONAL",
         "retention_class": "operational",
         "source": "swarm_field_slo:append_state_dir_report",
         "slo_pass": report.ok,
+        "freshness": {
+            "latest_field_ts": latest_field_ts,
+            "latest_field_age_s": (
+                round(max(0.0, now - latest_field_ts), 3)
+                if latest_field_ts is not None else None
+            ),
+            "latest_truth_ts": latest_truth_ts,
+            "latest_truth_age_s": (
+                round(max(0.0, now - latest_truth_ts), 3)
+                if latest_truth_ts is not None else None
+            ),
+        },
         "report": report.as_dict(),
     }
     from System.jsonl_file_lock import append_line_locked
@@ -279,17 +324,67 @@ def append_state_dir_report(
 
 
 def summary_for_prompt(state_dir: Path = _STATE) -> str:
+    field_rows = read_jsonl_tail(state_dir / "organ_field_vector.jsonl", limit=1)
+    truth_rows = read_jsonl_tail(state_dir / "truth_continuity_events.jsonl", limit=1)
+    latest_field_ts = _row_ts(field_rows[-1]) if field_rows else None
+    latest_truth_ts = _row_ts(truth_rows[-1]) if truth_rows else None
     report = evaluate_state_dir(state_dir)
     status = "PASS" if report.ok else "FAIL"
+    now = time.time()
+    field_age_s = (
+        max(0.0, now - latest_field_ts)
+        if latest_field_ts is not None else
+        None
+    )
+    field_age = _format_age(latest_field_ts, now=now)
+    truth_age = _format_age(latest_truth_ts, now=now)
+    try:
+        from System.swarm_stale_speech_guard import wrap_value_if_stale
+    except Exception:
+        def wrap_value_if_stale(label: str, value: object, age_s, *, threshold_s: int = 86400) -> str:
+            return f"{label}={value}"
+
+    completeness = wrap_value_if_stale(
+        "completeness_rate",
+        f"{report.completeness_rate:.3f}",
+        field_age_s,
+    )
+    unknown_free = wrap_value_if_stale(
+        "unknown_free_rate",
+        f"{report.unknown_free_rate:.3f}",
+        field_age_s,
+    )
+    min_connected = wrap_value_if_stale(
+        "min_connected_organs",
+        report.min_connected_organs,
+        field_age_s,
+    )
+    density_span = wrap_value_if_stale(
+        "density_span",
+        report.density_span if report.density_span is not None else "n/a",
+        field_age_s,
+    )
+    truth_drift = wrap_value_if_stale(
+        "max_truth_drift_streak",
+        report.max_consecutive_truth_drifts,
+        field_age_s,
+    )
+    stale_note = ""
+    if latest_field_ts is None:
+        stale_note = " field_freshness=UNKNOWN_DO_NOT_CALL_LIVE"
+    elif field_age_s is not None and field_age_s > 3600.0:
+        stale_note = " field_freshness=STALE_DO_NOT_CALL_LIVE"
     return (
         "UNIFIED FIELD SLO (alive_real receipts + measurement gate):\n"
         f"- status={status} field_rows={report.total_field_rows} "
         f"truth_rows={report.total_truth_rows} "
-        f"completeness_rate={report.completeness_rate:.3f} "
-        f"unknown_free_rate={report.unknown_free_rate:.3f} "
-        f"min_connected_organs={report.min_connected_organs} "
-        f"density_span={report.density_span if report.density_span is not None else 'n/a'} "
-        f"max_truth_drift_streak={report.max_consecutive_truth_drifts}\n"
+        f"field_latest_age={field_age} truth_latest_age={truth_age}{stale_note} "
+        f"{completeness} "
+        f"{unknown_free} "
+        f"{min_connected} "
+        f"{density_span} "
+        f"{truth_drift}\n"
+        "- rule=if field_latest_age is stale, say this SLO is the last field snapshot, not this-turn live health.\n"
         f"- boundary={report.boundary}"
     )
 

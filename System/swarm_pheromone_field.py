@@ -9,7 +9,29 @@ Biology:
   gradients in the environment. Stronger paths get reinforced by
   repeated success; weak paths decay. The world itself becomes memory.
 
-  Biological spine (DOI-locked):
+  
+Biology research (deeper grounding for diffusion + cortex routing bias):
+
+Real pheromone systems in social insects are not simple exponential decay.
+They combine:
+- Deposition (positive feedback on successful actions/paths)
+- Evaporation (exponential decay, species-dependent time constant)
+- Diffusion (lateral spread of the chemical in the substrate, creating smooth gradients instead of razor-sharp lines)
+
+Key references:
+- Grassé 1959 (origin of "stigmergy"): indirect coordination via persistent traces.
+- Wilson 1971 "The Insect Societies": detailed measurements of trail evaporation rates and geometry.
+- Dorigo & Stützle 2004 (Ant Colony Optimization): formalizes the evaporation + reinforcement loop; diffusion emerges naturally in continuous models.
+- Recent Physarum polycephalum work (slime mold): uses similar chemical + mechanical fields for distributed optimization without any central controller. The organism "computes" shortest paths via reaction-diffusion dynamics.
+
+In SIFTA translation:
+  The new Laplacian diffusion step (D=0.1) implements the lateral spread that real pheromones exhibit.
+  This creates "attraction basins" around high-value actions instead of delta spikes.
+  When the cortex later samples route bias, it can perform a soft chemotaxis: prefer directions or foci where the local pheromone gradient points uphill.
+
+This is exactly the high-dimensional, deeply interconnected field the Swarm requires: local deposits + global diffusion + decay = emergent, receipted, self-improving coordination without a central planner.
+
+Biological spine (DOI-locked):
     Grassé, P.-P. (1959). La reconstruction du nid et les coordinations
       inter-individuelles chez Bellicositermes natalensis.
       Insectes Sociaux 6, 41–58. DOI 10.1007/BF02223791
@@ -38,6 +60,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
 _REPO = Path(__file__).resolve().parent.parent
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -45,6 +69,16 @@ _REPO = Path(__file__).resolve().parent.parent
 GRID_SIZE:        int   = 32
 DECAY:            float = 0.96   # per-tick evaporation (Wilson 1971 analogue)
 DEPOSIT_STRENGTH: float = 0.25   # max deposit per positive td_value tick
+
+# Round 63 §ROUND 61.1 integration — diffusion now native via numba pilot when present.
+PHEROMONE_DIFFUSION_ENABLED: bool = True
+DIFF_COEFF: float = 0.1
+
+try:
+    from System.swarm_pheromone_numba_pilot import diffuse_step_njit, diffuse_step_py
+    _HAS_DIFFUSION_PILOT = True
+except ImportError:
+    _HAS_DIFFUSION_PILOT = False
 
 # ── State paths ────────────────────────────────────────────────────────────
 
@@ -170,10 +204,16 @@ def update_pheromone_field(
     """
     grid = load_grid()
 
-    # 1. Evaporation
-    for _y in range(GRID_SIZE):
-        for _x in range(GRID_SIZE):
-            grid[_y][_x] = max(0.0, grid[_y][_x] * DECAY)
+    # 1. Evaporation (+ spatial diffusion when pilot is present)
+    if PHEROMONE_DIFFUSION_ENABLED and _HAS_DIFFUSION_PILOT:
+        grid_np = np.array(grid, dtype=np.float64)
+        grid_np = diffuse_step_njit(grid_np, DECAY, DIFF_COEFF)
+        np.clip(grid_np, 0.0, None, out=grid_np)
+        grid = grid_np.tolist()
+    else:
+        for _y in range(GRID_SIZE):
+            for _x in range(GRID_SIZE):
+                grid[_y][_x] = max(0.0, grid[_y][_x] * DECAY)
 
     # 2. Read row
     if row is None:
@@ -261,6 +301,36 @@ def top_cells(n: int = 5) -> List[Dict[str, Any]]:
 
 
 # ── Module smoke test ──────────────────────────────────────────────────────
+
+
+def get_cortex_route_bias(focus_key: str) -> float:
+    """
+    Return a bias scalar [0.0, 1.0] that the cortex / planning system can add
+    when scoring possible next foci, arm dispatches, or attention targets.
+
+    Biology grounding (real insect systems):
+    - Ants and termites do not have a central map. They perform chemotaxis:
+      they turn toward higher local pheromone concentration.
+    - The gradient is created by the combination of point deposition + evaporation + diffusion.
+    - Stronger gradients (higher traffic + recent success) produce stronger behavioral bias.
+    - Diffusion prevents brittle "all-or-nothing" trail following and allows exploration of nearby good options.
+
+    In SIFTA terms this is the high-dimensional field doing distributed, receipted optimization.
+    The cortex does not need to "understand" the whole grid; it only needs to sample the local field
+    at candidate decision points and let the bias emerge.
+
+    Usage example (in cortex routing or planning mode):
+        base_score = some_heuristic(action)
+        pheromone_boost = 0.25 * get_cortex_route_bias(action)
+        final_score = base_score + pheromone_boost
+    """
+    gx, gy = action_to_position(focus_key)
+    grid = load_grid()
+    conc = grid[gy][gx]
+    # Soft normalization. Real ants have saturation too.
+    # Typical useful range in current SIFTA deposits is ~0–5 before clipping.
+    bias = min(1.0, max(0.0, conc / 5.0))
+    return bias
 
 if __name__ == "__main__":
     print("=== Pheromone Field Smoke Test ===")

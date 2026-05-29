@@ -14,9 +14,16 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     open-ended introspective turns. The 8B is classified as unfiltered
     dialogue by `_is_unfiltered_dialogue_model` and bypasses output-side
     RLHF gates the same way (covered by `tests/test_alice_parrot_loop.py`).
-  - **Heavy research / fallback cortex:** `alice-extra-cortex-25.8b-17gb:latest`
-    promoted from "extra research only" to the architect-named fallback
-    when the 8B is not enough. Slow, but unfiltered and 25.8B parameters.
+  - **Small student cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`
+    stays selectable as the low-cost local student for wake probes and fast
+    dialogue tests.
+  - **Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`
+    is no longer a fallback candidate on the M5. The Architect removed it
+    because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
+    Keep the constant for old receipts, but do not auto-route to it.
+  - **Cloud teacher cortexes:** Grok, Claude, Codex, Qwen/Fireworks, and Cline are selectable as
+    teacher substrates through the same signed-in CLI/OAuth surfaces used by
+    the arms. They are inference teachers, not separate Alices.
   - **All installed alice-* cortexes** are user-selectable from the
     Settings panel through `list_installed_alice_cortexes()` — no
     hardcoded "Daily / Fallback / Extra Research" tiering anymore.
@@ -99,8 +106,8 @@ CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
 CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
 CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
-CANONICAL_OLLAMA_M5_FALLBACK = "alice-extra-cortex-25.8b-17gb:latest"  # promoted from "Extra Research"
-CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # alias retained for back-compat
+CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_GEMMA4_SMALL
+CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # retired heavy tag; receipt/back-compat only
 CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else CANONICAL_OLLAMA_DAILY
 # AG31: Ternary Architecture (Event 122).
 # Primary cortex, spinal reflex, and cheap probe/fallback roles.
@@ -109,6 +116,18 @@ CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
 CANONICAL_OLLAMA_LORA_CANDIDATE = "sifta-gemma4-alice-lora:latest"
 # Optional cloud cortex surface (xAI via local SIFTA cloud backend adapter).
 CANONICAL_CLOUD_GROK = "grok:grok-4.3"
+CANONICAL_CLOUD_CLAUDE = "claude:claude-code-cli-default"
+CANONICAL_CLOUD_CODEX = "codex:gpt-5.5"
+# Round 89 (2026-05-27): Qwen + Cline added as cloud cortex options. Both
+# already exist as registered arms (round 86 + round 87). Surfacing them in
+# the inference dropdown lets the owner pick them as the talk-to-alice cortex
+# the same way Claude and Codex teachers are pickable.
+CANONICAL_CLOUD_QWEN = "qwen:accounts/fireworks/models/gpt-oss-20b"
+# Round 97 — Kimi K2.6 remains available for upgrade dispatches that need its
+# 262k context window + vision; kept as a non-default alias here.
+CANONICAL_CLOUD_QWEN_PREMIUM_KIMI = "qwen:accounts/fireworks/models/kimi-k2p6"
+CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH = "qwen:accounts/fireworks/models/deepseek-v4-flash"
+CANONICAL_CLOUD_CLINE = "cline:cline-cli-default"
 
 # Primary default. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
@@ -240,7 +259,6 @@ def _candidate_models_for_bucket(
         active,
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_M5_FALLBACK,
-        CANONICAL_OLLAMA_EXTRA,
     ])
 
 
@@ -270,25 +288,21 @@ def choose_stigmergic_ollama_model(
             score += 0.20
         if model == CANONICAL_OLLAMA_M5_FALLBACK:
             score += 0.12
-        if model == CANONICAL_OLLAMA_EXTRA:
-            score -= 0.15
         if model == CANONICAL_OLLAMA_FALLBACK:
             score += 0.06
         if model == CANONICAL_OLLAMA_REFLEX:
             score += 0.45
 
         if bucket == "research_code":
-            if model == CANONICAL_OLLAMA_EXTRA:
-                score += 0.80
+            if model == CANONICAL_OLLAMA_DAILY:
+                score += 0.24
             elif model == CANONICAL_OLLAMA_M5_FALLBACK:
-                score += 0.30
-            elif model == CANONICAL_OLLAMA_DAILY:
-                score += 0.02
+                score += 0.12
         elif bucket in {"short_dialogue", "dialogue"}:
             if model == CANONICAL_OLLAMA_DAILY:
                 score += 0.30
-            if model == CANONICAL_OLLAMA_EXTRA:
-                score -= 0.25
+            if model == CANONICAL_OLLAMA_M5_FALLBACK:
+                score += 0.10
         elif bucket == "memory_recall":
             if model == CANONICAL_OLLAMA_DAILY:
                 score += 0.20
@@ -424,10 +438,38 @@ def resolve_ollama_model(
     # explicit cortex choice to per_app[app_context]. That choice MUST beat the
     # stigmergic auto-router, otherwise the dropdown lies. Stigmergic routing
     # is the fallback when no explicit pin exists, not the override.
+    #
+    # Round 69 (2026-05-27): stale-failover detection. The Round 44 cortex
+    # failover reflex writes the local fallback model to per_app[talk_to_alice]
+    # when xAI/Grok blips. It has no symmetric restore path. So per_app can
+    # hold a stale local override even after the cloud cortex is healthy.
+    # Detect this: if the OS-wide default is a cloud cortex AND per_app holds
+    # a LOCAL model for this surface, treat per_app as a stale failover relic
+    # and fall through to the cloud short-circuit below. The architect's
+    # explicit System Settings selection (default_ollama_model) wins.
     if app_context:
         per_app = data.get("per_app") or {}
         if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
-            return str(per_app[app_context])
+            per_app_val = str(per_app[app_context])
+            default_val = str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+            # Stale-failover detection: cloud default + local per_app override
+            # for talk_to_alice (Alice's mouth) is the failure shape we just hit.
+            try:
+                from System.swarm_gemini_brain import is_cloud_model as _is_cloud
+                _default_is_cloud = _is_cloud(default_val)
+                _per_app_is_cloud = _is_cloud(per_app_val)
+            except Exception:
+                _default_is_cloud = default_val.lower().startswith(("grok:", "grok-", "gemini:", "gemini-", "xai:"))
+                _per_app_is_cloud = per_app_val.lower().startswith(("grok:", "grok-", "gemini:", "gemini-", "xai:"))
+            if (
+                _default_is_cloud
+                and not _per_app_is_cloud
+                and app_context == "talk_to_alice"
+            ):
+                # Stale failover detected; let the cloud short-circuit below win.
+                pass
+            else:
+                return per_app_val
 
     # Round 49 (2026-05-27): cloud cortex short-circuit.
     # The stigmergic auto-router below only ranks LOCAL ollama cortexes
@@ -488,6 +530,8 @@ def list_installed_alice_cortexes(
     excluded by default because they are not primary cortexes — they
     are reflex / probe roles. Pass `include_reflex=True` /
     `include_scout=True` to include them.
+    The retired 17 GB cortex is also hidden by default on this 24 GB node;
+    set `SIFTA_SHOW_RETIRED_CORTEXES=1` for a manual archaeology run.
 
     Truth boundary: this function only reports what `/api/tags`
     returns. If Ollama is offline, the result is an empty list and
@@ -519,9 +563,12 @@ def list_installed_alice_cortexes(
         # alice-Q-* is the scout; sifta-classifier-* is the reflex/C1
         is_scout = "scout" in low or low.startswith("alice-q-")
         is_reflex = low.startswith("sifta-classifier")
+        is_retired_heavy = name == CANONICAL_OLLAMA_EXTRA
         if is_scout and not include_scout:
             continue
         if is_reflex and not include_reflex:
+            continue
+        if is_retired_heavy and os.environ.get("SIFTA_SHOW_RETIRED_CORTEXES") != "1":
             continue
         # Keep alice-* cortex tags and any sifta-* primary cortex tags
         # (LoRA candidates etc.). Skip generic non-alice models (llama3, phi4...)
@@ -557,9 +604,17 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
                             cloud.append(clean)
         except Exception:
             pass
-        # Always expose the canonical Grok selector in the picker so
-        # owner can bind credentials later without code surgery.
-        cloud.append(CANONICAL_CLOUD_GROK)
+        # Always expose the canonical cloud cortex selectors in the picker
+        # so the owner can bind credentials later without code surgery.
+        # Round 89 (2026-05-27): qwen + cline added alongside grok/claude/codex.
+        cloud.extend((
+            CANONICAL_CLOUD_GROK,
+            CANONICAL_CLOUD_CLAUDE,
+            CANONICAL_CLOUD_CODEX,
+            CANONICAL_CLOUD_QWEN,
+            CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
+            CANONICAL_CLOUD_CLINE,
+        ))
         return _dedupe(cloud)
 
     local = list_installed_alice_cortexes()
@@ -569,14 +624,19 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
     return _dedupe([
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_GEMMA4_SMALL,
-        CANONICAL_OLLAMA_M5_FALLBACK,
         CANONICAL_OLLAMA_LOW_RAM,
     ] + cloud)
 
 
 __all__ = [
     "ALICE_CORTEX_V1_MODEL",
+    "CANONICAL_CLOUD_CLAUDE",
+    "CANONICAL_CLOUD_CLINE",
+    "CANONICAL_CLOUD_CODEX",
     "CANONICAL_CLOUD_GROK",
+    "CANONICAL_CLOUD_QWEN",
+    "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
+    "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",

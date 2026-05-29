@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicState
+from System.swarm_stability_to_homeostasis_bridge import read_latest_clamp_signal
 from System.swarm_consciousness_engine import ConsciousnessEngine, ConsciousnessEngineConfig, read_interoception
 from System.swarm_dream_engine import SwarmDreamEngine
 from System.jsonl_file_lock import append_line_locked
@@ -272,14 +273,27 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("George Prior daemon failed to start (non-fatal)")
 
-    def _assess_danger(self, body_state: MetabolicState) -> Dict[str, Any]:
-        """Convert raw metabolic state into a danger/pressure signal."""
+    def _assess_danger(self, body_state: MetabolicState, stability_signal: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Convert raw metabolic state into a danger/pressure signal.
+        Now accepts the full stability + field stress signal so CONSERVE_REPAIR
+        from the 17-organ ring actually flips the homeostat mode and budget.
+        """
         pressure = self.homeostat.pressure(body_state)
-        mode = self.homeostat.mode(pressure)
+        # Pass the rich field + clamp signal so the homeostat can enter
+        # CONSERVE_REPAIR and lower STGM pressure / throttle heavy work.
+        mode = self.homeostat.mode(pressure, stability_signal=stability_signal or {})
+        if stability_signal:
+            try:
+                if stability_signal.get("conserve_repair") or (stability_signal.get("field_stress", 0.0) >= 0.55):
+                    mode = "CONSERVE_REPAIR"
+            except Exception:
+                pass
         return {
             "pressure": pressure,
             "mode": mode,
-            "is_critical": mode in ("RED_CONSERVE", "CRITICAL_STARVATION")
+            "is_critical": mode in ("RED_CONSERVE", "CRITICAL_STARVATION"),
+            "stability_clamp_level": (stability_signal or {}).get("clamp_level", "NONE"),
+            "field_stress": (stability_signal or {}).get("field_stress", 0.0),
         }
 
     def _select_attention(self, consciousness_state) -> str:
@@ -583,6 +597,16 @@ class SwarmPhysiology:
         
         # 0. Spacetime / Circadian Context
         now_state = build_now_state()
+
+        # 0b. Rich field + clamp signal (the high-dimensional organ ring speaks here)
+        # This is the wire that makes §2.A real: the 17-organ health field + clamp
+        # now flows into the metabolic governor so CONSERVE_REPAIR actually changes
+        # STGM pressure, rest cycles, and arm routing in live ticks.
+        stability_signal: Dict[str, Any] = {}
+        try:
+            stability_signal = read_latest_clamp_signal(root=_STATE_DIR)
+        except Exception:
+            stability_signal = {}
         causal_probe_tick: Optional[int] = None
         causal_probe_reverts_applied = 0
         try:
@@ -605,6 +629,7 @@ class SwarmPhysiology:
             logger.debug("Active causal prober revert sweep skipped (non-fatal)")
 
         # 0c. Organizational Identity Rehydration (Priority #1)
+        # (stability_signal from the rich field ring is now in scope for all metabolic calls below)
         # Runs once per body tick so long gaps / genome drift can temporarily
         # tighten probing and pruning until the organism recalibrates.
         _identity_receipt: Dict[str, Any] = {
@@ -652,7 +677,7 @@ class SwarmPhysiology:
         body_state = MetabolicHomeostat.sample_live(self.homeostat.cfg)
 
         # 2. Assess Danger
-        danger = self._assess_danger(body_state)
+        danger = self._assess_danger(body_state, stability_signal=stability_signal)
         
         # 2b. Event 112 — Hippocampal Novelty Map & Metabolic Gate
         novelty_frame: Optional[Any] = None
@@ -943,14 +968,65 @@ class SwarmPhysiology:
                 root=_STATE_DIR,
                 same_tick_receipt=_clamp_receipt,
             )
-            if _clamp_receipt["clamp_level"] != "NONE":
-                logger.warning(
-                    "[Event134] Stability clamp=%s energy=%.3f delta=%.3f clamps=%s",
-                    _clamp_receipt["clamp_level"],
-                    _clamp_receipt.get("lyapunov_energy", 0.0),
-                    _clamp_receipt.get("delta_lyapunov_energy", 0.0),
-                    _clamp_receipt.get("active_clamps", []),
+            try:
+                from dataclasses import replace
+                from System.swarm_stability_to_homeostasis_bridge import (
+                    read_latest_clamp_signal,
+                    should_enter_conserve_repair,
                 )
+
+                _stability_homeostasis_signal = read_latest_clamp_signal(
+                    root=_STATE_DIR,
+                    same_tick_receipt=_clamp_receipt,
+                    write_ledger=True,
+                )
+                mem_row["stability_homeostasis"] = _stability_homeostasis_signal
+                if should_enter_conserve_repair(_stability_homeostasis_signal):
+                    body_state = replace(body_state, conserve_repair=True)
+                    danger["mode"] = "CONSERVE_REPAIR"
+                    danger["is_critical"] = True
+                    danger["stability_conserve_repair"] = True
+                    self.homeostat.append_ledger_row(
+                        body_state,
+                        ledger_path=_STATE_DIR / "metabolic_homeostasis.jsonl",
+                        stability_signal=_stability_homeostasis_signal,
+                    )
+            except Exception:
+                pass
+            # Round 101 (2026-05-28) — EMERGENCY log rate-limit. Before this,
+            # the stability clamp logged on every body-brain tick (~3s
+            # cadence) while clamp_level != "NONE". Once energy hit the
+            # EMERGENCY threshold (>= 0.8) and there was no decay path
+            # back below it, the same line printed thousands of times per
+            # minute, flooding the terminal and starving the UI of stdout
+            # buffer. Now we only log when the level CHANGES or when at
+            # least 60 seconds have passed since the last log of the same
+            # level. Receipt ledger still gets every snapshot — this rate
+            # limit only affects stdout.
+            try:
+                _last_clamp_log = globals().get("_LAST_CLAMP_LOG_STATE")
+            except Exception:
+                _last_clamp_log = None
+            if _last_clamp_log is None:
+                _last_clamp_log = {"level": "NONE", "ts": 0.0}
+                globals()["_LAST_CLAMP_LOG_STATE"] = _last_clamp_log
+            _now_ts = time.time()
+            _curr_level = _clamp_receipt["clamp_level"]
+            if _curr_level != "NONE":
+                _level_changed = _curr_level != _last_clamp_log.get("level")
+                _enough_time = (_now_ts - float(_last_clamp_log.get("ts") or 0.0)) >= 60.0
+                if _level_changed or _enough_time:
+                    logger.warning(
+                        "[Event134] Stability clamp=%s energy=%.3f delta=%.3f clamps=%s",
+                        _curr_level,
+                        _clamp_receipt.get("lyapunov_energy", 0.0),
+                        _clamp_receipt.get("delta_lyapunov_energy", 0.0),
+                        _clamp_receipt.get("active_clamps", []),
+                    )
+                    _last_clamp_log["level"] = _curr_level
+                    _last_clamp_log["ts"] = _now_ts
+            else:
+                _last_clamp_log["level"] = "NONE"
         except Exception:
             logger.debug("Stability audit skipped (non-fatal)")
 

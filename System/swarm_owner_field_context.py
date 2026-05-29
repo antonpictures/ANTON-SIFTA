@@ -20,6 +20,13 @@ try:
 except Exception:  # pragma: no cover - direct script fallback
     read_text_locked = None  # type: ignore[assignment]
 
+# Round 81 Slice B: stale-speech guard for ledger-quoted values.
+try:
+    from System.swarm_stale_speech_guard import wrap_value_if_stale  # type: ignore
+except Exception:  # pragma: no cover
+    def wrap_value_if_stale(label, value, age_s, *, threshold_s=86400):  # type: ignore
+        return f"{label}={value}"
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 
@@ -215,6 +222,10 @@ def format_owner_field_for_prompt(
     presence = ctx["presence"]
     boot = ctx["boot_receipt"]
     schedule = ctx["schedule_anchor"]
+    now_f = float(now) if now is not None else time.time()
+    presence_age_s = presence.get("last_alive_age_s") if isinstance(presence, dict) else None
+    boot_age_s = _age_s(_row_ts(boot), now_f) if isinstance(boot, dict) and boot.get("available") else None
+    schedule_age_s = _age_s(_row_ts(schedule), now_f) if isinstance(schedule, dict) and schedule.get("available") else None
     lines = [
         "OWNER UNIFIED FIELD READBACK:",
         f"- truth_label={ctx['truth_label']}",
@@ -223,20 +234,28 @@ def format_owner_field_for_prompt(
     ]
     if presence.get("available"):
         lines.append(
-            "- desktop_presence="
-            f"last_alive_age={presence.get('last_alive_age_human')} "
-            f"last_boot_age={presence.get('last_boot_age_human')} "
-            f"last_boot_gap={presence.get('last_gap_human')}"
+            f"- age_s={int(presence_age_s) if presence_age_s is not None else 'unknown'} desktop_presence="
+            + wrap_value_if_stale("last_alive_age", presence.get('last_alive_age_human'), presence_age_s)
+            + " "
+            + wrap_value_if_stale("last_boot_age", presence.get('last_boot_age_human'), presence_age_s)
+            + " "
+            + wrap_value_if_stale("last_boot_gap", presence.get('last_gap_human'), presence_age_s)
         )
     if boot.get("available"):
         lines.append(
-            "- boot_stigtime="
-            f"{boot.get('stigtime')} receipt={boot.get('trace_id')} age={boot.get('age_human')}"
+            f"- age_s={int(boot_age_s) if boot_age_s is not None else 'unknown'} boot_stigtime="
+            + wrap_value_if_stale("stigtime", boot.get('stigtime'), boot_age_s)
+            + " "
+            + wrap_value_if_stale("receipt", boot.get('trace_id'), boot_age_s)
+            + " "
+            + wrap_value_if_stale("age", boot.get('age_human'), boot_age_s)
         )
     if schedule.get("available"):
         lines.append(
-            "- schedule_anchor="
-            f"{schedule.get('text')} age={schedule.get('age_human')}"
+            f"- age_s={int(schedule_age_s) if schedule_age_s is not None else 'unknown'} schedule_anchor="
+            + wrap_value_if_stale("text", schedule.get('text'), schedule_age_s)
+            + " "
+            + wrap_value_if_stale("age", schedule.get('age_human'), schedule_age_s)
         )
     lines.append(f"- readback_rule={ctx['readback_rule']}")
     return "\n".join(lines)

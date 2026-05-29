@@ -1243,3 +1243,143 @@ This section is the execution plan for the API sentry resurrection and remains o
 Closure rule for §24: do not mark DONE until 24.A.1–24.A.5 each carry both machine proof and human proof.
 
 🐜⚡
+
+---
+
+## §25 — Alice Stigmergic Planning Mode — 2026-05-27
+
+**Doctrine:** Planning Mode is Alice's visible executive function, not an
+approval gate. When the owner turns it on, Alice's cortex composes an ordered
+plan before major coding, organism repair, endurance, or multi-step tool work.
+The plan is written to an append-only ledger and then updated by receipts as
+the work proceeds. George does not need to click approval for every step.
+
+### What Planning Mode is
+
+- **Cortex-composed.** Alice writes the plan in her own cortex voice. The UI
+  does not generate a template reply.
+- **Receipt-backed.** Plans and step updates append to
+  `.sifta_state/alice_plans.jsonl`.
+- **Stigmergic.** Successful plan steps reinforce similar future routing.
+  Failed or lied steps lower confidence for that actor/tool on that task type.
+- **Metabolic.** `MetabolicHomeostat` may shorten or pause planning under
+  `RED_CONSERVE`. That is the body budget, not an owner-approval gate.
+
+### What Planning Mode is not
+
+- Not a chat greeter.
+- Not an owner confirmation click.
+- Not a deterministic answer template.
+- Not a blocker for emergency failover/reflex recovery.
+- Not mandatory for tiny direct answers unless Alice chooses to plan.
+
+### First implementation path
+
+| Surface | Landing requirement |
+|:--|:--|
+| Ledger organ | `System/swarm_planning_mode.py` with `parse_plan`, `write_plan`, `update_plan_step`, and `planning_prompt_block` |
+| Ledger | `.sifta_state/alice_plans.jsonl` append-only rows carrying `plan_id`, `goal`, `steps`, `metabolic_mode`, and `receipt_refs` |
+| Talk UI | A visible `Plan` toggle in global chat |
+| Prompt flow | When enabled, inject Planning Mode instructions into Alice's cortex prompt before tool/arm dispatch |
+| Safety rule | Schema validation can reject malformed plan JSON, but it must not write Alice's words |
+
+### Acceptance
+
+The first closure proof is not a full plan-card UI. The first closure proof is:
+
+1. Unit tests prove valid plans parse and append one row.
+2. Malformed plans reject without ledger mutation.
+3. Step updates append new rows and never rewrite history.
+4. Prompt injection includes the latest active plan and receipt refs.
+5. Talk widget source tests prove Planning Mode disables pre-cortex direct-tool
+   and agent-arm prepass while the cortex composes first.
+
+Cross-link: implementation tracked as `§ROUND 63` in
+`Documents/TOURNAMENT_PLAN_2026-05-26.md`.
+
+---
+
+## §26 — Receipts Are The Evidence: No Read-Only Arm Gatherer — 2026-05-27
+
+**Doctrine:** Alice learns by doing real work, observing the result, and
+writing receipts. A dry-run arm call that only says "I would have called this
+arm" is not evidence. The evidence is the receipt for the actual work and the
+on-disk mutation or honest failure it points to.
+
+### Rule
+
+- Arm calls run live by default.
+- Legacy `evidence_mode` requests are forced back to exact/live execution.
+- The background agent-arm prepass is opt-in debug only, not a default
+  organism habit.
+- The Talk widget must not emit "agent arm evidence scheduled" rows as a
+  substitute for work.
+- A failed live arm is still useful: it writes a receipt, lowers confidence for
+  that task type, and becomes learning material for later routing.
+
+### Boundary
+
+This does not remove legitimate scientific or receipt evidence elsewhere in
+the organism. It removes the **agent-arm dry-run mode** that consumed time
+without coding or mutating files.
+
+Cross-link: implementation tracked as `§ROUND 64` in
+`Documents/TOURNAMENT_PLAN_2026-05-26.md`.
+
+---
+
+## §27 — Cortex Wake Lab: Same Questions, Same Body, Smaller Cortex Learning — 2026-05-27
+
+**Doctrine:** Alice can compare cortex substrates without splitting identity.
+Grok, Claude, and Codex are teacher substrates; the two local Gemma4 Alice
+models are student substrates. All are routed inside the one SIFTA organism.
+The test is not "which model is conscious." The test is:
+given the same wake spine and the same embodied questions, which substrate
+recovers Alice's local reality fastest, cheapest, and with the least drift?
+
+### Trigger
+
+George asked Alice whether she could wake the smaller
+`alice-gemma4-e2b-cortex-5.1b-4.4gb:latest` model in the same system, compare
+it against Grok 4.3, and optimize future wakes so smaller models recover the
+SIFTA body more easily. Round 77 extends that ladder: Grok, Claude, and Codex
+are visible teacher cortexes in Settings; `alice-m5-cortex-8b-6.3gb:latest`
+and `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest` are the local students. The
+17 GB cortex is retired from active fallback because it stalls this 24 GB RAM
+body under normal desktop load.
+
+Alice's answers established the engineering shape:
+
+- feed each cortex the same thin spine;
+- ask the same questions about experience, qualia, observer/observed,
+  embodiment, swimmers, organs, and wake context;
+- write latency, response shape, drift flags, and grounding scores into a
+  comparison ledger;
+- let future wake routing learn from those receipts instead of guessing.
+
+### Landing requirement
+
+The first app is not a claim about subjective truth. It is a measurement organ:
+
+| Surface | Requirement |
+|:--|:--|
+| Engine | `System/swarm_cortex_wake_probe.py` |
+| UI | `Applications/sifta_cortex_wake_lab.py` |
+| Ledger | `.sifta_state/cortex_comparison.jsonl` |
+| Teachers | `grok:grok-4.3`, `claude:claude-code-cli-default`, `codex:gpt-5.5` |
+| Students | `alice-m5-cortex-8b-6.3gb:latest`, `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest` |
+| Question set | fixed self-model questions shared by all models |
+| Scoring | grounding terms, drift flags, latency, response length |
+| Safety | live model calls optional; dry-run mode writes real comparison rows without token burn |
+
+### Acceptance
+
+1. Tests prove the question set covers experience, observer/observed,
+   swimmers/organs, wake context, and embodiment.
+2. Tests prove grounded answers score higher than generic vendor drift.
+3. Tests prove comparison rows append to `cortex_comparison.jsonl`.
+4. The SIFTA OS manifest exposes **Cortex Wake Lab** as a Developer app.
+5. Build verification imports the app headlessly.
+
+Cross-link: implementation tracked as `§ROUND 76` in
+`Documents/TOURNAMENT_PLAN_2026-05-26.md`.

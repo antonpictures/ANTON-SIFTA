@@ -1642,6 +1642,16 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 fh.write(json.dumps(record) + "\n")
         except Exception:
             pass
+        try:
+            from System.swarm_owner_somatic_state import update_from_camera_hotplug
+
+            update_from_camera_hotplug(
+                kind=kind,
+                camera_name=camera_name,
+                ts=record["ts"],
+            )
+        except Exception:
+            pass
 
         # ── Motor alarm: rapid LED blink + dock bounce ───────────────────────
         try:
@@ -1822,6 +1832,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         if self._face_probe_running:
             return
         self._face_probe_running = True
+        camera_id = self._cam_combo.currentText()
 
         def _run():
             try:
@@ -1836,6 +1847,21 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                     text = f"👤 UNKNOWN FACE — {faces} face(s) detected"
                 else:
                     text = "👁 No face in frame"
+                try:
+                    from System.swarm_owner_somatic_state import on_camera_frame_processed
+
+                    on_camera_frame_processed(
+                        {
+                            "faces_detected": faces,
+                            "confidence": conf,
+                            "audience": audience,
+                            "posture_hint": "visible" if audience == "architect" else "not_visible",
+                            "movement": "steady",
+                        },
+                        camera_id=camera_id,
+                    )
+                except Exception:
+                    pass
                 # emit() is thread-safe in PyQt6 — it posts an event to the main loop
                 self._face_result_ready.emit(audience, text)
             except Exception:

@@ -72,7 +72,7 @@ def _build_fake_widget(tmp_state_dir: Path) -> tuple[object, _FakeCombo, Path]:
     that resolves the config path inside the test's tmp dir."""
     combo = _FakeCombo()
     combo.addItem(
-        "Ollama (local) · alice-extra-cortex-25.8b-17gb",
+        "Ollama (local) · alice-m5-cortex-8b-6.3gb",
         userData="ollama_local",
     )
     combo.addItem(
@@ -106,7 +106,9 @@ def test_handler_writes_hermes_cortex_json_with_provider_and_previous(
     bound, combo, cfg_path = _build_fake_widget(tmp_path)
     # Redirect the handler's path resolution into tmp_path.
     real_file = Path(settings.__file__).resolve()
-    fake_file = tmp_path / "fake_app.py"
+    fake_dir = tmp_path / "Applications"
+    fake_dir.mkdir()
+    fake_file = fake_dir / "fake_app.py"
     fake_file.write_text("# stub")
     monkeypatch.setattr(settings, "__file__", str(fake_file))
 
@@ -131,7 +133,9 @@ def test_handler_writes_hermes_cortex_json_with_provider_and_previous(
 
 def test_handler_creates_file_when_absent(tmp_path, monkeypatch):
     bound, combo, cfg_path = _build_fake_widget(tmp_path)
-    fake_file = tmp_path / "fake_app.py"
+    fake_dir = tmp_path / "Applications"
+    fake_dir.mkdir()
+    fake_file = fake_dir / "fake_app.py"
     fake_file.write_text("# stub")
     monkeypatch.setattr(settings, "__file__", str(fake_file))
 
@@ -148,7 +152,9 @@ def test_handler_creates_file_when_absent(tmp_path, monkeypatch):
 
 def test_handler_does_not_crash_on_corrupt_existing_json(tmp_path, monkeypatch):
     bound, combo, cfg_path = _build_fake_widget(tmp_path)
-    fake_file = tmp_path / "fake_app.py"
+    fake_dir = tmp_path / "Applications"
+    fake_dir.mkdir()
+    fake_file = fake_dir / "fake_app.py"
     fake_file.write_text("# stub")
     monkeypatch.setattr(settings, "__file__", str(fake_file))
 

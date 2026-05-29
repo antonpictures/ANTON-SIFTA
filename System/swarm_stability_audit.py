@@ -160,7 +160,7 @@ def compute_stability_snapshot(
         "world_error_norm": 0.25,
         "astrocyte_heat_norm": 0.10,
     }
-    energy = round(sum(weights[k] * (terms[k] ** 2) for k in terms), 6)
+    raw_energy = round(sum(weights[k] * (terms[k] ** 2) for k in terms), 6)
 
     prior = tail_stability_rows(1, root=root)
     prior_energy = None
@@ -168,10 +168,24 @@ def compute_stability_snapshot(
     if prior:
         try:
             prior_energy = float(prior[-1].get("lyapunov_energy", 0.0))
-            delta = round(energy - prior_energy, 6)
         except (TypeError, ValueError):
             prior_energy = None
-            delta = 0.0
+
+    # §2.A (2026-05-28) — explicit exponential decay so energy can come back down.
+    # This closes the symptom where boot-time PoUW mint spikes leave energy stuck
+    # at 0.85+ with HARD clamp until process restart. Decay is applied to the
+    # reported value; the raw instantaneous energy is still computed for delta.
+    # Half-life target ~45-60s at normal tick rate.
+    DECAY_FACTOR = float(os.environ.get("STABILITY_ENERGY_DECAY", "0.965"))
+    if prior_energy is not None:
+        energy = round(prior_energy * DECAY_FACTOR + raw_energy * (1 - DECAY_FACTOR), 6)
+    else:
+        energy = raw_energy
+
+    if prior_energy is not None:
+        delta = round(energy - prior_energy, 6)
+    else:
+        delta = 0.0
 
     max_energy = float(os.environ.get("STABILITY_AUDIT_MAX_ENERGY", "1.0"))
     max_delta = float(os.environ.get("STABILITY_AUDIT_MAX_DELTA", "0.35"))

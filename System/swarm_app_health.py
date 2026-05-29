@@ -28,6 +28,13 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+
+# Round 81 Slice B: stale-speech guard for ledger-quoted values.
+try:
+    from System.swarm_stale_speech_guard import wrap_value_if_stale  # type: ignore
+except Exception:  # pragma: no cover
+    def wrap_value_if_stale(label, value, age_s, *, threshold_s=86400):  # type: ignore
+        return f"{label}={value}"
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -218,11 +225,20 @@ def app_health_prompt_block(app_name: str, max_rows: int = 5) -> str:
     lines = [f"APP HEALTH SECTION FOR {name} (latest {len(health)} trace rows):"]
     if skills:
         lines.append("Required skills from health trace: " + ", ".join(skills))
+    now_f = time.time()
     for row in health:
+        ts = row.get("ts") or row.get("timestamp")
+        try:
+            row_age = max(0.0, now_f - float(ts)) if ts is not None else None
+        except (TypeError, ValueError):
+            row_age = None
         action = str(row.get("action") or "update")
         row_skills = ", ".join(str(s) for s in row.get("skills", []) if str(s).strip())
         note = str(row.get("note") or "").replace("\n", " ")[:220]
-        lines.append(f"- {action}: skills=[{row_skills}] | {note}")
+        age_tag = f"age_s={int(row_age)}" if row_age is not None else "age_s=unknown"
+        skills_quoted = wrap_value_if_stale("skills", f"[{row_skills}]", row_age)
+        note_quoted = wrap_value_if_stale("note", note, row_age)
+        lines.append(f"- {age_tag} {action}: {skills_quoted} | {note_quoted}")
     lines.append(
         "Rule: this app pulls only the health-listed skills/habits it needs now; update this section on app exit with any new discovery."
     )

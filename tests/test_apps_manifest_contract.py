@@ -2,6 +2,7 @@ import json
 import pytest
 from pathlib import Path
 from sifta_os_desktop import (
+    _alice_resident_autostart_enabled,
     _desktop_autostart_enabled,
     _load_widget_class,
     _session_restore_from_wm_enabled,
@@ -107,6 +108,28 @@ def test_desktop_autostart_requires_explicit_enable(monkeypatch):
 
     monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
     assert _desktop_autostart_enabled() is False
+
+
+def test_alice_resident_chat_autostarts_without_manifest_autostart(monkeypatch):
+    monkeypatch.delenv("SIFTA_DESKTOP_ENABLE_AUTOSTART", raising=False)
+    monkeypatch.delenv("SIFTA_DESKTOP_SKIP_ALICE_RESIDENT", raising=False)
+    monkeypatch.delenv("SIFTA_DESKTOP_ENABLE_ALICE_RESIDENT", raising=False)
+    monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
+    assert _desktop_autostart_enabled() is False
+    assert _alice_resident_autostart_enabled() is True
+
+    monkeypatch.setenv("SIFTA_DESKTOP_SKIP_ALICE_RESIDENT", "1")
+    assert _alice_resident_autostart_enabled() is False
+
+
+def test_alice_resident_chat_stays_off_in_offscreen_tests_by_default(monkeypatch):
+    monkeypatch.delenv("SIFTA_DESKTOP_SKIP_ALICE_RESIDENT", raising=False)
+    monkeypatch.delenv("SIFTA_DESKTOP_ENABLE_ALICE_RESIDENT", raising=False)
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    assert _alice_resident_autostart_enabled() is False
+
+    monkeypatch.setenv("SIFTA_DESKTOP_ENABLE_ALICE_RESIDENT", "1")
+    assert _alice_resident_autostart_enabled() is True
 
 
 def test_wm_session_restore_independent_of_manifest_autostart(monkeypatch):

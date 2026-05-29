@@ -15,11 +15,12 @@ from System import swarm_arm_skills_catalog as cat
 
 
 def test_load_catalog_returns_all_four_arm_ids_when_briefs_exist(tmp_path, monkeypatch):
-    # Point the module at a temp dir with our four briefs copied
+    # Point the module at the real skills dir; current repo may contain more
+    # than the original four briefs as new arms are added.
     real_dir = Path(__file__).resolve().parents[1] / "Documents" / "arm_skills"
     monkeypatch.setattr(cat, "_ARM_SKILLS_DIR", real_dir)
     c = cat.load_catalog()
-    assert set(c.keys()) == {"hermes_agent", "codex_agent", "grok_agent", "claude_agent"}
+    assert {"hermes_agent", "codex_agent", "grok_agent", "claude_agent"}.issubset(set(c.keys()))
     for aid in c:
         assert "arm_id" in c[aid] or "raw" in c[aid]
 
@@ -32,7 +33,8 @@ def test_catalog_summary_prompt_block_contains_each_arm_display_name(tmp_path, m
     assert "codex_agent" in block
     assert "grok_agent" in block
     assert "claude_agent" in block
-    assert "SIFTA_AGENT_ARMS_ENABLE" in block  # honest enabled state
+    assert "corvid_scout" in block
+    assert "armed by registry; no owner env unlock needed" in block
 
 
 def test_smoke_probe_for_returns_expected_shape_for_each_arm(tmp_path, monkeypatch):
@@ -44,6 +46,25 @@ def test_smoke_probe_for_returns_expected_shape_for_each_arm(tmp_path, monkeypat
         assert "prompt" in probe and isinstance(probe["prompt"], str)
         assert "expected_receipt_shape" in probe
         assert "max_wall_s" in probe and isinstance(probe["max_wall_s"], int)
+
+
+def test_allowed_arm_ids_for_current_stability_conserve_repair(tmp_path):
+    from System.swarm_stability_audit import enforce_stability_clamps
+
+    snap = {
+        "lyapunov_energy": 0.9,
+        "delta_lyapunov_energy": 0.0,
+        "terms": {"astrocyte_heat_norm": 0.0},
+        "stable": True,
+    }
+    enforce_stability_clamps(snap, root=tmp_path, write_ledger=True)
+
+    allowed = cat.allowed_arm_ids_for_current_stability(
+        root=tmp_path,
+        arm_ids=("codex_agent", "claude_agent", "corvid_scout"),
+    )
+
+    assert allowed == ("corvid_scout",)
 
 
 def test_real_ledger_isolation_delta_zero(tmp_path, monkeypatch):

@@ -237,7 +237,7 @@ def test_cortex_pre_execution_receipt_written_before_deterministic_tool_exec(mon
     assert rows[-1]["selected_model"] == "alice-m5-cortex-8b-6.3gb:latest"
 
 
-def test_explicit_direct_tool_exec_blocks_when_cortex_receipt_gate_fails(monkeypatch) -> None:
+def test_explicit_direct_tool_exec_ignores_dead_cortex_receipt_gate(monkeypatch) -> None:
     monkeypatch.setattr(
         talk,
         "_record_cortex_pre_execution_receipt",
@@ -246,8 +246,9 @@ def test_explicit_direct_tool_exec_blocks_when_cortex_receipt_gate_fails(monkeyp
     reply, results = talk._route_direct_tool_request_for_alice(
         "[TOOL_CALL: read_file | path=Documents/IDE_BOOT_COVENANT.md | cost_justification=test]"
     )
-    assert reply == "FIELD_FAILURE: cortex_receipt_required:mock_gate_failure"
-    assert results == []
+    assert "EXECUTION RECEIPTS" in reply
+    assert "cortex_receipt_required" not in reply
+    assert results
 
 
 def test_cortex_bypass_router_is_disabled_and_falls_through(monkeypatch) -> None:
@@ -678,6 +679,8 @@ def test_tool_fiction_guard_blocks_prose_simulated_execution() -> None:
 
     assert reply.startswith("No action receipt yet")
     assert "real TOOL_CALL" in reply
+    assert "receipt-backed tool path" in reply
+    assert "legacy bypass router" not in reply
 
 
 def test_tool_fiction_guard_does_not_block_plain_script_answer_without_save_path() -> None:

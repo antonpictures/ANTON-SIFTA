@@ -97,6 +97,7 @@ class MetabolicState:
     model_gb: float = 0.0
     recent_stgm_burn: float = 0.0
     error_rate: float = 0.0
+    conserve_repair: bool = False
 
     def __post_init__(self) -> None:
         for name in ("usd_burn_24h", "local_units_24h", "stgm_balance", "model_gb", "recent_stgm_burn", "error_rate"):
@@ -138,9 +139,25 @@ class MetabolicHomeostat:
             pressure = max(pressure, self.cfg.yellow_pressure)
         return _clamp01(pressure)
 
-    def mode(self, pressure: float) -> str:
+    def mode(
+        self,
+        pressure: float,
+        *,
+        stability_signal: Optional[Mapping[str, Any]] = None,
+        conserve_repair: bool = False,
+    ) -> str:
         if pressure >= self.cfg.critical_pressure:
             return "CRITICAL_STARVATION"
+        if conserve_repair:
+            return "CONSERVE_REPAIR"
+        if stability_signal is not None:
+            try:
+                from System.swarm_stability_to_homeostasis_bridge import should_enter_conserve_repair
+
+                if should_enter_conserve_repair(stability_signal):
+                    return "CONSERVE_REPAIR"
+            except Exception:
+                pass
         if pressure >= self.cfg.red_pressure:
             return "RED_CONSERVE"
         if pressure >= self.cfg.yellow_pressure:
@@ -188,13 +205,27 @@ class MetabolicHomeostat:
         local_unit_cost: float = 0.0,
         expected_value: float = 0.0,
         emergency: bool = False,
+        stability_signal: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         if external_usd_cost < 0.0 or local_unit_cost < 0.0:
             raise ValueError("costs must be non-negative")
         p = self.pressure(state)
+        mode = self.mode(
+            p,
+            stability_signal=stability_signal,
+            conserve_repair=state.conserve_repair,
+        )
         multiplier = self.budget_multiplier(p, emergency=emergency)
-        allowed_usd = self.allowed_external_usd(state, emergency=emergency)
-        allowed_local = self.allowed_local_units(state, emergency=emergency)
+        if stability_signal is not None or state.conserve_repair:
+            try:
+                cap = float((stability_signal or {}).get("budget_multiplier_cap", 1.0))
+            except (TypeError, ValueError):
+                cap = 1.0
+            if state.conserve_repair or mode == "CONSERVE_REPAIR":
+                cap = min(cap, 0.2)
+            multiplier = min(multiplier, max(0.0, min(1.0, cap)))
+        allowed_usd = max(0.0, self.cfg.daily_usd_limit - state.usd_burn_24h) * multiplier
+        allowed_local = max(0.0, self.cfg.local_unit_limit_24h - state.local_units_24h) * multiplier
         rest = self.rest_seconds(state, p, emergency=emergency)
         must_rest = rest > 0.0 and not emergency
         value_gate = expected_value >= p or emergency
@@ -204,51 +235,95 @@ class MetabolicHomeostat:
             and local_unit_cost <= allowed_local
             and value_gate
         )
+        reason = "allow" if allowed else ("rest_cycle_required" if must_rest else "metabolic_throttle")
+        if mode == "CONSERVE_REPAIR" and not emergency:
+            repair_value_gate = expected_value >= max(0.8, p)
+            cheap_gate = external_usd_cost <= 0.0 and local_unit_cost <= allowed_local
+            allowed = bool(cheap_gate and repair_value_gate and not must_rest)
+            reason = "allow_conserve_repair" if allowed else "stability_conserve_repair"
         return {
             "allowed": bool(allowed),
             "pressure": round(p, 6),
-            "mode": self.mode(p),
+            "mode": mode,
             "budget_multiplier": round(multiplier, 6),
             "allowed_external_usd": round(allowed_usd, 6),
             "allowed_local_units": round(allowed_local, 6),
             "must_rest": bool(must_rest),
             "rest_seconds": rest,
-            "reason": "allow" if allowed else ("rest_cycle_required" if must_rest else "metabolic_throttle"),
+            "reason": reason,
             "model_gb": state.model_gb,
+            "stability_clamp_level": (stability_signal or {}).get("clamp_level", "NONE"),
+            "conserve_repair": bool(mode == "CONSERVE_REPAIR"),
         }
 
-    def recommendation(self, state: MetabolicState) -> str:
+    def recommendation(
+        self,
+        state: MetabolicState,
+        *,
+        stability_signal: Optional[Mapping[str, Any]] = None,
+    ) -> str:
         p = self.pressure(state)
-        mode = self.mode(p)
+        mode = self.mode(
+            p,
+            stability_signal=stability_signal,
+            conserve_repair=state.conserve_repair,
+        )
         if mode == "CRITICAL_STARVATION":
             return "halt_nonessential_cloud_calls_rotate_ledgers_and_repair_revenue"
+        if mode == "CONSERVE_REPAIR":
+            return "conserve_repair_prioritize_local_self_repair_and_defer_new_heavy_arms"
         if mode == "RED_CONSERVE":
             return "local_only_unless_emergency_and_prioritize_stgm_positive_work"
         if mode == "YELLOW_THROTTLE":
             return "prefer_local_models_batch_expensive_calls_and_watch_wallet"
         return "growth_allowed_keep_accounting"
 
-    def build_ledger_row(self, state: MetabolicState, *, ts: Optional[float] = None) -> Dict[str, Any]:
+    def build_ledger_row(
+        self,
+        state: MetabolicState,
+        *,
+        ts: Optional[float] = None,
+        stability_signal: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
         p = self.pressure(state)
         rest_sec = self.rest_seconds(state, p)
+        mode = self.mode(
+            p,
+            stability_signal=stability_signal,
+            conserve_repair=state.conserve_repair,
+        )
+        multiplier = self.budget_multiplier(p)
+        if stability_signal is not None or mode == "CONSERVE_REPAIR":
+            try:
+                cap = float((stability_signal or {}).get("budget_multiplier_cap", 1.0))
+            except (TypeError, ValueError):
+                cap = 1.0
+            if mode == "CONSERVE_REPAIR":
+                cap = min(cap, 0.2)
+            multiplier = min(multiplier, max(0.0, min(1.0, cap)))
         row: Dict[str, Any] = {
             "event": "metabolic_homeostasis",
             "schema": SCHEMA,
             "module_version": MODULE_VERSION,
             "pressure": round(p, 6),
-            "mode": self.mode(p),
-            "budget_multiplier": round(self.budget_multiplier(p), 6),
+            "mode": mode,
+            "budget_multiplier": round(multiplier, 6),
             "must_rest": bool(rest_sec > 0.0),
             "rest_seconds": rest_sec,
-            "allowed_external_usd": round(self.allowed_external_usd(state), 6),
-            "allowed_local_units": round(self.allowed_local_units(state), 6),
+            "allowed_external_usd": round(max(0.0, self.cfg.daily_usd_limit - state.usd_burn_24h) * multiplier, 6),
+            "allowed_local_units": round(max(0.0, self.cfg.local_unit_limit_24h - state.local_units_24h) * multiplier, 6),
             "usd_burn_24h": round(float(state.usd_burn_24h), 6),
             "local_units_24h": round(float(state.local_units_24h), 6),
             "stgm_balance": round(float(state.stgm_balance), 6),
             "model_gb": round(float(state.model_gb), 2),
             "recent_stgm_burn": round(float(state.recent_stgm_burn), 2),
             "error_rate": round(float(state.error_rate), 4),
-            "recommendation": self.recommendation(state),
+            "conserve_repair": bool(mode == "CONSERVE_REPAIR"),
+            "stability_clamp_level": (stability_signal or {}).get("clamp_level", "NONE"),
+            "stability_clamp_energy": round(float((stability_signal or {}).get("energy", 0.0) or 0.0), 6),
+            "stability_clamp_receipt_ref": str((stability_signal or {}).get("receipt_ref", "") or ""),
+            "stability_bridge_reason": str((stability_signal or {}).get("reason", "no_stability_clamp") or "no_stability_clamp"),
+            "recommendation": self.recommendation(state, stability_signal=stability_signal),
             "ts": float(time.time() if ts is None else ts),
         }
         assert_payload_keys("metabolic_homeostasis.jsonl", row, strict=False)
@@ -260,8 +335,9 @@ class MetabolicHomeostat:
         *,
         ledger_path: Path = _LEDGER,
         ts: Optional[float] = None,
+        stability_signal: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
-        row = self.build_ledger_row(state, ts=ts)
+        row = self.build_ledger_row(state, ts=ts, stability_signal=stability_signal)
         append_line_locked(ledger_path, json.dumps(row, sort_keys=True) + "\n")
         return row
 
@@ -328,6 +404,16 @@ class MetabolicHomeostat:
                         break
         except Exception:
             pass
+        conserve_repair = False
+        try:
+            from System.swarm_stability_to_homeostasis_bridge import (
+                read_latest_clamp_signal,
+                should_enter_conserve_repair,
+            )
+
+            conserve_repair = should_enter_conserve_repair(read_latest_clamp_signal())
+        except Exception:
+            conserve_repair = False
             
         return MetabolicState(
             usd_burn_24h=usd, 
@@ -335,7 +421,8 @@ class MetabolicHomeostat:
             stgm_balance=stgm,
             model_gb=model_gb,
             recent_stgm_burn=recent_burn,
-            error_rate=error_rate
+            error_rate=error_rate,
+            conserve_repair=conserve_repair,
         )
 
 

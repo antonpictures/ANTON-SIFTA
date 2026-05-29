@@ -341,6 +341,12 @@ class MacSayBackend:
         self._default_voice = default_voice
         self._timeout_s = timeout_s if timeout_s is not None else self.DEFAULT_TIMEOUT_S
         self._lock = threading.Lock()  # serialise overlapping `say` calls
+        # Round 111 — diagnostic surface: callers can read this to learn
+        # WHY speak() returned False instead of being told only "no speech".
+        self._last_failure_reason: str = ""
+
+    def last_failure_reason(self) -> str:
+        return self._last_failure_reason
 
     def is_available(self) -> bool:
         return platform.system() == "Darwin" and shutil.which("say") is not None
@@ -432,9 +438,16 @@ class MacSayBackend:
         return en[0].name
 
     def speak(self, text: str, params: Optional[VoiceParams] = None) -> bool:
+        # Round 111 — every False return now records WHY into
+        # self._last_failure_reason so the widget can show a real diagnostic
+        # instead of the generic "voice backend macsay returned no speech".
         if not text or not text.strip():
+            self._last_failure_reason = "empty_text_after_sanitize"
             return False
         if not self.is_available():
+            self._last_failure_reason = (
+                "macsay_unavailable_off_darwin_or_say_not_on_PATH"
+            )
             return False
         params = params or VoiceParams()
         voice = params.voice or self._default_voice or self.best_default_voice()
@@ -452,21 +465,34 @@ class MacSayBackend:
                     cmd, capture_output=True, timeout=self._timeout_s,
                 )
                 if proc.returncode == 0:
+                    self._last_failure_reason = ""
                     return True
                 stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
+                reason = (
+                    f"say exited {proc.returncode}"
+                    + (f": {stderr.strip()[:200]}" if stderr.strip() else "")
+                    + (f" (voice={voice})" if voice else "")
+                )
+                self._last_failure_reason = reason
                 _log_failure(
                     "say_nonzero",
-                    RuntimeError(f"say exited {proc.returncode}: {stderr.strip()}"),
+                    RuntimeError(reason),
                     backend=self.name,
                 )
                 return False
             except subprocess.TimeoutExpired as exc:
+                # Round 116 — Architect register fix: speak the bound in
+                # stigmergic time, not literal clock seconds. The number
+                # belongs in receipts; the chat line is for the body.
+                self._last_failure_reason = "voice ran past its budget for this tick"
                 _log_failure("say_timeout", exc, backend=self.name)
                 return False
             except FileNotFoundError as exc:
+                self._last_failure_reason = f"say binary not found: {exc}"
                 _log_failure("say_missing", exc, backend=self.name)
                 return False
             except Exception as exc:
+                self._last_failure_reason = f"{type(exc).__name__}: {exc}"
                 _log_failure("say_unknown", exc, backend=self.name)
                 return False
 

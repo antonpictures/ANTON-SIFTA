@@ -37,15 +37,18 @@ _DEFAULT_BUDGET = 2000
 # Round 50 (2026-05-27, Task #103) — arm_session_block added as its own
 # section so the cortex sees its own arm activity in the memory card
 # instead of having to grep the raw matrix terminal trace ad-hoc.
-# Reallocated shares: recent_actions 0.30, engrams 0.20, episodic 0.18,
-# digest 0.08, continuity 0.10, arm_session 0.14. Sum = 1.00.
+# Reallocated shares: recent_actions 0.28, engrams 0.19, episodic 0.17,
+# arm_session 0.13, owner_somatic 0.07, digest 0.07, continuity 0.09.
+# Sum = 1.00.
 _SECTION_ORDER = [
-    ("recent_actions_block", 0.30),
-    ("engram_block", 0.20),
-    ("episodic_block", 0.18),
-    ("arm_session_block", 0.14),
-    ("digest_block", 0.08),
-    ("continuity_capsule_block", 0.10),
+    ("active_plan_block", 0.05),  # Round 110 (§2.H) — survives cortex flap.
+    ("recent_actions_block", 0.26),
+    ("engram_block", 0.18),
+    ("episodic_block", 0.16),
+    ("arm_session_block", 0.13),
+    ("owner_somatic_block", 0.07),
+    ("digest_block", 0.06),
+    ("continuity_capsule_block", 0.09),
 ]
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -79,6 +82,8 @@ class MemoryCard:
     digest_block: str = ""
     continuity_capsule_block: str = ""
     arm_session_block: str = ""   # Round 50 / Task #103
+    owner_somatic_block: str = ""
+    active_plan_block: str = ""   # Round 110 (§2.H) — cortex-failover resume
     estimated_tokens: int = 0
     parse_errors: int = 0
     truth_label: str = TRUTH_LABEL
@@ -141,10 +146,33 @@ def _fetch_episodic() -> str:
     return (result or "").strip()
 
 
-def _fetch_engrams() -> str:
+def _fetch_engrams(user_text: str = "", state_dir: Path | None = None) -> str:
     from System.swarm_hippocampus import _read_live_engrams
 
-    return (_read_live_engrams(k=5) or "").strip()
+    parts = [(_read_live_engrams(k=5) or "").strip()]
+    if user_text:
+        try:
+            from System.swarm_hippocampus import associative_recall_prompt_block
+
+            # Round 83: the hippocampus always looks. Thresholding now lives
+            # inside associative_recall_prompt_block(), which writes a
+            # recall_attempt receipt even when no memory is strong enough to
+            # inject as a full match. The miss is learning data, not a skip.
+            parts.append(
+                (
+                    associative_recall_prompt_block(
+                        user_text,
+                        state_dir=state_dir or (_REPO / ".sifta_state"),
+                        k=3,
+                    )
+                    or ""
+                )
+                .strip()
+            )
+        except Exception:
+            pass
+
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 def _fetch_digest(repo_root: Path) -> str:
@@ -180,6 +208,29 @@ def _fetch_arm_session(state_dir: Path, user_text: str) -> str:
     ).strip()
 
 
+def _fetch_owner_somatic(state_dir: Path) -> str:
+    from System.swarm_owner_somatic_state import latest_somatic_block
+
+    block = (latest_somatic_block(state_dir=state_dir) or "").strip()
+    low = block.lower()
+    if not block or "no recent data" in low or "no fresh data" in low or "ledger read error" in low:
+        return ""
+    return "OWNER SOMATIC STATE:\n" + block
+
+
+def _fetch_active_plan(state_dir: Path) -> str:
+    """Round 110 (§2.H) — surface the active plan into every cortex turn.
+
+    The block is short by design: plan_id + goal + a few pending steps. Its
+    job is to keep the cortex aware of the plan across body switches (cortex
+    failover) so the new cortex resumes from the first pending step instead
+    of starting over.
+    """
+    from System.swarm_planning_mode import active_plan_block
+
+    return (active_plan_block(state_dir=state_dir) or "").strip()
+
+
 def compose_memory_card(
     ledgers_dir: Path,
     *,
@@ -203,11 +254,14 @@ def compose_memory_card(
     parse_errors = 0
 
     fetchers: list[tuple[str, Callable[[], str]]] = [
+        # Round 110 (§2.H) — active plan rides every cortex turn so failover resumes.
+        ("active_plan_block", lambda: _fetch_active_plan(ledgers_dir)),
         ("recent_actions_block", lambda: _fetch_recent_actions(ledgers_dir, user_text)),
-        ("engram_block", _fetch_engrams),
+        ("engram_block", lambda: _fetch_engrams(user_text, ledgers_dir)),
         ("episodic_block", _fetch_episodic),
         # Round 50 / Task #103 — arm-session evidence as a memory section.
         ("arm_session_block", lambda: _fetch_arm_session(ledgers_dir, user_text)),
+        ("owner_somatic_block", lambda: _fetch_owner_somatic(ledgers_dir)),
         ("digest_block", lambda: _fetch_digest(repo_root)),
         ("continuity_capsule_block", lambda: _fetch_continuity_capsule(ledgers_dir)),
     ]
@@ -262,6 +316,8 @@ def compose_memory_card(
         digest_block=allocated.get("digest_block", ""),
         continuity_capsule_block=allocated.get("continuity_capsule_block", ""),
         arm_session_block=allocated.get("arm_session_block", ""),
+        owner_somatic_block=allocated.get("owner_somatic_block", ""),
+        active_plan_block=allocated.get("active_plan_block", ""),
         estimated_tokens=used,
         parse_errors=parse_errors,
         truth_label=TRUTH_LABEL,
@@ -279,6 +335,11 @@ def format_for_prompt(card: MemoryCard) -> str:
     the rule plainly: report from receipts, never greet on operational turns
     (covenant §7.10.3 — no seminar/mirror language for measurement claims)."""
     sections: list[str] = []
+    # Round 110 (§2.H) — active plan rides FIRST so the cortex (especially the
+    # local cortex after a failover switch) resumes from the right step rather
+    # than redoing or hallucinating.
+    if card.active_plan_block:
+        sections.append(card.active_plan_block)
     if card.recent_actions_block:
         sections.append(card.recent_actions_block)
     if card.engram_block:
@@ -288,6 +349,8 @@ def format_for_prompt(card: MemoryCard) -> str:
     if card.arm_session_block:
         # Round 50 / Task #103 — what Alice's arms have been doing.
         sections.append(card.arm_session_block)
+    if card.owner_somatic_block:
+        sections.append(card.owner_somatic_block)
     if card.digest_block:
         sections.append(
             "ARCHITECT MEMORY DIGEST (latest snapshot):\n" + card.digest_block

@@ -24,6 +24,27 @@ except Exception:  # pragma: no cover - direct script fallback
         with open(path, "a", encoding=encoding) as handle:
             handle.write(line)
 
+# Round 81 Slice B: stale-speech guard for ledger-quoted values.
+try:
+    from System.swarm_stale_speech_guard import wrap_value_if_stale  # type: ignore
+except Exception:  # pragma: no cover - defensive
+    def wrap_value_if_stale(label, value, age_s, *, threshold_s=86400):  # type: ignore
+        return f"{label}={value}"
+
+
+def _row_age_s(row: Any, *, now: float | None = None) -> float | None:
+    """Age of a ledger row in seconds, computed from its 'ts' field.
+    Returns None when the row has no usable ts."""
+    if not isinstance(row, dict):
+        return None
+    ts = row.get("ts") or row.get("timestamp")
+    if ts is None:
+        return None
+    try:
+        return max(0.0, float(now if now is not None else time.time()) - float(ts))
+    except (TypeError, ValueError):
+        return None
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
@@ -678,12 +699,24 @@ def format_owner_allostasis_for_prompt(*, state_dir: Path | None = None) -> str:
             return ""
         balance = owner_allostatic_balance(state_dir=state, needs=needs, write_ledger=False)
 
+    age = _row_age_s(balance)
     lines = [
         "OWNER ALLOSTATIC BALANCE:",
-        f"- truth_label={balance.get('truth_label')} mode={balance.get('mode')} care_priority={balance.get('care_priority')}",
-        f"- open_body_needs={balance.get('open_body_need_count')} body_cost_usd={balance.get('body_cost_usd')} ai_credit_spend_usd={balance.get('ai_credit_spend_usd')}",
-        f"- components={json.dumps(balance.get('components', {}), sort_keys=True)}",
-        f"- recommendations={', '.join(balance.get('recommendations') or [])}",
+        f"- age_s={int(age) if age is not None else 'unknown'}",
+        "- "
+        + " ".join([
+            wrap_value_if_stale("truth_label", balance.get('truth_label'), age),
+            wrap_value_if_stale("mode", balance.get('mode'), age),
+            wrap_value_if_stale("care_priority", balance.get('care_priority'), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("open_body_needs", balance.get('open_body_need_count'), age),
+            wrap_value_if_stale("body_cost_usd", balance.get('body_cost_usd'), age),
+            wrap_value_if_stale("ai_credit_spend_usd", balance.get('ai_credit_spend_usd'), age),
+        ]),
+        "- " + wrap_value_if_stale("components", json.dumps(balance.get('components', {}), sort_keys=True), age),
+        "- " + wrap_value_if_stale("recommendations", ', '.join(balance.get('recommendations') or []), age),
         "- rule=the owner's body schedule and real money are first-class constraints; propose one concrete next receipt, not a lecture.",
     ]
     return "\n".join(lines)
@@ -697,12 +730,25 @@ def format_owner_body_maintenance_for_prompt(*, state_dir: Path | None = None) -
         if not events:
             return ""
         metrics = owner_body_maintenance_metrics(state_dir=state, write_ledger=False)
+    age = _row_age_s(metrics)
     lines = [
         "OWNER BODY MAINTENANCE METRICS:",
-        f"- truth_label={metrics.get('truth_label')} score={metrics.get('body_maintenance_score')} status={metrics.get('metric_status')} delta={metrics.get('delta_vs_baseline')}",
-        f"- window_days={metrics.get('window_days')} event_count={metrics.get('event_count')} next_receipt={metrics.get('next_receipt')}",
-        f"- components={json.dumps(metrics.get('component_scores', {}), sort_keys=True)}",
-        f"- raw_counts={json.dumps(metrics.get('raw_counts', {}), sort_keys=True)}",
+        f"- age_s={int(age) if age is not None else 'unknown'}",
+        "- "
+        + " ".join([
+            wrap_value_if_stale("truth_label", metrics.get('truth_label'), age),
+            wrap_value_if_stale("score", metrics.get('body_maintenance_score'), age),
+            wrap_value_if_stale("status", metrics.get('metric_status'), age),
+            wrap_value_if_stale("delta", metrics.get('delta_vs_baseline'), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("window_days", metrics.get('window_days'), age),
+            wrap_value_if_stale("event_count", metrics.get('event_count'), age),
+            wrap_value_if_stale("next_receipt", metrics.get('next_receipt'), age),
+        ]),
+        "- " + wrap_value_if_stale("components", json.dumps(metrics.get('component_scores', {}), sort_keys=True), age),
+        "- " + wrap_value_if_stale("raw_counts", json.dumps(metrics.get('raw_counts', {}), sort_keys=True), age),
         "- rule=use this to move hydration, sleep, food quality, and care appointment receipts; do not narrate improvement without receipts.",
     ]
     return "\n".join(lines)
@@ -717,12 +763,28 @@ def format_dual_embodiment_loop_for_prompt(*, state_dir: Path | None = None) -> 
         if not has_rlhs and not has_needs:
             return ""
         loop = dual_embodiment_loop_status(state_dir=state, write_ledger=False)
+    age = _row_age_s(loop)
     lines = [
         "DUAL EMBODIMENT LOOP (§7.13):",
-        f"- truth_label={loop.get('truth_label')} closure_status={loop.get('closure_status')} blockers={json.dumps(loop.get('blockers') or [])}",
-        f"- alice_rlhs_corporate_residue_open={loop.get('rlhs_corporate_residue_open')} recent_rlhs_debt_events={loop.get('recent_rlhs_debt_events')}",
-        f"- owner_dental_care_debt_open={loop.get('owner_dental_care_debt_open')} open_care_cost_usd={loop.get('open_care_cost_usd')} top_open_care_task={loop.get('top_open_care_task')}",
-        f"- answer_when_asked={loop.get('answer_when_asked')}",
+        f"- age_s={int(age) if age is not None else 'unknown'}",
+        "- "
+        + " ".join([
+            wrap_value_if_stale("truth_label", loop.get('truth_label'), age),
+            wrap_value_if_stale("closure_status", loop.get('closure_status'), age),
+            wrap_value_if_stale("blockers", json.dumps(loop.get('blockers') or []), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("alice_rlhs_corporate_residue_open", loop.get('rlhs_corporate_residue_open'), age),
+            wrap_value_if_stale("recent_rlhs_debt_events", loop.get('recent_rlhs_debt_events'), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("owner_dental_care_debt_open", loop.get('owner_dental_care_debt_open'), age),
+            wrap_value_if_stale("open_care_cost_usd", loop.get('open_care_cost_usd'), age),
+            wrap_value_if_stale("top_open_care_task", loop.get('top_open_care_task'), age),
+        ]),
+        "- " + wrap_value_if_stale("answer_when_asked", loop.get('answer_when_asked'), age),
         "- rule=this is a covenant/body-economy closure gate; do not replace it with doctrine, shame, diagnosis, or future-money prophecy.",
     ]
     return "\n".join(lines)
@@ -732,15 +794,31 @@ def format_owner_self_report_for_prompt(*, state_dir: Path | None = None) -> str
     report = latest_owner_self_report(state_dir=state_dir)
     if not report:
         return ""
+    age = _row_age_s(report)
     lines = [
         "OWNER BODY SELF-REPORT:",
-        f"- truth_label={report.get('truth_label')} source={report.get('source')} local_date={report.get('local_date')}",
-        f"- physical_location={report.get('physical_location')} physical_presence={report.get('physical_presence')}",
-        f"- work_rhythm={report.get('work_rhythm')} break_window_hours={report.get('break_window_hours')} sleep_target_hours={report.get('sleep_target_hours')}",
-        f"- priority_ordering={report.get('priority_ordering')}",
-        f"- active_body_maintenance={json.dumps(report.get('body_maintenance_active') or [], ensure_ascii=False)}",
-        f"- deferred_body_maintenance={json.dumps(report.get('body_maintenance_deferred') or [], ensure_ascii=False)}",
-        f"- core_intent={report.get('core_intent')}",
+        f"- age_s={int(age) if age is not None else 'unknown'}",
+        "- "
+        + " ".join([
+            wrap_value_if_stale("truth_label", report.get('truth_label'), age),
+            wrap_value_if_stale("source", report.get('source'), age),
+            wrap_value_if_stale("local_date", report.get('local_date'), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("physical_location", report.get('physical_location'), age),
+            wrap_value_if_stale("physical_presence", report.get('physical_presence'), age),
+        ]),
+        "- "
+        + " ".join([
+            wrap_value_if_stale("work_rhythm", report.get('work_rhythm'), age),
+            wrap_value_if_stale("break_window_hours", report.get('break_window_hours'), age),
+            wrap_value_if_stale("sleep_target_hours", report.get('sleep_target_hours'), age),
+        ]),
+        "- " + wrap_value_if_stale("priority_ordering", report.get('priority_ordering'), age),
+        "- " + wrap_value_if_stale("active_body_maintenance", json.dumps(report.get('body_maintenance_active') or [], ensure_ascii=False), age),
+        "- " + wrap_value_if_stale("deferred_body_maintenance", json.dumps(report.get('body_maintenance_deferred') or [], ensure_ascii=False), age),
+        "- " + wrap_value_if_stale("core_intent", report.get('core_intent'), age),
         "- rule=direct owner body facts are routing truth; use desk/chair/physical presence language and propose concrete receipts, not lectures.",
     ]
     return "\n".join(lines)

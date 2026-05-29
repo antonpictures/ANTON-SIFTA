@@ -75,6 +75,18 @@ def _desktop_autostart_enabled() -> bool:
     return os.environ.get("SIFTA_DESKTOP_ENABLE_AUTOSTART") == "1"
 
 
+def _alice_resident_autostart_enabled() -> bool:
+    """Alice's resident chat is OS tissue, not optional app autostart."""
+    if os.environ.get("SIFTA_DESKTOP_SKIP_ALICE_RESIDENT") == "1":
+        return False
+    if (
+        os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+        and os.environ.get("SIFTA_DESKTOP_ENABLE_ALICE_RESIDENT") != "1"
+    ):
+        return False
+    return True
+
+
 def _session_restore_from_wm_enabled() -> bool:
     """Re-open stigmergic_wm last_session (explicit; not implied by manifest autostart)."""
     v = os.environ.get("SIFTA_DESKTOP_ENABLE_SESSION_RESTORE", "").strip().lower()
@@ -2207,9 +2219,9 @@ class SiftaDesktop(QMainWindow):
         self._load_apps_manifest_and_autostart()
         _desktop_init_trace("after _load_apps_manifest_and_autostart()")
         # Embed Alice as resident panel after first paint in real desktop runs.
-        # Offscreen tests disable autostart so they do not spawn mic/camera/TTS
-        # workers while exercising unrelated window-manager contracts.
-        if _desktop_autostart_enabled():
+        # This is separate from optional manifest app autostart: Alice is the
+        # OS resident global chat, so a normal launch must not open blank.
+        if _alice_resident_autostart_enabled():
             QTimer.singleShot(400, self._embed_alice_panel)
 
         # macOS-style overlays (not inside try/except — failures are visible in tests).

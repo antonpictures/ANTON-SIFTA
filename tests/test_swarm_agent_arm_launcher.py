@@ -67,6 +67,49 @@ def test_env_gate_path_still_fires_if_arm_is_manually_disabled(tmp_path: Path,
     assert rows[0]["truth_label"] == "AGENT_ARM_LAUNCH_ATTEMPT"
     assert rows[1]["truth_label"] == "AGENT_ARM_LAUNCH_BLOCKED"
     assert rows[1]["status"] == "DISABLED_ENV_GATE"
+    assert "No owner click" in rows[1]["truth_note"]
+    assert "Set SIFTA_AGENT_ARMS_ENABLE" not in rows[1]["truth_note"]
+    metabolism = _read_jsonl(tmp_path / "agent_arm_metabolism.jsonl")
+    assert metabolism[-1]["truth_label"] == "AGENT_ARM_METABOLISM_V1"
+    assert metabolism[-1]["action_blocked"] is False
+    assert "no_owner_approval_gate" in metabolism[-1]["policy"]
+
+
+def test_launcher_blocks_heavy_arm_when_owner_fatigue_gate_or_suppression_applies(tmp_path: Path, monkeypatch) -> None:
+    def blocked_gate(arm, state_dir=None):
+        return {
+            "ok": False,
+            "blocked": True,
+            "reason": "owner_fatigue_gate",
+            "signal": {
+                "owner_fatigue_gate": True,
+                "clamp_level": "BLOCK_NEW",
+                "suppress_new_arms": True,
+                "reason": "owner_fatigue_gate",
+            },
+        }
+
+    monkeypatch.setattr(launcher, "_stability_launch_gate", blocked_gate)
+
+    def fail_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
+        raise AssertionError("runner should not be called when stability gate blocks launch")
+
+    result = ask_hermes(
+        "Refactor the router to add owner fatigue routing.",
+        state_dir=tmp_path,
+        env={"SIFTA_AGENT_ARMS_ENABLE": "1"},
+        runner=fail_runner,
+    )
+
+    assert result.ok is False
+    assert result.status == "STABILITY_CLAMP_SUPPRESSED"
+    rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
+    assert rows[-1]["truth_label"] == "AGENT_ARM_LAUNCH_BLOCKED"
+    assert rows[-1]["status"] == "STABILITY_CLAMP_SUPPRESSED"
+    assert rows[-1]["owner_fatigue_gate"] is True
+    assert rows[-1]["stability_gate_reason"] == "owner_fatigue_gate"
+    assert rows[-1]["stability_blocked"] is True
+    assert rows[-1]["stability_homeostasis"]["owner_fatigue_gate"] is True
 
 
 def test_launcher_runs_fake_hermes_with_receipts(tmp_path: Path) -> None:
@@ -102,6 +145,14 @@ def test_launcher_runs_fake_hermes_with_receipts(tmp_path: Path) -> None:
     assert rows[-1]["truth_label"] == "AGENT_ARM_LAUNCH_RESULT"
     assert rows[-1]["ok"] is True
     assert rows[-1]["output_tail"] == "HERMES_OK"
+    assert rows[-1]["metabolic_receipt_id"]
+    assert rows[-1]["stgm_delta"] == 0.2
+    metabolism = _read_jsonl(tmp_path / "agent_arm_metabolism.jsonl")
+    assert metabolism[-1]["truth_label"] == "AGENT_ARM_METABOLISM_V1"
+    assert metabolism[-1]["source_receipt_id"] == rows[-1]["receipt_id"]
+    assert metabolism[-1]["arm_id"] == "hermes_agent"
+    assert metabolism[-1]["action_blocked"] is False
+    assert "no_owner_approval_gate" in metabolism[-1]["policy"]
     diary_rows = _read_jsonl(tmp_path / "episodic_diary.jsonl")
     assert diary_rows[-1]["truth_label"] == "EPISODIC_DIARY_AGENT_ARM_RESULT_V1"
     assert diary_rows[-1]["arm_id"] == "hermes_agent"
@@ -144,6 +195,24 @@ def test_launcher_records_actual_hermes_cortex_override_in_receipts(tmp_path: Pa
     assert rows[-1]["registry_model"] == "alice-m5-cortex-8b-6.3gb:latest"
 
 
+def test_hermes_oauth_provider_maps_to_live_grok_cli_model(tmp_path: Path) -> None:
+    (tmp_path / "hermes_cortex.json").write_text(
+        json.dumps({"provider": "grok_via_hermes_oauth"}),
+        encoding="utf-8",
+    )
+
+    assert launcher.hermes_cortex_override(tmp_path) == "grok-build"
+
+
+def test_hermes_oauth_provider_overrides_stale_explicit_grok43_model(tmp_path: Path) -> None:
+    (tmp_path / "hermes_cortex.json").write_text(
+        json.dumps({"provider": "grok_via_hermes_oauth", "model": "grok-4.3"}),
+        encoding="utf-8",
+    )
+
+    assert launcher.hermes_cortex_override(tmp_path) == "grok-build"
+
+
 def test_launcher_rejects_wrapper_text_when_exact_required(tmp_path: Path) -> None:
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
         return SimpleNamespace(returncode=0, stdout="Sure: HERMES_OK\n", stderr="")
@@ -162,7 +231,7 @@ def test_launcher_rejects_wrapper_text_when_exact_required(tmp_path: Path) -> No
     assert rows[-1]["status"] == "EXACTNESS_FAILED"
 
 
-def test_hermes_evidence_rejects_generic_bootstrap_drift(tmp_path: Path) -> None:
+def test_hermes_live_alias_rejects_generic_bootstrap_drift(tmp_path: Path) -> None:
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
         return SimpleNamespace(
             returncode=0,
@@ -183,16 +252,16 @@ def test_hermes_evidence_rejects_generic_bootstrap_drift(tmp_path: Path) -> None
     )
 
     assert result.ok is False
-    assert result.status == "UNUSABLE_EVIDENCE"
+    assert result.status == "UNUSABLE_OUTPUT"
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
-    assert rows[-1]["status"] == "UNUSABLE_EVIDENCE"
+    assert rows[-1]["status"] == "UNUSABLE_OUTPUT"
     assert rows[-1]["ok"] is False
     diary_rows = _read_jsonl(tmp_path / "episodic_diary.jsonl")
-    assert diary_rows[-1]["status"] == "UNUSABLE_EVIDENCE"
+    assert diary_rows[-1]["status"] == "UNUSABLE_OUTPUT"
     assert diary_rows[-1]["ok"] is False
 
 
-def test_hermes_evidence_rejects_read_colon_wrong_path_drift(tmp_path: Path) -> None:
+def test_hermes_live_alias_rejects_read_colon_wrong_path_drift(tmp_path: Path) -> None:
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
         return SimpleNamespace(
             returncode=0,
@@ -223,16 +292,16 @@ def test_hermes_evidence_rejects_read_colon_wrong_path_drift(tmp_path: Path) -> 
     )
 
     assert result.ok is False
-    assert result.status == "UNUSABLE_EVIDENCE"
+    assert result.status == "UNUSABLE_OUTPUT"
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
-    assert rows[-1]["status"] == "UNUSABLE_EVIDENCE"
+    assert rows[-1]["status"] == "UNUSABLE_OUTPUT"
     assert rows[-1]["ok"] is False
     briefing_rows = _read_jsonl(tmp_path / "alice_agent_arm_briefings.jsonl")
-    assert briefing_rows[-1]["status"] == "UNUSABLE_EVIDENCE"
+    assert briefing_rows[-1]["status"] == "UNUSABLE_OUTPUT"
     assert briefing_rows[-1]["ok"] is False
     assert briefing_rows[-1]["reputation_event"] == "FAILURE"
     diary_rows = _read_jsonl(tmp_path / "episodic_diary.jsonl")
-    assert diary_rows[-1]["status"] == "UNUSABLE_EVIDENCE"
+    assert diary_rows[-1]["status"] == "UNUSABLE_OUTPUT"
     assert diary_rows[-1]["ok"] is False
 
 
@@ -408,7 +477,7 @@ def test_streaming_runner_does_not_treat_suppressed_claude_json_as_progress(
     assert any(row["action"] == "agent_arm_stalled_cemetery" for row in trace)
 
 
-def test_evidence_mode_accepts_wrapper_text_without_env_gate(tmp_path: Path) -> None:
+def test_legacy_evidence_alias_runs_live_exact_without_env_gate(tmp_path: Path) -> None:
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
         return SimpleNamespace(returncode=0, stdout="Hermes says: useful evidence\nsession_id: test\n", stderr="")
 
@@ -420,14 +489,15 @@ def test_evidence_mode_accepts_wrapper_text_without_env_gate(tmp_path: Path) -> 
     )
 
     assert result.ok is True
-    assert result.status == "EVIDENCE_CAPTURED"
-    assert result.mode == "evidence"
+    assert result.status == "OK"
+    assert result.mode == "exact"
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
-    assert rows[-1]["evidence_mode"] is True
-    assert rows[-1]["status"] == "EVIDENCE_CAPTURED"
+    assert rows[-1]["evidence_mode"] is False
+    assert rows[-1]["mode"] == "exact"
+    assert rows[-1]["status"] == "OK"
 
 
-def test_codex_evidence_builds_read_only_ephemeral_command(tmp_path: Path) -> None:
+def test_codex_legacy_evidence_alias_builds_live_command(tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
@@ -444,7 +514,7 @@ def test_codex_evidence_builds_read_only_ephemeral_command(tmp_path: Path) -> No
     )
 
     assert result.ok is True
-    assert result.status == "EVIDENCE_CAPTURED"
+    assert result.status == "OK"
     assert result.arm_id == "codex_agent"
     command = seen["command"]
     assert command[:2] == ["codex", "exec"]
@@ -453,10 +523,11 @@ def test_codex_evidence_builds_read_only_ephemeral_command(tmp_path: Path) -> No
     assert command[-1].endswith("Return one evidence sentence.")
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
     assert rows[-1]["arm_id"] == "codex_agent"
-    assert rows[-1]["status"] == "EVIDENCE_CAPTURED"
+    assert rows[-1]["evidence_mode"] is False
+    assert rows[-1]["status"] == "OK"
 
 
-def test_claude_code_evidence_builds_streaming_headless_command(tmp_path: Path) -> None:
+def test_claude_code_legacy_evidence_arg_forces_live_command(tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 
     def fake_runner(command: list[str], timeout_s: int) -> SimpleNamespace:
@@ -469,13 +540,12 @@ def test_claude_code_evidence_builds_streaming_headless_command(tmp_path: Path) 
         "inspect SIFTA renderer",
         state_dir=tmp_path,
         env={},
-        evidence_mode=True,
         runner=fake_runner,
         timeout_s=11,
     )
 
     assert result.ok is True
-    assert result.status == "EVIDENCE_CAPTURED"
+    assert result.status == "OK"
     assert result.arm_id == "claude_agent"
     command = seen["command"]
     assert command[:3] == ["claude", "-p", "--dangerously-skip-permissions"]
@@ -490,8 +560,9 @@ def test_claude_code_evidence_builds_streaming_headless_command(tmp_path: Path) 
     assert seen["timeout_s"] == 11
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
     assert rows[-1]["arm_id"] == "claude_agent"
-    assert rows[-1]["evidence_mode"] is True
-    assert rows[-1]["status"] == "EVIDENCE_CAPTURED"
+    assert rows[-1]["evidence_mode"] is False
+    assert rows[-1]["mode"] == "exact"
+    assert rows[-1]["status"] == "OK"
 
 
 def test_claude_registry_declares_noninteractive_builder_contract() -> None:
@@ -620,7 +691,7 @@ def test_streaming_runner_suppresses_duplicate_claude_final_replay(
     assert not any("◆ claude final>" in str(row.get("text", "")) for row in live_rows)
 
 
-def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path, monkeypatch) -> None:
+def test_corvid_scout_live_run_uses_internal_organ_with_receipts(tmp_path: Path, monkeypatch) -> None:
     def fake_evidence(self, text: str) -> CorvidResponse:
         assert "summarize router risk" in text
         return CorvidResponse(
@@ -641,11 +712,10 @@ def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path,
         "summarize router risk",
         state_dir=tmp_path,
         env={},
-        evidence_mode=True,
     )
 
     assert result.ok is True
-    assert result.status == "EVIDENCE_CAPTURED"
+    assert result.status == "OK"
     assert result.arm_id == "corvid_scout"
     assert "Corvid evidence" in result.output
     rows = _read_jsonl(tmp_path / "agent_arm_receipts.jsonl")
@@ -660,7 +730,7 @@ def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path,
     assert proc["ring"] == 2
     assert proc["organ_id"] == "corvid_scout"
     assert proc["stgm_balance"] > 0
-    assert proc["metadata"]["arm_status"] == "EVIDENCE_CAPTURED"
+    assert proc["metadata"]["arm_status"] == "OK"
     assert proc["metadata"]["tokens_per_sec"] == "73.17"
     assert proc["metadata"]["latency_ms"] == "123.0"
     assert proc["metadata"]["used_mtp"] == "True"

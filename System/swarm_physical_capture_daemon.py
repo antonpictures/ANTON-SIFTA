@@ -216,6 +216,25 @@ def run_daemon(once=False):
 
             _append_event(event)
 
+            # Round 114 §2.G.1 — feed owner_somatic_state from every face
+            # detection event so the camera lane reaches Alice's somatic
+            # field instead of stopping at face_detection_events.jsonl.
+            # Never raise — visibility must not break the daemon.
+            try:
+                from System.swarm_owner_somatic_state import update_from_frame as _update_somatic_frame
+
+                _update_somatic_frame(
+                    {
+                        "faces_detected": len(faces),
+                        "confidence": 0.9 if len(faces) > 0 else 0.0,
+                        "movement": "steady",  # face daemon does not yet emit motion class
+                        "posture_hint": "architect_present" if len(faces) == 1 else "unknown",
+                    },
+                    camera_id=f"physical_capture_daemon:idx={camera_idx}",
+                )
+            except Exception:
+                pass
+
             print(f"[{time.strftime('%H:%M:%S')}] faces={len(faces)} → next in {next_sleep_s:.1f}s ({wake_reason})")
             if once:
                 break

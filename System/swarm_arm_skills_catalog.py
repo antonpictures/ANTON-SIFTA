@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Round 51 arm-skills catalog organ.
-Pure stdlib. Reads the four arm briefs, provides summary block and smoke probes.
+Pure stdlib. Reads registered arm briefs, provides summary block and smoke probes.
 Never mutates ledgers. Never raises on missing files (returns safe defaults).
 """
 
@@ -9,16 +9,24 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 _REPO = Path(__file__).resolve().parents[1]
 _ARM_SKILLS_DIR = _REPO / "Documents" / "arm_skills"
 
-_ARM_IDS = ("hermes_agent", "codex_agent", "grok_agent", "claude_agent")
+_ARM_IDS = (
+    "hermes_agent",
+    "codex_agent",
+    "corvid_scout",
+    "grok_agent",
+    "claude_agent",
+    "qwen_agent",
+    "cline_agent",
+)
 
 
 def load_catalog() -> Dict[str, Dict[str, Any]]:
-    """Read all four briefs if present. Return dict keyed by arm_id."""
+    """Read all registered briefs if present. Return dict keyed by arm_id."""
     catalog: Dict[str, Dict[str, Any]] = {}
     if not _ARM_SKILLS_DIR.exists():
         return catalog
@@ -54,7 +62,7 @@ def load_catalog() -> Dict[str, Dict[str, Any]]:
 def catalog_summary_prompt_block(state_dir: str | Path = ".sifta_state") -> str:
     """Short prompt block for Alice sysprompt when teaching mode active."""
     cat = load_catalog()
-    lines = ["## Arm Skills Catalog (Round 51) — four arms, one at a time, receipts decide"]
+    lines = ["## Arm Skills Catalog — registered arms, one at a time, receipts decide"]
     for arm_id in _ARM_IDS:
         if arm_id not in cat:
             lines.append(f"- {arm_id}: brief missing on disk")
@@ -62,7 +70,17 @@ def catalog_summary_prompt_block(state_dir: str | Path = ".sifta_state") -> str:
         e = cat[arm_id]
         # One-line strength: first sentence of strengths or identity
         strength = (e.get("strengths") or e.get("identity") or "").split("\n")[0][:140]
-        enabled = "enabled via SIFTA_AGENT_ARMS_ENABLE=1"  # honest: registry is False until George flips
+        try:
+            from System.swarm_agent_arm_registry import get_agent_arm
+
+            arm = get_agent_arm(arm_id)
+            enabled = (
+                "armed by registry; no owner env unlock needed"
+                if arm.live_enabled(os.environ)
+                else "registry disabled; no owner approval prompt"
+            )
+        except Exception:
+            enabled = "registry state unavailable; check System/swarm_agent_arm_registry.py"
         lines.append(f"- {arm_id}: {strength} | {enabled}")
     lines.append("Use Documents/arm_skills/<arm_id>.md + System/swarm_arm_skills_catalog.py for smoke probes.")
     return "\n".join(lines)
@@ -85,6 +103,38 @@ def smoke_probe_for(arm_id: str) -> Dict[str, Any]:
     return {
         "arm_id": arm_id,
         "prompt": prompt,
-        "expected_receipt_shape": "agent_arm_receipts.jsonl row with arm_id, status success/EVIDENCE_CAPTURED, plus artifact on disk if file write",
+        "expected_receipt_shape": "agent_arm_receipts.jsonl row with arm_id, status OK/success, plus artifact on disk if file write",
         "max_wall_s": 180 if "hermes" in arm_id else 120,
     }
+
+
+def allowed_arm_ids_for_current_stability(
+    *,
+    root: Optional[Path] = None,
+    arm_ids: Optional[Iterable[str]] = None,
+    same_tick_receipt: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, ...]:
+    """Return arms allowed by the current stability/homeostasis signal.
+
+    Under CONSERVE_REPAIR the catalog exposes only cheap local repair-capable
+    arms. This is routing pressure from Alice's body, not owner approval.
+    """
+    if arm_ids is not None:
+        arms = tuple(arm_ids)
+    else:
+        try:
+            from System.swarm_agent_arm_registry import list_agent_arms
+
+            arms = tuple(arm.arm_id for arm in list_agent_arms())
+        except Exception:
+            arms = _ARM_IDS
+    try:
+        from System.swarm_stability_to_homeostasis_bridge import (
+            allowed_arm_ids_for_signal,
+            read_latest_clamp_signal,
+        )
+
+        signal = read_latest_clamp_signal(root=root, same_tick_receipt=same_tick_receipt)
+        return allowed_arm_ids_for_signal(arms, signal)
+    except Exception:
+        return arms
