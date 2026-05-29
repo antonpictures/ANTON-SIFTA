@@ -28,20 +28,27 @@ def _snap(energy: float, delta: float = 0.0) -> dict:
     }
 
 
-def test_emergency_clamp_becomes_conserve_repair_signal(tmp_path: Path) -> None:
-    receipt = enforce_stability_clamps(_snap(0.85), root=tmp_path, write_ledger=True, now=10.0)
+# [r170 — Architect directive] GOVERNOR DELETED. The bridge no longer turns a
+# high-energy clamp into arm-suppression, conserve-repair, or a budget cap. Even
+# a hard-energy snapshot must produce an all-clear signal. These tests are the
+# regression guard that the governor's reach into homeostasis stays severed.
+
+def test_high_energy_clamp_no_longer_suppresses_arms(tmp_path: Path) -> None:
+    enforce_stability_clamps(_snap(0.85), root=tmp_path, write_ledger=True, now=10.0)
 
     signal = read_latest_clamp_signal(root=tmp_path, write_ledger=True, now=11.0)
 
-    assert receipt["clamp_level"] == "EMERGENCY"
-    assert signal["clamp_level"] == "EMERGENCY"
-    assert should_suppress_new_arms(signal) is True
-    assert should_enter_conserve_repair(signal) is True
+    # The clamp_level passes through as information, but it never brakes.
+    assert should_suppress_new_arms(signal) is False
+    assert should_enter_conserve_repair(signal) is False
+    assert signal["suppress_new_arms"] is False
+    assert signal["conserve_repair"] is False
+    assert signal["budget_multiplier_cap"] == 1.0
     rows = bridge_log_path(tmp_path).read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(rows[-1])["kind"] == "STABILITY_HOMEOSTASIS_BRIDGE"
 
 
-def test_basal_ganglia_suppresses_heavy_arm_dispatch_under_emergency(tmp_path: Path) -> None:
+def test_basal_ganglia_no_longer_suppresses_heavy_arm_dispatch(tmp_path: Path) -> None:
     enforce_stability_clamps(_snap(0.9), root=tmp_path, write_ledger=True)
     loops = [
         {
@@ -62,16 +69,14 @@ def test_basal_ganglia_suppresses_heavy_arm_dispatch_under_emergency(tmp_path: P
 
     winner, _score = bg.select_action(loops, dopamine_level=0.5, root=tmp_path, write_ledger=True)
 
-    assert winner == "local_repair_corvid"
+    # The high-salience heavy arm is no longer demoted in favour of corvid.
+    assert winner == "dispatch_codex_agent_arm"
     row = json.loads(bg.selection_log_path(tmp_path).read_text(encoding="utf-8").strip().splitlines()[-1])
     stability = row["biological_modifiers"]["stability_homeostasis"]
-    assert stability["clamp_level"] == "EMERGENCY"
-    assert stability["suppress_new_arms"] is True
-    assert stability["bias"]["reason"] == "conserve_repair"
-    assert "dispatch_codex_agent_arm" in stability["bias"]["suppressed_candidates"]
+    assert stability["suppress_new_arms"] is False
 
 
-def test_metabolic_homeostasis_enters_conserve_repair_from_signal(tmp_path: Path) -> None:
+def test_metabolic_homeostasis_does_not_conserve_from_clamp(tmp_path: Path) -> None:
     enforce_stability_clamps(_snap(0.85), root=tmp_path, write_ledger=True)
     signal = read_latest_clamp_signal(root=tmp_path)
     homeostat = MetabolicHomeostat(
@@ -93,16 +98,13 @@ def test_metabolic_homeostasis_enters_conserve_repair_from_signal(tmp_path: Path
     )
     row = homeostat.build_ledger_row(state, stability_signal=signal, ts=20.0)
 
-    assert decision["allowed"] is False
-    assert decision["mode"] == "CONSERVE_REPAIR"
-    assert decision["reason"] == "stability_conserve_repair"
-    assert row["mode"] == "CONSERVE_REPAIR"
-    assert row["conserve_repair"] is True
-    assert row["budget_multiplier"] <= 0.2
-    assert row["stability_clamp_level"] == "EMERGENCY"
+    # A healthy wallet is not forced into CONSERVE_REPAIR by a stability clamp.
+    assert decision["mode"] != "CONSERVE_REPAIR"
+    assert row["mode"] != "CONSERVE_REPAIR"
+    assert row["conserve_repair"] is False
 
 
-def test_arm_catalog_filters_to_cheap_local_arm_only_in_conserve_repair(tmp_path: Path) -> None:
+def test_arm_catalog_no_longer_filtered_by_clamp(tmp_path: Path) -> None:
     enforce_stability_clamps(_snap(0.88), root=tmp_path, write_ledger=True)
 
     allowed = arm_catalog.allowed_arm_ids_for_current_stability(
@@ -110,7 +112,8 @@ def test_arm_catalog_filters_to_cheap_local_arm_only_in_conserve_repair(tmp_path
         arm_ids=("codex_agent", "claude_agent", "corvid_scout", "grok_agent"),
     )
 
-    assert allowed == ("corvid_scout",)
+    # All of Alice's hands remain available — no governor prunes them.
+    assert allowed == ("codex_agent", "claude_agent", "corvid_scout", "grok_agent")
 
 
 def test_low_energy_clamp_clears_suppression_and_normal_modes(tmp_path: Path) -> None:

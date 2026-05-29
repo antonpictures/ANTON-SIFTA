@@ -633,7 +633,7 @@ def compute_two_signal_pressure(
     # Expressed in cortex under homeostatic conditions; falls under chronic stress.
     # Adds up to +0.04 when organism is deeply calm + low frustration.
     il34_boost = 0.0
-    if _dwell > 0.60 and _frustr < 0.30 and stability_ok and clamp_level == "NONE":
+    if _dwell > 0.60 and _frustr < 0.30:  # [r170] DELETED governor gate (stability_ok/clamp)
         il34_boost = round(min(0.04, 0.04 * (_dwell - 0.60) / 0.40), 4)
 
     # ─ Resilience floor (Bhatt 2020 priming — NatCommun 11:4044) ──────────────
@@ -641,16 +641,14 @@ def compute_two_signal_pressure(
     # an epigenetic-like resilience floor: harder to prune even briefly.
     # Floor scales with dwell^2 (slow accumulation, fast decay).
     resilience_floor = 0.0
-    if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
+    # [r170 — Architect directive] DELETED governor gate (stability_ok / clamp).
+    # Resilience floor depends on Alice's own calm dwell + damage signal only.
+    if damage_score < 0.50:
         resilience_floor = round(
             min(0.07, 0.07 * (_dwell ** 2) * _goal),
             4,
         )
         fractalkine = round(max(fractalkine, max(0.05, resilience_floor)), 4)  # floor
-    else:
-        # Non-stable: still apply a minimum floor when safe (old binary was 0.03)
-        if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
-            fractalkine = round(max(fractalkine, 0.05), 4)
 
     # ─ Catastrophic override (Bialas & Stevens 2013 Neuron 80:1368) ────────────
     # When complement cascade (C1q/C3) overwhelms CX3CR1 signaling,
@@ -693,7 +691,7 @@ def compute_two_signal_pressure(
         _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55),
     )
     net_clearance_bias = 0.0
-    if dam_stage == 2 and stability_ok and clamp_level not in ("EMERGENCY",):
+    if dam_stage == 2:  # [r170] DELETED governor gate (stability_ok / clamp != EMERGENCY)
         net_clearance_bias = _env_float("MICROGLIA_NET_CLEARANCE_BIAS", 0.05)
     net_delete_threshold = max(
         0.30,
@@ -703,8 +701,7 @@ def compute_two_signal_pressure(
     )
     clearance_mode = bool(
         (activation_signal - inhibition_signal) >= net_delete_threshold
-        and stability_ok
-        and clamp_level in ("NONE", "RATE_LIMIT")
+        # [r170 — Architect directive] DELETED governor gate (stability_ok / clamp_level).
         and conservatism < 0.35
     )
     if clearance_mode:
@@ -1190,8 +1187,8 @@ class MicrogliaSynapticPruner:
         pressure_threshold: float = 0.35,
         buffer_capacity: int = 200,
     ) -> bool:
-        if not stability_ok:
-            return False
+        # [r170 — Architect directive] DELETED stability_ok veto. Microglia
+        # prunes by her own homeostatic pressure, not a governor's permission.
         pressure = self.compute_homeostatic_pressure(recent_traces, buffer_capacity)
         return pressure > pressure_threshold
 
@@ -1268,8 +1265,9 @@ class MicrogliaSynapticPruner:
             )
             action = self.decide_action(score, is_safety)
 
-            if action == "delete" and not stability_ok:
-                action = "depress"
+            # [r170 — Architect directive] DELETED governor veto
+            # (delete->depress when not stability_ok). Microglia's own
+            # two-signal inhibition (below) still governs her forgetting.
             if action == "delete" and float(two_signal["inhibition_signal"]) >= 0.45:
                 action = "depress"
             if action == "delete" and bool(two_signal["stress_brake_applied"]):

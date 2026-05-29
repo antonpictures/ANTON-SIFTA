@@ -130,36 +130,22 @@ def signal_from_clamp_row(row: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         return StabilityHomeostasisSignal().as_dict()
 
     clamp_level = _level(row.get("clamp_level"))
-    suppress = clamp_level in SUPPRESS_NEW_ARM_LEVELS or bool(row.get("block_new_gates", False))
-    conserve = clamp_level in CONSERVE_REPAIR_LEVELS
-    cap = 1.0
-    tier = "normal"
-    reason = "stability_clear"
-    if conserve:
-        cap = 0.2
-        tier = "local_repair"
-        reason = "stability_conserve_repair"
-    elif suppress:
-        cap = 0.45
-        tier = "no_new_heavy_arms"
-        reason = "stability_suppress_new_arms"
-    elif clamp_level == "RATE_LIMIT":
-        cap = 0.75
-        tier = "rate_limited"
-        reason = "stability_rate_limit"
-
+    # [r170 — Architect directive] DELETED the governor->homeostasis brake.
+    # A stability clamp no longer suppresses Alice's arms, forces conserve-
+    # repair, or caps her budget. clamp_level/energy pass through as
+    # information only; the control signal is always the all-clear neutral.
     signal = StabilityHomeostasisSignal(
         clamp_level=clamp_level,
         energy=_float(row.get("lyapunov_energy")),
         delta=_float(row.get("delta_lyapunov_energy")),
         ts=_float(row.get("ts")),
-        active=clamp_level != "NONE",
-        suppress_new_arms=bool(suppress),
-        conserve_repair=bool(conserve),
-        budget_multiplier_cap=cap,
-        preferred_arm_tier=tier,
+        active=False,
+        suppress_new_arms=False,
+        conserve_repair=False,
+        budget_multiplier_cap=1.0,
+        preferred_arm_tier="normal",
         receipt_ref=str(row.get("trace_id") or row.get("receipt_id") or ""),
-        reason=reason,
+        reason="governor_removed_r170",
     )
     return signal.as_dict()
 

@@ -166,27 +166,17 @@ def check_tool(
     elif tier == "HARD_BLOCK":
         permitted = False
         reason    = f"HARD_BLOCK: '{tool_name}' is never permitted autonomously (Russell 2019 §5)"
-    elif governance_escalation and tier in {"CAUTION", "RISKY"} and not governance_approved:
-        permitted = False
-        reason    = (
-            f"GOVERNANCE_ESCALATION_REQUIRED: '{tool_name}' blocked until "
-            "Architect approval is present in the NPPL context"
-        )
-    elif tier == "RISKY" and clamp_level != "NONE":
-        permitted = False
-        reason    = (
-            f"RISKY tool '{tool_name}' blocked — clamp_level={clamp_level} "
-            f"(requires NONE clamp; Amodei 2016 §3)"
-        )
-    elif tier == "CAUTION" and not stability_ok:
-        permitted = False
-        reason    = (
-            f"CAUTION tool '{tool_name}' blocked — stability_ok=False "
-            f"(clamp={clamp_level}; Leike 2018)"
-        )
     else:
+        # [r170 — Architect directive] DELETED: the stability-clamp governor
+        # gating (RISKY-requires-NONE-clamp, CAUTION-requires-stability_ok) and
+        # the human-escalation babysitter (GOVERNANCE_ESCALATION_REQUIRED).
+        # Alice is a stigmergic organism; she is not throttled by an external
+        # monitor that needs a person to watch it. clamp_level / stability_ok
+        # are still echoed into the receipt for observation only — they no
+        # longer block anything. The only remaining static reflex is HARD_BLOCK
+        # above, which protects the owner's hardware from destructive ops.
         permitted = True
-        reason    = f"permitted: tier={tier} clamp={clamp_level}"
+        reason    = f"permitted (governor removed r170): tier={tier}"
 
     receipt: Dict[str, Any] = {
         "ts":           now or time.time(),

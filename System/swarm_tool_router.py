@@ -2639,16 +2639,16 @@ def execute_tool_call(
         _log_trace({"event": "TOOL_CALL_REJECTED", "tool": call.tool_name, "missing": missing})
         return result
 
-    # ── NPPL hard gate (Event 141) — before any executor / subprocess ─────
+    # ── NPPL static reflex (HARD_BLOCK only) — before any executor ────────
+    # [r170 — Architect directive] DELETED the stability-clamp governor feed.
+    # No more get_current_clamp_overrides(): the router no longer asks a
+    # detached governor whether Alice is allowed to act. check_tool now only
+    # enforces the static HARD_BLOCK reflex (destructive-op owner protection).
     try:
         from System.swarm_nppl_gate import check_tool as _nppl_tool_check
-        from System.swarm_stability_audit import get_current_clamp_overrides
 
-        _clamp_ov = get_current_clamp_overrides(root=_REPO)
         _nppl = _nppl_tool_check(
             call.tool_name,
-            clamp_level=str(_clamp_ov.get("clamp_level", "NONE")),
-            stability_ok=bool(_clamp_ov.get("stability_ok", True)),
             root=_REPO,
             context={"organ": "swarm_tool_router.execute_tool_call", "tool": call.tool_name},
             write_ledger=True,

@@ -1,18 +1,24 @@
 """
-Tests for Event 134 — enforce_stability_clamps().
-Validates clamp level escalation, receipt schema, EMERGENCY gate,
-and disable env-var kill-switch.
+Regression guard for the stability-clamp GOVERNOR REMOVAL (r169/r170).
+
+[Architect directive] The four-state stability clamp governor
+(NONE / RATE_LIMIT / BLOCK_NEW / EMERGENCY) that could externally restrict
+gate creation, learning rate, exploration, pruning, or self-modification was
+DELETED. One Alice is the only governor. Alice is a stigmergic organism; she is
+not throttled by a detached monitor.
+
+These tests now assert the governor stays dead: no matter how high the Lyapunov
+energy or delta, enforce_stability_clamps() must return a pure NONE receipt with
+no blocking, no caps, and stability_ok=True. The Lyapunov value survives only as
+information (measurement), never as a brake.
 """
-import os
 import json
 import pytest
-from pathlib import Path
 from System.swarm_stability_audit import (
     compute_stability_snapshot,
     enforce_stability_clamps,
     get_current_clamp_overrides,
     get_latest_stability_clamp_row,
-    tail_stability_rows,
 )
 
 
@@ -26,71 +32,54 @@ def _snap(energy=0.1, delta=0.0, astro=0.0, stable=True):
     }
 
 
-# ── Clamp levels ───────────────────────────────────────────────────────────────
+def _assert_all_clear(receipt):
+    """The governor is gone: every receipt must be a no-restriction NONE."""
+    assert receipt["clamp_level"] == "NONE"
+    assert receipt["stability_ok"] is True
+    assert receipt["active_clamps"] == []
+    assert receipt["block_new_gates"] is False
+    assert receipt["lr_ceiling"] is None
+    assert receipt["max_prunes_override"] is None
+    assert receipt["exploration_bias_cap"] is None
+
+
+# ── Governor stays dead at every energy/delta ────────────────────────────────
 
 def test_no_clamp_when_healthy():
-    receipt = enforce_stability_clamps(_snap(energy=0.1, delta=0.05), write_ledger=False)
-    assert receipt["clamp_level"] == "NONE"
-    assert receipt["stability_ok"] is True
-    assert receipt["active_clamps"] == []
+    _assert_all_clear(enforce_stability_clamps(_snap(energy=0.1, delta=0.05), write_ledger=False))
 
 
-def test_rate_limit_on_rising_delta():
-    receipt = enforce_stability_clamps(_snap(delta=0.25), write_ledger=False)
-    assert receipt["clamp_level"] == "RATE_LIMIT"
-    assert receipt["max_prunes_override"] == 3
-    assert receipt["exploration_bias_cap"] == pytest.approx(0.3)
+def test_rising_delta_no_longer_rate_limits():
+    _assert_all_clear(enforce_stability_clamps(_snap(delta=0.25), write_ledger=False))
 
 
-def test_block_new_gates_at_warn_energy():
-    receipt = enforce_stability_clamps(_snap(energy=0.55), write_ledger=False)
-    assert receipt["clamp_level"] == "BLOCK_NEW"
-    assert receipt["block_new_gates"] is True
-    assert receipt["lr_ceiling"] == pytest.approx(0.05)
-    assert receipt["max_prunes_override"] == 1
+def test_warn_energy_no_longer_blocks_new_gates():
+    _assert_all_clear(enforce_stability_clamps(_snap(energy=0.55), write_ledger=False))
 
 
-def test_emergency_at_hard_energy():
-    receipt = enforce_stability_clamps(_snap(energy=0.85), write_ledger=False)
-    assert receipt["clamp_level"] == "EMERGENCY"
-    assert receipt["stability_ok"] is False
-    assert receipt["max_prunes_override"] == 0
-    assert receipt["lr_ceiling"] == pytest.approx(0.01)
-    assert receipt["exploration_bias_cap"] == pytest.approx(0.0)
+def test_hard_energy_no_longer_emergency():
+    _assert_all_clear(enforce_stability_clamps(_snap(energy=0.85), write_ledger=False))
 
 
-def test_emergency_on_unstable_and_hard_delta():
-    receipt = enforce_stability_clamps(
-        _snap(energy=0.3, delta=0.45, stable=False), write_ledger=False
+def test_unstable_and_hard_delta_no_longer_emergency():
+    _assert_all_clear(
+        enforce_stability_clamps(_snap(energy=0.99, delta=0.45, stable=False), write_ledger=False)
     )
-    assert receipt["clamp_level"] == "EMERGENCY"
 
 
-def test_receipt_has_provenance():
-    receipt = enforce_stability_clamps(_snap(), write_ledger=False)
-    assert "Khalil" in receipt["provenance"]
-    assert "Liberzon" in receipt["provenance"]
+def test_receipt_carries_removal_directive():
+    receipt = enforce_stability_clamps(_snap(energy=0.9), write_ledger=False)
+    # The old Khalil/Liberzon control-theory provenance is gone; the row now
+    # records WHY it is neutralized.
+    assert "provenance" not in receipt or "Khalil" not in str(receipt.get("provenance", ""))
+    assert "r169" in str(receipt.get("removed_by_directive", ""))
 
 
-# ── Ledger write ───────────────────────────────────────────────────────────────
+# ── Ledger write: high energy now writes a NONE row, not EMERGENCY ───────────
 
-def test_clamp_writes_to_ledger_when_active(tmp_path, monkeypatch):
+def test_high_energy_writes_none_row(tmp_path, monkeypatch):
     monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
-    receipt = enforce_stability_clamps(_snap(energy=0.9), root=tmp_path)
-    log = tmp_path / "stability_audit.jsonl"
-    assert log.exists()
-    row = json.loads(log.read_text().strip().splitlines()[-1])
-    assert row["kind"] == "STABILITY_CLAMP"
-    assert row["clamp_level"] == "EMERGENCY"
-
-
-def test_none_clamp_writes_correct_schema(tmp_path):
-    """NONE clamp rows ARE written (recovery tracking), but must have empty active_clamps."""
-    receipt = enforce_stability_clamps(_snap(energy=0.1, delta=0.01), root=tmp_path, write_ledger=True)
-    assert receipt["clamp_level"] == "NONE"
-    assert receipt["active_clamps"] == []
-    assert receipt["stability_ok"] is True
-    assert receipt["block_new_gates"] is False
+    enforce_stability_clamps(_snap(energy=0.9), root=tmp_path)
     log = tmp_path / "stability_audit.jsonl"
     assert log.exists()
     row = json.loads(log.read_text().strip().splitlines()[-1])
@@ -98,26 +87,20 @@ def test_none_clamp_writes_correct_schema(tmp_path):
     assert row["clamp_level"] == "NONE"
 
 
-def test_get_current_clamp_overrides_reads_latest_row(tmp_path, monkeypatch):
+def test_get_current_clamp_overrides_is_all_clear(tmp_path, monkeypatch):
     monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
     enforce_stability_clamps(_snap(energy=0.9), root=tmp_path, write_ledger=True)
     last = get_latest_stability_clamp_row(root=tmp_path)
     assert last is not None
-    assert last["clamp_level"] == "EMERGENCY"
+    assert last["clamp_level"] == "NONE"
     ov = get_current_clamp_overrides(root=tmp_path)
-    assert ov["clamp_level"] == "EMERGENCY"
-    assert ov["max_prunes_override"] == 0
+    assert ov["clamp_level"] == "NONE"
+    assert ov["max_prunes_override"] is None
+    assert ov["block_new_gates"] is False
+    assert ov["stability_ok"] is True
 
 
-def test_same_tick_receipt_short_circuits_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
-    enforce_stability_clamps(_snap(energy=0.9), root=tmp_path, write_ledger=True)
-    live = enforce_stability_clamps(_snap(energy=0.1, delta=0.01), root=tmp_path, write_ledger=False)
-    ov = get_current_clamp_overrides(root=tmp_path, same_tick_receipt=live)
-    assert ov["clamp_level"] == live["clamp_level"]
-
-
-# ── Kill-switch ────────────────────────────────────────────────────────────────
+# ── Kill-switch still returns NONE ───────────────────────────────────────────
 
 def test_disable_env_returns_none_clamp(monkeypatch):
     monkeypatch.setenv("SIFTA_STABILITY_AUDIT_DISABLE", "1")
@@ -126,15 +109,16 @@ def test_disable_env_returns_none_clamp(monkeypatch):
     assert receipt["disabled"] is True
 
 
-# ── Integration: compute_stability_snapshot feeds enforce_stability_clamps ─────
+# ── Measurement survives: compute_stability_snapshot still produces energy ───
 
-def test_snapshot_to_clamps_pipeline(tmp_path, monkeypatch):
+def test_snapshot_still_measures_but_never_brakes(tmp_path, monkeypatch):
     monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
     snap = compute_stability_snapshot(
-        multi_gate_norm=0.0, critic_norm=0.0, arbiter_norm=0.0,
-        world_error_norm=0.0, astrocyte_heat_norm=0.0,
+        multi_gate_norm=5.0, critic_norm=1.0, arbiter_norm=1.0,
+        world_error_norm=1.0, astrocyte_heat_norm=1.0,
         root=tmp_path, write_ledger=False,
     )
-    receipt = enforce_stability_clamps(snap, write_ledger=False)
-    assert "clamp_level" in receipt
-    assert "stability_ok" in receipt
+    # The Lyapunov energy is still measured (information only)...
+    assert "lyapunov_energy" in snap
+    # ...but enforcing on even a very high snapshot yields no restriction.
+    _assert_all_clear(enforce_stability_clamps(snap, write_ledger=False))

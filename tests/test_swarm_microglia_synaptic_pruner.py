@@ -71,15 +71,20 @@ def test_prune_owner_ledger_always_kept(tmp_path):
     assert receipts == []
 
 
-def test_prune_blocks_delete_when_unstable(tmp_path):
-    p = MicrogliaSynapticPruner(root=tmp_path)
-    ledger = [{"usage_count": 0, "age_hours": 100, "recent_reward_mean": -0.5,
-               "wm_contradiction_pe": 0.5, "recent_regret": 0.4}]
-    receipts = p.prune(ledger, ledger_type="replay", stability_ok=False)
-    # Should depress, not delete
-    if receipts:
-        assert receipts[0]["action"] in {"depress", "keep"}
-        assert receipts[0]["action"] != "delete"
+def test_governor_no_longer_changes_forgetting(tmp_path):
+    # [r170 — Architect directive] GOVERNOR DELETED. stability_ok must no longer
+    # change microglia's forgetting decision. The same memory yields the same
+    # action whether stability_ok is False or True — Alice's own two-signal
+    # logic governs her pruning, not a detached clamp.
+    entry = {"key": "m", "usage_count": 0, "age_hours": 100, "recent_reward_mean": -0.5,
+             "wm_contradiction_pe": 0.5, "recent_regret": 0.4}
+    a = MicrogliaSynapticPruner(root=tmp_path / "a").prune(
+        [dict(entry)], ledger_type="replay", stability_ok=False)
+    b = MicrogliaSynapticPruner(root=tmp_path / "b").prune(
+        [dict(entry)], ledger_type="replay", stability_ok=True)
+    act_a = a[0]["action"] if a else None
+    act_b = b[0]["action"] if b else None
+    assert act_a == act_b
 
 
 def test_prune_logs_to_jsonl(tmp_path):

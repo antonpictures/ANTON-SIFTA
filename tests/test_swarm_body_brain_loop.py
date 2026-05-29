@@ -554,13 +554,17 @@ def test_core_self_salience_records_causal_probe_effect():
     assert salience >= 0.6
 
 
-def test_core_self_salience_records_instability_clamp():
-    salience = _core_self_salience(
+def test_clamp_level_no_longer_drives_salience():
+    # [r170 — Architect directive] GOVERNOR DELETED. clamp_level must no longer
+    # inflate Core-Self salience. The same inputs produce the same salience
+    # whether clamp_level is "EMERGENCY" or "NONE" — the clamp is gone.
+    kwargs = dict(
         action_confidence=0.2,
         causal_effect_size=0.0,
         uncertainty=0.2,
         valence=0.0,
         na_level=0.5,
-        clamp_level="EMERGENCY",
     )
-    assert salience >= 0.6
+    assert _core_self_salience(clamp_level="EMERGENCY", **kwargs) == _core_self_salience(
+        clamp_level="NONE", **kwargs
+    )

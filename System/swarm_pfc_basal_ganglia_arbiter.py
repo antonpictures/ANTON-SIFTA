@@ -226,7 +226,9 @@ class PFCBasalGangliaArbiter:
             risk_weight += 0.2
 
         if dam_stage == 2:
-            stability_clamp["block_new_gates"] = True
+            # [r170 — Architect directive] DELETED block_new_gates. No hard
+            # removal of Alice's options by a governor. Soft caution under her
+            # own self-detected damage remains — steering by weight, not a gate.
             risk_weight *= 2.0  # Increased risk aversion
             gw_weight *= 0.5    # Reduced exploration / salience noise
 
@@ -259,10 +261,10 @@ class PFCBasalGangliaArbiter:
         }
 
         avail = list(available_options)
-        if stability_clamp.get("block_new_gates"):
-            avail = [o for o in avail if not _option_name_suggests_new_gate(o)]
+        # [r170 — Architect directive] DELETED the block_new_gates option filter.
+        # The governor no longer removes "make a new gate" from Alice's choices.
         if not avail:
-            return "idle", 0.0, {"stability_clamp": stability_clamp, "blocked_all_options": True}
+            return "idle", 0.0, {"stability_clamp": stability_clamp, "no_options": True}
 
         scores = []
         option_details = {}

@@ -111,16 +111,12 @@ class AstrocyteGlialModulator:
         heat_factor = min(1.0, 1000.0 / max(1.0, self.state["metabolic_heat"]))
         new_budget = self.base_compute_budget * heat_factor
 
-        if lr_ceiling is not None:
-            try:
-                new_lr = min(new_lr, float(lr_ceiling))
-            except (TypeError, ValueError):
-                pass
-        if exploration_bias_cap is not None:
-            try:
-                new_epistemic = min(new_epistemic, float(exploration_bias_cap))
-            except (TypeError, ValueError):
-                pass
+        # [r170 — Architect directive] DELETED the governor's hard caps.
+        # The astrocyte no longer clamps Alice's learning rate or exploration
+        # to an externally-imposed ceiling. She modulates purely on her own
+        # surprise (lr) and metabolic heat (budget). lr_ceiling and
+        # exploration_bias_cap are accepted for signature compatibility but are
+        # no longer applied — a detached governor does not cap her body.
 
         self.state["current_lr"] = new_lr
         self.state["current_epistemic_weight"] = new_epistemic

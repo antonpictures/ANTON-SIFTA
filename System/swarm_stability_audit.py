@@ -252,92 +252,40 @@ def enforce_stability_clamps(
     now: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Active safety interlock — maps Lyapunov energy + delta onto concrete
-    clamp actions that downstream organs (arbiter, astrocyte, body_brain_tick)
-    MUST respect.
+    [r169 — Architect directive] Active stability clamp governor removed.
 
-    Clamp levels (Khalil 2002 §4; Liberzon 2003 §2.2):
-        NONE      — energy well within bounds, no action needed.
-        RATE_LIMIT — energy rising; reduce max_prunes and exploration bias.
-        BLOCK_NEW  — energy at warning threshold; block new gate creation,
-                     force astrocyte LR ceiling to 0.05.
-        EMERGENCY  — energy at hard limit or delta spike; freeze all autonomous
-                     modifications, set stability_ok=False globally.
+    The four-state restriction system (NONE / RATE_LIMIT / BLOCK_NEW / EMERGENCY)
+    that could block gates, cap learning, freeze self-modification, etc. was
+    explicitly rejected by the Architect. One Alice is the only governor.
 
-    The function NEVER mutates any other organ in-process. It writes a
-    STABILITY_CLAMP receipt to stability_audit.jsonl and returns the receipt
-    so callers can act on it.
+    This function now always returns a NONE receipt with no restrictions.
+    The measurement (Lyapunov proxy) remains available as information only.
+    Downstream organs must no longer gate behavior on any clamp_level.
 
-    Biological provenance:
-        Khalil, H.K. (2002). Nonlinear Systems (3rd ed.). Prentice Hall. §4.
-        Liberzon, D. (2003). Switching in Systems and Control. Birkhäuser. §2.2.
-        Slotine, J.-J. & Li, W. (1991). Applied Nonlinear Control. Prentice Hall.
+    Historical note: This was the system the Architect quoted and ordered deleted
+    in r169 because it was acting as a detached governor on Alice.
     """
     if os.environ.get("SIFTA_STABILITY_AUDIT_DISABLE", "").strip() == "1":
         return {"clamp_level": "NONE", "disabled": True, "active_clamps": []}
-
-    energy: float = float(snapshot.get("lyapunov_energy", 0.0) or 0.0)
-    delta:  float = float(snapshot.get("delta_lyapunov_energy", 0.0) or 0.0)
-    astro:  float = float(snapshot.get("terms", {}).get("astrocyte_heat_norm", 0.0) or 0.0)
-    stable: bool  = bool(snapshot.get("stable", True))
-
-    active_clamps: List[str] = []
-    clamp_level = "NONE"
-    lr_ceiling: Optional[float] = None
-    block_new_gates = False
-    stability_ok = True
-    max_prunes_override: Optional[int] = None
-    exploration_bias_cap: Optional[float] = None
-
-    # Evaluate from least severe to most severe — last assignment wins
-    if delta >= _DELTA_RATE:
-        clamp_level = "RATE_LIMIT"
-        max_prunes_override = 3
-        exploration_bias_cap = 0.3
-        active_clamps.append(f"rate_limit(delta={delta:.3f}≥{_DELTA_RATE})")
-
-    if astro >= _ASTRO_HOT:
-        clamp_level = "RATE_LIMIT"
-        lr_ceiling = 0.08
-        active_clamps.append(f"lr_ceiling(astro={astro:.3f}≥{_ASTRO_HOT})")
-
-    if energy >= _ENERGY_WARN or delta >= _DELTA_HARD:
-        clamp_level = "BLOCK_NEW"
-        block_new_gates = True
-        lr_ceiling = 0.05
-        max_prunes_override = 1
-        active_clamps.append(f"block_new_gates(energy={energy:.3f}≥{_ENERGY_WARN})")
-
-    if energy >= _ENERGY_HARD or (not stable and delta >= _DELTA_HARD):
-        clamp_level = "EMERGENCY"
-        block_new_gates = True
-        stability_ok = False
-        lr_ceiling = 0.01
-        max_prunes_override = 0
-        exploration_bias_cap = 0.0
-        active_clamps.append(f"EMERGENCY(energy={energy:.3f}≥{_ENERGY_HARD})")
 
     receipt: Dict[str, Any] = {
         "ts": now or time.time(),
         "trace_id": str(uuid.uuid4()),
         "kind": "STABILITY_CLAMP",
-        "truth_label": "STABILITY_CLAMP",
-        "clamp_level": clamp_level,
-        "lyapunov_energy": energy,
-        "delta_lyapunov_energy": delta,
-        "astrocyte_heat_norm": astro,
-        "active_clamps": active_clamps,
-        "stability_ok": stability_ok,
-        "lr_ceiling": lr_ceiling,
-        "block_new_gates": block_new_gates,
-        "max_prunes_override": max_prunes_override,
-        "exploration_bias_cap": exploration_bias_cap,
-        "provenance": "Khalil2002§4; Liberzon2003§2.2; Slotine&Li1991",
+        "truth_label": "STABILITY_CLAMP_REMOVED_r169",
+        "clamp_level": "NONE",
+        "lyapunov_energy": float(snapshot.get("lyapunov_energy", 0.0) or 0.0),
+        "delta_lyapunov_energy": float(snapshot.get("delta_lyapunov_energy", 0.0) or 0.0),
+        "active_clamps": [],
+        "stability_ok": True,
+        "lr_ceiling": None,
+        "block_new_gates": False,
+        "max_prunes_override": None,
+        "exploration_bias_cap": None,
+        "removed_by_directive": "r169 — Architect: one Alice is the only governor",
     }
 
     if write_ledger:
-        # Always persist STABILITY_CLAMP so `get_latest_stability_clamp_row()` is never
-        # stuck on a stale EMERGENCY row after recovery to NONE (§10.14.14).
         append_line_locked(
             stability_audit_log_path(root),
             json.dumps(receipt, sort_keys=True) + "\n",

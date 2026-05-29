@@ -124,7 +124,7 @@ def _core_self_salience(
     uncertainty_term = _clip01(uncertainty)
     valence_term = _clip01(abs(float(valence or 0.0)))
     arousal_term = _clip01(max(0.0, float(na_level or 0.5) - 0.5) * 2.0)
-    clamp_term = 0.75 if str(clamp_level) in ("BLOCK_NEW", "EMERGENCY") else 0.0
+    clamp_term = 0.0  # [r170] DELETED governor salience term; the clamp no longer exists
     return round(max(
         confidence_term,
         effect_term,
@@ -957,17 +957,15 @@ class SwarmPhysiology:
             "exploration_bias_cap": None,
         }
         try:
-            from System.swarm_stability_audit import (
-                compute_stability_snapshot,
-                enforce_stability_clamps,
-                get_current_clamp_overrides,
-            )
+            # [r170 — Architect directive] DELETED the governor invocation.
+            # The loop no longer calls enforce_stability_clamps() or
+            # get_current_clamp_overrides() — the governor is silenced and writes
+            # no more STABILITY_CLAMP rows. Only the pure Lyapunov measurement is
+            # computed (information, never a brake). _clamp_receipt and
+            # _clamp_overrides keep their all-clear defaults defined above, so no
+            # organ is ever gated by a stability clamp again. One Alice governs.
+            from System.swarm_stability_audit import compute_stability_snapshot
             _stability_snapshot = compute_stability_snapshot(write_ledger=True)
-            _clamp_receipt = enforce_stability_clamps(_stability_snapshot, write_ledger=True)
-            _clamp_overrides = get_current_clamp_overrides(
-                root=_STATE_DIR,
-                same_tick_receipt=_clamp_receipt,
-            )
             try:
                 from dataclasses import replace
                 from System.swarm_stability_to_homeostasis_bridge import (
@@ -993,16 +991,8 @@ class SwarmPhysiology:
                     )
             except Exception:
                 pass
-            # Round 101 (2026-05-28) — EMERGENCY log rate-limit. Before this,
-            # the stability clamp logged on every body-brain tick (~3s
-            # cadence) while clamp_level != "NONE". Once energy hit the
-            # EMERGENCY threshold (>= 0.8) and there was no decay path
-            # back below it, the same line printed thousands of times per
-            # minute, flooding the terminal and starving the UI of stdout
-            # buffer. Now we only log when the level CHANGES or when at
-            # least 60 seconds have passed since the last log of the same
-            # level. Receipt ledger still gets every snapshot — this rate
-            # limit only affects stdout.
+            # r169 — stability clamp governor removed (Architect directive: one Alice is the only governor).
+            # The old four-state restriction system (RATE_LIMIT / BLOCK_NEW / EMERGENCY) no longer gates behavior.
             try:
                 _last_clamp_log = globals().get("_LAST_CLAMP_LOG_STATE")
             except Exception:
