@@ -161,6 +161,7 @@ class SiftaBrainstem:
         # Brainstem eye Δ-salience (P0 tournament, 2026-05-12) — in-RAM only.
         self._last_vision_gray: object | None = None
         self._eye_baseline_delta: float | None = None
+        self._cowatch_media_visual_next_at: float = 0.0
 
     def _write_visual_stigmergy_row(self, row: dict) -> None:
         """Append one OBSERVED sample decision to visual_stigmergy.jsonl.
@@ -1213,6 +1214,19 @@ class SiftaBrainstem:
                               f"{vision_consecutive_fail}× in a row. "
                               f"Backoff now {wait:.0f}s. "
                               f"Check camera permission / device.")
+
+            if tick_start >= getattr(self, "_cowatch_media_visual_next_at", 0.0):
+                try:
+                    from System.swarm_cowatch_media_visual import maybe_capture_cowatch_frame
+
+                    cowatch_media = maybe_capture_cowatch_frame(
+                        write_visual_stigmergy_row=self._write_visual_stigmergy_row,
+                        now=tick_start,
+                    )
+                    next_check = float(cowatch_media.get("next_check_s", 10.0) or 10.0)
+                    self._cowatch_media_visual_next_at = tick_start + max(1.0, next_check)
+                except Exception:
+                    self._cowatch_media_visual_next_at = tick_start + 10.0
 
             time.sleep(current_sleep_s)
 

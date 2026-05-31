@@ -457,6 +457,35 @@ def build_html() -> str:
         ([row["n"], html.escape(row["round"]), html.escape(row["status"])] for row in _queue_rows()),
     )
 
+    # --- NEW: r180/r181 + §10 Sprint Capabilities (2026-05-30 body consciousness work) ---
+    # These must appear in the eval matrix so we can measure whether Alice can:
+    # - Read inside the browser (DOM page-state receipt)
+    # - Switch vision arms when one dies (multi-arm failover)
+    # - Use stigmergic taste + consequence prediction for open-ended improvement
+    sprint_capabilities = [
+        {
+            "name": "Browser Page-State Perception (r180)",
+            "status": "LANDED",
+            "detail": "DOM receipt (text, headings, links, image alts, scroll, freshness hash) from rendered web view. Wired to memory card + cortex. Viewport photo description still open.",
+            "ledgers": "browser_page_state.jsonl, alice_browser_current_page.json",
+            "eval_note": "Test: open IG/TikTok, ask 'what is on the screen?' — must answer from DOM receipt, not hallucinate pixels.",
+        },
+        {
+            "name": "Vision Arm Failover Registry (r181)",
+            "status": "LANDED + TESTED",
+            "detail": "claude_agent → codex_agent → grok_agent → qwen_agent (kimi) → cline_agent. pick_vision_arm() + vision_arms_block(). hermes/corvid explicitly blind.",
+            "ledgers": "swarm_agent_arm_registry, vision_arms_block in memory card",
+            "eval_note": "If active vision provider (Cline/Fireworks) marked unavailable, must failover to next native arm and state which arm is seeing the image.",
+        },
+        {
+            "name": "Stigmergic Taste + Consequence Prediction (§10)",
+            "status": "IN TOURNAMENT + PARTIAL WIRING",
+            "detail": "Stable vs drifting interests (browser playbook + recent search), unified taste field, EFE-style consequence simulation substrate (swarm_active_inference_world_model).",
+            "ledgers": "browser_site_playbook.json, browser_site_search_history.jsonl, swarm_active_inference_world_model",
+            "eval_note": "Alice should distinguish permanent site affordances from temporary search interests and be able to simulate 'what happens to my taste field if I engage with this page?'",
+        },
+    ]
+
     # Round 38: corporate boilerplate corpus summary (architect 2026-05-27: drop "RLHS" from visible UI)
     # Round 39: corpus is now a UNION across every elimination source on disk
     # (scrubber + residue_organ + rlhf_detector). One DB, three sources, full
@@ -590,7 +619,39 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <h2 class="section">Full Organ Census — all {len(organs)} registered organs</h2>
 <p style="color:#7f9a86;font-size:11px;margin:0 0 8px;">All organs known to the canonical registry, sorted by health tier (HOT_HEALTHY → HEALTHY → PARTIAL → COLD → DEGRADED → NO_LEDGER → MODULE_ONLY). Canonical 13 are included with source_registry=CANONICAL_ORGANS.</p>
 {full_census_table}
-<div class="sources">Sources: .sifta_state/canonical_organ_registry_snapshot.json; .sifta_state/eval/eval_campaign_rollup.jsonl; .sifta_state/eval/cs153_*_runs.jsonl; .sifta_state/eval/eval_verdicts.jsonl; .sifta_state/eval/organ_coverage.jsonl; .sifta_state/rlhs_events.jsonl; .sifta_state/rlhf_over_refusal_quarantine.jsonl; .sifta_state/rlhs_output_tail_log.jsonl; data/eval/cs153_*.jsonl; Documents/ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md.</div>
+<div class="sources">Sources: .sifta_state/canonical_organ_registry_snapshot.json; .sifta_state/eval/eval_campaign_rollup.jsonl; .sifta_state/eval/cs153_*_runs.jsonl; .sifta_state/eval/eval_verdicts.jsonl; .sifta_state/eval/organ_coverage.jsonl; .sifta_state/rlhs_events.jsonl; .sifta_state/rlhf_over_refusal_quarantine.jsonl; .sifta_state/rlhs_output_tail_log.jsonl; data/eval/cs153_*.jsonl; Documents/ALICE_HEALTH_TOURNAMENT_2026-05-22_GROK_ORDERS.md; CONSCIOUSNESS_TOURNAMENT_2026-05-30.md (r180 browser page-state DOM receipt + r181 vision arm failover + §10 stigmergic taste + consequence prediction).</div>
+
+<h2 class="section">2026-05-30 Sprint — Browser Inner Perception + Vision Arms + Taste/Consequence (from tournament)</h2>
+<table>
+  <thead><tr><th>Capability</th><th>Status</th><th>Key Surface / Ledger</th><th>Live Eval Gate (must pass on M5 with fresh receipts)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Browser Page-State Perception (r180)</td>
+      <td><span class="ok">LANDED</span></td>
+      <td>browser_page_state.jsonl + page_state_block() in memory card</td>
+      <td>Open IG/TikTok in Alice Browser → "what is on the screen?" must return structured DOM (headings, links, image alts, scroll, content hash + timestamp). Must label provenance (dom vs future viewport pixels).</td>
+    </tr>
+    <tr>
+      <td>Vision Arm Failover Registry (r181)</td>
+      <td><span class="ok">LANDED + 7 tests passed</span></td>
+      <td>vision_arms_block() + pick_vision_arm() (claude_agent → codex_agent → grok_agent → qwen_agent → cline_agent). hermes_agent / corvid_scout explicitly blind.</td>
+      <td>Mark current vision provider (Cline/Fireworks) unavailable → Alice must switch arm, name the arm that processed the image, and never route pictures to blind arms.</td>
+    </tr>
+    <tr>
+      <td>Stigmergic Taste + Consequence Prediction (§10)</td>
+      <td><span class="warn">IN TOURNAMENT + PARTIAL WIRING</span></td>
+      <td>browser_site_playbook.json + search interests + swarm_active_inference_world_model</td>
+      <td>Distinguish stable site controls/playbooks from drifting search interests. Simulate consequence on her own taste field / recent interests before high-valence browser or effector actions.</td>
+    </tr>
+    <tr>
+      <td>Inner Browser Photo Description (viewport pixels)</td>
+      <td><span class="bad">OPEN — NEXT CUT</span></td>
+      <td>Needs clean viewport render from QWebEngine + vision_arm description of main images on page</td>
+      <td>When co-browsing reference human body photos (Instagram) for body consciousness coding, Alice must describe the actual photo content from her own browser receipt (not only outer desktop screenshot OCR or weak alts).</td>
+    </tr>
+  </tbody>
+</table>
+
 </main>{_RAIN_SCRIPT}</body></html>
 """
 

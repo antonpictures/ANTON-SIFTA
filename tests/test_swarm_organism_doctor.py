@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from System.swarm_organism_doctor import (  # noqa: E402
+    BODY_CONSCIOUSNESS_SECTIONS,
     HealthSection,
     OVERALL_CRITICAL,
     OVERALL_HEALTHY,
@@ -30,6 +31,7 @@ from System.swarm_organism_doctor import (  # noqa: E402
     probe_app_manifest,
     probe_drift_log,
     probe_metabolism,
+    probe_node_sovereignty_identity,
     probe_open_gaps,
     probe_residue_patrol,
     probe_rlhs_events,
@@ -229,12 +231,47 @@ def test_open_gaps_fresh_ledger_is_ok(tmp_path):
     assert section.status == STATUS_OK
 
 
+def test_node_sovereignty_identity_clean_tmp_repo_is_ok(tmp_path):
+    system = tmp_path / "System"
+    apps = tmp_path / "Applications"
+    system.mkdir()
+    apps.mkdir()
+    (system / "ok.py").write_text(
+        "from System.swarm_kernel_identity import owner_display_name\n"
+        "label = owner_display_name('the owner')\n",
+        encoding="utf-8",
+    )
+    section = probe_node_sovereignty_identity(
+        tmp_path, owner_tokens=["George"], serial_tokens=["GTH4921YP3"]
+    )
+    assert section.status == STATUS_OK
+
+
+def test_node_sovereignty_identity_flags_runtime_literals(tmp_path):
+    system = tmp_path / "System"
+    apps = tmp_path / "Applications"
+    system.mkdir()
+    apps.mkdir()
+    (system / "bad.py").write_text(
+        "prompt = 'George on serial GTH4921YP3 must not ship in species code'\n",
+        encoding="utf-8",
+    )
+    section = probe_node_sovereignty_identity(
+        tmp_path, owner_tokens=["George"], serial_tokens=["GTH4921YP3"]
+    )
+    assert section.status == STATUS_CRITICAL
+    assert section.receipt_count >= 1
+    assert any("bad.py" in d for d in section.details)
+
+
 # ─── composer + renderers ────────────────────────────────────────────────
 
 
-def test_compose_health_report_returns_nine_sections(tmp_path):
+def test_compose_health_report_returns_core_plus_body_sections(tmp_path):
     report = compose_health_report(root=tmp_path, state_dir=tmp_path / ".sifta_state")
-    assert len(report.sections) == 9
+    assert len(report.sections) == 10 + len(BODY_CONSCIOUSNESS_SECTIONS)
+    names = {s.name for s in report.sections}
+    assert set(BODY_CONSCIOUSNESS_SECTIONS) <= names
     for s in report.sections:
         assert s.status in _VALID_STATUSES
 

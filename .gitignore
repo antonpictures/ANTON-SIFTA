@@ -234,3 +234,9 @@ SwarmEntityWatchingYouTube/
 
 # private outbound email drafts/correspondence — keep local (node sovereignty §3)
 Documents/EMAIL_*.md
+
+# r218 (cowork): 5.1GB image-demo data — never commit (GitHub would reject; bloats repo)
+Bonsai-Image-Demo/
+
+# r218: vendored claude-code clone (has own .git) — not a submodule, keep out of tree
+Vendor/claude-code-python/

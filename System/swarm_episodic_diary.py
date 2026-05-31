@@ -46,6 +46,7 @@ DEFAULT_SOURCES = (
     "media_ingress_gate.jsonl",
     "youtube_context.jsonl",
     "youtube_watch_memory.jsonl",
+    "cowatch_media_visual.jsonl",
     # George 2026-05-24: Alice must read/learn/write her diary about what she
     # actually lived — including delegating to her external cortexes. These
     # ledgers carry the tournament: what she asked Grok/Claude/Hermes to build,
@@ -322,10 +323,13 @@ def _row_digest(row: Mapping[str, Any]) -> dict[str, Any]:
         "label",
         "location",
         "media_context",
+        "media_title",
         "context_note",
         "title",
         "video_id",
         "youtube_video_id",
+        "youtube_context_hash",
+        "provenance_note",
         "route",
         "reason",
         "action",
@@ -395,7 +399,7 @@ def summarize_bucket(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     text = " ".join(json.dumps(d, sort_keys=True, ensure_ascii=False) for d in digests)
     source_hash = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
     labels = _labels_for_text(text)
-    if any(d.get("title") or d.get("video_id") or d.get("youtube_video_id") or d.get("route") for d in digests):
+    if any(d.get("media_title") or d.get("title") or d.get("video_id") or d.get("youtube_video_id") or d.get("route") for d in digests):
         labels.add("media")
 
     source_counts = Counter(str(d.get("_source") or "unknown") for d in digests)
@@ -405,6 +409,7 @@ def summarize_bucket(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         loc = str(d.get("location") or "")
         media = str(d.get("media_context") or "")
         note = str(d.get("context_note") or "")
+        media_title = str(d.get("media_title") or "")
         title = str(d.get("title") or "")
         video_id = str(d.get("video_id") or d.get("youtube_video_id") or "")
         app = str(d.get("app") or d.get("app_name") or d.get("active_app") or "")
@@ -436,6 +441,10 @@ def summarize_bucket(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             if note:
                 bits.append(note[:120])
             fact = " ".join(bits)
+        elif media_title:
+            fact = f"co-watch media frame {media_title}"
+            if video_id:
+                fact += f" [{video_id}]"
         elif title or video_id:
             fact = f"video {title or video_id}"
             if video_id:

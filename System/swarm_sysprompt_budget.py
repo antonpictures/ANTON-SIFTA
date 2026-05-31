@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""System-prompt budget governor (r216).
+
+George 2026-05-31: a Kimi turn hung ~90s with sysprompt_chars=140996 (~35k tokens).
+The base system prompt is built from ~40 context builders; a few of them (memory /
+recall excerpts, page text, diary tails) can run unbounded and bloat every turn —
+slow prefill on a cloud cortex, and real $ at $0.95/Mtoken input.
+
+This governor bounds the prompt WITHOUT me having to guess which builder ran hot:
+  1. Per-block cap — no single block may exceed ``per_block_max``.
+  2. Total budget — if the assembled parts still exceed ``total_max``, water-fill a
+     single cap C (binary search) and trim every block longer than C down to C.
+It NEVER drops a block entirely (every block keeps at least a grounding head down to
+``min_block``), so identity / effector-truth / runtime-contract blocks — which are all
+small — pass through untouched; only runaway excerpt blocks get trimmed, with a marker
+pointing at the receipts that hold the full data.
+
+Pure stdlib, deterministic, side-effect free. Tested.
+"""
+from __future__ import annotations
+
+import os
+from typing import Any
+
+_MARKER = " […trimmed for context budget; full data lives in my receipts]"
+_SEP_LEN = 2  # "\n\n" join separator between blocks
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        v = int(str(os.environ.get(name, "")).strip())
+        return v if v > 0 else default
+    except Exception:
+        return default
+
+
+def clamp_prompt_parts(
+    parts: list[str],
+    *,
+    total_max: int = 48000,
+    per_block_max: int = 6000,
+    min_block: int = 300,
+    marker: str = _MARKER,
+) -> tuple[list[str], dict[str, Any]]:
+    """Bound a list of system-prompt blocks to a character budget.
+
+    Returns ``(clamped_parts, report)``. ``report`` carries orig/final char counts and
+    how many blocks were trimmed — for honest logging. Order is preserved; no block is
+    removed. Small blocks (the core grounding) are never touched when the fat ones are
+    the cause of the overflow."""
+    blocks = [p for p in parts if p]
+    orig = sum(len(b) for b in blocks)
+    report: dict[str, Any] = {
+        "orig_chars": orig, "blocks": len(blocks),
+        "total_max": total_max, "per_block_max": per_block_max,
+        "trimmed_blocks": 0, "applied": False,
+    }
+
+    def _cap(block: str, cap: int) -> str:
+        if len(block) <= cap:
+            return block
+        return block[: max(0, cap - len(marker))].rstrip() + marker
+
+    # Stage 1 — per-block hard cap.
+    capped = [_cap(b, per_block_max) for b in blocks]
+    report["trimmed_blocks"] = sum(1 for a, b in zip(blocks, capped) if a != b)
+
+    def _total(bs: list[str]) -> int:
+        return sum(len(b) for b in bs) + _SEP_LEN * max(0, len(bs) - 1)
+
+    # Stage 2 — water-fill total budget if still over.
+    if _total(capped) > total_max and capped:
+        lens = [len(b) for b in capped]
+        lo, hi, best = min_block, max(lens), min_block
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if sum(min(l, mid) for l in lens) + _SEP_LEN * max(0, len(lens) - 1) <= total_max:
+                best, lo = mid, mid + 1
+            else:
+                hi = mid - 1
+        capped = [_cap(b, best) for b in capped]
+        report["water_fill_cap"] = best
+        report["trimmed_blocks"] = sum(1 for a, b in zip(blocks, capped) if a != b)
+
+    report["final_chars"] = sum(len(b) for b in capped)
+    report["applied"] = report["final_chars"] < orig
+    return capped, report
+
+
+def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
+    """Convenience wrapper honouring owner overrides:
+    SIFTA_SYSPROMPT_BASE_BUDGET (total) and SIFTA_SYSPROMPT_BLOCK_MAX (per-block)."""
+    return clamp_prompt_parts(
+        parts,
+        total_max=_env_int("SIFTA_SYSPROMPT_BASE_BUDGET", 48000),
+        per_block_max=_env_int("SIFTA_SYSPROMPT_BLOCK_MAX", 6000),
+    )
+
+
+__all__ = ["clamp_prompt_parts", "clamp_for_env"]

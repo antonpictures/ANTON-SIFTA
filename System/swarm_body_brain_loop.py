@@ -190,7 +190,7 @@ def _apply_novelty_metabolic_gate(
     danger: Dict[str, Any],
     novelty_frame: Any,
 ) -> Dict[str, Any]:
-    """CA1-style match/mismatch → metabolic governor (FAMILIAR clamps, NOVEL relaxes).
+    """CA1-style match/mismatch -> metabolic modulator (FAMILIAR tightens, NOVEL relaxes).
 
     Does not mask true starvation: if the pre-gate state is already critical,
     the gate is skipped so RED/CRITICAL pressure cannot be hidden by novelty.
@@ -223,7 +223,7 @@ def _apply_novelty_metabolic_gate(
     danger: Dict[str, Any],
     novelty_frame: Any,
 ) -> Dict[str, Any]:
-    """CA1-style match/mismatch → metabolic governor (FAMILIAR clamps, NOVEL relaxes).
+    """CA1-style match/mismatch -> metabolic modulator (FAMILIAR tightens, NOVEL relaxes).
     Does not mask true starvation: if the pre-gate state is already critical,
     the gate is skipped so RED/CRITICAL pressure cannot be ``hidden'' by novelty.
     """
@@ -276,7 +276,7 @@ class SwarmPhysiology:
     def _assess_danger(self, body_state: MetabolicState, stability_signal: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Convert raw metabolic state into a danger/pressure signal.
         Now accepts the full stability + field stress signal so CONSERVE_REPAIR
-        from the 17-organ ring actually flips the homeostat mode and budget.
+        from the organ ring actually flips the homeostat mode and budget.
         """
         pressure = self.homeostat.pressure(body_state)
         # Pass the rich field + clamp signal so the homeostat can enter
@@ -599,8 +599,8 @@ class SwarmPhysiology:
         now_state = build_now_state()
 
         # 0b. Rich field + clamp signal (the high-dimensional organ ring speaks here)
-        # This is the wire that makes §2.A real: the 17-organ health field + clamp
-        # now flows into the metabolic governor so CONSERVE_REPAIR actually changes
+        # This is the wire that makes §2.A real: the organ health field + clamp
+        # now flows into the metabolic homeostat so CONSERVE_REPAIR actually changes
         # STGM pressure, rest cycles, and arm routing in live ticks.
         stability_signal: Dict[str, Any] = {}
         try:
@@ -1021,7 +1021,7 @@ class SwarmPhysiology:
             logger.debug("Stability audit skipped (non-fatal)")
 
         # 7b. LC/NA Arousal (Event 142) — gain, exploration bias, LR ceiling
-        # Runs AFTER stability clamps, BEFORE astrocyte so NA modulates LR ceiling.
+        # Runs after the legacy stability snapshot, before astrocyte, so NA modulates LR ceiling.
         # Bio-math anchored: Sara 2009; Yu & Dayan 2005; Aston-Jones & Cohen 2005.
         _lc_na_receipt: Dict[str, Any] = {
             "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5,
@@ -1060,13 +1060,13 @@ class SwarmPhysiology:
             logger.debug("LC/NA arousal skipped (non-fatal)")
 
         # 8. Astrocyte Glial Modulation (Event 135) — scale LR/ε/budget from surprise
-        # NA lr_ceiling is now passed in from Event 142 (overrides clamp default)
+        # NA lr_ceiling is now passed in from Event 142; the old clamp ceiling is neutral.
         try:
             from System.swarm_astrocyte_glial_modulator import AstrocyteGlialModulator
             _astrocyte = AstrocyteGlialModulator()
             _surprise = float(mem_row.get("td_value", 0.0) or 0.0)
             _compute_spent = float(mem_row.get("result", {}).get("energy_used", 0.05) or 0.05) * 1000
-            # LC/NA lr_ceiling overrides stability clamp ceiling (NA is more granular)
+            # LC/NA lr_ceiling is the active ceiling; legacy clamp ceiling remains neutral.
             _na_lr_ceiling = float(_lc_na_receipt.get("lr_ceiling", 0.05))
             _clamp_lr_ceiling = float(_clamp_overrides.get("lr_ceiling", 1.0) or 1.0)
             _effective_lr_ceiling = min(_na_lr_ceiling, _clamp_lr_ceiling)
@@ -1366,7 +1366,7 @@ class SwarmPhysiology:
                         pass
                     if _candidates:
                         # Rich fractalkine (\u00a710.14.25 \u2014 Cardona 2006; Paolicelli 2011)
-                        # stability_dwell_score: 1.0 when NONE, falls for active clamps
+                        # legacy stability_dwell_score: 1.0 when NONE, lower only for old trace labels
                         _clamp_lv = str(_clamp_receipt.get("clamp_level", "NONE"))
                         _dwell_score = {
                             "NONE": 1.0, "RATE_LIMIT": 0.5,
@@ -2102,6 +2102,9 @@ class SwarmPhysiology:
             "hippocampus",
             "sensor_gate",
             "bg_selector",
+            "alice_arm",
+            "claude_arm",
+            "hermes_arm",
         ]
         td_receipt_freshness = _ledger_freshness("td_receipts.jsonl")
         sensor_gate_row = _read_last("sensor_gate_lock.json")
@@ -2110,6 +2113,9 @@ class SwarmPhysiology:
         if sensor_gate_known:
             sensor_gate_health = 0.35 if sensor_gate_row.get("locked") is True else 1.0
         bg_selector_freshness = _ledger_freshness("basal_ganglia_selections.jsonl")
+        alice_arm_freshness = _ledger_freshness("alice_arm_organ.jsonl", 600.0)
+        claude_arm_freshness = _ledger_freshness("claude_arm_organ.jsonl", 600.0)
+        hermes_arm_freshness = _ledger_freshness("hermes_arm_organ.jsonl", 600.0)
         organ_health = {
             "field": 0.0,  # filled after field_energy is computed
             "rl": max(td_receipt_freshness, min(1.0, abs(td_error))),
@@ -2128,6 +2134,9 @@ class SwarmPhysiology:
             "hippocampus": _ledger_freshness("hippocampus/events.jsonl", 3600.0),
             "sensor_gate": sensor_gate_health,
             "bg_selector": bg_selector_freshness,
+            "alice_arm": alice_arm_freshness,
+            "claude_arm": claude_arm_freshness,
+            "hermes_arm": hermes_arm_freshness,
         }
         organ_health_vector = [round(float(organ_health.get(name, 0.0)), 4) for name in declared_organs]
         dimension_names = list(dimension_names) + [f"organ_health_{name}" for name in declared_organs]
@@ -2155,6 +2164,7 @@ class SwarmPhysiology:
             "hippocampus": 3,
             "sensor_gate": 2,
             "bg_selector": 5,
+            "alice_arm": 6,
         }
         
         # Recover previous generations
@@ -2278,6 +2288,21 @@ class SwarmPhysiology:
             "bg_selector": (
                 "basal_ganglia_selections.jsonl",
                 bg_selector_freshness,
+                "ledger_tail",
+            ),
+            "alice_arm": (
+                "alice_arm_organ.jsonl",
+                organ_health["alice_arm"],
+                "ledger_tail",
+            ),
+            "claude_arm": (
+                "claude_arm_organ.jsonl",
+                organ_health["claude_arm"],
+                "ledger_tail",
+            ),
+            "hermes_arm": (
+                "hermes_arm_organ.jsonl",
+                organ_health["hermes_arm"],
                 "ledger_tail",
             ),
         }
@@ -2443,6 +2468,12 @@ class SwarmPhysiology:
             {"source": "field_homeostasis", "target": "basal_ganglia", "variables": ["control_action", "error"]},
             {"source": "field_memory", "target": "field", "variables": ["memory_retention", "evaporation_rate"]},
             {"source": "field", "target": "motor_effector", "variables": ["octopus_coherence", "electric_tone", "homeostasis_state"]},
+            {"source": "alice_arm_organ.jsonl", "target": "alice_arm", "variables": ["runtime_trace", "event_type", "outcome"]},
+            {"source": "alice_arm", "target": "field", "variables": ["organ_health", "runtime_trace_freshness"]},
+            {"source": "claude_arm_organ.jsonl", "target": "claude_arm", "variables": ["runtime_trace", "event_type", "outcome"]},
+            {"source": "claude_arm", "target": "field", "variables": ["organ_health", "runtime_trace_freshness"]},
+            {"source": "hermes_arm_organ.jsonl", "target": "hermes_arm", "variables": ["runtime_trace", "event_type", "outcome"]},
+            {"source": "hermes_arm", "target": "field", "variables": ["organ_health", "runtime_trace_freshness"]},
         ])
         field_event = _organ_event(
             organ="unified_field",
@@ -2492,6 +2523,9 @@ class SwarmPhysiology:
                     "hippocampus/events.jsonl",
                     "reflex_arc_trace.jsonl",
                     "basal_ganglia_selections.jsonl",
+                    "alice_arm_organ.jsonl",
+                    "claude_arm_organ.jsonl",
+                    "hermes_arm_organ.jsonl",
                     "field_homeostasis.jsonl",
                     "field_motor_effector.jsonl",
                     "motor_pulses.jsonl",

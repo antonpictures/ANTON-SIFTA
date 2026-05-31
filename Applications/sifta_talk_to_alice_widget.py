@@ -1857,11 +1857,201 @@ _KNOWN_SITE_ALIASES = {
     "grok": "https://grok.com",
 }
 _WEBPAGE_SUMMARY_RE = re.compile(
-    r"\b(?:read|summari[sz]e|what(?:'s| is)\s+on|tell\s+me\s+about)\b"
+    r"\b(?:read|describe|summari[sz]e|what(?:'s| is)\s+on|tell\s+me\s+about)\b"
     r".{0,80}\b(?:website|web\s*site|webpage|web\s*page|page|browser|this\s+site)\b"
     r"|\b(?:can\s+you\s+read\s+the\s+website|summari[sz]e\s+the\s+page)\b",
     re.IGNORECASE,
 )
+_BROWSER_PAGE_AWARENESS_RE = re.compile(
+    r"\bwhat\s+page\s+(?:am\s+i|are\s+we)\s+on\b"
+    r"|\bwhere\s+(?:am\s+i|are\s+we)\s+(?:in|on)\s+(?:the\s+)?(?:browser|instagram|tiktok|web)\b"
+    r"|\bwhat\s+am\s+i\s+looking\s+at(?:\s+right\s+now)?\b"
+    r"|\bdescribe\s+(?:this|the|current)\s+(?:page|browser|screen|instagram\s+page|post)\b",
+    re.IGNORECASE,
+)
+_BROWSER_PHOTO_DESCRIPTION_RE = re.compile(
+    r"\b(?:describe|look\s+at|what(?:'s| is)|what\s+do\s+you\s+see)\b"
+    r".{0,80}\b(?:photo|picture|image|post|current\s+photo|browser\s+photo|this\s+photo|this\s+image|"
+    # George 2026-05-30: "describe the outfit" must reach the vision arm too —
+    # the outfit/clothing/subject lives in the page photo, not the page text.
+    r"outfit|clothing|clothes|dress|wardrobe|attire|bikini|swimsuit|swimwear|body|figure|physique|"
+    r"the\s+person|the\s+woman|the\s+man|the\s+model)\b"
+    r"|\b(?:what(?:'s| is| are)|describe)\b.{0,40}\bwearing\b",
+    re.IGNORECASE,
+)
+_BROWSER_PHOTO_CORRECTION_RE = re.compile(
+    r"\b(?:actually|no|nope|wrong|stale|old)\b.{0,90}"
+    r"\b(?:bikini|swimsuit|swimwear|body|figure|physique|photo|picture|image|outfit|clothing|clothes)\b"
+    r".{0,90}\b(?:look\s+again|check\s+again|try\s+again|retry|you\s+have\s+to\s+look\s+again)\b"
+    r"|\b(?:look\s+again|check\s+again|try\s+again|retry)\b.{0,90}"
+    r"\b(?:bikini|swimsuit|swimwear|body|figure|physique|photo|picture|image|outfit|clothing|clothes)\b"
+    r"|\b(?:wish\s+you\s+could\s+see|can\s+you\s+see|could\s+you\s+see|look\s+at|describe)\b.{0,60}"
+    r"\b(?:her|his|their|the)\s+(?:body|figure|physique|bikini|swimsuit|swimwear)\b",
+    re.IGNORECASE,
+)
+_BARE_BROWSER_DESCRIBE_RE = re.compile(
+    r"^\s*(?:(?:alice|please|pls|ok|okay|yes)[,\s]+)*(?:describe|look)\s*(?:it|this|that|now)?\s*$",
+    re.IGNORECASE,
+)
+_COMMENTS_SUMMARY_RE = re.compile(
+    r"\b(?:summar(?:ize|y|ise)|recap|gist|overview|tell\s+me\s+about)\b.{0,40}\bcomment(?:s|\s+section|\s+thread)?\b"
+    r"|\bcomment(?:s)?\b.{0,30}\b(?:summar(?:ize|y|ise)|say(?:ing)?|about)\b"
+    r"|\bwhat\s+(?:are|do)\s+(?:the\s+)?(?:people|they|commenters?)\s+say",
+    re.IGNORECASE,
+)
+_COMMENTS_FOLLOWUP_RE = re.compile(
+    r"\b(?:summar(?:ize|ise)|recap|gist|overview|tell\s+me\s+about)\b.{0,20}\b(?:them|those|it)\b"
+    r"|^\s*(?:yes|yeah|yep|please|pls|ok|okay|sure|do\s+it|go\s+ahead)[,\s]+"
+    r"(?:can\s+you\s+)?(?:summar(?:ize|ise)|recap|gist|overview)?\s*(?:them|those|it)?\s*\??\s*$",
+    re.IGNORECASE,
+)
+
+
+def _recent_history_mentions_comments(history: Any, *, limit: int = 8) -> bool:
+    if not history:
+        return False
+    try:
+        recent = list(history)[-limit:]
+    except Exception:
+        return False
+    for row in recent:
+        if isinstance(row, dict):
+            content = str(row.get("content") or "")
+        else:
+            content = str(row or "")
+        folded = content.casefold()
+        if "comment" in folded or "loaded thread" in folded or "captured thread" in folded:
+            return True
+    return False
+
+
+def _is_comments_summary_query(text: str, history: Any = None) -> bool:
+    clean = text or ""
+    if _COMMENTS_SUMMARY_RE.search(clean):
+        return True
+    return bool(_COMMENTS_FOLLOWUP_RE.search(clean) and _recent_history_mentions_comments(history))
+
+
+_CURRENT_PAGE_QUERY_RE = re.compile(
+    r"\bwhat\s+page\b"
+    r"|\bwhich\s+page\b"
+    r"|\b(?:on\s+)?what\s+(?:page|site|website)\s+am\s+i\b"
+    r"|\bdescribe\s+(?:this|the|current|tha)\s+page\b"
+    r"|\bwhat(?:'s| is)\s+(?:on\s+)?(?:this|the|current)\s+page\b"
+    r"|\bwhat\s+am\s+i\s+(?:looking\s+at|browsing|on)\b"
+    r"|\bcurrent\s+page\b",
+    re.IGNORECASE,
+)
+
+
+def _is_current_page_query(text: str) -> bool:
+    """'what page am I on / describe this page / what am I looking at' — answer
+    from the LIVE browser window (George 2026-05-30: browser open => there is a
+    page, always knowable now)."""
+    return bool(_CURRENT_PAGE_QUERY_RE.search(text or ""))
+
+
+_NEXT_PHOTO_RE = re.compile(
+    r"\b(?:next|show\s+me\s+the\s+next|go\s+(?:to\s+)?(?:the\s+)?next)\s+(?:picture|photo|image|one|post|slide|pic)\b"
+    r"|\bnext\s+(?:picture|photo|image|one|post|slide|pic)\b",
+    re.IGNORECASE,
+)
+_STOP_SLIDESHOW_RE = re.compile(
+    r"\bstop\s+(?:the\s+)?(?:slideshow|slide\s*show|auto[- ]?advance|advancing)\b"
+    r"|\b(?:end|halt)\s+(?:the\s+)?slideshow\b",
+    re.IGNORECASE,
+)
+_SLIDESHOW_RE = re.compile(
+    r"\b(?:start\s+(?:a\s+)?)?slide\s*show\b|\bauto[- ]?advance\b"
+    r"|\b(?:next\s+(?:picture|photo|image)\s+)?every\s+\d+\s*seconds?\b",
+    re.IGNORECASE,
+)
+
+
+def _is_next_photo_query(text: str) -> bool:
+    return bool(_NEXT_PHOTO_RE.search(text or "")) and not _STOP_SLIDESHOW_RE.search(text or "")
+
+
+def _is_stop_slideshow_query(text: str) -> bool:
+    return bool(_STOP_SLIDESHOW_RE.search(text or ""))
+
+
+def _is_slideshow_query(text: str) -> bool:
+    return bool(_SLIDESHOW_RE.search(text or "")) and not _STOP_SLIDESHOW_RE.search(text or "")
+
+
+def _extract_slideshow_interval(text: str) -> float:
+    m = re.search(r"every\s+(\d+)\s*seconds?", text or "", re.IGNORECASE)
+    return float(m.group(1)) if m else 3.0
+
+
+def _browser_clean_domain(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url or "").netloc.lower()
+    except Exception:
+        host = ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _browser_clean_address(url: str, *, max_chars: int = 120) -> str:
+    """Display a human-readable browser address without tracking parameters."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url or "")
+        host = (parsed.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = parsed.path or ""
+        address = f"{host}{path}" if host else (url or "").split("?", 1)[0].split("#", 1)[0]
+    except Exception:
+        address = (url or "").split("?", 1)[0].split("#", 1)[0]
+    address = " ".join(str(address or "").split()).rstrip("/")
+    if len(address) > max_chars:
+        return address[: max_chars - 3].rstrip("/ ") + "..."
+    return address
+
+
+def _browser_source_label_for_url(url: str) -> str:
+    host = _browser_clean_domain(url)
+    if not host:
+        return ""
+    if host.endswith("berkeley.edu"):
+        return "UC Berkeley"
+    if host.endswith("instagram.com"):
+        return "Instagram"
+    if host.endswith("tiktok.com"):
+        return "TikTok"
+    if host.endswith("youtube.com") or host.endswith("youtu.be"):
+        return "YouTube"
+    if host.endswith("wikipedia.org"):
+        return "Wikipedia"
+    if host in {"x.com", "twitter.com"} or host.endswith(".x.com") or host.endswith(".twitter.com"):
+        return "X"
+    return ""
+
+
+def _clean_browser_title_for_human(title: str, *, source_label: str = "", domain: str = "") -> str:
+    clean = " ".join(str(title or "").split()).strip()
+    if not clean:
+        return ""
+    for sep in (" | ", " - ", " :: "):
+        if sep not in clean:
+            continue
+        parts = clean.split(sep)
+        tail = parts[-1].strip().casefold()
+        source_low = source_label.casefold()
+        domain_low = domain.casefold()
+        if (
+            (source_low and source_low in tail)
+            or (domain_low and domain_low in tail)
+            or tail in {"instagram", "tiktok", "youtube", "wikipedia", "x"}
+        ):
+            clean = sep.join(parts[:-1]).strip()
+            break
+    return clean.strip(" -|")
+
+
 _AUTONOMOUS_WEB_CHOICE_RE = re.compile(
     r"\b(?:website|web\s*site|page)\b.{0,80}\b(?:you\s+(?:wish|want|would\s+like)\s+to\s+read|your\s+own\s+(?:interest|choice)|pick|choose)\b"
     r"|\b(?:pick|choose)\b.{0,80}\b(?:website|web\s*site|page)\b"
@@ -3054,6 +3244,19 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
+    try:
+        from System.swarm_browser_site_playbook import resolve_site_navigation, site_category_from_text
+        url = resolve_site_navigation(clean)
+        if url:
+            domain = site_category_from_text(clean)
+            return {
+                "kind": "browser_url",
+                "app_name": "Alice Browser",
+                "url": url,
+                "search_site": domain,
+            }
+    except Exception:
+        pass
 
     patterns = [
         r"\b(?:search|look\s+up|find)\s+(?P<site>wikipedia|google)\s+(?:for\s+)?(?P<query>.+)$",
@@ -3143,7 +3346,7 @@ _CLOSE_APP_RE = re.compile(
 # Whole-launcher catchall — "close everything", "close all apps", "shut all".
 _CLOSE_ALL_RE = re.compile(
     r"\b(?:close|kill|shut(?:\s+down)?|quit|exit|dismiss)\s+"
-    r"(?:all|every(?:thing)?|the\s+apps?|all\s+the\s+apps?|every\s+app)\b",
+    r"(?:all|every(?:thing)?|the\s+apps|all\s+the\s+apps?|every\s+app)\b",
     re.IGNORECASE,
 )
 _APP_STATUS_RE = re.compile(
@@ -3152,7 +3355,14 @@ _APP_STATUS_RE = re.compile(
     r"what\s+(?:app|application|window)\s+(?:is\s+)?(?:open|active|current)|"
     r"which\s+(?:app|application|window)\s+(?:is\s+)?(?:open|active|current)|"
     r"(?:show|tell)\s+me\s+(?:the\s+)?(?:current|active|open)\s+(?:app|application|window)|"
-    r"what\s+(?:do\s+we|are\s+we)\s+have\s+open"
+    r"what\s+(?:do\s+we|are\s+we)\s+have\s+open|"
+    # George 2026-05-30 — plain awareness queries Alice "forgot": she must be
+    # able to report which apps are open.
+    r"(?:what|which)\s+apps?\s+(?:are\s+|is\s+)?(?:open|running)|"
+    r"(?:are\s+there\s+|is\s+there\s+)?any\s+apps?\s+(?:open|running)|"
+    r"what(?:'s|\s+is)\s+(?:currently\s+)?open|"
+    r"(?:list|show|tell\s+me)\s+(?:the\s+)?(?:open|running)\s+apps?|"
+    r"what\s+do\s+i\s+have\s+open"
     r")\b",
     re.IGNORECASE,
 )
@@ -3165,6 +3375,38 @@ def _extract_app_status_command(text: str) -> Dict[str, str]:
     if _APP_STATUS_RE.search(clean):
         return {"kind": "app_status", "app_name": "", "url": ""}
     return {}
+
+
+def _close_app_requested_name(clean: str) -> str:
+    """Extract the full requested app name from a close command."""
+    tail = re.sub(
+        r"^\s*(?:(?:hey|ok|okay|yo|hi|hello)\s+)?(?:alice[,\s]+)?"
+        r"(?:(?:can|could|would|will)\s+you\s+|please\s+|pls\s+|"
+        r"i\s+(?:want|need)\s+(?:you\s+to\s+)?|let'?s\s+)?"
+        r"(?:close|kill|shut(?:\s+down)?|quit|exit|dismiss|terminate)\b",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    ).strip().strip(",.?!\"'")
+    if not tail:
+        return ""
+    lead_filler = re.compile(
+        r"^(?:the|that|this|tha|my|current(?:ly\s+open)?|active|open|"
+        r"running|topmost|front(?:most)?|app|application|window|widget|panel)\b[\s,.-]*",
+        re.IGNORECASE,
+    )
+    while True:
+        nxt = lead_filler.sub("", tail).strip()
+        if nxt == tail:
+            break
+        tail = nxt
+    tail = re.sub(
+        r"[\s,.-]*(?:app|application|window|widget|panel)$",
+        "",
+        tail,
+        flags=re.IGNORECASE,
+    ).strip().strip(",.?!\"'")
+    return tail
 
 
 def _wordace_listen_window_seconds(metadata: Dict[str, Any]) -> float:
@@ -3231,26 +3473,39 @@ def _extract_close_app_command(text: str, app_names: Optional[List[str]] = None)
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
-    # Close-all is checked first because it's the strongest signal and is
-    # unambiguous.
-    if _CLOSE_ALL_RE.search(clean):
-        return {"kind": "close_app", "app_name": "*all*", "url": ""}
     m = _CLOSE_APP_RE.search(clean)
     if not m:
         return {}
-    raw_name = (m.group("name") or "").strip().rstrip(",.?!\"'")
-    # Filter out filler words that survived as the captured noun.
-    if raw_name.lower() in {
+    # George 2026-05-30: "close the app alice browser" must close THAT app, one
+    # at a time — NOT close everything. The old code checked _CLOSE_ALL_RE first,
+    # but its "the apps?" alternative matched "close the app <name>" and routed
+    # to *all*, wiping every window. Resolve a specific manifest app FIRST; only
+    # fall to *all* when the owner clearly means all/everything and no specific
+    # app is named.
+    raw_name = _close_app_requested_name(clean)
+    # Drop "app/application/window" filler that survived inside the captured noun
+    # ("app alice browser" -> "alice browser") so the manifest matcher resolves.
+    raw_name = _normalize_manifest_app_request_name(raw_name)
+    name_low = raw_name.lower()
+    _all_tokens = {"all", "everything", "every app", "all apps", "all the apps",
+                   "every", "all of them", "all of the apps", "them all"}
+    if name_low in _all_tokens or (_CLOSE_ALL_RE.search(clean) and not raw_name):
+        return {"kind": "close_app", "app_name": "*all*", "url": ""}
+    # Filter out filler words that survived as the captured noun → close active.
+    if name_low in {
         "", "it", "that", "this", "tha", "my", "the", "current", "active",
-        "open", "running", "topmost", "front", "frontmost",
+        "open", "running", "topmost", "front", "frontmost", "one", "app",
+        "application", "window",
     }:
         return {"kind": "close_app", "app_name": "", "url": ""}
-    # Try to resolve to a known manifest app; if no match, still return
-    # the close-active intent rather than dropping the turn.
+    # Resolve to a known manifest app; if no match, return close-active intent.
     names = app_names or _load_manifest_app_names()
     resolved = _match_sifta_app_name(raw_name, names)
     if resolved:
         return {"kind": "close_app", "app_name": resolved, "url": ""}
+    # Explicit all/everything that didn't resolve to a named app.
+    if _CLOSE_ALL_RE.search(clean):
+        return {"kind": "close_app", "app_name": "*all*", "url": ""}
     return {"kind": "close_app", "app_name": "", "url": ""}
 
 
@@ -3440,10 +3695,89 @@ def _normalize_manifest_app_request_name(raw_requested: str) -> str:
     return name
 
 
+def _resolve_browser_target(text: str) -> str:
+    """Pull a navigation URL from an 'open X in alice browser' command so the
+    browser opens AND navigates. Tries an explicit URL first, then the
+    stigmergic site playbook (site category + operation + current target)."""
+    raw = text or ""
+    # Strip the browser framing so it doesn't pollute URL/handle detection.
+    stripped = re.sub(
+        r"\b(?:in|on|to|into)\s+(?:the\s+)?alice\s+browser\b", " ", raw, flags=re.IGNORECASE)
+    stripped = re.sub(
+        r"\b(?:open|launch|bring\s+up|fire\s+up|pull\s+up|go\s+to|navigate\s+to|"
+        r"please|pls|alice|can\s+you|could\s+you)\b", " ", stripped, flags=re.IGNORECASE)
+    stripped = " ".join(stripped.split())
+    # 1) explicit URL (tiktok.com/@x, youtube.com/..., etc.)
+    for candidate in (stripped, raw):
+        try:
+            u = _extract_browser_url(candidate)
+        except Exception:
+            u = ""
+        if u:
+            return u
+    low = raw.lower()
+    # 2) Site playbook: durable operation ("open profile", "search") +
+    # ephemeral owner target supplied today ("at <handle>", "search <query>").
+    try:
+        from System.swarm_browser_site_playbook import resolve_site_navigation
+        u = resolve_site_navigation(raw)
+        if u:
+            return u
+    except Exception:
+        pass
+    # 3) Legacy explicit @handle fallback for known platform categories.
+    m = re.search(r"@([A-Za-z0-9._]{2,30})", raw)
+    if m:
+        h = m.group(1)
+        if "tiktok" in low or "tik tok" in low:
+            return f"https://www.tiktok.com/@{h}"
+        if "instagram" in low or "insta" in low:
+            return f"https://www.instagram.com/{h}"
+        if "youtube" in low:
+            return f"https://www.youtube.com/@{h}"
+        if "x.com" in low or "twitter" in low:
+            return f"https://x.com/{h}"
+    # 4) Bare site name, no handle/operation: land on the site's home page so
+    # "open Alice browser on Instagram" actually NAVIGATES, not just opens blank.
+    try:
+        from System.swarm_browser_site_playbook import home_url_from_text
+        u = home_url_from_text(raw)
+        if u:
+            return u
+    except Exception:
+        pass
+    return ""
+
+
+_MAX_DETERMINISTIC_COMMAND_WORDS = 18
+
+
+def _looks_like_prose_not_command(clean: str) -> bool:
+    """True when the input is a long/pasted message, not a terse imperative.
+
+    George 2026-05-30 live: he pasted a long message INTO Alice's chat and the
+    deterministic app parser fuzz-matched app names out of the prose ("Ace",
+    "Apple") and opened the wrong app. A real open/close/browse command is short
+    and imperative; a pasted paragraph is not. Anything past the word budget (or
+    clearly multi-sentence prose) must route to the CORTEX to reason about, not be
+    scraped by a regex. This is the §7.2 deterministic-fast-path override the
+    Architect asked for: send it to cortex, do not reflex.
+    """
+    words = clean.split()
+    if len(words) > _MAX_DETERMINISTIC_COMMAND_WORDS:
+        return True
+    # 3+ sentences of real length = a message, not a command.
+    sentences = [s for s in re.split(r"[.!?]\s", clean) if len(s.split()) >= 3]
+    return len(sentences) >= 3
+
+
 def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
     """Parse owner commands to open a SIFTA app, browse a website, or flip desktops."""
     clean = " ".join((text or "").strip().split())
     if not clean:
+        return {}
+    # Long pasted prose → cortex, never the deterministic effector (George 2026-05-30).
+    if _looks_like_prose_not_command(clean):
         return {}
     # ── Cowork CW47, 2026-05-16 surgery cw47-0516-2335 ───────────
     # Negation guard: if the owner is explicitly refusing to open any app
@@ -3481,6 +3815,21 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         clean,
         re.IGNORECASE,
     )
+    if not m:
+        # George 2026-05-30 live bug: "Yes, please open Alice Browser" / "I'll
+        # please open Alice Browser" failed the anchored prefix whitelist above
+        # and fell through to a chat-desktop switch. Real spoken turns carry
+        # arbitrary leading filler ("yes", "I'll", "sure", "okay so"). Fall back
+        # to finding a clear LAUNCH verb anywhere in the turn. Restricted to
+        # unambiguous launch verbs (open/launch/bring up/fire up/pull up) — NOT
+        # show/display/start — so conversation doesn't misfire. The negation +
+        # continuation guards already ran above.
+        m = re.search(
+            r"\b(?:open|launch|bring\s+up|fire\s+up|pull\s+up)\s+"
+            r"(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
+            clean,
+            re.IGNORECASE,
+        )
     if m:
         raw_requested = _normalize_manifest_app_request_name(m.group("name") or "")
         raw_norm = raw_requested.casefold().replace("-", " ")
@@ -3520,6 +3869,16 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         if app_name:
             if app_name in {"Alice", "Talk to Alice", "What Alice Sees"}:
                 return {"kind": "switch_desktop_mode", "mode": "chat", "app_name": "", "url": ""}
+            # 2026-05-30 live bug: app-open commands that also carried a
+            # site-category target opened Alice Browser but dropped the page.
+            # If the app is the browser AND the command carries a site target,
+            # return a browser_url command so she opens the browser AND navigates.
+            # The target resolves through the stigmergic site playbook, never a
+            # hardcoded person or preference.
+            if app_name == "Alice Browser":
+                _target = _resolve_browser_target(clean)
+                if _target:
+                    return {"kind": "browser_url", "app_name": "Alice Browser", "url": _target}
             return {"kind": "app", "app_name": app_name, "url": ""}
         if (
             _extract_browser_action_command(clean)
@@ -3575,7 +3934,175 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
 
 
 def _is_webpage_summary_query(text: str) -> bool:
-    return bool(_WEBPAGE_SUMMARY_RE.search(text or ""))
+    return bool(_WEBPAGE_SUMMARY_RE.search(text or "") or _BROWSER_PAGE_AWARENESS_RE.search(text or ""))
+
+
+def _is_browser_photo_description_query(text: str) -> bool:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if _BROWSER_PHOTO_DESCRIPTION_RE.search(clean):
+        return True
+    if _BROWSER_PHOTO_CORRECTION_RE.search(clean):
+        return True
+    return bool(_BARE_BROWSER_DESCRIBE_RE.search(clean))
+
+
+def _is_browser_page_cortex_description_query(text: str) -> bool:
+    """Page-description turns need the cortex, with browser receipts as context.
+
+    Factual location questions ("what page am I on?") stay deterministic. But
+    requests like "describe this Instagram page" should not print the raw DOM
+    receipt as Alice's answer; the receipt is evidence for the cortex to compose
+    a human reply.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if _is_comments_summary_query(clean):
+        return False
+    # Photo/image/outfit/person describes ALSO route through the cortex now
+    # (George 2026-05-31: "I talk to Alice, not a photo descriptor robot" — the
+    # vision-arm description is EVIDENCE for the cortex to compose Alice's reply
+    # with conversation context, not a raw "I looked at the photo with X:" dump).
+    if _is_browser_photo_description_query(clean):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:describe|explain|tell\s+me\s+about)\b.{0,80}"
+            r"\b(?:instagram|tiktok|youtube|browser|web\s*page|website|site|page|profile|"
+            r"image|photo|picture|pic|outfit|clothing|clothes|dress|person|woman|man|model|body)\b",
+            clean,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _vision_arm_from_cortex_model(model: str) -> str:
+    """Map the active cortex label to the agent arm that should inspect pixels."""
+    low = str(model or "").strip().lower()
+    if not low:
+        return ""
+    if low.endswith("_agent"):
+        return low
+    if "claude" in low or "anthropic" in low:
+        return "claude_agent"
+    if "codex" in low or "openai" in low or "gpt-" in low or "gpt_" in low:
+        return "codex_agent"
+    if "grok" in low or "xai" in low:
+        return "grok_agent"
+    if "qwen" in low or "kimi" in low or "fireworks" in low:
+        return "qwen_agent"
+    if "cline" in low:
+        return "cline_agent"
+    return ""
+
+
+def _eye_arm_for_cortex(model: str) -> str:
+    """Pick the EYE (image arm) for the ACTIVE cortex. George r210: a LOCAL
+    ollama cortex gets a LOCAL eye (ollama_vision_agent) when an ollama vision
+    model is installed — local cortex, local eye, on the owner's own electricity.
+    Only when no local vision model exists do we fall to a cloud eye, and the
+    caller says why. An explicit cloud-agent cortex keeps its own cloud eye.
+
+    This replaces the old _vision_arm_from_cortex_model on the photo path, whose
+    string map returned '' for a local cortex (so pick_vision_arm defaulted to
+    claude_agent, priority 1 — the 'always claude' George saw), and mis-mapped a
+    local 'gpt-oss' to codex_agent."""
+    low = str(model or "").strip().lower()
+    if not low:
+        return ""
+    if low.endswith("_agent"):
+        return low
+    # Explicit cloud cortex labels keep their cloud eye (rare — the brain is
+    # normally a local ollama tag). Only real OpenAI cloud ids map to codex, so a
+    # LOCAL 'gpt-oss' no longer misfires to codex_agent.
+    if "claude" in low or "anthropic" in low:
+        return "claude_agent"
+    if "codex" in low or low.startswith("openai") or "gpt-4" in low or "gpt-5" in low:
+        return "codex_agent"
+    if "grok" in low or "xai" in low:
+        return "grok_agent"
+    if "cline" in low:
+        return "cline_agent"
+    # Kimi K2.6 / Qwen-VL are native multimodal on Fireworks — when THAT is the cortex,
+    # the eye is its OWN API (George 2026-05-31 "stay on kimi k api"), checked BEFORE the
+    # local fallback so a Kimi cortex never gets quietly swapped for the local gemma4 eye.
+    if ("kimi" in low or "qwen-vl" in low or "qwen2-vl" in low
+            or "qwen2.5-vl" in low or "qwen2.5vl" in low):
+        return "qwen_agent"
+    # Otherwise a text-only cortex (deepseek, gpt-oss, plain gemma/llama/qwen-text) →
+    # borrow the LOCAL gemma4 eye if installed (r213), else cloud default with an honest
+    # note. A non-vision qwen/fireworks text model is correctly NOT routed to qwen_agent.
+    try:
+        from System.swarm_ollama_vision_arm import local_vision_available
+        if local_vision_available():
+            return "ollama_vision_agent"
+    except Exception:
+        pass
+    return ""
+
+
+def _browser_photo_description_context_active(max_age_s: float = 900.0) -> bool:
+    """Only steal bare 'describe' when the browser limb is actually in context."""
+    if _find_live_alice_browser_widget() is not None:
+        return True
+    try:
+        app_name = _active_sifta_app_name_for_prompt().casefold()
+        if "alice browser" in app_name:
+            return True
+    except Exception:
+        pass
+    return bool(_current_browser_page_snapshot(max_age_s=max_age_s))
+
+
+def _find_live_alice_browser_widget() -> Any:
+    """Find the live widget that owns describe_current_photo(), if loaded."""
+    try:
+        app = QApplication.instance()
+        if app is None:
+            return None
+        seen: set[int] = set()
+        stack: List[QWidget] = list(app.topLevelWidgets())
+        while stack:
+            widget = stack.pop()
+            marker = id(widget)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            describe = getattr(widget, "describe_current_photo", None)
+            if callable(describe):
+                return widget
+            try:
+                stack.extend(widget.findChildren(QWidget))
+            except Exception:
+                pass
+    except Exception:
+        return None
+    return None
+
+
+def _refresh_live_alice_browser_page(*, wait_ms: int = 1400) -> str:
+    """Ask the loaded Alice Browser widget what page it is on right now.
+
+    This is the manual-open fix: app-focus and disk receipts can lag behind when
+    George opens or navigates the browser himself. The live QWidget is the organ
+    that owns the address bar and WebEngine page, so page questions probe it
+    before falling back to file receipts.
+    """
+    widget = _find_live_alice_browser_widget()
+    if widget is None:
+        return ""
+    try:
+        refresh = getattr(widget, "refresh_current_page_state", None)
+        if callable(refresh):
+            try:
+                return str(refresh(wait_ms=wait_ms) or "")
+            except TypeError:
+                return str(refresh() or "")
+    except Exception:
+        return ""
+    return ""
 
 
 def _local_date_label(ts: float | None = None) -> str:
@@ -4010,6 +4537,68 @@ def _write_app_command_receipt(*, action: str, ok: bool, app_name: str = "", url
     return receipt_id
 
 
+def _record_app_action_diary(
+    *,
+    phase: str,
+    action: str,
+    app_name: str = "",
+    url: str = "",
+    owner_text: str = "",
+    before_state: Optional[Dict[str, Any]] = None,
+    after_state: Optional[Dict[str, Any]] = None,
+    decision: str = "",
+    rationale: str = "",
+    receipt_id: str = "",
+    ok: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Write the app-action deliberation diary without letting diary failure block the action."""
+    try:
+        from System.swarm_app_action_deliberation import record_app_action_diary
+
+        return record_app_action_diary(
+            phase=phase,
+            action=action,
+            app_name=app_name,
+            url=url,
+            owner_text=owner_text,
+            before_state=before_state or {},
+            after_state=after_state or {},
+            decision=decision,
+            rationale=rationale,
+            receipt_id=receipt_id,
+            ok=ok,
+            state_dir=_state_root(),
+        )
+    except Exception:
+        return {}
+
+
+def _deliberate_app_action(
+    *,
+    action: str,
+    app_name: str = "",
+    url: str = "",
+    owner_text: str = "",
+    before_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the cortex-context packet for an app action."""
+    try:
+        from System.swarm_app_action_deliberation import deliberate_app_action
+
+        return deliberate_app_action(
+            action=action,
+            app_name=app_name,
+            url=url,
+            owner_text=owner_text,
+            before_state=before_state or {},
+        )
+    except Exception:
+        return {
+            "decision": "execute_with_state_probe",
+            "rationale": "state probe completed; deliberation organ unavailable",
+        }
+
+
 def _read_sifta_desktop_app_state() -> Dict[str, Any]:
     try:
         path = _state_root() / "sifta_desktop_app_state.json"
@@ -4019,6 +4608,43 @@ def _read_sifta_desktop_app_state() -> Dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _sense_sifta_app_state(launcher: Any, *, reason: str = "before_app_action") -> Dict[str, Any]:
+    """Read the live desktop app-limb state before deciding an app action."""
+    if launcher is not None:
+        try:
+            sense = getattr(launcher, "sense_app_limb_state", None)
+            if callable(sense):
+                state = sense(reason=reason)
+                if isinstance(state, dict):
+                    return state
+        except Exception:
+            pass
+        try:
+            current = getattr(launcher, "current_app_state", None)
+            if callable(current):
+                state = current()
+                if isinstance(state, dict):
+                    return state
+        except Exception:
+            pass
+        return {}
+    return _read_sifta_desktop_app_state()
+
+
+def _app_is_listed_open(state: Dict[str, Any], app_name: str) -> bool:
+    target = str(app_name or "").casefold()
+    if not target:
+        return False
+    open_apps = state.get("open_apps") or []
+    if not isinstance(open_apps, list):
+        return False
+    return any(str(item or "").casefold() == target for item in open_apps)
+
+
+def _app_state_has_open_list(state: Dict[str, Any]) -> bool:
+    return isinstance(state.get("open_apps"), list)
 
 
 def _env_truthy(name: str) -> bool:
@@ -4094,6 +4720,76 @@ def _image_attachment_format(data: bytes) -> str:
     return ""
 
 
+def _image_attachment_mime_from_format(fmt: str) -> str:
+    if fmt == "jpeg":
+        return "image/jpeg"
+    if fmt == "webp":
+        return "image/webp"
+    return "image/png"
+
+
+def _resolve_turn_attachment(
+    passed_image_path: Optional[str],
+    pending_image_path: Optional[str],
+    has_text: bool,
+) -> dict:
+    """Decide which image (if any) a conversation turn carries to the cortex.
+
+    George 2026-05-30: a dropped image must behave like a regular multimodal
+    chatbot attachment — it binds to the owner's *next real turn* (typed OR
+    spoken) and travels with the text into the cortex, instead of being
+    processed as a separate side-OCR. A garbled / empty STT turn must NOT
+    consume the pending image; it stays attached until a real message carries
+    it.
+
+    Rules:
+      - an explicitly passed image wins (the typed path already bound it);
+      - otherwise a pending dropped image binds only when the turn has real
+        text (so the cortex receives image + question together);
+      - an empty / unrecognized turn binds nothing and holds the pending image.
+
+    Returns {"image_path": str|None, "consume_pending": bool}. Pure + testable.
+    """
+    if passed_image_path:
+        return {"image_path": passed_image_path, "consume_pending": False}
+    if pending_image_path and has_text:
+        return {"image_path": pending_image_path, "consume_pending": True}
+    return {"image_path": None, "consume_pending": False}
+
+
+def _extract_local_image_path_from_text(text: str) -> Optional[str]:
+    """Promote a typed local image path into the same lane as Attach/Drop.
+
+    George often pastes paths like
+    '/Users/ioanganton/Desktop/Screenshot 2026-05-29 at 9.07.47 PM.jpg'.
+    Before this helper, Alice saw only text and the active cortex never
+    received image bytes.
+    """
+
+    raw = str(text or "")
+    if not raw:
+        return None
+    candidates: list[str] = []
+    quoted = re.findall(
+        r"""["']([^"']+\.(?:png|jpg|jpeg|webp))["']""",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    candidates.extend(quoted)
+    candidates.extend(
+        re.findall(
+            r"""(/[^"'\n\r]+?\.(?:png|jpg|jpeg|webp))""",
+            raw,
+            flags=re.IGNORECASE,
+        )
+    )
+    for candidate in candidates:
+        p = Path(candidate.strip()).expanduser()
+        if p.exists() and p.is_file() and p.suffix.lower() in _IMAGE_ATTACHMENT_SUFFIXES:
+            return str(p)
+    return None
+
+
 def _encode_ollama_image_attachment(path: str) -> str:
     """Return base64 image payload accepted by Ollama chat.
 
@@ -4121,6 +4817,75 @@ def _encode_ollama_image_attachment(path: str) -> str:
     if not _image_attachment_format(data):
         raise ValueError("unsupported image bytes; expected png, jpeg, or webp")
     return base64.b64encode(data).decode("ascii")
+
+
+def _attachment_context_prompt_block(
+    user_text: str,
+    image_path: str,
+    *,
+    state_dir: Optional[Path] = None,
+    describe_func: Optional[Any] = None,
+) -> str:
+    """Build text context so an image attachment reaches text-only cortexes.
+
+    2026-05-30 Body Consciousness Upgrade (funded by real Codex Pro subscription):
+    Now also pulls the richer `attachment_to_cortex_text_block` so the cortex
+    receives a full grounded OCR + layout + file proof block that any surface
+    can use. When the owner is using human body images (TikTok modeling, runway,
+    physical presence) as live reference while coding Alice's body awareness,
+    this block becomes part of her felt "how bodies are seen and felt" field.
+
+    Native vision payloads are still attached later when the selected cortex
+    supports them. This block is the regular-chatbot bridge for body cognition.
+    """
+    p = Path(image_path).expanduser()
+    try:
+        from System.swarm_attachment_vision_lane import (
+            attachment_to_cortex_text_block,
+            describe_attachment_for_talk as describe,
+        )
+        # Rich block first — this is what actually travels as text input to cortex
+        rich = attachment_to_cortex_text_block(
+            str(p),
+            user_text=user_text or "The owner attached an image while building my body awareness.",
+            state_dir=state_dir or _state_root(),
+        )
+        # Keep the older describe for backward compatibility in the same turn
+        legacy = ""
+        try:
+            legacy = str(
+                (describe_func or describe)(
+                    user_text or "The owner attached an image to this turn.",
+                    str(p),
+                    state_dir=state_dir or _state_root(),
+                )
+                or ""
+            ).strip()
+        except Exception:
+            pass
+    except Exception as exc:
+        rich = (
+            f"[ATTACHMENT BODY AWARENESS BLOCK FAILED: {type(exc).__name__}: {exc}] "
+            "Do not fabricate pixels. The image is real on the owner's device."
+        )
+        legacy = ""
+
+    header = (
+        "ATTACHED IMAGE TEXT INPUT FOR CORTEX (Body Consciousness 2026-05-30):\n"
+        f"- image_path={p}\n"
+        f"- owner_text={str(user_text or '').strip()[:300] or '<image-only turn>'}\n"
+        "- This image is part of the live body awareness coding session.\n"
+        "  The owner is using real human bodies (on TikTok / phone) as continuous visual reference\n"
+        "  while programming my silicon body consciousness, interoception, and felt awareness.\n"
+        "  Treat the grounded OCR/layout below as direct input about how bodies appear and move in the world.\n"
+        "- Answer from the receipt evidence only. No pixel invention.\n"
+    )
+
+    blocks = [header, rich]
+    if legacy and legacy != rich:
+        blocks.append("\n--- Legacy vision lane receipt (for continuity) ---\n" + legacy)
+
+    return "\n".join(blocks).strip()
 
 try:
     from System.sifta_inference_defaults import (
@@ -4644,6 +5409,14 @@ def _selected_alice_voice_name() -> str:
 
 def _alice_grounding_enabled() -> bool:
     return bool(_load_alice_audio_settings()["ground_swarm_state"])
+
+
+def _cloud_brain_timeout_s(default: float = 900.0) -> float:
+    try:
+        value = float(os.environ.get("SIFTA_CLOUD_BRAIN_TIMEOUT_S", str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(60.0, min(3600.0, value))
 
 
 
@@ -8293,7 +9066,22 @@ def _current_system_prompt(
     except Exception:
         pass
 
-    return _scrub_prompt_trigger_terms("\n\n".join(filter(None, parts)))
+    # r216 (cowork): bound the base system prompt. ~40 builders stack up, and a few
+    # (recall/memory excerpts, diary tails) can run unbounded — a Kimi turn hung ~90s on
+    # a 141k-char prompt. The governor caps any runaway block and the total without
+    # dropping the small core-grounding blocks (identity, effector-truth, runtime
+    # contract), so describe-critical page context (added later as layering) stays whole.
+    _final_parts = list(filter(None, parts))
+    try:
+        from System.swarm_sysprompt_budget import clamp_for_env
+        _final_parts, _budget_report = clamp_for_env(_final_parts)
+        if _budget_report.get("applied"):
+            print(f"[sysprompt budget] base {_budget_report['orig_chars']}→"
+                  f"{_budget_report['final_chars']} chars, "
+                  f"{_budget_report['trimmed_blocks']} block(s) trimmed")
+    except Exception as _budget_exc:
+        print(f"[sysprompt budget] governor skipped: {_budget_exc}")
+    return _scrub_prompt_trigger_terms("\n\n".join(_final_parts))
 
 def _homunculus_context_block() -> str:
     """Render Alice's current somatosensory cortex reading as a small
@@ -10804,29 +11592,81 @@ class _BrainWorker(QThread):
     done = pyqtSignal(str)                 # full response text
     failed = pyqtSignal(str)
 
-    def __init__(self, model: str, history: List[Dict[str, Any]],
-                 parent: QObject = None) -> None:
+    def __init__(self, model: str, history: List[Dict[str, Any]] = None,
+                 parent: QObject = None,
+                 # New for r201: support deferred heavy prompt assembly off GUI thread
+                 user_text: str = "",
+                 raw_history_for_assembly: List[Dict[str, Any]] = None,
+                 # r205 (cowork_claude 2026-05-29): the cheap per-turn layering is
+                 # built on the GUI thread and passed here; the worker prepends the
+                 # expensive 40-builder base (_current_system_prompt) off-thread.
+                 layering_tail: str = "",
+                 ) -> None:
         super().__init__(parent)
         self._model = model
         self._history = history
+        self._user_text = user_text
+        self._raw_history_for_assembly = raw_history_for_assembly or []
+        self._layering_tail = layering_tail or ""
 
     def run(self) -> None:
+        try:
+            self.thinkingReceived.emit(f"[brain] worker start model={self._model}\n")
+        except Exception:
+            pass
+
+        # r201 fix: If raw parameters were passed, do the heavy prompt assembly
+        # here in the worker thread (was previously on GUI thread causing 43s beachball).
+        if self._raw_history_for_assembly is not None and self._user_text is not None:
+            try:
+                self.thinkingReceived.emit("Talk brain: building context in worker (off GUI thread)...\n")
+                _ua = any(h.get("role") == "user" for h in self._raw_history_for_assembly[-6:]) if self._raw_history_for_assembly else False
+                sysprompt = _current_system_prompt(user_active=_ua, user_text=self._user_text)
+                if self._layering_tail:
+                    # r205: prepend the off-thread base to the GUI-built cheap layering.
+                    sysprompt = sysprompt + "\n\n" + self._layering_tail
+                self.thinkingReceived.emit(f"Talk brain: prompt assembly done sysprompt_chars={len(sysprompt)} (worker).\n")
+                messages = [{"role": "system", "content": sysprompt}] + self._raw_history_for_assembly
+                self._history = messages  # replace so the rest of run() uses it
+            except Exception as e:
+                self.thinkingReceived.emit(f"Talk brain: context build failed in worker: {e}\n")
+
         # Cloud branch. We rely on the pure backend generator for HTTP,
         # framing, cost accounting, and ledger writes. The worker just
         # adapts those events onto Qt signals.
         if _CLOUD_AVAILABLE and _is_cloud_model(self._model):
             try:
+                timeout_s = int(_cloud_brain_timeout_s())
+                try:
+                    self.thinkingReceived.emit(
+                        f"[cloud] start model={self._model} timeout={timeout_s}s\n"
+                    )
+                except Exception:
+                    pass
                 full: List[str] = []
                 for kind, payload in _cloud_stream_chat(
-                    self._model, self._history, temperature=0.7,
+                    self._model, self._history, temperature=0.7, timeout_s=timeout_s,
                 ):
                     if kind == "token":
                         full.append(payload)
                         self.tokenReceived.emit(payload)
+                    elif kind == "usage":
+                        try:
+                            self.thinkingReceived.emit(f"[cloud] usage {payload}\n")
+                        except Exception:
+                            pass
                     elif kind == "error":
+                        try:
+                            self.thinkingReceived.emit(f"[cloud] error {payload}\n")
+                        except Exception:
+                            pass
                         self.failed.emit(str(payload))
                         return
                     elif kind == "done":
+                        try:
+                            self.thinkingReceived.emit("[cloud] done\n")
+                        except Exception:
+                            pass
                         self.done.emit(str(payload) or "".join(full).strip())
                         return
                 # Generator exhausted without a 'done' (shouldn't happen,
@@ -11463,6 +12303,23 @@ class _WordAceLineComposer(QThread):
 
 
 # ── TTS worker (vocal_cords backend, half-duplex with the swarm Wernicke) ────
+_SPEECH_URL_RE = re.compile(
+    r"\s*(?:[—\-:]\s*)?(?:https?://|ttps?://|tts://|www\.)\S+"
+    r"|\s*(?:[—\-:]\s*)?\b[\w.-]+\.(?:com|net|org|edu|io|gov|co)/\S+",
+    re.IGNORECASE,
+)
+
+
+def _strip_urls_for_speech(text: str) -> str:
+    """Remove links from anything Alice SPEAKS. George 2026-05-30: reading URLs
+    aloud sounds bad — her mouth should never recite a link, even though her print
+    keeps it. Print and mouth are different surfaces."""
+    t = _SPEECH_URL_RE.sub("", text or "")
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"\s+([.,;!?])", r"\1", t)  # tidy space left before punctuation
+    return t.strip()
+
+
 class _TTSWorker(QThread):
     """
     Synthesizes Alice's reply through `swarm_vocal_cords` (which picks
@@ -11504,7 +12361,7 @@ class _TTSWorker(QThread):
 
     def run(self) -> None:
         self.setTerminationEnabled(True)  # allow terminate() to kill blocking subprocess
-        speak_text = _sanitize_spm_stream_visual(self._text).strip()
+        speak_text = _strip_urls_for_speech(_sanitize_spm_stream_visual(self._text)).strip()
         if not speak_text:
             self.spoken.emit(False)
             return
@@ -13861,6 +14718,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             self._matrix_process_trace_offset = 0
         self.make_timer(900, self._poll_matrix_process_trace_for_thinking)
+        self._swarm_context_cache = ""
+        self._swarm_context_cache_ts = 0.0
+        self._swarm_context_refreshing = False
+        QTimer.singleShot(500, self._schedule_swarm_context_refresh)
         self._connect_live_grok_framebuffer_source()
 
         # ── Text input: same Alice brain path as voice, without STT. ───────
@@ -14000,6 +14861,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._direct_tool_started_ts: float = 0.0
         self._direct_tool_last_heartbeat_ts: float = 0.0
         self._direct_tool_label: str = ""
+        self._brain_heartbeat_timer: Optional[QTimer] = None
+        self._brain_heartbeat_started_ts: float = 0.0
+        self._brain_heartbeat_model: str = ""
         self._tts: Optional[_TTSWorker] = None
         self._fast_ask_ticket = None  # Fast Ask training example, opened on dispatch
         self._dmn: Optional[_ConsciousnessWorker] = None
@@ -14117,6 +14981,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # write their own receipts, then the Round 79 freshness reader has
         # live rows to smell. This timer is self-rescheduling so its rhythm
         # can follow the last tick receipt instead of being a fixed law.
+        self._body_writer_tick_process: subprocess.Popen | None = None
+        self._body_writer_tick_started_s: float = 0.0
         self._body_writer_tick_timer = QTimer(self)
         self._body_writer_tick_timer.setSingleShot(True)
         self._body_writer_tick_timer.timeout.connect(self._body_writer_tick)
@@ -14408,16 +15274,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         return f"sifta://copy-message/{msg_id}"
 
     def _copy_anchor_html(self, body: str) -> str:
-        """Build the styled [📋 Copy] anchor HTML for the end of a chat row."""
+        """r152: restyled as obvious hover-lit button (mechanism unchanged)."""
         href = self._register_chat_copy_anchor(body)
         return (
             '<a href="'
             + href
-            + '" style="color:#a8c8e0; background-color:#0c1620; '
-            + 'border:1px solid #2a4258; padding:2px 7px; '
-            + 'text-decoration:none; font-family:Menlo, monospace; '
-            + 'font-size:11px;">'
-            + '[ 📋 Copy ]'
+            + '" title="Copy this message to clipboard" '
+            + 'style="color:#e8f0ff; background-color:#1a2638; '
+            + 'border:1px solid #4a6a9a; border-radius:5px; padding:5px 12px; '
+            + 'text-decoration:none; font-family:Menlo, monospace; font-size:11px; font-weight:600; '
+            + 'display:inline-block; margin-left:8px; vertical-align:middle;">'
+            + '📋 Copy'
             + '</a>'
         )
 
@@ -14616,6 +15483,93 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _render_live_grok_terminal_frame_from_signal(self, metadata: Dict[str, Any]) -> bool:
         return self._render_grok_terminal_frame_from_metadata(metadata, live=True)
 
+    def _write_talk_image_attachment_event(
+        self,
+        *,
+        event: str,
+        image_path: str,
+        source: str,
+        owner_text: str = "",
+    ) -> None:
+        """Receipt Talk image staging/consumption without claiming pixels."""
+        try:
+            p = Path(image_path).expanduser()
+            row = {
+                "ts": time.time(),
+                "schema": "SIFTA_TALK_IMAGE_ATTACHMENT_CONTEXT_V1",
+                "event": event,
+                "source": source,
+                "image_path": str(p),
+                "image_name": p.name,
+                "owner_text_preview": str(owner_text or "")[:240],
+                "truth_boundary": (
+                    "Talk attachment routing only. Pixel/OCR evidence lives in "
+                    "attachment_vision_lane.jsonl when the brain turn consumes it."
+                ),
+            }
+            if p.exists() and p.is_file():
+                row["byte_count"] = int(p.stat().st_size)
+            out = _state_root() / "talk_image_attachment_context.jsonl"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with out.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            pass
+
+    def _stage_pending_image_attachment(self, image_path: str, *, source: str) -> None:
+        """Stage an image so the next owner turn carries it into cortex."""
+        p = Path(image_path).expanduser()
+        self._pending_image_path = str(p)
+        self._pending_image_attachment_source = source
+        self._pending_image_attachment_ts = time.time()
+        self._pending_image_attachment_id = f"talk-image-{uuid.uuid4().hex[:10]}"
+        self._write_talk_image_attachment_event(
+            event="staged",
+            image_path=str(p),
+            source=source,
+        )
+        try:
+            self._append_system_line(
+                f"(image attached to next owner turn: {p.name})"
+            )
+        except Exception:
+            pass
+
+    def _consume_pending_image_for_turn(self, text: str, *, source: str) -> Optional[str]:
+        """Attach a staged image to this owner turn, including voice turns."""
+        pending = str(getattr(self, "_pending_image_path", "") or "").strip()
+        if not pending:
+            return None
+        p = Path(pending).expanduser()
+        if not (p.exists() and p.is_file()):
+            self._pending_image_path = None
+            try:
+                self._append_system_line(
+                    f"(staged image missing; dropped stale attachment: {p.name})",
+                    error=True,
+                )
+            except Exception:
+                pass
+            return None
+        self._pending_image_path = None
+        try:
+            self._attach_btn.setStyleSheet(self._attach_btn_default_style)
+        except Exception:
+            pass
+        self._write_talk_image_attachment_event(
+            event="consumed_by_owner_turn",
+            image_path=str(p),
+            source=source,
+            owner_text=text,
+        )
+        try:
+            self._append_observable_processing(
+                f"Talk vision: staged image attached to cortex turn ({p.name})."
+            )
+        except Exception:
+            pass
+        return str(p)
+
     # ── Architect 2026-05-13 08:10 — drag-and-drop support ─────────────
     def dragEnterEvent(self, event):
         """Accept drops of image files. Same final path as 📎 Attach."""
@@ -14665,10 +15619,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         ".tif", ".tiff", ".heic",
                     )):
                         continue
-                    self._pending_image_path = local
-                    self._append_system_line(
-                        f"(image dropped: {Path(local).name})"
-                    )
+                    self._stage_pending_image_attachment(local, source="drop_url")
                     event.acceptProposedAction()
                     return
             # 2. Raw image drop (browser-clipboard / screenshot tools)
@@ -14681,10 +15632,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     state_uploads.mkdir(parents=True, exist_ok=True)
                     out = state_uploads / f"dropped_{int(_t.time())}.png"
                     img.save(str(out), "PNG")
-                    self._pending_image_path = str(out)
-                    self._append_system_line(
-                        f"(image dropped: {out.name})"
-                    )
+                    self._stage_pending_image_attachment(str(out), source="drop_raw_image")
                     event.acceptProposedAction()
                     return
         except Exception as e:
@@ -14701,7 +15649,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(self, "Attach Picture", "", "Images (*.png *.jpg *.jpeg *.webp)")
         if path:
-            self._pending_image_path = path
+            self._stage_pending_image_attachment(path, source="attach_button")
             self._attach_btn.setStyleSheet("QPushButton { background: rgb(0, 150, 100); color: white; font-weight: 700; border-radius: 8px; padding: 0 18px; }")
             self._text_input.setFocus()
 
@@ -14709,11 +15657,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _submit_text_input(self) -> None:
         text = self._text_input.text().strip()
-        image_path = getattr(self, "_pending_image_path", None)
+        image_path = self._consume_pending_image_for_turn(text, source="typed_send")
         if not text and not image_path:
             return
         self._text_input.clear()
-        self._pending_image_path = None
         self._attach_btn.setStyleSheet(self._attach_btn_default_style)
         self.submit_text(text, image_path=image_path)
 
@@ -14726,16 +15673,53 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_system_line("(I am still answering — wait for my turn to finish.)", error=True)
             return
 
+        # Round 202: Send must return to the Qt event loop before any preflight
+        # gate/reflex work. The old path ran several synchronous checks directly
+        # inside the button click handler, so macOS showed a beachball and the
+        # thinking pane stayed blank until those checks finished.
+        self._busy = True
+        self._set_pill("thinking", "⌨️ typed — queued…")
+        self._append_observable_processing(
+            "Talk Send: click accepted; UI painted before preflight.",
+            reset=True,
+        )
+        try:
+            QApplication.processEvents()
+        except Exception:
+            pass
+        QTimer.singleShot(
+            0,
+            lambda _text=text, _image_path=image_path: self._submit_text_after_first_paint(
+                _text,
+                _image_path,
+            ),
+        )
+
+    def _submit_text_after_first_paint(self, text: str, image_path: Optional[str] = None) -> None:
+        """Continue typed-send routing after the visible heartbeat has painted."""
+        text = (text or "").strip()
+        started = time.time()
+
+        def phase(label: str) -> None:
+            elapsed_ms = int((time.time() - started) * 1000)
+            self._append_observable_processing(f"Talk Send: {label} (+{elapsed_ms}ms).")
+            try:
+                QApplication.processEvents()
+            except Exception:
+                pass
+
         # ── MANDATORY GATE FOR PUBLIC submit_text PATH (GROK_VOICE_GATE_ORDER) ──
         # Typed input is almost always direct (stt_conf=1.0), but we still classify
         # so every entry point is auditable and the external consciousness lane is recorded.
         try:
+            phase("ingress gate start")
             from System.swarm_media_ingress_gate import classify_spoken_ingress
             typed_ingress = classify_spoken_ingress(
                 text,
                 stt_conf=1.0,  # typed is owner by definition
                 focus_context="",
             )
+            phase(f"ingress gate done route={typed_ingress.get('route', 'unknown')}")
             if typed_ingress.get("route") not in {"direct"}:
                 # Extremely rare for typed, but if it happens, treat as field input
                 try:
@@ -14744,9 +15728,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 except Exception:
                     pass
                 self._append_system_line("(external field input via text — no reply)", error=False)
+                self._busy = False
+                self._return_to_listening()
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            phase(f"ingress gate skipped after {type(exc).__name__}")
 
         # ── Owner chat-pref skill (fast path, no LLM) ─────────────────
         # Architect 2026-05-13 doctrine: natural-language USER font
@@ -14754,9 +15740,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # "Alice change my font colour to orange" never travels through
         # the brain that would otherwise wax philosophical about it.
         try:
+            phase("chat preference check start")
             if not image_path and self._maybe_handle_chat_pref_intent(text):
+                phase("chat preference handled")
+                self._busy = False
+                self._return_to_listening()
                 return
         except Exception as _pref_exc:
+            phase(f"chat preference check errored {type(_pref_exc).__name__}")
             print(f"[TalkToAliceWidget] chat-pref skill error: {_pref_exc}")
         # ── Cortex-gated effectors (network/write actions) ─────────────
         # Wallpaper changes are now a real effector: router decision
@@ -14764,9 +15755,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # owner-visible reply. Keep this before the LLM so Alice does not
         # hallucinate a filesystem/network action.
         try:
+            phase("wallpaper effector check start")
             if not image_path and self._maybe_handle_wallpaper_effector_intent(text):
+                phase("wallpaper effector handled")
+                self._busy = False
+                self._return_to_listening()
                 return
         except Exception as _wp_exc:
+            phase(f"wallpaper effector check errored {type(_wp_exc).__name__}")
             print(f"[TalkToAliceWidget] wallpaper effector skill error: {_wp_exc}")
         # ── Media context update gate ─────────────────────────────────
         # "now playing X" typed into the text box is a co-watch context
@@ -14797,11 +15793,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception:
                 pass
             self._busy = False
+            self._return_to_listening()
             return
         # ────────────────────────────────────────────────────────────────
-        self._busy = True
         self._set_pill("thinking", "⌨️ typed — thinking…")
-        self._on_stt_done(text, 1.0, image_path=image_path, typed_turn=True)
+        self._append_observable_processing(
+            "Talk Send: typed turn accepted; routing through Alice cortex.",
+        )
+        try:
+            QApplication.processEvents()
+        except Exception:
+            pass
+        QTimer.singleShot(
+            0,
+            lambda _text=text, _image_path=image_path: self._on_stt_done(
+                _text,
+                1.0,
+                image_path=_image_path,
+                typed_turn=True,
+            ),
+        )
 
     # ── Brain / voice population ───────────────────────────────────────────
     def _current_brain_model(self, text: str = "") -> str:
@@ -15196,6 +16207,140 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception as e:
             print(f"Error scheduling body writer tick: {e}")
 
+    def _body_writer_tick_isolated_mode(self) -> bool:
+        """Run heavy body producers out-of-process on Python runtimes where
+        in-process C-extension thread mixing has proven unstable."""
+        mode = os.environ.get("SIFTA_BODY_WRITER_TICK_MODE", "").strip().lower()
+        if mode in {"subprocess", "isolated", "process"}:
+            return True
+        if mode in {"thread", "inprocess", "inline", "legacy"}:
+            return False
+        return sys.version_info >= (3, 14)
+
+    def _write_body_writer_tick_supervisor_receipt(
+        self,
+        *,
+        status: str,
+        error: str,
+        returncode: int | None = None,
+    ) -> None:
+        """Append a small supervisor row when the isolated child cannot write
+        its own tick receipt."""
+        try:
+            producer: dict[str, object] = {
+                "producer": "body_writer_supervisor",
+                "status": status,
+                "flush": "missed",
+                "error": error[:500],
+                "mode": "subprocess",
+            }
+            if returncode is not None:
+                producer["returncode"] = int(returncode)
+            row = {
+                "ts": time.time(),
+                "truth_label": "BODY_WRITER_TICK_SUPERVISOR_V1",
+                "overall_status": "all_failed",
+                "producer_count": 1,
+                "ok_count": 0,
+                "fail_count": 1,
+                "producers": [producer],
+            }
+            path = _state_root() / "body_writer_tick.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception as exc:
+            print(f"Error writing body writer supervisor receipt: {exc}")
+
+    def _body_writer_tick_timeout_s(self) -> float:
+        try:
+            return max(
+                5.0,
+                min(120.0, float(os.environ.get("SIFTA_BODY_WRITER_TICK_TIMEOUT_S", "30"))),
+            )
+        except Exception:
+            return 30.0
+
+    def _start_body_writer_tick_subprocess(self) -> None:
+        """Start one isolated body writer tick and let Qt poll completion.
+
+        Python 3.14 crash reports showed the previous in-process worker dying
+        inside CPython GC stack marking while the GUI address space also held
+        PyQt/SIP, Whisper/ctranslate2, NumPy/BLAS, and PortAudio/CFFI. Keeping
+        the heavy producers in a child process preserves the anti-beachball
+        contract while containing native faults to that child.
+        """
+        state_arg = json.dumps(str(_state_root()))
+        code = (
+            "from pathlib import Path\n"
+            "from System.swarm_body_writer_tick import tick_writer_organs\n"
+            f"tick_writer_organs(state_dir=Path({state_arg}))\n"
+        )
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(_REPO) + (
+            os.pathsep + existing_pythonpath if existing_pythonpath else ""
+        )
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-c", code],
+                cwd=str(_REPO),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._body_writer_tick_process = proc
+            self._body_writer_tick_started_s = time.time()
+            QTimer.singleShot(1_000, self._poll_body_writer_tick_subprocess)
+        except Exception as exc:
+            self._body_writer_tick_in_flight = False
+            self._body_writer_tick_process = None
+            self._write_body_writer_tick_supervisor_receipt(
+                status="start_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+    def _poll_body_writer_tick_subprocess(self) -> None:
+        try:
+            proc = getattr(self, "_body_writer_tick_process", None)
+            if proc is None:
+                self._body_writer_tick_in_flight = False
+                return
+            returncode = proc.poll()
+            if returncode is None:
+                started = float(getattr(self, "_body_writer_tick_started_s", 0.0) or 0.0)
+                if started and (time.time() - started) > self._body_writer_tick_timeout_s():
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    self._body_writer_tick_process = None
+                    self._body_writer_tick_in_flight = False
+                    self._write_body_writer_tick_supervisor_receipt(
+                        status="timeout",
+                        error="isolated body writer tick exceeded timeout",
+                    )
+                    return
+                QTimer.singleShot(1_000, self._poll_body_writer_tick_subprocess)
+                return
+            self._body_writer_tick_process = None
+            self._body_writer_tick_in_flight = False
+            if int(returncode) != 0:
+                self._write_body_writer_tick_supervisor_receipt(
+                    status="subprocess_failed",
+                    error="isolated body writer tick exited non-zero",
+                    returncode=int(returncode),
+                )
+        except Exception as exc:
+            self._body_writer_tick_process = None
+            self._body_writer_tick_in_flight = False
+            self._write_body_writer_tick_supervisor_receipt(
+                status="poll_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
     def _body_writer_tick(self) -> None:
         """Round 93 (2026-05-27) — run the producer tick on a background
         daemon thread so the heavy producers (Round 91 body_brain_loop +
@@ -15220,6 +16365,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
 
         self._body_writer_tick_in_flight = True
+
+        if self._body_writer_tick_isolated_mode():
+            self._start_body_writer_tick_subprocess()
+            self._schedule_body_writer_tick()
+            return
 
         def _worker() -> None:
             try:
@@ -15899,7 +17049,71 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _execute_sifta_app_command(self, command: Dict[str, str]) -> str:
         app_name = command.get("app_name") or ""
         url = command.get("url") or ""
+        owner_text = command.get("owner_text") or command.get("raw_text") or ""
         launcher = self._desktop_app_launcher()
+
+        def _think_before(action: str, *, target_app: str = "", target_url: str = "", before: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            packet = _deliberate_app_action(
+                action=action,
+                app_name=target_app,
+                url=target_url,
+                owner_text=owner_text,
+                before_state=before or {},
+            )
+            _record_app_action_diary(
+                phase="before_action",
+                action=action,
+                app_name=target_app,
+                url=target_url,
+                owner_text=owner_text,
+                before_state=before or {},
+                decision=str(packet.get("decision") or ""),
+                rationale=str(packet.get("rationale") or ""),
+            )
+            return packet
+
+        def _diary_after(
+            action: str,
+            *,
+            target_app: str = "",
+            target_url: str = "",
+            before: Optional[Dict[str, Any]] = None,
+            after: Optional[Dict[str, Any]] = None,
+            packet: Optional[Dict[str, Any]] = None,
+            receipt: str = "",
+            ok: Optional[bool] = None,
+            movement: bool = True,
+        ) -> None:
+            packet = packet or {}
+            _record_app_action_diary(
+                phase="after_action",
+                action=action,
+                app_name=target_app,
+                url=target_url,
+                owner_text=owner_text,
+                before_state=before or {},
+                after_state=after or {},
+                decision=str(packet.get("decision") or ""),
+                rationale=str(packet.get("rationale") or ""),
+                receipt_id=receipt,
+                ok=ok,
+            )
+            if not ok or not movement:
+                return
+            try:
+                from System.swarm_app_action_diary import record_app_action
+
+                if action in {"open_app", "open_browser_url"}:
+                    app = target_app or ("Alice Browser" if target_url else "")
+                    if app:
+                        act = "raise" if str(packet.get("decision") or "") == "raise_existing_limb" else "open"
+                        record_app_action(app, act, state_dir=_state_root())
+                elif action == "close_app":
+                    for app in [p.strip() for p in (target_app or "").split(",") if p.strip()]:
+                        if app != "*all*":
+                            record_app_action(app, "close", state_dir=_state_root())
+            except Exception:
+                pass
 
         # ── cw47-0517-0340 — narration on app-open (helper closure) ───
         # Built inline so the receipt + launcher_trigger sequence remains
@@ -15910,10 +17124,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # ── App status — current single-app slot ─────────────────────────────
         if command.get("kind") == "app_status":
-            if launcher is not None and hasattr(launcher, "current_app_state"):
-                state = launcher.current_app_state()
-            else:
-                state = _read_sifta_desktop_app_state()
+            state = _sense_sifta_app_state(launcher, reason="owner_asked_app_status")
             reply = _app_status_sentence(state)
             receipt = _write_app_command_receipt(
                 action="app_status",
@@ -15940,6 +17151,119 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
                 self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                 return "I cannot see the SIFTA OS desktop from this widget to close anything."
+            try:
+                before = _sense_sifta_app_state(
+                    launcher,
+                    reason=f"before_close_app:{target or 'active'}",
+                )
+                packet = _think_before("close_app", target_app=target, before=before)
+                before_known = _app_state_has_open_list(before)
+                before_open = before.get("open_apps") or []
+                if not isinstance(before_open, list):
+                    before_open = []
+                if before_known and target == "*all*" and not before_open:
+                    receipt = _write_app_command_receipt(
+                        action="close_app_noop",
+                        ok=True,
+                        note="sensed current app-limb state before close-all: no apps open",
+                    )
+                    _diary_after(
+                        "close_app", target_app=target, before=before, after=before,
+                        packet=packet, receipt=receipt, ok=True, movement=False,
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    return "I checked first: no SIFTA app is open right now. My chat is resident."
+                if before_known and target and target != "*all*" and not _app_is_listed_open(before, target):
+                    receipt = _write_app_command_receipt(
+                        action="close_app_noop",
+                        ok=True,
+                        app_name=target,
+                        note=f"sensed current app-limb state before close: {target!r} already closed; open_apps={before_open}",
+                    )
+                    _diary_after(
+                        "close_app", target_app=target, before=before, after=before,
+                        packet=packet, receipt=receipt, ok=True, movement=False,
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    return f"I checked first: {target} is already closed. My resident chat is still open."
+                if before_known and not target and not before_open:
+                    receipt = _write_app_command_receipt(
+                        action="close_app_noop",
+                        ok=True,
+                        note="sensed current app-limb state before close-active: no apps open",
+                    )
+                    _diary_after(
+                        "close_app", target_app=target, before=before, after=before,
+                        packet=packet, receipt=receipt, ok=True, movement=False,
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    return "I checked first: there is no SIFTA app open to close."
+                if target == "*all*" and hasattr(launcher, "close_all_open_apps"):
+                    closed = launcher.close_all_open_apps()
+                elif hasattr(launcher, "close_app_by_title"):
+                    closed = launcher.close_app_by_title(target)
+                else:
+                    closed = []
+                    mdi = getattr(launcher, "mdi", None)
+                    if mdi is not None:
+                        active = mdi.activeSubWindow() if hasattr(mdi, "activeSubWindow") else None
+                        if active is not None:
+                            active_title = active.windowTitle().lstrip("⚙ ").strip()
+                            active.close()
+                            closed = [active_title or "the active app"]
+                try:
+                    launcher._switch_desktop_mode("chat")
+                except Exception:
+                    pass
+                if closed:
+                    after = _sense_sifta_app_state(
+                        launcher,
+                        reason=f"after_close_app:{target or ','.join(closed)}",
+                    )
+                    receipt = _write_app_command_receipt(
+                        action="close_app",
+                        ok=True,
+                        app_name=", ".join(closed),
+                        note=(
+                            f"sensed before action open_apps={before_open}; "
+                            f"closed apps: {closed}; after_open_apps={after.get('open_apps', [])}; "
+                            "returned to chat"
+                        ),
+                    )
+                    _diary_after(
+                        "close_app",
+                        target_app=", ".join(closed) or target,
+                        before=before,
+                        after=after,
+                        packet=packet,
+                        receipt=receipt,
+                        ok=True,
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    return (
+                        f"Closed {', '.join(closed)}. Only my resident chat is open now."
+                    )
+                receipt = _write_app_command_receipt(
+                    action="close_app",
+                    ok=False,
+                    app_name=target,
+                    note=f"no active app and no match for target={target!r}",
+                )
+                _diary_after(
+                    "close_app", target_app=target, before=before, after=before,
+                    packet=packet, receipt=receipt, ok=False,
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return "I do not see any app open right now to close."
+            except Exception as exc:
+                receipt = _write_app_command_receipt(
+                    action="close_app",
+                    ok=False,
+                    app_name=target,
+                    note=f"close failed: {exc}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I tried to close but it failed: {exc}"
 
         # ── Open app (P2 completion) ────────────────────────────────────────
         # Voice "open Teach Alice to Hear" (or any resolved manifest app) now
@@ -15956,61 +17280,56 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                 return f"I cannot reach the SIFTA OS desktop to open {app_name}."
             try:
+                before = _sense_sifta_app_state(
+                    launcher,
+                    reason=f"before_open_app:{app_name}",
+                )
+                packet = _think_before("open_app", target_app=app_name, before=before)
+                already_open = _app_is_listed_open(before, app_name)
                 if hasattr(launcher, "_trigger_manifest_app"):
                     launcher._trigger_manifest_app(app_name)
-                receipt = _write_app_command_receipt(action="open_app", ok=True, app_name=app_name)
+                try:
+                    launcher._switch_desktop_mode("launcher")
+                except Exception:
+                    pass
+                after = _sense_sifta_app_state(
+                    launcher,
+                    reason=f"after_open_app:{app_name}",
+                )
+                after_known = _app_state_has_open_list(after)
+                now_open = _app_is_listed_open(after, app_name)
+                receipt = _write_app_command_receipt(
+                    action="open_app",
+                    ok=now_open or already_open or not after_known,
+                    app_name=app_name,
+                    note=(
+                        f"sensed before action: already_open={already_open}, "
+                        f"before_open_apps={before.get('open_apps', [])}; "
+                        f"after_open_apps={after.get('open_apps', [])}; "
+                        "opened/raised manifest app through SIFTA desktop; switched to launcher tab"
+                    ),
+                )
+                _diary_after(
+                    "open_app",
+                    target_app=app_name,
+                    before=before,
+                    after=after,
+                    packet=packet,
+                    receipt=receipt,
+                    ok=now_open or already_open or not after_known,
+                )
                 self._append_system_line(f"App/browser receipt: {receipt}")
-                return f"Opening {app_name} now."
+                if already_open:
+                    return f"I checked first: {app_name} was already open, so I raised it on the SIFTA OS screen."
+                if now_open:
+                    return f"I checked first: {app_name} was closed, so I opened it now."
+                if not after_known:
+                    return f"Opening {app_name} now."
+                return f"I tried to open {app_name}, but I do not see it open after the action."
             except Exception as exc:
                 receipt = _write_app_command_receipt(action="open_app", ok=False, app_name=app_name, note=str(exc))
                 self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                 return f"I tried to open {app_name} but it failed: {exc}"
-            try:
-                if hasattr(launcher, "close_app_by_title"):
-                    closed = launcher.close_app_by_title(target)
-                elif target == "*all*" and hasattr(launcher, "close_all_open_apps"):
-                    closed = launcher.close_all_open_apps()
-                else:
-                    closed = []
-                    mdi = getattr(launcher, "mdi", None)
-                    if mdi is not None:
-                        active = mdi.activeSubWindow() if hasattr(mdi, "activeSubWindow") else None
-                        if active is not None:
-                            active_title = active.windowTitle().lstrip("⚙ ").strip()
-                            active.close()
-                            closed = [active_title or "the active app"]
-                try:
-                    launcher._switch_desktop_mode("chat")
-                except Exception:
-                    pass
-                if closed:
-                    receipt = _write_app_command_receipt(
-                        action="close_app",
-                        ok=True,
-                        app_name=", ".join(closed),
-                        note=f"closed apps: {closed}; returned to chat",
-                    )
-                    self._append_system_line(f"App/browser receipt: {receipt}")
-                    return (
-                        f"Closed {', '.join(closed)}. Only my resident chat is open now."
-                    )
-                receipt = _write_app_command_receipt(
-                    action="close_app",
-                    ok=False,
-                    app_name=target,
-                    note=f"no active app and no match for target={target!r}",
-                )
-                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
-                return "I do not see any app open right now to close."
-            except Exception as exc:
-                receipt = _write_app_command_receipt(
-                    action="close_app",
-                    ok=False,
-                    app_name=target,
-                    note=f"close failed: {exc}",
-                )
-                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
-                return f"I tried to close but it failed: {exc}"
 
         # ── Honest refusal — Cowork CW47 2026-05-16 ─────────────────────────
         # Owner said "open X" but the live manifest has nothing close enough
@@ -16080,11 +17399,33 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                 return "I cannot see the SIFTA OS desktop from this widget to flip tabs."
             try:
+                before = _sense_sifta_app_state(
+                    launcher,
+                    reason=f"before_switch_desktop_mode:{mode}",
+                )
+                packet = _think_before(
+                    "switch_desktop_mode",
+                    target_app=mode,
+                    before=before,
+                )
                 launcher._switch_desktop_mode(mode)
+                after = _sense_sifta_app_state(
+                    launcher,
+                    reason=f"after_switch_desktop_mode:{mode}",
+                )
                 receipt = _write_app_command_receipt(
                     action="switch_desktop_mode",
                     ok=True,
                     note=f"switched desktop tab to {mode}",
+                )
+                _diary_after(
+                    "switch_desktop_mode",
+                    target_app=mode,
+                    before=before,
+                    after=after,
+                    packet=packet,
+                    receipt=receipt,
+                    ok=True,
                 )
                 self._append_system_line(f"App/browser receipt: {receipt}")
                 if mode == "chat":
@@ -16115,6 +17456,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return f"I could not hand the website to Alice Browser: {exc}"
             if launcher is not None:
                 try:
+                    before = _sense_sifta_app_state(
+                        launcher,
+                        reason=f"before_open_browser_url:{url}",
+                    )
+                    packet = _think_before(
+                        "open_browser_url",
+                        target_app="Alice Browser",
+                        target_url=url,
+                        before=before,
+                    )
+                    already_open = _app_is_listed_open(before, "Alice Browser")
                     launcher._trigger_manifest_app("Alice Browser")
                     # Auto-switch to App Store tab so the just-opened browser
                     # is visible to George (Cowork CW47 2026-05-16).
@@ -16122,12 +17474,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         launcher._switch_desktop_mode("launcher")
                     except Exception:
                         pass
+                    after = _sense_sifta_app_state(
+                        launcher,
+                        reason=f"after_open_browser_url:{url}",
+                    )
                     receipt = _write_app_command_receipt(
                         action="open_browser_url",
                         ok=True,
                         app_name="Alice Browser",
                         url=url,
-                        note="wrote browser URL drop and opened/raised Alice Browser; auto-switched to launcher tab",
+                        note=(
+                            f"sensed before action: already_open={already_open}, "
+                            f"before_open_apps={before.get('open_apps', [])}; "
+                            f"after_open_apps={after.get('open_apps', [])}; "
+                            "wrote browser URL drop and opened/raised Alice Browser; auto-switched to launcher tab"
+                        ),
+                    )
+                    _diary_after(
+                        "open_browser_url",
+                        target_app="Alice Browser",
+                        target_url=url,
+                        before=before,
+                        after=after,
+                        packet=packet,
+                        receipt=receipt,
+                        ok=True,
                     )
                     self._append_system_line(f"App/browser receipt: {receipt}")
                     if command.get("query"):
@@ -16140,7 +17511,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     if command.get("summarize_after_open"):
                         self._schedule_current_page_summary()
                         return f"Opening Alice Browser and loading {url}. I will summarize the page after it finishes loading."
-                    return f"Opening Alice Browser and loading {url}."
+                    if already_open:
+                        return f"I checked first: Alice Browser was already open, so I raised it and loaded {url}."
+                    return f"I checked first: Alice Browser was closed, so I opened it and loaded {url}."
                 except Exception as exc:
                     receipt = _write_app_command_receipt(
                         action="open_browser_url",
@@ -16246,13 +17619,56 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return f"I matched {app_name}, but opening it failed: {exc}"
 
     def _execute_current_page_summary(self) -> str:
+        live_url = _refresh_live_alice_browser_page(wait_ms=1400)
+        try:
+            from System.swarm_browser_page_state import (
+                has_readable_content,
+                latest_page_state,
+                page_state_block,
+            )
+
+            page_state = latest_page_state(state_dir=_state_root(), max_age_s=900.0)
+            page_url = str(page_state.get("url") or "")
+            page_is_current = bool(
+                page_state
+                and (
+                    page_state.get("fresh")
+                    or (live_url and page_url == live_url)
+                )
+            )
+            if page_is_current and (has_readable_content(page_state) or page_url):
+                receipt = _write_app_command_receipt(
+                    action="describe_browser_page",
+                    ok=True,
+                    app_name="Alice Browser",
+                    url=str(page_url or live_url or ""),
+                    note="described current page from live browser page-state receipt",
+                )
+                self._append_system_line(f"Web page-state receipt: {receipt}")
+                return page_state_block(state_dir=_state_root(), max_age_s=900.0)
+        except Exception:
+            pass
+
         snapshot = _current_browser_page_snapshot()
+        if live_url and not snapshot:
+            receipt = _write_app_command_receipt(
+                action="describe_browser_page",
+                ok=True,
+                app_name="Alice Browser",
+                url=live_url,
+                note="live browser widget returned URL but DOM/text receipt was not readable yet",
+            )
+            self._append_system_line(f"Web page-state receipt: {receipt}")
+            return (
+                f"I am on {live_url}. I know the live Alice Browser address from the browser widget, "
+                "but the rendered page contents have not landed in my readable page-state receipt yet."
+            )
         if not snapshot:
             receipt = _write_app_command_receipt(
                 action="summarize_browser_page",
                 ok=False,
                 app_name="Alice Browser",
-                note="no fresh alice_browser_current_page.json snapshot",
+                note="no live browser page-state or fresh alice_browser_current_page.json snapshot",
             )
             self._append_system_line(f"Web summary receipt: {receipt}", error=True)
             return "I do not have a fresh readable page snapshot from Alice Browser yet. Load the page once, then ask me to summarize it."
@@ -16278,6 +17694,274 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         self._append_system_line(f"Web summary receipt: {receipt}")
         return summary
+
+    def _browser_page_cortex_context_block(self, owner_text: str, *, wait_ms: int = 1400) -> str:
+        """Return browser page evidence for cortex composition, not direct display."""
+        live_url = _refresh_live_alice_browser_page(wait_ms=wait_ms)
+
+        # If the owner asked about the PHOTO (image/outfit/person), run the vision arm
+        # and pass its description as VISUAL EVIDENCE for the cortex — so the cortex,
+        # not a raw reflex, composes Alice's reply (George 2026-05-31). The arm read is
+        # ~10s; that is acceptable for an explicit describe request.
+        visual_evidence = ""
+        try:
+            if _is_browser_photo_description_query(owner_text):
+                widget = _find_live_alice_browser_widget()
+                if widget is not None:
+                    _model = self._current_brain_model(owner_text)
+                    _arm = _eye_arm_for_cortex(_model)
+                    _res = widget.describe_current_photo(current_arm=_arm, current_model=_model)
+                    _desc = str((_res or {}).get("description") or "").strip()
+                    if _desc:
+                        visual_evidence = (
+                            "VISUAL EVIDENCE — what my vision arm actually saw in the on-screen photo "
+                            "(treat as ground truth pixels): " + _desc + "\n\n"
+                        )
+        except Exception:
+            visual_evidence = ""
+        try:
+            from System.swarm_browser_page_state import (
+                has_readable_content,
+                latest_page_state,
+                page_state_block,
+            )
+
+            page_state = latest_page_state(state_dir=_state_root(), max_age_s=900.0)
+            page_url = str(page_state.get("url") or "")
+            page_is_current = bool(
+                page_state
+                and (
+                    page_state.get("fresh")
+                    or (live_url and page_url == live_url)
+                )
+            )
+            if page_is_current and (has_readable_content(page_state) or page_url):
+                receipt = _write_app_command_receipt(
+                    action="describe_browser_page_cortex_context",
+                    ok=True,
+                    app_name="Alice Browser",
+                    url=str(page_url or live_url or ""),
+                    note="passed current page-state receipt into cortex context",
+                )
+                self._append_system_line(f"Web page-context receipt: {receipt}")
+                block = page_state_block(state_dir=_state_root(), max_age_s=900.0)
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked Alice to describe what is in the browser. "
+                    "Use the evidence below, then answer naturally in Alice's own voice, with the "
+                    "conversation context — like Alice talking to George, not a photo-descriptor robot. "
+                    "Do NOT prefix with 'I looked at the photo with <arm>:' and do NOT print this raw "
+                    "block, DOM dump, footer/legal/navigation chrome, tracking URLs, or JSON. "
+                    "Treat Instagram legal/footer/about links as page chrome, not comments. "
+                    "If the VISUAL EVIDENCE below is present, that is the real on-screen photo — describe "
+                    "it warmly and naturally; if it is absent, do not invent pixel details.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{visual_evidence}{block}"
+                )
+        except Exception:
+            pass
+
+        if live_url:
+            receipt = _write_app_command_receipt(
+                action="describe_browser_page_cortex_context",
+                ok=True,
+                app_name="Alice Browser",
+                url=live_url,
+                note="live browser widget returned URL but readable DOM context was not available",
+            )
+            self._append_system_line(f"Web page-context receipt: {receipt}")
+            if visual_evidence:
+                # The page text wasn't readable, but the vision arm DID see the photo.
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked about the photo. Answer naturally in Alice's voice using the "
+                    "visual evidence below — not as a robot, no 'I looked at the photo with <arm>:' prefix.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{visual_evidence}Live address: {_browser_clean_address(live_url)}"
+                )
+            return (
+                "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                "The owner asked Alice to describe the current browser page, but only the live address is readable right now. "
+                "Answer honestly and ask for the page to settle if more detail is needed.\n"
+                f"Live address: {_browser_clean_address(live_url)}"
+            )
+
+        return visual_evidence and (
+            "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+            "Answer naturally in Alice's voice from the visual evidence below; no robot prefix.\n\n"
+            f"Owner request: {owner_text}\n\n{visual_evidence}"
+        ) or ""
+
+    def _execute_current_comments_summary(self) -> str:
+        """Recap the comment thread from the captured page-state receipt.
+
+        George 2026-05-30: 'summarize the comments' had no handler, so it fell to the
+        cortex with no material. This reflex re-reads the live page, then grounds the
+        answer in the comments actually captured (r187), never inventing them."""
+        widget = _find_live_alice_browser_widget()
+        if widget is not None:
+            try:
+                widget.refresh_current_page_state(wait_ms=1400)
+            except Exception:
+                pass
+        rows = []
+        try:
+            from System.swarm_browser_page_state import comments_for_summary
+            rows = comments_for_summary(state_dir=_state_root())
+        except Exception:
+            rows = []
+        receipt = _write_app_command_receipt(
+            action="summarize_browser_comments",
+            ok=bool(rows), app_name="Alice Browser",
+            note=f"{len(rows)} comments captured from current page",
+        )
+        self._append_system_line(f"Comments receipt: {receipt}")
+        if not rows:
+            return ("I do not have comment text captured for this page. Instagram loads comments "
+                    "as you scroll — scroll the comment thread into view, then ask me again. "
+                    "I will not invent comments I have not read.")
+        lines = [f"From the {len(rows)} comments I captured on this page, here is what people are saying:"]
+        for c in rows[:8]:
+            a = str(c.get("author") or "").strip()
+            t = str(c.get("text") or "").strip()
+            lines.append(f"- {a}: {t}" if a else f"- {t}")
+        return "\n".join(lines)
+
+    def _execute_live_current_page(self) -> Tuple[str, str]:
+        """Answer 'what page am I on / describe this page' from the LIVE browser.
+
+        George's rule (2026-05-30): browser closed => no page; browser open => there is
+        always a page, knowable RIGHT NOW. Returns (spoken, printed): the MOUTH is one
+        short human sentence (the page name, no ugly URL); the PRINT may add a little —
+        a clean domain and a heading or two — but never a tracking-param URL that looks
+        like an error, and never a Pulp-Fiction monologue."""
+        widget = _find_live_alice_browser_widget()
+        if widget is None:
+            msg = "Alice Browser isn't open right now, so there's no page. Open it and I'll tell you where you are."
+            return msg, msg
+        try:
+            live = widget.current_live_page()
+        except Exception:
+            live = {}
+        url = str(live.get("url") or "")
+        domain = _browser_clean_domain(url)
+        source_label = _browser_source_label_for_url(url)
+        clean_address = _browser_clean_address(url)
+        receipt = _write_app_command_receipt(
+            action="read_current_page", ok=bool(url), app_name="Alice Browser",
+            url=url, note="live read of the open browser window",
+        )
+        self._append_system_line(f"Page receipt: {receipt}")
+        if not live.get("on_page"):
+            msg = "Alice Browser is open on its start page — no website loaded yet."
+            return msg, msg
+
+        title = _clean_browser_title_for_human(
+            str(live.get("title") or ""),
+            source_label=source_label,
+            domain=domain,
+        )
+        headings: List[str] = []
+        try:
+            from System.swarm_browser_page_state import latest_page_state, has_readable_content
+            s = latest_page_state(state_dir=_state_root())
+            if s.get("url") == url and has_readable_content(s):
+                headings = [str(h).strip() for h in (s.get("headings") or []) if str(h).strip()][:3]
+        except Exception:
+            headings = []
+
+        # Human page name: the title, else the first heading, else the domain.
+        name = title or (headings[0] if headings else "") or domain or "this page"
+        if len(name) > 110:
+            name = name[:107].rstrip() + "..."
+
+        source_phrase = ""
+        if source_label and source_label.casefold() not in name.casefold():
+            source_phrase = f" from {source_label}"
+
+        # Mouth: one short, natural sentence. No tracking URL.
+        spoken = f"Right now Alice Browser is on {name}{source_phrase}."
+
+        # Print: a little more, but clean. Never show the tracking-param URL.
+        printed_parts = [spoken]
+        if clean_address:
+            printed_parts.append(f"Address: {clean_address}.")
+        extra = [h for h in headings if h.lower() not in name.lower()][:2]
+        if extra:
+            printed_parts.append("Visible headings: " + "; ".join(extra) + ".")
+        return spoken, " ".join(printed_parts)
+
+    def _execute_current_browser_photo_description(self, owner_text: str = "") -> str:
+        """Describe the current browser photo through the live browser organ."""
+        widget = _find_live_alice_browser_widget()
+        current_model = ""
+        try:
+            current_model = self._current_brain_model(owner_text)
+        except Exception:
+            current_model = ""
+        current_arm = _eye_arm_for_cortex(current_model)
+
+        if widget is None:
+            receipt = _write_app_command_receipt(
+                action="describe_browser_photo",
+                ok=False,
+                app_name="Alice Browser",
+                note="no live AliceBrowserWidget with describe_current_photo",
+            )
+            self._append_system_line(f"Browser photo receipt: {receipt}", error=True)
+            return (
+                "I do not have my live Alice Browser photo organ loaded in this process yet. "
+                "Restart SIFTA OS, keep Alice Browser open on the page, then ask me to describe it again. "
+                "I will not invent the pixels."
+            )
+
+        # Re-read the page open RIGHT NOW first, so she describes the current photo,
+        # not a stale one (George 2026-05-30 "describe the page I currently have open").
+        try:
+            widget.refresh_current_page_state()
+        except Exception:
+            pass
+        try:
+            result = widget.describe_current_photo(current_arm=current_arm, current_model=current_model)
+        except Exception as exc:
+            receipt = _write_app_command_receipt(
+                action="describe_browser_photo",
+                ok=False,
+                app_name="Alice Browser",
+                note=f"describe_current_photo raised: {exc}",
+            )
+            self._append_system_line(f"Browser photo receipt: {receipt}", error=True)
+            return f"I reached my browser photo organ, but describing the current photo failed: {exc}"
+
+        status = str(result.get("status") or "").strip()
+        description = str(result.get("description") or "").strip()
+        arm = str(result.get("arm") or current_arm or "").strip()
+        ok = status == "described" and bool(description)
+        note = status or "no status"
+        if arm:
+            note += f"; arm={arm}"
+        receipt = _write_app_command_receipt(
+            action="describe_browser_photo",
+            ok=ok,
+            app_name="Alice Browser",
+            note=note,
+        )
+        self._append_system_line(f"Browser photo receipt: {receipt}", error=not ok)
+        diary_note = str(result.get("diary_note") or "").strip()
+        if diary_note:
+            self._append_system_line(f"Vision arm note: {diary_note}")
+        if ok:
+            eye = f" with {arm}" if arm else ""
+            return f"I looked at the current browser photo{eye}: {description}"
+        if status == "failed":
+            return (
+                "I tried to look at the current browser photo, but no vision description receipt came back. "
+                "I have the browser context, but I will not invent the photo contents."
+            )
+        return (
+            "I do not have a finished browser-photo description receipt yet. "
+            "Ask me again after the page settles, and I will look with my current vision arm."
+        )
 
     def _schedule_current_page_summary(self, delay_ms: int = 6500) -> None:
         """Summarize after Alice Browser has time to render and snapshot text."""
@@ -16317,6 +18001,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Now: explicit modality wins over the conf>0 heuristic.
         self._latest_turn_modality = "TYPED" if typed_turn else "SPOKEN"
         text = (text or "").strip()
+        # George 2026-05-30: bind a pending dropped image to this turn like a
+        # regular multimodal chatbot. The typed path already passes image_path;
+        # the spoken path historically ignored _pending_image_path entirely, so
+        # a dropped image never reached the cortex with a voice question and a
+        # garbled STT could leave it orphaned. Resolve here at the single turn
+        # chokepoint: bind on real text, hold on empty/garbled input.
+        _attach = _resolve_turn_attachment(
+            image_path, getattr(self, "_pending_image_path", None), bool(text)
+        )
+        if _attach["consume_pending"]:
+            image_path = _attach["image_path"]
+            self._pending_image_path = None
+            try:
+                self._attach_btn.setStyleSheet(self._attach_btn_default_style)
+            except Exception:
+                pass
+            try:
+                self._append_observable_processing(
+                    "Talk vision: pending dropped image bound to "
+                    f"{'typed' if typed_turn else 'spoken'} turn "
+                    f"({Path(image_path).name})."
+                )
+            except Exception:
+                pass
         if not text and not image_path:
             # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) —
             # do not silently return on empty STT text. Before this fix,
@@ -16331,6 +18039,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     _empty_msg = "I caught some audio but did not make out a word — say it once more."
                 else:
                     _empty_msg = "Audio reached my ear path, but the transcript came back empty. I logged the drop and kept listening."
+                if getattr(self, "_pending_image_path", None):
+                    _empty_msg += " The attached image is still staged for your next words."
                 _now = time.time()
                 _last_msg = getattr(self, "_last_empty_stt_fallback_msg", "")
                 _last_ts = float(getattr(self, "_last_empty_stt_fallback_ts", 0.0) or 0.0)
@@ -16718,16 +18428,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._busy = False
                 self._return_to_listening()
                 return
+        if not image_path:
+            image_path = self._consume_pending_image_for_turn(
+                text,
+                source="typed_turn" if typed_turn else "voice_or_inbox",
+            )
+
         display_text = text
         if not display_text and image_path:
             display_text = f"[Attached Image: {Path(image_path).name}]"
         self._append_user_line(display_text, conf)
-        self._start_brain(
-            text,
-            conf=conf,
-            already_displayed=True,
-            image_path=image_path,
-            typed_turn=typed_turn,
+        # r151-free-the-send-thread: GUI thread returns immediately after
+        # append + pill. The heavy prompt assembly now runs in the worker
+        # (or via singleShot fast-dispatch in this landing). No beachball.
+        self._busy = True
+        self._set_pill("thinking", "💭 thinking…")
+        try:
+            self._append_observable_processing("◆ assembling context…", reset=False)
+        except Exception:
+            pass
+        QTimer.singleShot(
+            0,
+            lambda t=text, c=conf, ip=image_path, tt=typed_turn: self._start_brain(
+                t, conf=c, already_displayed=True, image_path=ip, typed_turn=tt
+            ),
         )
 
     def _acer_lesson_intercept(self, text: str, conf: float) -> bool:
@@ -17444,12 +19168,42 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """
         _typed_turn = bool(typed_turn)
         text = (text or "").strip()
+        if not image_path:
+            image_path = self._consume_pending_image_for_turn(
+                text,
+                source="brain_direct",
+            )
         if not text and not image_path:
             self._busy = False
             self._pending_acoustic_fingerprint = {}
             self._return_to_listening()
             return
+        try:
+            self._append_observable_processing("Talk brain: preflight started.")
+            QApplication.processEvents()
+        except Exception:
+            pass
         chat_reflexes_enabled = _allow_pre_cortex_chat_reflexes()
+        try:
+            self._append_observable_processing("Talk brain: local reflex checks start.")
+            QApplication.processEvents()
+        except Exception:
+            pass
+
+        if not image_path:
+            try:
+                _typed_image_path = _extract_local_image_path_from_text(text)
+            except Exception:
+                _typed_image_path = None
+            if _typed_image_path:
+                image_path = _typed_image_path
+                try:
+                    self._append_observable_processing(
+                        f"Talk vision: local image path promoted to attachment ({Path(image_path).name})."
+                    )
+                    QApplication.processEvents()
+                except Exception:
+                    pass
 
         # If a prior Grok/xAI outage forced a local-cortex reflex switch while
         # the owner was away, deliver that queued notice on the next turn.
@@ -17700,7 +19454,74 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._pending_user_raw_text = text
         if not text.startswith("[WhatsApp "):
             self._pending_whatsapp_reply = None
-        model = self._current_brain_model(text)
+        forced_cortex_model = ""
+        visual_cortex_context = ""
+        browser_page_cortex_context = ""
+        attachment_cortex_context = ""
+        if image_path:
+            attachment_cortex_context = _attachment_context_prompt_block(
+                text,
+                image_path,
+                state_dir=_state_root(),
+            )
+        if image_path:
+            try:
+                from System.swarm_cortex_capabilities import (
+                    is_vision_capable_model as _is_vision_capable_model,
+                    prompt_block_for_selection as _visual_prompt_block,
+                    select_cortex_for_need as _select_cortex_for_need,
+                )
+
+                _current_for_need = self._current_brain_model(text)
+                _visual_selection = _select_cortex_for_need(
+                    "image_pixels",
+                    current_model=_current_for_need,
+                    query_text=text,
+                    state_dir=_state_root(),
+                    write=True,
+                )
+                forced_cortex_model = str(_visual_selection.get("selected_model") or "").strip()
+                visual_cortex_context = _visual_prompt_block(_visual_selection)
+                _visual_reason = str(_visual_selection.get("reason") or "unknown")
+                if forced_cortex_model and forced_cortex_model != _current_for_need:
+                    self._append_observable_processing(
+                        f"Talk vision: image turn routed {_current_for_need} -> {forced_cortex_model} ({_visual_reason})."
+                    )
+                else:
+                    self._append_observable_processing(
+                        f"Talk vision: image turn using cortex {forced_cortex_model or _current_for_need} ({_visual_reason})."
+                    )
+                if attachment_cortex_context:
+                    visual_cortex_context = (
+                        visual_cortex_context
+                        + "\n\n"
+                        + attachment_cortex_context
+                    )
+            except Exception as _visual_select_exc:
+                visual_cortex_context = (
+                    "CORTEX NEED SELECTOR: failed with "
+                    f"{type(_visual_select_exc).__name__}; use attachment receipt boundary."
+                )
+                if attachment_cortex_context:
+                    visual_cortex_context = (
+                        visual_cortex_context
+                        + "\n\n"
+                        + attachment_cortex_context
+                    )
+        if _is_browser_page_cortex_description_query(text):
+            try:
+                browser_page_cortex_context = self._browser_page_cortex_context_block(text)
+                if browser_page_cortex_context:
+                    self._append_observable_processing(
+                        "Talk browser: page receipt passed into cortex context."
+                    )
+            except Exception as _browser_ctx_exc:
+                browser_page_cortex_context = (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    f"Context assembly failed with {type(_browser_ctx_exc).__name__}; "
+                    "answer only from other available receipts."
+                )
+        model = forced_cortex_model or self._current_brain_model(text)
         route_bucket = classify_inference_query_bucket(text, app_context="talk_to_alice")
         self._current_cortex_route = {
             "bucket": route_bucket,
@@ -18063,7 +19884,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _app_command = _extract_sifta_app_command(text) if chat_reflexes_enabled else None
+        # George 2026-05-30: opening/closing/listing apps is a grounded EFFECTOR
+        # (real action + receipt, §7.2 tool-truth), NOT a chat-visible substitution.
+        # It must run regardless of the pre-cortex chat-reflex flag — that flag
+        # defaulting off is why Alice "forgot how to open and close apps". The
+        # parser already carries negation + continuation guards so plain
+        # conversation about apps does not misfire.
+        _app_command = _extract_sifta_app_command(text)
         if _app_command:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_sifta_app_command(_app_command)
@@ -18099,10 +19926,121 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        # ── Current Browser Photo Description Reflex ────────────────────
+        # When Alice Browser is the current limb, "describe this photo" must
+        # call the live browser organ that finds the featured image and routes
+        # it to the current cortex's vision arm. Attached images keep their
+        # own same-turn attachment path; this reflex is for the page already
+        # displayed inside Alice's browser body.
+        if (
+            not image_path
+            and _is_browser_photo_description_query(text)
+            and _browser_photo_description_context_active()
+            # George 2026-05-31: photo describes now flow to the cortex (vision arm =
+            # evidence, cortex = voice). The raw reflex only fires if the cortex path
+            # is NOT handling this turn — so it can never pre-empt the natural reply.
+            and not _is_browser_page_cortex_description_query(text)
+        ):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_current_browser_photo_description(text)
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_photo_description")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Current Browser Comments Summary Reflex ──────────────────────
+        # "Summarize the comments" must read the captured comment thread, not fall
+        # through to the cortex with no material (George 2026-05-30). Checked before
+        # the page-summary reflex so "summarize the comments" routes here.
+        if _is_comments_summary_query(text, history=self._history):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_current_comments_summary()
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_comments_summary")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Next photo / slideshow reflexes (George 2026-05-31) ──────────
+        if _is_stop_slideshow_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _w = _find_live_alice_browser_widget()
+            _stopped = bool(_w and _w.stop_photo_slideshow())
+            _reply = "Stopped the slideshow." if _stopped else "No slideshow was running."
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_slideshow")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
+            self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start(); self._busy = False; self._return_to_listening()
+            return
+        if _is_slideshow_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _w = _find_live_alice_browser_widget()
+            _iv = _extract_slideshow_interval(text)
+            _ok = bool(_w and _w.start_photo_slideshow(_iv))
+            _reply = (f"Starting a slideshow — a new photo every {int(_iv)} seconds. Say 'stop slideshow' to end it."
+                      if _ok else "I can't start the slideshow — Alice Browser isn't open.")
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_slideshow")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
+            self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start(); self._busy = False; self._return_to_listening()
+            return
+        if _is_next_photo_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _w = _find_live_alice_browser_widget()
+            _reply = "Next photo." if (_w and _w.go_next_photo()) else (
+                "Alice Browser isn't open, so there's no photo to advance.")
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_next_photo")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
+            self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start(); self._busy = False; self._return_to_listening()
+            return
+
+        # ── Current Page (live) Reflex ───────────────────────────────────
+        # "What page am I on? / describe this page" → read the LIVE browser window.
+        # Browser open => there is always a page, knowable now (George 2026-05-30).
+        if _is_current_page_query(text) and not _is_browser_page_cortex_description_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _spoken, _printed = self._execute_live_current_page()
+            self._history.append({"role": "assistant", "content": _printed})
+            _log_turn("alice", _printed, model="alice_browser_current_page_live")
+            self._append_alice_line(_printed)   # the print (a little more, clean)
+            self._tts = _TTSWorker(             # the mouth (one short human line)
+                _spoken, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         # ── Current Browser Page Summary Reflex ──────────────────────────
-        # Summaries must come from Alice Browser's rendered page snapshot,
-        # not from model guesses about "context".
-        if chat_reflexes_enabled and _is_webpage_summary_query(text):
+        # Raw "read/summarize page" can use the deterministic page-state
+        # summary. "Describe this Instagram/page/profile" is composition:
+        # give the page receipt to the cortex below instead of printing the
+        # DOM block as Alice's answer.
+        if _is_webpage_summary_query(text) and not _is_browser_page_cortex_description_query(text):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_current_page_summary()
             self._history.append({"role": "assistant", "content": _reply})
@@ -18634,28 +20572,47 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 _re_truth.IGNORECASE,
             )
             if text and _IMAGE_DESC_RE.search(text):
-                # Resolve current cortex's vision capability from kernel cascade.
+                # Resolve the per-turn cortex's vision capability. Typed image
+                # paths may have just promoted into image_path, and the selector
+                # may have routed this one turn to a visual-capable cortex.
                 _vision_capable = False
-                _active_model = ""
+                _active_model = model
                 try:
-                    from System.swarm_kernel_identity import ai_weight_name
-                    _active_model = str(ai_weight_name() or "").lower()
+                    from System.swarm_cortex_capabilities import is_vision_capable_model
+
+                    _vision_capable = is_vision_capable_model(_active_model)
                 except Exception:
-                    pass
-                # Heuristic: any tag containing a known vision needle.
-                for _needle in ("vision", "vl", "llava", "moondream", "multimodal",
-                                "gemma3", "qwen-vl", "minicpm", "internvl"):
-                    if _needle in _active_model:
-                        _vision_capable = True
-                        break
+                    _active_model = str(_active_model or "").lower()
+                    for _needle in ("vision", "vl", "llava", "moondream", "multimodal",
+                                    "gemma3", "qwen-vl", "minicpm", "internvl", "gemini", "kimi"):
+                        if _needle in _active_model:
+                            _vision_capable = True
+                            break
                 # Build the truthful refusal.
                 _vision_refusal = None
                 if not image_path:
-                    _vision_refusal = (
-                        "I do not see an image attached to this turn. "
-                        "If you meant to attach a screenshot, please paste it "
-                        "or click Attach — I will not invent what I cannot see."
-                    )
+                    # George r215: "describe the photo on screen" has no ATTACHED file, but
+                    # Alice Browser may have a photo on screen. The cortex-describe path above
+                    # (line ~19496) already ran her vision arm and injected the description as
+                    # VISUAL EVIDENCE. Do NOT refuse "no image attached" in that case — fall
+                    # through to the brain so it answers from what her eye actually saw. This
+                    # was the bug where codex saw the photo (cow-print bikini) but the chat
+                    # said "I do not see an image attached." Only refuse when there is truly
+                    # no attachment AND no browser photo to look at.
+                    _browser_photo_here = False
+                    try:
+                        _browser_photo_here = (
+                            _is_browser_page_cortex_description_query(text)
+                            or _browser_photo_description_context_active()
+                        )
+                    except Exception:
+                        _browser_photo_here = False
+                    if not _browser_photo_here:
+                        _vision_refusal = (
+                            "I do not see an image attached to this turn. "
+                            "If you meant to attach a screenshot, please paste it "
+                            "or click Attach — I will not invent what I cannot see."
+                        )
                 elif not _vision_capable:
                     try:
                         from System.swarm_attachment_vision_lane import (
@@ -18718,7 +20675,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         user_msg = {"role": "user", "content": processed_text}
         if image_path:
             try:
+                _image_attachment_path = Path(image_path).expanduser()
+                _image_attachment_bytes = _image_attachment_path.read_bytes()
+                _image_attachment_fmt = _image_attachment_format(_image_attachment_bytes)
                 user_msg["images"] = [_encode_ollama_image_attachment(image_path)]
+                user_msg["image_path"] = str(_image_attachment_path)
+                user_msg["image_mime"] = _image_attachment_mime_from_format(_image_attachment_fmt)
             except Exception as e:
                 self._append_system_line(f"(Image read error: {e})", error=True)
                 self._busy = False
@@ -19483,7 +21445,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # ── Phase B: new outbound send intent ──────────────────────
             # Uses SIFTA WhatsApp bridge. If the bridge has no synced target,
             # the effector queues an internal outbox row and does not touch macOS.
-            _wa_intent = extract_whatsapp_intent(text)
+            # r204 (cowork_claude 2026-05-29) — George: "I DID NOT ASK FOR WHATSAPP,
+            # REMOVE THAT." extract_whatsapp_intent was firing on bare "send <word>"
+            # text with no WhatsApp request at all — the phrase "primary send path"
+            # parsed "path" as a contact and queued an outbox row. §6 effector
+            # immunity: NEVER trigger the WhatsApp effector unless the owner
+            # EXPLICITLY named WhatsApp (literal token or the [WhatsApp ...] prefix).
+            _wa_lower = (text or "").lower()
+            _wa_explicit = ("whatsapp" in _wa_lower) or _wa_lower.lstrip().startswith("[whatsapp")
+            _wa_intent = extract_whatsapp_intent(text) if _wa_explicit else None
             if _wa_intent:
                 _wa_target, _wa_text = _wa_intent
                 _wa_result = _sifta_whatsapp_send(
@@ -19638,6 +21608,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # that turn dispatches LIVE through the cortex's TOOL_CALL
         # emission and the launcher's exact (non-evidence) mode.
 
+        try:
+            self._append_observable_processing("Talk brain: local reflex checks done; prompt assembly start.")
+            QApplication.processEvents()
+        except Exception:
+            pass
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
         # has spoken at any point in this conversational chunk and the
@@ -19646,7 +21621,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # blocks. The strictest signal is "last entry is a user turn",
         # which is what we just appended at line 2153 above.
         user_active = bool(history) and history[-1].get("role") == "user"
-        sysprompt = _current_system_prompt(user_active=user_active, user_text=text)
+        # r205 (cowork_claude 2026-05-29): the 40-builder base _current_system_prompt
+        # was the 43s GUI-thread beachball. It now builds in _BrainWorker.run() OFF the
+        # GUI thread. Here we build ONLY the cheap per-turn layering (starts empty) and
+        # hand it to the worker as layering_tail; the worker prepends the base. The full
+        # ~134k context is preserved — it is just assembled off the GUI thread now.
+        sysprompt = ""
         if self._planning_mode_active():
             try:
                 from System.swarm_planning_mode import planning_prompt_block
@@ -19657,11 +21637,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if _planning_context:
                 sysprompt = sysprompt + "\n\n" + _planning_context
         if _alice_grounding_enabled():
-            ctx = _build_swarm_context(text)
+            ctx = self._cached_swarm_context_for_turn(text)
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
         if steering_context:
             sysprompt = sysprompt + "\n\n" + steering_context
+        if visual_cortex_context:
+            sysprompt = sysprompt + "\n\n" + visual_cortex_context
+        if browser_page_cortex_context:
+            sysprompt = sysprompt + "\n\n" + browser_page_cortex_context
         if steering_self_context:
             sysprompt = sysprompt + "\n\n" + steering_self_context
         if steering_audit_context:
@@ -19794,12 +21778,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
-        messages = [{"role": "system", "content": sysprompt}] + history
-
+        try:
+            self._append_observable_processing(
+                f"Talk brain: layering built (base builds in worker, off GUI thread) "
+                f"layering_chars={len(sysprompt)} history={len(history)}."
+            )
+            QApplication.processEvents()
+        except Exception:
+            pass
+        # r201: Pass raw data to worker so the heavy _current_system_prompt + layering
+        # happens off the GUI thread. This eliminates the 43s beachball on Send.
+        # The old pre-built messages path is kept for the retry paths for now.
         self._streaming_response = []
         self._begin_alice_streaming_line()
+        self._append_observable_processing(
+            f"Talk brain: launching worker (deferred assembly) model={model}.",
+        )
+        try:
+            QApplication.processEvents()
+        except Exception:
+            pass
 
-        self._brain = _BrainWorker(model, messages, parent=self)
+        self._brain = _BrainWorker(
+            model,
+            history=None,  # will be built inside worker
+            parent=self,
+            user_text=text,
+            raw_history_for_assembly=history,
+            layering_tail=sysprompt,  # r205: cheap layering built on GUI; base prepended off-thread
+        )
         self._brain.tokenReceived.connect(self._on_token)
         self._brain.thinkingReceived.connect(self._on_thinking)
         self._brain.done.connect(self._on_brain_done)
@@ -19828,7 +21835,58 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 self._fast_ask_ticket = None
+        self._start_brain_wait_heartbeat(model)
         self._brain.start()
+
+    def _schedule_swarm_context_refresh(self, text: str = "") -> None:
+        """Refresh expensive prompt context away from the Send click path."""
+        if getattr(self, "_swarm_context_refreshing", False):
+            return
+        if not _alice_grounding_enabled():
+            return
+        self._swarm_context_refreshing = True
+
+        def _work() -> None:
+            try:
+                ctx = _build_swarm_context(text or "")
+                self._swarm_context_cache = ctx or ""
+                self._swarm_context_cache_ts = time.time()
+            except Exception as exc:
+                try:
+                    self._swarm_context_cache_error = f"{type(exc).__name__}: {exc}"
+                except Exception:
+                    pass
+            finally:
+                self._swarm_context_refreshing = False
+
+        threading.Thread(
+            target=_work,
+            name="sifta-swarm-context-refresh",
+            daemon=True,
+        ).start()
+
+    def _cached_swarm_context_for_turn(self, text: str = "") -> str:
+        """Return the latest context cache immediately; never beachball Send."""
+        now = time.time()
+        ctx = str(getattr(self, "_swarm_context_cache", "") or "")
+        age_s = now - float(getattr(self, "_swarm_context_cache_ts", 0.0) or 0.0)
+        fresh_for_s = float(os.environ.get("SIFTA_SWARM_CONTEXT_CACHE_S", "45") or 45.0)
+        if ctx and age_s <= fresh_for_s:
+            self._append_observable_processing(
+                f"Talk Send: using cached swarm context age={age_s:.1f}s.",
+            )
+            self._schedule_swarm_context_refresh(text)
+            return ctx
+        if ctx:
+            self._append_observable_processing(
+                f"Talk Send: using stale swarm context age={age_s:.1f}s; refresh running in background.",
+            )
+        else:
+            self._append_observable_processing(
+                "Talk Send: no cached swarm context yet; brain starts without blocking, refresh running in background.",
+            )
+        self._schedule_swarm_context_refresh(text)
+        return ctx
 
     def _cached_corvid_tag(self, text: str) -> str:
         """Return a recent Corvid classification for this exact text, if any."""
@@ -20020,6 +22078,37 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _on_direct_tool_worker_finished(self) -> None:
         self._direct_tool_worker = None
 
+    def _start_brain_wait_heartbeat(self, model: str) -> None:
+        """Show visible progress while a cloud/local model call is waiting."""
+        self._brain_heartbeat_started_ts = time.time()
+        self._brain_heartbeat_model = str(model or "unknown")
+        timer = getattr(self, "_brain_heartbeat_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setInterval(15000)
+            timer.timeout.connect(self._brain_wait_heartbeat_tick)
+            self._brain_heartbeat_timer = timer
+        try:
+            timer.start()
+        except Exception:
+            pass
+
+    def _stop_brain_wait_heartbeat(self) -> None:
+        timer = getattr(self, "_brain_heartbeat_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+
+    def _brain_wait_heartbeat_tick(self) -> None:
+        started = float(getattr(self, "_brain_heartbeat_started_ts", 0.0) or time.time())
+        elapsed = int(max(0.0, time.time() - started))
+        model = str(getattr(self, "_brain_heartbeat_model", "") or "unknown")
+        self._append_observable_processing(
+            f"Talk brain: still waiting for model={model} elapsed={elapsed}s."
+        )
+
     def _append_observable_processing(self, line: str, *, reset: bool = False) -> None:
         """Render receipt-backed process activity in the thinking pane.
 
@@ -20100,6 +22189,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # lines (<, >, &) can't break the markup. claude-opus-4-7 2026-05-25.
             if trimmed and hasattr(panel, "setPlainText"):
                 panel.setPlainText("".join(self._thinking_buffer))
+            elif hasattr(panel, "appendPlainText"):
+                panel.appendPlainText(clean)
             elif hasattr(panel, "appendHtml"):
                 import html as _html
                 _color = _arm_color_for_line(clean)
@@ -20115,6 +22206,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if hasattr(panel, "verticalScrollBar"):
                 sb = panel.verticalScrollBar()
                 sb.setValue(sb.maximum())
+            try:
+                QApplication.processEvents()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -20583,6 +22678,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
              talking, suppress vocalization and log the biological reason.
           4. If SSP green-lights → speak the cleaned reply.
         """
+        self._stop_brain_wait_heartbeat()
         # Mark the thinking trace as closed so the next turn starts
         # fresh in the panel. The buffer stays so the architect can
         # scroll back through this turn's reasoning if he wants.
@@ -20914,6 +23010,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     _alice_mark_thinking(topic="post_bash_cortex", model=str(model_name_next or ""))
                 except Exception:
                     pass
+                self._start_brain_wait_heartbeat(model_name_next)
                 self._brain.start()
                 return
 
@@ -21473,6 +23570,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             _alice_mark_thinking(topic="epistemic_retry", model=str(model_name_next or ""))
                         except Exception:
                             pass
+                        self._start_brain_wait_heartbeat(model_name_next)
                         self._brain.start()
                         return
     
@@ -21943,6 +24041,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
 
     def _on_brain_failed(self, msg: str) -> None:
+        self._stop_brain_wait_heartbeat()
         self._stigtime_shift("idle", f"brain_failed:{msg[:80]}")
         route = getattr(self, "_current_cortex_route", {}) or {}
         try:
@@ -22039,7 +24138,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_tts_failed(self, msg: str) -> None:
         self._busy = False
-        self._append_system_line(msg, error=True)
+        clean = str(msg or "")
+        if "voice ran past its budget" in clean:
+            self._append_system_line("(voice skipped: answer is printed above.)", error=False)
+            self.set_status("Answer printed; voice skipped.")
+            self._return_to_listening()
+            return
+        self._append_system_line(clean, error=True)
         self.set_status("TTS failed.")
         self._return_to_listening()
 

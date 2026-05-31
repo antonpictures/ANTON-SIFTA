@@ -137,6 +137,74 @@ def test_hear_widget_constructs_and_clears_singleton_on_close(monkeypatch):
     assert id(w) not in hear.TeachAliceToHearWidget._initialized_instance_ids
 
 
+def test_bonsai_widget_constructs_before_singleton_reentry():
+    import Applications.sifta_bonsai_image_app as bonsai
+
+    _app()
+    bonsai.BonsaiImageStudioApp._live_instance = None
+    bonsai.BonsaiImageStudioApp._initialized_instance_ids.clear()
+
+    w = bonsai.BonsaiImageStudioApp()
+    assert w.windowTitle() == "Bonsai Image Studio"
+    assert bonsai.BonsaiImageStudioApp._live_instance is w
+    assert id(w) in bonsai.BonsaiImageStudioApp._initialized_instance_ids
+    button_texts = [button.text() for button in w.findChildren(QtWidgets.QPushButton)]
+    assert "Ant Cortex Compose" in button_texts
+    assert "Generate & Teach" in button_texts
+    assert w._idle_timer.isActive()
+
+    again = bonsai.BonsaiImageStudioApp()
+    assert again is w
+
+    w.close()
+    bonsai.BonsaiImageStudioApp._clear_live_instance(id(w))
+    assert bonsai.BonsaiImageStudioApp._live_instance is None
+    assert id(w) not in bonsai.BonsaiImageStudioApp._initialized_instance_ids
+
+
+def test_bonsai_widget_generate_stays_idle_when_backend_missing(monkeypatch):
+    import Applications.sifta_bonsai_image_app as bonsai
+
+    _app()
+    bonsai.BonsaiImageStudioApp._live_instance = None
+    bonsai.BonsaiImageStudioApp._initialized_instance_ids.clear()
+    monkeypatch.delenv("SIFTA_BONSAI_DEMO_DIR", raising=False)
+
+    w = bonsai.BonsaiImageStudioApp()
+    w.prompt.setText("A bonsai tree in a quiet studio")
+    w._on_generate()
+
+    assert w._worker is None
+    assert w.generate_btn.isEnabled()
+    assert w.status.text().startswith("Idle. Bonsai generation backend is not ready:")
+
+    w.close()
+    bonsai.BonsaiImageStudioApp._clear_live_instance(id(w))
+
+
+def test_bonsai_widget_accepts_desktop_idle_hook():
+    import Applications.sifta_bonsai_image_app as bonsai
+
+    _app()
+    bonsai.BonsaiImageStudioApp._live_instance = None
+    bonsai.BonsaiImageStudioApp._initialized_instance_ids.clear()
+
+    w = bonsai.BonsaiImageStudioApp()
+    result = w.mark_idle_from_desktop(
+        reason="chat_desktop_selected",
+        desktop_mode="chat",
+        app_name="Bonsai Image Studio",
+    )
+
+    assert result["ok"] is True
+    assert result["idle"] is True
+    assert result["running"] is False
+    assert w.status.text().startswith("Idle. Bonsai remains open in the background")
+
+    w.close()
+    bonsai.BonsaiImageStudioApp._clear_live_instance(id(w))
+
+
 def test_hear_widget_has_no_generic_monospace_font_family():
     src = Path("Applications/sifta_teach_alice_to_hear.py").read_text(encoding="utf-8")
 

@@ -37,7 +37,7 @@ _REPO = Path(__file__).resolve().parents[1]
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "stigmergic_computer_use.jsonl"
 
-# We also feed the main organ field so the 17-organ ring sees computer use activity
+# We also feed the main organ field so the organ ring sees computer use activity.
 _ORGAN_FIELD = _STATE / "organ_field_vector.jsonl"
 
 

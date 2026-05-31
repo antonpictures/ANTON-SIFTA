@@ -6,6 +6,10 @@ synchronously on the Qt main thread, beachballing the UI for ~7s every
 tick. Round 93 moves the tick onto a daemon thread and reschedules the
 next tick from the main thread immediately.
 
+Round 214 keeps that anti-beachball contract but isolates the heavy producer
+tick into a child process on Python 3.14+, where in-process C-extension thread
+mixing has produced native CPython GC crashes.
+
 PyQt6 is not in the Linux sandbox; tests verify the wiring by static
 source inspection.
 """
@@ -34,7 +38,7 @@ def test_widget_still_parses_after_threading_fix():
 
 
 def test_body_writer_tick_uses_threading():
-    """The fix must spawn a daemon Thread named 'body_writer_tick'."""
+    """Legacy runtimes still spawn a daemon Thread named 'body_writer_tick'."""
     src = _src()
     # Isolate the _body_writer_tick method block (Python doesn't use braces,
     # so split between method defs instead of regex over the whole file).
@@ -51,8 +55,8 @@ def test_body_writer_tick_uses_threading():
 
 
 def test_body_writer_tick_calls_tick_writer_organs_inside_worker():
-    """tick_writer_organs must be called from the worker, NOT from the
-    main thread directly."""
+    """The legacy in-process tick must still call tick_writer_organs from the
+    worker, NOT from the main thread directly."""
     src = _src()
     # Locate the _body_writer_tick block
     block_match = re.search(
@@ -69,6 +73,48 @@ def test_body_writer_tick_calls_tick_writer_organs_inside_worker():
     assert call_pos > worker_pos, (
         "tick_writer_organs must be inside the _worker, not on the main thread"
     )
+
+
+def test_python314_body_writer_tick_uses_isolated_subprocess():
+    """Python 3.14+ must not run the heavy producers in the GUI address space."""
+    src = _src()
+    block_match = re.search(
+        r"def _body_writer_tick_isolated_mode\(self\) -> bool:(.*?)def _write_body_writer_tick_supervisor_receipt",
+        src,
+        re.DOTALL,
+    )
+    assert block_match is not None, "could not locate isolation mode helper"
+    mode_block = block_match.group(1)
+    assert "sys.version_info >= (3, 14)" in mode_block
+
+    start_match = re.search(
+        r"def _start_body_writer_tick_subprocess\(self\) -> None:(.*?)def _poll_body_writer_tick_subprocess",
+        src,
+        re.DOTALL,
+    )
+    assert start_match is not None, "could not locate subprocess starter"
+    start_block = start_match.group(1)
+    assert "subprocess.Popen(" in start_block
+    assert "tick_writer_organs" in start_block
+    assert "PYTHONPATH" in start_block
+    assert "QTimer.singleShot" in start_block
+
+
+def test_isolated_subprocess_poll_writes_failure_receipts():
+    """A failed child process must leave a grounded supervisor row."""
+    src = _src()
+    assert "BODY_WRITER_TICK_SUPERVISOR_V1" in src
+    poll_match = re.search(
+        r"def _poll_body_writer_tick_subprocess\(self\) -> None:(.*?)def _body_writer_tick\(self\) -> None:",
+        src,
+        re.DOTALL,
+    )
+    assert poll_match is not None, "could not locate subprocess poller"
+    poll_block = poll_match.group(1)
+    assert "proc.poll()" in poll_block
+    assert "proc.kill()" in poll_block
+    assert "subprocess_failed" in poll_block
+    assert "_body_writer_tick_in_flight = False" in poll_block
 
 
 def test_in_flight_guard_present():

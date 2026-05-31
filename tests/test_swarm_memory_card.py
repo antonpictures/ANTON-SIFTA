@@ -26,9 +26,19 @@ def tmp_ledgers(tmp_path):
 
 def test_empty_ledgers_returns_empty_card(tmp_ledgers):
     with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_app_limb_context", return_value=""), \
          patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
          patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
-         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+         patch("System.swarm_memory_card._fetch_owner_somatic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_owner_carbon_body", return_value=""), \
+         patch("System.swarm_memory_card._fetch_media_capability", return_value=""), \
+         patch("System.swarm_memory_card._fetch_vision_arms_awareness", return_value=""), \
+         patch("System.swarm_memory_card._fetch_browser_context", return_value=""), \
+         patch("System.swarm_memory_card._fetch_taste_consequence", return_value=""), \
+         patch("System.swarm_memory_card._fetch_active_plan", return_value=""), \
+         patch("System.swarm_memory_card._fetch_arm_session", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""), \
+         patch("System.swarm_memory_card._fetch_continuity_capsule", return_value=""):
         card = compose_memory_card(tmp_ledgers, token_budget=2000)
     assert isinstance(card, MemoryCard)
     assert card.truth_label == TRUTH_LABEL
@@ -71,6 +81,235 @@ def test_format_for_prompt_includes_restart_continuity_capsule():
     result = format_for_prompt(card)
     assert "RESTART CONTINUITY CAPSULE" in result
     assert "capsule_id=abc" in result
+
+
+def test_memory_card_includes_app_body_state_before_action(tmp_ledgers):
+    from System.swarm_app_action_diary import record_app_action
+
+    record_app_action("Alice Browser", "open", now=1000.0, state_dir=tmp_ledgers)
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=2000)
+
+    prompt = format_for_prompt(card)
+    assert "APP-BODY STATE" in prompt
+    assert "Alice Browser" in prompt
+    assert "read this BEFORE" in prompt
+
+
+def test_memory_card_includes_current_browser_context(tmp_ledgers):
+    from System.swarm_browser_context import publish_browser_context
+
+    publish_browser_context(
+        url="https://example.com/",
+        title="Example Browser Surface",
+        media_status={"ok": True},
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=2000)
+
+    prompt = format_for_prompt(card)
+    assert "CURRENT BROWSER CONTEXT" in prompt
+    assert "Example Browser Surface" in prompt
+
+
+def test_memory_card_includes_browser_site_category_features(tmp_ledgers):
+    from System.swarm_browser_stigmergic_memory import record_snapshot_memory
+
+    record_snapshot_memory(
+        url="https://www.tiktok.com/@barbellinaa",
+        title="barbellinaa | TikTok",
+        page_text="TikTok Search Following 430.9K Followers 11.9M Likes Message",
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=2400)
+
+    prompt = format_for_prompt(card)
+    assert "BROWSER SITE CATEGORIES" in prompt
+    assert "tiktok.com" in prompt
+    assert "TikTok search" in prompt
+
+
+def test_memory_card_includes_current_site_operation_playbook(tmp_ledgers):
+    from System.swarm_browser_context import publish_browser_context
+    from System.swarm_browser_stigmergic_memory import record_snapshot_memory
+
+    record_snapshot_memory(
+        url="https://www.tiktok.com/@barbellinaa",
+        title="barbellinaa | TikTok",
+        page_text="TikTok Search Following 430.9K Followers 11.9M Likes Message",
+        state_dir=tmp_ledgers,
+    )
+    publish_browser_context(
+        url="https://www.tiktok.com/@barbellinaa",
+        title="barbellinaa | TikTok",
+        media_status={"ok": True},
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=4000)
+
+    prompt = format_for_prompt(card)
+    assert "HOW TO USE tiktok.com IN ALICE BROWSER" in prompt
+    assert "search" in prompt
+    assert "https://www.tiktok.com/search?q=<query>" in prompt
+
+
+def test_memory_card_includes_browser_page_state_contents(tmp_ledgers):
+    from System.swarm_browser_page_state import record_page_state
+
+    record_page_state(
+        "https://www.instagram.com/lialinxo/",
+        title="lialinxo - Instagram",
+        text="lialinxo Los Angeles California Suggested for you",
+        headings=["lialinxo", "Suggested for you"],
+        links=[{"text": "Home", "href": "/"}],
+        images=[{"alt": "person in white top", "src": "i.jpg"}],
+        now=1000.0,
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=5000)
+
+    prompt = format_for_prompt(card)
+    assert "WHAT IS ON MY SCREEN" in prompt
+    assert "lialinxo" in prompt
+    assert "rendered DOM" in prompt
+
+
+def test_memory_card_includes_image_vision_arm_failover(tmp_ledgers):
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(
+            tmp_ledgers,
+            token_budget=5000,
+            user_text="look at this screenshot in Alice Browser",
+        )
+
+    prompt = format_for_prompt(card)
+    assert "MY EYES FOR IMAGES" in prompt
+    assert "codex_agent" in prompt
+    assert "claude_agent" in prompt
+    assert "NOT limited to Kimi" in prompt
+    assert "BROWSER SCREENSHOT RULE" in prompt
+    assert "web-page contents" in prompt
+
+
+def test_memory_card_includes_mutable_site_search_interests(tmp_ledgers):
+    from System.swarm_browser_context import publish_browser_context
+    from System.swarm_browser_site_playbook import record_site_search
+
+    record_site_search("tiktok.com", "mercedes", now=100.0, state_dir=tmp_ledgers)
+    record_site_search("tiktok.com", "ferrari", now=200.0, state_dir=tmp_ledgers)
+    publish_browser_context(
+        url="https://www.tiktok.com/search?q=ferrari",
+        title="ferrari | TikTok",
+        media_status={"ok": True},
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=5000)
+
+    prompt = format_for_prompt(card)
+    assert "RECENT SITE SEARCH INTERESTS" in prompt
+    assert prompt.find("ferrari") < prompt.find("mercedes")
+    assert "do not treat as permanent preference" in prompt
+
+
+def test_memory_card_includes_taste_consequence_learning(tmp_ledgers):
+    from System.swarm_taste_consequence_learning import (
+        predict_action_consequence,
+        record_action_outcome,
+        record_taste_trace,
+    )
+
+    record_taste_trace("tiktok.com", "ferrari", now=100.0, state_dir=tmp_ledgers)
+    preview = predict_action_consequence(
+        {"kind": "browser.search", "domain": "tiktok.com", "query": "ferrari"},
+        state_dir=tmp_ledgers,
+    )
+    record_action_outcome(
+        preview,
+        {"url": "https://www.tiktok.com/search?q=wrong"},
+        mistake=True,
+        correction="query was stale",
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=5000)
+
+    prompt = format_for_prompt(card)
+    assert "STIGMERGIC TASTE" in prompt
+    assert "MISTAKE LEARNING" in prompt
+    assert "query was stale" in prompt
+
+
+def test_memory_card_includes_action_prediction_learning(tmp_ledgers):
+    from System.swarm_action_prediction import observe, predict
+
+    predict(
+        "open browser",
+        "Alice Browser opens",
+        state_dir=tmp_ledgers,
+    )
+    observe(
+        "open browser",
+        "Alice Browser did not open",
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=5000)
+
+    prompt = format_for_prompt(card)
+    assert "ACTION PREDICTION & LEARNING" in prompt
+    assert "MISTAKE" in prompt
+
+
+def test_memory_card_includes_google_search_playbook(tmp_ledgers):
+    from System.swarm_browser_context import publish_browser_context
+
+    publish_browser_context(
+        url="https://www.google.com/",
+        title="Google",
+        media_status={"ok": True},
+        state_dir=tmp_ledgers,
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=4000)
+
+    prompt = format_for_prompt(card)
+    assert "HOW TO USE google.com IN ALICE BROWSER" in prompt
+    assert "https://www.google.com/search?q=<query>" in prompt
 
 
 def test_estimate_tokens():

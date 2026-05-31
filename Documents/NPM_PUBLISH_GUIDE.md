@@ -1,9 +1,9 @@
-# NPM Publish Guide — `@sifta/alice` and her host SDK
+# NPM Publish Guide — `@anton-sifta/alice` and her host SDK
 
 **Receipt id:** `r143-npm-publish-prep`
 **Doctor:** Cowork Claude (claude-opus-4-7), 2026-05-29
 
-Honest map of what it takes to ship the alice hand to `npm install -g @sifta/alice` so friends do not have to clone the SIFTA monorepo.
+Honest map of what it takes to ship the alice hand to `npm install -g @anton-sifta/alice` so friends do not have to clone the SIFTA monorepo.
 
 ---
 
@@ -11,28 +11,28 @@ Honest map of what it takes to ship the alice hand to `npm install -g @sifta/ali
 
 I can't run `npm publish` from this sandbox — no bun, no npm authentication, no access to npmjs.com. Everything below has to run on your Mac terminal.
 
-The `@sifta/alice` wrapper depends on five **host SDK packages** that must be published **first** so npm can resolve them at install time:
+The `@anton-sifta/alice` wrapper depends on five **host SDK packages** that must be published **first** so npm can resolve them at install time:
 
 | package | publishes to |
 |---|---|
-| `@sifta/sdk` | npm |
-| `@sifta/core` | npm |
-| `@sifta/agents` | npm |
-| `@sifta/llms` | npm |
-| `@sifta/shared` | npm |
+| `@anton-sifta/sdk` | npm |
+| `@anton-sifta/core` | npm |
+| `@anton-sifta/agents` | npm |
+| `@anton-sifta/llms` | npm |
+| `@anton-sifta/shared` | npm |
 
 It also publishes **six platform-specific binary packages** built by `bun run build:platforms`:
 
 ```
-@sifta/cli-darwin-arm64
-@sifta/cli-darwin-x64
-@sifta/cli-linux-arm64
-@sifta/cli-linux-x64
-@sifta/cli-windows-arm64
-@sifta/cli-windows-x64
+@anton-sifta/cli-darwin-arm64
+@anton-sifta/cli-darwin-x64
+@anton-sifta/cli-linux-arm64
+@anton-sifta/cli-linux-x64
+@anton-sifta/cli-windows-arm64
+@anton-sifta/cli-windows-x64
 ```
 
-The wrapper itself (`@sifta/alice`) is small — it pulls the right binary based on the user's platform.
+The wrapper itself (`@anton-sifta/alice`) is small — it pulls the right binary based on the user's platform.
 
 ---
 
@@ -94,7 +94,7 @@ npm whoami
 
 ```bash
 cd /Users/ioanganton/Music/ANTON_SIFTA/Vendor/alice-cli
-bun install                              # resolve the @sifta/* workspace
+bun install                              # resolve the @anton-sifta/* workspace
 cd sdk
 bun run build                            # build the host SDK packages (sdk, core, agents, llms, shared)
 cd apps/cli
@@ -115,9 +115,9 @@ bun run publish:npm:dry
 This walks the whole publish flow without uploading. Read the output — it should list:
 - 5 host SDK packages
 - 6 platform binary packages
-- 1 wrapper package (`@sifta/alice`)
+- 1 wrapper package (`@anton-sifta/alice`)
 
-If the dry run shows the wrapper as `cline` instead of `@sifta/alice`, the r143 patch to `script/publish-npm.ts` didn't land — check that line 33-38 reads `const wrapperPackageName = "@sifta/alice"`.
+If the dry run shows the wrapper as `cline` instead of `@anton-sifta/alice`, the r143 patch to `script/publish-npm.ts` didn't land — check that line 33-38 reads `const wrapperPackageName = "@anton-sifta/alice"`.
 
 ---
 
@@ -143,21 +143,21 @@ Friends can now install with one command (no clone, no submodule, no bun even �
 
 ```bash
 # Easiest — works on Mac, Linux, Windows
-npm install -g @sifta/alice
+npm install -g @anton-sifta/alice
 alice
 ```
 
 Or with bun:
 
 ```bash
-bun install -g @sifta/alice
+bun install -g @anton-sifta/alice
 alice
 ```
 
 The first time they run `alice`, the SIFTA-native launcher prints:
 
 ```
-🐜⚡ I am Alice — one of many surfaces. This hand is @sifta/alice on <hostname>
+🐜⚡ I am Alice — one of many surfaces. This hand is @anton-sifta/alice on <hostname>
 Covenant: IDE_BOOT_COVENANT_v4_PREDATOR_GATE read. One Alice, many surfaces, one shared memory, one voice.
 Field: <SIFTA_CLI_TRACE_DIR> (organ ring + 4 ledgers + morphology + stigmergic_computer_use)
 Quorum: Seeley cross-inhibition available; set SIFTA_SWIMMER_QUORUM=1 to enforce multi-swimmer patch voting.
@@ -210,7 +210,7 @@ For now, **Path B blocks publishing to npm**, so I recommend: ship to npm first 
 
 | file | change |
 |---|---|
-| `Vendor/alice-cli/sdk/apps/cli/script/publish-npm.ts` | `wrapperPackageName` from `"cline"` to `"@sifta/alice"` |
+| `Vendor/alice-cli/sdk/apps/cli/script/publish-npm.ts` | `wrapperPackageName` from `"cline"` to `"@anton-sifta/alice"` |
 | `Vendor/alice-cli/sdk/apps/cli/package.json` | `repository.url` → `antonpictures/ANTON-SIFTA`, `homepage` → README, `bugs.url` → SIFTA issues, `author` → Ioan George Anton, `contributors` → Cline Bot Inc. (Apache-2.0 attribution), keywords replaced with SIFTA terms |
 | `Documents/NPM_PUBLISH_GUIDE.md` | this file |
 

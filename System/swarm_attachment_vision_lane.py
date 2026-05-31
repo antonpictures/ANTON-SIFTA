@@ -453,7 +453,62 @@ __all__ = [
     "describe_attachment_for_talk",
     "inspect_attachment_image",
     "write_attachment_vision_receipt",
+    "attachment_to_cortex_text_block",
 ]
+
+
+def attachment_to_cortex_text_block(
+    image_path: str | Path,
+    *,
+    user_text: str = "",
+    state_dir: str | Path | None = None,
+) -> str:
+    """
+    Returns a clean, prompt-ready textual block that any surface (Talk widget,
+    Ace teaching app, direct drops) can include in the user turn so the cortex
+    receives the image as first-class text input — exactly like regular chatbots.
+
+    This closes the "image went separate" gap: the caller gets OCR + metadata
+    + layout in one string that can be prepended or merged into the message
+    content before the prompt is built.
+    """
+    summary = inspect_attachment_image(
+        image_path,
+        user_text=user_text,
+        state_dir=state_dir,
+        write=True,
+    )
+    if not summary.ok:
+        return f"[ATTACHED IMAGE UNREADABLE: {summary.error}]"
+
+    lines = []
+    lines.append("[USER ATTACHED IMAGE — OCR + LAYOUT RECEIPT]")
+    lines.append(f"File: {Path(image_path).name} | Format: {summary.image_format.upper()} | {summary.width or '?'}x{summary.height or '?'} | {summary.byte_count} bytes | sha256[:12]={summary.sha256[:12]}")
+
+    if summary.ocr_rows:
+        lines.append("OCR TEXT (grounded, local macOS Vision):")
+        for row in summary.ocr_rows[:15]:  # keep it bounded for prompt
+            t = str(row.get("text", "")).strip()
+            if t:
+                lines.append(f"  • {t}")
+
+    if summary.zone_labels:
+        z = summary.zone_labels
+        labels = []
+        for zone in ("left", "middle", "right"):
+            if z.get(zone):
+                labels.append(f"{zone}: {', '.join(z[zone])}")
+        if labels:
+            lines.append("Layout zones (OCR-derived): " + "; ".join(labels) + ".")
+
+    if summary.self_screenshot and summary.self_screenshot.get("ok"):
+        lines.append("Self-screenshot evidence: detected (Alice's own output in the frame).")
+
+    lines.append("TRUTH BOUNDARY: Local receipt only. No full scene caption or pixel invention. Use this text as the image's voice in the field.")
+    if user_text.strip():
+        lines.append(f"Accompanying user text: {user_text.strip()}")
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

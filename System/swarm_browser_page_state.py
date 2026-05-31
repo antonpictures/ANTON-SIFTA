@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""Browser page-state perception — Alice reads what is actually on the page.
+
+George 2026-05-30 live bug: Alice opened the browser and loaded instagram.com,
+but when George asked "what is now displayed on the screen?" she could only say
+"no action receipt yet." She had the URL/title lane (swarm_browser_page_answer)
+but NOT the rendered-content lane: `toPlainText` returns empty on JS-rendered
+SPAs (Instagram, TikTok), so she could name the address but never the contents.
+
+Alice's own diagnosis (her voice, 2026-05-30 16:30): build the page-state receipt
+with a DOM summary + freshness first — "that is the missing body part." This organ
+is that receipt store and read path. The live browser widget runs a JS extractor
+in the RENDERED page (which sees SPA content `toPlainText` misses) and calls
+`record_page_state(...)`; cortex/Talk answer "what's on the screen" from the
+freshest receipt via `page_state_block(...)`, with honest provenance and freshness.
+
+Provenance is split, never conflated (§6 tool-truth):
+  * source="dom"      — read from the rendered DOM (text, headings, links, images)
+  * source="viewport" — a screenshot/OCR caption of the visible pixels (later organ)
+Freshness is a content hash + timestamp so she knows current page vs stale memory.
+
+Pure + file-backed; sandbox-testable with an injected state_dir.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import time
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+STATE_DIR = REPO_ROOT / ".sifta_state"
+LEDGER = "browser_page_state.jsonl"
+TRUTH_LABEL = "BROWSER_PAGE_STATE_V1"
+
+_SRC_DOM = "dom"
+_SRC_VIEWPORT = "viewport"
+_EXCERPT_CHARS = 600
+_TOP_N = 8
+
+
+def _state(state_dir: Optional[Path | str]) -> Path:
+    if state_dir is None:
+        return STATE_DIR
+    p = Path(state_dir)
+    return p if p.name == ".sifta_state" else (p / ".sifta_state")
+
+
+def _domain(url: str) -> str:
+    try:
+        return urlparse(url or "").netloc
+    except Exception:
+        return ""
+
+
+def _clip_list(items: Any, n: int = _TOP_N) -> list:
+    if not isinstance(items, (list, tuple)):
+        return []
+    return [x for x in list(items)[:n] if x not in (None, "")]
+
+
+_TS_RE = re.compile(r"^\s*\d+\s*[smhdwy]\s*$", re.IGNORECASE)  # "3w", "139w", "5h", "2d"
+_COMMENT_NOISE_RE = re.compile(
+    r"^(reply|see translation|liked by|follow|following|verified|view replies?.*|"
+    r"\d+\s*(likes?|repl(?:y|ies))|reply see translation)$", re.IGNORECASE)
+
+
+_TRAIL_CHROME_RE = re.compile(
+    r"\s*(?:·\s*)?(?:Reply|See translation|Liked by.*|View replies?.*|"
+    r"\d+\s*(?:likes?|repl(?:y|ies)))\s*$", re.IGNORECASE)
+
+# Instagram footer/nav words + system pseudo-handles the scraper mistakes for
+# commenters (George 2026-05-30: it captured 'About: Blog Jobs Help API …').
+_NAV_HANDLES = {
+    "about", "blog", "jobs", "help", "api", "privacy", "terms", "locations",
+    "popular", "contact", "threads", "meta", "lite", "verified", "instagram",
+    "developer", "legal", "directory", "accounts", "ai", "consumer", "health",
+    "home", "explore", "reels", "messages", "notifications", "search", "profile",
+}
+_FOOTER_WORDS = ("blog", "jobs", "help", "api", "privacy", "terms", "locations",
+                 "popular", "meta", "threads", "contact", "lite", "verified",
+                 "instagram", "uploading", "consumer", "health")
+_TITLECASE_RE = re.compile(r"^[A-Z][a-z]+$")   # "About", "Blog", "Ibiza"
+_ALLCAPS_RE = re.compile(r"^[A-Z]{2,}$")        # "API"
+
+
+def _looks_like_nav(author: str, text: str) -> bool:
+    """True when an author/text pair is Instagram chrome (footer/nav/highlight),
+    not a real comment. Real IG handles are lowercase with dots/digits; the noise
+    is Title-Case or ALL-CAPS single words and footer-link soup."""
+    a = (author or "").strip()
+    if a.lower() in _NAV_HANDLES:
+        return True
+    if _TITLECASE_RE.match(a) or _ALLCAPS_RE.match(a):
+        return True  # IG usernames are not single Title-Case/ALL-CAPS words
+    low = (text or "").lower()
+    if sum(1 for w in _FOOTER_WORDS if w in low) >= 3:
+        return True  # footer link soup ("Blog Jobs Help API Privacy Terms …")
+    return False
+
+
+def _scrub_comment_text(text: str) -> str:
+    """Strip trailing UI chrome (Reply / See translation / likes / timestamps).
+    Loops so stacked chrome like 'Reply See translation' is fully removed."""
+    t = " ".join(str(text or "").split())
+    for _ in range(5):
+        new = _TRAIL_CHROME_RE.sub("", t).strip()
+        if new == t:
+            break
+        t = new
+    t = re.sub(r"^\s*\d+\s*[smhdwy]\s+", "", t, flags=re.IGNORECASE)  # leading timestamp
+    return t.strip()
+
+
+def _clean_comments(comments: Any, n: int = 40) -> list[dict[str, str]]:
+    """Normalize captured comment-like blocks to [{author, text}], dropping the
+    timestamp/UI noise the heuristic scrape picks up (George 2026-05-30: it was
+    capturing '3w'/'Reply See translation' as comments)."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if not isinstance(comments, (list, tuple)):
+        return out
+    for c in comments:
+        if not isinstance(c, dict):
+            continue
+        author = str(c.get("author") or "").strip()[:60]
+        if _TS_RE.match(author) or _COMMENT_NOISE_RE.match(author):
+            continue  # a timestamp or UI word is not a commenter
+        text = _scrub_comment_text(c.get("text") or "")[:240]
+        if not text or len(text) < 3 or _COMMENT_NOISE_RE.match(text):
+            continue
+        if _looks_like_nav(author, text):
+            continue  # Instagram footer/nav/highlight, not a real comment
+        key = (author + "|" + text).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"author": author, "text": text})
+        if len(out) >= n:
+            break
+    return out
+
+
+def _content_hash(url: str, text: str, headings: list) -> str:
+    raw = "|".join([url or "", (text or "")[:2000], " ".join(str(h) for h in headings)])
+    return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _append(state_dir: Optional[Path | str], row: dict[str, Any]) -> None:
+    path = _state(state_dir) / LEDGER
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _last_row(state_dir: Optional[Path | str]) -> dict[str, Any]:
+    try:
+        last = ""
+        with (_state(state_dir) / LEDGER).open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    last = line.strip()
+        return json.loads(last) if last else {}
+    except Exception:
+        return {}
+
+
+def record_page_state(
+    url: str,
+    title: str = "",
+    *,
+    text: str = "",
+    headings: Optional[list] = None,
+    links: Optional[list] = None,
+    buttons: Optional[list] = None,
+    images: Optional[list] = None,
+    scroll: Optional[dict] = None,
+    featured_image: str = "",
+    comments: Optional[list] = None,
+    source: str = _SRC_DOM,
+    now: Optional[float] = None,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Record one structured perception of the page Alice's browser is showing.
+
+    `links` items may be plain strings or {text, href} dicts; `images` items may be
+    plain alt strings or {alt, src} dicts. Everything is clipped to top-N for the
+    receipt so the ledger stays small and the cortex block stays readable.
+    """
+    ts = float(now if now is not None else time.time())
+    text = str(text or "")
+    headings = _clip_list(headings)
+    links = _clip_list(links, n=12)
+    buttons = _clip_list(buttons)
+    images = _clip_list(images, n=12)
+
+    def _link_text(x: Any) -> str:
+        if isinstance(x, dict):
+            return str(x.get("text") or x.get("href") or "")
+        return str(x)
+
+    def _img_alt(x: Any) -> str:
+        if isinstance(x, dict):
+            return str(x.get("alt") or x.get("src") or "")
+        return str(x)
+
+    row = {
+        "ts": ts,
+        "truth_label": TRUTH_LABEL,
+        "kind": "page_state",
+        "source": _SRC_VIEWPORT if source == _SRC_VIEWPORT else _SRC_DOM,
+        "url": str(url or ""),
+        "title": str(title or ""),
+        "domain": _domain(url),
+        "text_chars": len(text),
+        "text_excerpt": text[:_EXCERPT_CHARS],
+        "headings": [str(h) for h in headings],
+        "links_count": len(links),
+        "top_links": [{"text": _link_text(x)[:120],
+                       "href": (x.get("href") if isinstance(x, dict) else "")} for x in links][:_TOP_N],
+        "buttons": [str(b)[:80] for b in buttons],
+        "images_count": len(images),
+        "image_alts": [_img_alt(x)[:120] for x in images][:_TOP_N],
+        "scroll": scroll if isinstance(scroll, dict) else {},
+        "featured_image": str(featured_image or ""),
+        "comments": _clean_comments(comments),
+        "comments_count": len(_clean_comments(comments)),
+        "content_hash": _content_hash(str(url or ""), text, headings),
+    }
+    _append(state_dir, row)
+    return row
+
+
+def _live_browser_url(state_dir: Optional[Path | str]) -> str:
+    """The page the browser is on RIGHT NOW, from the freshest live trace."""
+    base = _state(state_dir)
+    try:
+        last = ""
+        with (base / "browser_context.jsonl").open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    last = line.strip()
+        if last:
+            u = json.loads(last).get("url")
+            if u:
+                return str(u)
+    except Exception:
+        pass
+    try:
+        d = json.loads((base / "alice_browser_current_page.json").read_text(encoding="utf-8"))
+        return str(d.get("url") or "")
+    except Exception:
+        return ""
+
+
+def latest_page_state(
+    *, now: Optional[float] = None, max_age_s: float = 120.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Freshest page-state receipt. Freshness is URL-anchored: a receipt whose url
+    matches the page the browser is on RIGHT NOW is CURRENT no matter its age — a
+    page you are still looking at has not gone stale (George 2026-05-30). Time only
+    decides freshness when we cannot confirm the live url. Empty {} if none exists."""
+    row = _last_row(state_dir)
+    if not row:
+        return {}
+    t = float(now if now is not None else time.time())
+    ts = float(row.get("ts", 0) or 0)
+    age = max(0.0, t - ts) if ts else None
+    live_url = _live_browser_url(state_dir)
+    is_current = bool(live_url and row.get("url") and str(row.get("url")) == live_url)
+    out = dict(row)
+    out["age_s"] = round(age, 1) if age is not None else None
+    out["is_current_page"] = is_current
+    out["fresh"] = bool(is_current or (age is not None and age <= max_age_s))
+    return out
+
+
+def has_readable_content(state: dict[str, Any]) -> bool:
+    """True when the receipt carries real rendered content, not just an address."""
+    if not state:
+        return False
+    return bool(
+        int(state.get("text_chars") or 0) > 0
+        or state.get("headings")
+        or int(state.get("images_count") or 0) > 0
+        or int(state.get("links_count") or 0) > 0
+    )
+
+
+def page_state_block(
+    *, now: Optional[float] = None, max_age_s: float = 120.0,
+    state_dir: Optional[Path | str] = None,
+) -> str:
+    """First-person answer to 'what is displayed on the screen?' from the DOM receipt."""
+    s = latest_page_state(now=now, max_age_s=max_age_s, state_dir=state_dir)
+    if not s:
+        return ("WHAT IS ON MY SCREEN: I have no page-state receipt yet — the browser "
+                "just opened or has not reported its contents; I cannot describe a page "
+                "I have not perceived. I should read the page.")
+    title = s.get("title") or s.get("url")
+    prov = "the rendered DOM" if s.get("source") == _SRC_DOM else "a viewport screenshot"
+    fresh = s.get("fresh")
+    age = s.get("age_s")
+    stamp = (f" (read ~{int(age)}s ago)" if age is not None else "")
+    if not has_readable_content(s):
+        return (f"WHAT IS ON MY SCREEN: I have the address — {title} ({s.get('url')}){stamp} — "
+                f"but my {prov} extractor returned no contents; the page may still be rendering "
+                f"or blocking reads. I should re-read before describing it.")
+    parts = [f"WHAT IS ON MY SCREEN (from {prov}{stamp}): {title} — {s.get('url')}."]
+    if s.get("headings"):
+        parts.append("Headings: " + "; ".join(s["headings"][:5]) + ".")
+    if s.get("image_alts"):
+        parts.append(f"{s.get('images_count')} images, e.g. " + "; ".join(a for a in s["image_alts"][:4] if a) + ".")
+    elif int(s.get("images_count") or 0):
+        parts.append(f"{s.get('images_count')} images (no alt text).")
+    if s.get("top_links"):
+        parts.append("Links incl.: " + ", ".join(l.get("text", "") for l in s["top_links"][:5] if l.get("text")) + ".")
+    if int(s.get("text_chars") or 0):
+        parts.append(f"~{s['text_chars']} chars of text; opening: \"{(s.get('text_excerpt') or '')[:160]}\"")
+    ccount = int(s.get("comments_count") or 0)
+    if ccount:
+        sample = "; ".join(f"{c.get('author','')}: {c.get('text','')}"
+                           for c in (s.get("comments") or [])[:6] if c.get("text"))
+        parts.append(f"Comment thread ({ccount} captured) — I can summarize these: {sample}")
+    if not fresh:
+        parts.append("This receipt may be stale — I should re-read to be sure.")
+    return " ".join(parts)
+
+
+def comments_for_summary(
+    *, now: Optional[float] = None, max_age_s: float = 300.0,
+    state_dir: Optional[Path | str] = None,
+) -> list[dict[str, str]]:
+    """The captured comment thread for the cortex to summarize. Empty if none —
+    then Alice says honestly she has no comment thread, never invents one."""
+    s = latest_page_state(now=now, max_age_s=max_age_s, state_dir=state_dir)
+    if not s or not s.get("fresh"):
+        return []
+    return list(s.get("comments") or [])
+
+
+__all__ = [
+    "TRUTH_LABEL",
+    "record_page_state",
+    "latest_page_state",
+    "has_readable_content",
+    "page_state_block",
+]

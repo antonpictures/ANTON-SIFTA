@@ -822,13 +822,46 @@ def classify_spoken_ingress(
 ) -> dict[str, Any]:
     """Classify an STT turn as direct speech or ambient media bleed.
 
-    Returns:
-      {
-        "route": "direct" | "ambient_media" | "observed_media",
-        "reason": str,
-        "confidence": float,
-      }
+    Thin wrapper around :func:`_classify_spoken_ingress_core`. When a turn
+    routes ``direct`` AND Alice's own name is present in it (the owner called
+    her), deposit the stigmergic attention pheromone so the owner's *next*
+    nameless sentences still route to her while the window stays warm
+    (George 2026-05-30). Nameless direct turns and media never deposit, so the
+    hold only ever opens from the owner actually calling her name.
     """
+    decision = _classify_spoken_ingress_core(
+        text,
+        stt_conf=stt_conf,
+        focus_context=focus_context,
+        acoustic_fingerprint=acoustic_fingerprint,
+        voice_george_conf=voice_george_conf,
+    )
+    try:
+        if decision.get("route") == "direct":
+            from System.swarm_alice_wake_ear import (
+                MIN_NAME_SIMILARITY,
+                best_wake_name_match,
+            )
+
+            name = best_wake_name_match(" ".join(str(text or "").split()))
+            if float(name.get("similarity") or 0.0) >= MIN_NAME_SIMILARITY:
+                from System.swarm_wake_attention_window import mark_wake
+
+                mark_wake(source="ingress_named_direct")
+    except Exception:
+        pass
+    return decision
+
+
+def _classify_spoken_ingress_core(
+    text: str,
+    *,
+    stt_conf: float = 0.0,
+    focus_context: str = "",
+    acoustic_fingerprint: Mapping[str, Any] | None = None,
+    voice_george_conf: float = 0.0,
+) -> dict[str, Any]:
+    """Core routing logic. Side-effect free except for receipt-less reads."""
     clean = " ".join(str(text or "").split())
     if not clean:
         return {"route": "ambient_media", "reason": "empty_stt", "confidence": 1.0}
@@ -905,6 +938,40 @@ def classify_spoken_ingress(
             }
     except Exception:
         pass
+
+    # ── Wake attention window follow-up (George 2026-05-30) ───────────────
+    # No name in this turn, but if Alice heard her name a moment ago the
+    # pheromone window is still warm. A nearfield, conversationally-short turn
+    # during that window is the owner continuing to talk to her — route direct.
+    # Far-field replay (TV/YouTube bleed) and long narration never qualify, and
+    # the window only ever opened from a confirmed name wake, so media cannot
+    # capture the hold. The window is NOT refreshed here, so its decay bounds
+    # any media exposure to a single short ceiling.
+    if acoustic_cue != "farfield_replay_likely":
+        try:
+            from System.swarm_wake_attention_window import wake_window_active
+
+            win = wake_window_active()
+            if win.get("active"):
+                wc = _word_count(clean)
+                nearfield_ok = (
+                    acoustic_cue == "nearfield_voice_likely"
+                    or (stt_conf and float(stt_conf) >= 0.50)
+                )
+                if nearfield_ok and wc <= 16 and not NARRATION_RE.search(clean):
+                    return {
+                        "route": "direct",
+                        "reason": "wake_window_followup",
+                        "confidence": round(
+                            0.60 + 0.35 * float(win.get("strength") or 0.0), 3
+                        ),
+                        "wake_window": {
+                            "strength": win.get("strength"),
+                            "age_s": win.get("age_s"),
+                        },
+                    }
+        except Exception:
+            pass
 
     if (
         has_media_focus

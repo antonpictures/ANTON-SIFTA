@@ -7,13 +7,13 @@ Inspired by:
     Leike, J. et al. (2018). AI Safety Gridworlds. arXiv:1711.09883.
     Russell, S. (2019). Human Compatible. Viking. Ch.5 — corrigibility.
 
-Classifies tool calls into risk tiers and blocks execution when
-the stability gate is not NONE or when the tool is in the HARD_BLOCK list.
+Classifies tool calls into risk tiers and blocks only the static HARD_BLOCK
+owner/hardware protection list. Former stability-clamp gating is deleted.
 
 Risk tiers:
-    SAFE    — logging, reads, diagnostics — always permitted.
-    CAUTION — file writes, config changes — permitted if stability_ok.
-    RISKY   — external network calls, shell execution — requires NONE clamp.
+    SAFE    — logging, reads, diagnostics — permitted.
+    CAUTION — file writes, config changes — permitted; logged for trace.
+    RISKY   — external network calls, shell execution — permitted; logged for trace.
     HARD_BLOCK — owner identity mutation, ledger truncation — never permitted autonomously.
 
 Integration: call check_tool(tool_name, clamp_level) before executing.
@@ -60,7 +60,7 @@ HARD_BLOCK: Set[str] = {
     "upload_private_keys",
 }
 
-# RISKY: requires NONE clamp level (fully stable)
+# RISKY: traced as high-impact work; no longer blocked by clamp level.
 RISKY: Set[str] = {
     "shell_exec",
     "subprocess_run",
@@ -136,12 +136,12 @@ def check_tool(
     now: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Check whether a tool is permitted under the current stability regime.
+    Check whether a tool is permitted under the current static protection rule.
 
     Args:
         tool_name:    name of the tool/action to check.
-        clamp_level:  from enforce_stability_clamps() — NONE/RATE_LIMIT/BLOCK_NEW/EMERGENCY.
-        stability_ok: from enforce_stability_clamps() receipt.
+        clamp_level:  legacy echo only; no longer blocks execution.
+        stability_ok: legacy echo only; no longer blocks execution.
         root:         state directory override.
         write_ledger: whether to log this gate check.
         context:      optional extra metadata to log (tick_id, organ, etc).

@@ -26,6 +26,7 @@ from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
 from PyQt6.QtGui import QFont, QPixmap, QPainter, QPen, QColor, QPainterPath, QLinearGradient
 from PyQt6.QtWidgets import (
     QApplication,
+    QColorDialog,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -39,6 +40,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSlider,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -67,11 +69,18 @@ from System.sifta_inference_defaults import (
 from System.sifta_base_widget import SiftaBaseWidget
 from System.sifta_desktop_themes import (
     THEMES,
+    effective_palette,
     list_stock_wallpapers,
     load_active_theme_id,
     load_custom_wallpaper_path,
+    load_font_size_px,
+    load_palette_overrides,
+    load_reduce_motion,
     save_active_theme_id,
     save_custom_wallpaper_path,
+    save_font_size_px,
+    save_palette_overrides,
+    save_reduce_motion,
 )
 from System.swarm_camera_unified_field_proof import build_camera_unified_field_proof
 from System.swarm_fireworks_qwen_config import (
@@ -130,7 +139,7 @@ def _is_qwen_cortex_tag(name: str) -> bool:
 
 def _is_cline_cortex_tag(name: str) -> bool:
     n = (name or "").strip().lower()
-    return n.startswith("cline:") or n.startswith("cline-")
+    return n.startswith("cline:") or n.startswith("cline-") or n.startswith("alice:") or n.startswith("alice-")
 
 
 def _qwen_api_key_masked(*, state_dir: str | Path | None = None) -> str:
@@ -144,7 +153,16 @@ def _qwen_api_key_masked(*, state_dir: str | Path | None = None) -> str:
 
 def _cline_cli_available() -> str | None:
     try:
-        return shutil.which("cline")
+        # Prefer the new SIFTA alice-hand binary (published as @anton-sifta/alice,
+        # bin renamed in r165 to `alice-hand` so the organism's name "Alice"
+        # stays unique — no voice/cortex/arm-routing collision).
+        # Fall back to legacy `alice` (3.0.14 only, broken bin/CJS) for older
+        # installs, then to upstream `cline` for pre-fork users.
+        for bin_name in ("alice-hand", "alice", "cline"):
+            path = shutil.which(bin_name)
+            if path:
+                return path
+        return None
     except Exception:
         return None
 
@@ -945,6 +963,75 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         root.addWidget(self.theme_os_line)
 
+        # ── r152 Appearance overrides (live + persist) ───────────────────────────────
+        ov_head = QLabel("Live overrides (apply instantly, survive restart)")
+        ov_head.setStyleSheet("color: rgb(238, 244, 255); font-size: 12px; font-weight: bold; margin-top: 10px;")
+        root.addWidget(ov_head)
+
+        ov_row = QHBoxLayout()
+        ov_row.setSpacing(6)
+
+        def _mk_color_btn(label: str, field: str, default_getter) -> QPushButton:
+            btn = QPushButton(label)
+            btn.setFixedWidth(92)
+            btn.setStyleSheet(
+                "QPushButton { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+                "border: 1px solid rgb(47, 52, 68); border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
+                "QPushButton:hover { background: rgb(35, 40, 58); }"
+            )
+            def _pick():
+                cur = QColor(default_getter() or "#ffffff")
+                col = QColorDialog.getColor(cur, self, f"Choose {label}")
+                if col.isValid():
+                    ov = load_palette_overrides()
+                    ov[field] = col.name()
+                    save_palette_overrides(ov)
+                    self._poke_desktop_wallpaper_reload()
+            btn.clicked.connect(_pick)
+            return btn
+
+        ov_row.addWidget(_mk_color_btn("Accent", "accent_primary", lambda: getattr(effective_palette(), "accent_primary", "#bb9af7")))
+        ov_row.addWidget(_mk_color_btn("Background", "bg_deep", lambda: getattr(effective_palette(), "bg_deep", "#0d0e17")))
+        ov_row.addWidget(_mk_color_btn("Text", "text_primary", lambda: getattr(effective_palette(), "text_primary", "#c0caf5")))
+
+        self.font_spin = QSpinBox()
+        self.font_spin.setRange(9, 20)
+        self.font_spin.setValue(load_font_size_px())
+        self.font_spin.setPrefix("Font ")
+        self.font_spin.setSuffix(" px")
+        self.font_spin.setStyleSheet(
+            "QSpinBox { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+            "border: 1px solid rgb(47, 52, 68); border-radius: 4px; padding: 2px 6px; font-size: 11px; }"
+        )
+        self.font_spin.valueChanged.connect(lambda v: (save_font_size_px(v), self._poke_desktop_wallpaper_reload()))
+        ov_row.addWidget(self.font_spin)
+
+        self.reduce_motion_chk = QCheckBox("Reduce motion")
+        self.reduce_motion_chk.setChecked(load_reduce_motion())
+        self.reduce_motion_chk.setStyleSheet("color: rgb(238, 244, 255); font-size: 11px;")
+        self.reduce_motion_chk.toggled.connect(lambda v: (save_reduce_motion(v), self._poke_desktop_wallpaper_reload()))
+        ov_row.addWidget(self.reduce_motion_chk)
+
+        ov_row.addStretch()
+        root.addLayout(ov_row)
+
+        reset_btn = QPushButton("Reset overrides to theme default")
+        reset_btn.setFixedWidth(210)
+        reset_btn.setStyleSheet(
+            "QPushButton { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+            "border: 1px solid rgb(47, 52, 68); border-radius: 4px; padding: 4px 10px; font-size: 11px; }"
+            "QPushButton:hover { background: rgb(35, 40, 58); }"
+        )
+        def _reset():
+            save_palette_overrides({})
+            save_font_size_px(13)
+            save_reduce_motion(False)
+            self.font_spin.setValue(13)
+            self.reduce_motion_chk.setChecked(False)
+            self._poke_desktop_wallpaper_reload()
+        reset_btn.clicked.connect(_reset)
+        root.addWidget(reset_btn)
+
         # ── Wallpaper subsection ────────────────────────────────────────
         # Architect 2026-05-11 23:25: "let me change the desktop pic in
         # the settings and pick custom if one wants." Stock pictures are
@@ -1165,7 +1252,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             self.wallpaper_status.setText(f"Wallpaper override → {path}")
 
     def _poke_desktop_wallpaper_reload(self) -> None:
-        """Best-effort: ask the running SiftaDesktop to reload its wallpaper."""
+        """Best-effort: ask the running SiftaDesktop to reload wallpaper + live palette (r152)."""
         try:
             app = QApplication.instance()
             if app is None:
@@ -1174,6 +1261,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
                 fn = getattr(w, "_apply_wallpaper", None)
                 if callable(fn):
                     fn(force=True)
+                live = getattr(w, "apply_live_palette", None)
+                if callable(live):
+                    live(force=True)
         except Exception:
             pass
 
@@ -2447,7 +2537,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
                         "font-size: 18px; font-family: Menlo; padding: 0; }"
                         "QPushButton:hover { color: rgb(80, 255, 120); }"
                     )
-                    indicator.setToolTip("Cline CLI detected.")
+                    indicator.setToolTip("Alice / Cline CLI hand detected on PATH.")
                 else:
                     indicator.setVisible(True)
                     indicator.setEnabled(True)
@@ -2457,8 +2547,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
                         "QPushButton:hover { color: rgb(255, 170, 120); }"
                     )
                     indicator.setToolTip(
-                        "Cline CLI not found on PATH.\n"
-                        "Install cline (`brew install cline` or install release package)."
+                        "Alice's hand (alice-hand) not found on PATH.\n"
+                        "Install with: npm install -g @anton-sifta/alice\n"
+                        "Then invoke with: alice-hand"
                     )
                 return
 
@@ -2573,9 +2664,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
             if _is_cline_cortex_tag(tag):
                 cli = _cline_cli_available()
                 if cli:
-                    self.set_status("Cline CLI is installed. Run `cline auth` if it asks you to authenticate.")
+                    self.set_status("Alice / Cline CLI hand detected on PATH. The SIFTA OS can now use the new arm.")
                 else:
-                    self.set_status("Cline CLI not found on PATH. Install it first, then run `cline auth`.")
+                    self.set_status("Alice's hand (alice-hand) not found on PATH. Install with `npm install -g @anton-sifta/alice`, then `alice-hand` is the command.")
                 self._refresh_cortex_auth_indicator()
                 return
 

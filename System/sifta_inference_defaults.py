@@ -612,6 +612,7 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
             CANONICAL_CLOUD_CLAUDE,
             CANONICAL_CLOUD_CODEX,
             CANONICAL_CLOUD_QWEN,
+            CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
             CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
             CANONICAL_CLOUD_CLINE,
         ))

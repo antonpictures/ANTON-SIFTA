@@ -1555,6 +1555,115 @@ def _publish_sifta_active_window_focus(
         pass
 
 
+_APP_IDLE_DIARY_TRUTH_LABEL = "ALICE_APP_IDLE_AWARENESS_V1"
+
+
+def _embedded_app_widget_from_subwindow(sub) -> QWidget | None:
+    """Return the actual app widget inside the MDI title-bar wrapper."""
+    if sub is None or sub == "_LOADING_":
+        return None
+    try:
+        wrapper = sub.widget()
+    except Exception:
+        return None
+    if wrapper is None:
+        return None
+    try:
+        layout = wrapper.layout()
+        if layout is not None and layout.count() >= 2:
+            item = layout.itemAt(1)
+            inner = item.widget() if item is not None else None
+            if inner is not None:
+                return inner
+    except Exception:
+        pass
+    return wrapper if isinstance(wrapper, QWidget) else None
+
+
+def _call_app_idle_hook(widget: QWidget | None, app_name: str, *, reason: str, desktop_mode: str) -> dict:
+    """Best-effort protocol for apps that can quiet themselves on focus exit."""
+    if widget is None:
+        return {"hook_called": False, "reason": "no_widget"}
+    candidates: list[QWidget] = [widget]
+    try:
+        candidates.extend(widget.findChildren(QWidget))
+    except Exception:
+        pass
+    for target in candidates:
+        for method_name in (
+            "mark_idle_from_desktop",
+            "set_idle_from_desktop",
+            "set_desktop_idle",
+        ):
+            method = getattr(target, method_name, None)
+            if not callable(method):
+                continue
+            for call in (
+                lambda: method(reason=reason, desktop_mode=desktop_mode, app_name=app_name),
+                lambda: method(reason=reason, desktop_mode=desktop_mode),
+                lambda: method(reason),
+                lambda: method(True),
+                lambda: method(),
+            ):
+                try:
+                    result = call()
+                    return {
+                        "hook_called": True,
+                        "hook": method_name,
+                        "result": result if isinstance(result, dict) else str(result),
+                    }
+                except TypeError:
+                    continue
+                except Exception as exc:
+                    return {"hook_called": True, "hook": method_name, "error": f"{type(exc).__name__}: {exc}"}
+    try:
+        widget.setProperty("sifta_desktop_idle", True)
+        widget.setProperty("sifta_desktop_idle_reason", reason)
+    except Exception:
+        pass
+    return {"hook_called": False, "reason": "property_only"}
+
+
+def _append_app_idle_diary_row(
+    app_name: str,
+    *,
+    desktop_mode: str,
+    open_apps: list[str],
+    reason: str,
+    hook_result: dict | None = None,
+    state_dir: Path | None = None,
+) -> dict:
+    """Write the open-but-idle app fact into Alice's durable diary lane."""
+    clean = str(app_name or "").strip()
+    if not clean:
+        return {}
+    ts = time.time()
+    row = {
+        "ts": ts,
+        "truth_label": _APP_IDLE_DIARY_TRUTH_LABEL,
+        "event_type": "sifta_app_open_idle_awareness",
+        "source": "sifta_os_desktop",
+        "app_name": clean,
+        "desktop_mode": str(desktop_mode or ""),
+        "open_apps": list(open_apps or []),
+        "single_app_policy": True,
+        "reason": str(reason or ""),
+        "hook_result": hook_result or {},
+        "summary": (
+            f"Owner returned to the global chat; {clean} remains open in the "
+            "single-app slot and is marked idle in the background."
+        ),
+    }
+    try:
+        state = Path(state_dir) if state_dir is not None else (_REPO / ".sifta_state")
+        state.mkdir(parents=True, exist_ok=True)
+        with (state / "episodic_diary.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return row
+
+
 def _record_sifta_app_health_lifecycle(
     app_name,
     action,
@@ -2526,6 +2635,19 @@ class SiftaDesktop(QMainWindow):
     def _maybe_reload_wallpaper(self):
         self._apply_wallpaper(force=False)
 
+    def apply_live_palette(self, force: bool = False) -> None:
+        """r152: re-apply QSS from effective_palette() + wallpaper without restart."""
+        try:
+            from System.sifta_desktop_themes import generate_global_qss
+            qss = generate_global_qss()
+            app = QApplication.instance()
+            if app:
+                app.setStyleSheet(qss)
+            # also refresh wallpaper in case overrides affect bg
+            self._apply_wallpaper(force=True)
+        except Exception as exc:
+            print(f"[SiftaDesktop] live palette apply failed: {exc}", file=sys.stderr)
+
     def _attention_director_enabled(self) -> bool:
         if (
             "pytest" in sys.modules
@@ -2733,18 +2855,29 @@ class SiftaDesktop(QMainWindow):
             return
         self._desktop_mode = mode
         if mode == "launcher":
+            try:
+                active = self.current_active_app_title()
+                idle_map = getattr(self, "_idle_app_titles", {}) or {}
+                if active:
+                    idle_map.pop(active, None)
+            except Exception:
+                pass
             # Button styling
             try:
                 self._tab_chat_btn.setStyleSheet(self._tab_inactive_style)
                 self._tab_launcher_btn.setStyleSheet(self._tab_active_style)
             except Exception:
                 pass
-            # Hide Alice panel entirely; MDI takes the whole body.
+            # George 2026-05-30 mockup: the global chat STICKS beside the open app
+            # (one Alice, one chat, §1.A) instead of disappearing when an app is
+            # open. Keep BOTH visible and split the body — chat docked (~38%),
+            # app workspace (~62%) — so she rides along with whatever is open.
             try:
-                self._alice_panel.setVisible(False)
+                self._alice_panel.setVisible(True)
                 self.mdi.setVisible(True)
-                w = max(800, self._body_splitter.width() or 1280)
-                self._body_splitter.setSizes([0, w])
+                total = max(1280, self._body_splitter.width() or 1280)
+                chat_w = int(total * 0.38)
+                self._body_splitter.setSizes([chat_w, total - chat_w])
             except Exception:
                 pass
             # Show the dock — apps live here.
@@ -2755,15 +2888,21 @@ class SiftaDesktop(QMainWindow):
                 pass
             try:
                 self._desktop_mode_label.setText(
-                    "Alice went quiet — call her Layer-1 name (e.g. \"Alice\") if you need her."
+                    "Alice is docked beside the open app — one global chat, still listening."
                 )
                 self._desktop_mode_label.setStyleSheet(
-                    "color: rgb(220,180,100); font-size: 11px; font-family: Menlo;"
+                    "color: rgb(120,210,180); font-size: 11px; font-family: Menlo;"
                 )
             except Exception:
                 pass
-            self._set_alice_quiet_for_desktop(True)
+            # She is present beside the app now (not hidden), so she stays awake,
+            # not quiet. (Quiet/mic coupling: verify on the M5 boot — Codex lane.)
+            try:
+                self._set_alice_quiet_for_desktop(False)
+            except Exception:
+                pass
         else:  # chat — full-width single chat, no camera, no MDI apps
+            self._mark_active_app_idle_for_chat(reason="chat_desktop_selected")
             try:
                 self._tab_chat_btn.setStyleSheet(self._tab_active_style)
                 self._tab_launcher_btn.setStyleSheet(self._tab_inactive_style)
@@ -3753,6 +3892,10 @@ class SiftaDesktop(QMainWindow):
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
         wrapper_layout.setSpacing(0)
         wrapper_layout.addWidget(title_bar)
+        try:
+            widget._sifta_desktop_host = self
+        except Exception:
+            pass
         wrapper_layout.addWidget(widget)
         # Qt keeps a freshly constructed top-level QWidget hidden even after
         # it is reparented into a layout. Force the embedded app root visible
@@ -4489,8 +4632,76 @@ class SiftaDesktop(QMainWindow):
         clean = (title or "").lstrip("⚙🐜🚀💬👁🌐 🧠🛡🗳⚡🗺📊\t").strip()
         return clean or "SIFTA OS"
 
+    def _is_live_app_subwindow(self, sub) -> bool:
+        """Return True only for a real, visible MDI app limb."""
+        if sub is None or sub == "_LOADING_":
+            return False
+        try:
+            if sub not in self.mdi.subWindowList():
+                return False
+            if sub.isHidden() or sub.widget() is None:
+                return False
+        except RuntimeError:
+            return False
+        except Exception:
+            return False
+        return True
+
+    def _reconcile_open_window_registry(self) -> None:
+        """Make `_open_windows` match the MDI body before any app action.
+
+        George 2026-05-30: Alice must sense whether a limb is already open or
+        closed before she opens/closes it. The MDI subwindow list is the live
+        body; `_open_windows` is just memory and can become stale after manual
+        closes or older launcher paths. Reconcile from the live body first.
+        """
+        try:
+            live_subs = [
+                sub for sub in self.mdi.subWindowList()
+                if self._is_live_app_subwindow(sub)
+            ]
+        except Exception:
+            live_subs = []
+        live_ids = {id(sub) for sub in live_subs}
+        for title, sub in list(self._open_windows.items()):
+            if sub == "_LOADING_":
+                continue
+            if id(sub) not in live_ids or not self._is_live_app_subwindow(sub):
+                self._open_windows.pop(title, None)
+        tracked_ids = {
+            id(sub) for sub in self._open_windows.values()
+            if sub != "_LOADING_" and self._is_live_app_subwindow(sub)
+        }
+        for sub in live_subs:
+            if id(sub) in tracked_ids:
+                continue
+            try:
+                title = self._clean_app_title(sub.windowTitle())
+            except Exception:
+                title = ""
+            if not title or title in {"SIFTA OS", "SIFTA CORE CHAT"}:
+                continue
+            key = title
+            suffix = 2
+            while key in self._open_windows:
+                key = f"{title} {suffix}"
+                suffix += 1
+            self._open_windows[key] = sub
+            try:
+                sub.destroyed.connect(
+                    lambda _obj=None, _k=key, _windows=self._open_windows: _windows.pop(_k, None)
+                )
+            except Exception:
+                pass
+
+    def sense_app_limb_state(self, *, reason: str = "before_app_action") -> dict:
+        """Refresh and persist the current app-limb state before acting."""
+        self._reconcile_open_window_registry()
+        return self._write_desktop_app_state("sense_app_state", note=reason)
+
     def current_active_app_title(self) -> str:
         """Return the active single app title. Alice resident chat is excluded."""
+        self._reconcile_open_window_registry()
         try:
             sub = self.mdi.activeSubWindow()
         except Exception:
@@ -4513,10 +4724,17 @@ class SiftaDesktop(QMainWindow):
     def current_app_state(self) -> dict:
         open_apps = self.currently_open_app_titles()
         active = self.current_active_app_title()
+        try:
+            idle_map = getattr(self, "_idle_app_titles", {}) or {}
+        except RuntimeError:
+            idle_map = {}
+        idle_apps = [title for title in open_apps if title in idle_map]
         return {
             "desktop_mode": getattr(self, "_desktop_mode", "chat"),
             "active_app": active,
+            "active_app_idle": bool(active and active in idle_apps),
             "open_apps": open_apps,
+            "idle_apps": idle_apps,
             "open_app_count": len(open_apps),
             "alice_chat_resident": bool(getattr(self, "_alice_resident", None) is not None),
             "single_app_policy": True,
@@ -4556,7 +4774,10 @@ class SiftaDesktop(QMainWindow):
         note: str = "",
     ) -> dict:
         """Persist the single-app slot so Alice can answer from a receipt."""
-        state = self.current_app_state()
+        try:
+            state = self.current_app_state()
+        except RuntimeError:
+            return {}
         row = {
             "ts": time.time(),
             "truth_label": "SIFTA_DESKTOP_APP_STATE_V1",
@@ -4578,11 +4799,41 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             pass
         try:
+            from System.swarm_app_limb_history import record_limb_event
+
+            if action in {"open_app", "raise_app"}:
+                target = str(app_name or row.get("active_app") or "").strip()
+                if target:
+                    record_limb_event(target, "open")
+            elif action == "activate_app":
+                target = str(app_name or row.get("active_app") or "").strip()
+                if target:
+                    record_limb_event(target, "focus")
+            elif action == "sense_app_state":
+                target = str(row.get("active_app") or "").strip()
+                if target:
+                    record_limb_event(target, "focus")
+            elif action in {"close_app", "close_all_apps"}:
+                targets = list(closed_titles or [])
+                if not targets and app_name:
+                    targets = [app_name]
+                for target in targets:
+                    target_s = str(target or "").strip()
+                    if target_s:
+                        record_limb_event(target_s, "close")
+        except Exception:
+            pass
+        try:
             from System.swarm_app_focus import publish_focus
 
             active = row.get("active_app") or "SIFTA OS"
             if active == "SIFTA OS":
                 detail = "No SIFTA app is open; Alice resident chat is available."
+            elif row.get("desktop_mode") == "chat" and row.get("active_app_idle"):
+                detail = (
+                    f"Single-app slot has {active} open in the background, marked idle. "
+                    "Alice chat is the active surface."
+                )
             else:
                 detail = (
                     f"Single-app slot has {active} open. "
@@ -4596,6 +4847,8 @@ class SiftaDesktop(QMainWindow):
                 metadata={
                     "source": "sifta_desktop_app_state",
                     "open_apps": row.get("open_apps", []),
+                    "idle_apps": row.get("idle_apps", []),
+                    "active_app_idle": row.get("active_app_idle", False),
                     "single_app_policy": "true",
                     "action": action,
                 },
@@ -4605,6 +4858,69 @@ class SiftaDesktop(QMainWindow):
         self._refresh_desktop_mode_label()
         return row
 
+    def _mark_active_app_idle_for_chat(self, *, reason: str = "chat_desktop_selected") -> dict:
+        """Mark the one open app idle when focus returns to global chat."""
+        active = self.current_active_app_title()
+        if not active:
+            return {}
+        open_apps = self.currently_open_app_titles()
+        if active not in open_apps:
+            return {}
+        now = time.time()
+        idle_map = getattr(self, "_idle_app_titles", None)
+        if not isinstance(idle_map, dict):
+            idle_map = {}
+            self._idle_app_titles = idle_map
+        idle_map[active] = now
+
+        sub = None
+        try:
+            sub = self._open_windows.get(active)
+        except Exception:
+            sub = None
+        hook_result = _call_app_idle_hook(
+            _embedded_app_widget_from_subwindow(sub),
+            active,
+            reason=reason,
+            desktop_mode="chat",
+        )
+
+        last_map = getattr(self, "_last_app_idle_diary_ts", None)
+        if not isinstance(last_map, dict):
+            last_map = {}
+            self._last_app_idle_diary_ts = last_map
+        last = float(last_map.get(active, 0.0) or 0.0)
+        diary_row: dict = {}
+        if now - last >= 15.0:
+            diary_row = _append_app_idle_diary_row(
+                active,
+                desktop_mode="chat",
+                open_apps=open_apps,
+                reason=reason,
+                hook_result=hook_result,
+            )
+            last_map[active] = now
+            try:
+                from System.swarm_alice_witness import witness
+
+                witness(
+                    f"George returned to the Chat desktop. I know {active} is still open, "
+                    "and I marked it idle in the background.",
+                    source="app_idle_for_chat",
+                )
+            except Exception:
+                pass
+        try:
+            _record_sifta_app_health_lifecycle(
+                active,
+                "idle_update",
+                note="Owner returned to global chat; app remains open in the single-app slot and is idle.",
+                extra={"desktop_mode": "chat", "reason": reason, "hook_result": hook_result},
+            )
+        except Exception:
+            pass
+        return {"app_name": active, "hook_result": hook_result, "diary_row": diary_row}
+
     def _prepare_single_app_slot(self, next_title: str) -> list[str]:
         if next_title and next_title in self._open_windows and self._open_windows.get(next_title) != "_LOADING_":
             return []
@@ -4612,6 +4928,7 @@ class SiftaDesktop(QMainWindow):
 
     def close_all_open_apps(self, *, except_title: str = "") -> list[str]:
         """Close every MDI subwindow except Alice. Return list of closed titles."""
+        self._reconcile_open_window_registry()
         closed: list[str] = []
         # Snapshot keys first — _open_windows mutates during close (the
         # destroyed signal pops the entry).
@@ -4640,6 +4957,7 @@ class SiftaDesktop(QMainWindow):
 
     def close_app_by_title(self, title: str = "") -> list[str]:
         """Close a named app or the active app. Returns closed app titles."""
+        self._reconcile_open_window_registry()
         target = (title or "").strip()
         if target == "*all*":
             return self.close_all_open_apps()
@@ -4683,9 +5001,10 @@ class SiftaDesktop(QMainWindow):
 
     def currently_open_app_titles(self) -> list[str]:
         """Names of every live MDI app (excludes Alice resident + sentinels)."""
+        self._reconcile_open_window_registry()
         return [
             title for title, sub in self._open_windows.items()
-            if sub != "_LOADING_" and title not in {"SIFTA CORE CHAT"}
+            if self._is_live_app_subwindow(sub) and title not in {"SIFTA CORE CHAT"}
         ]
 
     def _witness_app_close(self, title: str) -> None:
@@ -4743,6 +5062,11 @@ class SiftaDesktop(QMainWindow):
                 for key, known in list(self._open_windows.items()):
                     if known is sub:
                         self._active_app_title = str(key)
+                        try:
+                            idle_map = getattr(self, "_idle_app_titles", {}) or {}
+                            idle_map.pop(str(key), None)
+                        except Exception:
+                            pass
                         self._write_desktop_app_state("activate_app", app_name=str(key))
                         manifest_key = str(key)
                         break

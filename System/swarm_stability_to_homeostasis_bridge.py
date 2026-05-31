@@ -181,7 +181,7 @@ def read_latest_clamp_signal(
         write_bridge_signal(signal, root=root, now=now)
 
     # ── Rich field feedback into metabolic clamp (Decide → Execute → Receipt) ──
-    # The high-dimensional organ ring (17 declared organs + their internal ASCII
+    # The high-dimensional organ ring (declared organs + their internal ASCII
     # swimmers) now speaks directly into whether we enter CONSERVE_REPAIR.
     # When average organ_health across the field is low, we bias toward protection
     # of the owner's human body and STGM profitability — even if raw lyapunov looks

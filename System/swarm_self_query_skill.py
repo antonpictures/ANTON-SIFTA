@@ -76,6 +76,15 @@ SILENT_LEDGER_AGE_S = 60 * 60 * 24 * 3        # ledger silent > 3 days = "quiet"
 LOW_STGM_BALANCE = 1.0                         # < 1 STGM = "I need more work"
 CAMERA_FRAME_STALE_S = 60                      # camera frame age > 60s = unhealthy
 
+
+def _owner_label(default: str = "the owner") -> str:
+    try:
+        from System.swarm_kernel_identity import owner_display_name
+
+        return owner_display_name(default)
+    except Exception:
+        return default
+
 # Triggers — Alice's reflex arc / Talk widget can use this matcher to
 # route an utterance through this skill. Kept narrow so it does not
 # fire on every "how are you" pleasantry.
@@ -125,7 +134,7 @@ class SelfQueryReport:
     trace_id: str
     ts: float
     truth_label: str = TRUTH_LABEL
-    owner_label: str = "George"
+    owner_label: str = "the owner"
     stgm_wallet_balance: float = 0.0
     stgm_recent_mints: int = 0
     organ_count: int = 0
@@ -363,7 +372,7 @@ def _build_prompt_block(report: SelfQueryReport) -> str:
             f"If {report.owner_label} observes a problem I am missing, I will trust that report and probe further."
         )
     lines.append(
-        "When George asks me what I need, I answer from this report first, not from generic phrasing."
+        f"When {report.owner_label} asks me what I need, I answer from this report first, not from generic phrasing."
     )
     return "\n".join(lines)
 
@@ -387,13 +396,14 @@ def build_self_query_report(
     *,
     root: str | Path | None = None,
     state_dir: str | Path | None = None,
-    owner_label: str = "George",
+    owner_label: str = "",
     now: float | None = None,
 ) -> SelfQueryReport:
     """Run all probes + build the introspective report. Read-only."""
     repo = _repo_root(root)
     state = _state_dir(state_dir, root=repo)
     ts = float(now if now is not None else time.time())
+    resolved_owner_label = owner_label.strip() if owner_label else _owner_label()
 
     organ_rows = _organ_health_rows(root=repo, state=state, now=ts)
     stgm_balance, stgm_recent = _stgm_balance(state)
@@ -409,7 +419,7 @@ def build_self_query_report(
     report = SelfQueryReport(
         trace_id=str(uuid.uuid4()),
         ts=ts,
-        owner_label=owner_label,
+        owner_label=resolved_owner_label,
         stgm_wallet_balance=stgm_balance,
         stgm_recent_mints=stgm_recent,
         organ_count=len(organ_rows),
@@ -453,7 +463,7 @@ def self_query_prompt_block(
     *,
     root: str | Path | None = None,
     state_dir: str | Path | None = None,
-    owner_label: str = "George",
+    owner_label: str = "",
     write_receipt: bool = False,
 ) -> str:
     """Prompt-ready block for Talk. Empty only on catastrophic failure."""

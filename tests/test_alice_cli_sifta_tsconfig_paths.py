@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / "Vendor" / "alice-cli" / "sdk"
+VITEST_CONFIG = SDK / "apps" / "cli" / "vitest.config.ts"
 
 
 def _paths(relative: str) -> dict:
@@ -59,3 +60,26 @@ def test_runtime_uses_alice_welcome_symbol_after_rename() -> None:
     assert "resolveAliceWelcomeLine" in runtime_text
     assert "resolveClineWelcomeLine" not in runtime_text
     assert "resolveAliceWelcomeLine" in test_text
+
+
+def test_vitest_resolves_sifta_workspace_packages() -> None:
+    text = VITEST_CONFIG.read_text(encoding="utf-8")
+
+    for alias in (
+        "@sifta\\/agents",
+        "@sifta\\/core",
+        "@sifta\\/llms",
+        "@sifta\\/shared",
+    ):
+        assert alias in text
+
+
+def test_package_scripts_do_not_require_bunx_binary() -> None:
+    package_files = [
+        SDK / "package.json",
+        SDK / "packages" / "core" / "package.json",
+    ]
+
+    for path in package_files:
+        scripts = json.loads(path.read_text(encoding="utf-8")).get("scripts", {})
+        assert "bunx" not in json.dumps(scripts)

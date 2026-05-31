@@ -132,13 +132,13 @@ def test_body_brain_tick_writes_prompt_visible_organ_heartbeats(clean_state):
     assert field["dimension_count"] >= 29
     assert field["coupling_edge_count"] >= 8
     assert field["payload"]["tensor_shapes"]["cuttlefish_skin"] == [4, 4]
-    assert field["payload"]["tensor_shapes"]["organ_health"] == [17]
+    assert field["payload"]["tensor_shapes"]["organ_health"] == [20]
     assert field["payload"]["tensor_shapes"]["field_memory"] == [field["dimension_count"]]
     assert field["payload"]["tensor_shapes"]["metabolic_context"] == [7]
-    assert field["declared_organ_count"] == 17
-    assert field["connected_organ_count"] == 17
+    assert field["declared_organ_count"] == 20
+    assert field["connected_organ_count"] == 20
     assert field["swimmer_count"] >= 45
-    assert len(field["organ_nodes"]) == 17
+    assert len(field["organ_nodes"]) == 20
     assert field["unknown_vector_count"] >= 1
     assert field["low_resolution_vector_count"] >= 1
     assert 0.0 <= field["field_completeness"] <= 1.0
@@ -153,7 +153,14 @@ def test_body_brain_tick_writes_prompt_visible_organ_heartbeats(clean_state):
         "dopamine",
         "sensor_gate",
         "bg_selector",
+        "alice_arm",
+        "claude_arm",
+        "hermes_arm",
     }
+    for organ_name in ("alice_arm", "claude_arm", "hermes_arm"):
+        node = next(node for node in field["organ_nodes"] if node["organ"] == organ_name)
+        assert node["source"] == f"{organ_name}_organ.jsonl"
+        assert f"{organ_name}_organ.jsonl" in field["payload"]["source_ledgers"]
     td = json.loads((clean_state / "td_receipts.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     dopamine = json.loads(
         (clean_state / "dopamine_reward_ledger.jsonl").read_text(encoding="utf-8").splitlines()[-1]
@@ -285,10 +292,10 @@ def test_organ_heartbeats_are_coupled_to_prior_organ_rows(clean_state):
     assert field["dimension_count"] == len(field["dimension_names"])
     assert field["coupling_edge_count"] == len(field["coupling_edges"])
     assert field["coupling_edge_count"] >= 30
-    assert field["payload"]["declared_organ_count"] == 17
-    assert field["payload"]["connected_organ_count"] == 17
+    assert field["payload"]["declared_organ_count"] == 20
+    assert field["payload"]["connected_organ_count"] == 20
     assert field["payload"]["swimmer_count"] >= 45
-    assert len(field["payload"]["organ_health"]) == 17
+    assert len(field["payload"]["organ_health"]) == 20
     assert len(field["payload"]["swimmer_registry"]) == field["payload"]["swimmer_count"]
     assert field["payload"]["unknown_vector_count"] >= 1
     assert field["payload"]["low_resolution_vector_count"] >= 1

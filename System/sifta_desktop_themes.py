@@ -178,6 +178,10 @@ class DesktopPalette:
     # Tooltip
     tooltip_bg: str = "#1e2030"
 
+    # Live overrides (r152)
+    reduce_motion: bool = False
+    font_size_px: int = 13
+
 
 # ──────────────────────────────────────────────────────────────
 #  PREDATOR PALETTE
@@ -393,11 +397,16 @@ def wallpaper_path(palette: Optional[DesktopPalette] = None) -> str:
 # ──────────────────────────────────────────────────────────────
 
 def generate_global_qss(p: Optional[DesktopPalette] = None) -> str:
-    """Generate the complete SIFTA OS stylesheet from a palette."""
-    p = p or active_palette()
+    """Thin wrapper: always uses effective_palette() (r152 overrides honored)."""
+    return _generate_global_qss_impl(p or effective_palette())
+
+
+def _generate_global_qss_impl(p: DesktopPalette) -> str:
+    """Internal impl (kept for minimal diff)."""
+    fs = getattr(p, "font_size_px", 13) or 13
     return f"""
 QMainWindow, QDialog {{ background: {p.bg_deep}; }}
-QWidget {{ font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: 13px; color: {p.text_primary}; }}
+QWidget {{ font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
 QMdiSubWindow {{ background: {p.bg_panel}; border: 1px solid {p.border_subtle}; border-radius: 12px; }}
 QMdiSubWindow > QWidget {{ background: {p.bg_panel}; }}
 QScrollBar:vertical {{ background: transparent; width: 5px; margin: 0; }}
@@ -442,3 +451,140 @@ QProgressBar {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; bo
 QProgressBar::chunk {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {p.progress_start},stop:1 {p.progress_end}); border-radius: 5px; }}
 QSplitter::handle {{ background: {p.border_subtle}; }}
 """
+
+
+# ──────────────────────────────────────────────────────────────
+#  R152 LIVE OVERRIDES (Appearance controls)
+#  Persisted alongside theme_id in desktop_theme.json
+# ──────────────────────────────────────────────────────────────
+
+_OVERRIDES_FILE = _THEME_FILE  # reuse; keys: overrides, reduce_motion, font_size_px
+
+
+def load_palette_overrides() -> dict:
+    """Return {field: value} overrides or {}."""
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+        return data.get("overrides", {}) or {}
+    except Exception:
+        return {}
+
+
+def save_palette_overrides(overrides: dict) -> None:
+    """Merge-save overrides; does not touch theme_id or wallpaper."""
+    _STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data["overrides"] = {k: v for k, v in (overrides or {}).items() if v is not None}
+    data["changed_at"] = time.time()
+    _OVERRIDES_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def load_reduce_motion() -> bool:
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+        return bool(data.get("reduce_motion", False))
+    except Exception:
+        return False
+
+
+def save_reduce_motion(flag: bool) -> None:
+    _STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data["reduce_motion"] = bool(flag)
+    data["changed_at"] = time.time()
+    _OVERRIDES_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def load_font_size_px() -> int:
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+        return int(data.get("font_size_px", 13))
+    except Exception:
+        return 13
+
+
+def save_font_size_px(px: int) -> None:
+    _STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(_OVERRIDES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data["font_size_px"] = int(px)
+    data["changed_at"] = time.time()
+    _OVERRIDES_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def effective_palette() -> DesktopPalette:
+    """Active theme + any live field overrides applied (r152)."""
+    p = active_palette()
+    ov = load_palette_overrides()
+    for k, v in ov.items():
+        if hasattr(p, k):
+            try:
+                setattr(p, k, v)
+            except Exception:
+                pass
+    # also apply scalar overrides
+    p.font_size_px = load_font_size_px()
+    p.reduce_motion = load_reduce_motion()
+    return p
+
+
+def generate_global_qss(p: Optional[DesktopPalette] = None) -> str:
+    """Generate the complete SIFTA OS stylesheet from a palette (honors overrides)."""
+    p = p or effective_palette()
+    fs = getattr(p, "font_size_px", 13) or 13
+    return f"""
+QMainWindow, QDialog {{ background: {p.bg_deep}; }}
+QWidget {{ font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
+QMdiSubWindow {{ background: {p.bg_panel}; border: 1px solid {p.border_subtle}; border-radius: 12px; }}
+QMdiSubWindow > QWidget {{ background: {p.bg_panel}; }}
+QScrollBar:vertical {{ background: transparent; width: 5px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {p.border_default}; border-radius: 2px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: {p.accent_secondary}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+QScrollBar:horizontal {{ background: transparent; height: 5px; margin: 0; }}
+QScrollBar::handle:horizontal {{ background: {p.border_default}; border-radius: 2px; min-width: 24px; }}
+QScrollBar::handle:horizontal:hover {{ background: {p.accent_secondary}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; }}
+QLineEdit {{ background: {p.bg_card}; border: 1px solid {p.border_default}; border-radius: 8px; padding: 7px 12px; color: {p.text_primary}; selection-background-color: {p.selection_bg}; }}
+QLineEdit:focus {{ border: 1px solid {p.focus_border}; }}
+QTextEdit, QPlainTextEdit {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; border-radius: 8px; padding: 8px; color: {p.text_primary}; selection-background-color: {p.selection_bg}; }}
+QPushButton {{ background: {p.bg_card}; border: 1px solid {p.border_default}; border-radius: 8px; color: {p.text_primary}; padding: 6px 16px; font-weight: 500; }}
+QPushButton:hover {{ background: {p.accent_hover}; border: 1px solid {p.accent_primary}; color: {p.text_primary}; }}
+QPushButton:pressed {{ background: {p.accent_pressed}; }}
+QListWidget, QTreeWidget {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; border-radius: 8px; color: {p.text_primary}; outline: none; }}
+QListWidget::item, QTreeWidget::item {{ padding: 6px 12px; border-radius: 6px; }}
+QListWidget::item:selected, QTreeWidget::item:selected {{ background: {p.selection_bg}; color: {p.accent_secondary}; }}
+QListWidget::item:hover, QTreeWidget::item:hover {{ background: {p.selection_bg}; }}
+QTabWidget::pane {{ border: 1px solid {p.border_subtle}; border-radius: 8px; background: {p.bg_card}; }}
+QTabBar::tab {{ background: transparent; color: {p.text_dim}; padding: 7px 16px; border-bottom: 2px solid transparent; }}
+QTabBar::tab:selected {{ color: {p.accent_secondary}; border-bottom: 2px solid {p.accent_secondary}; }}
+QTabBar::tab:hover {{ color: {p.text_primary}; }}
+QLabel {{ color: {p.text_primary}; background: transparent; }}
+QComboBox {{ background: {p.bg_card}; border: 1px solid {p.border_default}; border-radius: 8px; padding: 6px 12px; color: {p.text_primary}; }}
+QComboBox:hover {{ border: 1px solid {p.focus_border}; }}
+QComboBox QAbstractItemView {{ background: {p.tooltip_bg}; border: 1px solid {p.border_default}; selection-background-color: {p.selection_bg}; }}
+QSlider::groove:horizontal {{ background: {p.slider_groove}; height: 4px; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: {p.slider_handle}; width: 14px; height: 14px; border-radius: 7px; margin: -5px 0; }}
+QSlider::sub-page:horizontal {{ background: {p.slider_handle}; border-radius: 2px; }}
+QCheckBox {{ color: {p.text_primary}; spacing: 8px; }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {p.border_default}; border-radius: 4px; background: {p.bg_card}; }}
+QCheckBox::indicator:checked {{ background: {p.checkbox_checked}; border: 1px solid {p.checkbox_checked}; }}
+QGroupBox {{ border: 1px solid {p.border_subtle}; border-radius: 8px; margin-top: 20px; padding-top: 12px; color: {p.text_dim}; font-size: 11px; }}
+QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 8px; left: 12px; color: {p.text_dim}; }}
+QToolTip {{ background: {p.tooltip_bg}; border: 1px solid {p.border_default}; border-radius: 6px; color: {p.text_primary}; padding: 4px 8px; font-size: 12px; }}
+QMessageBox {{ background: {p.bg_deep}; }}
+QProgressBar {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; border-radius: 5px; text-align: center; color: {p.text_primary}; font-size: 11px; }}
+QProgressBar::chunk {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {p.progress_start},stop:1 {p.progress_end}); border-radius: 5px; }}
+QSplitter::handle {{ background: {p.border_subtle}; }}
+"""
+

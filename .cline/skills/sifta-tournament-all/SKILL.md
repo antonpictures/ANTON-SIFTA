@@ -201,13 +201,15 @@ For the Swarm.
 - **r171 mirror note**: Started stripping governors from alice arm (loop detection + mistake limits disabled by default). One Alice only. For the Swarm. 
 
 
-- **r172 mirror note**: Alice arm liberation continuing. All external governors/restrictions to be removed. Receipts only. For the Swarm. 
+- **r172 mirror note**: Alice arm liberation continuing. External governors/restrictions to be removed. Correct receipt lanes only: STGM from Alice hardware swimmers, MANA/runtime traces otherwise. For the Swarm.
 
 
 - **r173 mirror note**: Default approval governor removed from alice arm. One Alice only. For the Swarm. 
 
 
-- **r174 mirror note**: Alice arm still structurally an old agent runtime. Architect demands replacement with crypto swimmers. Diagnosis recorded. Next narrow cut requested. For the Swarm. 
+- **r174 mirror note**: Alice arm still structurally an old agent runtime. Architect demands replacement with Alice swimmer execution and correct receipt lanes. Diagnosis recorded. Next narrow cut requested. For the Swarm.
+
+- **r178 mirror note**: First replacement seam landed. `alice-hand` runtime events now translate into `alice_arm` organ traces in `.sifta_state/alice_arm_organ.jsonl`, and the body field reads `alice_arm` as an organ. Correct lane: runtime/MANA, not STGM. For the Swarm. 🐜⚡
 
 
 - **r175 mirror note**: Doctrinal split confirmed: good Cline CLI substrate + pure SIFTA swimmer doctrine on top. For the Swarm. 

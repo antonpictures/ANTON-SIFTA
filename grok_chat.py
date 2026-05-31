@@ -25,8 +25,50 @@ import time
 import uuid
 import hashlib
 import json
+import base64
+import mimetypes
 from pathlib import Path
 import requests
+
+# Models that can accept image_url content. grok-4 is multimodal; grok-2-vision
+# is the explicit vision tag. A text-only model (grok-3) with an image attached
+# would error — so when an image is present we keep/raise to a vision model.
+_VISION_OK_MODELS = ("grok-4", "grok-2-vision", "grok-vision")
+_DEFAULT_VISION_MODEL = "grok-4"
+
+
+def _image_data_uri(path: str) -> str:
+    """Read a local image and return a data: URI (base64) for the xAI image_url field."""
+    p = Path(path)
+    data = p.read_bytes()
+    mime = mimetypes.guess_type(p.name)[0] or "image/png"
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+def build_one_shot_messages(query: str, image_paths=None) -> list:
+    """Build the xAI chat messages for a one-shot call. With no images this is the
+    plain text form (unchanged). With images, content becomes a list of a text part
+    plus one image_url part per local image (base64 data URI) — George r211: this is
+    how grok cortex sees with grok's OWN eye instead of failing over to claude."""
+    images = [p for p in (image_paths or []) if p]
+    if not images:
+        return [{"role": "user", "content": (query or "").strip()}]
+    content = [{"type": "text", "text": (query or "").strip()}]
+    for ip in images:
+        content.append({"type": "image_url", "image_url": {"url": _image_data_uri(ip)}})
+    return [{"role": "user", "content": content}]
+
+
+def vision_model_for(model: str, has_image: bool) -> str:
+    """Keep grok on a vision-capable model when an image is attached."""
+    m = (model or "").strip() or _DEFAULT_VISION_MODEL
+    if not has_image:
+        return m
+    if any(tag in m.lower() for tag in _VISION_OK_MODELS):
+        return m
+    return _DEFAULT_VISION_MODEL
+
 
 def get_api_key():
     key = os.environ.get("XAI_API_KEY")
@@ -82,6 +124,9 @@ def main():
                         help="One-shot delegation prompt. Alice types: python ... --one-shot 'question'")
     parser.add_argument("--receipt", action="store_true", help="Mint organism swimmer receipt for this call")
     parser.add_argument("--model", default="grok-4", help="xAI model (grok-4 for full power, grok-3 fallback)")
+    parser.add_argument("--image", dest="image", action="append", default=None,
+                        help="Path to a local image grok should LOOK at (repeatable). "
+                             "George r211: grok's own eye via xAI image_url, no claude failover.")
     parser.add_argument("--invoker", default="alice_matrix_terminal", help="Who is delegating (for receipt)")
     args = parser.parse_args()
 
@@ -95,7 +140,14 @@ def main():
     if args.one_shot:
         # Alice's reliable delegation path: real Grok, no hallucination, receipt optional
         query = args.one_shot.strip()
-        messages = [{"role": "user", "content": query}]
+        image_paths = list(args.image or [])
+        missing = [p for p in image_paths if not Path(p).exists()]
+        if missing:
+            print(f"ERROR: image not found: {missing}")
+            sys.exit(5)
+        has_image = bool(image_paths)
+        model = vision_model_for(model, has_image)
+        messages = build_one_shot_messages(query, image_paths)
         payload = {
             "model": model,
             "messages": messages,

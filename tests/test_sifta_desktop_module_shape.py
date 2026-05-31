@@ -538,6 +538,102 @@ def test_make_sub_enforces_single_visible_app_slot(monkeypatch):
         app.processEvents()
 
 
+def test_switch_to_chat_marks_open_app_idle_and_diary(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+    monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
+    monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
+
+    import json
+    from PyQt6.QtWidgets import QApplication, QLabel
+
+    import System.swarm_alice_witness as witness
+    import System.swarm_app_focus as app_focus
+    import sifta_os_desktop as m
+    from sifta_os_desktop import SiftaDesktop
+
+    monkeypatch.setattr(witness, "witness", lambda *args, **kwargs: {})
+    monkeypatch.setattr(app_focus, "publish_focus", lambda *args, **kwargs: None)
+    monkeypatch.setattr(m, "_record_sifta_app_health_lifecycle", lambda *args, **kwargs: None)
+
+    class IdleAwareLabel(QLabel):
+        def __init__(self):
+            super().__init__("idle aware")
+            self.idle_calls: list[dict] = []
+
+        def mark_idle_from_desktop(self, **kwargs):
+            self.idle_calls.append(dict(kwargs))
+            return {"ok": True, "idle": True}
+
+    app = QApplication.instance() or QApplication([])
+    desktop = SiftaDesktop()
+    desktop.resize(1200, 800)
+    monkeypatch.setattr(m, "_REPO", tmp_path)
+    try:
+        desktop._switch_desktop_mode("launcher", force=True)
+        widget = IdleAwareLabel()
+        desktop._make_sub(widget, "Idle Test", 260, 180)
+        app.processEvents()
+
+        assert desktop.current_app_state()["active_app_idle"] is False
+
+        desktop._switch_desktop_mode("chat", force=True)
+        app.processEvents()
+
+        state = desktop.current_app_state()
+        assert state["open_apps"] == ["Idle Test"]
+        assert state["idle_apps"] == ["Idle Test"]
+        assert state["active_app_idle"] is True
+        assert widget.idle_calls[-1]["reason"] == "chat_desktop_selected"
+        assert widget.idle_calls[-1]["desktop_mode"] == "chat"
+
+        diary = tmp_path / ".sifta_state" / "episodic_diary.jsonl"
+        rows = [json.loads(line) for line in diary.read_text(encoding="utf-8").splitlines()]
+        assert rows[-1]["truth_label"] == "ALICE_APP_IDLE_AWARENESS_V1"
+        assert rows[-1]["app_name"] == "Idle Test"
+        assert rows[-1]["single_app_policy"] is True
+    finally:
+        desktop.close()
+        app.processEvents()
+
+
+def test_sense_app_limb_state_reconciles_manual_window_registry(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+    monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
+    monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
+
+    import System.swarm_app_focus as app_focus
+    import sifta_os_desktop as m
+    from PyQt6.QtWidgets import QApplication, QLabel
+    from sifta_os_desktop import SiftaDesktop
+
+    monkeypatch.setattr(app_focus, "publish_focus", lambda *args, **kwargs: None)
+    monkeypatch.setattr(m, "_REPO", tmp_path)
+    monkeypatch.setattr(m, "_record_sifta_app_health_lifecycle", lambda *args, **kwargs: None)
+
+    app = QApplication.instance() or QApplication([])
+    desktop = SiftaDesktop()
+    desktop.resize(1200, 800)
+    try:
+        desktop._make_sub(QLabel("browser body"), "Alice Browser", 320, 220)
+        app.processEvents()
+
+        # Simulate a stale body-memory registry: the MDI limb exists, but the
+        # registry forgot it. Sensing must use the live MDI body as truth.
+        desktop._open_windows.pop("Alice Browser", None)
+        state = desktop.sense_app_limb_state(reason="test_manual_reconcile")
+        assert state["open_apps"] == ["Alice Browser"]
+
+        closed = desktop.close_app_by_title("Alice Browser")
+        app.processEvents()
+        assert closed == ["Alice Browser"]
+        assert desktop.sense_app_limb_state(reason="after_manual_close")["open_apps"] == []
+    finally:
+        desktop.close()
+        app.processEvents()
+
+
 def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")

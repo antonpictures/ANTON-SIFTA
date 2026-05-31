@@ -3,7 +3,8 @@
 organism health on demand and on a 30-second auto-refresh.
 
 Architect 2026-05-14 ~19:00 PDT — "for organism you need a doctor like
-I need a doctor". Single page, 9 probe rows, color-coded status.
+I need a doctor". Single page, 13 probe rows, color-coded status. The
+2026-05-30 matrix includes the Body Consciousness Index.
 
 The probe logic lives in :mod:`System.swarm_organism_doctor` (no Qt,
 testable headless). This widget is the renderer + the refresh

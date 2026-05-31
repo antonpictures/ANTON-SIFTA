@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 import time
 import uuid
@@ -76,6 +77,56 @@ except Exception:
 TRUTH_LABEL = "SIFTA_TEACH_ACE_TO_READ_V0"
 WORDACE_SENTENCE_UNLOCK_CORRECT = 4
 WORDACE_LATE_VERDICT_GRACE_S = 30.0
+
+_WORDACE_DIRECT_WORD_COMMANDS = (
+    re.compile(
+        r"\b(?:let(?:'|’)?s\s+)?"
+        r"(?:pick|choose|set(?:\s+up)?|make|change)\s+"
+        r"(?:the\s+)?(?:next\s+)?(?:word|work)\s+"
+        r"(?:to\s+be\s+|to\s+|as\s+|is\s+|should\s+be\s+)?"
+        r"(?P<word>[a-z][a-z'-]{1,24})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:let(?:'|’)?s\s+)?(?:the\s+)?(?:next\s+)?(?:word|work)\s+"
+        r"(?:should\s+be|is|to|as)\s+"
+        r"(?P<word>[a-z][a-z'-]{1,24})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:print|show|put|display)\s+"
+        r"(?P<word>[a-z][a-z'-]{1,24})\s+"
+        r"(?:on|onto)\s+(?:the\s+)?screen\b",
+        re.IGNORECASE,
+    ),
+)
+_WORDACE_DIRECT_WORD_STOPWORDS = frozenset({
+    "a", "an", "as", "current", "it", "next", "one", "same",
+    "screen", "table", "the", "this", "that", "word", "work",
+})
+
+
+def _normalize_wordace_direct_word(raw: str) -> str:
+    """Return a conservative one-word Ace card target from a chat command."""
+    word = re.sub(r"[^A-Za-z'-]", "", str(raw or "").replace("’", "'"))
+    word = word.strip("-'").lower()
+    if not (2 <= len(word) <= 24):
+        return ""
+    if word in _WORDACE_DIRECT_WORD_STOPWORDS:
+        return ""
+    return word
+
+
+def _extract_wordace_direct_word_command(text: str) -> str:
+    """Extract the requested next Ace word from an explicit owner command."""
+    for pattern in _WORDACE_DIRECT_WORD_COMMANDS:
+        match = pattern.search(str(text or ""))
+        if not match:
+            continue
+        word = _normalize_wordace_direct_word(match.group("word"))
+        if word:
+            return word
+    return ""
 
 
 def _visible_lesson_verdict_label(label: str) -> str:
@@ -537,6 +588,9 @@ class TeachAceToReadWidget(QWidget):
         self._consent_ledger_consent = (
             _REPO / ".sifta_state" / "wordace_consent.jsonl"
         )
+        self._direct_word_command_ledger = (
+            _REPO / ".sifta_state" / "wordace_direct_word_command.jsonl"
+        )
         self._consent_proposal_offset = 0
         self._consent_consent_offset = 0
         self._pending_proposal: Optional[Dict] = None  # last open PROPOSE
@@ -906,22 +960,11 @@ class TeachAceToReadWidget(QWidget):
         # which is the lesson LEARNER's name (Ace = the kid). The mirror
         # below shows the conversation between the OS user and Alice;
         # it must render the OS user, not the kid.
-        self._os_user_display_name = "George"  # safe default
+        self._os_user_display_name = "the owner"
         try:
-            gpath = _REPO / ".sifta_state" / "owner_genesis.json"
-            if gpath.exists():
-                g = json.loads(gpath.read_text(encoding="utf-8"))
-                raw = str(g.get("owner_name") or "").strip()
-                if raw:
-                    # "ioan george anton" → "George" (prefer middle name
-                    # which is how the architect signs his messages).
-                    parts = [p for p in raw.split() if p]
-                    if len(parts) >= 2:
-                        # Take the second token if present — matches how
-                        # he refers to himself in chat ("Ioan George").
-                        self._os_user_display_name = parts[1].capitalize()
-                    elif parts:
-                        self._os_user_display_name = parts[0].capitalize()
+            from System.swarm_kernel_identity import owner_display_name
+
+            self._os_user_display_name = owner_display_name("the owner")
         except Exception:
             pass
 
@@ -1371,6 +1414,8 @@ class TeachAceToReadWidget(QWidget):
             if not self._should_render_chat_row(role, text):
                 continue
             self._render_chat_mirror_row(role, text)
+            if self._conversation_mode and self._is_owner_chat_row(role):
+                self._maybe_apply_direct_word_command_from_chat(text)
             new_rows_rendered += 1
         # On EVERY new visible turn, refresh the buddy swarm.
         if new_rows_rendered > 0:
@@ -1412,6 +1457,15 @@ class TeachAceToReadWidget(QWidget):
                 return False
         return True
 
+    def _is_owner_chat_row(self, role: str) -> bool:
+        """True for visible owner rows that may route actions to Ace."""
+        normalized = str(role or "").strip().lower()
+        if normalized in {"alice", "assistant"}:
+            return False
+        if normalized in self._MIRROR_ROLE_BLOCKLIST:
+            return False
+        return True
+
     def _render_chat_mirror_row(self, role: str, text: str) -> None:
         """Append one conversation row to the chat mirror with role color."""
         if not self._should_render_chat_row(role, text):
@@ -1437,7 +1491,7 @@ class TeachAceToReadWidget(QWidget):
                 # from owner_genesis (resolved in _build_lesson_ui).
                 fmt_speaker.setForeground(_Co(0, 187, 249))
                 fmt_speaker.setFontWeight(_F.Weight.Bold)
-                speaker = getattr(self, "_os_user_display_name", "") or "George"
+                speaker = getattr(self, "_os_user_display_name", "") or "the owner"
             fmt_body.setForeground(_Co(235, 230, 255))
             cur.insertText(f"{speaker}: ", fmt_speaker)
             cur.insertText(f"{text}\n", fmt_body)
@@ -1748,6 +1802,100 @@ class TeachAceToReadWidget(QWidget):
             request_auto_spell(seed_word, kind="open")
         except Exception:
             pass
+
+    def _append_jsonl_receipt(self, ledger: Path, row: Dict[str, Any]) -> None:
+        """Best-effort JSONL append for Ace-local receipts."""
+        try:
+            ledger.parent.mkdir(parents=True, exist_ok=True)
+            with ledger.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _seek_consent_ledgers_to_tail(self) -> None:
+        """Skip receipts this widget already applied directly."""
+        for ledger, attr in (
+            (self._consent_ledger_proposal, "_consent_proposal_offset"),
+            (self._consent_ledger_consent, "_consent_consent_offset"),
+        ):
+            try:
+                setattr(self, attr, ledger.stat().st_size if ledger.exists() else 0)
+            except Exception:
+                pass
+
+    def _maybe_apply_direct_word_command_from_chat(self, text: str) -> bool:
+        """Route explicit focused-chat word commands into the Ace card."""
+        new_word = _extract_wordace_direct_word_command(text)
+        if not new_word:
+            return False
+        return self._apply_direct_word_command(new_word, raw_text=text)
+
+    def _apply_direct_word_command(self, new_word: str, *, raw_text: str) -> bool:
+        """Apply an owner-requested Ace word while preserving consent receipts."""
+        new_word = _normalize_wordace_direct_word(new_word)
+        if not new_word:
+            return False
+        old_word = str(self._current_word or "").strip()
+        now = time.time()
+        if old_word.lower() == new_word:
+            self._append_jsonl_receipt(
+                self._direct_word_command_ledger,
+                {
+                    "ts": now,
+                    "schema": "WORDACE_DIRECT_WORD_COMMAND_V1",
+                    "source": "global_chat",
+                    "requested_word": new_word,
+                    "previous_word": old_word,
+                    "applied": False,
+                    "reason": "already_current_word",
+                    "raw_text": raw_text,
+                },
+            )
+            try:
+                self._heard_lbl.setText(
+                    f"💬  The word is already '{new_word}'. Talk to Alice about it."
+                )
+            except Exception:
+                pass
+            return True
+
+        proposal_id = f"ace-chat-{int(now * 1000)}-{uuid.uuid4().hex[:8]}"
+        pending = {
+            "ts": now,
+            "schema": "WORDACE_PROPOSAL_V1",
+            "proposer": "user",
+            "proposed_word": new_word,
+            "proposal_id": proposal_id,
+            "context": raw_text,
+            "source": "ace_global_chat_direct_command",
+        }
+        consent = {
+            "ts": now,
+            "schema": "WORDACE_CONSENT_V1",
+            "consenter": "alice",
+            "proposal_id": proposal_id,
+            "agreed": True,
+            "context": "Focused Ace chat command requested the next screen word.",
+            "source": "ace_global_chat_direct_command",
+        }
+        self._append_jsonl_receipt(self._consent_ledger_proposal, pending)
+        self._append_jsonl_receipt(self._consent_ledger_consent, consent)
+        self._append_jsonl_receipt(
+            self._direct_word_command_ledger,
+            {
+                "ts": now,
+                "schema": "WORDACE_DIRECT_WORD_COMMAND_V1",
+                "source": "global_chat",
+                "requested_word": new_word,
+                "previous_word": old_word,
+                "proposal_id": proposal_id,
+                "applied": True,
+                "raw_text": raw_text,
+            },
+        )
+        self._seek_consent_ledgers_to_tail()
+        self._swap_word(new_word, pending=pending, consent=consent)
+        return True
 
     def _poll_consent_ledgers(self) -> None:
         """Watch for PROPOSE then matching CONSENT — swap the word when found.

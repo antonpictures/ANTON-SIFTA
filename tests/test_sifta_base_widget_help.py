@@ -90,13 +90,23 @@ def _chat_toggle_buttons(widget):
     ]
 
 
+def _sticky_toggle_buttons(widget):
+    return [
+        button
+        for button in widget.findChildren(QPushButton)
+        if button.toolTip() == "Toggle one global chat mirror"
+    ]
+
+
 def test_normal_apps_do_not_embed_alice_chat_panel(monkeypatch):
     monkeypatch.delenv("SIFTA_ENABLE_APP_LOCAL_CHAT", raising=False)
     widget = _NormalLoop()
     try:
         assert widget._gci_visible is False
-        assert widget._splitter.count() == 1
+        assert widget._splitter.count() == 2
         assert _chat_toggle_buttons(widget) == []
+        assert len(_sticky_toggle_buttons(widget)) == 1
+        assert widget._sticky_global_chat_visible is True
         # Legacy apps can still call _gci safely; it is a non-visual bridge.
         widget._gci.chat_display.append("ignored")
         widget._gci.set_app_context("state update")

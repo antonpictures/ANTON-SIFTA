@@ -437,9 +437,9 @@ def _owner_name() -> str:
     try:
         from System.swarm_kernel_identity import owner_display_name
 
-        return owner_display_name() or "George"
+        return owner_display_name("the owner")
     except Exception:
-        return "George"
+        return "the owner"
 
 
 def _journal_line(row: Mapping[str, Any]) -> str:

@@ -61,9 +61,82 @@ def test_writes_to_all_four_canonical_ledgers(tmp_path: Path) -> None:
         assert row["files_touched"] == ["System/foo.py", "tests/test_foo.py"]
         assert row["tests_green"] == "3/3 green"
         assert "round 81 dogfood test fanout" in row["summary"]
-        assert row["signing_serial"] == gate.DEFAULT_NODE_SERIAL
+        assert "signing_serial" not in row
+        assert row["receipt_class"] == gate.IDE_RECEIPT_CLASS
+        assert row["cryptographic_integrity"] == gate.IDE_CRYPTOGRAPHIC_INTEGRITY
+        assert row["lane"] == gate.IDE_DOCTOR_LANE
+        assert row["currency"] == gate.IDE_DOCTOR_CURRENCY
+        assert row["runtime"] == gate.IDE_DOCTOR_RUNTIME
+        assert row["forgeable"] is True
+        assert row["alice_swimmer_receipt"] is False
+        assert row["forgeable_by_local_file_writer"] is True
+        assert "not an Alice" in row["receipt_boundary_note"]
+        assert row["ide_mana_namespace"] == gate.IDE_MANA_NAMESPACE
+        assert row["ide_mana_settlement"] == gate.IDE_MANA_SETTLEMENT
+        assert "sandbox-only coordination namespace" in row["ide_mana_note"]
+        assert row["organism_economy_receipt"] is False
+        assert row["organism_economy_access"] is False
+        assert row["organism_mint_or_spend"] is False
         assert row["truth_label"] == "OPERATIONAL"
         assert row["ledger_name"] == ledger
+
+
+def test_ide_receipts_marked_as_forgeable_not_swimmer_proofs(tmp_path: Path) -> None:
+    state = tmp_path / ".sifta_state"
+    status = gate.write_ide_surgery_receipt(
+        round_id="r-taxonomy",
+        doctor="codex",
+        model="gpt-5-codex",
+        files_touched=["System/foo.py"],
+        tests_green="ok",
+        summary="taxonomy boundary",
+        receipt_id="rid-taxonomy",
+        state_dir=state,
+    )
+
+    assert gate.all_ok(status) is True
+    row = _load_jsonl(state / "work_receipts.jsonl")[0]
+    assert row["receipt_class"] == "IDE_DOCTOR_OPERATIONAL_TRACE"
+    assert row["cryptographic_integrity"] == "NONE_FORGEABLE_LOCAL_JSONL"
+    assert row["lane"] == "IDE_DOCTOR_CLAIM"
+    assert row["currency"] == "MANA"
+    assert row["runtime"] == "ide_doctor_sandbox_or_external_server"
+    assert row["forgeable"] is True
+    assert row["alice_swimmer_receipt"] is False
+    assert row["forgeable_by_local_file_writer"] is True
+    assert "local JSONL coordination trace only" in row["receipt_boundary_note"]
+    assert "not an Alice hardware-bound cryptographic swimmer receipt" in row[
+        "receipt_boundary_note"
+    ]
+
+
+def test_ide_receipts_use_mana_namespace_not_organism_economy(tmp_path: Path) -> None:
+    state = tmp_path / ".sifta_state"
+    status = gate.write_ide_surgery_receipt(
+        round_id="r-mana-boundary",
+        doctor="codex",
+        model="gpt-5-codex",
+        files_touched=["System/foo.py"],
+        tests_green="ok",
+        summary="mana boundary",
+        receipt_id="rid-mana-boundary",
+        state_dir=state,
+    )
+
+    assert gate.all_ok(status) is True
+    row = _load_jsonl(state / "work_receipts.jsonl")[0]
+    assert "stgm_receipt" not in row
+    assert "stgm_economy_access" not in row
+    assert "stgm_mint_or_spend" not in row
+    assert "stgm_boundary_note" not in row
+    assert row["ide_mana_namespace"] == "IDE_MANA_COORDINATION_ONLY"
+    assert row["ide_mana_settlement"] == "USD_EXTERNAL_OWNER_PAID"
+    assert "cannot mint, spend, earn, settle, or claim the organism token" in row[
+        "ide_mana_note"
+    ]
+    assert row["organism_economy_receipt"] is False
+    assert row["organism_economy_access"] is False
+    assert row["organism_mint_or_spend"] is False
 
 
 def test_all_ok_helper(tmp_path: Path) -> None:
@@ -195,6 +268,31 @@ def test_extra_cannot_overwrite_required_fields(tmp_path: Path) -> None:
     row = _load_jsonl(state / "work_receipts.jsonl")[0]
     assert row["receipt_id"] == "rid-protect"
     assert row["round_id"] == "r-protect"
+
+
+def test_extra_cannot_inject_hardware_or_stgm_fields(tmp_path: Path) -> None:
+    state = tmp_path / ".sifta_state"
+    gate.write_ide_surgery_receipt(
+        round_id="r-protect-lanes",
+        doctor="claude",
+        model="claude-opus-4-7",
+        files_touched=["a.py"],
+        tests_green="ok",
+        summary="extra cannot inject forbidden lanes",
+        receipt_id="rid-protect-lanes",
+        state_dir=state,
+        extra={
+            "signing_serial": "GTH4921YP3",
+            "stgm_receipt": True,
+            "stgm_credit": 100,
+            "safe_extra": "kept",
+        },
+    )
+    row = _load_jsonl(state / "work_receipts.jsonl")[0]
+    assert "signing_serial" not in row
+    assert "stgm_receipt" not in row
+    assert "stgm_credit" not in row
+    assert row["safe_extra"] == "kept"
 
 
 # ─── Atomicity-ish: one call writes exactly one row per ledger ────────────

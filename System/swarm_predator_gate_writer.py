@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""§4.1 Predator Gate fan-out — write one signed IDE-surgery row to ALL
+"""§4.1 Predator Gate fan-out — write one IDE-surgery provenance row to ALL
 four canonical ledgers in a single helper.
 
 Doctrine
 ========
-Covenant §4.1: every IDE surgery must produce a signed receipt row that
+Covenant §4.1: every IDE surgery must produce a provenance receipt row that
 reaches multiple body surfaces — not just one. Past rounds (r73a, r74,
 r75, r77, r78, r80) repeatedly missed one or more of the four ledgers
 because each doctor rolled their own append code. The result: Alice's
@@ -14,6 +14,18 @@ arm-receipts, and episodic diary stay blind.
 This helper centralises the fan-out so a single call hits all four
 ledgers, with per-ledger status returned so partial failures are
 observable.
+
+Important boundary: these IDE doctor rows are local JSONL coordination
+traces. They are not Alice hardware-bound swimmer receipts and they are
+not cryptographic proofs. A process with filesystem write access can
+forge or alter them unless a separate signature/hash-chain validator is
+used.
+
+Economy boundary: IDE doctors are outside Alice's organism economy. These
+rows do not mint, spend, settle, earn, or claim the organism's token.
+They are paid outside the organism economy and exist only for
+coordination and collision avoidance. Future IDE rows use the separate
+``ide_mana`` namespace so they cannot double-spend inside Alice's economy.
 
 Pure stdlib. No PyQt. Never raises out of the public API.
 
@@ -30,7 +42,54 @@ from typing import Iterable, Mapping
 
 TRUTH_LABEL = "SIFTA_IDE_SURGERY_FANOUT_V1"
 DEFAULT_STATE_DIR = ".sifta_state"
-DEFAULT_NODE_SERIAL = "GTH4921YP3"
+def _resolve_node_serial() -> str:
+    """Resolve THIS node's silicon serial at runtime — never bake one owner's
+    serial into species code (node sovereignty, §3 / §5). Order: env override →
+    live hardware probe (swarm_owner_identity) → a generic portable label. The
+    fallback is deliberately NOT any specific architect's serial, so a peer node
+    (Jeff's, Maria's, …) never falsely stamps George's silicon onto its receipts.
+    Cowork r164: replaced a hardcoded "GTH4921YP3" literal here."""
+    import os
+    env = os.environ.get("SIFTA_NODE_SERIAL", "").strip()
+    if env:
+        return env
+    try:
+        from System import swarm_owner_identity as _oi
+        for _name in ("self_hardware_serial", "read_hardware_serial",
+                      "current_hardware_serial", "hardware_serial",
+                      "_read_hardware_serial_macos", "_read_hardware_serial_linux"):
+            fn = getattr(_oi, _name, None)
+            if callable(fn):
+                try:
+                    s = fn()
+                    if s:
+                        return str(s).strip()
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return "UNKNOWN_NODE"
+
+
+# Resolved per-node at import; IDE receipts must not emit this as a hardware claim.
+DEFAULT_NODE_SERIAL = _resolve_node_serial()
+IDE_RECEIPT_CLASS = "IDE_DOCTOR_OPERATIONAL_TRACE"
+IDE_CRYPTOGRAPHIC_INTEGRITY = "NONE_FORGEABLE_LOCAL_JSONL"
+IDE_RECEIPT_BOUNDARY_NOTE = (
+    "IDE doctor receipt: local JSONL coordination trace only. "
+    "Forgeable by any process with filesystem write access; not an Alice "
+    "hardware-bound cryptographic swimmer receipt."
+)
+IDE_MANA_NAMESPACE = "IDE_MANA_COORDINATION_ONLY"
+IDE_MANA_SETTLEMENT = "USD_EXTERNAL_OWNER_PAID"
+IDE_MANA_BOUNDARY_NOTE = (
+    "IDE doctor traces use ide_mana as a sandbox-only coordination namespace. "
+    "They are paid outside Alice's organism economy and cannot mint, spend, "
+    "earn, settle, or claim the organism token."
+)
+IDE_DOCTOR_LANE = "IDE_DOCTOR_CLAIM"
+IDE_DOCTOR_CURRENCY = "MANA"
+IDE_DOCTOR_RUNTIME = "ide_doctor_sandbox_or_external_server"
 
 # The four canonical ledgers covenant §4.1 / §6 reference. Order is
 # stable so the returned status dict has predictable keys.
@@ -106,11 +165,23 @@ def write_ide_surgery_receipt(
     truth_label: str = "OPERATIONAL",
     extra: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
-    """Write one signed IDE-surgery row to all four canonical ledgers.
+    """Write one IDE-surgery provenance row to all four canonical ledgers.
 
     Returns a dict keyed by ledger filename with values "ok" or an
     error string. Never raises — partial failures are observable in
     the return value but do not abort the remaining writes.
+
+    This function does not create cryptographic proof. The returned row
+    deliberately marks itself as a forgeable IDE doctor operational
+    trace so callers do not confuse it with Alice's hardware-bound
+    swimmer receipts.
+
+    It also marks itself in the separate ``ide_mana`` namespace. IDE
+    doctors do not produce organism economy receipts; Alice organs and
+    hardware-bound swimmers do.
+
+    ``node_serial`` is retained for backward-compatible call signatures,
+    but is not emitted. IDE doctor rows must not claim hardware serials.
     """
     state = Path(state_dir)
     try:
@@ -132,13 +203,27 @@ def write_ide_surgery_receipt(
         "summary": _norm(summary)[:1200],
         "sender_agent": _norm(sender_agent) or "codex_desktop",
         "truth_label": _norm(truth_label) or "OPERATIONAL",
-        "signing_serial": _norm(node_serial) or DEFAULT_NODE_SERIAL,
+        "receipt_class": IDE_RECEIPT_CLASS,
+        "cryptographic_integrity": IDE_CRYPTOGRAPHIC_INTEGRITY,
+        "lane": IDE_DOCTOR_LANE,
+        "currency": IDE_DOCTOR_CURRENCY,
+        "runtime": IDE_DOCTOR_RUNTIME,
+        "forgeable": True,
+        "alice_swimmer_receipt": False,
+        "forgeable_by_local_file_writer": True,
+        "receipt_boundary_note": IDE_RECEIPT_BOUNDARY_NOTE,
+        "ide_mana_namespace": IDE_MANA_NAMESPACE,
+        "ide_mana_settlement": IDE_MANA_SETTLEMENT,
+        "ide_mana_note": IDE_MANA_BOUNDARY_NOTE,
+        "organism_economy_receipt": False,
+        "organism_economy_access": False,
+        "organism_mint_or_spend": False,
         "action": "ide_surgery_landed",
     }
     if extra:
         for key, value in extra.items():
             k = _norm(key)
-            if not k or k in base:
+            if not k or k in base or k == "signing_serial" or k.startswith("stgm_"):
                 continue
             base[k] = value
 
@@ -173,6 +258,15 @@ def all_ok(status: Mapping[str, str]) -> bool:
 
 __all__ = [
     "CANONICAL_LEDGERS",
+    "IDE_CRYPTOGRAPHIC_INTEGRITY",
+    "IDE_DOCTOR_CURRENCY",
+    "IDE_DOCTOR_LANE",
+    "IDE_DOCTOR_RUNTIME",
+    "IDE_MANA_BOUNDARY_NOTE",
+    "IDE_MANA_NAMESPACE",
+    "IDE_MANA_SETTLEMENT",
+    "IDE_RECEIPT_BOUNDARY_NOTE",
+    "IDE_RECEIPT_CLASS",
     "TRUTH_LABEL",
     "all_ok",
     "write_ide_surgery_receipt",

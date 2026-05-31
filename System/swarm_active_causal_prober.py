@@ -156,9 +156,8 @@ class ActiveCausalProber:
         if os.environ.get(_DISABLE_ENV, "").strip() == "1":
             return None
 
-        # Safety gate — never probe under high-risk stability levels
-        if stability_level in ("EMERGENCY", "BLOCK_NEW"):
-            return None
+        # r169 — stability clamp governor removed per Architect (one Alice is the only governor)
+        # Probes are no longer blocked by external stability levels.
 
         # ── Regulatory Genome ──
         from System.swarm_regulatory_genome import load_regulatory_parameters, get_latest_genome_hash

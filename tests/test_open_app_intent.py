@@ -60,6 +60,7 @@ def test_voice_open_app_actually_triggers_launcher(monkeypatch):
     reply = tw.TalkToAliceWidget._execute_sifta_app_command(widget, command)
 
     fake_launcher._trigger_manifest_app.assert_called_with("Teach Alice to Hear")
+    fake_launcher._switch_desktop_mode.assert_called_with("launcher")
     assert "Opening Teach Alice to Hear" in reply
 
 
@@ -71,3 +72,64 @@ def test_voice_open_app_with_greeting_and_the_app_prefix_routes_to_launch():
 
     assert parsed.get("kind") == "app"
     assert parsed.get("app_name") == "Teach Alice to Hear"
+
+
+def test_close_alice_browser_alias_routes_to_close_command():
+    """Owner can say close alicebrowser without spacing and still hit the real app."""
+    from Applications import sifta_talk_to_alice_widget as tw
+
+    for phrase in (
+        "close alicebrowser",
+        "close Alice Browser",
+        "close the app Alice Browser",
+        "close the app alicebrowser",
+    ):
+        parsed = tw._extract_sifta_app_command(phrase)
+        assert parsed == {"kind": "close_app", "app_name": "Alice Browser", "url": ""}
+
+
+def test_close_named_app_triggers_launcher_close_not_open():
+    """Resolved close commands must not fall through into the app-open path."""
+    from Applications import sifta_talk_to_alice_widget as tw
+    from unittest.mock import MagicMock
+
+    fake_launcher = MagicMock()
+    fake_launcher.close_app_by_title.return_value = ["Alice Browser"]
+    fake_launcher._trigger_manifest_app = MagicMock()
+
+    widget = tw.TalkToAliceWidget.__new__(tw.TalkToAliceWidget)
+    widget._append_system_line = MagicMock()
+    widget._desktop_app_launcher = lambda: fake_launcher
+
+    reply = tw.TalkToAliceWidget._execute_sifta_app_command(
+        widget,
+        {"kind": "close_app", "app_name": "Alice Browser", "url": ""},
+    )
+
+    fake_launcher.close_app_by_title.assert_called_once_with("Alice Browser")
+    fake_launcher._trigger_manifest_app.assert_not_called()
+    fake_launcher._switch_desktop_mode.assert_called_with("chat")
+    assert "Closed Alice Browser" in reply
+
+
+def test_close_current_app_uses_single_active_slot():
+    """Bare close/current close delegates target resolution to the desktop."""
+    from Applications import sifta_talk_to_alice_widget as tw
+    from unittest.mock import MagicMock
+
+    fake_launcher = MagicMock()
+    fake_launcher.close_app_by_title.return_value = ["Ace"]
+    fake_launcher._trigger_manifest_app = MagicMock()
+
+    widget = tw.TalkToAliceWidget.__new__(tw.TalkToAliceWidget)
+    widget._append_system_line = MagicMock()
+    widget._desktop_app_launcher = lambda: fake_launcher
+
+    reply = tw.TalkToAliceWidget._execute_sifta_app_command(
+        widget,
+        {"kind": "close_app", "app_name": "", "url": ""},
+    )
+
+    fake_launcher.close_app_by_title.assert_called_once_with("")
+    fake_launcher._trigger_manifest_app.assert_not_called()
+    assert "Closed Ace" in reply

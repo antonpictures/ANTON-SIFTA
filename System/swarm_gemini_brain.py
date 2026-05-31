@@ -71,6 +71,7 @@ log line and a ledger row can be cross-referenced 1:1.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -375,7 +376,21 @@ def available_cloud_models() -> List[str]:
 # ─────────────────────────────────────────────────────────────────────
 # Message-shape adapter (OpenAI-ish → Gemini)
 # ─────────────────────────────────────────────────────────────────────
-def _to_gemini_payload(messages: List[Dict[str, str]],
+def _guess_image_mime(raw_b64: str, fallback: str = "image/png") -> str:
+    try:
+        data = base64.b64decode(str(raw_b64 or ""), validate=False)
+    except Exception:
+        return fallback
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return fallback
+
+
+def _to_gemini_payload(messages: List[Dict[str, Any]],
                        *, temperature: float = 0.7) -> Dict[str, Any]:
     """Translate the [{role, content}] history the widget already builds
     into the {systemInstruction, contents:[{role, parts:[{text}]}]}
@@ -393,16 +408,31 @@ def _to_gemini_payload(messages: List[Dict[str, str]],
     for m in messages or []:
         role = (m.get("role") or "user").lower()
         text = m.get("content") or ""
-        if not text:
+        images = m.get("images") if isinstance(m.get("images"), list) else []
+        if not text and not images:
             continue
         if role == "system":
             sys_chunks.append(text)
             continue
         gemini_role = "model" if role == "assistant" else "user"
-        contents.append({
-            "role": gemini_role,
-            "parts": [{"text": text}],
-        })
+        parts: List[Dict[str, Any]] = []
+        if text:
+            parts.append({"text": text})
+        for idx, image_b64 in enumerate(images[:4]):
+            if not isinstance(image_b64, str) or not image_b64.strip():
+                continue
+            mime = str(m.get("image_mime") or _guess_image_mime(image_b64))
+            parts.append({
+                "inlineData": {
+                    "mimeType": mime,
+                    "data": image_b64,
+                }
+            })
+        if parts:
+            contents.append({
+                "role": gemini_role,
+                "parts": parts,
+            })
     payload: Dict[str, Any] = {
         "contents": contents,
         "generationConfig": {
@@ -417,7 +447,7 @@ def _to_gemini_payload(messages: List[Dict[str, str]],
     return payload
 
 
-def _to_xai_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def _to_xai_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """Normalize widget history for xAI chat-completions payload."""
     out: List[Dict[str, str]] = []
     for m in messages or []:
@@ -435,7 +465,7 @@ def _grok_cli_binary() -> Optional[str]:
     return shutil.which("grok")
 
 
-def _to_grok_cli_prompt(messages: List[Dict[str, str]]) -> str:
+def _to_grok_cli_prompt(messages: List[Dict[str, Any]]) -> str:
     """Flatten chat history into a deterministic single-turn prompt for grok CLI."""
     lines: List[str] = [
         "You are the active SIFTA Grok Cortex for Alice.",
@@ -532,7 +562,7 @@ def _stream_grok_chat(
     temperature: float = 0.7,
     api_key: Optional[str] = None,
     request_tag: Optional[str] = None,
-    timeout_s: int = 120,
+    timeout_s: int = 600,  # [r193] 120->600: 120s cut Alice off mid-turn. Cortex runs off the UI thread, so this does not affect the Send beachball. Heavy multi-file coding still belongs in the 900s arm, not the cortex turn.
 ) -> Iterator[Tuple[str, Any]]:
     """xAI chat-completions adapter.
 
@@ -659,7 +689,7 @@ def _stream_grok_chat_via_cli(
     model: str,
     messages: List[Dict[str, str]],
     request_tag: Optional[str] = None,
-    timeout_s: int = 120,
+    timeout_s: int = 600,  # [r193] 120->600: give the Grok-OAuth cortex turn real room (was cutting Alice off at 120s).
 ) -> Iterator[Tuple[str, Any]]:
     """Fallback path: use logged-in local grok CLI OAuth session.
 
@@ -769,7 +799,7 @@ def _stream_grok_chat_via_cli(
     yield ("done", text)
 
 
-def _to_teacher_cli_prompt(messages: List[Dict[str, str]], *, teacher: str) -> str:
+def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> str:
     """Flatten chat history for CLI teacher cortexes.
 
     Claude and Codex are used here as signed-in teacher substrates, not as
@@ -788,9 +818,15 @@ def _to_teacher_cli_prompt(messages: List[Dict[str, str]], *, teacher: str) -> s
     for msg in messages or []:
         role = str(msg.get("role") or "user").strip() or "user"
         content = str(msg.get("content") or "").strip()
-        if not content:
+        image_path = str(msg.get("image_path") or "").strip()
+        image_count = len(msg.get("images") or []) if isinstance(msg.get("images"), list) else 0
+        if not content and not image_path and not image_count:
             continue
         chunks.append(f"[{role}]\n{content}")
+        if image_path:
+            chunks.append(f"[attached image path]\n{image_path}")
+        elif image_count:
+            chunks.append(f"[attached image]\n{image_count} base64 image payload(s) were present in the Talk turn.")
     return "\n\n".join(chunks).strip()
 
 
@@ -1098,7 +1134,7 @@ def stream_chat(
     temperature: float = 0.7,
     api_key: Optional[str] = None,
     request_tag: Optional[str] = None,
-    timeout_s: int = 120,
+    timeout_s: Optional[int] = None,  # r150: was 120 (guillotined Alice's cortex mid-thought). None => resolve from SIFTA_CORTEX_TIMEOUT_S.
 ) -> Iterator[Tuple[str, Any]]:
     """Stream a Gemini chat completion.
 
@@ -1120,6 +1156,18 @@ def stream_chat(
         • Two custom headers are sent on every request to make the call
           trivially findable in the Google Cloud Console log viewer.
     """
+    # r150 (cowork_claude, 2026-05-29) — George: "REMOVE THE TIMEOUT." The old hardcoded
+    # 120s default was cutting Alice's cortex off mid-thought (grok/qwen "CLI timed out
+    # after 120s", then reflex-fallback to the local 8B). No wall-clock cage on her voice.
+    # Owner-tunable: SIFTA_CORTEX_TIMEOUT_S=0 (or "none") => truly unbounded. The default
+    # is a long backstop, NOT a guillotine — a hung provider must not permanently wedge the
+    # cortex worker (a wedged worker blocks every future turn via the _busy guard).
+    if timeout_s is None:
+        _raw = os.environ.get("SIFTA_CORTEX_TIMEOUT_S", "1800").strip().lower()
+        try:
+            timeout_s = None if _raw in {"0", "none", "off", ""} else int(float(_raw))
+        except Exception:
+            timeout_s = 1800
     if _is_grok_model(model):
         yield from _stream_grok_chat(
             model,

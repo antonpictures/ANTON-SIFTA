@@ -182,6 +182,113 @@ class RecallResult:
 
 # ─── MemoryForager ─────────────────────────────────────────────────────────────
 
+def _astar_prerank_candidates(query: str, candidates: list, state_dir) -> list:
+    """Optional Semantic A* pre-rank lane (SIFTA r207, GraphPalace pattern).
+
+    When the wing→room→drawer overlay (forager_hierarchy.jsonl) exists, gently REORDER
+    the flat scent candidates by structural + pheromone fit. Strict Delta=0 guarantees:
+      * overlay absent  → return candidates unchanged (no behavior change),
+      * any error       → return candidates unchanged,
+      * confidence values are NEVER modified (only order may change),
+      * the nudge is capped (≤8%) so it can never push a high-confidence owner/session
+        memory below a weakly-matched one — it only breaks near-ties using structure.
+    Bounded so the hot recall path stays cheap.
+    """
+    try:
+        if not candidates or len(candidates) > 200:
+            return candidates
+        from System.swarm_forager_hierarchy import load_hierarchy  # noqa: PLC0415
+        hierarchy_rows = load_hierarchy(state_dir=state_dir)
+        if not hierarchy_rows:
+            return candidates  # overlay not built yet → flat recall, Delta=0
+        from System.swarm_forager_semantic_astar import semantic_astar  # noqa: PLC0415
+        hierarchy_by_ref = {}
+        for row in hierarchy_rows:
+            ref = str(row.get("ref") or "")
+            if ref:
+                hierarchy_by_ref.setdefault(ref, row)
+        nodes = []
+        pheromone_rows = []
+        matched_hierarchy = False
+        for i, (_conf, trace) in enumerate(candidates):
+            nid = str(getattr(trace, "trace_id", "") or i)
+            h = hierarchy_by_ref.get(nid) or {}
+            matched_hierarchy = matched_hierarchy or bool(h)
+            raw_text = str(getattr(trace, "raw_text", "") or "")
+            h_text = str(h.get("text") or "")
+            nodes.append({
+                "id": nid,
+                "ref": nid,
+                "text": f"{raw_text} {h_text}".strip(),
+                "ts": getattr(trace, "timestamp", None),
+                "retention": trace.retention() if hasattr(trace, "retention") else 1.0,
+                "wing": h.get("wing", ""),
+                "room": h.get("room", ""),
+                "drawer": h.get("drawer", ""),
+            })
+            recall_count = float(getattr(trace, "recall_count", 0) or 0)
+            if recall_count > 0:
+                pheromone_rows.append({
+                    "id": nid,
+                    "uses": min(1.0, recall_count / 3.0),
+                    "ts": getattr(trace, "timestamp", None),
+                })
+        if not matched_hierarchy:
+            return candidates  # unrelated overlay exists; preserve flat recall
+        graph_edges = _hierarchy_candidate_edges(nodes)
+        ranked = semantic_astar(query, nodes,
+                                graph_edges=graph_edges,
+                                pheromone_rows=pheromone_rows,
+                                max_expansions=min(400, len(nodes) * 3),
+                                top_k=len(nodes))
+        cost_by_id = {d["id"]: d["cost"] for d in ranked}
+        if not cost_by_id:
+            return candidates
+        maxc = max(cost_by_id.values()) or 1.0
+
+        def _blended(i, conf, trace):
+            nid = str(getattr(trace, "trace_id", "") or i)
+            cost = cost_by_id.get(nid, maxc)
+            nudge = (1.0 - (cost / maxc)) * 0.08  # ≤8% structural/pheromone nudge
+            return conf + nudge
+
+        order = sorted(range(len(candidates)),
+                       key=lambda i: _blended(i, candidates[i][0], candidates[i][1]),
+                       reverse=True)
+        return [candidates[i] for i in order]  # same tuples, only the order may shift
+    except Exception:
+        return candidates
+
+
+def _hierarchy_candidate_edges(nodes: list) -> list[tuple[str, str]]:
+    """Sparse structural edges between candidate traces that share a hierarchy room.
+
+    Anchor edges avoid O(n^2) complete buckets while still letting A* pull nearby
+    memories through wing/room/drawer locality.
+    """
+    buckets = {}
+    for node in nodes:
+        nid = str(node.get("id") or "")
+        if not nid:
+            continue
+        wing = str(node.get("wing") or "")
+        room = str(node.get("room") or "")
+        drawer = str(node.get("drawer") or "")
+        if wing and room:
+            buckets.setdefault(("room", wing, room), []).append(nid)
+        if wing and room and drawer:
+            buckets.setdefault(("drawer", wing, room, drawer), []).append(nid)
+    edges = set()
+    for ids in buckets.values():
+        ids = sorted(set(ids))
+        if len(ids) < 2:
+            continue
+        anchor = ids[0]
+        for other in ids[1:]:
+            edges.add((anchor, other))
+    return sorted(edges)
+
+
 class MemoryForager:
     """
     A single swimmer dispatched to crawl the ledger.
@@ -284,7 +391,9 @@ class MemoryForager:
 
         # Sort by strongest scent first
         candidates.sort(key=lambda x: x[0], reverse=True)
-        return candidates
+        # Optional Semantic A* pre-rank (r207): nudge order by wing→room→drawer +
+        # pheromone fit when the overlay exists; otherwise unchanged (Delta=0).
+        return _astar_prerank_candidates(query, candidates, ledger_path.parent)
 
     def report(self) -> str:
         return (

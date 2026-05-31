@@ -101,6 +101,10 @@ def _journal_text(source: str, row: dict[str, Any]) -> str:
     if source == "app_focus.jsonl":
         return f"Owner focus: {_short(row.get('app'))} {_short(row.get('detail'))}".strip()
     if source == "visual_stigmergy.jsonl":
+        if row.get("source") == "co_watch_desktop" or row.get("stigmergic_label") == "OBSERVED_MEDIA":
+            title = _short(row.get("media_title") or row.get("title") or "current media", 120)
+            proof = row.get("sha8") or row.get("frame_sha256") or row.get("row_hash") or "unhashed"
+            return f"Co-watch media frame observed: {title} proof={_short(proof, 32)} provenance=OBSERVED_MEDIA"
         frame = f"{row.get('w', '?')}x{row.get('h', '?')}"
         proof = row.get("sha8") or row.get("frame_sha256") or row.get("source_sha8") or "unhashed"
         return f"Visual stigmergy frame observed: {frame} proof={_short(proof, 32)}"

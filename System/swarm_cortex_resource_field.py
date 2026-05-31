@@ -9,7 +9,7 @@ The organism (all other organs and swimmers) can now *see* the real-time health 
 - Is the primary cortex cold-loaded?
 - What is current VRAM / power pressure on the M5?
 - What was the last inference latency and cold-start cost?
-- Overall "thinking organ health" that feeds the 17-organ ring and metabolic clamp.
+- Overall "thinking organ health" that feeds the organ ring and metabolic clamp.
 
 This is the missing interconnection the Architect named:
   "all organs unified ... all swimmers know their organs, they communicate to keep organs healthy and STGM profitable."
@@ -36,7 +36,7 @@ _REPO = Path(__file__).resolve().parents[1]
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "cortex_resource_field.jsonl"
 
-# We feed the main organ_field_vector too so the 17-organ ring sees cortex health
+# We feed the main organ_field_vector too so the organ ring sees cortex health.
 _ORGAN_FIELD = _STATE / "organ_field_vector.jsonl"
 
 

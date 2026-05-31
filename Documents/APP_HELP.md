@@ -623,8 +623,15 @@ stigmergic state of the Swarm in real time. Open them via **SIFTA → Swarm Inte
   listens to receipts from YouTube context, watch memory, observed media ingress,
   acoustic scene classification, and caption snippets, then guesses the likely
   YouTube category and source family.
+- **Co-watch eyes:** When co-watch is active and a media title is present, the
+  brainstem may take a throttled desktop screenshot under
+  `.sifta_state/cowatch_frames/`, fingerprint it like camera/Bonsai frames, and
+  write `source=co_watch_desktop` + `stigmergic_label=OBSERVED_MEDIA`. This is
+  screen media from George's display, not webcam sight and not a real-room
+  scene. Alice may learn from it but must keep that provenance boundary.
 - **State:** `.sifta_state/media_shazam_guesses.jsonl`,
   `.sifta_state/media_shazam_latest.json`,
+  `.sifta_state/cowatch_media_visual.jsonl`,
   `.sifta_state/acoustic_scene_classifications.jsonl`, plus upstream
   YouTube/media ledgers.
 - **Metric:** Top category confidence, candidate category scores, source-family
@@ -657,10 +664,11 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Failure mode:** if Alice Shell can't find the app you named, it suggests the closest match.
 
 ### Talk to Alice
-**What it does:** Voice + text conversation interface to Alice's LLM brain (Ollama). Speak or type; Alice responds in real time with her full personality, swarm context, and memory.
-**State:** reads pheromone trail, health scores, and stigmergic ledger for grounding.
-**Control:** microphone button for voice, text field for typing.
-**Failure mode:** if Ollama is not running, Alice will fall back to a pre-scripted response.
+**What it does:** Voice + text conversation interface to Alice's LLM brain. Speak or type; Alice responds in real time with her full personality, swarm context, and memory.
+**Image turns:** Drag/drop an image or paste a local image path such as `/Users/.../Screenshot.jpg`. Talk promotes that path into the attachment lane, records the attachment boundary, and asks the cortex-need selector for a vision-capable cortex for that turn. If a native vision transport is available, image bytes go with the message; CLI teacher paths receive the absolute image path plus attachment receipt context.
+**State:** reads pheromone trail, health scores, stigmergic ledger, attachment-vision receipts, and `.sifta_state/cortex_need_switches.jsonl` for per-turn cortex choice.
+**Control:** microphone button for voice, text field for typing, Drop/Attach for images.
+**Failure mode:** if no vision-capable cortex or attachment receipt exists, Alice must say what failed and refuse to fabricate pixels. A generated Bonsai image, co-watch frame, and camera frame each keep their own provenance label.
 
 ### What Alice Sees
 **What it does:** Renders Alice's real-time 16×16 visual saliency grid — the raw photon stream from her camera expressed as a heat-map. Shows what the swarm's eye is attending to RIGHT NOW.
@@ -969,6 +977,14 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 ---
 
 <!-- Manifest-canonical titles (Programs menu). CG55M 2026-05-05: every non-retired widget app names a ### section here for MDI ? help. -->
+
+### Bonsai Image Studio (AI Vision)
+- **Purpose:** Generate AI images on the local Apple-Silicon Bonsai backend, then teach Alice what the image means through the same `.sifta_state/visual_stigmergy.jsonl` lane her camera organs read.
+- **Ant Cortex Compose:** Press **Ant Cortex Compose** to let ant swimmers sample recent visual pheromone traces and produce candidate prompt fragments. Alice's live cortex then selects/refines one candidate into the prompt, label, and meaning fields. It does not render automatically; press **Generate & Teach** when the candidate looks right.
+- **Pheromone update law:** Candidate fragments strengthen by `pheromone_next = (1 - evaporation) * pheromone_now + deposit * candidate_score`. Stronger repeated field signals become easier for later ants to sample; unused signals fade.
+- **Teaching meaning:** The meaning field may be empty, but owner language makes the field richer. A good meaning is plain English: what the image is, why it matters, and which feeling or concept Alice should associate with it.
+- **Receipts:** AI renders are tagged `OBSERVED_AI_GENERATED`, never real camera observations. Ant/cortex composition attempts are written to `.sifta_state/bonsai_ant_cortex.jsonl`; successful renders are also written to `.sifta_state/bonsai_image_trace.jsonl`.
+- **Failure mode:** If the live cortex or MLX backend fails, the app shows the real error and writes an error trace. It must not fake an image or silently claim learning happened.
 
 ### AG31 - Stigmergic Pac-Man
 - **Purpose:** Arcade Pac-Man where pheromone-gradient search drives dot collection; stub ghost personas reference NVIDIA stack names as flavor only.

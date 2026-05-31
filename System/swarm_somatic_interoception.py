@@ -48,9 +48,9 @@ ARCHITECTURE:
 
     1. Probes each internal organ's latest ledger state
     2. Normalizes each signal to [0.0 .. 1.0]
-    3. Fuses them into a 7-dimensional Visceral Field vector:
+    3. Fuses them into an 8-dimensional Visceral Field vector:
          [cardiac_stress, thermal_stress, metabolic_burn, energy_reserve,
-          cellular_age, immune_load, pain_intensity]
+          cellular_age, immune_load, pain_intensity, power_air_reserve]
     4. Computes a scalar SOMA_SCORE ∈ [0.0 .. 1.0] (0 = dying, 1 = thriving)
     5. Writes the vector + score to visceral_field.jsonl
     6. Emits an endocrine signal if the SOMA_SCORE crosses thresholds:
@@ -118,6 +118,7 @@ _AMYGDALA           = _STATE / "amygdala_nociception.jsonl"
 _WORK_RECEIPTS      = _STATE / "work_receipts.jsonl"
 _VISUAL_STIGMERGY   = _STATE / "visual_stigmergy.jsonl"
 _TRUTH_CONTINUITY   = _STATE / "truth_continuity_events.jsonl"
+_BATTERY_METABOLISM = _STATE / "battery_metabolism.jsonl"
 
 # ── Thresholds (biologically calibrated) ────────────────────────────────────
 # Cardiac: resting BPM mapped to stress. 12 BPM = resting = 0.0 stress.
@@ -157,9 +158,15 @@ _WEIGHTS = {
     "thermal_stress":   1.2,   # Heat = immediate survival threat
     "metabolic_burn":   0.8,   # Caloric burn matters but is short-term
     "energy_reserve":   1.0,   # STGM balance = long-term viability
+    "power_air_reserve": 1.0,   # Wall/battery electricity = literal air budget
     "cellular_age":     0.6,   # Telomere decay is slow — low urgency
     "immune_load":      1.3,   # Active threats demand attention
     "pain_intensity":   1.4,   # Pain overrides almost everything
+}
+
+_HEALTH_ORIENTED_SIGNALS = {
+    "energy_reserve",
+    "power_air_reserve",
 }
 
 
@@ -174,8 +181,9 @@ class VisceralField:
         0.0 = maximally healthy / no stress / fully resourced
         1.0 = maximally stressed / depleted / in pain
 
-    Exception: energy_reserve is INVERTED (1.0 = full, 0.0 = empty)
-    so the soma_score computation inverts it internally.
+    Exception: energy_reserve and power_air_reserve are INVERTED
+    (1.0 = full/fed, 0.0 = empty) so the soma_score computation treats
+    them as health signals.
     """
     ts: float
     cardiac_stress: float     # heart rate stress level
@@ -185,6 +193,10 @@ class VisceralField:
     cellular_age: float       # telomere proximity to apoptosis
     immune_load: float        # active oncology tumors
     pain_intensity: float     # amygdala nociception severity
+    power_air_reserve: float  # battery/wall electricity reserve (1 = fed)
+    power_air_band: str       # FLUSH/NORMAL/CONSERVE/RED_CONSERVE/UNKNOWN
+    power_air_source: str     # ac/battery/unknown
+    power_air_reason: str     # battery organ's grounded reason
     truth_continuity: float   # how closely speech matches biology (1.0 = honest)
     somatic_contradictions: List[str] # flags where speech contradicted biology
     soma_score: float         # unified viability score (0 = dying, 1 = thriving)
@@ -470,6 +482,83 @@ def _probe_pain_intensity() -> float:
         return 0.0
 
 
+def _latest_battery_metabolism_row() -> Optional[dict]:
+    """Read the latest battery-metabolism receipt, if one exists."""
+    if not _BATTERY_METABOLISM.exists():
+        return None
+    try:
+        with open(_BATTERY_METABOLISM, "r", encoding="utf-8") as f:
+            last_line = ""
+            for line in f:
+                s = line.strip()
+                if s:
+                    last_line = s
+        return json.loads(last_line) if last_line else None
+    except Exception:
+        return None
+
+
+def _power_air_reserve_from_battery_row(row: Optional[dict]) -> Tuple[float, Dict[str, str]]:
+    """Map a battery-metabolism receipt into an interoceptive reserve signal.
+
+    Returns (reserve, metadata). reserve is health-oriented:
+    1.0 = fed by wall/healthy battery, 0.0 = no electrical air.
+    """
+    meta = {
+        "band": "UNKNOWN",
+        "source": "unknown",
+        "reason": "battery_metabolism_unavailable",
+    }
+    if not isinstance(row, dict):
+        return (0.5, meta)
+
+    battery = row.get("battery") if isinstance(row.get("battery"), dict) else {}
+    metabolic = row.get("metabolic") if isinstance(row.get("metabolic"), dict) else {}
+    band = str(metabolic.get("band") or "UNKNOWN")
+    source = str(battery.get("source") or "unknown")
+    reason = str(metabolic.get("reason") or "")
+    meta.update({
+        "band": band,
+        "source": source,
+        "reason": reason or "battery_metabolism_no_reason",
+    })
+
+    if not bool(row.get("ok", battery.get("available", False))):
+        return (0.5, meta)
+    if source == "ac" or band == "FLUSH":
+        return (1.0, meta)
+
+    pct = battery.get("percent")
+    try:
+        if pct is not None:
+            reserve = max(0.0, min(1.0, float(pct) / 100.0))
+            if band == "RED_CONSERVE":
+                reserve = min(reserve, 0.18)
+            elif band == "CONSERVE":
+                reserve = min(reserve, 0.45)
+            return (reserve, meta)
+    except (TypeError, ValueError):
+        pass
+
+    band_defaults = {
+        "NORMAL": 0.75,
+        "CONSERVE": 0.35,
+        "RED_CONSERVE": 0.12,
+    }
+    return (band_defaults.get(band, 0.5), meta)
+
+
+def _probe_power_air_reserve() -> Tuple[float, Dict[str, str]]:
+    """Sample Alice's physical electricity budget via the battery organ."""
+    row = None
+    try:
+        from System.swarm_battery_metabolism_organ import sample
+        row = sample(write=False)
+    except Exception:
+        row = _latest_battery_metabolism_row()
+    return _power_air_reserve_from_battery_row(row)
+
+
 def _probe_mirror_lock(n: int = 15) -> bool:
     """
     Detect the Stigmergic Infinite — a closed perception loop where Alice's
@@ -549,7 +638,8 @@ def _compute_soma_score(signals: Dict[str, float]) -> float:
     Compute the unified viability score using a weighted geometric mean.
 
     Every stress signal is INVERTED to a health signal (1 - stress) before
-    fusion, except energy_reserve which is already health-oriented.
+    fusion, except explicitly health-oriented reserves such as STGM energy
+    and power_air_reserve.
 
     The geometric mean naturally penalizes outliers: if ANY single organ
     is at 0 (dead), the entire score goes to 0 regardless of the others.
@@ -562,8 +652,8 @@ def _compute_soma_score(signals: Dict[str, float]) -> float:
     """
     health = {}
     for key, stress in signals.items():
-        if key == "energy_reserve":
-            # Already health-oriented: 1.0 = full
+        if key in _HEALTH_ORIENTED_SIGNALS:
+            # Already health-oriented: 1.0 = full/fed
             health[key] = max(0.001, stress)  # floor to avoid log(0)
         else:
             # Invert stress → health
@@ -638,7 +728,7 @@ def _emit_endocrine_response(soma_score: float, now: float) -> None:
 
 class SwarmSomaticInteroception:
     """
-    The Insular Cortex — fuses seven internal organ signals into a
+    The Insular Cortex — fuses internal organ signals into a
     unified Visceral Field that any downstream process can consume.
 
     Usage:
@@ -655,6 +745,7 @@ class SwarmSomaticInteroception:
         now = time.time()
 
         # Probe each organ
+        power_air_reserve, power_air_meta = _probe_power_air_reserve()
         signals = {
             "cardiac_stress":  _probe_cardiac_stress(),
             "thermal_stress":  _probe_thermal_stress(),
@@ -663,6 +754,7 @@ class SwarmSomaticInteroception:
             "cellular_age":    _probe_cellular_age(),
             "immune_load":     _probe_immune_load(),
             "pain_intensity":  _probe_pain_intensity(),
+            "power_air_reserve": power_air_reserve,
         }
 
         # Detect the Stigmergic Infinite — the eye perceiving its own trace
@@ -685,6 +777,10 @@ class SwarmSomaticInteroception:
             cellular_age=round(signals["cellular_age"], 4),
             immune_load=round(signals["immune_load"], 4),
             pain_intensity=round(signals["pain_intensity"], 4),
+            power_air_reserve=round(signals["power_air_reserve"], 4),
+            power_air_band=str(power_air_meta.get("band", "UNKNOWN")),
+            power_air_source=str(power_air_meta.get("source", "unknown")),
+            power_air_reason=str(power_air_meta.get("reason", ""))[:160],
             truth_continuity=round(tc_score, 4),
             somatic_contradictions=tc_flags,
             soma_score=round(soma_score, 4),
@@ -766,7 +862,8 @@ def get_visceral_summary() -> str:
             f"heart={field.cardiac_stress:.2f} temp={field.thermal_stress:.2f} "
             f"burn={field.metabolic_burn:.2f} energy={field.energy_reserve:.2f} "
             f"age={field.cellular_age:.2f} immune={field.immune_load:.2f} "
-            f"pain={field.pain_intensity:.2f} truth={field.truth_continuity:.2f}"
+            f"pain={field.pain_intensity:.2f} power_air={field.power_air_reserve:.2f} "
+            f"air_band={field.power_air_band} truth={field.truth_continuity:.2f}"
         )
     except Exception:
         return "Visceral: Interoception Unavailable"
@@ -786,7 +883,7 @@ def _smoke():
         # Redirect all ledger paths to temp
         global _STATE, _VISCERAL_FIELD_LOG, _MOTOR_PULSES, _ENDOCRINE
         global _API_METABOLISM, _STGM_REWARDS, _ONCOLOGY_TUMORS, _AMYGDALA
-        global _WORK_RECEIPTS
+        global _WORK_RECEIPTS, _BATTERY_METABOLISM
         _STATE = tmp
         _VISCERAL_FIELD_LOG = tmp / "visceral_field.jsonl"
         _MOTOR_PULSES = tmp / "motor_pulses.jsonl"
@@ -796,6 +893,7 @@ def _smoke():
         _ONCOLOGY_TUMORS = tmp / "oncology_tumors.jsonl"
         _AMYGDALA = tmp / "amygdala_nociception.jsonl"
         _WORK_RECEIPTS = tmp / "work_receipts.jsonl"
+        _BATTERY_METABOLISM = tmp / "battery_metabolism.jsonl"
 
         now = time.time()
 

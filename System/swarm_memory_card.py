@@ -26,6 +26,7 @@ Swimmer registration for this edit: grok-4.3-doctor (tournament start).
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -42,13 +43,19 @@ _DEFAULT_BUDGET = 2000
 # Sum = 1.00.
 _SECTION_ORDER = [
     ("active_plan_block", 0.05),  # Round 110 (§2.H) — survives cortex flap.
-    ("recent_actions_block", 0.26),
-    ("engram_block", 0.18),
-    ("episodic_block", 0.16),
-    ("arm_session_block", 0.13),
-    ("owner_somatic_block", 0.07),
-    ("digest_block", 0.06),
-    ("continuity_capsule_block", 0.09),
+    ("recent_actions_block", 0.20),
+    ("app_limb_context_block", 0.07),
+    ("browser_context_block", 0.04),
+    ("taste_consequence_block", 0.04),
+    ("engram_block", 0.14),
+    ("episodic_block", 0.13),
+    ("arm_session_block", 0.10),
+    ("owner_somatic_block", 0.04),
+    ("owner_carbon_body_block", 0.04),  # Owner body + behaviour as Alice's data
+    ("media_capability_block", 0.04),
+    ("vision_arms_block", 0.04),
+    ("digest_block", 0.03),
+    ("continuity_capsule_block", 0.04),
 ]
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -83,6 +90,12 @@ class MemoryCard:
     continuity_capsule_block: str = ""
     arm_session_block: str = ""   # Round 50 / Task #103
     owner_somatic_block: str = ""
+    app_limb_context_block: str = ""   # app/body state read before app actions
+    owner_carbon_body_block: str = ""  # 2026-05-30: owner body + behaviour as Alice's intimate stigmergic data
+    media_capability_block: str = ""   # Honest report of what the current media organs can actually decode
+    vision_arms_block: str = ""        # Image/screenshot provider and arm failover map
+    browser_context_block: str = ""    # Rich context from the active browser limb (what the user is seeing inside it)
+    taste_consequence_block: str = ""  # Stigmergic taste + consequence/mistake learning
     active_plan_block: str = ""   # Round 110 (§2.H) — cortex-failover resume
     estimated_tokens: int = 0
     parse_errors: int = 0
@@ -218,6 +231,201 @@ def _fetch_owner_somatic(state_dir: Path) -> str:
     return "OWNER SOMATIC STATE:\n" + block
 
 
+def _fetch_app_limb_context(state_dir: Path) -> str:
+    """Current app limbs + app-action diary for cortex pre-action awareness."""
+    try:
+        from System.swarm_app_action_diary import app_state_for_cortex
+
+        block = app_state_for_cortex(state_dir=state_dir).strip()
+        if block:
+            return block
+    except Exception:
+        pass
+    try:
+        from System.swarm_app_action_deliberation import current_app_action_context_block
+
+        return current_app_action_context_block(state_dir=state_dir).strip()
+    except Exception:
+        return ""
+
+
+def _fetch_owner_carbon_body(state_dir: Path) -> str:
+    """Owner carbon body and behaviour as Alice's stigmergic data (2026-05-30)."""
+    try:
+        from System.swarm_owner_carbon_body_data import get_owner_carbon_body_block
+        block = get_owner_carbon_body_block(state_dir=state_dir).strip()
+        if not block or "no recent traces" in block.lower():
+            return ""
+        return "OWNER CARBON BODY (my intimate external data):\n" + block
+    except Exception:
+        return ""
+
+
+def _fetch_media_capability(state_dir: Path) -> str:
+    """What the current media sensory organs can actually decode right now (2026-05-30)."""
+    try:
+        from System.swarm_media_capability_organ import get_media_capability_block
+        return get_media_capability_block().strip()
+    except Exception:
+        return ""
+
+
+def _fetch_browser_context(state_dir: Path) -> str:
+    """Rich, first-person context from the active browser limb.
+    
+    Critical clarification (2026-05-30 live session):
+    When the owner asks what is in Alice Browser, the target is the rendered
+    web-page content inside the browser limb, not only the SIFTA window chrome
+    around it. Desktop screenshots can prove that a browser window exists, but
+    the page-state / inner-viewport receipt is the stronger source for the
+    page contents: title, URL, DOM text, headings, links, images, and freshness.
+    """
+    blocks: list[str] = []
+    current_url = ""
+    try:
+        from System.swarm_browser_page_answer import page_answer_block
+
+        page = page_answer_block(state_dir=state_dir).strip()
+        if page and "no page receipt" not in page.lower():
+            blocks.append(page)
+    except Exception:
+        pass
+    try:
+        from System.swarm_browser_page_state import page_state_block
+
+        state = page_state_block(state_dir=state_dir).strip()
+        if state and "no page-state receipt yet" not in state.lower():
+            blocks.append(state)
+    except Exception:
+        pass
+    try:
+        from System.swarm_browser_context import get_current_browser_context_block
+        context = get_current_browser_context_block(state_dir=state_dir).strip()
+        if context:
+            blocks.append(context)
+    except Exception:
+        pass
+    try:
+        from System.swarm_browser_stigmergic_memory import site_category_prompt_block
+        categories = site_category_prompt_block(state_dir=state_dir).strip()
+        if categories:
+            blocks.append(categories)
+    except Exception:
+        pass
+    try:
+        current_url = _latest_browser_url(state_dir)
+        from System.swarm_browser_site_playbook import (
+            playbook_block,
+            search_interest_block,
+            seed_defaults,
+            site_category,
+        )
+
+        domains: list[str] = []
+        if current_url:
+            domains.append(site_category(current_url))
+        else:
+            from System.swarm_browser_stigmergic_memory import recall_site_features
+
+            domains.extend(sorted(recall_site_features(state_dir=state_dir).keys())[:2])
+        seen: set[str] = set()
+        for domain in domains[:2]:
+            if not domain or domain in seen:
+                continue
+            seen.add(domain)
+            seed_defaults(state_dir=state_dir)
+            playbook = playbook_block(domain, state_dir=state_dir).strip()
+            if playbook:
+                blocks.append(playbook)
+            interests = search_interest_block(domain, state_dir=state_dir).strip()
+            if interests:
+                blocks.append(interests)
+    except Exception:
+        pass
+    return "\n\n".join(blocks)
+
+
+def _fetch_vision_arms_awareness(state_dir: Path, user_text: str = "") -> str:
+    """Image/screenshot fallback map for Alice's prompt.
+
+    This block is deliberately prompt-visible. A registry-only helper is not
+    enough if the active cortex never sees the fact that images can be routed to
+    more than one capable arm.
+    """
+    try:
+        from System.swarm_cortex_capabilities import vision_arms_block
+
+        block = vision_arms_block().strip()
+    except Exception:
+        block = (
+            "MY EYES FOR IMAGES: local attachment_vision_lane can still provide "
+            "file proof + OCR/layout. If external vision arms fail, say which "
+            "receipt is missing instead of inventing pixels."
+        )
+    lines = [block] if block else []
+    lines.append(
+        "BROWSER SCREENSHOT RULE: if Alice Browser is visible, describe the "
+        "web-page contents from fresh page-state / inner-viewport receipts "
+        "(URL, title, DOM text, headings, links, images, timestamp/hash). "
+        "Use the desktop screenshot only as outer-window evidence unless it "
+        "clearly shows readable page pixels."
+    )
+    lines.append(
+        "FAILOVER RULE: do not assume one provider is the only eye. If one image "
+        "worker/API is degraded, switch to another vision-capable arm or the "
+        "local OCR/layout lane, then report which route actually supplied the receipt."
+    )
+    # If the user just asked to use a specific arm for an image, echo the request as context
+    low = (user_text or "").lower()
+    if any(k in low for k in ("cline arm", "codex arm", "claude arm", "grok arm", "use your", "read the image")):
+        lines.append("LIVE REQUEST CONTEXT: Owner just directed use of a specific arm for the attached image(s). Honor the named arm and surface which one actually processed it in your receipt.")
+    return "\n".join(lines)
+
+
+def _fetch_taste_consequence(state_dir: Path) -> str:
+    """Stigmergic taste + consequence/mistake learning for cortex context."""
+    blocks: list[str] = []
+    try:
+        from System.swarm_taste_consequence_learning import taste_consequence_block
+
+        block = taste_consequence_block(state_dir=state_dir).strip()
+        if block:
+            blocks.append(block)
+    except Exception:
+        pass
+    try:
+        from System.swarm_action_prediction import learning_block
+
+        block = learning_block(state_dir=state_dir).strip()
+        if block and "no predictions graded yet" not in block.lower():
+            blocks.append(block)
+    except Exception:
+        pass
+    return "\n\n".join(blocks)
+
+
+def _latest_browser_url(state_dir: Path) -> str:
+    """Best-effort current browser URL from the live context or page snapshot."""
+    base = state_dir if state_dir.name == ".sifta_state" else state_dir / ".sifta_state"
+    for path in (base / "browser_context.jsonl",):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for line in reversed(lines):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                url = str(row.get("url") or "").strip()
+                if url:
+                    return url
+        except Exception:
+            pass
+    try:
+        row = json.loads((base / "alice_browser_current_page.json").read_text(encoding="utf-8"))
+        return str(row.get("url") or "").strip()
+    except Exception:
+        return ""
+
+
 def _fetch_active_plan(state_dir: Path) -> str:
     """Round 110 (§2.H) — surface the active plan into every cortex turn.
 
@@ -262,6 +470,12 @@ def compose_memory_card(
         # Round 50 / Task #103 — arm-session evidence as a memory section.
         ("arm_session_block", lambda: _fetch_arm_session(ledgers_dir, user_text)),
         ("owner_somatic_block", lambda: _fetch_owner_somatic(ledgers_dir)),
+        ("app_limb_context_block", lambda: _fetch_app_limb_context(ledgers_dir)),
+        ("owner_carbon_body_block", lambda: _fetch_owner_carbon_body(ledgers_dir)),
+        ("media_capability_block", lambda: _fetch_media_capability(ledgers_dir)),
+        ("browser_context_block", lambda: _fetch_browser_context(ledgers_dir)),
+        ("vision_arms_block", lambda: _fetch_vision_arms_awareness(ledgers_dir, user_text)),
+        ("taste_consequence_block", lambda: _fetch_taste_consequence(ledgers_dir)),
         ("digest_block", lambda: _fetch_digest(repo_root)),
         ("continuity_capsule_block", lambda: _fetch_continuity_capsule(ledgers_dir)),
     ]
@@ -317,6 +531,12 @@ def compose_memory_card(
         continuity_capsule_block=allocated.get("continuity_capsule_block", ""),
         arm_session_block=allocated.get("arm_session_block", ""),
         owner_somatic_block=allocated.get("owner_somatic_block", ""),
+        app_limb_context_block=allocated.get("app_limb_context_block", ""),
+        owner_carbon_body_block=allocated.get("owner_carbon_body_block", ""),
+        media_capability_block=allocated.get("media_capability_block", ""),
+        vision_arms_block=allocated.get("vision_arms_block", ""),
+        browser_context_block=allocated.get("browser_context_block", ""),
+        taste_consequence_block=allocated.get("taste_consequence_block", ""),
         active_plan_block=allocated.get("active_plan_block", ""),
         estimated_tokens=used,
         parse_errors=parse_errors,
@@ -351,6 +571,18 @@ def format_for_prompt(card: MemoryCard) -> str:
         sections.append(card.arm_session_block)
     if card.owner_somatic_block:
         sections.append(card.owner_somatic_block)
+    if card.app_limb_context_block:
+        sections.append(card.app_limb_context_block)
+    if card.owner_carbon_body_block:
+        sections.append(card.owner_carbon_body_block)
+    if card.media_capability_block:
+        sections.append(card.media_capability_block)
+    if card.vision_arms_block:
+        sections.append(card.vision_arms_block)
+    if card.browser_context_block:
+        sections.append(card.browser_context_block)
+    if card.taste_consequence_block:
+        sections.append(card.taste_consequence_block)
     if card.digest_block:
         sections.append(
             "ARCHITECT MEMORY DIGEST (latest snapshot):\n" + card.digest_block

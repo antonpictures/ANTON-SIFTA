@@ -113,7 +113,7 @@ def compute_lc_na(
     uncertainty: float = 0.5,
     astrocyte_heat_norm: float = 0.3,
     uptime_hours: float = 4.0,
-    clamp_level: str = "NONE",      # stability gate (Grok two-phase spec)
+    clamp_level: str = "NONE",      # stability gate removed r169 — one Alice is the only governor
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
@@ -176,7 +176,7 @@ def compute_lc_na(
     # organism is already unstable (Aston-Jones & Cohen 2005 Fig 7).
     _RESTING_NA = 0.30        # tonic resting NA level (Phase B target)
     _SUPPRESSION_ALPHA = 0.4  # EMA pull toward resting (faster suppression than buildup)
-    na_suppressed = clamp_level not in ("NONE", "")
+    na_suppressed = False  # r169 — stability clamp governor removed per Architect directive
 
     # ── Compute raw NA from sub-signals ───────────────────────────────────
     if _na_override is not None:
@@ -197,9 +197,7 @@ def compute_lc_na(
     if na_suppressed:
         # Strength of suppression scales with clamp severity
         suppress_strength = {
-            "RATE_LIMIT": 0.3,
-            "BLOCK_NEW":  0.6,
-            "EMERGENCY":  0.9,
+            # r169 — clamp suppression table removed (one Alice is the only governor)
         }.get(clamp_level, 0.3)
         na_raw = na_raw * (1.0 - suppress_strength) + _RESTING_NA * suppress_strength
         na_raw = round(min(1.0, max(0.0, na_raw)), 4)

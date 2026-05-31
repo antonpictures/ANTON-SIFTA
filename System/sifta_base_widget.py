@@ -283,12 +283,36 @@ class SiftaBaseWidget(QWidget):
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._splitter.addWidget(self._content_widget)
 
+        # ── Sticky one-global-chat mirror ────────────────────────
+        # This is a visual mirror of the canonical desktop Alice ledger, not a
+        # second app-local chat worker. It lets the same conversation ride next
+        # to the active app without violating the one-chat covenant.
+        self._sticky_global_chat = None
+        self._sticky_global_chat_visible = self._should_enable_sticky_global_chat()
+        if self._sticky_global_chat_visible:
+            try:
+                from System.swarm_sticky_global_chat_panel import StickyGlobalChatPanel
+
+                self._sticky_global_chat = StickyGlobalChatPanel(
+                    app_name=self.APP_NAME,
+                    parent=self,
+                )
+                self._splitter.addWidget(self._sticky_global_chat)
+                QTimer.singleShot(0, self._balance_sticky_global_chat_splitter)
+            except Exception:
+                self._sticky_global_chat = None
+                self._sticky_global_chat_visible = False
+
         # ── App-local cognitive interface ────────────────────────
         # Desktop Alice is now the canonical OS chat. Normal apps receive a
         # compatibility bridge only; app collaboration belongs in-app, not in
-        # a second right-side chat panel.
+        # a second right-side chat panel. If the sticky global mirror is live,
+        # the older app-local GCI must stay hidden to avoid two right panels.
         self._gci = None
-        self._gci_visible = self._should_enable_app_local_chat()
+        self._gci_visible = (
+            not self._sticky_global_chat_visible
+            and self._should_enable_app_local_chat()
+        )
         app_context = self.APP_NAME.lower().replace(" ", "_")
         if self._gci_visible:
             try:
@@ -311,6 +335,13 @@ class SiftaBaseWidget(QWidget):
         root.addWidget(self._splitter, 1)
 
         # ── Toggle chat button in the title bar ───────────────────
+        if self._sticky_global_chat_visible:
+            btn_sticky = QPushButton("💬")
+            btn_sticky.setObjectName("btnHelp")  # reuse the same compact style
+            btn_sticky.setToolTip("Toggle one global chat mirror")
+            btn_sticky.clicked.connect(self._toggle_sticky_global_chat)
+            title_row.insertWidget(title_row.count() - 1, btn_sticky)  # before the ? button
+
         if self._gci_visible:
             btn_chat = QPushButton("💬")
             btn_chat.setObjectName("btnHelp")  # reuse the same compact style
@@ -370,6 +401,20 @@ class SiftaBaseWidget(QWidget):
             "on",
         }
 
+    def _should_enable_sticky_global_chat(self) -> bool:
+        if bool(getattr(self, "APP_LOCAL_CHAT_DISABLED", False)):
+            return False
+        if bool(getattr(self, "STICKY_GLOBAL_CHAT_DISABLED", False)):
+            return False
+        if self.APP_NAME == "Stigmergic Writer":
+            return False
+        if self.APP_NAME in {"Talk to Alice", "Alice"}:
+            return False
+        import os
+
+        value = os.environ.get("SIFTA_STICKY_GLOBAL_CHAT", "1").strip().lower()
+        return value not in {"0", "false", "no", "off"}
+
     @staticmethod
     def separator() -> QFrame:
         s = QFrame()
@@ -391,6 +436,42 @@ class SiftaBaseWidget(QWidget):
             min_left=360,
             max_right=420,
         )
+
+    def _balance_sticky_global_chat_splitter(self) -> None:
+        """Give the sticky global chat mirror a usable initial width."""
+        if not self._sticky_global_chat or not self._sticky_global_chat_visible:
+            return
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._splitter,
+            self,
+            left_ratio=0.72,
+            min_right=280,
+            min_left=360,
+            max_right=420,
+        )
+
+    def _toggle_sticky_global_chat(self) -> None:
+        """Show/hide the read-only one-global-chat mirror."""
+        if not self._sticky_global_chat or not self._sticky_global_chat_visible:
+            return
+        idx = self._splitter.indexOf(self._sticky_global_chat)
+        if idx < 0:
+            return
+        sizes = self._splitter.sizes()
+        if idx >= len(sizes):
+            return
+        total = max(1, sum(sizes))
+        if sizes[idx] < 10:
+            right = min(420, max(280, int(total * 0.28)))
+            sizes[idx] = right
+            sizes[0] = max(360, total - right)
+            self._splitter.setSizes(sizes)
+        else:
+            sizes[0] = max(sizes[0], total)
+            sizes[idx] = 0
+            self._splitter.setSizes(sizes)
 
     def _toggle_gci(self) -> None:
         """Show/hide the Global Cognitive Interface chat panel."""

@@ -13,7 +13,7 @@ OPTIONS_LEDGER = STATE_DIR / "sutton_options_ledger.jsonl"
 
 
 def _option_name_suggests_new_gate(name: str) -> bool:
-    """Heuristic: names that imply spawning / high-exploration gates (Event 134 BLOCK_NEW)."""
+    """Heuristic for old Event 134 labels; observation only, not a launch block."""
     n = (name or "").lower()
     return any(tok in n for tok in ("novel", "new_gate", "spawn_gate", "explore_raw"))
 
