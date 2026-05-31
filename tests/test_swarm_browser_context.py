@@ -2,6 +2,7 @@
 """Tests for active browser-limb context publishing."""
 import os
 import sys
+import json
 
 import pytest
 
@@ -39,6 +40,33 @@ def test_publish_and_read_browser_context_from_state_dir(tmp_path):
     assert "TikTok" in block
     assert "code 4" in block
     assert not (state_dir / ".sifta_state").exists()
+
+
+def test_publish_browser_context_marks_page_diary_once_per_page(tmp_path):
+    ctx.publish_browser_context(
+        url="https://www.youtube.com/watch?v=abc123",
+        title="Jensen Huang warned he'll Go ape",
+        media_status={"ok": True},
+        source="load_finished",
+        state_dir=tmp_path,
+    )
+    ctx.publish_browser_context(
+        url="https://www.youtube.com/watch?v=abc123",
+        title="Jensen Huang warned he'll Go ape",
+        media_status={"ok": True},
+        source="awareness_tick",
+        state_dir=tmp_path,
+    )
+
+    diary_path = tmp_path / ".sifta_state" / "episodic_diary.jsonl"
+    rows = [json.loads(line) for line in diary_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["truth_label"] == ctx.BROWSER_PAGE_DIARY_TRUTH_LABEL
+    assert row["event_type"] == "browser_page_loaded"
+    assert row["category"] == "youtube.com"
+    assert "search" in row["site_habits"]
+    assert "watch video" in row["site_habits"]
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ def test_seed_defaults_gives_tiktok_playbook(tmp_path):
     assert "/@<handle>" in block
     google = pb.playbook_block("google.com", state_dir=tmp_path)
     assert "https://www.google.com/search?q=<query>" in google
+    youtube = pb.playbook_block("youtube.com", state_dir=tmp_path)
+    assert "https://www.youtube.com/results?search_query=<query>" in youtube
+    assert "watch video" in youtube
 
 
 def test_seed_defaults_is_idempotent(tmp_path):
@@ -83,6 +86,7 @@ def test_search_interest_is_recency_not_permanent_preference(tmp_path):
 def test_extracts_search_query_from_common_urls():
     assert pb.extract_search_query("https://www.tiktok.com/search?q=barbellina") == "barbellina"
     assert pb.extract_search_query("https://www.google.com/search?q=mercedes+amg") == "mercedes amg"
+    assert pb.extract_search_query("https://www.youtube.com/results?search_query=ai+campaigns") == "ai campaigns"
 
 
 def test_record_search_from_url(tmp_path):

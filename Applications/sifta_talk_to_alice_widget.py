@@ -1939,6 +1939,12 @@ _CURRENT_PAGE_QUERY_RE = re.compile(
     r"|\bdescribe\s+(?:this|the|current|tha)\s+page\b"
     r"|\bwhat(?:'s| is)\s+(?:on\s+)?(?:this|the|current)\s+page\b"
     r"|\bwhat\s+am\s+i\s+(?:looking\s+at|browsing|on)\b"
+    r"|\b(?:i|we)\s+have\b.{0,80}\b(?:loaded|open|opened|on)\b.{0,60}"
+    r"\b(?:alice\s+browser|browser)\b.{0,60}\b(?:can\s+you\s+tell|can\s+you\s+see|do\s+you\s+know)\b"
+    r"|\b(?:can\s+you\s+tell|can\s+you\s+see|do\s+you\s+know)\b.{0,80}"
+    r"\b(?:alice\s+browser|browser)\b.{0,80}\b(?:loaded|open|opened|on|showing|page|site|website)\b"
+    r"|\b(?:can\s+you\s+tell|can\s+you\s+see|do\s+you\s+know)\b.{0,80}"
+    r"\b(?:loaded|open|opened|on|showing)\b.{0,80}\b(?:alice\s+browser|browser)\b"
     r"|\bcurrent\s+page\b",
     re.IGNORECASE,
 )

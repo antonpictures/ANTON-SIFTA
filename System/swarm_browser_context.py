@@ -20,11 +20,15 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 
 TRUTH_LABEL = "BROWSER_CONTEXT_V1"
+BROWSER_PAGE_DIARY_TRUTH_LABEL = "BROWSER_PAGE_DIARY_V1"
+_PAGE_DIARY_LATEST = "browser_page_diary_latest.json"
+_EPISODIC_DIARY = "episodic_diary.jsonl"
 
 
 def _state_dir(state_dir: Optional[Path | str] = None) -> Path:
@@ -65,6 +69,155 @@ def publish_browser_context(
     except Exception:
         pass
 
+    try:
+        record_browser_page_diary(
+            url=url,
+            title=title,
+            source=source,
+            media_status=media_status or {},
+            state_dir=base,
+        )
+    except Exception:
+        pass
+
+    return row
+
+
+def _domain(url: str) -> str:
+    try:
+        return urlparse(url or "").netloc
+    except Exception:
+        return ""
+
+
+def _site_category(url: str) -> str:
+    try:
+        from System.swarm_browser_site_playbook import site_category
+
+        return site_category(url)
+    except Exception:
+        host = _domain(url).lower()
+        if host.startswith("www."):
+            host = host[4:]
+        parts = host.split(".")
+        return ".".join(parts[-2:]) if len(parts) >= 2 else (host or "unknown")
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _page_diary_summary(*, title: str, url: str, category: str) -> str:
+    name = " ".join(str(title or "").split()) or url
+    if len(name) > 160:
+        name = name[:157].rstrip() + "..."
+    return f"Alice Browser is on {name} ({category})."
+
+
+def record_browser_page_diary(
+    *,
+    url: str = "",
+    title: str = "",
+    source: str = "browser_context",
+    media_status: Optional[Dict[str, Any]] = None,
+    now: Optional[float] = None,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Write a durable diary row when Alice Browser moves to a new page.
+
+    This is the site-category habit trace George asked for: the browser limb
+    already publishes fast context rows; this diary row marks the contiguous page
+    identity once, so awareness ticks do not spam the episodic diary.
+    """
+    clean_url = str(url or "").strip()
+    clean_title = " ".join(str(title or "").split())
+    if not clean_url or clean_url in {"about:blank", "sifta://home"}:
+        return {}
+    if clean_url.startswith(("data:", "blob:", "javascript:")):
+        return {}
+
+    base = _state_dir(state_dir)
+    ts = float(now if now is not None else time.time())
+    latest_path = base / _PAGE_DIARY_LATEST
+    latest = _read_json(latest_path)
+    if latest.get("url") == clean_url and latest.get("title") == clean_title:
+        return {}
+
+    category = _site_category(clean_url)
+    playbook_skills: list[str] = []
+    recent_search: dict[str, Any] = {}
+    try:
+        from System.swarm_browser_site_playbook import (
+            record_search_from_url,
+            seed_defaults,
+            site_playbook,
+        )
+
+        seed_defaults(state_dir=base)
+        playbook_skills = sorted(site_playbook(category, state_dir=base).keys())
+        recent_search = record_search_from_url(
+            clean_url,
+            source="browser_page_diary",
+            now=ts,
+            state_dir=base,
+        )
+    except Exception:
+        playbook_skills = []
+        recent_search = {}
+
+    row = {
+        "ts": ts,
+        "truth_label": BROWSER_PAGE_DIARY_TRUTH_LABEL,
+        "event_type": "browser_page_loaded",
+        "surface": "Alice Browser",
+        "route": "browser_context",
+        "source": str(source or "browser_context"),
+        "url": clean_url,
+        "title": clean_title,
+        "domain": _domain(clean_url),
+        "category": category,
+        "summary": _page_diary_summary(title=clean_title, url=clean_url, category=category),
+        "site_habits": playbook_skills,
+    }
+    if recent_search:
+        row["recent_search"] = {
+            "category": recent_search.get("category"),
+            "query": recent_search.get("query"),
+            "scope": recent_search.get("preference_scope"),
+        }
+    if media_status:
+        row["media_status"] = {
+            "ok": bool(media_status.get("ok", False)),
+            "last_error_code": media_status.get("last_error_code"),
+        }
+
+    try:
+        from System.jsonl_file_lock import append_line_locked
+
+        append_line_locked(
+            base / _EPISODIC_DIARY,
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
+        )
+        latest_path.write_text(
+            json.dumps(
+                {
+                    "ts": ts,
+                    "truth_label": BROWSER_PAGE_DIARY_TRUTH_LABEL,
+                    "url": clean_url,
+                    "title": clean_title,
+                    "category": category,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     return row
 
 
@@ -115,6 +268,8 @@ def get_current_browser_context_block(state_dir: Optional[Path | str] = None) ->
 
 __all__ = [
     "TRUTH_LABEL",
+    "BROWSER_PAGE_DIARY_TRUTH_LABEL",
     "publish_browser_context",
+    "record_browser_page_diary",
     "get_current_browser_context_block",
 ]

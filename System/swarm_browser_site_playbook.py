@@ -38,6 +38,8 @@ SITE_ALIASES = {
     "instagram": "instagram.com",
     "insta": "instagram.com",
     "youtube": "youtube.com",
+    "you tube": "youtube.com",
+    "yt": "youtube.com",
     "google": "google.com",
     "x": "x.com",
     "twitter": "x.com",
@@ -334,7 +336,7 @@ def extract_search_query(url: str) -> str:
     except Exception:
         return ""
     params = parse_qs(parsed.query or "")
-    for key in ("q", "query", "search", "keyword", "keywords", "term", "p"):
+    for key in ("q", "query", "search", "search_query", "keyword", "keywords", "term", "p"):
         vals = params.get(key)
         if vals and vals[0]:
             return unquote_plus(str(vals[0])).strip()
@@ -495,6 +497,15 @@ def seed_defaults(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
     out["google_search"] = ensure_site_skill(
         "google.com", "search",
         "navigate to https://www.google.com/search?q=<query> (or type in Google's search box)",
+        state_dir=state_dir)
+    out["youtube_search"] = ensure_site_skill(
+        "youtube.com", "search",
+        "navigate to https://www.youtube.com/results?search_query=<query> "
+        "(or type in YouTube's search box)",
+        state_dir=state_dir)
+    out["youtube_video"] = ensure_site_skill(
+        "youtube.com", "watch video",
+        "open the current /watch?v=... page; read title, channel, visible description, comments, and playback state",
         state_dir=state_dir)
     out["instagram_search"] = ensure_site_skill(
         "instagram.com", "search",

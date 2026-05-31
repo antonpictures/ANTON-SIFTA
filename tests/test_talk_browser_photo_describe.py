@@ -95,12 +95,17 @@ def test_describe_this_page_matches_browser_page_reflex() -> None:
     assert talk._is_webpage_summary_query("What am I looking at right now?")
 
 
+def test_loaded_in_alice_browser_can_you_tell_hits_live_page_reflex() -> None:
+    assert talk._is_current_page_query("yes, i have youtube loaded in alice browser now, can you tell?")
+    assert talk._is_current_page_query("Can you tell what is loaded in Alice Browser?")
+
+
 def test_describe_instagram_page_uses_cortex_lane_not_raw_dom() -> None:
     assert talk._is_browser_page_cortex_description_query("Please describe this Instagram page.")
     assert talk._is_browser_page_cortex_description_query("describe this page")
     assert not talk._is_browser_page_cortex_description_query("What page am I on right now?")
     assert not talk._is_browser_page_cortex_description_query("Can you summarize the comments?")
-    assert not talk._is_browser_page_cortex_description_query("Can you describe her outfit?")
+    assert talk._is_browser_page_cortex_description_query("Can you describe her outfit?")
 
 
 def test_current_page_summary_refreshes_live_manual_browser(monkeypatch, tmp_path) -> None:
@@ -202,7 +207,7 @@ def test_browser_page_cortex_context_wraps_receipt_without_answer_dump(monkeypat
     )
 
     assert block.startswith("ALICE BROWSER PAGE CONTEXT FOR CORTEX")
-    assert "Do not print this raw block" in block
+    assert "do NOT print this raw block" in block
     assert "WHAT IS ON MY SCREEN" in block
     assert "Treat Instagram legal/footer/about links as page chrome" in block
     assert "ramonna_olaru" in block

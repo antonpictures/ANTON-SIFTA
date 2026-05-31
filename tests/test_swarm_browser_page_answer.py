@@ -58,11 +58,12 @@ def test_freshest_source_wins(tmp_path):
     assert p["url"] == "https://new.example.com" and p["source"] == "focus_context"
 
 
-def test_stale_receipt_flagged(tmp_path):
+def test_old_current_page_receipt_is_still_current_when_it_is_the_live_url(tmp_path):
     now = time.time()
     _snap(tmp_path, "https://www.tiktok.com/@x", "TikTok", now - 9999, text_chars=0)
     block = bpa.page_answer_block(now=now, state_dir=tmp_path)
-    assert "re-read the page" in block or "stale" in block
+    assert "I am on TikTok" in block
+    assert "stale" not in block
 
 
 if __name__ == "__main__":
