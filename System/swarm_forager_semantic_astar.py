@@ -136,11 +136,40 @@ def semantic_astar(
 
     pher = pheromone_rows or []
 
-    def node_cost(row: dict[str, Any], graph_dist: int) -> tuple[float, dict[str, Any]]:
-        nid = _node_id(row)
-        lex = _lexical_overlap(qtok, _node_text(row), idf)
-        boost = _pheromone_boost(nid, pher, t)
-        stale = _staleness(row, t)
+    # ── Precompute every distance-independent field ONCE (r220: kill the O(N²)) ──
+    # The old hot path recomputed _pheromone_boost (a full scan of EVERY pheromone
+    # row) and re-tokenized node text for EVERY node — on seed, on every heap pop,
+    # and again in the fill pass. That is O(N·P) ≈ O(N²) (≈1s at N=5000, found in the
+    # r219 GraphPalace head-to-head). lex / boost / staleness do not depend on graph
+    # distance, so compute them a single time; node_cost then only adds the distance
+    # term. Every number stays byte-identical to the per-call version (same helpers,
+    # same rounding) — this is a speed refactor, not a behaviour change.
+    boost_by_id: dict[str, float] = {}
+    for p in pher:
+        pid = str(p.get("id") or p.get("ref") or p.get("node") or p.get("trace_id") or "")
+        if not pid:
+            continue
+        strength = float(p.get("strength") or p.get("weight") or p.get("uses") or 1.0)
+        ts = float(p.get("ts") or t)
+        age_days = max(0.0, (t - ts) / 86400.0)
+        contribution = min(1.0, strength) * math.exp(-age_days / 7.0)
+        if contribution > boost_by_id.get(pid, 0.0):
+            boost_by_id[pid] = contribution
+    boost_by_id = {k: round(v, 6) for k, v in boost_by_id.items()}  # match _pheromone_boost
+
+    text_by_id: dict[str, str] = {}
+    lex_by_id: dict[str, float] = {}
+    stale_by_id: dict[str, float] = {}
+    for nid, row in by_id.items():
+        txt = _node_text(row)
+        text_by_id[nid] = txt
+        lex_by_id[nid] = _lexical_overlap(qtok, txt, idf)
+        stale_by_id[nid] = _staleness(row, t)
+
+    def node_cost(nid: str, row: dict[str, Any], graph_dist: int) -> tuple[float, dict[str, Any]]:
+        lex = lex_by_id[nid]
+        boost = boost_by_id.get(nid, 0.0)
+        stale = stale_by_id[nid]
         gnorm = min(1.0, graph_dist / 6.0)
         cost = (_W_LEX * (1.0 - lex) + _W_GRAPH * gnorm
                 - _W_PHERO * boost + _W_STALE * stale)
@@ -148,7 +177,7 @@ def semantic_astar(
                   "pheromone": boost, "stale": stale, "graph_dist": graph_dist,
                   "wing": row.get("wing", ""), "room": row.get("room", ""),
                   "drawer": row.get("drawer", ""), "ref": row.get("ref", ""),
-                  "text": _node_text(row)[:300]}
+                  "text": text_by_id[nid][:300]}
         return cost, detail
 
     # Seed frontier from directly useful nodes. This makes graph distance meaningful:
@@ -157,15 +186,13 @@ def semantic_astar(
     frontier: list[tuple[float, str, int]] = []
     seen_dist: dict[str, int] = {}
     for nid, row in by_id.items():
-        lex = _lexical_overlap(qtok, _node_text(row), idf)
-        boost = _pheromone_boost(nid, pher, t)
-        if lex > 0.0 or boost > 0.0:
-            cost, _ = node_cost(row, 0)
+        if lex_by_id[nid] > 0.0 or boost_by_id.get(nid, 0.0) > 0.0:
+            cost, _ = node_cost(nid, row, 0)
             heapq.heappush(frontier, (round(cost, 6), nid, 0))
             seen_dist[nid] = 0
     if not frontier:
         for nid, row in by_id.items():
-            cost, _ = node_cost(row, 0)
+            cost, _ = node_cost(nid, row, 0)
             heapq.heappush(frontier, (round(cost, 6), nid, 0))
             seen_dist[nid] = 0
 
@@ -177,7 +204,7 @@ def semantic_astar(
         row = by_id.get(nid)
         if row is None:
             continue
-        c, detail = node_cost(row, dist)
+        c, detail = node_cost(nid, row, dist)
         prev = results.get(nid)
         if prev is None or detail["cost"] < prev["cost"]:
             results[nid] = detail
@@ -187,12 +214,12 @@ def semantic_astar(
                 next_dist = dist + 1
                 if next_dist < seen_dist.get(nb, 10 ** 9):
                     seen_dist[nb] = next_dist
-                    nb_cost, _ = node_cost(by_id[nb], next_dist)
+                    nb_cost, _ = node_cost(nb, by_id[nb], next_dist)
                     heapq.heappush(frontier, (round(nb_cost, 6), nb, dist + 1))
 
     for nid, row in by_id.items():
         if nid not in results:
-            _, detail = node_cost(row, 6)
+            _, detail = node_cost(nid, row, 6)
             results[nid] = detail
 
     ranked = sorted(results.values(), key=lambda d: (d["cost"], d["id"]))

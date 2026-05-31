@@ -93,5 +93,20 @@ def test_deterministic_tie_break_by_id():
     assert [d["id"] for d in out] == ["a", "z"]  # equal cost → id order
 
 
+def test_scales_to_large_graph_bounded_and_deterministic():
+    # r220: the precompute path must stay bounded + deterministic at scale (was O(N^2),
+    # ~1s at N=5000 before the per-node pheromone/lexical recompute was hoisted out).
+    n = 2000
+    rows = [{"id": str(i), "text": f"node {i % 7} item alpha", "ts": 1000.0} for i in range(n)]
+    edges = [(str(i), str(i + 1)) for i in range(n - 1)]
+    pher = [{"id": str(i), "strength": 0.5, "ts": 1000.0} for i in range(0, n, 3)]
+    out = sa.semantic_astar("node 3 item", rows, graph_edges=edges,
+                            pheromone_rows=pher, top_k=8, now=1000.0)
+    assert len(out) <= 8
+    out2 = sa.semantic_astar("node 3 item", rows, graph_edges=edges,
+                             pheromone_rows=pher, top_k=8, now=1000.0)
+    assert [d["id"] for d in out] == [d["id"] for d in out2]
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

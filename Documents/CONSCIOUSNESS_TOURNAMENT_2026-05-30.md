@@ -4290,3 +4290,25 @@ Action: hard delete on owner approval. First `rm -rf` failed with "Operation not
 `rm -rf ANTON-SIFTA` → exit 0, 0 errors. Verified: nested tree GONE; live root intact (Talk widget,
 swarm_fireworks_vision_arm, covenant, .git/HEAD all present). 375MB reclaimed; split-brain edit risk
 removed. Receipt: `r217-cowork-delete-nested-duplicate`.
+
+---
+
+## r220 — Forager O(N²) → O(N + E log N): the one real finding from the GraphPalace audit — cowork_claude 2026-05-31
+
+The r219 head-to-head exposed a weakness in OUR code, not theirs: swarm_forager_semantic_astar ran
+~O(N²) (≈1s at N=5000) while their Dijkstra path-cost engine stayed near-linear. Architect: "delete the
+test and optimize the forager." Deleted tests/bench_graphpalace_headtohead.py.
+
+Root cause: the per-node `node_cost` recomputed `_pheromone_boost` (a full scan of EVERY pheromone row)
+and re-tokenized node text on seed, on every heap pop, AND in the fill pass — O(N·P).
+
+Fix (pure speed refactor, behaviour byte-identical): hoist all distance-independent fields out of the
+hot loop — `boost_by_id` (one pass over pheromone rows, max contribution per id, same rounding as
+_pheromone_boost), and per-node `text/lex/staleness` computed once. `node_cost(nid, row, dist)` is now
+O(1) (cached lookups + the distance term). idf, frontier/pop/fill logic, tie-break and all rounding are
+unchanged.
+
+Verified: byte-identical output vs a pre-refactor snapshot on 4 seeded datasets (ids, cost, lexical,
+pheromone, stale, graph_dist all match); 13/13 forager+hierarchy tests (added a scale/bounded/determinism
+guard at N=2000); py_compile clean. Measured: N=200 2.9→0.78ms, N=1000 50→3.6ms, N=5000 1013→20.7ms
+(~49× at N=5000), growth now near-linear. Receipt: `r220-cowork-forager-optimization`.
