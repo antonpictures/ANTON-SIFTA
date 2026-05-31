@@ -34,6 +34,17 @@ def test_browser_photo_description_query_does_not_steal_general_planning() -> No
     assert not talk._is_browser_photo_description_query("body schema architecture")
 
 
+def test_browser_photo_open_query_routes_to_browser_not_app_launcher() -> None:
+    phrase = (
+        "pls open the photo currently positioned against the beach/ocean backdrop, "
+        "and what is her primary feature?"
+    )
+
+    assert talk._is_browser_photo_open_query(phrase)
+    assert talk._is_browser_page_cortex_description_query(phrase)
+    assert talk._extract_sifta_app_command(phrase) == {}
+
+
 def test_vision_arm_from_current_cortex_model() -> None:
     assert talk._vision_arm_from_cortex_model("cline:cline-cli-default") == "cline_agent"
     assert talk._vision_arm_from_cortex_model("claude:opus") == "claude_agent"
@@ -212,6 +223,160 @@ def test_browser_page_cortex_context_wraps_receipt_without_answer_dump(monkeypat
     assert "Treat Instagram legal/footer/about links as page chrome" in block
     assert "ramonna_olaru" in block
     assert dummy.lines == [("Web page-context receipt: context-receipt", False)]
+
+
+def test_browser_photo_context_does_not_treat_api_error_as_visual_evidence(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    url = "https://www.instagram.com/p/DZAktltGvMv/"
+    page_state.record_page_state(
+        url,
+        title="Instagram",
+        text="Hollywood Reporter Alexa Demie cover story teaser",
+        headings=["hollywoodreporter"],
+        state_dir=state_dir,
+    )
+
+    class FakeBrowser:
+        def describe_current_photo(self, **kwargs):
+            return {
+                "status": "failed",
+                "description": "API error 401: missing xAI key",
+                "attempts": [{"arm": "grok_agent", "status": "EXEC_FAILED_COMMAND_FAILED"}],
+            }
+
+    class DummyTalk:
+        def _append_system_line(self, line, error=False):
+            pass
+
+        def _current_brain_model(self, owner_text):
+            return "grok:grok-4.3"
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_refresh_live_alice_browser_page", lambda wait_ms=0: url)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "context-receipt")
+
+    block = talk.TalkToAliceWidget._browser_page_cortex_context_block(
+        DummyTalk(),
+        "Can you describe her outfit and her body please?",
+    )
+
+    assert "VISION ROUTING NOTE" in block
+    assert "VISUAL EVIDENCE —" not in block
+    assert "API error 401" not in block
+    assert "grok_agent:EXEC_FAILED_COMMAND_FAILED" in block
+
+
+def test_browser_photo_open_context_invokes_browser_selection_before_vision(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    url = "https://www.instagram.com/kylinmilan/"
+    page_state.record_page_state(
+        url,
+        title="Kylin Milan (@kylinmilan) Instagram",
+        text="Kylin Milan Music Artist Actress Runway Model",
+        headings=["kylinmilan"],
+        state_dir=state_dir,
+    )
+    calls = []
+
+    class FakeBrowser:
+        def open_visible_photo_matching_text(self, owner_text, **kwargs):
+            calls.append(("open", owner_text, kwargs))
+            return {
+                "status": "opened",
+                "href": "https://www.instagram.com/p/OCEAN/",
+                "row": 3,
+                "col": 4,
+                "used_vision": True,
+            }
+
+        def describe_current_photo(self, **kwargs):
+            calls.append(("describe", kwargs))
+            return {
+                "status": "described",
+                "arm": "grok_agent",
+                "description": "A woman poses on a beach in a bikini with ocean water behind her.",
+            }
+
+    class DummyTalk:
+        def __init__(self):
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+        def _current_brain_model(self, owner_text):
+            return "grok:grok-4.3"
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_refresh_live_alice_browser_page", lambda wait_ms=0: url)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "context-receipt")
+
+    block = talk.TalkToAliceWidget._browser_page_cortex_context_block(
+        DummyTalk(),
+        "pls open the photo currently positioned against the beach/ocean backdrop, and what is her primary feature?",
+    )
+
+    assert calls[0][0] == "open"
+    assert calls[1][0] == "describe"
+    assert "BROWSER ACTION EVIDENCE" in block
+    assert "VISUAL EVIDENCE" in block
+    assert "row=3, col=4" in block
+
+
+def test_contextual_visual_shopping_search_composes_query_then_opens_google(monkeypatch, tmp_path) -> None:
+    opened = {}
+
+    class DummyTalk:
+        def __init__(self):
+            self._history = [
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Yeah. Beach one now. Pink and black checkered bikini, "
+                        "arms raised overhead, ocean waves behind her."
+                    ),
+                }
+            ]
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+        def _current_brain_model(self, owner_text):
+            return "grok:grok-4"
+
+        def _execute_sifta_app_command(self, command):
+            opened.update(command)
+            return "Searching Google for pink black checkered bikini."
+
+    monkeypatch.setattr(
+        talk,
+        "_latest_contextual_search_evidence",
+        lambda **kwargs: "Latest browser photo vision: Pink and black checkered bikini on a beach.",
+    )
+    monkeypatch.setattr(
+        talk,
+        "_compose_contextual_search_query_with_cortex",
+        lambda owner_text, evidence, model="": {
+            "query": "pink black checkered bikini",
+            "source": "cortex",
+            "raw": '{"query":"pink black checkered bikini"}',
+        },
+    )
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "search-receipt")
+
+    phrase = "Where can I buy this type of bikini? Can you search on Google?"
+    assert talk._is_contextual_browser_search_request(phrase)
+    reply = talk.TalkToAliceWidget._execute_contextual_browser_search(DummyTalk(), phrase)
+
+    assert "searched Google for pink black checkered bikini" in reply
+    assert opened["kind"] == "browser_url"
+    assert opened["query"] == "pink black checkered bikini"
+    assert opened["url"].endswith("q=pink+black+checkered+bikini")
 
 
 def test_live_current_page_uses_human_spoken_line_and_clean_print(monkeypatch, tmp_path) -> None:

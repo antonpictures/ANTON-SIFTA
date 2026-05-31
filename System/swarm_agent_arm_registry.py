@@ -127,9 +127,9 @@ CORVID_SCOUT = AgentArmSpec(
 
 GROK_AGENT = AgentArmSpec(
     arm_id="grok_agent",
-    display_name="Grok (xAI grok-4)",
+    display_name="Grok (xAI grok-4.3)",
     command=("grok_chat",),  # marker; _build_command expands to python3 grok_chat.py --one-shot <prompt>
-    model="grok-4",
+    model="grok-4.3",
     provider_base_url="https://api.x.ai/v1",
     enabled=True,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",
@@ -137,7 +137,7 @@ GROK_AGENT = AgentArmSpec(
     max_turns=1,
     capabilities=("single_query_research", "evidence_output", "external_cortex"),
     notes=(
-        "External xAI Grok cortex via grok_chat.py --one-shot (grok-4). Owner decision "
+        "External xAI Grok cortex via grok_chat.py --one-shot (grok-4.3). Owner decision "
         "2026-05-24: Grok runs from global chat like Hermes — headless evidence + receipt, "
         "streamed live. Output is Grok's voice (evidence), never Alice's. Bridge, not merge."
     ),

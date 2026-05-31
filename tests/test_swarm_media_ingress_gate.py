@@ -50,6 +50,9 @@ def isolated_media_state(monkeypatch, tmp_path):
     monkeypatch.setattr(gate, "STATE_DIR", state)
     monkeypatch.setattr(gate, "LEDGER", state / "media_ingress_gate.jsonl")
     monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", state / "ambient_media_context.json")
+    from System import swarm_wake_attention_window as wake_window
+
+    monkeypatch.setattr(wake_window, "_DEFAULT_STATE_DIR", state)
 
 
 def test_movie_dialogue_is_ambient_when_youtube_is_frontmost():
@@ -115,6 +118,42 @@ def test_external_consciousness_lane_categorizes_owner_media_phone_room_and_appl
     )
     assert appliance["source_class"] == "appliance_or_environmental_noise"
     assert appliance["attention_policy"] == "low_semantic_trace"
+
+
+def test_own_browser_playback_beats_room_or_visitor(monkeypatch):
+    monkeypatch.setattr(
+        gate,
+        "is_my_own_browser_playback",
+        lambda **kwargs: (True, {"domain": "www.youtube.com", "playing": True}),
+    )
+
+    decision = classify_external_consciousness_lane(
+        "Someone in the video says the government is repeating itself.",
+        route="observed_media",
+        reason="media_focus_default_to_observed",
+        stt_conf=0.72,
+    )
+
+    assert decision["source_class"] == "my_own_browser_playback"
+    assert decision["attention_policy"] == "store_silent_context_as_self_body_output"
+    assert "own_browser_media_playing" in decision["evidence"]
+
+
+def test_own_browser_playback_never_overrides_direct_owner_speech(monkeypatch):
+    monkeypatch.setattr(
+        gate,
+        "is_my_own_browser_playback",
+        lambda **kwargs: (True, {"domain": "www.youtube.com", "playing": True}),
+    )
+
+    decision = classify_external_consciousness_lane(
+        "Alice, listen to me.",
+        route="direct",
+        reason="direct_address_or_request",
+        stt_conf=0.77,
+    )
+
+    assert decision["source_class"] == "owner_direct_speech"
 
 
 def test_direct_alice_address_still_reaches_the_cortex_during_youtube():

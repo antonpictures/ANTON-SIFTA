@@ -325,10 +325,9 @@ def prompt_block_for_attached(
 #   3. observed habit: did this arm actually behave correctly last time?
 #
 # qwen_agent belongs in the vision-capable family because it can route to Kimi /
-# Qwen-VL class models, but the current local browser-photo path reaches qwen as
-# a text CLI over Fireworks and passes only a PNG path. That transport is not yet
-# a native image payload. So qwen stays in the capability map, while local-image
-# selection fails over until that transport is wired.
+# Qwen-VL class models. r214 wired its direct Fireworks image_url path, so local
+# browser screenshots now reach Kimi as pixels rather than falling through the
+# text CLI.
 #
 # vision_mode:
 #   native_multimodal        — the arm's own model sees image bytes/paths directly
@@ -339,7 +338,7 @@ def prompt_block_for_attached(
 _VISION_ARMS: tuple[tuple[str, str, str, int], ...] = (
     ("claude_agent", "native_multimodal", "Claude Max auth (claude CLI)", 1),
     ("codex_agent", "native_multimodal", "OpenAI Codex signed-in CLI (gpt-5.5)", 2),
-    ("grok_agent", "native_multimodal", "xAI API (grok-4)", 3),
+    ("grok_agent", "native_multimodal", "xAI API (grok-4 image understanding via OAuth)", 3),
     ("qwen_agent", "routes_vision_model", "Fireworks API (kimi-k2.6 / qwen-vl)", 4),
     ("cline_agent", "routes_upstream_provider", "Cline upstream provider (Anthropic/OpenAI/Gemini)", 5),
 )

@@ -1879,6 +1879,15 @@ _BROWSER_PHOTO_DESCRIPTION_RE = re.compile(
     r"|\b(?:what(?:'s| is| are)|describe)\b.{0,40}\bwearing\b",
     re.IGNORECASE,
 )
+_BROWSER_PHOTO_OPEN_RE = re.compile(
+    r"\b(?:open|click|select|tap|choose|show|bring\s+up|pull\s+up|go\s+to)\b"
+    r".{0,140}\b(?:the|this|that|current|visible|on[-\s]?screen|screen)\s+"
+    r"(?:photo|picture|image|post|reel|tile|grid\s+post)\b"
+    r"|\b(?:open|click|select|tap|choose|show|bring\s+up|pull\s+up|go\s+to)\b"
+    r".{0,140}\b(?:photo|picture|image|post|reel|tile)\b.{0,80}"
+    r"\b(?:beach|ocean|water|sea|shore|backdrop|background)\b",
+    re.IGNORECASE,
+)
 _BROWSER_PHOTO_CORRECTION_RE = re.compile(
     r"\b(?:actually|no|nope|wrong|stale|old)\b.{0,90}"
     r"\b(?:bikini|swimsuit|swimwear|body|figure|physique|photo|picture|image|outfit|clothing|clothes)\b"
@@ -3246,6 +3255,243 @@ def _search_url_for_site(site: str, query: str) -> str:
     return f"https://www.google.com/search?q={q}"
 
 
+_SEARCH_JUNK_QUERIES = {
+    "", "on", "in", "it", "google", "on google", "the web", "web", "online",
+    "this", "that", "these", "those", "this one", "that one", "them",
+}
+# Anaphora: a query that points back at the conversation (the photo Alice just
+# described) rather than naming a concrete thing — must be resolved by the cortex.
+_SEARCH_ANAPHORA_RE = re.compile(
+    r"\b(?:this|that|these|those|it|her|his|same)\b"
+    # optional trailing noun is category-AGNOSTIC (r235): any body/product type, not just
+    # clothing — the bare this/that/it already triggers regardless.
+    r"(?:\s+(?:type|kind|one|outfit|bikini|dress|swimsuit|thing|item|product|style|look|"
+    r"car|vehicle|watch|bag|shoe|phone|gadget|device|model|piece|animal|building|food|plant))?\b",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_BROWSER_SEARCH_RE = re.compile(
+    r"\b(?:where\s+can\s+i\s+buy|where\s+to\s+buy|buy|shop|shopping|search|look\s+up|find)\b"
+    r".{0,140}\b(?:this|that|these|those|it|same|type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes)\b"
+    r"|\b(?:this|that|these|those|it|same)\s+(?:type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes)\b"
+    r".{0,140}\b(?:buy|shop|shopping|search|look\s+up|find|google)\b",
+    re.IGNORECASE,
+)
+
+
+def _search_query_is_contextual_or_junk(query: str) -> bool:
+    """George 2026-05-31: a literal browser search must NOT fire when the query is junk
+    ('on Google', 'google', empty) or context-referential ('this type of bikini', 'it',
+    'that one') — the real target lives in the conversation (e.g. the image Alice just
+    described). Such turns route to the CORTEX so it composes the query from context."""
+    q = " ".join((query or "").strip(" .?!,;:").split()).casefold()
+    if q in _SEARCH_JUNK_QUERIES or len(q) < 3:
+        return True
+    if _SEARCH_ANAPHORA_RE.search(q):
+        return True
+    return False
+
+
+def _is_contextual_browser_search_request(text: str) -> bool:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    return bool(_CONTEXTUAL_BROWSER_SEARCH_RE.search(clean))
+
+
+def _clean_contextual_search_query(query: str) -> str:
+    q = " ".join(str(query or "").strip().strip("`'\"“”‘’ .?!,;:").split())
+    q = re.sub(
+        r"^(?:search|google|look\s+up|find)\s+(?:google\s+)?(?:for\s+)?",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    ).strip()
+    q = q.strip("`'\"“”‘’ .?!,;:")
+    if _search_query_is_contextual_or_junk(q):
+        return ""
+    # Keep the effector URL readable and bounded; Google will handle the rest.
+    return q[:120].strip()
+
+
+def _parse_contextual_search_query(raw: str) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(text[start:end + 1])
+            if isinstance(data, dict):
+                q = _clean_contextual_search_query(str(data.get("query") or ""))
+                if q:
+                    return q
+    except Exception:
+        pass
+    for line in text.splitlines():
+        line = re.sub(r"^\s*(?:query|search_query)\s*[:=-]\s*", "", line, flags=re.IGNORECASE)
+        q = _clean_contextual_search_query(line)
+        if q:
+            return q
+    return _clean_contextual_search_query(text)
+
+
+def _latest_contextual_search_evidence(
+    *,
+    state_dir: Optional[Path | str] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
+    max_age_s: float = 1800.0,
+) -> str:
+    """Recent visual/browser evidence for anaphoric shopping searches."""
+    parts: list[str] = []
+    try:
+        from System.swarm_browser_photo_description import latest_photo_description
+        photo = latest_photo_description(now=time.time(), max_age_s=max_age_s, state_dir=state_dir)
+        desc = str(photo.get("description") or "").strip() if isinstance(photo, dict) else ""
+        if desc:
+            parts.append(f"Latest browser photo vision: {desc}")
+    except Exception:
+        pass
+    try:
+        from System.swarm_browser_page_state import latest_page_state
+        ps = latest_page_state(now=time.time(), max_age_s=max_age_s, state_dir=state_dir)
+        if isinstance(ps, dict):
+            title = str(ps.get("title") or "").strip()
+            url = str(ps.get("url") or "").strip()
+            text = str(ps.get("text") or "").strip()
+            if title or url:
+                parts.append(f"Current/nearby browser page: {title} {url}".strip())
+            if text:
+                parts.append("Page text excerpt: " + text[:280])
+    except Exception:
+        pass
+    for msg in list(history or [])[-8:]:
+        try:
+            role = str(msg.get("role") or "")
+            content = " ".join(str(msg.get("content") or "").split())
+        except Exception:
+            continue
+        if role == "assistant" and re.search(
+            r"\b(?:bikini|swimsuit|outfit|dress|top|checkered|plaid|pink|black|beach|ocean)\b",
+            content,
+            re.IGNORECASE,
+        ):
+            parts.append("Recent Alice visual answer: " + content[:360])
+    # Preserve order but remove duplicates.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for part in parts:
+        key = part.casefold()
+        if part and key not in seen:
+            seen.add(key)
+            deduped.append(part)
+    return "\n".join(deduped)[:1800]
+
+
+def _fallback_contextual_shopping_query(evidence: str) -> str:
+    """Last-resort grounded query if the cortex is unavailable."""
+    low = str(evidence or "").lower()
+    if not low:
+        return ""
+    colors = [
+        c for c in (
+            "pink", "black", "white", "blue", "green", "yellow", "red",
+            "brown", "orange", "purple", "gold", "silver",
+        )
+        if re.search(rf"\b{re.escape(c)}\b", low)
+    ][:3]
+    patterns = [
+        p for p in (
+            "checkered", "plaid", "gingham", "striped", "floral",
+            "animal print", "cow print", "polka dot", "triangle",
+        )
+        if p in low
+    ][:2]
+    item = "bikini"
+    if "swimsuit" in low and "bikini" not in low:
+        item = "swimsuit"
+    terms = colors + patterns + [item]
+    q = " ".join(dict.fromkeys(t for t in terms if t))
+    if len(q.split()) >= 2:
+        return q
+    return ""
+
+
+def _compose_contextual_search_query_with_cortex(
+    owner_text: str,
+    evidence: str,
+    *,
+    model: str = "",
+) -> dict[str, str]:
+    """Ask the active cortex to turn visual/browser evidence into a concrete search query."""
+    evidence = str(evidence or "").strip()
+    if not evidence:
+        return {"query": "", "source": "no_evidence", "raw": ""}
+    system = (
+        "You are Alice's cortex choosing a web search query from grounded visual/browser evidence. "
+        "The owner used anaphora like 'this type', so resolve it from the evidence. "
+        "Return ONLY JSON: {\"query\":\"...\",\"reason\":\"...\"}. "
+        "The query must be concrete product-search words, not 'on Google', not 'this', not a URL."
+    )
+    user = (
+        f"Owner request: {owner_text}\n\n"
+        f"Grounded evidence:\n{evidence}\n\n"
+        "Compose the Google query for where to buy the item/style."
+    )
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    raw = ""
+    model_name = str(model or "").strip()
+    try:
+        if _CLOUD_AVAILABLE and model_name and _is_cloud_model(model_name):
+            full: list[str] = []
+            for kind, payload in _cloud_stream_chat(
+                model_name,
+                messages,
+                temperature=0.2,
+                timeout_s=min(90, int(_cloud_brain_timeout_s())),
+            ):
+                if kind == "token":
+                    full.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(full)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(full)
+        else:
+            import urllib.request
+            model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "stream": False,
+                "keep_alive": _ollama_keep_alive("15s"),
+                "think": False,
+                "options": {
+                    "temperature": 0.2,
+                    "top_p": 0.8,
+                    "num_ctx": min(4096, _ollama_num_ctx(4096)),
+                    "num_predict": 80,
+                    "repeat_penalty": 1.08,
+                },
+            }
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{_OLLAMA_URL}/api/chat",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=min(20.0, _ollama_brain_timeout_s(20.0))) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
+            msg = data.get("message") if isinstance(data.get("message"), dict) else {}
+            raw = str(msg.get("content") or data.get("response") or "").strip()
+    except Exception:
+        raw = ""
+    query = _parse_contextual_search_query(raw)
+    return {"query": query, "source": "cortex" if query else "cortex_failed", "raw": raw[:500]}
+
+
 def _extract_browser_search_command(text: str) -> Dict[str, str]:
     clean = " ".join((text or "").strip().split())
     if not clean:
@@ -3254,6 +3500,13 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
         from System.swarm_browser_site_playbook import resolve_site_navigation, site_category_from_text
         url = resolve_site_navigation(clean)
         if url:
+            # Same guard as below: if this resolved to a SEARCH url whose query is junk or
+            # context-referential, route to the cortex instead of a literal search.
+            _qm = re.search(r"[?&]q=([^&]+)", url or "")
+            if _qm:
+                from urllib.parse import unquote_plus as _unq
+                if _search_query_is_contextual_or_junk(_unq(_qm.group(1))):
+                    return {}
             domain = site_category_from_text(clean)
             return {
                 "kind": "browser_url",
@@ -3278,6 +3531,10 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
         site = m.group("site")
         query = re.sub(r"\b(?:please|now|in\s+a\s+browser|on\s+screen)\b", " ", m.group("query"), flags=re.IGNORECASE)
         query = " ".join(query.strip(" .?!,;:").split())
+        # Junk/anaphoric query -> route to the cortex (it composes the real query from the
+        # conversation, e.g. the bikini Alice just described) instead of a literal search.
+        if _search_query_is_contextual_or_junk(query):
+            return {}
         url = _search_url_for_site(site, query)
         if url:
             return {
@@ -3811,6 +4068,11 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         return close
     if _is_negated_or_media_conversation_app_turn(clean):
         return {}
+    # r233 — browser-body guard: "open/click the photo on screen" while Alice
+    # Browser is in context is a browser effector + cortex turn, not a fuzzy
+    # SIFTA-app launch ("Pheromone Symphony" bug).
+    if _is_browser_photo_open_query(clean):
+        return {}
     app_names = app_names or _load_manifest_app_names()
     m = re.match(
         r"^\s*(?:(?:hey|ok|okay|yo|hi|hello)\s+)?(?:alice[,\s]+)?"
@@ -3954,6 +4216,14 @@ def _is_browser_photo_description_query(text: str) -> bool:
     return bool(_BARE_BROWSER_DESCRIBE_RE.search(clean))
 
 
+def _is_browser_photo_open_query(text: str) -> bool:
+    """Owner wants Alice Browser to open/select a visible photo/post/reel."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    return bool(_BROWSER_PHOTO_OPEN_RE.search(clean))
+
+
 def _is_browser_page_cortex_description_query(text: str) -> bool:
     """Page-description turns need the cortex, with browser receipts as context.
 
@@ -3971,7 +4241,7 @@ def _is_browser_page_cortex_description_query(text: str) -> bool:
     # (George 2026-05-31: "I talk to Alice, not a photo descriptor robot" — the
     # vision-arm description is EVIDENCE for the cortex to compose Alice's reply
     # with conversation context, not a raw "I looked at the photo with X:" dump).
-    if _is_browser_photo_description_query(clean):
+    if _is_browser_photo_description_query(clean) or _is_browser_photo_open_query(clean):
         return True
     return bool(
         re.search(
@@ -15777,16 +16047,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         import re as _re
         _NOW_PLAYING_RE = _re.compile(r"^now\s+playing[\s:]+.{3,}", _re.IGNORECASE)
         if not image_path and _NOW_PLAYING_RE.match(text):
-            self._append_user_line(text, conf=1.0)
-            self._append_system_line(
-                "(co-watch context updated — Alice listening in background)",
-                error=False,
-            )
+            # George 2026-05-31: a TYPED "now playing <url> <title>" is the OWNER telling
+            # Alice what he is co-watching — a DIRECT turn, not ambient room audio. The old
+            # path logged "(co-watch context updated — listening in background)" and returned
+            # SILENT: the "I typed and got a deterministic robot, no reply" the owner hit.
+            # Now: capture the co-watch context, mark it in her EPISODIC DIARY (so "is it in
+            # her diary?" is yes), then FALL THROUGH to the cortex so she answers like Alice
+            # with the now-playing context in hand.
             try:
                 from System.swarm_media_ingress_gate import write_gate_receipt
                 write_gate_receipt(
-                    {"route": "ambient_media",
-                     "reason": "now_playing_typed_notification",
+                    {"route": "owner_cowatch_notice",
+                     "reason": "now_playing_typed_by_owner",
                      "confidence": 1.0},
                     text=text, stt_conf=1.0,
                 )
@@ -15798,9 +16070,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 try_ingest_architect_cowatch_segment(text)
             except Exception:
                 pass
-            self._busy = False
-            self._return_to_listening()
-            return
+            try:
+                import json as _json_diary
+                _diary = _state_root() / "episodic_diary.jsonl"
+                _diary.parent.mkdir(parents=True, exist_ok=True)
+                with _diary.open("a", encoding="utf-8") as _df:
+                    _df.write(_json_diary.dumps({
+                        "ts": time.time(),
+                        "kind": "owner_cowatch",
+                        "source": "alice_browser",
+                        "truth_label": "OPERATIONAL",
+                        "note": "owner is co-watching with me in Alice Browser: " + text[:400],
+                    }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            # NO early return — fall through to the cortex dispatch below so Alice replies.
         # ────────────────────────────────────────────────────────────────
         self._set_pill("thinking", "⌨️ typed — thinking…")
         self._append_observable_processing(
@@ -17052,6 +17336,65 @@ class TalkToAliceWidget(SiftaBaseWidget):
             {"kind": "app", "app_name": app_name, "url": ""}
         )
 
+    def _execute_contextual_browser_search(self, owner_text: str) -> str:
+        """Resolve 'search this/that type' through visual context, then search."""
+        evidence = _latest_contextual_search_evidence(
+            state_dir=_state_root(),
+            history=getattr(self, "_history", []),
+            max_age_s=1800.0,
+        )
+        try:
+            model = self._current_brain_model(owner_text)
+        except Exception:
+            model = ""
+        composed = _compose_contextual_search_query_with_cortex(
+            owner_text,
+            evidence,
+            model=model,
+        )
+        query = _clean_contextual_search_query(str(composed.get("query") or ""))
+        source = str(composed.get("source") or "")
+        if not query:
+            query = _fallback_contextual_shopping_query(evidence)
+            source = "fallback_from_visual_evidence" if query else source or "failed"
+
+        if not query:
+            receipt = _write_app_command_receipt(
+                action="contextual_browser_search",
+                ok=False,
+                app_name="Alice Browser",
+                note="no concrete search query could be composed from recent visual evidence",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return (
+                "I will not search Google for 'on Google'. I need the recent visual receipt "
+                "again before I can turn 'this type' into a real search query."
+            )
+
+        url = _search_url_for_site("google", query)
+        receipt = _write_app_command_receipt(
+            action="contextual_browser_search_query",
+            ok=True,
+            app_name="Alice Browser",
+            url=url,
+            note=f"query={query}; source={source}; model={model or '<unknown>'}",
+        )
+        self._append_system_line(f"Context search receipt: {receipt}")
+        self._execute_sifta_app_command(
+            {
+                "kind": "browser_url",
+                "app_name": "Alice Browser",
+                "url": url,
+                "search_site": "google",
+                "query": query,
+                "owner_text": owner_text,
+                "contextual_search_source": source,
+            }
+        )
+        if source == "cortex":
+            return f"I reasoned from the bikini I just saw and searched Google for {query}."
+        return f"I used the recent visual receipt and searched Google for {query}."
+
     def _execute_sifta_app_command(self, command: Dict[str, str]) -> str:
         app_name = command.get("app_name") or ""
         url = command.get("url") or ""
@@ -17710,21 +18053,73 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # not a raw reflex, composes Alice's reply (George 2026-05-31). The arm read is
         # ~10s; that is acceptable for an explicit describe request.
         visual_evidence = ""
+        vision_routing_note = ""
+        photo_open_evidence = ""
         try:
-            if _is_browser_photo_description_query(owner_text):
+            needs_photo_pixels = (
+                _is_browser_photo_description_query(owner_text)
+                or _is_browser_photo_open_query(owner_text)
+            )
+            if needs_photo_pixels:
                 widget = _find_live_alice_browser_widget()
                 if widget is not None:
                     _model = self._current_brain_model(owner_text)
                     _arm = _eye_arm_for_cortex(_model)
+                    if _is_browser_photo_open_query(owner_text):
+                        try:
+                            _open = widget.open_visible_photo_matching_text(
+                                owner_text,
+                                current_arm=_arm,
+                                current_model=_model,
+                            )
+                            _ostatus = str((_open or {}).get("status") or "").strip()
+                            if _ostatus == "opened":
+                                photo_open_evidence = (
+                                    "BROWSER ACTION EVIDENCE — I selected and opened the visible "
+                                    "Instagram media tile that best matched the owner's words "
+                                    f"(row={(_open or {}).get('row')}, col={(_open or {}).get('col')}, "
+                                    f"used_vision={bool((_open or {}).get('used_vision'))}, "
+                                    f"href={str((_open or {}).get('href') or '')[:180]}). "
+                                    "Now describe the opened/foreground photo from visual evidence.\n\n"
+                                )
+                            else:
+                                photo_open_evidence = (
+                                    "BROWSER ACTION NOTE — I recognized this as a browser-photo open/select "
+                                    "request, not an app launch, but I could not open a matching visible tile "
+                                    f"({str((_open or {}).get('reason') or 'unknown')}). Do not invent which "
+                                    "tile was meant.\n\n"
+                                )
+                        except Exception as _open_exc:
+                            photo_open_evidence = (
+                                "BROWSER ACTION NOTE — I recognized this as a browser-photo open/select "
+                                "request, but the browser selection organ raised "
+                                f"{type(_open_exc).__name__}. Do not route this to the app launcher and do "
+                                "not invent which tile was meant.\n\n"
+                            )
                     _res = widget.describe_current_photo(current_arm=_arm, current_model=_model)
+                    _status = str((_res or {}).get("status") or "").strip()
                     _desc = str((_res or {}).get("description") or "").strip()
-                    if _desc:
+                    if _status == "described" and _desc:
                         visual_evidence = (
                             "VISUAL EVIDENCE — what my vision arm actually saw in the on-screen photo "
                             "(treat as ground truth pixels): " + _desc + "\n\n"
                         )
+                    else:
+                        _attempts = (_res or {}).get("attempts") or []
+                        if _attempts:
+                            _chain = ", ".join(
+                                f"{str(a.get('arm') or '<arm>')}:{str(a.get('status') or 'failed')}"
+                                for a in _attempts
+                                if isinstance(a, dict)
+                            )
+                            vision_routing_note = (
+                                "VISION ROUTING NOTE — I tried to get pixel evidence, but no vision arm "
+                                f"returned a usable visual description this turn. Attempts: {_chain}. "
+                                "Do not invent outfit/body details from page text alone.\n\n"
+                            )
         except Exception:
             visual_evidence = ""
+            vision_routing_note = ""
         try:
             from System.swarm_browser_page_state import (
                 has_readable_content,
@@ -17760,9 +18155,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "block, DOM dump, footer/legal/navigation chrome, tracking URLs, or JSON. "
                     "Treat Instagram legal/footer/about links as page chrome, not comments. "
                     "If the VISUAL EVIDENCE below is present, that is the real on-screen photo — describe "
-                    "it warmly and naturally; if it is absent, do not invent pixel details.\n\n"
+                    "it warmly and naturally; if it is absent, do not invent pixel details. "
+                    "If a VISION ROUTING NOTE is present, use it only to explain the missing pixels briefly.\n\n"
                     f"Owner request: {owner_text}\n\n"
-                    f"{visual_evidence}{block}"
+                    f"{photo_open_evidence}{visual_evidence}{vision_routing_note}{block}"
                 )
         except Exception:
             pass
@@ -17783,7 +18179,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "The owner asked about the photo. Answer naturally in Alice's voice using the "
                     "visual evidence below — not as a robot, no 'I looked at the photo with <arm>:' prefix.\n\n"
                     f"Owner request: {owner_text}\n\n"
-                    f"{visual_evidence}Live address: {_browser_clean_address(live_url)}"
+                    f"{photo_open_evidence}{visual_evidence}Live address: {_browser_clean_address(live_url)}"
+                )
+            if vision_routing_note:
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked about the photo, but the vision route did not return usable pixels. "
+                    "Answer honestly and briefly from the routing note; do not invent visual details.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{photo_open_evidence}{vision_routing_note}Live address: {_browser_clean_address(live_url)}"
+                )
+            if photo_open_evidence:
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked me to select/open a visible browser photo. Use the browser action "
+                    "evidence below, answer honestly, and do not route to any SIFTA app.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{photo_open_evidence}Live address: {_browser_clean_address(live_url)}"
                 )
             return (
                 "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
@@ -17795,8 +18207,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         return visual_evidence and (
             "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
             "Answer naturally in Alice's voice from the visual evidence below; no robot prefix.\n\n"
-            f"Owner request: {owner_text}\n\n{visual_evidence}"
-        ) or ""
+            f"Owner request: {owner_text}\n\n{photo_open_evidence}{visual_evidence}"
+        ) or (vision_routing_note and (
+            "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+            "The owner asked about the photo, but no vision arm returned usable pixels. "
+            "Do not invent visual details.\n\n"
+            f"Owner request: {owner_text}\n\n{photo_open_evidence}{vision_routing_note}"
+        )) or (photo_open_evidence and (
+            "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+            "The owner asked me to select/open a visible browser photo. Use this action evidence only; "
+            "do not invent pixels.\n\n"
+            f"Owner request: {owner_text}\n\n{photo_open_evidence}"
+        )) or ""
 
     def _execute_current_comments_summary(self) -> str:
         """Recap the comment thread from the captured page-state receipt.
@@ -17959,6 +18381,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if ok:
             eye = f" with {arm}" if arm else ""
             return f"I looked at the current browser photo{eye}: {description}"
+        if status.startswith("grok_eye"):
+            detail = str(result.get("error_summary") or diary_note or status).strip()
+            return (
+                "My selected Grok eye could not return a usable photo description from xAI OAuth. "
+                f"{detail} I did not switch to Claude for this Grok-selected photo."
+            )
         if status == "failed":
             return (
                 "I tried to look at the current browser photo, but no vision description receipt came back. "
@@ -19882,6 +20310,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_repair_reply)
             self._tts = _TTSWorker(
                 _repair_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Contextual Browser Search Reflex ─────────────────────────────
+        # "Where can I buy this type of bikini? Search on Google" cannot be
+        # parsed as literal query "on Google". The query lives in the visual
+        # receipt/history, so the active cortex composes it before the browser
+        # effector opens Google.
+        if (
+            not image_path
+            and _is_contextual_browser_search_request(text)
+        ):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_contextual_browser_search(text)
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_contextual_browser_search")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)

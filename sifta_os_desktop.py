@@ -4503,14 +4503,11 @@ class SiftaDesktop(QMainWindow):
         None in list = separator. This drives the macOS-style dynamic menu bar."""
         _sep = None
         default = {
-            # Architect 2026-05-13 07:15 — File menu pared to the two
-            # apps about HER life and HIS life, plus Quit. Everything
-            # else lives in the Launcher tab. Less to click, less to
-            # crash, faster open.
+            # George 2026-05-31: default File pared to just Quit. Alice Journal +
+            # Provider Schedule removed from the global File menu — they live in the
+            # Launcher tab. This is the FALLBACK menu (no app focused / app without an
+            # override); per-app File menus are defined in `overrides` below, macOS-style.
             "File": [
-                ("Alice Journal",     lambda: self._trigger_manifest_app("Alice Journal")),
-                ("Provider Schedule", lambda: self._trigger_manifest_app("Provider Schedule")),
-                _sep,
                 ("Quit SIFTA OS", self.close),
             ],
             "Edit": [

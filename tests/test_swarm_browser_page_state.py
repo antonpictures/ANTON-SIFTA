@@ -191,5 +191,42 @@ def test_state_dir_accepts_root_or_state_dir(tmp_path):
     assert (sd / "browser_page_state.jsonl").exists()
 
 
+def test_media_playback_signal_marks_own_browser_audio(tmp_path):
+    url = "https://www.youtube.com/watch?v=abc123"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="YouTube video",
+        text="",
+        media_playback={"status": "playing", "playing": True, "video_count": 1},
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    assert state["media_playback"]["status"] == "playing"
+    playing, details = ps.is_my_own_browser_playback(now=1001.0, state_dir=tmp_path)
+    assert playing is True
+    assert details["domain"] == "www.youtube.com"
+    assert details["playing"] is True
+
+
+def test_media_domain_without_playing_signal_is_not_own_audio(tmp_path):
+    url = "https://www.youtube.com/watch?v=abc123"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="YouTube video",
+        text="",
+        media_playback={"status": "paused", "playing": False, "video_count": 1},
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    playing, details = ps.is_my_own_browser_playback(now=1001.0, state_dir=tmp_path)
+    assert playing is False
+    assert details["reason"] == "media_domain_but_not_playing"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

@@ -194,6 +194,41 @@ def _append_failover_ledger(row: dict[str, Any]) -> None:
         pass
 
 
+def record_cortex_failover(
+    *,
+    from_arm: str = "",
+    to_arm: str = "",
+    reason: str = "",
+    state_dir: Optional[Path | str] = None,
+    extra: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Record a non-cortex fatal arm failover, such as Grok-eye key missing.
+
+    This is deliberately smaller than ``handle_cortex_auth_failure``: no OAuth
+    popup, no model swap, just a ledger row saying one perception arm yielded to
+    another so Alice stayed able to see.
+    """
+    base = Path(state_dir) if state_dir is not None else _STATE
+    path = base / "cortex_failover.jsonl"
+    row = {
+        "ts": time.time(),
+        "kind": "ARM_FAILOVER",
+        "receipt_id": uuid.uuid4().hex[:16],
+        "from_arm": str(from_arm or ""),
+        "to_arm": str(to_arm or ""),
+        "reason": str(reason or ""),
+        "truth_label": TRUTH_LABEL,
+        "extra": dict(extra or {}),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except OSError:
+        pass
+    return row
+
+
 def handle_cortex_auth_failure(
     *,
     error_text: str,
@@ -292,6 +327,7 @@ __all__ = [
     "is_auth_failure",
     "compose_owner_voice",
     "schedule_oauth_refresh",
+    "record_cortex_failover",
     "handle_cortex_auth_failure",
     "summary",
     "TRUTH_LABEL",

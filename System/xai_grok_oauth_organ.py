@@ -56,6 +56,19 @@ def redact_secret(value: str) -> str:
     return f"{text[:5]}...{text[-4:]}"
 
 
+def normalize_grok_model_id(model: str) -> str:
+    """Normalize SIFTA Grok labels to the xAI API model id used by OAuth calls."""
+    m = str(model or "").strip() or "grok-4"
+    low = m.lower()
+    if low.startswith(("grok:", "xai:")):
+        m = m.split(":", 1)[1].strip()
+    if "/" in m and "grok-" in m.lower():
+        m = m.rsplit("/", 1)[-1].strip()
+    if m.lower().startswith("grok-4."):
+        return "grok-4"
+    return m or "grok-4"
+
+
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -219,16 +232,18 @@ def _receipt(
 def call_xai_responses(
     prompt: str,
     *,
-    model: str = "grok-4.3",
+    model: str = "grok-4",
     api_url: str = _API_URL,
     trace_path: Path = _TRACE,
     ledger_path: Path = _LEDGER,
     token_file: Path = _TOKEN_FILE,
+    hermes_auth_file: Path = _HERMES_AUTH_FILE,
     timeout_s: float = 60.0,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Call xAI only after local SIFTA registration and credential resolution."""
-    credential = load_credential(token_file=token_file)
+    model = normalize_grok_model_id(model)
+    credential = load_credential(token_file=token_file, hermes_auth_file=hermes_auth_file)
     if not has_recent_registration(trace_path=trace_path):
         row = _receipt(ok=False, reason="missing_recent_sifta_registration", credential=credential, ledger_path=ledger_path, model=model)
         _append_jsonl(ledger_path, row)
@@ -273,12 +288,160 @@ def call_xai_responses(
     return row
 
 
+@dataclass(frozen=True)
+class GrokVisionResult:
+    """Shaped like the other vision arms so describe_current_photo reads .ok/.output."""
+    ok: bool
+    output: str = ""
+    status: str = ""
+    arm_id: str = "grok_agent"
+    model: str = ""
+    stderr: str = ""
+
+
+def _grok_image_data_uri(path: Path) -> str:
+    import base64
+    import mimetypes
+    mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+def _capture_grok_vision_error(http_status, body, model) -> None:
+    try:
+        p = _STATE / "grok_api_errors.jsonl"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.time(), "http_status": http_status,
+                                "body": str(body)[:400], "model": model, "had_image": True,
+                                "endpoint": "v1/responses"}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _extract_responses_text(raw: str) -> str:
+    """Pull the assistant text out of an xAI /v1/responses payload (defensive)."""
+    try:
+        d = json.loads(raw)
+    except Exception:
+        return ""
+    if isinstance(d, dict):
+        t = d.get("output_text")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+        for arr_key in ("output", "messages"):
+            for item in d.get(arr_key) or []:
+                if isinstance(item, dict):
+                    for c in item.get("content") or []:
+                        if isinstance(c, dict) and isinstance(c.get("text"), str) and c["text"].strip():
+                            return c["text"].strip()
+        try:
+            return str(d["choices"][0]["message"]["content"]).strip()
+        except Exception:
+            pass
+    return ""
+
+
+def describe_image_via_oauth(
+    image_path: str,
+    prompt: str,
+    *,
+    model: str = "grok-4",
+    api_url: str = _API_URL,
+    timeout_s: float = 300.0,
+    env: Optional[dict[str, str]] = None,
+) -> GrokVisionResult:
+    """Grok's EYE via the OAuth-valid endpoint. George 2026-05-31: the OAuth token 403s on
+    /v1/chat/completions (the developer API expects an xai- key) but IS valid on
+    /v1/responses (what the OAuth organ already uses). So a grok-cortex photo describe goes
+    here — image inlined as a responses `input_image` with the OAuth bearer. Honest failure
+    (no cred / non-2xx / empty) so a selected-Grok turn can report the exact Grok failure
+    without silently covering it with another vendor; the reason is written to grok_api_errors.jsonl."""
+    model = normalize_grok_model_id(model)
+    p = Path(image_path)
+    if not image_path or not p.exists():
+        return GrokVisionResult(ok=False, status="image_missing")
+    cred = load_credential(env=env)
+    if cred is None or not cred.value:
+        return GrokVisionResult(ok=False, status="no_xai_oauth_credential", model=model)
+    try:
+        uri = _grok_image_data_uri(p)
+    except Exception as exc:
+        return GrokVisionResult(ok=False, status="image_read_failed", stderr=str(exc), model=model)
+    body = json.dumps({
+        "model": model,
+        "input": [{"role": "user", "content": [
+            {"type": "input_text", "text": prompt},
+            {"type": "input_image", "image_url": uri},
+        ]}],
+    }).encode("utf-8")
+    req = request.Request(
+        api_url, data=body,
+        headers={"Authorization": f"Bearer {cred.value}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=timeout_s) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            status_code = int(getattr(resp, "status", 0) or 0)
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        bodytxt = ""
+        try:
+            bodytxt = exc.read().decode("utf-8", "replace")[:400]  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        _capture_grok_vision_error(code, bodytxt or str(exc), model)
+        return GrokVisionResult(ok=False, status=f"http_error:{code or type(exc).__name__}",
+                                stderr=str(exc)[:200], model=model)
+    if not (200 <= status_code < 300):
+        _capture_grok_vision_error(status_code, raw[:400], model)
+        return GrokVisionResult(ok=False, status=f"http_{status_code}", stderr=raw[:200], model=model)
+    text = _extract_responses_text(raw)
+    if not text:
+        return GrokVisionResult(ok=False, status="empty_grok_reply", model=model)
+    return GrokVisionResult(ok=True, output=text, status="ok", model=model)
+
+
 __all__ = [
     "XaiCredential",
+    "GrokVisionResult",
+    "describe_image_via_oauth",
     "call_xai_responses",
     "discover_official_grok_cli",
     "has_recent_registration",
     "load_credential",
+    "normalize_grok_model_id",
     "redact_secret",
     "write_token_file",
+    "preflight_grok_vision_key",
+    "GROK_VISION_KEY_MISSING_MESSAGE",
 ]
+
+
+GROK_VISION_KEY_MISSING_MESSAGE = (
+    "my grok eye needs my xAI OAuth login (Hermes xAI OAuth at ~/.hermes/auth.json, or "
+    ".sifta_state/secrets/xai_grok_oauth_token.json). Without it I am blind through that sensor. "
+    "If Grok is selected, I will report this Grok-eye failure instead of switching to Claude."
+)
+
+
+def preflight_grok_vision_key(*, env: Optional[dict[str, str]] = None) -> tuple[bool, str]:
+    """Returns (has_key, reason_or_message).
+
+    This is the honest preflight for Alice's Grok eye organ.
+    Called before any expensive xAI vision call when grok_agent is selected as eye.
+    If False, the caller must:
+      - Write a clear "grok_eye_key_missing" receipt
+      - Tell the cortex the honest line above
+      - Avoid silent vendor substitution when Grok is the selected cortex/eye
+
+    No sys.exit. No opaque vendor error. The organism stays conscious.
+    """
+    env = os.environ if env is None else env
+    # George 2026-05-31: grok auth is OAuth. load_credential resolves the OAuth bearer
+    # (env XAI_OAUTH_ACCESS_TOKEN, xai_grok_oauth_token.json, or Hermes ~/.hermes/auth.json).
+    # No ~/.xai_key / XAI_API_KEY instruction — that path is gone.
+    cred = load_credential(env=env)
+    if cred is not None and cred.value:
+        return True, "ok"
+    return False, GROK_VISION_KEY_MISSING_MESSAGE

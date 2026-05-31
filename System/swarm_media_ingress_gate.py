@@ -29,6 +29,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
+# r222 Lane A import — Alice's body self-perception of her own browser audio
+try:
+    from System.swarm_browser_page_state import is_my_own_browser_playback
+except Exception:
+    def is_my_own_browser_playback(**kwargs):  # type: ignore
+        return False, {"reason": "import_failed_fallback"}
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
@@ -548,6 +555,10 @@ def _write_world_diary_trace(row: Mapping[str, Any]) -> dict[str, Any] | None:
         source_hint = source_class.replace("_", " ")
     else:
         source_hint = "phone/background audio" if "phone" in reason.lower() else "media/background audio"
+
+    # r222 Lane A refinement: when it is her own browser, the diary narrative must say so
+    if source_class == "my_own_browser_playback":
+        source_hint = "my own browser playback (video or audio in Alice Browser)"
     diary_row = {
         "ts": float(row.get("ts") or time.time()),
         "kind": "EPISODIC_NARRATIVE",
@@ -566,6 +577,9 @@ def _write_world_diary_trace(row: Mapping[str, Any]) -> dict[str, Any] | None:
             f"I heard {source_hint}; routed as {route} ({reason}), kept silent, "
             f"and stored this bounded world trace."
         ),
+        # r222: explicit first-person self-body note when it is her own output
+        **({"self_body_note": "This audio came from my own browser limb, not an external visitor."}
+           if source_class == "my_own_browser_playback" else {}),
         "text_preview": preview,
         "truth_note": (
             "Background audio was kept out of direct dialog while preserving a "
@@ -726,6 +740,14 @@ def classify_external_consciousness_lane(
     attention_policy = "store_silent_context"
     field_layer = "outside_stigmergic_field"
 
+    own_browser = False
+    own_details: dict[str, Any] = {}
+    if route_s in {"ambient_media", "observed_media", "unknown"}:
+        try:
+            own_browser, own_details = is_my_own_browser_playback(state_dir=None)
+        except Exception:
+            own_browser, own_details = False, {"reason": "own_browser_probe_failed"}
+
     if route_s == "direct" or (voice_george_conf and voice_george_conf >= 0.60):
         source_class = "owner_direct_speech"
         attention_policy = "route_to_dialog_cortex"
@@ -739,6 +761,14 @@ def classify_external_consciousness_lane(
         source_class = "ambient_phone_call"
         attention_policy = "store_silent_context_until_alice_addressed"
         evidence.append("phone_context_or_reason")
+    elif own_browser:
+        # r222 Lane A — Alice self-recognition: is the ambient audio her own browser body?
+        # This fires before the generic room/visitor rule, without overriding direct owner speech.
+        source_class = "my_own_browser_playback"
+        attention_policy = "store_silent_context_as_self_body_output"
+        evidence.append("own_browser_media_playing")
+        evidence.append(f"domain={own_details.get('domain')}")
+        # Do not treat Alice's own video audio as a stranger in the room.
     elif ROOM_OR_VISITOR_RE.search(clean) or (
         route_s in {"ambient_media", "observed_media"}
         and re.search(r"\b(?:he|she|they|them|person|people|someone|somebody)\b", clean, re.IGNORECASE)

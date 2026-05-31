@@ -53,8 +53,9 @@ def test_two_images_both_inlined(tmp_path):
 
 
 def test_vision_model_kept_or_raised_when_image_present():
-    assert gc.vision_model_for("grok-3", True) == "grok-4"          # text-only raised
+    assert gc.vision_model_for("grok-3", True) == "grok-4"          # text-only raised to valid id
     assert gc.vision_model_for("grok-4", True) == "grok-4"
+    assert gc.vision_model_for("grok:grok-4.3", True) == "grok-4"   # product-version -> valid API id
     assert gc.vision_model_for("grok-2-vision-1212", True) == "grok-2-vision-1212"
     assert gc.vision_model_for("grok-3", False) == "grok-3"         # no image: untouched
 
@@ -62,9 +63,21 @@ def test_vision_model_kept_or_raised_when_image_present():
 def test_launcher_passes_image_only_to_grok():
     grok = _build_command(get_agent_arm("grok_agent"), "look", image_path="/tmp/x.png")
     assert "--image" in grok and "/tmp/x.png" in grok
+    assert "--model" in grok and "grok-4" in grok
     assert "--image" not in _build_command(get_agent_arm("grok_agent"), "look")
     # claude/codex read the path agentically from the prompt — no --image flag.
     assert "--image" not in _build_command(get_agent_arm("claude_agent"), "look", image_path="/tmp/x.png")
+
+
+def test_launcher_normalizes_grok_cortex_model_hint():
+    grok = _build_command(
+        get_agent_arm("grok_agent"),
+        "look",
+        image_path="/tmp/x.png",
+        model_hint="grok:grok-4.3",
+    )
+    idx = grok.index("--model")
+    assert grok[idx + 1] == "grok-4"
 
 
 def test_capability_grok_now_transports_local_image():

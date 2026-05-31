@@ -509,6 +509,7 @@ def _build_command(
     *,
     state_dir: Path | None = None,
     image_path: str = "",
+    model_hint: str = "",
 ) -> list[str]:
     # Owner standing order (George 2026-05-24, reaffirmed 2026-05-25 — "set it in
     # stone"): EVERY external arm Alice delegates to — Grok, Claude, Codex, Hermes —
@@ -536,7 +537,22 @@ def _build_command(
         # George r211: when an image is attached, hand grok the PNG via --image so grok
         # cortex SEES with grok's own eye (xAI image_url) instead of failing over to claude.
         import sys as _sys
-        cmd = [_sys.executable, str(_REPO / "grok_chat.py"), "--one-shot", prompt]
+        model = str(model_hint or arm.model or "grok-4").strip()
+        low = model.lower()
+        if low.startswith(("grok:", "xai:")):
+            model = model.split(":", 1)[1].strip()
+        if "/" in model and "grok-" in model.lower():
+            model = model.rsplit("/", 1)[-1].strip()
+        if model.lower().startswith("grok-4."):
+            model = "grok-4"
+        cmd = [
+            _sys.executable,
+            str(_REPO / "grok_chat.py"),
+            "--one-shot",
+            prompt,
+            "--model",
+            model or "grok-4",
+        ]
         if image_path:
             cmd += ["--image", str(image_path)]
         return cmd
@@ -1353,6 +1369,7 @@ def ask_agent_arm(
     require_exact: str | None = None,
     evidence_mode: bool = False,
     image_path: str = "",
+    model_hint: str = "",
 ) -> AgentArmResult:
     """Run one bounded arm query with before/after receipts.
 
@@ -1384,7 +1401,13 @@ def ask_agent_arm(
         return AgentArmResult(False, receipt_id, arm.arm_id, "EMPTY_PROMPT")
 
     launch_state_dir = Path(state_dir) if state_dir is not None else None
-    command = _build_command(arm, prompt, state_dir=launch_state_dir, image_path=image_path)
+    command = _build_command(
+        arm,
+        prompt,
+        state_dir=launch_state_dir,
+        image_path=image_path,
+        model_hint=model_hint,
+    )
     actual_model = _actual_model_from_command(arm, command)
     start_row = {
         "ts": time.time(),

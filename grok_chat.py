@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Clean, no-TUI Grok chat for Alice / Matrix Terminal use.
-No sign-in every time. Uses persistent XAI_API_KEY.
+Auth is xAI OAuth (resolved by System.xai_grok_oauth_organ.load_credential).
 
 Usage (interactive):
   python3 ~/Music/ANTON_SIFTA/grok_chat.py
@@ -14,7 +14,7 @@ without hallucinating):
 
 This runs real xAI API call, prints the reply, Alice reads it in terminal, waits.
 Same power as George. Never hallucinates the answer — code forces delegation.
-Set key once in ~/.xai_key (chmod 600) so no sign-in ever.
+Auth comes from the xAI OAuth login (Hermes / xai_grok_oauth_token) — no static key.
 
 For the Swarm. 🐜⚡
 """
@@ -30,11 +30,38 @@ import mimetypes
 from pathlib import Path
 import requests
 
-# Models that can accept image_url content. grok-4 is multimodal; grok-2-vision
-# is the explicit vision tag. A text-only model (grok-3) with an image attached
-# would error — so when an image is present we keep/raise to a vision model.
+# Models that can accept image_url content. Alice's Grok photo path uses the
+# xAI chat/completions API model id that currently works for multimodal calls;
+# grok-2-vision remains an explicit older vision tag.
 _VISION_OK_MODELS = ("grok-4", "grok-2-vision", "grok-vision")
-_DEFAULT_VISION_MODEL = "grok-4"
+# George 2026-05-31: receipts proved grok vision calls returned a non-200 (rc=3) and
+# failed over to claude. Root cause = the model id. "grok-4.3" / "grok-4.20-reasoning"
+# are product version strings the xAI /v1/chat/completions API does NOT accept; the valid
+# multimodal API id is "grok-4". Owner-overridable via SIFTA_GROK_VISION_MODEL.
+_DEFAULT_VISION_MODEL = (os.environ.get("SIFTA_GROK_VISION_MODEL", "grok-4").strip() or "grok-4")
+
+
+def normalize_model_name(model: str) -> str:
+    """Normalize Alice cortex labels into xAI API model IDs.
+
+    The desktop may call the cortex ``grok:grok-4.3`` while the xAI API wants
+    just ``grok-4.3``. Keep this local and conservative so non-Grok labels are
+    still passed through for explicit advanced use.
+    """
+    m = (model or "").strip()
+    if not m:
+        return _DEFAULT_VISION_MODEL
+    low = m.lower()
+    if low.startswith(("grok:", "xai:")):
+        m = m.split(":", 1)[1].strip()
+    if "/" in m and "grok-" in m.lower():
+        m = m.rsplit("/", 1)[-1].strip()
+    # Map grok-4.x product-version strings (grok-4.3, grok-4.20-reasoning) — which the
+    # xAI API rejects — to the valid API id "grok-4". This is the chokepoint, so a
+    # grok-4.3 leaking from the launcher/registry still hits the API as grok-4.
+    if m.lower().startswith("grok-4."):
+        m = _DEFAULT_VISION_MODEL if _DEFAULT_VISION_MODEL.lower().startswith("grok-4") else "grok-4"
+    return m or _DEFAULT_VISION_MODEL
 
 
 def _image_data_uri(path: str) -> str:
@@ -62,7 +89,7 @@ def build_one_shot_messages(query: str, image_paths=None) -> list:
 
 def vision_model_for(model: str, has_image: bool) -> str:
     """Keep grok on a vision-capable model when an image is attached."""
-    m = (model or "").strip() or _DEFAULT_VISION_MODEL
+    m = normalize_model_name(model)
     if not has_image:
         return m
     if any(tag in m.lower() for tag in _VISION_OK_MODELS):
@@ -71,16 +98,20 @@ def vision_model_for(model: str, has_image: bool) -> str:
 
 
 def get_api_key():
-    key = os.environ.get("XAI_API_KEY")
-    if key:
-        return key.strip()
-    key_file = os.path.expanduser("~/.xai_key")
-    if os.path.exists(key_file):
-        with open(key_file, "r") as f:
-            return f.read().strip()
-    print("ERROR: No XAI_API_KEY found.")
-    print("Set it with: export XAI_API_KEY=yourkey")
-    print("Or put it in ~/.xai_key (chmod 600 ~/.xai_key)")
+    # George 2026-05-31: grok auth is xAI OAuth, NOT a static XAI_API_KEY. The bearer is
+    # resolved by load_credential (Hermes xAI OAuth at ~/.hermes/auth.json,
+    # .sifta_state/secrets/xai_grok_oauth_token.json, or XAI_OAUTH_ACCESS_TOKEN). We no
+    # longer instruct the owner to set XAI_API_KEY.
+    try:
+        from System.xai_grok_oauth_organ import load_credential
+        cred = load_credential()
+        if cred is not None and cred.value:
+            return cred.value.strip()
+    except Exception as exc:
+        print(f"grok auth: could not load xAI OAuth credential: {exc}")
+    print("ERROR: no xAI OAuth credential found.")
+    print("Log in via xAI OAuth (Hermes). Token is read from ~/.hermes/auth.json or "
+          ".sifta_state/secrets/xai_grok_oauth_token.json.")
     sys.exit(1)
 
 
@@ -123,7 +154,7 @@ def main():
     parser.add_argument("--one-shot", dest="one_shot", type=str, default=None,
                         help="One-shot delegation prompt. Alice types: python ... --one-shot 'question'")
     parser.add_argument("--receipt", action="store_true", help="Mint organism swimmer receipt for this call")
-    parser.add_argument("--model", default="grok-4", help="xAI model (grok-4 for full power, grok-3 fallback)")
+    parser.add_argument("--model", default=_DEFAULT_VISION_MODEL, help="xAI model (default: grok-4)")
     parser.add_argument("--image", dest="image", action="append", default=None,
                         help="Path to a local image grok should LOOK at (repeatable). "
                              "George r211: grok's own eye via xAI image_url, no claude failover.")
@@ -135,7 +166,7 @@ def main():
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    model = args.model
+    model = normalize_model_name(args.model)
 
     if args.one_shot:
         # Alice's reliable delegation path: real Grok, no hallucination, receipt optional
@@ -166,6 +197,19 @@ def main():
             sys.exit(2)
         if resp.status_code != 200:
             print(f"API error {resp.status_code}: {resp.text}")
+            # George 2026-05-31: capture the EXACT xAI rejection so a future grok failure
+            # is self-diagnosing (model-not-found vs 401-auth vs ...), not an opaque rc=3.
+            try:
+                errp = Path(__file__).resolve().parent / ".sifta_state" / "grok_api_errors.jsonl"
+                errp.parent.mkdir(parents=True, exist_ok=True)
+                with errp.open("a", encoding="utf-8") as _ef:
+                    _ef.write(json.dumps({
+                        "ts": time.time(), "http_status": resp.status_code,
+                        "body": str(resp.text)[:400], "model": model,
+                        "had_image": bool(args.image), "endpoint": "chat/completions",
+                    }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
             sys.exit(3)
         data = resp.json()
         try:

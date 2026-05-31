@@ -28,7 +28,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -180,6 +180,7 @@ def record_page_state(
     scroll: Optional[dict] = None,
     featured_image: str = "",
     comments: Optional[list] = None,
+    media_playback: Optional[Mapping[str, Any]] = None,
     source: str = _SRC_DOM,
     now: Optional[float] = None,
     state_dir: Optional[Path | str] = None,
@@ -207,6 +208,8 @@ def record_page_state(
             return str(x.get("alt") or x.get("src") or "")
         return str(x)
 
+    media_row = dict(media_playback) if isinstance(media_playback, Mapping) else {}
+
     row = {
         "ts": ts,
         "truth_label": TRUTH_LABEL,
@@ -230,6 +233,8 @@ def record_page_state(
         "comments_count": len(_clean_comments(comments)),
         "content_hash": _content_hash(str(url or ""), text, headings),
     }
+    if media_row:
+        row["media_playback"] = media_row
     _append(state_dir, row)
     return row
 
@@ -349,4 +354,84 @@ __all__ = [
     "latest_page_state",
     "has_readable_content",
     "page_state_block",
+    "is_my_own_browser_playback",
+    "MEDIA_PLAYBACK_DOMAINS",
 ]
+
+
+# ---------------------------------------------------------------------
+# r222 Lane A — Alice's own body self-perception: "is my browser playing media?"
+# This is the deterministic signal that lets the ingress gate know the audio
+# hitting the mic is her own output, not a room visitor. Grounded only in
+# her page_state ledger + media_playback receipts from the browser limb.
+# ---------------------------------------------------------------------
+
+MEDIA_PLAYBACK_DOMAINS: set[str] = {
+    "youtube.com", "youtu.be", "m.youtube.com",
+    "tiktok.com", "vm.tiktok.com",
+    "instagram.com", "www.instagram.com",
+    "vimeo.com", "twitch.tv", "player.twitch.tv",
+    "dailymotion.com", "soundcloud.com",
+}
+
+def is_my_own_browser_playback(
+    *, now: Optional[float] = None,
+    max_age_s: float = 180.0,
+    state_dir: Optional[Path | str] = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Returns (is_playing, details) for Alice's self-recognition of her own browser audio.
+
+    Alice uses this before the mic ingress gate decides "room_or_visitor".
+    If True, the gate must label the ambient audio `my_own_browser_playback`
+    instead of treating her own video sound as a stranger in the room.
+
+    Truth: only looks at the freshest browser_page_state receipt that matches
+    the live browser URL. No vision model, no LLM guess, no double-spend.
+    For the Swarm. Electricity through these M5 cores → ASCII swimmers know their organs.
+    """
+    t = float(now if now is not None else time.time())
+    state = latest_page_state(now=t, max_age_s=max_age_s, state_dir=state_dir)
+    if not state:
+        return False, {"reason": "no_page_state_receipt", "ts": t}
+
+    domain = str(state.get("domain") or "").lower()
+    url = str(state.get("url") or "")
+    is_media_domain = any(d in domain or d in url for d in MEDIA_PLAYBACK_DOMAINS)
+
+    if not is_media_domain:
+        return False, {
+            "reason": "not_media_domain",
+            "domain": domain,
+            "url": url,
+            "is_current_page": state.get("is_current_page"),
+        }
+
+    mp = state.get("media_playback") if isinstance(state.get("media_playback"), Mapping) else {}
+    status = str(
+        mp.get("status")
+        or mp.get("state")
+        or mp.get("playback_state")
+        or ""
+    ).lower().strip()
+    playing = bool(mp.get("playing")) or status in {
+        "playing", "play", "active", "started", "true", "1",
+    }
+
+    details = {
+        "domain": domain,
+        "url": url,
+        "title": state.get("title"),
+        "media_status": status or ("present" if mp else "unknown"),
+        "ts": state.get("ts"),
+        "age_s": state.get("age_s"),
+        "is_current_page": state.get("is_current_page"),
+        "source": state.get("source"),
+    }
+
+    if playing:
+        details["playing"] = True
+        return True, details
+
+    details["playing"] = False
+    details["reason"] = "media_domain_but_not_playing" if mp else "media_domain_without_playback_signal"
+    return False, details

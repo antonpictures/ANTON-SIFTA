@@ -431,3 +431,36 @@ def test_timebox_finish_without_open_writes_uncertain_marker(tmp_path: Path, mon
     assert row["label"] == "meal"
     assert row["timebox_status"] == "closed_without_open_start"
     assert row["start_precision"] == "unknown_fallback_1min"
+
+
+def test_log_owner_browser_behaviour_writes_schedule_and_diary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    base = tmp_path / "state"
+
+    row = s.log_owner_browser_behaviour(
+        url="https://www.youtube.com/watch?v=abc123",
+        title="Jensen Huang warned",
+        action="media_playing",
+        source="alice_browser_widget_test",
+        extra={"current_time": 12.5},
+        state_dir=base,
+        now=time.time(),
+    )
+
+    assert row["segment"]["label"] == "browser_activity"
+    assert row["segment"]["browser_truth_label"] == "OWNER_BROWSER_BEHAVIOUR_V1"
+    assert row["segment"]["action"] == "media_playing"
+    assert row["segment"]["source"] == "alice_browser_widget_test"
+
+    diary_rows = [
+        json.loads(line)
+        for line in (base / "episodic_diary.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert diary_rows[-1]["truth_label"] == "OWNER_BROWSER_ACTIVITY_IN_ALICE_BODY_V1"
+    assert diary_rows[-1]["action"] == "media_playing"
+    assert "George is on www.youtube.com" in diary_rows[-1]["first_person"]
+    assert diary_rows[-1]["extra"]["current_time"] == 12.5

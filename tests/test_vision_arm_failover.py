@@ -3,8 +3,8 @@
 
 She was routing every image to Kimi only; if she loses that API she must switch
 to another vision-capable arm (claude/codex/grok/qwen/cline), not go blind. qwen
-is tracked as a vision-capable family even when its current local-image transport
-cannot yet receive PNG pixels.
+now has a direct Fireworks image transport, so it stays its own eye when Kimi is
+the active cortex.
 """
 import os
 import sys
@@ -29,9 +29,9 @@ def test_local_browser_photo_ready_arms_track_transport_separately():
     ready = [a["arm_id"] for a in cap.vision_capable_arms(local_image_required=True)]
     all_rows = {a["arm_id"]: a for a in cap.vision_capable_arms()}
     assert "qwen_agent" in all_rows
-    assert "qwen_agent" not in ready
-    assert all_rows["qwen_agent"]["local_image_transport"] is False
-    assert "text_prompt_only" in all_rows["qwen_agent"]["transport_kind"]
+    assert "qwen_agent" in ready
+    assert all_rows["qwen_agent"]["local_image_transport"] is True
+    assert "fireworks_image_url_base64" in all_rows["qwen_agent"]["transport_kind"]
 
 
 def test_failover_when_cline_api_lost():
@@ -60,15 +60,14 @@ def test_failover_when_current_cortex_cannot_see_images():
     assert "cannot read images" in pick["diary_note"]
 
 
-def test_qwen_text_transport_fails_over_for_local_browser_photo():
+def test_qwen_kimi_cortex_keeps_own_fireworks_eye_for_local_browser_photo():
     pick = cap.pick_vision_arm(
         current_arm="qwen_agent",
         current_model="qwen:accounts/fireworks/models/kimi-k2p6",
     )
-    assert pick["selected_arm"] != "qwen_agent"
-    assert pick["selected_arm"] in ("claude_agent", "codex_agent", "grok_agent", "cline_agent")
-    assert pick["reason"] == "current_arm_transport_cannot_receive_local_image"
-    assert "transport cannot deliver the PNG pixels" in pick["diary_note"]
+    assert pick["selected_arm"] == "qwen_agent"
+    assert pick["reason"] == "current_cortex_sees_images"
+    assert pick["diary_note"] == ""
 
 
 def test_failover_when_cline_lost_still_has_native_vision():
@@ -121,7 +120,8 @@ def test_records_cortex_arm_habit_with_transport_and_model(tmp_path):
     )
     assert row["model_vision_capable"] is True
     assert row["arm_vision_family"] is True
-    assert row["local_image_transport"] is False
+    assert row["local_image_transport"] is True
+    assert row["transport_kind"] == "fireworks_image_url_base64"
     assert (tmp_path / "cortex_arm_habits.jsonl").exists()
 
 

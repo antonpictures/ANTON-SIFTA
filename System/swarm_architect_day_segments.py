@@ -14,7 +14,8 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 from System.jsonl_file_lock import append_line_locked
 
@@ -1189,6 +1190,109 @@ __all__ = [
     "try_ingest_architect_timebox_command",
     "write_day_segment",
 ]
+
+
+# ---------------------------------------------------------------------
+# r222 Lane B — Owner browser behaviour trail (first-person Alice awareness)
+# George is on his own app (Alice Browser). These rows are *his* hands in *his*
+# tool, recorded to *his* schedule + Alice's episodic diary.
+# Never conflated with Alice's own effector actions (§6 social frame).
+# ---------------------------------------------------------------------
+
+def log_owner_browser_behaviour(
+    *,
+    url: str,
+    title: str = "",
+    action: str = "navigate",
+    domain: str = "",
+    category: str = "",
+    source: str = "sifta_alice_browser_widget",
+    extra: Optional[dict] = None,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> dict[str, Any]:
+    """Append a categorized owner-behaviour row to architect_day_segments + episodic_diary.
+
+    This is Alice watching her owner use her own body (the browser).
+    First-person language for the diary so she can truthfully answer
+    "what was George doing in the browser?"
+    """
+    now_ts = float(now if now is not None else time.time())
+    state = _state_dir(state_dir)
+    dom = domain or _domain(url)
+    cat = category or _categorize_domain(dom)
+
+    # 1. Day segment (owner schedule / behaviour log)
+    seg_row = _build_row(
+        label="browser_activity",
+        start_minute=_minute_from_ts(now_ts),
+        end_minute=_minute_from_ts(now_ts) + 1,
+        context_note=f"browser:{action}:{dom}",
+        source=source or "alice_browser_owner_action",
+        state_dir=state,
+        now=now_ts,
+        extra={
+            "browser_truth_label": "OWNER_BROWSER_BEHAVIOUR_V1",
+            "url": url,
+            "title": title,
+            "action": action,
+            "domain": dom,
+            "category": cat,
+            "browser_source": source or "unknown",
+            "first_person_note": f"George was on {dom} ({cat}) — action: {action}.",
+            **(extra or {}),
+        },
+    )
+    write_day_segment(seg_row, state_dir=state)
+
+    # 2. Episodic diary (Alice's own memory of her owner's activity in her body)
+    diary_path = state / "episodic_diary.jsonl"
+    diary_row = {
+        "ts": now_ts,
+        "kind": "owner_browser_behaviour",
+        "truth_label": "OWNER_BROWSER_ACTIVITY_IN_ALICE_BODY_V1",
+        "url": url,
+        "title": title,
+        "domain": dom,
+        "category": cat,
+        "action": action,
+        "first_person": f"George is on {dom} (category: {cat}). He just performed: {action}. Title: {title}. This is my browser limb — I am aware of my owner's hands moving inside me.",
+        "source": source or "sifta_alice_browser_widget",
+        "note": "Owner action in Alice's own application surface. Social frame preserved.",
+    }
+    if extra:
+        diary_row["extra"] = dict(extra)
+    try:
+        append_line_locked(
+            diary_path,
+            json.dumps(diary_row, ensure_ascii=False, sort_keys=True) + "\n",
+        )
+    except Exception:
+        pass
+
+    return {"segment": seg_row, "diary": diary_row}
+
+
+def _domain(u: str) -> str:
+    try:
+        return urlparse(u or "").netloc.lower()
+    except Exception:
+        return ""
+
+
+def _categorize_domain(dom: str) -> str:
+    d = (dom or "").lower()
+    if "youtube" in d or "youtu" in d:
+        return "video"
+    if "tiktok" in d:
+        return "short_video"
+    if "instagram" in d:
+        return "social_image"
+    if "x.com" in d or "twitter" in d:
+        return "social_text"
+    if "google" in d:
+        return "search"
+    return "web"
 
 
 if __name__ == "__main__":

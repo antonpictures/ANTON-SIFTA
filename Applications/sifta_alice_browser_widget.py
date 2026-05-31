@@ -22,6 +22,7 @@ Features:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 import uuid
@@ -317,6 +318,229 @@ def _domain(url: str) -> str:
         return ""
 
 
+def _is_instagram_media_url(url: str) -> bool:
+    text = str(url or "")
+    return "instagram.com" in text and any(part in text for part in ("/reel/", "/p/", "/tv/"))
+
+
+def _choose_native_media_handoff_url(
+    dom_info: dict | None,
+    *,
+    fallback_url: str = "",
+    media_status: dict | None = None,
+) -> str:
+    """Choose the best URL for native playback when the embedded limb cannot decode.
+
+    Instagram profile pages often keep the address at ``/kylinmilan/`` while a
+    clicked reel fails inside a modal. The native handoff must open the clicked
+    reel/post, or the signed MP4 URL from the media error, not just the profile.
+    """
+    info = dom_info if isinstance(dom_info, dict) else {}
+    candidates: list[str] = []
+    for key in ("last_clicked", "dialog_href", "active_href", "first_reel_href", "first_media_href"):
+        value = str(info.get(key) or "").strip()
+        if value:
+            candidates.append(value)
+
+    loc = str(info.get("location") or fallback_url or "").strip()
+    if _is_instagram_media_url(loc):
+        candidates.append(loc)
+
+    for err in (media_status or {}).get("recent_errors", []) or []:
+        if isinstance(err, dict):
+            src = str(err.get("src") or "").strip()
+            if src:
+                candidates.append(src)
+
+    video_src = str(info.get("video_src") or "").strip()
+    if video_src:
+        candidates.append(video_src)
+    if fallback_url:
+        candidates.append(str(fallback_url).strip())
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in {"sifta://home", "about:blank"} or candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.startswith(("http://", "https://")):
+            return candidate
+    return ""
+
+
+_VISIBLE_MEDIA_VISUAL_HINTS = {
+    "beach", "ocean", "sea", "water", "shore", "waves", "wave", "sand",
+    "backdrop", "background", "sky", "pool", "lake", "river",
+}
+
+
+def _visible_media_query_tokens(query: str) -> set[str]:
+    return {
+        t
+        for t in re.findall(r"[a-z0-9]{3,}", str(query or "").lower())
+        if t not in {"the", "this", "that", "with", "from", "currently", "positioned", "please", "pls"}
+    }
+
+
+def _candidate_visible_text(candidate: dict) -> str:
+    if not isinstance(candidate, dict):
+        return ""
+    parts = [
+        candidate.get("href"),
+        candidate.get("alt"),
+        candidate.get("aria"),
+        candidate.get("text"),
+        candidate.get("src"),
+    ]
+    return " ".join(str(p or "") for p in parts).lower()
+
+
+def _score_visible_media_candidate(query: str, candidate: dict) -> float:
+    """Score an on-screen Instagram tile from text/geometry only.
+
+    Pixel-only requests (for example "beach/ocean backdrop" when Instagram gives
+    no useful alt text) are intentionally low-scored here so the browser limb can
+    ask its vision arm instead of pretending DOM metadata saw the beach.
+    """
+    if not isinstance(candidate, dict):
+        return 0.0
+    tokens = _visible_media_query_tokens(query)
+    text = _candidate_visible_text(candidate)
+    score = 0.0
+    for tok in tokens:
+        if tok in text:
+            score += 8.0 if tok in _VISIBLE_MEDIA_VISUAL_HINTS else 4.0
+
+    q = str(query or "").lower()
+    try:
+        row = int(candidate.get("row") or 0)
+        col = int(candidate.get("col") or 0)
+        area = float(candidate.get("onscreen") or candidate.get("area") or 0.0)
+    except Exception:
+        row, col, area = 0, 0, 0.0
+    if area > 0:
+        score += min(2.0, area / 120000.0)
+    if any(w in q for w in ("top", "upper", "first row")) and row == 1:
+        score += 3.0
+    if any(w in q for w in ("bottom", "lower", "last row")) and row >= 3:
+        score += 3.0
+    if "left" in q and col == 1:
+        score += 2.0
+    if "right" in q and col >= 4:
+        score += 2.0
+    if any(w in q for w in ("center", "middle")) and 2 <= col <= 4:
+        score += 1.0
+    return round(score, 4)
+
+
+def _best_visible_media_candidate(query: str, candidates: list[dict]) -> tuple[dict | None, float]:
+    best: dict | None = None
+    best_score = 0.0
+    for candidate in candidates or []:
+        score = _score_visible_media_candidate(query, candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best, best_score
+
+
+def _visible_media_query_needs_vision(query: str, best_score: float) -> bool:
+    tokens = _visible_media_query_tokens(query)
+    has_visual_hint = bool(tokens & _VISIBLE_MEDIA_VISUAL_HINTS)
+    # Visual predicates like "ocean backdrop" are usually absent from IG DOM alt
+    # text; when metadata did not strongly match, defer to pixels.
+    return has_visual_hint and best_score < 8.0
+
+
+def _parse_visible_media_selection(text: str) -> tuple[int, int]:
+    """Parse row/column from a vision-arm JSON or natural-language answer."""
+    raw = str(text or "").strip()
+    if not raw:
+        return 0, 0
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(raw[start:end + 1])
+            row = int(data.get("row") or data.get("visible_row") or 0)
+            col = int(data.get("col") or data.get("column") or data.get("visible_col") or 0)
+            if row > 0 and col > 0:
+                return row, col
+    except Exception:
+        pass
+    m = re.search(r"\brow\s*(\d+)\D{0,20}\bcol(?:umn)?\s*(\d+)\b", raw, re.IGNORECASE)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = re.search(r"\b(\d+)\s*(?:st|nd|rd|th)?\s+row\D{0,20}\b(\d+)\s*(?:st|nd|rd|th)?\s+col", raw, re.IGNORECASE)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return 0, 0
+
+
+def _candidate_by_row_col(candidates: list[dict], row: int, col: int) -> dict | None:
+    for candidate in candidates or []:
+        try:
+            if int(candidate.get("row") or 0) == int(row) and int(candidate.get("col") or 0) == int(col):
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _strict_grok_eye_selected(current_arm: str = "", current_model: str = "") -> bool:
+    """True when the owner-selected cortex/eye is Grok, so browser pixels stay on Grok."""
+    arm = str(current_arm or "").strip().lower()
+    model = str(current_model or "").strip().lower()
+    return arm == "grok_agent" or "grok" in model or "xai" in model
+
+
+def _owner_browser_actions_from_dom_result(result: dict) -> list[tuple[str, dict, float]]:
+    """Infer durable owner browser actions from one rendered DOM receipt."""
+    if not isinstance(result, dict):
+        return []
+    actions: list[tuple[str, dict, float]] = []
+
+    media = result.get("media") if isinstance(result.get("media"), dict) else {}
+    status = str(media.get("status") or "").lower().strip()
+    if status in {"playing", "paused"}:
+        actions.append(
+            (
+                f"media_{status}",
+                {
+                    "video_count": media.get("video_count"),
+                    "current_time": media.get("current_time"),
+                    "duration": media.get("duration"),
+                    "muted": media.get("muted"),
+                },
+                12.0,
+            )
+        )
+
+    search = result.get("search") if isinstance(result.get("search"), dict) else {}
+    query = " ".join(str(search.get("value") or "").split())
+    if query:
+        actions.append(
+            (
+                "search_query_visible",
+                {
+                    "query": query[:160],
+                    "placeholder": str(search.get("placeholder") or "")[:80],
+                },
+                20.0,
+            )
+        )
+
+    scroll = result.get("scroll") if isinstance(result.get("scroll"), dict) else {}
+    try:
+        pct = int(scroll.get("pct") or 0)
+    except Exception:
+        pct = 0
+    if pct >= 25:
+        bucket = min(100, (pct // 25) * 25)
+        actions.append((f"scroll_depth_{bucket}", {"scroll_pct": pct}, 30.0))
+    return actions
+
+
 # ── Fallback widget (no WebEngine) ───────────────────────────────────────────
 
 class _NoWebEngineWidget(QWidget):
@@ -351,6 +575,8 @@ class _NoWebEngineWidget(QWidget):
 # ── Browser page with receipt hooks ──────────────────────────────────────────
 
 class _AlicePage(QWebEnginePage if _HAS_WEBENGINE else object):
+    media_error_observed = pyqtSignal(dict)
+
     def __init__(self, profile, parent=None):
         if _HAS_WEBENGINE:
             super().__init__(profile, parent)
@@ -390,6 +616,10 @@ class _AlicePage(QWebEnginePage if _HAS_WEBENGINE else object):
                 # Keep only last 5
                 if len(self._recent_media_errors) > 5:
                     self._recent_media_errors = self._recent_media_errors[-5:]
+                try:
+                    self.media_error_observed.emit(err)
+                except Exception:
+                    pass
             except Exception:
                 pass  # never break the page for logging
         # Otherwise stay quiet (original behavior)
@@ -436,6 +666,7 @@ class AliceBrowserWidget(QMainWindow):
         self._page_load_ts = time.time()
         self._current_url = ""
         self._last_awareness_dom_ts = 0.0
+        self._owner_browser_action_cache: dict[str, float] = {}
         self._setup_ui()
         self._apply_style()
         self._navigate(_HOME_URL)
@@ -509,6 +740,13 @@ class AliceBrowserWidget(QMainWindow):
         # ── Web view ─────────────────────────────────────────────────────────
         if _HAS_WEBENGINE:
             profile = QWebEngineProfile("alice_browser", self)
+            # r231 (cowork): REVERT of r228. George was signed into Google in this browser;
+            # r228's UA bump (120 + "SIFTA-Alice/1.0"  ->  clean "Chrome/124") and the new
+            # persistent storage path broke a previously-working sign-in — Google flags a UA
+            # whose claimed Chrome version mismatches the real QtWebEngine engine ("browser
+            # may not be secure"), and the new storage path orphaned the existing Google
+            # session cookies. Restored the EXACT UA + profile he was signed in with. Reels
+            # stays a separate codec/handoff lane; it was never worth breaking sign-in.
             profile.setHttpUserAgent(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -520,6 +758,10 @@ class AliceBrowserWidget(QMainWindow):
             self._page = _AlicePage(profile, self)
             self._view = QWebEngineView()
             self._view.setPage(self._page)
+            try:
+                self._page.media_error_observed.connect(self._on_media_error_observed)
+            except Exception:
+                pass
             self._view.urlChanged.connect(self._on_url_changed)
             self._view.titleChanged.connect(self._on_title_changed)
             self._view.loadStarted.connect(self._on_load_started)
@@ -614,6 +856,163 @@ class AliceBrowserWidget(QMainWindow):
 
     # ── Navigation ────────────────────────────────────────────────────────────
 
+    def _force_embedded_play(self) -> None:
+        """r228: nudge <video> elements to play muted (autoplay-policy compliant).
+        Helps a real <video> start; cannot help if the engine can't decode the codec."""
+        if not self._view:
+            return
+        try:
+            self._view.page().runJavaScript(
+                "document.querySelectorAll('video').forEach(function(v){"
+                "try{v.muted=true;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(e){}});"
+            )
+        except Exception as exc:
+            print(f"[AliceBrowser] force embedded play failed: {exc}")
+
+    def _install_instagram_media_tracker(self) -> None:
+        """Remember the reel/post George clicked so native handoff opens that item."""
+        if not self._view:
+            return
+        js = r"""
+        (function () {
+            if (window.__aliceInstagramMediaTrackerInstalled) return "already";
+            window.__aliceInstagramMediaTrackerInstalled = true;
+            window.__aliceLastInstagramMediaHref = window.__aliceLastInstagramMediaHref || "";
+            function mediaHrefFrom(target) {
+                var el = target;
+                while (el && el !== document.documentElement) {
+                    if (el.href && /\/(reel|p|tv)\//.test(el.href)) return el.href;
+                    el = el.parentElement;
+                }
+                return "";
+            }
+            document.addEventListener("click", function (ev) {
+                var href = mediaHrefFrom(ev.target);
+                if (href) window.__aliceLastInstagramMediaHref = href;
+            }, true);
+            return "installed";
+        })();
+        """
+        try:
+            self._view.page().runJavaScript(js)
+        except Exception as exc:
+            print(f"[AliceBrowser] instagram media tracker failed: {exc}")
+
+    def _resolve_native_media_handoff_url(self, callback) -> None:
+        """Resolve active Instagram reel/post or signed MP4 before native handoff."""
+        fallback = (self._current_url or self._url_bar.text() or "").strip()
+        media_status = self.get_current_media_playback_status()
+        if not self._view:
+            callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
+            return
+        js = r"""
+        (function () {
+            function firstHref(sel) {
+                var el = document.querySelector(sel);
+                return el && el.href ? el.href : "";
+            }
+            var videos = Array.prototype.slice.call(document.querySelectorAll("video"));
+            var activeVideo = videos.find(function (v) {
+                return v && !v.paused && !v.ended;
+            }) || videos[0] || null;
+            var info = {
+                location: window.location.href || "",
+                last_clicked: window.__aliceLastInstagramMediaHref || "",
+                dialog_href: firstHref('[role="dialog"] a[href*="/reel/"], [role="dialog"] a[href*="/p/"], [role="dialog"] a[href*="/tv/"]'),
+                active_href: firstHref('article a[href*="/reel/"], article a[href*="/p/"], article a[href*="/tv/"]'),
+                first_reel_href: firstHref('a[href*="/reel/"]'),
+                first_media_href: firstHref('a[href*="/p/"], a[href*="/tv/"]'),
+                video_src: activeVideo ? (activeVideo.currentSrc || activeVideo.src || "") : ""
+            };
+            return JSON.stringify(info);
+        })();
+        """
+
+        def _done(res):
+            import json as _j
+            try:
+                info = _j.loads(res) if res else {}
+            except Exception:
+                info = {}
+            callback(_choose_native_media_handoff_url(info, fallback_url=fallback, media_status=media_status))
+
+        try:
+            self._view.page().runJavaScript(js, _done)
+        except Exception:
+            callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
+
+    def _note_media_error_for_handoff(self, err: dict | None = None) -> None:
+        """React when a video fails after loadFinished, not only during load."""
+        media_status = self.get_current_media_playback_status()
+        try:
+            from System.swarm_media_codec_bridge import append_bridge_receipt, media_status_summary
+
+            append_bridge_receipt(
+                {
+                    "ts": time.time(),
+                    "truth_label": "SIFTA_MEDIA_CODEC_BRIDGE_V1",
+                    "action": "embedded_media_error_observed",
+                    "source": "alice_browser_media_error_signal",
+                    "url": self._current_url,
+                    "error": dict(err or {}),
+                    "media_status": media_status,
+                    "summary": media_status_summary(media_status, url=self._current_url),
+                },
+                state_dir=_STATE,
+            )
+        except Exception:
+            pass
+        if media_status.get("native_handoff_available"):
+            self._native_media_btn.setStyleSheet("background:#ffcc00; color:black;")
+            self._native_media_btn.setToolTip(
+                "Embedded Qt cannot decode this video stream; open this reel/media in the native playback path"
+            )
+            self._status.showMessage(
+                "⚠️ Embedded video decode failed here. Press ▶ to open the active reel/media natively.",
+                12000,
+            )
+
+    def _probe_media_codecs(self) -> None:
+        """r228 (honest, §7.12): record whether this QtWebEngine build can decode H.264/AAC.
+        Embedded reels need proprietary codecs the standard PyQt6 wheel often omits. The
+        verdict goes to .sifta_state/browser_codec_probe.jsonl so the owner knows whether
+        embedded playback is even possible, or the native ▶ handoff is the only honest path."""
+        if not self._view:
+            return
+        js = (
+            "(function(){var v=document.createElement('video');return JSON.stringify({"
+            "h264:v.canPlayType('video/mp4; codecs=\"avc1.42E01E\"'),"
+            "aac:v.canPlayType('audio/mp4; codecs=\"mp4a.40.2\"'),"
+            "webm_vp9:v.canPlayType('video/webm; codecs=\"vp9\"')});})()"
+        )
+
+        def _on_result(res):
+            import json as _j
+            import time as _t
+            try:
+                caps = _j.loads(res) if res else {}
+            except Exception:
+                caps = {"raw": str(res)}
+            h264 = str(caps.get("h264") or "")
+            ok = h264 in ("probably", "maybe")
+            verdict = ("embedded H.264 playback AVAILABLE" if ok else
+                       "NO embedded H.264 — reels cannot decode in-limb; native ▶ handoff is the path")
+            print(f"[AliceBrowser] codec probe: {caps} -> {verdict}")
+            try:
+                p = _STATE / "browser_codec_probe.jsonl"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                with p.open("a", encoding="utf-8") as f:
+                    f.write(_j.dumps({"ts": _t.time(), "caps": caps, "h264_ok": ok,
+                                      "verdict": verdict,
+                                      "truth_label": "QTWEBENGINE_CODEC_PROBE_V1"}) + "\n")
+            except Exception:
+                pass
+
+        try:
+            self._view.page().runJavaScript(js, _on_result)
+        except Exception as exc:
+            print(f"[AliceBrowser] codec probe failed: {exc}")
+
     def _navigate(self, url: str):
         if not _HAS_WEBENGINE or self._view is None:
             return
@@ -654,7 +1053,10 @@ class AliceBrowserWidget(QMainWindow):
             self._view.reload()
 
     def _open_current_in_native_player(self) -> None:
-        url = (self._current_url or self._url_bar.text() or "").strip()
+        self._resolve_native_media_handoff_url(self._open_native_media_url)
+
+    def _open_native_media_url(self, url: str) -> None:
+        url = (url or self._current_url or self._url_bar.text() or "").strip()
         try:
             from System.swarm_media_codec_bridge import open_url_in_native_player
 
@@ -702,6 +1104,18 @@ class AliceBrowserWidget(QMainWindow):
         self._current_url = url_str
         self._publish_browser_context(source="url_changed")
         self._write_address_context(source="url_changed")
+
+        # r222 Lane B — owner browser behaviour trail (Alice awareness of George's hands in her body)
+        try:
+            from System.swarm_architect_day_segments import log_owner_browser_behaviour
+            log_owner_browser_behaviour(
+                url=url_str,
+                title=self._view.title() if self._view else "",
+                action="navigate_or_spa_change",
+                source="alice_browser_widget",
+            )
+        except Exception as _e:
+            pass  # never break the limb for a diary row
         # Cowork r174 — George 2026-05-30: TikTok/YouTube/Instagram are single-page
         # apps. Navigating WITHIN them (profile→profile, video→video) fires
         # urlChanged but NOT loadFinished, so the page snapshot stayed frozen and
@@ -757,6 +1171,10 @@ class AliceBrowserWidget(QMainWindow):
         self._write_address_context(source="load_started")
         self._status.showMessage("Loading…")
 
+    @pyqtSlot(dict)
+    def _on_media_error_observed(self, err: dict):
+        self._note_media_error_for_handoff(err)
+
     @pyqtSlot(bool)
     def _on_load_finished(self, ok: bool):
         url = self._current_url
@@ -764,6 +1182,19 @@ class AliceBrowserWidget(QMainWindow):
         duration = round(time.time() - self._page_load_ts, 2)
         self._publish_browser_context(source="load_finished")
         self._write_address_context(source="load_finished", duration_s=duration)
+
+        # r222 Lane B — full load = stronger "George is now here doing this" signal
+        if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
+            try:
+                from System.swarm_architect_day_segments import log_owner_browser_behaviour
+                log_owner_browser_behaviour(
+                    url=url,
+                    title=title,
+                    action="load_finished",
+                    source="alice_browser_widget",
+                )
+            except Exception:
+                pass
         if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
             import threading as _th
             def _async_receipt(_u=url, _t=title, _d=duration):
@@ -774,6 +1205,7 @@ class AliceBrowserWidget(QMainWindow):
             _th.Thread(target=_async_receipt, daemon=True, name="BrowseReceipt").start()
 
             if self._view is not None:
+                self._install_instagram_media_tracker()
                 # Body consciousness improvement (2026-05-30): Inject media error listener
                 # so the browser limb can honestly report what actually happened with video streams
                 # (e.g. the exact TikTok "trouble playing this video" state the user just saw).
@@ -828,6 +1260,7 @@ class AliceBrowserWidget(QMainWindow):
                     self._view.page().runJavaScript(media_monitor_js)
                 except Exception:
                     pass
+                QTimer.singleShot(800, self._force_embedded_play)
 
                 def _async_snapshot(text, u=url, t=title, d=duration):
                     def _worker():
@@ -920,6 +1353,62 @@ class AliceBrowserWidget(QMainWindow):
             )
         except Exception:
             pass
+
+    def _log_owner_browser_behaviour(
+        self,
+        action: str,
+        *,
+        url: str = "",
+        title: str = "",
+        extra: dict | None = None,
+        dedupe_s: float = 8.0,
+    ) -> bool:
+        """Record George's browser action without spamming repeated DOM ticks."""
+        clean_url = str(url or self._current_url or "").strip()
+        if not clean_url or clean_url in (_HOME_URL, "sifta://home", "about:blank", ""):
+            return False
+        clean_title = str(title or self._current_browser_title() or "").strip()
+        extra = dict(extra or {})
+        key = json.dumps(
+            {
+                "url": clean_url,
+                "action": str(action or ""),
+                "title": clean_title[:120],
+                "extra": extra,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        now = time.time()
+        cache = getattr(self, "_owner_browser_action_cache", {})
+        if now - float(cache.get(key, 0.0) or 0.0) < dedupe_s:
+            return False
+        cache[key] = now
+        self._owner_browser_action_cache = cache
+        try:
+            from System.swarm_architect_day_segments import log_owner_browser_behaviour
+
+            log_owner_browser_behaviour(
+                url=clean_url,
+                title=clean_title,
+                action=str(action or "browser_action"),
+                source="alice_browser_widget",
+                extra=extra,
+            )
+            return True
+        except Exception:
+            return False
+
+    def _log_owner_browser_dom_actions(self, result: dict, *, url: str, title: str) -> None:
+        """Infer finer owner activity from the rendered page state."""
+        for action, extra, dedupe_s in _owner_browser_actions_from_dom_result(result):
+            self._log_owner_browser_behaviour(
+                action,
+                url=url,
+                title=title,
+                extra=extra,
+                dedupe_s=dedupe_s,
+            )
 
     def _capture_current_page_text_snapshot(self, *, source: str, expected_url: str) -> None:
         """Best-effort text capture for SPA pages after URL/title changes settle."""
@@ -1064,10 +1553,43 @@ class AliceBrowserWidget(QMainWindow):
             } catch (e) {}
             var body = document.body ? ((document.body.innerText || '').trim()) : '';
             var sh = document.body ? (document.body.scrollHeight || 0) : 0;
+            var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
+            var activeVideo = null;
+            for (var vi = 0; vi < videos.length; vi++) {
+                var v = videos[vi];
+                if (v && !v.paused && !v.ended && v.readyState > 0) {
+                    activeVideo = v;
+                    break;
+                }
+            }
+            var primaryVideo = activeVideo || videos[0] || null;
+            var media = { status: 'no_media', playing: false, video_count: videos.length };
+            if (primaryVideo) {
+                var playing = !!activeVideo;
+                media = {
+                    status: playing ? 'playing' : (primaryVideo.ended ? 'ended' : 'paused'),
+                    playing: playing,
+                    video_count: videos.length,
+                    current_time: Math.round((primaryVideo.currentTime || 0) * 10) / 10,
+                    duration: isFinite(primaryVideo.duration) ? Math.round(primaryVideo.duration * 10) / 10 : null,
+                    muted: !!primaryVideo.muted,
+                    ready_state: primaryVideo.readyState,
+                    src: primaryVideo.currentSrc || primaryVideo.src || ''
+                };
+            }
+            var searchInput = document.querySelector(
+                'input[type="search"], input[aria-label*="Search" i], input[placeholder*="Search" i], textarea[aria-label*="Search" i]'
+            );
+            var search = searchInput ? {
+                value: (searchInput.value || '').trim().slice(0, 160),
+                placeholder: (searchInput.getAttribute('placeholder') || searchInput.getAttribute('aria-label') || '').trim().slice(0, 80)
+            } : {};
             return {
                 text: body.slice(0, 4000),
                 headings: heads, links: links, buttons: btns, images: imgs, og: og,
                 comments: comments,
+                media: media,
+                search: search,
                 scroll: { y: window.scrollY || 0, height: sh,
                           pct: sh ? Math.round(((window.scrollY || 0) / Math.max(1, sh - (window.innerHeight || 0))) * 100) : 0 }
             };
@@ -1097,6 +1619,13 @@ class AliceBrowserWidget(QMainWindow):
                     from System.swarm_browser_photo_description import pick_featured_image
                     feat = pick_featured_image(result.get("images") or [],
                                                og_image=result.get("og", ""))
+                    media_playback = result.get("media") if isinstance(result.get("media"), dict) else {}
+                    if media_playback:
+                        try:
+                            media_playback = dict(media_playback)
+                            media_playback["codec_status"] = self.get_current_media_playback_status()
+                        except Exception:
+                            pass
                     record_page_state(
                         u, t,
                         text=result.get("text", ""),
@@ -1107,9 +1636,11 @@ class AliceBrowserWidget(QMainWindow):
                         scroll=result.get("scroll"),
                         featured_image=feat.get("src", ""),
                         comments=result.get("comments"),
+                        media_playback=media_playback,
                         source="dom",
                         state_dir=_STATE,
                     )
+                    self._log_owner_browser_dom_actions(result, url=u, title=t)
                     return True
                 except Exception as _e:
                     print(f"[AliceBrowser] page-state receipt failed: {_e}")
@@ -1264,6 +1795,359 @@ class AliceBrowserWidget(QMainWindow):
             print(f"[AliceBrowser] refresh_current_page_state failed: {exc}")
             return ""
 
+    def _run_javascript_sync(self, js: str, *, wait_ms: int = 1200):
+        """Run small browser-limb JS and wait for its result."""
+        if not self._view:
+            return None
+        box = {"done": False, "result": None}
+        loop = QEventLoop(self)
+
+        def _done(result):
+            box["done"] = True
+            box["result"] = result
+            try:
+                loop.quit()
+            except Exception:
+                pass
+
+        try:
+            self._view.page().runJavaScript(js, _done)
+            timeout = QTimer(self)
+            timeout.setSingleShot(True)
+            timeout.timeout.connect(loop.quit)
+            timeout.start(max(100, int(wait_ms)))
+            if not box["done"]:
+                loop.exec()
+            timeout.stop()
+        except Exception:
+            return None
+        return box.get("result")
+
+    def _visible_instagram_media_candidates(self) -> dict:
+        """Return visible Instagram profile/post tiles with stable row/col labels."""
+        js = r"""
+        (function () {
+            var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+            function clean(s) { return (s || '').toString().trim().replace(/\s+/g, ' ').slice(0, 260); }
+            function area(r) {
+                var ow = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+                var oh = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+                return Math.round(ow * oh);
+            }
+            var anchors = Array.prototype.slice.call(
+                document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]')
+            );
+            var out = [];
+            for (var i = 0; i < anchors.length; i++) {
+                var a = anchors[i];
+                var r = a.getBoundingClientRect();
+                var onscreen = area(r);
+                if (!r || r.width < 40 || r.height < 40 || onscreen < 1200) continue;
+                var img = a.querySelector('img');
+                var href = a.href || a.getAttribute('href') || '';
+                if (href && href.charAt(0) === '/') href = location.origin + href;
+                out.push({
+                    index: out.length,
+                    href: href,
+                    text: clean(a.innerText || ''),
+                    aria: clean(a.getAttribute('aria-label') || ''),
+                    alt: img ? clean(img.alt || '') : '',
+                    src: img ? (img.currentSrc || img.src || '') : '',
+                    x: Math.round(r.left), y: Math.round(r.top),
+                    w: Math.round(r.width), h: Math.round(r.height),
+                    center_x: Math.round(r.left + r.width / 2),
+                    center_y: Math.round(r.top + r.height / 2),
+                    onscreen: onscreen
+                });
+            }
+            out.sort(function (a, b) { return (a.y - b.y) || (a.x - b.x); });
+            var row = 0, col = 0, lastY = null;
+            for (var j = 0; j < out.length; j++) {
+                var c = out[j];
+                if (lastY === null || Math.abs(c.y - lastY) > Math.max(32, c.h * 0.35)) {
+                    row += 1; col = 1; lastY = c.y;
+                } else {
+                    col += 1;
+                }
+                c.row = row;
+                c.col = col;
+            }
+            return {
+                location: location.href,
+                title: document.title || '',
+                viewport: {w: vw, h: vh},
+                candidates: out.slice(0, 80)
+            };
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1400)
+        return result if isinstance(result, dict) else {}
+
+    def _select_visible_media_candidate_with_vision(
+        self,
+        query: str,
+        candidates: list[dict],
+        *,
+        current_arm: str = "",
+        current_model: str = "",
+    ) -> dict:
+        """Ask the current cortex's eye to choose a visible grid tile by row/col."""
+        if not candidates:
+            return {}
+        img_path = ""
+        try:
+            img_path = self._capture_viewport_image(expected_url=self._current_url)
+        except Exception:
+            img_path = ""
+        if not img_path or not Path(img_path).exists():
+            return {}
+
+        try:
+            from System.swarm_browser_photo_description import extract_arm_final_text
+            from System.swarm_cortex_capabilities import pick_vision_arm, record_cortex_arm_habit
+        except Exception:
+            return {}
+
+        table = "\n".join(
+            f"row={int(c.get('row') or 0)} col={int(c.get('col') or 0)} "
+            f"href={str(c.get('href') or '')[:90]} alt={str(c.get('alt') or '')[:80]}"
+            for c in candidates[:30]
+        )
+        prompt = (
+            "Look at the image at this exact path: "
+            f"{img_path}\n"
+            "It is a screenshot of Instagram showing a visible grid of square media tiles. "
+            "The owner wants this visible tile: "
+            f"{query!r}.\n"
+            "Count only the visible Instagram grid tiles, top-to-bottom and left-to-right. "
+            "Return ONLY compact JSON with integer row and col, for example "
+            "{\"row\":3,\"col\":4,\"reason\":\"ocean backdrop\"}. "
+            "If no tile matches, return {\"row\":0,\"col\":0,\"reason\":\"no match\"}.\n"
+            "Candidate coordinates from the DOM:\n"
+            f"{table}"
+        )
+
+        down: set[str] = set()
+        strict_grok_eye = _strict_grok_eye_selected(current_arm, current_model)
+        pick = pick_vision_arm(
+            current_arm=current_arm,
+            current_model=current_model,
+            unavailable=(),
+            local_image_required=True,
+        )
+        arm = "grok_agent" if strict_grok_eye else str(pick.get("selected_arm") or current_arm or "").strip()
+        for _ in range(3):
+            if not arm or arm in down:
+                break
+            if arm == "grok_agent":
+                try:
+                    from System.xai_grok_oauth_organ import preflight_grok_vision_key
+                    has_key, _msg = preflight_grok_vision_key()
+                    if not has_key:
+                        if strict_grok_eye:
+                            record_cortex_arm_habit(
+                                "grok_agent",
+                                cortex_model=current_model,
+                                task="browser_visible_media_selection",
+                                ok=False,
+                                status="grok_eye_key_missing",
+                                reason="selected_grok_eye_has_no_oauth_credential",
+                                state_dir=_STATE,
+                                meta={"image_ref": img_path, "query": query[:180]},
+                            )
+                            return {}
+                        down.add(arm)
+                        arm = "ollama_vision_agent"
+                        continue
+                except Exception:
+                    pass
+            try:
+                if arm == "ollama_vision_agent":
+                    from System.swarm_ollama_vision_arm import describe_image_local
+                    arm_result = describe_image_local(img_path, prompt, timeout_s=300)
+                elif arm == "qwen_agent":
+                    from System.swarm_fireworks_vision_arm import describe_image_fireworks
+                    arm_result = describe_image_fireworks(img_path, prompt, state_dir=_STATE, timeout_s=300)
+                elif arm == "grok_agent":
+                    # r236: grok's eye via the OAuth-valid /v1/responses endpoint (NOT
+                    # grok_chat's /v1/chat/completions, which 403s on the OAuth token).
+                    from System.xai_grok_oauth_organ import describe_image_via_oauth
+                    arm_result = describe_image_via_oauth(
+                        img_path,
+                        prompt,
+                        model=current_model or "grok-4",
+                        timeout_s=300,
+                    )
+                else:
+                    from System.swarm_agent_arm_launcher import ask_agent_arm
+                    arm_result = ask_agent_arm(
+                        arm,
+                        prompt,
+                        state_dir=_STATE,
+                        timeout_s=300,
+                        image_path=img_path,
+                    )
+                raw = extract_arm_final_text(getattr(arm_result, "output", "") or "")
+                ok = bool(getattr(arm_result, "ok", False))
+                row, col = _parse_visible_media_selection(raw)
+                record_cortex_arm_habit(
+                    arm,
+                    cortex_model=current_model,
+                    task="browser_visible_media_selection",
+                    ok=bool(ok and row and col),
+                    status="selected" if ok and row and col else str(getattr(arm_result, "status", "") or "failed"),
+                    reason=f"row={row} col={col}",
+                    state_dir=_STATE,
+                    meta={"image_ref": img_path, "query": query[:180]},
+                )
+                chosen = _candidate_by_row_col(candidates, row, col)
+                if ok and chosen:
+                    chosen = dict(chosen)
+                    chosen["vision_selected_by"] = arm
+                    chosen["vision_reason"] = raw[:240]
+                    return chosen
+            except Exception:
+                pass
+            down.add(arm)
+            if strict_grok_eye:
+                break
+            try:
+                pick = pick_vision_arm(
+                    current_arm="",
+                    current_model=current_model,
+                    unavailable=tuple(sorted(down)),
+                    local_image_required=True,
+                )
+                arm = str(pick.get("selected_arm") or "").strip()
+            except Exception:
+                break
+        return {}
+
+    def _click_visible_media_candidate(self, candidate: dict) -> dict:
+        href = str((candidate or {}).get("href") or "")
+        index = int((candidate or {}).get("index") or 0)
+        js = f"""
+        (function () {{
+            var targetHref = {json.dumps(href)};
+            var targetIndex = {json.dumps(index)};
+            var nodes = Array.prototype.slice.call(
+                document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]')
+            );
+            var visible = [];
+            var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+            function onscreen(el) {{
+                var r = el.getBoundingClientRect();
+                var ow = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+                var oh = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+                return Math.round(ow * oh);
+            }}
+            for (var i = 0; i < nodes.length; i++) {{
+                if (onscreen(nodes[i]) >= 1200) visible.push(nodes[i]);
+            }}
+            var el = null;
+            for (var j = 0; j < visible.length; j++) {{
+                if ((visible[j].href || '') === targetHref) {{ el = visible[j]; break; }}
+            }}
+            if (!el && visible[targetIndex]) el = visible[targetIndex];
+            if (!el) return {{clicked:false, reason:'candidate_not_found', href:targetHref}};
+            try {{ window.__aliceLastInstagramMediaHref = el.href || targetHref; }} catch (e) {{}}
+            try {{ el.scrollIntoView({{block:'center', inline:'center', behavior:'instant'}}); }} catch (e) {{}}
+            var r = el.getBoundingClientRect();
+            var cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+            ['mouseover','mousedown','mouseup','click'].forEach(function (name) {{
+                try {{
+                    el.dispatchEvent(new MouseEvent(name, {{
+                        bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
+                    }}));
+                }} catch (e) {{}}
+            }});
+            try {{ el.click(); }} catch (e) {{}}
+            return {{clicked:true, href:el.href || targetHref, x:cx, y:cy}};
+        }})();
+        """
+        result = self._run_javascript_sync(js, wait_ms=900)
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
+
+    def open_visible_photo_matching_text(
+        self,
+        query: str,
+        *,
+        current_arm: str = "",
+        current_model: str = "",
+    ) -> dict:
+        """Pick and open a visible Instagram photo/reel/post named by the owner.
+
+        This is the browser-limb path for turns like "open the photo against the
+        ocean backdrop" — it must never route to the SIFTA app launcher just
+        because the word "open" appears.
+        """
+        if not self._view:
+            return {"status": "failed", "reason": "no_web_view"}
+        candidates_result = self._visible_instagram_media_candidates()
+        candidates = candidates_result.get("candidates") if isinstance(candidates_result, dict) else []
+        if not isinstance(candidates, list) or not candidates:
+            return {"status": "failed", "reason": "no_visible_instagram_media", "candidate_count": 0}
+
+        candidate, score = _best_visible_media_candidate(query, candidates)
+        used_vision = False
+        needs_vision = _visible_media_query_needs_vision(query, score)
+        if needs_vision:
+            vision_candidate = self._select_visible_media_candidate_with_vision(
+                query,
+                candidates,
+                current_arm=current_arm,
+                current_model=current_model,
+            )
+            if vision_candidate:
+                candidate = vision_candidate
+                used_vision = True
+                score = max(score, 20.0)
+            elif score < 8.0:
+                return {
+                    "status": "failed",
+                    "reason": "vision_needed_for_visual_tile_match",
+                    "candidate_count": len(candidates),
+                }
+
+        if not candidate or score <= 0:
+            return {
+                "status": "failed",
+                "reason": "no_matching_visible_media",
+                "candidate_count": len(candidates),
+            }
+
+        clicked = self._click_visible_media_candidate(candidate)
+        ok = bool(clicked.get("clicked"))
+        if ok:
+            try:
+                from System.swarm_browser_photo_description import mark_frame_changed
+                mark_frame_changed(url=self._current_url, state_dir=_STATE)
+            except Exception:
+                pass
+            # Let the Instagram modal/post settle before the cortex asks for pixels.
+            try:
+                loop = QEventLoop(self)
+                QTimer.singleShot(950, loop.quit)
+                loop.exec()
+            except Exception:
+                pass
+            try:
+                self.refresh_current_page_state(wait_ms=700)
+            except Exception:
+                pass
+        return {
+            "status": "opened" if ok else "failed",
+            "reason": "" if ok else str(clicked.get("reason") or "click_failed"),
+            "href": str(clicked.get("href") or candidate.get("href") or ""),
+            "row": candidate.get("row"),
+            "col": candidate.get("col"),
+            "score": score,
+            "used_vision": used_vision,
+            "vision_selected_by": candidate.get("vision_selected_by", ""),
+            "vision_reason": candidate.get("vision_reason", ""),
+            "candidate_count": len(candidates),
+        }
+
     def go_next_photo(self) -> str:
         """Advance to the NEXT photo: click Instagram's 'Next' control (carousel slide
         or next post), falling back to the ArrowRight key. Then re-read the page so the
@@ -1333,7 +2217,10 @@ class AliceBrowserWidget(QMainWindow):
         viewport image and let Alice's picked vision arm describe the actual photo.
 
         Honours George's rule via pick_vision_arm: default eye = current cortex,
-        failover (with an owner diary note) if it cannot see or its API died."""
+        failover (with an owner diary note) if it cannot see or its API died.
+
+        r236: if the owner-selected cortex/eye is Grok, this is strict: Grok OAuth
+        vision or an honest Grok failure. No silent Claude/local cover answer."""
         result = {"status": "failed", "arm": "", "description": ""}
         try:
             import hashlib
@@ -1380,12 +2267,25 @@ class AliceBrowserWidget(QMainWindow):
             if not img_path or not Path(img_path).exists():
                 return result
 
+            strict_grok_eye = _strict_grok_eye_selected(current_arm, current_model)
             pick = pick_vision_arm(
                 current_arm=current_arm,
                 current_model=current_model,
                 unavailable=unavailable,
                 local_image_required=True,
             )
+            if strict_grok_eye:
+                pick = {
+                    **pick,
+                    "selected_arm": "grok_agent",
+                    "reason": "selected_grok_cortex_strict_oauth_eye",
+                    "switched": False,
+                    "fallbacks": [],
+                    "diary_note": (
+                        "Grok is my selected cortex/eye for this photo, so I must use "
+                        "grok_agent through xAI OAuth and not cover it with Claude."
+                    ),
+                }
             arm = pick.get("selected_arm", "")
             result["arm"] = arm
             record_cortex_arm_habit(
@@ -1403,82 +2303,208 @@ class AliceBrowserWidget(QMainWindow):
                                          status="failed", source=source, state_dir=_STATE)
                 return result
 
+            preflight_notes: list[str] = []
+            # r225 / r226: Grok eye preflight — honest key check before burning tokens or surfacing opaque error.
+            # r236: when Grok itself is selected, missing OAuth is a Grok failure, not a license
+            # to switch vendors and pretend the selected eye saw the pixels.
+            if arm == "grok_agent":
+                try:
+                    from System.xai_grok_oauth_organ import preflight_grok_vision_key, GROK_VISION_KEY_MISSING_MESSAGE
+                    has_key, msg = preflight_grok_vision_key()
+                    if not has_key:
+                        if strict_grok_eye:
+                            result.update({
+                                "status": "grok_eye_key_missing",
+                                "arm": "grok_agent",
+                                "description": "",
+                                "error_summary": GROK_VISION_KEY_MISSING_MESSAGE,
+                                "attempts": [{
+                                    "arm": "grok_agent",
+                                    "ok": False,
+                                    "status": "grok_eye_key_missing",
+                                    "source": source,
+                                    "receipt_id": "",
+                                }],
+                                "diary_note": (
+                                    (msg or GROK_VISION_KEY_MISSING_MESSAGE)
+                                    + " I did not switch to Claude or a local eye because Grok is selected."
+                                ),
+                            })
+                            record_cortex_arm_habit(
+                                "grok_agent",
+                                cortex_model=current_model,
+                                task="browser_photo_local_image",
+                                ok=False,
+                                status="grok_eye_key_missing",
+                                reason="selected_grok_eye_has_no_oauth_credential",
+                                state_dir=_STATE,
+                                meta={"image_ref": img_path, "source": source},
+                            )
+                            record_photo_description(
+                                url, description="", arm="grok_agent",
+                                image_ref=img_path, status="grok_eye_key_missing",
+                                source=source, state_dir=_STATE
+                            )
+                            return result
+                        # Write a clear stigmergic trace the organism can read
+                        try:
+                            from System.swarm_cortex_failover_reflex import record_cortex_failover
+                            record_cortex_failover(
+                                from_arm="grok_agent",
+                                to_arm="ollama_vision_agent",
+                                reason="grok_eye_key_missing",
+                                state_dir=_STATE,
+                            )
+                        except Exception:
+                            pass
+                        # Honest first-person report for the cortex
+                        result["description"] = GROK_VISION_KEY_MISSING_MESSAGE
+                        record_photo_description(
+                            url, description=GROK_VISION_KEY_MISSING_MESSAGE, arm="grok_agent",
+                            image_ref=img_path, status="grok_eye_key_missing", source=source, state_dir=_STATE
+                        )
+                        # Fail over to local eye for this turn
+                        preflight_notes.append(msg or GROK_VISION_KEY_MISSING_MESSAGE)
+                        arm = "ollama_vision_agent"
+                        result["arm"] = arm
+                except Exception as _pf_exc:
+                    print(f"[AliceBrowser] grok eye preflight failed to run: {_pf_exc}")
+
             prompt = (
                 "Look at the image at this exact path: "
                 f"{img_path}\n"
-                "It is a screenshot of a web page. Describe the MAIN large photo shown in it (ignore the "
+                "It is a screenshot of a web page. Describe the MAIN subject of the photo — whatever it is: "
+                "a person, product, vehicle, animal, building, food, plant, or any object (ignore the "
                 "surrounding browser/app interface, menus, and comment sidebar). Be concise — 2 short "
-                "sentences, under 50 words: the person, their outfit, and the setting; nothing else. State "
-                "only what is clearly visible — no speculation, no hedging, no lists."
+                "sentences, under 50 words: WHAT it is, its key visible attributes (form, colour, material; "
+                "clothing if it is a person), and the setting; nothing else. State only what is clearly "
+                "visible — no speculation, no hedging, no lists."
             )
-            # George r210: a LOCAL ollama cortex looks with its OWN local eye.
-            # ollama_vision_agent base64s the screenshot into a local /api/generate
-            # call — no cloud, no per-image cost. Every other arm goes through the
-            # normal agent-arm launcher (claude/codex/cline CLIs).
-            if arm == "ollama_vision_agent":
-                from System.swarm_ollama_vision_arm import describe_image_local
-                arm_res = describe_image_local(img_path, prompt, timeout_s=300)
-                source = "local_ollama_vision_arm"
-            elif arm == "qwen_agent":
-                # George r214: Kimi K2.6 cortex sees with Kimi's OWN Fireworks API. The
-                # qwen Code CLI can't carry pixels, so dispatch a direct image_url call.
-                from System.swarm_fireworks_vision_arm import describe_image_fireworks
-                arm_res = describe_image_fireworks(img_path, prompt, state_dir=_STATE, timeout_s=300)
-                source = "kimi_fireworks_vision_arm"
-            else:
-                # George r211: hand the PNG path to the arm. grok_agent inlines it as an
-                # xAI image_url (its own eye); claude/codex read it from the prompt path
-                # (agentic file tools) and ignore the extra flag.
-                arm_res = ask_agent_arm(arm, prompt, state_dir=_STATE, timeout_s=300,
-                                        image_path=img_path)
-            # Arms like cline stream NDJSON (+ base64); keep ONLY the final clean text.
-            text = extract_arm_final_text(getattr(arm_res, "output", "") or "")
-            non_visual = looks_like_non_visual_arm_reply(text)
-            ok = bool(getattr(arm_res, "ok", False)) and bool(text) and not non_visual
-            # Honest local→cloud failover (George r210): if the LOCAL eye was picked
-            # but couldn't actually see (ollama down / model error / empty reply), fall
-            # over to the cloud default eye and tell the owner WHY — never silently fail.
-            if not ok and arm == "ollama_vision_agent":
-                cloud = pick_vision_arm(current_arm="", local_image_required=True)
-                cloud_arm = cloud.get("selected_arm", "")
-                if cloud_arm:
-                    record_cortex_arm_habit(
-                        "ollama_vision_agent", cortex_model=current_model,
-                        task="browser_photo_local_image", ok=False,
-                        status=str(getattr(arm_res, "status", "") or "failed"),
-                        reason="local_eye_failed_failover_to_cloud", state_dir=_STATE,
-                        meta={"failover_to": cloud_arm},
+            def _call_vision_arm(selected_arm: str) -> dict:
+                call_source = source
+                # George r210: a LOCAL ollama cortex looks with its OWN local eye.
+                if selected_arm == "ollama_vision_agent":
+                    from System.swarm_ollama_vision_arm import describe_image_local
+                    arm_result = describe_image_local(img_path, prompt, timeout_s=300)
+                    call_source = "local_ollama_vision_arm"
+                elif selected_arm == "qwen_agent":
+                    # George r214: Kimi K2.6 cortex sees with Kimi's OWN Fireworks API.
+                    from System.swarm_fireworks_vision_arm import describe_image_fireworks
+                    arm_result = describe_image_fireworks(img_path, prompt, state_dir=_STATE, timeout_s=300)
+                    call_source = "kimi_fireworks_vision_arm"
+                elif selected_arm == "grok_agent":
+                    # George r236: grok's eye via the OAuth-valid /v1/responses endpoint.
+                    # grok_chat's /v1/chat/completions 403s on the OAuth token (it wants an
+                    # xai- API key); /v1/responses accepts the OAuth bearer.
+                    from System.xai_grok_oauth_organ import describe_image_via_oauth
+                    arm_result = describe_image_via_oauth(
+                        img_path,
+                        prompt,
+                        model=current_model or "grok-4",
+                        timeout_s=300,
                     )
-                    arm = cloud_arm
-                    result["arm"] = arm
-                    source = "cloud_failover_after_local_eye"
-                    pick["diary_note"] = (
-                        "my local cortex's own eye could not read this picture this turn "
-                        f"(ollama vision unavailable), so I used {cloud_arm} for the pixels and "
-                        "stayed on my local cortex for the words."
+                    call_source = "grok_oauth_responses_vision_arm"
+                else:
+                    model_hint = ""
+                    arm_result = ask_agent_arm(
+                        selected_arm,
+                        prompt,
+                        state_dir=_STATE,
+                        timeout_s=300,
+                        image_path=img_path,
+                        model_hint=model_hint,
                     )
-                    arm_res = ask_agent_arm(arm, prompt, state_dir=_STATE, timeout_s=300,
-                                            image_path=img_path)
-                    text = extract_arm_final_text(getattr(arm_res, "output", "") or "")
-                    non_visual = looks_like_non_visual_arm_reply(text)
-                    ok = bool(getattr(arm_res, "ok", False)) and bool(text) and not non_visual
-            record_cortex_arm_habit(
-                arm,
-                cortex_model=current_model,
-                task="browser_photo_local_image",
-                ok=ok,
-                status="described" if ok else ("non_visual_reply" if non_visual else str(getattr(arm_res, "status", "") or "failed")),
-                reason="arm_returned_visual_description" if ok else ("arm_asked_for_image_contents" if non_visual else "arm_failed_or_empty"),
-                state_dir=_STATE,
-                meta={
-                    "receipt_id": getattr(arm_res, "receipt_id", ""),
-                    "returncode": getattr(arm_res, "returncode", None),
-                    "source": source,
-                },
-            )
+                clean_text = extract_arm_final_text(getattr(arm_result, "output", "") or "")
+                asked_for_image = looks_like_non_visual_arm_reply(clean_text)
+                success = bool(getattr(arm_result, "ok", False)) and bool(clean_text) and not asked_for_image
+                status = (
+                    "described"
+                    if success else (
+                        "non_visual_reply"
+                        if asked_for_image else str(getattr(arm_result, "status", "") or "failed")
+                    )
+                )
+                reason = (
+                    "arm_returned_visual_description"
+                    if success else (
+                        "arm_asked_for_image_contents"
+                        if asked_for_image else "arm_failed_or_empty"
+                    )
+                )
+                return {
+                    "arm": selected_arm,
+                    "arm_res": arm_result,
+                    "text": clean_text,
+                    "non_visual": asked_for_image,
+                    "ok": success,
+                    "status": status,
+                    "reason": reason,
+                    "source": call_source,
+                }
+
+            attempts: list[dict] = []
+            down = {str(a or "").strip() for a in (unavailable or ()) if str(a or "").strip()}
+            diary_notes = list(preflight_notes)
+            if pick.get("diary_note"):
+                diary_notes.append(str(pick.get("diary_note") or "").strip())
+            current_attempt = arm
+            final = None
+            while current_attempt:
+                attempt = _call_vision_arm(current_attempt)
+                attempts.append(attempt)
+                record_cortex_arm_habit(
+                    current_attempt,
+                    cortex_model=current_model,
+                    task="browser_photo_local_image",
+                    ok=bool(attempt.get("ok")),
+                    status=str(attempt.get("status") or "failed"),
+                    reason=str(attempt.get("reason") or "arm_failed_or_empty"),
+                    state_dir=_STATE,
+                    meta={
+                        "receipt_id": getattr(attempt.get("arm_res"), "receipt_id", ""),
+                        "returncode": getattr(attempt.get("arm_res"), "returncode", None),
+                        "source": attempt.get("source"),
+                        "attempt_index": len(attempts),
+                    },
+                )
+                final = attempt
+                if attempt.get("ok"):
+                    break
+                down.add(current_attempt)
+                if strict_grok_eye:
+                    diary_notes.append(
+                        f"my selected Grok eye failed on this frame ({attempt.get('status')}); "
+                        "I did not switch to Claude, Codex, Kimi, or local vision because Grok is selected."
+                    )
+                    break
+                next_pick = pick_vision_arm(
+                    current_arm="",
+                    current_model=current_model,
+                    unavailable=tuple(sorted(down)),
+                    local_image_required=True,
+                )
+                next_arm = str(next_pick.get("selected_arm") or "").strip()
+                if not next_arm or next_arm in down:
+                    break
+                diary_notes.append(
+                    f"my {current_attempt} eye failed on this frame "
+                    f"({attempt.get('status')}); I switched to {next_arm} for the pixels "
+                    "and still let the cortex compose the answer."
+                )
+                current_attempt = next_arm
+                result["arm"] = current_attempt
+
+            arm = str((final or {}).get("arm") or arm)
+            arm_res = (final or {}).get("arm_res")
+            text = str((final or {}).get("text") or "")
+            non_visual = bool((final or {}).get("non_visual"))
+            ok = bool((final or {}).get("ok"))
+            source = str((final or {}).get("source") or source)
+            result["arm"] = arm
+            failed_status = "grok_eye_failed" if strict_grok_eye and arm == "grok_agent" else "failed"
             record_photo_description(
                 url, description=text if ok else "", arm=arm, image_ref=img_path,
-                status="described" if ok else "failed", source=source, state_dir=_STATE,
+                status="described" if ok else failed_status, source=source, state_dir=_STATE,
             )
             if ok:
                 # Stigmergic form memory: record HOW this body/form looks, by type
@@ -1489,10 +2515,22 @@ class AliceBrowserWidget(QMainWindow):
                     record_form(text, url=url, arm=arm, state_dir=_STATE)
                 except Exception:
                     pass
-            result["status"] = "described" if ok else "failed"
-            result["description"] = text
-            if pick.get("diary_note"):
-                result["diary_note"] = pick["diary_note"]
+            result["status"] = "described" if ok else failed_status
+            result["description"] = text if ok else ""
+            result["error_summary"] = "" if ok else text[:500]
+            result["attempts"] = [
+                {
+                    "arm": str(a.get("arm") or ""),
+                    "ok": bool(a.get("ok")),
+                    "status": str(a.get("status") or ""),
+                    "source": str(a.get("source") or ""),
+                    "receipt_id": getattr(a.get("arm_res"), "receipt_id", ""),
+                }
+                for a in attempts
+            ]
+            notes = [n for n in diary_notes if n]
+            if notes:
+                result["diary_note"] = " ".join(notes)
             return result
         except Exception as exc:
             print(f"[AliceBrowser] photo description failed: {exc}")

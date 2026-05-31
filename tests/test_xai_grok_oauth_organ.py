@@ -58,6 +58,13 @@ def test_dry_run_with_registration_writes_redacted_receipt(tmp_path: Path, monke
     assert saved["reason"] == "dry_run_auth_resolved"
     assert saved["credential_kind"] == "oauth_access_token"
     assert saved["credential_redacted"] == "oauth...3456"
+    assert saved["model"] == "grok-4"
+
+
+def test_grok_product_labels_normalize_to_api_model_id() -> None:
+    assert organ.normalize_grok_model_id("grok:grok-4.3") == "grok-4"
+    assert organ.normalize_grok_model_id("xai:grok-4.20-reasoning") == "grok-4"
+    assert organ.normalize_grok_model_id("grok-2-vision-1212") == "grok-2-vision-1212"
 
 
 def test_missing_credential_is_receipted_not_faked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,6 +79,7 @@ def test_missing_credential_is_receipted_not_faked(tmp_path: Path, monkeypatch: 
         trace_path=trace,
         ledger_path=ledger,
         token_file=tmp_path / "missing_token.json",
+        hermes_auth_file=tmp_path / "missing_hermes_auth.json",
         dry_run=True,
     )
 

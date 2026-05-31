@@ -29,17 +29,43 @@ LEDGER = "visual_form_memory.jsonl"
 TRUTH_LABEL = "VISUAL_FORM_MEMORY_V1"
 
 HUMAN_BODY = "human_body"
+ANIMAL = "animal"
 CAR = "car"
 AIRPLANE = "airplane"
+VEHICLE = "vehicle"
+PRODUCT = "product"
+BUILDING = "building"
+FOOD = "food"
+NATURE = "nature"
 OTHER = "other"
 
-# Word-boundary keyword sets; airplane/car checked before human so "the body of a
-# car" does not misfile. Scored by hit count, highest wins.
+# r235 (cowork): generalized from {human/car/airplane} to an OPEN taxonomy so Alice
+# records ANY body/object she sees, not just human bodies + clothing. Grounded in
+# open-vocabulary recognition (OWL-ViT / GLIP / Detic / RegionCLIP): the vision arm
+# names arbitrary categories from free text; this is the lexical bucketer over its
+# description. OTHER remains the honest catch-all when nothing scores.
+# Word-boundary keyword sets, scored by hit count (highest wins); ties resolve toward
+# the more specific/distinctive category.
 _FORM_KEYWORDS: dict[str, tuple[str, ...]] = {
     AIRPLANE: ("airplane", "aeroplane", "aircraft", "jet", "airliner", "fuselage",
                "cockpit", "wings", "runway", "propeller", "biplane", "boeing", "airbus"),
-    CAR: ("car", "vehicle", "sedan", "coupe", "suv", "sportscar", "supercar", "wheels",
-          "headlights", "bumper", "ferrari", "mercedes", "porsche", "engine", "chassis", "dashboard"),
+    CAR: ("car", "sedan", "coupe", "suv", "sportscar", "supercar", "headlights",
+          "bumper", "ferrari", "mercedes", "porsche", "chassis", "dashboard", "hatchback"),
+    VEHICLE: ("motorcycle", "motorbike", "bicycle", "bike", "truck", "bus", "train",
+              "boat", "ship", "yacht", "scooter", "tractor", "helicopter", "drone"),
+    ANIMAL: ("dog", "cat", "puppy", "kitten", "horse", "bird", "lion", "tiger", "animal",
+             "pet", "paws", "tail", "wildlife", "fish", "elephant", "snake", "deer"),
+    FOOD: ("food", "dish", "meal", "plate", "pizza", "burger", "salad", "cake", "dessert",
+           "drink", "cuisine", "sandwich", "sushi", "fruit", "pasta", "soup", "snack"),
+    BUILDING: ("building", "house", "tower", "skyscraper", "architecture", "facade",
+               "bridge", "cathedral", "temple", "interior", "kitchen", "office", "apartment"),
+    NATURE: ("mountain", "beach", "ocean", "forest", "tree", "flower", "landscape",
+             "sunset", "sky", "river", "lake", "waterfall", "garden", "plant", "field", "desert"),
+    PRODUCT: ("watch", "shoe", "sneaker", "boot", "bag", "handbag", "backpack", "phone",
+              "laptop", "tablet", "bottle", "mug", "chair", "sofa", "couch", "furniture",
+              "jewelry", "jewellery", "ring", "necklace", "bracelet", "earrings", "gadget",
+              "device", "headphones", "earbuds", "camera", "sunglasses", "perfume",
+              "cosmetic", "makeup", "appliance", "product"),
     HUMAN_BODY: ("person", "woman", "man", "girl", "guy", "body", "wearing", "posing",
                  "standing", "sitting", "seated", "skin", "hair", "legs", "arms", "torso",
                  "shoulders", "smiling", "model", "figure"),
@@ -68,7 +94,10 @@ def infer_form_category(text: str) -> str:
     if not scores:
         return OTHER
     best = max(scores.values())
-    for cat in (AIRPLANE, CAR, HUMAN_BODY):  # tie-break order
+    # tie-break: the SUBJECT of a photo wins over its SETTING. Distinctive machines first,
+    # then animal/human/product/food (subjects), then building/nature (usually backdrop) —
+    # so "a woman on a beach" is human_body, not nature.
+    for cat in (AIRPLANE, CAR, VEHICLE, ANIMAL, HUMAN_BODY, PRODUCT, FOOD, BUILDING, NATURE):
         if scores.get(cat) == best:
             return cat
     return OTHER
