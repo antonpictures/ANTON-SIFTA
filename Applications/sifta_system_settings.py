@@ -22,7 +22,7 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
+from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap, QPainter, QPen, QColor, QPainterPath, QLinearGradient
 from PyQt6.QtWidgets import (
     QApplication,
@@ -87,6 +87,24 @@ from System.swarm_fireworks_qwen_config import (
     install_qwen_fireworks_settings,
     read_fireworks_api_key,
 )
+
+class _BonsaiWallpaperWorker(QThread):
+    """r272: generate a Bonsai desktop wallpaper OFF the GUI thread (the beachball lesson)."""
+    done = pyqtSignal(dict)
+
+    def __init__(self, prompt: str, theme_id: str, parent: "QObject | None" = None) -> None:
+        super().__init__(parent)
+        self._prompt = prompt
+        self._theme_id = theme_id
+
+    def run(self) -> None:
+        try:
+            from System.swarm_desktop_wallpaper import generate_desktop_wallpaper
+            res = generate_desktop_wallpaper(self._prompt, theme_id=self._theme_id)
+        except Exception as exc:  # noqa: BLE001
+            res = {"ok": False, "path": "", "prompt": self._prompt, "error": f"{type(exc).__name__}: {exc}"}
+        self.done.emit(res if isinstance(res, dict) else {"ok": False, "error": "no result"})
+
 
 STATE = _REPO / ".sifta_state"
 MANIFEST = _REPO / "Applications" / "apps_manifest.json"
@@ -1075,6 +1093,29 @@ class SystemSettingsWidget(SiftaBaseWidget):
         wp_btn_row.addStretch()
         root.addLayout(wp_btn_row)
 
+        # ── r272: Generate your desktop with Bonsai (on-device). Empty box = a fresh,
+        #     always-different prompt from the selected theme. ───────────────────────
+        bonsai_row = QHBoxLayout()
+        self.bonsai_prompt = QLineEdit()
+        self.bonsai_prompt.setPlaceholderText(
+            "Describe your desktop… (leave empty for a fresh theme-based one)"
+        )
+        self.bonsai_prompt.setStyleSheet(
+            "QLineEdit { background: rgb(20,22,32); color: rgb(238,244,255); "
+            "border: 1px solid rgb(47,52,68); border-radius: 6px; padding: 6px 10px; }"
+        )
+        bonsai_row.addWidget(self.bonsai_prompt, 1)
+        self.bonsai_generate_btn = QPushButton("🌳 Generate your desktop with Bonsai")
+        self.bonsai_generate_btn.setStyleSheet(
+            "QPushButton { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+            "border: 1px solid rgb(47, 52, 68); border-radius: 6px; padding: 6px 12px; }"
+            "QPushButton:hover { background: rgb(35, 40, 58); }"
+        )
+        self.bonsai_generate_btn.clicked.connect(self._on_generate_bonsai_desktop)
+        bonsai_row.addWidget(self.bonsai_generate_btn)
+        root.addLayout(bonsai_row)
+        self._bonsai_wp_worker = None
+
         self.wallpaper_status = QLabel("")
         self.wallpaper_status.setWordWrap(True)
         self.wallpaper_status.setStyleSheet(
@@ -1243,6 +1284,54 @@ class SystemSettingsWidget(SiftaBaseWidget):
         save_custom_wallpaper_path(path)
         self._wallpaper_status_msg(path)
         self._poke_desktop_wallpaper_reload()
+
+    def _on_generate_bonsai_desktop(self) -> None:
+        """r272: generate a desktop image with Bonsai (on-device) from the prompt box — or a
+        fresh theme-based default when empty — and set it as the wallpaper. Runs off the GUI
+        thread; never blocks or crashes the panel."""
+        try:
+            prompt = self.bonsai_prompt.text().strip()
+        except Exception:
+            prompt = ""
+        try:
+            theme_id = self.theme_combo.itemData(self.theme_combo.currentIndex()) or "beeson_v8"
+        except Exception:
+            theme_id = "beeson_v8"
+        # Empty box → show the varied default so the owner sees what will be painted, and use it.
+        if not prompt:
+            try:
+                from System.swarm_desktop_wallpaper import default_prompt_for_theme
+                self.bonsai_prompt.setText(default_prompt_for_theme(str(theme_id)))
+            except Exception:
+                pass
+        try:
+            self.bonsai_generate_btn.setEnabled(False)
+            self.bonsai_generate_btn.setText("🌳 Generating…")
+            self.wallpaper_status.setText("Bonsai is painting your desktop on-device…")
+        except Exception:
+            pass
+        worker = _BonsaiWallpaperWorker(self.bonsai_prompt.text().strip(), str(theme_id), self)
+        worker.done.connect(self._on_bonsai_desktop_done)
+        self._bonsai_wp_worker = worker
+        worker.start()
+
+    def _on_bonsai_desktop_done(self, res: dict) -> None:
+        try:
+            self.bonsai_generate_btn.setEnabled(True)
+            self.bonsai_generate_btn.setText("🌳 Generate your desktop with Bonsai")
+        except Exception:
+            pass
+        path = str((res or {}).get("path") or "")
+        if (res or {}).get("ok") and path:
+            try:
+                save_custom_wallpaper_path(path)
+                self._wallpaper_status_msg(path)
+                self._poke_desktop_wallpaper_reload()
+            except Exception as exc:
+                self.wallpaper_status.setText(f"Generated but could not apply: {exc}")
+        else:
+            err = str((res or {}).get("error") or "generation failed")
+            self.wallpaper_status.setText(f"Bonsai could not generate a desktop: {err}")
 
     def _wallpaper_status_msg(self, path: str | None) -> None:
         if not path:
@@ -2273,61 +2362,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self._cortex_auth_timer.start()
         self._refresh_cortex_auth_indicator()
 
-        # ── Hermes Arm Provider — Round 33 (Claude/Cowork direct, 2026-05-27) ──
-        # Owner choice for where Hermes-delegated work runs. Persists to
-        # .sifta_state/hermes_cortex.json (provider field). swarm_agent_arm_launcher.py
-        # reads that file at delegate-time (hermes_cortex_override around line 218).
-        # Two options for now: local Ollama vs xAI Grok OAuth via Hermes auth.json.
-        hermes_arm_heading = QLabel("🤖  Hermes Arm Provider  ·  where delegated work runs")
-        hermes_arm_heading.setStyleSheet(
-            "color: rgb(255, 180, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
-        )
-        root.addWidget(hermes_arm_heading)
-
-        hermes_row = QHBoxLayout()
-        hermes_row.setSpacing(8)
-        hermes_label = QLabel("Hermes Arm")
-        hermes_label.setStyleSheet(
-            "color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;"
-        )
-        hermes_row.addWidget(hermes_label)
-
-        self._hermes_arm_combo = QComboBox()
-        self._hermes_arm_combo.setObjectName("HermesArmProviderPicker")
-        self._hermes_arm_combo.setEditable(False)
-        self._hermes_arm_combo.setStyleSheet(
-            "QComboBox { background: rgb(40, 26, 8); color: rgb(255, 200, 110); "
-            "border: 1px solid rgb(200, 130, 30); border-radius: 8px; "
-            "padding: 6px 10px; font-size: 12px; font-family: Menlo; }"
-            "QComboBox::drop-down { border: none; width: 18px; }"
-            "QComboBox QAbstractItemView { background: rgb(28, 18, 6); "
-            "color: rgb(255, 200, 110); selection-background-color: rgb(80, 50, 12); }"
-        )
-        # (display_label, persisted_value) — provider tag goes into hermes_cortex.json
-        self._hermes_arm_combo.addItem(
-            "Ollama (local) · alice-m5-cortex-8b-6.3gb",
-            userData="ollama_local",
-        )
-        self._hermes_arm_combo.addItem(
-            "xAI Grok OAuth (SuperGrok / X Premium+) · ☁ cloud",
-            userData="grok_via_hermes_oauth",
-        )
-        # Pre-select current value from .sifta_state/hermes_cortex.json
-        try:
-            import json as _json_r33_init
-            from pathlib import Path as _Path_r33_init
-            _hcfg_init = _Path_r33_init(__file__).resolve().parent.parent / ".sifta_state" / "hermes_cortex.json"
-            if _hcfg_init.exists():
-                _curr = (_json_r33_init.loads(_hcfg_init.read_text(encoding="utf-8")) or {}).get("provider")
-                for _i in range(self._hermes_arm_combo.count()):
-                    if self._hermes_arm_combo.itemData(_i) == _curr:
-                        self._hermes_arm_combo.setCurrentIndex(_i)
-                        break
-        except Exception:
-            pass
-        self._hermes_arm_combo.currentIndexChanged.connect(self._on_hermes_arm_provider_changed)
-        hermes_row.addWidget(self._hermes_arm_combo, stretch=1)
-        root.addLayout(hermes_row)
+        # Hermes Arm Provider selector removed (2026-06-01, Architect directive).
+        # Arm selection is now 100% stigmergic: Alice chooses the best available arm
+        # based on learned experience in her field (what worked for this task/context
+        # in the past). New nodes inherit the shipped experience. No manual dropdown.
 
         # ── Corvid / Fallback section — secondary brain ──
         corvid_heading = QLabel("🐦  Corvid Scout  ·  Qwen side brain for cheap bounded evidence")

@@ -128,6 +128,45 @@ def test_visible_media_selection_parser_reads_json_and_text():
     assert browser._parse_visible_media_selection("row 2, column 5") == (2, 5)
 
 
+def test_visible_media_selection_stays_on_codex_when_codex_selected(monkeypatch, tmp_path):
+    _patch_state(monkeypatch, tmp_path)
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 9000)
+
+    class DummyBrowser:
+        _current_url = "https://www.instagram.com/kylinmilan/"
+
+        def _capture_viewport_image(self, expected_url=""):
+            return str(img)
+
+    calls = []
+
+    def fake_arm(arm_id, prompt, **kwargs):
+        calls.append(arm_id)
+        if arm_id != "codex_agent":
+            raise AssertionError(f"selected Codex tile selection leaked to {arm_id}")
+        return SimpleNamespace(
+            ok=True,
+            output='{"row":0,"col":0,"reason":"no match"}',
+            status="OK",
+            receipt_id="codex-no-match",
+            returncode=0,
+        )
+
+    monkeypatch.setattr("System.swarm_agent_arm_launcher.ask_agent_arm", fake_arm)
+
+    result = browser.AliceBrowserWidget._select_visible_media_candidate_with_vision(
+        DummyBrowser(),
+        "open the ocean photo",
+        [{"href": "https://www.instagram.com/p/A/", "row": 1, "col": 1, "alt": "", "onscreen": 90000}],
+        current_arm="codex_agent",
+        current_model="codex:gpt-5.5",
+    )
+
+    assert result == {}
+    assert calls == ["codex_agent"]
+
+
 def test_describe_current_photo_stays_on_grok_after_grok_api_failure(monkeypatch, tmp_path):
     _patch_state(monkeypatch, tmp_path)
     img = tmp_path / "viewport.png"
@@ -141,7 +180,7 @@ def test_describe_current_photo_stays_on_grok_after_grok_api_failure(monkeypatch
 
     calls = []
 
-    def fake_grok_oauth_eye(image_path, prompt, **kwargs):
+    def fake_grok_eye(image_path, prompt, **kwargs):
         calls.append(("grok_agent", kwargs))
         return SimpleNamespace(
             ok=False,
@@ -154,9 +193,14 @@ def test_describe_current_photo_stays_on_grok_after_grok_api_failure(monkeypatch
     def no_fallback_arm(*args, **kwargs):
         raise AssertionError("strict Grok photo describe should not call fallback arms")
 
-    monkeypatch.setattr("System.xai_grok_oauth_organ.describe_image_via_oauth", fake_grok_oauth_eye)
+    monkeypatch.setattr("System.xai_grok_oauth_organ.describe_image_with_grok", fake_grok_eye)
     monkeypatch.setattr("System.swarm_agent_arm_launcher.ask_agent_arm", no_fallback_arm)
     monkeypatch.setattr("System.xai_grok_oauth_organ.preflight_grok_vision_key", lambda: (True, "ok"))
+    refreshes = []
+    monkeypatch.setattr(
+        "System.swarm_cortex_failover_reflex.schedule_oauth_refresh",
+        lambda **kwargs: refreshes.append(kwargs) or {"status": "launched", "pid": 123},
+    )
 
     result = browser.AliceBrowserWidget.describe_current_photo(
         DummyBrowser(),
@@ -164,14 +208,114 @@ def test_describe_current_photo_stays_on_grok_after_grok_api_failure(monkeypatch
         current_model="grok:grok-4.3",
     )
 
-    assert result["status"] == "grok_eye_failed"
+    assert result["status"] == "grok_eye_auth_refresh_required"
     assert result["arm"] == "grok_agent"
     assert result["description"] == ""
     assert [c[0] for c in calls] == ["grok_agent"]
     assert calls[0][1]["model"] == "grok:grok-4.3"
     assert result["attempts"][0]["status"] == "EXEC_FAILED_COMMAND_FAILED"
     assert len(result["attempts"]) == 1
+    assert refreshes
+    assert "OAuth" in result["diary_note"]
     assert "did not switch to Claude" in result["diary_note"]
+
+
+def test_describe_current_photo_stays_on_codex_after_empty_codex_scan(monkeypatch, tmp_path):
+    _patch_state(monkeypatch, tmp_path)
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 9000)
+
+    class DummyBrowser:
+        _current_url = "https://www.instagram.com/p/current/"
+
+        def _capture_viewport_image(self, expected_url=""):
+            return str(img)
+
+    calls = []
+
+    def fake_arm(arm_id, prompt, **kwargs):
+        calls.append(arm_id)
+        if arm_id != "codex_agent":
+            raise AssertionError(f"selected Codex eye leaked to fallback arm {arm_id}")
+        return SimpleNamespace(
+            ok=True,
+            output="",
+            stderr="",
+            status="OK",
+            receipt_id="codex-empty",
+            returncode=0,
+        )
+
+    monkeypatch.setattr("System.swarm_agent_arm_launcher.ask_agent_arm", fake_arm)
+
+    result = browser.AliceBrowserWidget.describe_current_photo(
+        DummyBrowser(),
+        current_arm="codex_agent",
+        current_model="codex:gpt-5.5",
+    )
+
+    assert result["status"] == "codex_eye_failed"
+    assert result["arm"] == "codex_agent"
+    assert result["description"] == ""
+    assert calls == ["codex_agent"]
+    assert result["attempts"][0]["status"] == "OK"
+    assert len(result["attempts"]) == 1
+    assert "Codex is my selected cortex/eye" in result["diary_note"]
+    assert "did not switch to Claude" in result["diary_note"]
+
+
+def test_describe_current_photo_grok_subscription_failure_uses_local_backup(monkeypatch, tmp_path):
+    _patch_state(monkeypatch, tmp_path)
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 9000)
+
+    class DummyBrowser:
+        _current_url = "https://www.instagram.com/p/current/"
+
+        def _capture_viewport_image(self, expected_url=""):
+            return str(img)
+
+    calls = []
+
+    def fake_grok_eye(image_path, prompt, **kwargs):
+        calls.append("grok_agent")
+        return SimpleNamespace(
+            ok=False,
+            output="",
+            stderr="subscription required for this Grok vision operation",
+            status="http_error:402",
+            receipt_id="grok-subscription",
+            returncode=3,
+        )
+
+    def fake_local_eye(image_path, prompt, **kwargs):
+        calls.append("ollama_vision_agent")
+        return SimpleNamespace(
+            ok=True,
+            output="Leonardo DiCaprio is shown in a formal black tuxedo and bow tie.",
+            stderr="",
+            status="ok",
+            receipt_id="local-ok",
+            returncode=0,
+        )
+
+    monkeypatch.setattr("System.xai_grok_oauth_organ.describe_image_with_grok", fake_grok_eye)
+    monkeypatch.setattr("System.xai_grok_oauth_organ.preflight_grok_vision_key", lambda: (True, "ok"))
+    monkeypatch.setattr("System.swarm_ollama_vision_arm.local_vision_available", lambda **kwargs: True)
+    monkeypatch.setattr("System.swarm_ollama_vision_arm.describe_image_local", fake_local_eye)
+
+    result = browser.AliceBrowserWidget.describe_current_photo(
+        DummyBrowser(),
+        current_arm="grok_agent",
+        current_model="grok:grok-4.3",
+    )
+
+    assert result["status"] == "described"
+    assert result["arm"] == "ollama_vision_agent"
+    assert calls == ["grok_agent", "ollama_vision_agent"]
+    assert [a["status"] for a in result["attempts"]] == ["http_error:402", "described"]
+    assert "declared backup" in result["diary_note"]
+    assert "Claude" in result["diary_note"]
 
 
 def test_describe_current_photo_preflights_missing_grok_key_without_fallback(monkeypatch, tmp_path):
@@ -189,10 +333,16 @@ def test_describe_current_photo_preflights_missing_grok_key_without_fallback(mon
         "System.xai_grok_oauth_organ.preflight_grok_vision_key",
         lambda: (False, "my grok eye needs my xAI key set"),
     )
+    monkeypatch.setattr(browser, "_grok_cli_ready", lambda: False)
     def no_cloud_arm(*args, **kwargs):
         raise AssertionError("missing key should not call grok cloud arm")
 
     monkeypatch.setattr("System.swarm_agent_arm_launcher.ask_agent_arm", no_cloud_arm)
+    refreshes = []
+    monkeypatch.setattr(
+        "System.swarm_cortex_failover_reflex.schedule_oauth_refresh",
+        lambda **kwargs: refreshes.append(kwargs) or {"status": "launched", "pid": 123},
+    )
 
     result = browser.AliceBrowserWidget.describe_current_photo(
         DummyBrowser(),
@@ -200,10 +350,55 @@ def test_describe_current_photo_preflights_missing_grok_key_without_fallback(mon
         current_model="grok:grok-4.3",
     )
 
-    assert result["status"] == "grok_eye_key_missing"
+    assert result["status"] == "grok_eye_auth_refresh_required"
     assert result["arm"] == "grok_agent"
     assert result["description"] == ""
     assert result["attempts"][0]["arm"] == "grok_agent"
-    assert result["attempts"][0]["status"] == "grok_eye_key_missing"
-    assert "xAI key" in result["diary_note"]
+    assert result["attempts"][0]["status"] == "grok_eye_auth_refresh_required"
+    assert refreshes
+    assert "xAI OAuth" in result["diary_note"]
     assert "did not switch to Claude" in result["diary_note"]
+
+
+def test_describe_current_photo_uses_grok_cli_even_when_token_preflight_is_stale(monkeypatch, tmp_path):
+    _patch_state(monkeypatch, tmp_path)
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 9000)
+
+    class DummyBrowser:
+        _current_url = "https://www.instagram.com/p/current/"
+
+        def _capture_viewport_image(self, expected_url=""):
+            return str(img)
+
+    calls = []
+
+    monkeypatch.setattr(
+        "System.xai_grok_oauth_organ.preflight_grok_vision_key",
+        lambda: (False, "stale token file"),
+    )
+    monkeypatch.setattr(browser, "_grok_cli_ready", lambda: True)
+
+    def fake_grok_eye(image_path, prompt, **kwargs):
+        calls.append(("grok_agent", kwargs))
+        return SimpleNamespace(
+            ok=True,
+            output="Leonardo DiCaprio is shown in a formal black tuxedo and bow tie.",
+            stderr="",
+            status="ok",
+            receipt_id="grok-cli-ok",
+            returncode=0,
+        )
+
+    monkeypatch.setattr("System.xai_grok_oauth_organ.describe_image_with_grok", fake_grok_eye)
+
+    result = browser.AliceBrowserWidget.describe_current_photo(
+        DummyBrowser(),
+        current_arm="grok_agent",
+        current_model="grok:grok-4.3",
+    )
+
+    assert result["status"] == "described"
+    assert result["arm"] == "grok_agent"
+    assert "Leonardo DiCaprio" in result["description"]
+    assert [c[0] for c in calls] == ["grok_agent"]

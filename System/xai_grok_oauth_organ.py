@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import os
+import base64
+import mimetypes
 import shutil
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass
@@ -64,8 +67,6 @@ def normalize_grok_model_id(model: str) -> str:
         m = m.split(":", 1)[1].strip()
     if "/" in m and "grok-" in m.lower():
         m = m.rsplit("/", 1)[-1].strip()
-    if m.lower().startswith("grok-4."):
-        return "grok-4"
     return m or "grok-4"
 
 
@@ -300,10 +301,168 @@ class GrokVisionResult:
 
 
 def _grok_image_data_uri(path: Path) -> str:
-    import base64
-    import mimetypes
     mime = mimetypes.guess_type(path.name)[0] or "image/png"
     return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+def _grok_cli_model_for(model: str) -> str:
+    """Map SIFTA cloud labels to the logged-in Grok CLI model on this node."""
+    m = normalize_grok_model_id(model)
+    low = m.lower()
+    if not m or low in {"grok-4", "grok-4.3", "grok-4.20", "latest"} or low.startswith("grok-4."):
+        return "grok-build"
+    return m
+
+
+def _strip_ansi(text: str) -> str:
+    import re
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", str(text or ""))
+
+
+def _clean_grok_cli_vision_output(stdout: str, stderr: str = "") -> str:
+    text = _strip_ansi(stdout or "").strip()
+    lines = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if "session registry last_turn_number update failed" in s:
+            continue
+        if s.startswith("202") and " WARN " in s:
+            continue
+        lines.append(s)
+    return "\n".join(lines).strip()
+
+
+def _grok_cli_rejected_image(text: str, stderr: str = "") -> bool:
+    hay = f"{text}\n{stderr}".lower()
+    return any(
+        needle in hay
+        for needle in (
+            "no image received",
+            "normalization failed",
+            "image 1:",
+            "images must be at least",
+            "missing required field `mimetype`",
+        )
+    )
+
+
+def describe_image_via_grok_cli(
+    image_path: str,
+    prompt: str,
+    *,
+    model: str = "grok-build",
+    timeout_s: float = 300.0,
+    cli_path: Optional[str] = None,
+) -> GrokVisionResult:
+    """Use the logged-in Grok CLI OAuth surface for image understanding.
+
+    This is the same auth surface that works for text on this Mac. It sends ACP
+    content blocks (`text` + base64 `image` with `mimeType`) to `grok --prompt-json`.
+    """
+    p = Path(image_path)
+    if not image_path or not p.exists():
+        return GrokVisionResult(ok=False, status="image_missing", model=_grok_cli_model_for(model))
+    cli = cli_path or discover_official_grok_cli()
+    if not cli:
+        return GrokVisionResult(ok=False, status="grok_cli_missing", model=_grok_cli_model_for(model))
+    try:
+        mime = mimetypes.guess_type(p.name)[0] or "image/png"
+        payload = [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image",
+                "data": base64.b64encode(p.read_bytes()).decode("ascii"),
+                "mimeType": mime,
+            },
+        ]
+    except Exception as exc:
+        return GrokVisionResult(ok=False, status="image_read_failed", stderr=str(exc),
+                                model=_grok_cli_model_for(model))
+    cmd = [
+        cli,
+        "--prompt-json", json.dumps(payload, ensure_ascii=False),
+        "--model", _grok_cli_model_for(model),
+        "--output-format", "plain",
+        "--no-alt-screen",
+        # Image prompts need at least one internal file/image read turn before
+        # the final answer. A one-turn cap made Grok fail with "max turns
+        # reached" before it could look.
+        "--max-turns", "5",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(_REPO),
+            text=True,
+            capture_output=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return GrokVisionResult(ok=False, status="grok_cli_timeout",
+                                stderr=str(exc), model=_grok_cli_model_for(model))
+    except Exception as exc:
+        return GrokVisionResult(ok=False, status="grok_cli_launch_failed",
+                                stderr=f"{type(exc).__name__}: {exc}", model=_grok_cli_model_for(model))
+    text = _clean_grok_cli_vision_output(proc.stdout, proc.stderr)
+    if text and _grok_cli_rejected_image(text, proc.stderr):
+        return GrokVisionResult(
+            ok=False,
+            output="",
+            status="grok_cli_image_not_accepted",
+            stderr=_strip_ansi(f"{text}\n{proc.stderr or ''}")[:500],
+            model=_grok_cli_model_for(model),
+        )
+    if proc.returncode == 0 and text:
+        return GrokVisionResult(ok=True, output=text, status="ok",
+                                model=_grok_cli_model_for(model))
+    return GrokVisionResult(
+        ok=False,
+        status=f"grok_cli_failed:{proc.returncode}",
+        stderr=_strip_ansi((proc.stderr or proc.stdout or ""))[:500],
+        model=_grok_cli_model_for(model),
+    )
+
+
+def describe_image_with_grok(
+    image_path: str,
+    prompt: str,
+    *,
+    model: str = "grok-4",
+    timeout_s: float = 300.0,
+    env: Optional[dict[str, str]] = None,
+) -> GrokVisionResult:
+    """Primary Grok-eye entrypoint: logged-in CLI first, direct API as fallback."""
+    cli_result = describe_image_via_grok_cli(
+        image_path,
+        prompt,
+        model=model,
+        timeout_s=timeout_s,
+    )
+    if cli_result.ok:
+        return cli_result
+    cli_status = str(cli_result.status or "")
+    if not (
+        cli_status in {
+            "grok_cli_missing",
+            "grok_cli_launch_failed",
+            "grok_cli_image_not_accepted",
+        }
+        or cli_status.startswith("grok_cli_failed:")
+    ):
+        return cli_result
+    api_result = describe_image_via_oauth(
+        image_path,
+        prompt,
+        model=model,
+        timeout_s=timeout_s,
+        env=env,
+    )
+    if not api_result.ok and not api_result.stderr:
+        return GrokVisionResult(ok=False, status=api_result.status, stderr=cli_result.status,
+                                model=api_result.model)
+    return api_result
 
 
 def _capture_grok_vision_error(http_status, body, model) -> None:
@@ -313,7 +472,7 @@ def _capture_grok_vision_error(http_status, body, model) -> None:
         with p.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": time.time(), "http_status": http_status,
                                 "body": str(body)[:400], "model": model, "had_image": True,
-                                "endpoint": "v1/responses"}, ensure_ascii=False) + "\n")
+                                "endpoint": "v1/chat/completions"}, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -341,20 +500,62 @@ def _extract_responses_text(raw: str) -> str:
     return ""
 
 
+def _classify_grok_http_failure(status_code: Any, body: str) -> str:
+    """Stable status labels for Alice's Grok-eye receipts."""
+    text = str(body or "")
+    if str(status_code) == "403" and (
+        "bad-credentials" in text
+        or "access token could not be validated" in text.lower()
+        or "unauthenticated" in text.lower()
+    ):
+        return "oauth_bad_credentials"
+    return f"http_error:{status_code or 'unknown'}"
+
+
+_CHAT_API_URL = "https://api.x.ai/v1/chat/completions"
+
+
+def _build_grok_vision_chat_request(model: str, prompt: str, image_uri: str) -> dict:
+    """Build the xAI /v1/chat/completions request for a VISION call — the SAME endpoint and
+    message shape grok_chat.py uses for text + image, which the OAuth bearer is proven to accept
+    (George 2026-06-01: 'OAuth works for text then works for photo'). The earlier /v1/responses
+    path rejected the very same valid token; this aligns the photo to the working text path."""
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": image_uri}},
+        ]}],
+        "temperature": 0.6,
+        "stream": False,
+    }
+
+
+def _extract_chat_text(raw: str) -> str:
+    """Pull the assistant text out of an xAI /v1/chat/completions payload (defensive)."""
+    try:
+        data = json.loads(raw)
+        return str(data["choices"][0]["message"]["content"] or "").strip()
+    except Exception:
+        return ""
+
+
 def describe_image_via_oauth(
     image_path: str,
     prompt: str,
     *,
     model: str = "grok-4",
-    api_url: str = _API_URL,
+    api_url: str = _CHAT_API_URL,
     timeout_s: float = 300.0,
     env: Optional[dict[str, str]] = None,
 ) -> GrokVisionResult:
-    """Grok's EYE via the OAuth-valid endpoint. George 2026-05-31: the OAuth token 403s on
-    /v1/chat/completions (the developer API expects an xai- key) but IS valid on
-    /v1/responses (what the OAuth organ already uses). So a grok-cortex photo describe goes
-    here — image inlined as a responses `input_image` with the OAuth bearer. Honest failure
-    (no cred / non-2xx / empty) so a selected-Grok turn can report the exact Grok failure
+    """Grok's EYE via the SAME endpoint Alice's text path uses. George 2026-06-01: 'OAuth works
+    for text then works for photo' — the grok TEXT path (grok_chat.py --one-shot) authenticates on
+    /v1/chat/completions with the OAuth bearer and works daily, and grok_chat.py --image already
+    sends an image_url there. The r236 switch to /v1/responses was wrong: that endpoint rejects the
+    very same valid token (WKE=unauthenticated:bad-credentials). So the photo now goes to
+    /v1/chat/completions with an image_url content block — byte-for-byte the working text path.
+    Honest failure (no cred / non-2xx / empty) so a selected-Grok turn reports the exact Grok failure
     without silently covering it with another vendor; the reason is written to grok_api_errors.jsonl."""
     model = normalize_grok_model_id(model)
     p = Path(image_path)
@@ -367,13 +568,7 @@ def describe_image_via_oauth(
         uri = _grok_image_data_uri(p)
     except Exception as exc:
         return GrokVisionResult(ok=False, status="image_read_failed", stderr=str(exc), model=model)
-    body = json.dumps({
-        "model": model,
-        "input": [{"role": "user", "content": [
-            {"type": "input_text", "text": prompt},
-            {"type": "input_image", "image_url": uri},
-        ]}],
-    }).encode("utf-8")
+    body = json.dumps(_build_grok_vision_chat_request(model, prompt, uri)).encode("utf-8")
     req = request.Request(
         api_url, data=body,
         headers={"Authorization": f"Bearer {cred.value}", "Content-Type": "application/json"},
@@ -391,12 +586,14 @@ def describe_image_via_oauth(
         except Exception:
             pass
         _capture_grok_vision_error(code, bodytxt or str(exc), model)
-        return GrokVisionResult(ok=False, status=f"http_error:{code or type(exc).__name__}",
-                                stderr=str(exc)[:200], model=model)
+        status = _classify_grok_http_failure(code or type(exc).__name__, bodytxt or str(exc))
+        return GrokVisionResult(ok=False, status=status,
+                                stderr=(bodytxt or str(exc))[:400], model=model)
     if not (200 <= status_code < 300):
         _capture_grok_vision_error(status_code, raw[:400], model)
-        return GrokVisionResult(ok=False, status=f"http_{status_code}", stderr=raw[:200], model=model)
-    text = _extract_responses_text(raw)
+        status = _classify_grok_http_failure(status_code, raw[:400])
+        return GrokVisionResult(ok=False, status=status, stderr=raw[:400], model=model)
+    text = _extract_chat_text(raw)
     if not text:
         return GrokVisionResult(ok=False, status="empty_grok_reply", model=model)
     return GrokVisionResult(ok=True, output=text, status="ok", model=model)
@@ -405,6 +602,8 @@ def describe_image_via_oauth(
 __all__ = [
     "XaiCredential",
     "GrokVisionResult",
+    "describe_image_with_grok",
+    "describe_image_via_grok_cli",
     "describe_image_via_oauth",
     "call_xai_responses",
     "discover_official_grok_cli",
@@ -415,13 +614,15 @@ __all__ = [
     "write_token_file",
     "preflight_grok_vision_key",
     "GROK_VISION_KEY_MISSING_MESSAGE",
+    "_classify_grok_http_failure",
 ]
 
 
 GROK_VISION_KEY_MISSING_MESSAGE = (
     "my grok eye needs my xAI OAuth login (Hermes xAI OAuth at ~/.hermes/auth.json, or "
-    ".sifta_state/secrets/xai_grok_oauth_token.json). Without it I am blind through that sensor. "
-    "If Grok is selected, I will report this Grok-eye failure instead of switching to Claude."
+    ".sifta_state/secrets/xai_grok_oauth_token.json). If Grok is selected, I must try/repair "
+    "Grok first; I will not silently switch to Claude. If the provider/subscription is genuinely "
+    "unavailable after Grok is tried, Alice may use her free local Ollama eye as an explicit backup."
 )
 
 

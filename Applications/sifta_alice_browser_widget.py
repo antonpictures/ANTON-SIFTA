@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStatusBar,
+    QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -331,7 +332,7 @@ def _choose_native_media_handoff_url(
 ) -> str:
     """Choose the best URL for native playback when the embedded limb cannot decode.
 
-    Instagram profile pages often keep the address at ``/kylinmilan/`` while a
+    Instagram profile pages often keep the address at the historical handle while a
     clicked reel fails inside a modal. The native handoff must open the clicked
     reel/post, or the signed MP4 URL from the media error, not just the profile.
     """
@@ -492,6 +493,175 @@ def _strict_grok_eye_selected(current_arm: str = "", current_model: str = "") ->
     arm = str(current_arm or "").strip().lower()
     model = str(current_model or "").strip().lower()
     return arm == "grok_agent" or "grok" in model or "xai" in model
+
+
+_STRICT_SELECTED_EYE_ARMS = {
+    "grok_agent",
+    "codex_agent",
+    "claude_agent",
+    "qwen_agent",
+    "cline_agent",
+}
+
+
+def _strict_selected_eye(current_arm: str = "", current_model: str = "") -> str:
+    """Return the explicitly selected visual provider, if this turn has one.
+
+    Global vision failover is useful when no eye is selected. It is wrong when
+    the owner has selected Codex/Grok/etc. in the cortex picker: then a failed
+    scan must report that selected eye's failure, not silently spend another
+    provider's credits.
+    """
+    arm = str(current_arm or "").strip().lower()
+    model = str(current_model or "").strip().lower()
+    if arm in _STRICT_SELECTED_EYE_ARMS:
+        return arm
+    if "grok" in model or "xai" in model:
+        return "grok_agent"
+    if "codex" in model or model.startswith("openai") or "gpt-5" in model or "gpt-4" in model:
+        return "codex_agent"
+    if "claude" in model or "anthropic" in model:
+        return "claude_agent"
+    if "qwen" in model or "kimi" in model or "fireworks" in model:
+        return "qwen_agent"
+    if "cline" in model:
+        return "cline_agent"
+    return ""
+
+
+def _eye_display_name(arm: str) -> str:
+    return {
+        "grok_agent": "Grok",
+        "codex_agent": "Codex",
+        "claude_agent": "Claude",
+        "qwen_agent": "Qwen/Kimi",
+        "cline_agent": "Cline",
+        "ollama_vision_agent": "local Ollama",
+    }.get(str(arm or "").strip(), str(arm or "selected").strip() or "selected")
+
+
+_GROK_OAUTH_REPAIR_STATUSES = {
+    "no_xai_oauth_credential",
+    "oauth_bad_credentials",
+    "grok_eye_key_missing",
+    "grok_eye_auth_refresh_required",
+}
+
+
+def _grok_failure_blob(status: str = "", detail: str = "") -> str:
+    return f"{status or ''} {detail or ''}".strip().lower()
+
+
+def _grok_eye_needs_oauth_repair(status: str = "", detail: str = "") -> bool:
+    """True for stale/missing OAuth state that Alice should repair, not route around."""
+    blob = _grok_failure_blob(status, detail)
+    if str(status or "").strip() in _GROK_OAUTH_REPAIR_STATUSES:
+        return True
+    if not blob:
+        return False
+    if any(
+        needle in blob
+        for needle in (
+            "bad-credentials",
+            "bad_credentials",
+            "oauth2 access token could not be validated",
+            "unauthenticated:bad-credentials",
+            "wke=unauthenticated",
+            "no_xai_oauth_credential",
+            "no xai credential",
+            "missing_xai_credential",
+            "invalid xai key",
+            "missing or invalid xai",
+        )
+    ):
+        return True
+    return False
+
+
+def _grok_eye_allows_local_backup(status: str = "", detail: str = "") -> bool:
+    """True only when Grok itself/provider/subscription is unavailable after Grok was tried."""
+    if _grok_eye_needs_oauth_repair(status, detail):
+        return False
+    blob = _grok_failure_blob(status, detail)
+    if not blob:
+        return False
+
+    if str(status or "").startswith(("http_error:402", "http_error:403", "http_error:429", "http_error:5")):
+        return True
+
+    return any(
+        needle in blob
+        for needle in (
+            "subscription",
+            "billing",
+            "quota",
+            "insufficient_quota",
+            "rate limit",
+            "rate_limit",
+            "temporarily unavailable",
+            "service unavailable",
+            "overloaded",
+            "provider unavailable",
+            "source unavailable",
+        )
+    )
+
+
+def _schedule_grok_oauth_refresh(reason: str = "", *, force: bool = False) -> dict:
+    try:
+        from System.swarm_cortex_failover_reflex import schedule_oauth_refresh
+        receipt = schedule_oauth_refresh(force=force)
+        if reason:
+            try:
+                receipt["reason_context"] = reason
+            except Exception:
+                pass
+        return receipt if isinstance(receipt, dict) else {"status": "unknown"}
+    except Exception as exc:
+        return {"status": "oauth_refresh_unavailable", "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def _grok_oauth_repair_note(status: str = "", refresh: dict | None = None, detail: str = "") -> str:
+    refresh = refresh or {}
+    r_status = str(refresh.get("status") or "").strip()
+    if r_status == "launched":
+        action = "I launched the Hermes xAI OAuth refresh flow."
+    elif r_status == "throttled":
+        action = "The Hermes xAI OAuth refresh flow was already launched recently."
+    elif r_status == "hermes_not_on_path":
+        action = "Hermes was not on PATH, so I could not open the OAuth refresh flow automatically."
+    elif r_status == "launch_failed":
+        action = "The Hermes OAuth refresh launch failed; the failure is receipted."
+    else:
+        action = "I need the Hermes xAI OAuth refresh flow before Grok can see pixels again."
+    why = "bad token" if _grok_eye_needs_oauth_repair(status, detail) else (status or "auth repair")
+    return (
+        f"My selected Grok eye could not validate its xAI OAuth credential ({why}). "
+        f"{action} I did not switch to Claude. I will use Grok again after the OAuth receipt is fresh."
+    )
+
+
+def _local_grok_backup_ready() -> bool:
+    try:
+        from System.swarm_ollama_vision_arm import local_vision_available
+        return bool(local_vision_available())
+    except Exception:
+        return False
+
+
+def _grok_cli_ready() -> bool:
+    """True when the logged-in Grok CLI surface exists, independent of token-file preflight."""
+    try:
+        from System.xai_grok_oauth_organ import discover_official_grok_cli
+        return bool(discover_official_grok_cli())
+    except Exception:
+        return False
+
+
+def _strict_eye_failure_status(arm: str) -> str:
+    stem = str(arm or "").strip().replace("_agent", "").replace("_vision", "")
+    stem = re.sub(r"[^a-zA-Z0-9]+", "_", stem).strip("_").lower() or "selected"
+    return f"{stem}_eye_failed"
 
 
 def _owner_browser_actions_from_dom_result(result: dict) -> list[tuple[str, dict, float]]:
@@ -698,11 +868,13 @@ class AliceBrowserWidget(QMainWindow):
         tb.setObjectName("navBar")
         self.addToolBar(tb)
 
-        self._back_btn = QPushButton("‹")
-        self._fwd_btn = QPushButton("›")
-        self._refresh_btn = QPushButton("↺")
-        self._home_btn = QPushButton("⌂")
-        for btn in [self._back_btn, self._fwd_btn, self._refresh_btn, self._home_btn]:
+        # r277 (George): emoji labels so it is obvious what each button does.
+        self._back_btn = QPushButton("⬅️"); self._back_btn.setToolTip("Back")
+        self._fwd_btn = QPushButton("➡️"); self._fwd_btn.setToolTip("Forward")
+        self._refresh_btn = QPushButton("🔄"); self._refresh_btn.setToolTip("Refresh")
+        self._home_btn = QPushButton("🏠"); self._home_btn.setToolTip("Home")
+        self._new_tab_btn = QPushButton("➕"); self._new_tab_btn.setToolTip("New Tab")
+        for btn in [self._back_btn, self._fwd_btn, self._refresh_btn, self._home_btn, self._new_tab_btn]:
             btn.setFixedSize(36, 36)
             btn.setObjectName("navBtn")
             tb.addWidget(btn)
@@ -755,20 +927,28 @@ class AliceBrowserWidget(QMainWindow):
             ps = profile.settings()
             ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
             ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
-            self._page = _AlicePage(profile, self)
-            self._view = QWebEngineView()
-            self._view.setPage(self._page)
-            try:
-                self._page.media_error_observed.connect(self._on_media_error_observed)
-            except Exception:
-                pass
-            self._view.urlChanged.connect(self._on_url_changed)
-            self._view.titleChanged.connect(self._on_title_changed)
-            self._view.loadStarted.connect(self._on_load_started)
-            self._view.loadFinished.connect(self._on_load_finished)
-            self.setCentralWidget(self._view)
+            # r277: real tabs. One shared profile across all tabs (so George's Google
+            # session/cookies persist when he opens a New Tab). The central widget is a
+            # QTabWidget of web views; self._view / self._page ALWAYS point at the ACTIVE
+            # tab, so the whole vision/photo path (which uses self._view / self._page) keeps
+            # working unchanged on the focused tab.
+            self._profile = profile
+            self._tabs = QTabWidget()
+            self._tabs.setObjectName("browserTabs")
+            self._tabs.setTabsClosable(True)
+            self._tabs.setMovable(True)
+            self._tabs.setDocumentMode(True)
+            self._tabs.tabCloseRequested.connect(self._on_tab_close_requested)
+            self._tabs.currentChanged.connect(self._on_tab_changed)
+            view, page = self._make_web_view()
+            self._view = view
+            self._page = page
+            self._tabs.addTab(view, "New Tab")
+            self.setCentralWidget(self._tabs)
         else:
             self._view = None
+            self._page = None
+            self._tabs = None
             self.setCentralWidget(_NoWebEngineWidget())
 
         # ── Status bar ────────────────────────────────────────────────────────
@@ -793,11 +973,94 @@ class AliceBrowserWidget(QMainWindow):
         self._fwd_btn.clicked.connect(self._go_forward)
         self._refresh_btn.clicked.connect(self._go_refresh)
         self._home_btn.clicked.connect(lambda: self._navigate(_HOME_URL))
+        self._new_tab_btn.clicked.connect(lambda: self.new_tab())
+        # r277: popup/new-window + signal wiring is done per-view inside _make_web_view so
+        # every tab (not just the first) gets it.
 
-        # Connect page signals for popup support
-        if hasattr(self, "_page") and self._page is not None:
-            if hasattr(self._page, "new_window_requested"):
-                self._page.new_window_requested.connect(self._handle_new_window_from_page)
+    # ── r277: real tabs ──────────────────────────────────────────────────────
+    def _make_web_view(self):
+        """Create a web view + page wired with the standard handlers, on the shared profile.
+        Used for every tab so each new tab behaves exactly like the original single view."""
+        view = QWebEngineView()
+        page = _AlicePage(self._profile, self)
+        view.setPage(page)
+        try:
+            page.media_error_observed.connect(self._on_media_error_observed)
+        except Exception:
+            pass
+        try:
+            if hasattr(page, "new_window_requested"):
+                page.new_window_requested.connect(self._handle_new_window_from_page)
+        except Exception:
+            pass
+        view.urlChanged.connect(self._on_url_changed)
+        view.titleChanged.connect(self._on_title_changed)
+        view.loadStarted.connect(self._on_load_started)
+        view.loadFinished.connect(self._on_load_finished)
+        view.titleChanged.connect(lambda t, v=view: self._label_tab(v, t))
+        return view, page
+
+    def _label_tab(self, view, title) -> None:
+        try:
+            i = self._tabs.indexOf(view)
+            if i >= 0:
+                t = str(title or "").strip() or "New Tab"
+                self._tabs.setTabText(i, t[:22] + ("…" if len(t) > 22 else ""))
+        except Exception:
+            pass
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Keep self._view / self._page pointing at the ACTIVE tab so all existing code works."""
+        try:
+            w = self._tabs.widget(index)
+            if w is not None:
+                self._view = w
+                self._page = w.page()
+                try:
+                    self._url_bar.setText(w.url().toString())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def new_tab(self, url: str = None) -> int:
+        """Open a new browser tab and focus it (File ▶ New Tab / ➕). Returns the index, or -1."""
+        if not _HAS_WEBENGINE or getattr(self, "_tabs", None) is None:
+            return -1
+        view, page = self._make_web_view()
+        i = self._tabs.addTab(view, "New Tab")
+        self._tabs.setCurrentIndex(i)
+        self._view = view
+        self._page = page
+        try:
+            self._navigate(url or _HOME_URL)
+        except Exception:
+            pass
+        return i
+
+    def close_current_tab(self) -> bool:
+        """Close the active tab (File ▶ Close current Tab). Never drops below one tab."""
+        if not _HAS_WEBENGINE or getattr(self, "_tabs", None) is None:
+            return False
+        return self._on_tab_close_requested(self._tabs.currentIndex())
+
+    def _on_tab_close_requested(self, index: int) -> bool:
+        try:
+            if self._tabs.count() <= 1:
+                # Keep at least one tab — the body always has its window; just go home.
+                self._navigate(_HOME_URL)
+                return False
+            w = self._tabs.widget(index)
+            self._tabs.removeTab(index)
+            if w is not None:
+                w.deleteLater()
+            cur = self._tabs.currentWidget()
+            if cur is not None:
+                self._view = cur
+                self._page = cur.page()
+            return True
+        except Exception:
+            return False
 
     def _apply_style(self):
         self.setStyleSheet("""
@@ -1552,6 +1815,11 @@ class AliceBrowserWidget(QMainWindow):
                 }
             } catch (e) {}
             var body = document.body ? ((document.body.innerText || '').trim()) : '';
+            var playbackErrorText = "";
+            try {
+                var playbackErrorMatch = body.match(/Sorry,\s*we['’]re\s+having\s+trouble\s+playing\s+this\s+video\.?/i);
+                playbackErrorText = playbackErrorMatch ? playbackErrorMatch[0] : "";
+            } catch (e) {}
             var sh = document.body ? (document.body.scrollHeight || 0) : 0;
             var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
             var activeVideo = null;
@@ -1577,6 +1845,12 @@ class AliceBrowserWidget(QMainWindow):
                     src: primaryVideo.currentSrc || primaryVideo.src || ''
                 };
             }
+            if (playbackErrorText) {
+                media.status = 'error';
+                media.playing = false;
+                media.error_kind = 'instagram_video_playback_error';
+                media.visible_error_text = playbackErrorText;
+            }
             var searchInput = document.querySelector(
                 'input[type="search"], input[aria-label*="Search" i], input[placeholder*="Search" i], textarea[aria-label*="Search" i]'
             );
@@ -1584,12 +1858,44 @@ class AliceBrowserWidget(QMainWindow):
                 value: (searchInput.value || '').trim().slice(0, 160),
                 placeholder: (searchInput.getAttribute('placeholder') || searchInput.getAttribute('aria-label') || '').trim().slice(0, 80)
             } : {};
+
+            // Sponsored / ad content detection (lightweight, receipted truth for the visual limb)
+            // YouTube + generic patterns. This lets Alice truthfully report "there are sponsored panels"
+            // exactly like we report playback errors. No blocking here — just honest observation.
+            var sponsored = [];
+            try {
+                // YouTube common sponsored containers
+                var ytSponsored = document.querySelectorAll(
+                    'ytd-promoted-sparkles-web-renderer, .ytd-promoted-sparkles-web-renderer, ' +
+                    '[aria-label*="Sponsored" i], [aria-label*="Ad" i], [title*="Sponsored" i]'
+                );
+                for (var si = 0; si < ytSponsored.length && sponsored.length < 8; si++) {
+                    var el = ytSponsored[si];
+                    var txt = (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 120);
+                    if (txt) sponsored.push({ kind: 'youtube', text: txt });
+                }
+                // Generic "sponsored" / "ad" / "promoted" text anywhere visible
+                var generic = document.querySelectorAll(
+                    '[aria-label*="sponsored" i], [aria-label*="promoted" i], [aria-label*="ad " i], ' +
+                    '*:not(script):not(style)'
+                );
+                for (var gi = 0; gi < generic.length && sponsored.length < 12; gi++) {
+                    var g = generic[gi];
+                    var gtxt = (g.innerText || '').trim().toLowerCase();
+                    if (gtxt.includes('sponsored') || gtxt.includes('promoted') || gtxt === 'ad') {
+                        var label = (g.getAttribute('aria-label') || g.innerText || '').trim().slice(0, 80);
+                        if (label) sponsored.push({ kind: 'generic', text: label });
+                    }
+                }
+            } catch (e) {}
+
             return {
                 text: body.slice(0, 4000),
                 headings: heads, links: links, buttons: btns, images: imgs, og: og,
                 comments: comments,
                 media: media,
                 search: search,
+                sponsored: sponsored,
                 scroll: { y: window.scrollY || 0, height: sh,
                           pct: sh ? Math.round(((window.scrollY || 0) / Math.max(1, sh - (window.innerHeight || 0))) * 100) : 0 }
             };
@@ -1637,6 +1943,7 @@ class AliceBrowserWidget(QMainWindow):
                         featured_image=feat.get("src", ""),
                         comments=result.get("comments"),
                         media_playback=media_playback,
+                        sponsored=result.get("sponsored") or [],
                         source="dom",
                         state_dir=_STATE,
                     )
@@ -1928,14 +2235,15 @@ class AliceBrowserWidget(QMainWindow):
         )
 
         down: set[str] = set()
-        strict_grok_eye = _strict_grok_eye_selected(current_arm, current_model)
+        strict_eye = _strict_selected_eye(current_arm, current_model)
+        strict_grok_eye = strict_eye == "grok_agent"
         pick = pick_vision_arm(
             current_arm=current_arm,
             current_model=current_model,
             unavailable=(),
             local_image_required=True,
         )
-        arm = "grok_agent" if strict_grok_eye else str(pick.get("selected_arm") or current_arm or "").strip()
+        arm = strict_eye or str(pick.get("selected_arm") or current_arm or "").strip()
         for _ in range(3):
             if not arm or arm in down:
                 break
@@ -1943,22 +2251,24 @@ class AliceBrowserWidget(QMainWindow):
                 try:
                     from System.xai_grok_oauth_organ import preflight_grok_vision_key
                     has_key, _msg = preflight_grok_vision_key()
-                    if not has_key:
+                    if not has_key and not _grok_cli_ready():
                         if strict_grok_eye:
+                            refresh = _schedule_grok_oauth_refresh("browser_visible_media_selection:grok_preflight")
                             record_cortex_arm_habit(
                                 "grok_agent",
                                 cortex_model=current_model,
                                 task="browser_visible_media_selection",
                                 ok=False,
-                                status="grok_eye_key_missing",
-                                reason="selected_grok_eye_has_no_oauth_credential",
+                                status="grok_eye_auth_refresh_required",
+                                reason="selected_grok_eye_missing_oauth_refresh_scheduled",
                                 state_dir=_STATE,
-                                meta={"image_ref": img_path, "query": query[:180]},
+                                meta={"image_ref": img_path, "query": query[:180], "oauth_refresh": refresh},
                             )
                             return {}
-                        down.add(arm)
-                        arm = "ollama_vision_agent"
-                        continue
+                        else:
+                            down.add(arm)
+                            arm = "ollama_vision_agent"
+                            continue
                 except Exception:
                     pass
             try:
@@ -1969,10 +2279,10 @@ class AliceBrowserWidget(QMainWindow):
                     from System.swarm_fireworks_vision_arm import describe_image_fireworks
                     arm_result = describe_image_fireworks(img_path, prompt, state_dir=_STATE, timeout_s=300)
                 elif arm == "grok_agent":
-                    # r236: grok's eye via the OAuth-valid /v1/responses endpoint (NOT
-                    # grok_chat's /v1/chat/completions, which 403s on the OAuth token).
-                    from System.xai_grok_oauth_organ import describe_image_via_oauth
-                    arm_result = describe_image_via_oauth(
+                    # r258: use the logged-in Grok CLI OAuth surface first; direct
+                    # /v1/chat/completions remains a fallback only if the CLI is unavailable.
+                    from System.xai_grok_oauth_organ import describe_image_with_grok
+                    arm_result = describe_image_with_grok(
                         img_path,
                         prompt,
                         model=current_model or "grok-4",
@@ -1988,14 +2298,44 @@ class AliceBrowserWidget(QMainWindow):
                         image_path=img_path,
                     )
                 raw = extract_arm_final_text(getattr(arm_result, "output", "") or "")
+                err = extract_arm_final_text(getattr(arm_result, "stderr", "") or "")
                 ok = bool(getattr(arm_result, "ok", False))
+                arm_status = str(getattr(arm_result, "status", "") or "failed")
+                if strict_grok_eye and arm == "grok_agent" and not ok:
+                    if _grok_eye_needs_oauth_repair(arm_status, err or raw):
+                        refresh = _schedule_grok_oauth_refresh("browser_visible_media_selection:grok_runtime_auth")
+                        record_cortex_arm_habit(
+                            arm,
+                            cortex_model=current_model,
+                            task="browser_visible_media_selection",
+                            ok=False,
+                            status="grok_eye_auth_refresh_required",
+                            reason="selected_grok_eye_oauth_refresh_scheduled",
+                            state_dir=_STATE,
+                            meta={"image_ref": img_path, "query": query[:180], "oauth_refresh": refresh},
+                        )
+                        return {}
+                    if _grok_eye_allows_local_backup(arm_status, err or raw) and _local_grok_backup_ready():
+                        try:
+                            from System.swarm_cortex_failover_reflex import record_cortex_failover
+                            record_cortex_failover(
+                                from_arm="grok_agent",
+                                to_arm="ollama_vision_agent",
+                                reason=f"grok_source_or_subscription_failure:{arm_status}",
+                                state_dir=_STATE,
+                            )
+                        except Exception:
+                            pass
+                        down.add(arm)
+                        arm = "ollama_vision_agent"
+                        continue
                 row, col = _parse_visible_media_selection(raw)
                 record_cortex_arm_habit(
                     arm,
                     cortex_model=current_model,
                     task="browser_visible_media_selection",
                     ok=bool(ok and row and col),
-                    status="selected" if ok and row and col else str(getattr(arm_result, "status", "") or "failed"),
+                    status="selected" if ok and row and col else arm_status,
                     reason=f"row={row} col={col}",
                     state_dir=_STATE,
                     meta={"image_ref": img_path, "query": query[:180]},
@@ -2009,7 +2349,7 @@ class AliceBrowserWidget(QMainWindow):
             except Exception:
                 pass
             down.add(arm)
-            if strict_grok_eye:
+            if strict_eye:
                 break
             try:
                 pick = pick_vision_arm(
@@ -2219,8 +2559,9 @@ class AliceBrowserWidget(QMainWindow):
         Honours George's rule via pick_vision_arm: default eye = current cortex,
         failover (with an owner diary note) if it cannot see or its API died.
 
-        r236: if the owner-selected cortex/eye is Grok, this is strict: Grok OAuth
-        vision or an honest Grok failure. No silent Claude/local cover answer."""
+        r246: if the owner-selected cortex/eye is a named provider, this is strict:
+        that provider's eye or an honest selected-eye failure. No silent Claude/local
+        cover answer when Codex/Grok/etc. is selected."""
         result = {"status": "failed", "arm": "", "description": ""}
         try:
             import hashlib
@@ -2267,23 +2608,25 @@ class AliceBrowserWidget(QMainWindow):
             if not img_path or not Path(img_path).exists():
                 return result
 
-            strict_grok_eye = _strict_grok_eye_selected(current_arm, current_model)
+            strict_eye = _strict_selected_eye(current_arm, current_model)
+            strict_grok_eye = strict_eye == "grok_agent"
             pick = pick_vision_arm(
                 current_arm=current_arm,
                 current_model=current_model,
                 unavailable=unavailable,
                 local_image_required=True,
             )
-            if strict_grok_eye:
+            if strict_eye:
+                eye_name = _eye_display_name(strict_eye)
                 pick = {
                     **pick,
-                    "selected_arm": "grok_agent",
-                    "reason": "selected_grok_cortex_strict_oauth_eye",
+                    "selected_arm": strict_eye,
+                    "reason": f"selected_{strict_eye}_strict_eye",
                     "switched": False,
                     "fallbacks": [],
                     "diary_note": (
-                        "Grok is my selected cortex/eye for this photo, so I must use "
-                        "grok_agent through xAI OAuth and not cover it with Claude."
+                        f"{eye_name} is my selected cortex/eye for this photo, so I must use "
+                        f"{strict_eye} and not cover it with Claude or another provider."
                     ),
                 }
             arm = pick.get("selected_arm", "")
@@ -2311,41 +2654,44 @@ class AliceBrowserWidget(QMainWindow):
                 try:
                     from System.xai_grok_oauth_organ import preflight_grok_vision_key, GROK_VISION_KEY_MISSING_MESSAGE
                     has_key, msg = preflight_grok_vision_key()
-                    if not has_key:
+                    if not has_key and not _grok_cli_ready():
                         if strict_grok_eye:
-                            result.update({
-                                "status": "grok_eye_key_missing",
-                                "arm": "grok_agent",
-                                "description": "",
-                                "error_summary": GROK_VISION_KEY_MISSING_MESSAGE,
-                                "attempts": [{
-                                    "arm": "grok_agent",
-                                    "ok": False,
-                                    "status": "grok_eye_key_missing",
-                                    "source": source,
-                                    "receipt_id": "",
-                                }],
-                                "diary_note": (
-                                    (msg or GROK_VISION_KEY_MISSING_MESSAGE)
-                                    + " I did not switch to Claude or a local eye because Grok is selected."
-                                ),
-                            })
+                            refresh = _schedule_grok_oauth_refresh("browser_photo_local_image:grok_preflight")
+                            note = _grok_oauth_repair_note("grok_eye_key_missing", refresh)
                             record_cortex_arm_habit(
                                 "grok_agent",
                                 cortex_model=current_model,
                                 task="browser_photo_local_image",
                                 ok=False,
-                                status="grok_eye_key_missing",
-                                reason="selected_grok_eye_has_no_oauth_credential",
+                                status="grok_eye_auth_refresh_required",
+                                reason="selected_grok_eye_missing_oauth_refresh_scheduled",
                                 state_dir=_STATE,
-                                meta={"image_ref": img_path, "source": source},
+                                meta={"image_ref": img_path, "source": source, "oauth_refresh": refresh},
                             )
                             record_photo_description(
                                 url, description="", arm="grok_agent",
-                                image_ref=img_path, status="grok_eye_key_missing",
+                                image_ref=img_path, status="grok_eye_auth_refresh_required",
                                 source=source, state_dir=_STATE
                             )
+                            result.update({
+                                "status": "grok_eye_auth_refresh_required",
+                                "arm": "grok_agent",
+                                "description": "",
+                                "error_summary": note,
+                                "diary_note": note,
+                                "oauth_refresh": refresh,
+                                "attempts": [{
+                                    "arm": "grok_agent",
+                                    "ok": False,
+                                    "status": "grok_eye_auth_refresh_required",
+                                    "source": source,
+                                    "receipt_id": "",
+                                }],
+                            })
                             return result
+                        else:
+                            # Non-strict Grok path already handled below
+                            pass
                         # Write a clear stigmergic trace the organism can read
                         try:
                             from System.swarm_cortex_failover_reflex import record_cortex_failover
@@ -2393,17 +2739,16 @@ class AliceBrowserWidget(QMainWindow):
                     arm_result = describe_image_fireworks(img_path, prompt, state_dir=_STATE, timeout_s=300)
                     call_source = "kimi_fireworks_vision_arm"
                 elif selected_arm == "grok_agent":
-                    # George r236: grok's eye via the OAuth-valid /v1/responses endpoint.
-                    # grok_chat's /v1/chat/completions 403s on the OAuth token (it wants an
-                    # xai- API key); /v1/responses accepts the OAuth bearer.
-                    from System.xai_grok_oauth_organ import describe_image_via_oauth
-                    arm_result = describe_image_via_oauth(
+                    # r258: use the logged-in Grok CLI OAuth surface first; direct
+                    # /v1/chat/completions remains a fallback only if the CLI is unavailable.
+                    from System.xai_grok_oauth_organ import describe_image_with_grok
+                    arm_result = describe_image_with_grok(
                         img_path,
                         prompt,
                         model=current_model or "grok-4",
                         timeout_s=300,
                     )
-                    call_source = "grok_oauth_responses_vision_arm"
+                    call_source = "grok_cli_or_oauth_chat_vision_arm"
                 else:
                     model_hint = ""
                     arm_result = ask_agent_arm(
@@ -2415,6 +2760,7 @@ class AliceBrowserWidget(QMainWindow):
                         model_hint=model_hint,
                     )
                 clean_text = extract_arm_final_text(getattr(arm_result, "output", "") or "")
+                error_text = extract_arm_final_text(getattr(arm_result, "stderr", "") or "")
                 asked_for_image = looks_like_non_visual_arm_reply(clean_text)
                 success = bool(getattr(arm_result, "ok", False)) and bool(clean_text) and not asked_for_image
                 status = (
@@ -2434,7 +2780,7 @@ class AliceBrowserWidget(QMainWindow):
                 return {
                     "arm": selected_arm,
                     "arm_res": arm_result,
-                    "text": clean_text,
+                    "text": clean_text if success else (error_text or clean_text),
                     "non_visual": asked_for_image,
                     "ok": success,
                     "status": status,
@@ -2449,6 +2795,8 @@ class AliceBrowserWidget(QMainWindow):
                 diary_notes.append(str(pick.get("diary_note") or "").strip())
             current_attempt = arm
             final = None
+            selected_eye_failure_status = ""
+            selected_eye_error_summary = ""
             while current_attempt:
                 attempt = _call_vision_arm(current_attempt)
                 attempts.append(attempt)
@@ -2471,10 +2819,71 @@ class AliceBrowserWidget(QMainWindow):
                 if attempt.get("ok"):
                     break
                 down.add(current_attempt)
-                if strict_grok_eye:
+                if strict_eye:
+                    if strict_grok_eye:
+                        status_s = str(attempt.get("status") or "")
+                        detail_s = str(attempt.get("text") or "")
+                        if _grok_eye_needs_oauth_repair(status_s, detail_s):
+                            refresh = _schedule_grok_oauth_refresh("browser_photo_local_image:grok_runtime_auth")
+                            note = _grok_oauth_repair_note(status_s, refresh, detail_s)
+                            selected_eye_failure_status = "grok_eye_auth_refresh_required"
+                            selected_eye_error_summary = note
+                            diary_notes.append(note)
+                            record_cortex_arm_habit(
+                                "grok_agent",
+                                cortex_model=current_model,
+                                task="browser_photo_local_image",
+                                ok=False,
+                                status="grok_eye_auth_refresh_required",
+                                reason="selected_grok_eye_oauth_refresh_scheduled",
+                                state_dir=_STATE,
+                                meta={
+                                    "receipt_id": getattr(attempt.get("arm_res"), "receipt_id", ""),
+                                    "returncode": getattr(attempt.get("arm_res"), "returncode", None),
+                                    "source": attempt.get("source"),
+                                    "oauth_refresh": refresh,
+                                },
+                            )
+                            break
+                        if (
+                            current_attempt != "ollama_vision_agent"
+                            and "ollama_vision_agent" not in down
+                            and _grok_eye_allows_local_backup(status_s, detail_s)
+                            and _local_grok_backup_ready()
+                        ):
+                            diary_notes.append(
+                                f"my selected Grok eye was tried first and failed from provider/source/subscription "
+                                f"status ({status_s}); I used my free local Ollama eye as the declared backup. "
+                                "I did not switch to Claude."
+                            )
+                            try:
+                                from System.swarm_cortex_failover_reflex import record_cortex_failover
+                                record_cortex_failover(
+                                    from_arm="grok_agent",
+                                    to_arm="ollama_vision_agent",
+                                    reason=f"grok_source_or_subscription_failure:{status_s}",
+                                    state_dir=_STATE,
+                                )
+                            except Exception:
+                                pass
+                            current_attempt = "ollama_vision_agent"
+                            result["arm"] = current_attempt
+                            continue
+                        if _grok_eye_allows_local_backup(status_s, detail_s):
+                            selected_eye_failure_status = "grok_eye_source_unavailable_no_local_backup"
+                            selected_eye_error_summary = (
+                                "My selected Grok eye failed from provider/source/subscription, "
+                                "but my local Ollama vision backup is not installed or not reachable. "
+                                "I did not switch to Claude."
+                            )
+                    eye_name = _eye_display_name(strict_eye)
+                    if not selected_eye_error_summary:
+                        selected_eye_error_summary = (
+                            f"my selected {eye_name} eye failed on this frame ({attempt.get('status')}); "
+                            f"I did not switch to Claude or another provider because {eye_name} is selected."
+                        )
                     diary_notes.append(
-                        f"my selected Grok eye failed on this frame ({attempt.get('status')}); "
-                        "I did not switch to Claude, Codex, Kimi, or local vision because Grok is selected."
+                        selected_eye_error_summary
                     )
                     break
                 next_pick = pick_vision_arm(
@@ -2501,7 +2910,9 @@ class AliceBrowserWidget(QMainWindow):
             ok = bool((final or {}).get("ok"))
             source = str((final or {}).get("source") or source)
             result["arm"] = arm
-            failed_status = "grok_eye_failed" if strict_grok_eye and arm == "grok_agent" else "failed"
+            failed_status = selected_eye_failure_status or (
+                _strict_eye_failure_status(arm) if strict_eye and arm == strict_eye else "failed"
+            )
             record_photo_description(
                 url, description=text if ok else "", arm=arm, image_ref=img_path,
                 status="described" if ok else failed_status, source=source, state_dir=_STATE,
@@ -2517,7 +2928,7 @@ class AliceBrowserWidget(QMainWindow):
                     pass
             result["status"] = "described" if ok else failed_status
             result["description"] = text if ok else ""
-            result["error_summary"] = "" if ok else text[:500]
+            result["error_summary"] = "" if ok else (selected_eye_error_summary or text[:500])
             result["attempts"] = [
                 {
                     "arm": str(a.get("arm") or ""),
@@ -2668,6 +3079,9 @@ class AliceBrowserWidget(QMainWindow):
 
         return {
             "File": [
+                ("New Tab", lambda: self.new_tab()),                 # r277 (George)
+                ("Close current Tab", lambda: self.close_current_tab()),
+                None,  # separator
                 ("New Browser Window", _open_new_browser_window),
                 None,  # separator
                 ("Open URL…", _focus_url_bar),

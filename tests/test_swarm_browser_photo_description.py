@@ -23,6 +23,51 @@ def test_record_and_read_description(tmp_path):
     assert p["fresh"] is True
 
 
+def test_url_filter_never_falls_back_to_other_page(tmp_path):
+    pd.record_photo_description(
+        "https://www.instagram.com/p/OLD/",
+        description="old page: white cowboy hat and lace bikini",
+        arm="claude_agent",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    assert pd.latest_photo_description(
+        url="https://www.instagram.com/p/NEW/",
+        now=1001.0,
+        state_dir=tmp_path,
+    ) == {}
+    assert pd.latest_same_url_photo_description(
+        url="https://www.instagram.com/p/NEW/",
+        now=1001.0,
+        state_dir=tmp_path,
+    ) == {}
+
+
+def test_same_url_anchor_returns_prior_description_after_failed_scan(tmp_path):
+    url = "https://www.instagram.com/p/CbVbizsJzKi/"
+    pd.record_photo_description(
+        url,
+        description="colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers",
+        arm="claude_agent",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+    pd.record_photo_description(
+        url,
+        description="",
+        arm="grok_agent",
+        status="grok_eye_failed",
+        now=1005.0,
+        state_dir=tmp_path,
+    )
+
+    anchor = pd.latest_same_url_photo_description(url=url, now=1006.0, state_dir=tmp_path)
+
+    assert anchor["same_url_anchor"] is True
+    assert "green bikini bottoms" in anchor["description"]
+
+
 def test_empty_is_honest_no_invention(tmp_path):
     block = pd.photo_description_block(state_dir=tmp_path)
     assert "not described the featured image yet" in block

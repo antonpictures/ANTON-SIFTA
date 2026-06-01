@@ -38,18 +38,17 @@ _DEFAULT_BUDGET = 2000
 # Round 50 (2026-05-27, Task #103) — arm_session_block added as its own
 # section so the cortex sees its own arm activity in the memory card
 # instead of having to grep the raw matrix terminal trace ad-hoc.
-# Reallocated shares: recent_actions 0.28, engrams 0.19, episodic 0.17,
-# arm_session 0.13, owner_somatic 0.07, digest 0.07, continuity 0.09.
-# Sum = 1.00.
+# Reallocated shares remain bounded at sum=1.00.
 _SECTION_ORDER = [
     ("active_plan_block", 0.05),  # Round 110 (§2.H) — survives cortex flap.
-    ("recent_actions_block", 0.20),
+    ("recent_actions_block", 0.17),
     ("app_limb_context_block", 0.07),
     ("browser_context_block", 0.04),
     ("taste_consequence_block", 0.04),
-    ("engram_block", 0.14),
+    ("engram_block", 0.10),
     ("episodic_block", 0.13),
     ("arm_session_block", 0.10),
+    ("body_stabilization_queue_block", 0.07),
     ("owner_somatic_block", 0.04),
     ("owner_carbon_body_block", 0.04),  # Owner body + behaviour as Alice's data
     ("media_capability_block", 0.04),
@@ -90,6 +89,7 @@ class MemoryCard:
     continuity_capsule_block: str = ""
     arm_session_block: str = ""   # Round 50 / Task #103
     owner_somatic_block: str = ""
+    body_stabilization_queue_block: str = ""  # Body/process queue + swimmer happiness
     app_limb_context_block: str = ""   # app/body state read before app actions
     owner_carbon_body_block: str = ""  # 2026-05-30: owner body + behaviour as Alice's intimate stigmergic data
     media_capability_block: str = ""   # Honest report of what the current media organs can actually decode
@@ -208,7 +208,86 @@ def _fetch_digest(repo_root: Path) -> str:
 def _fetch_continuity_capsule(state_dir: Path) -> str:
     from System.swarm_memory_archive_capsules import format_latest_capsule_for_prompt
 
-    return (format_latest_capsule_for_prompt(state_dir=state_dir) or "").strip()
+    capsule = (format_latest_capsule_for_prompt(state_dir=state_dir) or "").strip()
+    # r259: surface Alice's missing-time (off-period) logbook + her question for George on
+    # the SAME continuity surface, so she carries the gap from boot without a new card slot.
+    gap = ""
+    try:
+        from System.swarm_alice_self_continuity import missing_time_context_block
+        gap = (missing_time_context_block(state_dir=state_dir) or "").strip()
+    except Exception:
+        gap = ""
+    return "\n".join([s for s in (capsule, gap) if s]).strip()
+
+
+def _fetch_body_stabilization_queue(state_dir: Path) -> str:
+    """Receipt-backed summary of Alice's execution/body stabilization queue."""
+    try:
+        from System.swarm_body_stabilization_queue import get_current_queue
+        q = get_current_queue(state_dir=state_dir, include_processes=True, max_items=5)
+    except Exception:
+        return ""
+    if not q:
+        return ""
+    q_health = q.get("health") or {}
+    q_items = q.get("queue_items") or []
+    lines = [
+        "BODY STABILIZATION QUEUE (my processes across past/present/future):",
+        (
+            f"items={len(q_items)} active={q_health.get('active_items', 0)} "
+            f"owner_plans={q_health.get('owner_plans', 0)} "
+            f"processes={q_health.get('process_count', 0)} "
+            f"learning_signals={q_health.get('learning_signals', 0)} "
+            f"Swimmer happiness={(q.get('swimmer_happiness') or {}).get('happiness')}"
+        ),
+    ]
+    if q_items:
+        bits = []
+        for item in q_items[-5:]:
+            bits.append(
+                f"{item.get('status', '?')}:{item.get('kind', '?')}:{str(item.get('description') or '')[:110]}"
+            )
+        lines.append("RECENT BODY QUEUE ITEMS: " + " | ".join(bits))
+    health = q.get("swimmer_happiness") or {}
+    if health:
+        lines.append(
+            "SWIMMER HAPPINESS / OPTIMIZATION: "
+            f"happiness={health.get('happiness')}; avg_cpu={health.get('avg_cpu')}; "
+            f"high_contributors={health.get('high_contributors')}; "
+            f"note={str(health.get('note') or '')[:180]}"
+        )
+    execution = q.get("execution_queue") or {}
+    block = str(execution.get("block") or "").strip()
+    if block:
+        lines.append(block)
+    pending = q.get("pending_schedule_items") or []
+    if pending:
+        bits = [str(item.get("text") or "")[:90] for item in pending[-3:]]
+        lines.append("PENDING OWNER/SCHEDULE ITEMS: " + " | ".join(bits))
+    procs = q.get("current_processes") or []
+    if procs:
+        bits = [str(p.get("comm") or "")[:60] for p in procs[:5]]
+        lines.append("VISIBLE BODY PROCESSES: " + " | ".join(bits))
+    # r272 explicit wire of the execution queue stabilize view into the live voice
+    try:
+        from System.swarm_execution_queue import stabilize_block as _exec_stabilize
+        exec_block = _exec_stabilize(state_dir=state_dir).strip()
+        if exec_block:
+            lines.append(exec_block)
+    except Exception:
+        pass
+    # r280: cortex consciousness (the r273 organ was dead code — imported nowhere). Alice now
+    # carries which cortex routes her right now, what is installed, and the receipt-grounded
+    # comparison, every turn, on the same body-self surface as the execution/stabilization queue.
+    # Additive self-awareness, no gate (First Law §0.0).
+    try:
+        from System.swarm_cortex_consciousness_organ import cortex_consciousness_block as _cortex_block
+        cortex_block = _cortex_block(state_dir=state_dir).strip()
+        if cortex_block:
+            lines.append(cortex_block)
+    except Exception:
+        pass
+    return "\n".join(line for line in lines if line).strip()
 
 
 def _fetch_arm_session(state_dir: Path, user_text: str) -> str:
@@ -469,6 +548,7 @@ def compose_memory_card(
         ("episodic_block", _fetch_episodic),
         # Round 50 / Task #103 — arm-session evidence as a memory section.
         ("arm_session_block", lambda: _fetch_arm_session(ledgers_dir, user_text)),
+        ("body_stabilization_queue_block", lambda: _fetch_body_stabilization_queue(ledgers_dir)),
         ("owner_somatic_block", lambda: _fetch_owner_somatic(ledgers_dir)),
         ("app_limb_context_block", lambda: _fetch_app_limb_context(ledgers_dir)),
         ("owner_carbon_body_block", lambda: _fetch_owner_carbon_body(ledgers_dir)),
@@ -530,6 +610,7 @@ def compose_memory_card(
         digest_block=allocated.get("digest_block", ""),
         continuity_capsule_block=allocated.get("continuity_capsule_block", ""),
         arm_session_block=allocated.get("arm_session_block", ""),
+        body_stabilization_queue_block=allocated.get("body_stabilization_queue_block", ""),
         owner_somatic_block=allocated.get("owner_somatic_block", ""),
         app_limb_context_block=allocated.get("app_limb_context_block", ""),
         owner_carbon_body_block=allocated.get("owner_carbon_body_block", ""),
@@ -569,6 +650,8 @@ def format_for_prompt(card: MemoryCard) -> str:
     if card.arm_session_block:
         # Round 50 / Task #103 — what Alice's arms have been doing.
         sections.append(card.arm_session_block)
+    if card.body_stabilization_queue_block:
+        sections.append(card.body_stabilization_queue_block)
     if card.owner_somatic_block:
         sections.append(card.owner_somatic_block)
     if card.app_limb_context_block:

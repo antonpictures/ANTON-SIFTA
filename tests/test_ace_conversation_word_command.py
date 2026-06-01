@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("PyQt6.QtWidgets")
 
 import Applications.sifta_teach_ace_to_read as ace
+from System.swarm_ace_consent_bridge import detect_change_directive
 
 
 class _Label:
@@ -52,6 +53,8 @@ def _jsonl(path: Path) -> list[dict]:
         "The next word should be mirror.",
         "Let's set up the next work as mirror.",
         "Print mirror on the screen.",
+        'Next word "mirror" --- also please change your cortex to cline.',
+        "Please print mirror.",
     ],
 )
 def test_ace_extracts_explicit_next_word_commands(text):
@@ -62,6 +65,17 @@ def test_ace_does_not_extract_discussion_as_word_command():
     text = "Can dolphins recognize themselves in a mirror?"
 
     assert ace._extract_wordace_direct_word_command(text) == ""
+
+
+def test_ace_bridge_treats_next_word_as_directive_not_cortex_command():
+    assert (
+        detect_change_directive(
+            'next word "optimize" --- also please change your cortex to cline'
+        )
+        == "optimize"
+    )
+    assert detect_change_directive("Please print money.") == "money"
+    assert detect_change_directive("please change your cortex to cline") == ""
 
 
 def test_ace_chat_word_command_swaps_card_and_writes_receipts(tmp_path):

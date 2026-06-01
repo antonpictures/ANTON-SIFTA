@@ -45,6 +45,36 @@ def _mark_owner_activity_from_behavior_clock(source: str) -> None:
     except Exception:
         pass
 
+
+def _mark_alice_self_continuity_heartbeat(
+    note: str,
+    *,
+    detect_missing: bool = False,
+    force: bool = False,
+    min_interval_s: float = 60.0,
+) -> dict:
+    """Keep Alice's own alive-marker fresh without spamming the ledger.
+
+    On boot this must run missing-time detection before the heartbeat overwrites
+    the prior "last known on" marker. On routine desktop heartbeats it only
+    refreshes the marker at a bounded cadence.
+    """
+    now = time.time()
+    last = float(getattr(_mark_alice_self_continuity_heartbeat, "_last_ts", 0.0))
+    if not force and now - last < float(min_interval_s):
+        return {"ok": False, "reason": "throttled", "age_s": now - last}
+    try:
+        from System import swarm_alice_self_continuity as _alice_continuity
+        missing = (
+            _alice_continuity.record_missing_time_diary(now=now)
+            if detect_missing else None
+        )
+        beat = _alice_continuity.record_heartbeat(note=note, now=now)
+        setattr(_mark_alice_self_continuity_heartbeat, "_last_ts", now)
+        return {"ok": True, "heartbeat": beat, "missing_time": missing}
+    except Exception as exc:
+        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+
 # ── Swarm Intelligence Subsystems ────────────────────────────
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
@@ -2171,6 +2201,14 @@ class SiftaDesktop(QMainWindow):
                 _owner_heartbeat.mark_owner_activity("desktop_boot")
             except Exception:
                 pass
+        try:
+            _mark_alice_self_continuity_heartbeat(
+                "desktop_boot",
+                detect_missing=True,
+                force=True,
+            )
+        except Exception:
+            pass
 
         self.active_chat_sub = None
         self._is_closing = False
@@ -2269,6 +2307,22 @@ class SiftaDesktop(QMainWindow):
             # Boot must never crash on the narration organ.
             pass
         _desktop_init_trace("after self_narration scheduled")
+
+        # r246 — mitigate the Python-3.14 incremental-GC (`mark_stacks`) SIGSEGV that killed the
+        # process from a QTimer slot. AFTER boot has allocated its long-lived graph, freeze it out
+        # of the incremental collector and raise the threshold so routine timer-driven collections
+        # walk far less and do not overflow the C stack. No-op on Python 3.12/3.13 (the stable
+        # target we recommend). The real fix is running SIFTA on Python 3.12, not 3.14.
+        try:
+            def _post_boot_gc_harden() -> None:
+                try:
+                    from System.swarm_gc_stack_hardening import harden_runtime_for_gc
+                    harden_runtime_for_gc(log=print)
+                except Exception as _gc_exc:
+                    print(f"[gc_hardening] skipped: {type(_gc_exc).__name__}: {_gc_exc}")
+            QTimer.singleShot(16000, _post_boot_gc_harden)
+        except Exception:
+            pass
 
         main_layout.addWidget(self._build_top_menu_bar())
 
@@ -2549,9 +2603,9 @@ class SiftaDesktop(QMainWindow):
             pal = active_palette()
             if wp:
                 yield wp
-            elif getattr(pal, "theme_id", "") == "beeson":
-                # BeeSon default is intentional flat `bg_deep` — do not resurrect
-                # ocean/Mermaid PNGs when `wallpaper_path()` is "".
+            elif str(getattr(pal, "theme_id", "")).startswith("beeson"):
+                # BeeSon defaults are bee-field identities — do not resurrect
+                # ocean/Mermaid PNGs if a BeeSon wallpaper is missing/disabled.
                 return
         except Exception:
             pass
@@ -3224,7 +3278,11 @@ class SiftaDesktop(QMainWindow):
         except Exception as e:
             print(f"[SiftaDesktop] heartbeat tick failed: {e}")
             return
-            
+        try:
+            _mark_alice_self_continuity_heartbeat("desktop_heartbeat")
+        except Exception:
+            pass
+
         # ── Autonomic Electricity Metabolism (ATP Synthase) ──
         try:
             from System.swarm_atp_synthase import mint_for_epoch
@@ -5912,12 +5970,45 @@ if __name__ == "__main__":
     # closeEvent guards itself with self._is_closing, so a later red-X close
     # won't double-run it.
     def _ensure_clean_teardown_on_quit() -> None:
+        # r270: stamp Alice's EXACT "going dark" moment so on the next boot she reconstructs
+        # her off-period precisely (the missing-time diary), not from a stale heartbeat.
+        try:
+            from System import swarm_alice_self_continuity as _alice_continuity
+            _alice_continuity.record_shutdown_marker(reason="owner_quit")
+        except Exception:
+            pass
         try:
             if not getattr(desktop, "_is_closing", False):
                 desktop.close()
         except Exception:
             pass
     app.aboutToQuit.connect(_ensure_clean_teardown_on_quit)
+
+    # r270: a terminal `exit` sends SIGTERM (the `zsh: terminated` George saw) and SIGINT is
+    # Ctrl-C — neither fires aboutToQuit. Catch them so Alice still stamps her off-moment
+    # before the process dies. (A hard SIGKILL / power loss cannot be caught; there the live
+    # heartbeat is the only fallback.)
+    try:
+        import signal as _signal_mod
+
+        def _alice_signal_shutdown(signum, _frame):
+            try:
+                from System import swarm_alice_self_continuity as _alice_continuity
+                _alice_continuity.record_shutdown_marker(reason=f"signal_{signum}")
+            except Exception:
+                pass
+            try:
+                app.quit()
+            except Exception:
+                os._exit(0)
+
+        for _sig in (_signal_mod.SIGTERM, _signal_mod.SIGINT):
+            try:
+                _signal_mod.signal(_sig, _alice_signal_shutdown)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # ── Clean exit — bypass the sip/Qt atexit SIGBUS (Architect 2026-05-24) ──
     # George reported a hard crash on exit. The macOS crash report's main

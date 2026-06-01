@@ -160,8 +160,9 @@ _GROK_DEFAULT_MENU = ("grok:grok-4.3",)
 _CLAUDE_DEFAULT_MENU = ("claude:claude-code-cli-default",)
 _CODEX_DEFAULT_MENU = ("codex:gpt-5.5",)
 _QWEN_DEFAULT_MENU = (
-    "qwen:accounts/fireworks/models/gpt-oss-20b",
-    "qwen:accounts/fireworks/models/deepseek-v4-flash",
+    # r261 (Architect 2026-06-01): show only Kimi K2.6 (native multimodal / vision) in the
+    # cortex picker. gpt-oss-20b / deepseek-v4-flash remain internal drafter constants.
+    "qwen:accounts/fireworks/models/kimi-k2p6",
 )
 _CLINE_DEFAULT_MENU = ("cline:cline-cli-default",)
 

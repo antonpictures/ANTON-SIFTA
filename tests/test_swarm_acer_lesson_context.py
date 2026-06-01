@@ -105,6 +105,30 @@ def test_ace_canonical_focus_row_is_a_lesson_receipt(tmp_path: Path):
     assert state["cue_say"] == "cat"
 
 
+def test_conversation_mode_current_word_is_visible_screen_receipt(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now,
+            "app": "Ace",
+            "selection": "money",
+            "metadata": {
+                "lesson_app": "Ace",
+                "ace_mode": "conversation",
+                "current_word": "money",
+                "owner_name": "Ace",
+            },
+        },
+    )
+
+    state = latest_acer_lesson_state(state_dir=tmp_path, now=now)
+
+    assert state is not None
+    assert state["cue_show"] == "money"
+    assert state["cue_say"] == "money"
+
+
 def test_lesson_state_ignores_generic_ace_activation_row(tmp_path: Path):
     now = time.time()
     _write_focus(

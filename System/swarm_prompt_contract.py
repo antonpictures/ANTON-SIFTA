@@ -153,12 +153,22 @@ def tool_affordances_for_turn(user_text: str) -> str:
         capability_block = capabilities_for_turn_prompt(user_text or "", limit=28)
         if capability_block:
             blocks.append(capability_block)
-        if live_capability_field:
-            from System.swarm_capability_registry import current_app_habit_prompt
+        from System.swarm_capability_registry import current_app_habit_prompt
 
-            app_habit_block = current_app_habit_prompt(user_text or "", limit=8)
-            if app_habit_block:
-                blocks.append(app_habit_block)
+        app_habit_block = current_app_habit_prompt(user_text or "", limit=8)
+        if app_habit_block and (live_capability_field or user_text):
+            blocks.append(app_habit_block)
+    except Exception:
+        pass
+    try:
+        from System.swarm_associative_focus_field import associative_focus_prompt
+
+        focus_block = associative_focus_prompt(
+            user_text or "",
+            write=("PYTEST_CURRENT_TEST" not in os.environ),
+        )
+        if focus_block:
+            blocks.append(focus_block)
     except Exception:
         pass
     return "\n\n".join(blocks)

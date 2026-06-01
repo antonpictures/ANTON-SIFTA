@@ -1,8 +1,8 @@
-"""Round 89 tests — Qwen + Cline added as canonical cloud cortexes.
+"""Round 89 tests — Fireworks/Kimi + Cline canonical cloud cortexes.
 
 Mirrors the Round 77 pattern (Claude + Codex). Verifies that:
-  - CANONICAL_CLOUD_QWEN, Fireworks Flash, and CANONICAL_CLOUD_CLINE are defined and exported
-  - list_available_cortexes_with_canonical_fallback() returns them
+  - Fireworks legacy constants and CANONICAL_CLOUD_CLINE are defined and exported
+  - list_available_cortexes_with_canonical_fallback() returns only Kimi K2.6 for Fireworks
   - the picker display formatter in sifta_system_settings.py handles
     qwen:* and cline:* tags with the proper teacher labels
   - the inference defaults module still parses + exports the older
@@ -58,11 +58,11 @@ def test_round77_constants_still_present():
 
 
 def test_picker_function_returns_qwen_and_cline():
-    """list_available_cortexes_with_canonical_fallback() must include both
-    new cloud cortex tags (alongside Grok/Claude/Codex)."""
+    """The owner-facing picker shows one Fireworks row: Kimi K2.6."""
     cortexes = defaults.list_available_cortexes_with_canonical_fallback()
-    assert defaults.CANONICAL_CLOUD_QWEN in cortexes
-    assert defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH in cortexes
+    assert defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI in cortexes
+    assert defaults.CANONICAL_CLOUD_QWEN not in cortexes
+    assert defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH not in cortexes
     assert defaults.CANONICAL_CLOUD_CLINE in cortexes
     # And the existing teachers are still there
     assert defaults.CANONICAL_CLOUD_GROK in cortexes
@@ -74,14 +74,15 @@ def test_picker_function_no_duplicates():
     """Each cloud cortex tag must appear at most once in the dropdown list."""
     cortexes = defaults.list_available_cortexes_with_canonical_fallback()
     for tag in (
-        defaults.CANONICAL_CLOUD_QWEN,
-        defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
+        defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
         defaults.CANONICAL_CLOUD_CLINE,
         defaults.CANONICAL_CLOUD_GROK,
         defaults.CANONICAL_CLOUD_CLAUDE,
         defaults.CANONICAL_CLOUD_CODEX,
     ):
         assert cortexes.count(tag) == 1, f"{tag} duplicated in picker list"
+    assert cortexes.count(defaults.CANONICAL_CLOUD_QWEN) == 0
+    assert cortexes.count(defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH) == 0
 
 
 # ─── Settings widget picker display formatting ────────────────────────────

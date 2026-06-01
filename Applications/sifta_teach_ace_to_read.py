@@ -94,9 +94,20 @@ _WORDACE_DIRECT_WORD_COMMANDS = (
         re.IGNORECASE,
     ),
     re.compile(
+        r"\b(?:please\s+)?(?:next|new)\s+(?:word|work)\s+"
+        r"[\"“”']?(?P<word>[a-z][a-z'-]{1,24})[\"“”']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
         r"\b(?:print|show|put|display)\s+"
         r"(?P<word>[a-z][a-z'-]{1,24})\s+"
         r"(?:on|onto)\s+(?:the\s+)?screen\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:please\s+)?(?:print|show|display)\s+"
+        r"[\"“”']?(?P<word>[a-z][a-z'-]{1,24})[\"“”']?"
+        r"(?:\s+(?:please|now))?(?:[.!?]|$)",
         re.IGNORECASE,
     ),
 )

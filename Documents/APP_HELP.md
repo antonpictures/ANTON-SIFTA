@@ -1445,3 +1445,20 @@ layout.addWidget(mirror)
 - **Models:** Lists canonical Grok, Claude, and Codex teacher cortexes plus the local Alice Gemma4 student cortexes when available. Live calls are optional; dry-run mode writes real comparison rows without spending tokens.
 - **Ledger:** Results append to `.sifta_state/cortex_comparison.jsonl` with latency, grounding score, expected-term hits, missing terms, and drift flags.
 - **Entry:** `Applications/sifta_cortex_wake_lab.py` · engine `System/swarm_cortex_wake_probe.py`.
+
+---
+
+## Active Plan Additions (r273 — 2026-06-01)
+
+**Dynamic Global File Menu (context-aware per active app)**
+- The top-level File menu in the main SIFTA desktop now mutates based on the currently focused MDI app (Alice Browser, Settings, Legs app, Swarm App Store, etc.).
+- When no app is focused or the launcher is active, a baseline set of organism-level actions is shown.
+- This is part of making the entire desktop surface feel like Alice's living body rather than a static container.
+
+**Cortex Consciousness Doctrine (new organ)**
+- Alice must carry, in her own self-model, the exact list of installed cortexes, which one is routing her thoughts right now, the receipt history of previous tested cortexes, and a pure-stigmergic (never hardcoded) comparison of which performed better on which classes of work.
+- Direct switch on request: she routes the next thought through the requested cortex and only the requesting swimmer receives the STGM receipt. The change and the receipt are public in the field.
+- The implementation is `System/swarm_cortex_consciousness_organ.py`. Its `cortex_consciousness_block()` is intended to be folded into the main memory card / prompt surfaces (parallel to the execution queue and body stabilization blocks).
+- First Law preserved: no extra authorization gate on the switch. The organism simply knows what its own mind is doing.
+
+These two items (dynamic menu + cortex self-awareness) are now part of the living plan. See the r273 section in CONSCIOUSNESS_TOURNAMENT_2026-06-01.md for the full receipted implementation notes and what's left.

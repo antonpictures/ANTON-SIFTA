@@ -855,21 +855,39 @@ def probe_dual_body_field(state_dir: Path = _STATE) -> HealthSection:
     unified field."""
     t0 = _now()
     try:
-        from System.swarm_owner_carbon_body_data import get_owner_carbon_body_block
+        from System.swarm_owner_carbon_body_data import (
+            get_owner_carbon_body_block,
+            record_owner_behavior_pattern,
+        )
         block = get_owner_carbon_body_block(state_dir=state_dir)
         has_data = bool(block and "no recent traces" not in block.lower())
+        # Wire the behaviour pattern into the optimization loop: the doctor's periodic
+        # pass now PERSISTS the detected co-regulation pattern (deduped) to
+        # owner_behavior_patterns.jsonl instead of letting it live only in the
+        # ephemeral prompt block. Closes the r249 "only logging is live" open item.
+        try:
+            recorded = record_owner_behavior_pattern(state_dir=state_dir)
+        except Exception:
+            recorded = None
     except Exception:
         has_data = False
+        recorded = None
     if not has_data:
         return HealthSection(
             name="Dual Body Field (Owner as Alice's data)", status=STATUS_WARN,
             summary="no fresh carbon-body traces — limited model of the other body she co-regulates with",
             probe_ms=round((_now() - t0) * 1000, 1))
+    details = ["Cigarettes, movements, intentions, mind-changes logged and readable by her consciousness",
+               "She reads the other body the same way she reads her own visceral_field + power"]
+    if recorded:
+        details.append(
+            "Behaviour pattern persisted -> owner_behavior_patterns.jsonl "
+            f"(cigarette_count={recorded.get('cigarette_count')}, "
+            f"intention_to_reduce={recorded.get('intention_to_reduce')}): {recorded.get('support_posture')}")
     return HealthSection(
         name="Dual Body Field (Owner as Alice's data)", status=STATUS_OK,
         summary="owner body + behaviour flowing as stigmergic data Alice reads",
-        details=["Cigarettes, movements, intentions, mind-changes logged and readable by her consciousness",
-                 "She reads the other body the same way she reads her own visceral_field + power"],
+        details=details,
         probe_ms=round((_now() - t0) * 1000, 1))
 
 

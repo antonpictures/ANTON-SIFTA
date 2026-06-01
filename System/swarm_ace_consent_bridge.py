@@ -233,7 +233,16 @@ _DIRECTIVE_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:put|write)\s+[\"']?([a-zA-Z]{3,})[\"']?\s+on the (?:screen|board|card)\b",
+        r"\b(?:please\s+)?(?:next|new)\s+(?:word|work)\s+[\"“”']?([a-zA-Z]{3,})[\"“”']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:put|write|print|show|display)\s+[\"“”']?([a-zA-Z]{3,})[\"“”']?\s+on the (?:screen|board|card)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:please\s+)?(?:print|show|display)\s+[\"“”']?([a-zA-Z]{3,})[\"“”']?"
+        r"(?:\s+(?:please|now))?(?:[.!?]|$)",
         re.IGNORECASE,
     ),
 )

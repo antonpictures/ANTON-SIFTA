@@ -1604,5 +1604,16 @@
     "truth_label": "STIGMERGIC_NANOBOT_TICTACTOE_V1",
     "autostart": false,
     "icon": "🤖"
+  },
+  "Alice's Legs (Walking Laptop)": {
+    "category": "Body",
+    "icon": "🦿",
+    "entry_point": "Applications/sifta_legs_humanoid_app.py",
+    "widget_class": "LegsHumanoidApp",
+    "window_width": 760,
+    "window_height": 640,
+    "doctor": "cowork_claude",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Alice's legs — the walking-laptop. Holds the LeRobot Humanoid build plan (~$2.5k, 3D-printed bipedal, design->sim->real loop) and lets Alice SIMULATE walking in software now, before the hardware exists. Simulation is labelled SIMULATION and never claims the physical robot moved (covenant 6); the real-step path honestly returns no_hardware until the legs are built + a runtime is wired. Backed by System.swarm_legs_locomotion_organ. r265."
   }
 }

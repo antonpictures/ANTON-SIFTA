@@ -21,9 +21,11 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     is no longer a fallback candidate on the M5. The Architect removed it
     because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
     Keep the constant for old receipts, but do not auto-route to it.
-  - **Cloud teacher cortexes:** Grok, Claude, Codex, Qwen/Fireworks, and Cline are selectable as
-    teacher substrates through the same signed-in CLI/OAuth surfaces used by
-    the arms. They are inference teachers, not separate Alices.
+  - **Cloud teacher cortexes:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline are selectable
+    as teacher substrates through the same signed-in CLI/OAuth surfaces used by
+    the arms. Kimi is the only owner-facing Fireworks cortex because it carries
+    the vision lane needed for Alice's browser-photo demo. Older Fireworks
+    drafter/long-context tags remain compatibility constants, not picker rows.
   - **All installed alice-* cortexes** are user-selectable from the
     Settings panel through `list_installed_alice_cortexes()` — no
     hardcoded "Daily / Fallback / Extra Research" tiering anymore.
@@ -128,6 +130,10 @@ CANONICAL_CLOUD_QWEN = "qwen:accounts/fireworks/models/gpt-oss-20b"
 CANONICAL_CLOUD_QWEN_PREMIUM_KIMI = "qwen:accounts/fireworks/models/kimi-k2p6"
 CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH = "qwen:accounts/fireworks/models/deepseek-v4-flash"
 CANONICAL_CLOUD_CLINE = "cline:cline-cli-default"
+DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES = frozenset((
+    CANONICAL_CLOUD_QWEN,
+    CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
+))
 
 # Primary default. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
@@ -195,6 +201,19 @@ def _clean_model_name(model_name: str) -> str:
     if "(" in s:
         s = s.split("(")[0].strip()
     return s or DEFAULT_OLLAMA_MODEL
+
+
+def _normalize_owner_facing_cortex(model_name: str) -> str:
+    """Collapse legacy Fireworks picker rows onto Kimi K2.6.
+
+    gpt-oss and DeepSeek remain backend constants for old receipts and internal
+    experiments. The owner-facing cortex default must be the one Fireworks model
+    Alice can use as a vision-capable Kimi eye during the demo.
+    """
+    clean = _clean_model_name(model_name)
+    if clean in DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES:
+        return CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+    return clean
 
 
 def classify_inference_query_bucket(query_text: str = "", *, app_context: str | None = None) -> str:
@@ -387,7 +406,7 @@ def set_default_ollama_model(model_name: str) -> str:
     """Persist the OS-wide default local model used by GUI apps."""
     persist_default_assignments_template()
     data = load_assignments()
-    model = _clean_model_name(model_name)
+    model = _normalize_owner_facing_cortex(model_name)
     data["default_ollama_model"] = model
     data.setdefault("per_swimmer", {})
     data.setdefault("per_app", {})
@@ -399,7 +418,7 @@ def set_app_ollama_model(app_context: str, model_name: str) -> str:
     """Persist a model override for a named app context, e.g. talk_to_alice."""
     persist_default_assignments_template()
     data = load_assignments()
-    model = _clean_model_name(model_name)
+    model = _normalize_owner_facing_cortex(model_name)
     per_app = data.setdefault("per_app", {})
     if not isinstance(per_app, dict):
         per_app = {}
@@ -411,7 +430,7 @@ def set_app_ollama_model(app_context: str, model_name: str) -> str:
 
 def get_default_ollama_model() -> str:
     data = load_assignments()
-    return str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+    return _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
 
 
 def resolve_ollama_model(
@@ -450,8 +469,8 @@ def resolve_ollama_model(
     if app_context:
         per_app = data.get("per_app") or {}
         if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
-            per_app_val = str(per_app[app_context])
-            default_val = str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+            per_app_val = _normalize_owner_facing_cortex(str(per_app[app_context]))
+            default_val = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
             # Stale-failover detection: cloud default + local per_app override
             # for talk_to_alice (Alice's mouth) is the failure shape we just hit.
             try:
@@ -480,7 +499,7 @@ def resolve_ollama_model(
     # is the "dropdown lies" pathology: the picker says Grok, the brain calls
     # the 8B. Honor the owner's cloud selection by short-circuiting before
     # the router runs.
-    default_model = str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+    default_model = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
     try:
         from System.swarm_gemini_brain import is_cloud_model as _is_cloud_model
         if _is_cloud_model(default_model):
@@ -611,9 +630,10 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
             CANONICAL_CLOUD_GROK,
             CANONICAL_CLOUD_CLAUDE,
             CANONICAL_CLOUD_CODEX,
-            CANONICAL_CLOUD_QWEN,
+            # r261 (Architect 2026-06-01): the only Qwen/Fireworks cortex shown in the picker is
+            # Kimi K2.6 (native multimodal — vision). gpt-oss-20b + deepseek-v4-flash stay as
+            # internal drafter constants but are no longer separate picker entries.
             CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
-            CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
             CANONICAL_CLOUD_CLINE,
         ))
         return _dedupe(cloud)
@@ -638,6 +658,7 @@ __all__ = [
     "CANONICAL_CLOUD_QWEN",
     "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
     "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",
+    "DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",

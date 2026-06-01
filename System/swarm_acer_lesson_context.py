@@ -85,6 +85,7 @@ def latest_acer_lesson_state(
         cue_show = str(
             visible.get("card_text")
             or md.get("current_cue_show")
+            or md.get("current_word")
             or md.get("expected_say")
             or ""
         ).strip()
@@ -99,6 +100,7 @@ def latest_acer_lesson_state(
             or md.get("wordace_lesson_active")
             or md.get("acer_lesson_active")
             or md.get("current_cue_show")
+            or md.get("current_word")
             or md.get("expected_say")
             or visible.get("card_text")
         )

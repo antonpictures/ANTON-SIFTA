@@ -2,8 +2,9 @@
 """
 SIFTA Desktop Theme Engine
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-Two visual identities for the same organism:
+Visual identities for the same organism:
 
+  🐝  BeeSon v8.1     — current yellow meadow / bee wallpaper identity
   🐝  BeeSon v8       — warm charcoal + honey-gold accents (clean desktop default)
   🐾  Predator v7     — blood-red/amber neural mesh, hunting stance
   🧜‍♀️  Mermaid OS v6  — oceanic indigo, purple accents, serene
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Optional
 
@@ -322,10 +323,25 @@ BEESON = DesktopPalette(
     tooltip_bg="#1a1612",
 )
 
+# ──────────────────────────────────────────────────────────────
+#  BEESON PALETTE — v8.1
+#  George's current yellow meadow / bee wallpaper promoted from
+#  custom override to first-class selectable theme clothing.
+# ──────────────────────────────────────────────────────────────
+
+BEESON_V8_1 = replace(
+    BEESON,
+    theme_id="beeson_v8_1",
+    display_name="🐝 BeeSon v8.1",
+    os_line="🐝 SIFTA BeeSon OS v8.1",
+    wallpaper_filename="BeeSon Yellow Meadow.jpg",
+)
+
 THEMES: dict[str, DesktopPalette] = {
     "mermaid": MERMAID,
     "predator": PREDATOR,
     "beeson": BEESON,
+    "beeson_v8_1": BEESON_V8_1,
 }
 
 
@@ -384,8 +400,8 @@ def wallpaper_path(palette: Optional[DesktopPalette] = None) -> str:
         candidate = _REPO / "Library" / "Desktop Pictures" / fn
         if candidate.exists():
             return str(candidate)
-    # BeeSon ships with empty default — stay clean; do not fall back to ocean PNG.
-    if getattr(p, "theme_id", "") == "beeson":
+    # BeeSon ships with explicit bee/meadow defaults — never fall back to ocean PNG.
+    if str(getattr(p, "theme_id", "")).startswith("beeson"):
         return ""
     # 3. Final fallback (Mermaid / Predator / legacy)
     fallback = _REPO / "static" / "mermaid_os_wallpaper.png"
@@ -587,4 +603,3 @@ QProgressBar {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; bo
 QProgressBar::chunk {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {p.progress_start},stop:1 {p.progress_end}); border-radius: 5px; }}
 QSplitter::handle {{ background: {p.border_subtle}; }}
 """
-

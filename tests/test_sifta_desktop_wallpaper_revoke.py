@@ -24,6 +24,20 @@ def test_wallpaper_path_resolves_beeson_bundle(monkeypatch: pytest.MonkeyPatch) 
 def test_stock_wallpaper_includes_beeson_bundle() -> None:
     paths = {Path(p).name for _, p in themes.list_stock_wallpapers()}
     assert "BeeSon Default.jpg" in paths
+    assert "BeeSon Yellow Meadow.jpg" in paths
+
+
+def test_beeson_v8_1_theme_uses_current_yellow_meadow_wallpaper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(themes, "load_active_theme_id", lambda: "beeson_v8_1")
+    monkeypatch.setattr(themes, "load_custom_wallpaper_path", lambda: None)
+
+    assert themes.BEESON_V8_1.display_name == "🐝 BeeSon v8.1"
+    assert themes.BEESON_V8_1.wallpaper_filename == "BeeSon Yellow Meadow.jpg"
+    p = themes.wallpaper_path()
+    assert p.endswith("BeeSon Yellow Meadow.jpg")
+    assert Path(p).is_file()
 
 
 def test_revoked_beeson_honeycomb_path_ignored(monkeypatch: pytest.MonkeyPatch) -> None:

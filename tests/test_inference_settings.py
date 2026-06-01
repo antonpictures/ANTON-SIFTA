@@ -105,6 +105,10 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert defaults.CANONICAL_CLOUD_CODEX == "codex:gpt-5.5"
     assert defaults.CANONICAL_CLOUD_QWEN == "qwen:accounts/fireworks/models/gpt-oss-20b"
     assert (
+        defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+        == "qwen:accounts/fireworks/models/kimi-k2p6"
+    )
+    assert (
         defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH
         == "qwen:accounts/fireworks/models/deepseek-v4-flash"
     )
@@ -123,7 +127,22 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert defaults.CANONICAL_OLLAMA_LORA_CANDIDATE == "sifta-gemma4-alice-lora:latest"
     assert "Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
     assert "Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
-    assert "Cloud teacher cortexes:** Grok, Claude, Codex, Qwen/Fireworks, and Cline" in (defaults.__doc__ or "")
+    assert "Cloud teacher cortexes:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
+
+
+def test_legacy_fireworks_cortexes_normalize_to_kimi(tmp_path, monkeypatch):
+    from System import sifta_inference_defaults as defaults
+
+    monkeypatch.setattr(defaults, "_STATE", tmp_path)
+    monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+
+    assert defaults.set_default_ollama_model(defaults.CANONICAL_CLOUD_QWEN) == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+    assert defaults.get_default_ollama_model() == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+    assert (
+        defaults.set_app_ollama_model("talk_to_alice", defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH)
+        == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+    )
+    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
 
 
 def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch):
@@ -229,9 +248,11 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert "grok:grok-4.3" in picker_items
         assert "claude:claude-code-cli-default" in picker_items
         assert "codex:gpt-5.5" in picker_items
-        assert "qwen:accounts/fireworks/models/gpt-oss-20b" in picker_items
-        assert "qwen:accounts/fireworks/models/deepseek-v4-flash" in picker_items
-        assert "qwen:accounts/fireworks/models/kimi-k2p6" not in picker_items
+        assert "qwen:accounts/fireworks/models/gpt-oss-20b" not in picker_items
+        assert "qwen:accounts/fireworks/models/deepseek-v4-flash" not in picker_items
+        assert "qwen:accounts/fireworks/models/kimi-k2p6" in picker_items
+        assert settings.findChild(QComboBox, "HermesArmProviderPicker") is None
+        assert "Hermes Arm Provider" not in labels
         assert "cline:cline-cli-default" in picker_items
     finally:
         settings.close()
@@ -278,7 +299,7 @@ def test_qwen_cortex_indicator_click_installs_key(monkeypatch, tmp_path):
             defaults.CANONICAL_CLOUD_GROK,
             defaults.CANONICAL_CLOUD_CLAUDE,
             defaults.CANONICAL_CLOUD_CODEX,
-            defaults.CANONICAL_CLOUD_QWEN,
+            defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
             defaults.CANONICAL_CLOUD_CLINE,
         ],
     )
@@ -324,7 +345,7 @@ def test_qwen_cortex_indicator_click_installs_key(monkeypatch, tmp_path):
         assert picker is not None
         qidx = None
         for i in range(picker.count()):
-            if picker.itemData(i) == defaults.CANONICAL_CLOUD_QWEN:
+            if picker.itemData(i) == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI:
                 qidx = i
                 break
         assert qidx is not None
@@ -371,9 +392,9 @@ def test_cline_cortex_indicator_refresh_message(monkeypatch, tmp_path):
         assert picker.count() >= 1
         picker.setCurrentIndex(0)
         settings._refresh_cortex_auth_indicator()
-        assert "Cline CLI not found" in settings._cortex_auth_indicator.toolTip()
+        assert "alice-hand" in settings._cortex_auth_indicator.toolTip()
         settings._on_cortex_auth_indicator_clicked()
-        assert "Install cline CLI" in settings._cortex_auth_indicator.toolTip() or "Cline CLI not found" in settings._cortex_auth_indicator.toolTip()
+        assert "alice-hand" in settings._cortex_auth_indicator.toolTip()
     finally:
         settings.close()
         for _ in range(10):

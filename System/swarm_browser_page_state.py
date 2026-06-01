@@ -41,6 +41,70 @@ _SRC_VIEWPORT = "viewport"
 _EXCERPT_CHARS = 600
 _TOP_N = 8
 
+VIDEO_PLAYBACK_ERROR_TEXT = "Sorry, we're having trouble playing this video."
+_VIDEO_PLAYBACK_ERROR_RE = re.compile(
+    r"sorry,\s*we[’']re\s+having\s+trouble\s+playing\s+this\s+video\.?",
+    re.IGNORECASE,
+)
+
+
+def _playback_error_message(text: Any) -> str:
+    m = _VIDEO_PLAYBACK_ERROR_RE.search(str(text or ""))
+    if not m:
+        return ""
+    return VIDEO_PLAYBACK_ERROR_TEXT
+
+
+def _media_strings(value: Any, *, depth: int = 0) -> list[str]:
+    """Small bounded recursive scan for media error text inside browser receipts."""
+    if depth > 4:
+        return []
+    if isinstance(value, str):
+        return [value[:2000]]
+    if isinstance(value, Mapping):
+        out: list[str] = []
+        for key, item in list(value.items())[:40]:
+            if isinstance(key, str):
+                out.append(key[:160])
+            out.extend(_media_strings(item, depth=depth + 1))
+        return out
+    if isinstance(value, (list, tuple)):
+        out: list[str] = []
+        for item in list(value)[:20]:
+            out.extend(_media_strings(item, depth=depth + 1))
+        return out
+    return []
+
+
+def media_playback_error_from_state(state: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return grounded visible media-playback error evidence from a page-state row.
+
+    This is not a vision guess. It only promotes explicit text/status the browser
+    limb already observed, such as Instagram's black-player message.
+    """
+    if not isinstance(state, Mapping) or not state:
+        return {}
+    existing = state.get("media_playback_error")
+    if isinstance(existing, Mapping) and existing.get("detected"):
+        return dict(existing)
+
+    candidates: list[tuple[str, Any]] = [
+        ("media_playback", state.get("media_playback")),
+        ("text_excerpt", state.get("text_excerpt")),
+        ("title", state.get("title")),
+    ]
+    for source, value in candidates:
+        for piece in _media_strings(value):
+            msg = _playback_error_message(piece)
+            if msg:
+                return {
+                    "detected": True,
+                    "kind": "instagram_video_playback_error",
+                    "message": msg,
+                    "source": source,
+                }
+    return {}
+
 
 def _state(state_dir: Optional[Path | str]) -> Path:
     if state_dir is None:
@@ -181,6 +245,7 @@ def record_page_state(
     featured_image: str = "",
     comments: Optional[list] = None,
     media_playback: Optional[Mapping[str, Any]] = None,
+    sponsored: Optional[list] = None,
     source: str = _SRC_DOM,
     now: Optional[float] = None,
     state_dir: Optional[Path | str] = None,
@@ -209,6 +274,11 @@ def record_page_state(
         return str(x)
 
     media_row = dict(media_playback) if isinstance(media_playback, Mapping) else {}
+    playback_error = media_playback_error_from_state({
+        "title": title,
+        "text_excerpt": text,
+        "media_playback": media_row,
+    })
 
     row = {
         "ts": ts,
@@ -233,8 +303,17 @@ def record_page_state(
         "comments_count": len(_clean_comments(comments)),
         "content_hash": _content_hash(str(url or ""), text, headings),
     }
+    if playback_error:
+        row["media_playback_error"] = playback_error
+        row["has_media_playback_error"] = True
+        if media_row:
+            media_row["playback_error"] = playback_error
     if media_row:
         row["media_playback"] = media_row
+
+    if sponsored:
+        row["sponsored"] = _clip_list(sponsored, n=8)
+        row["has_sponsored_content"] = True
     _append(state_dir, row)
     return row
 
@@ -293,6 +372,7 @@ def has_readable_content(state: dict[str, Any]) -> bool:
         or state.get("headings")
         or int(state.get("images_count") or 0) > 0
         or int(state.get("links_count") or 0) > 0
+        or media_playback_error_from_state(state)
     )
 
 
@@ -311,11 +391,27 @@ def page_state_block(
     fresh = s.get("fresh")
     age = s.get("age_s")
     stamp = (f" (read ~{int(age)}s ago)" if age is not None else "")
+    playback_error = media_playback_error_from_state(s)
+    if playback_error and not has_readable_content(s):
+        return (
+            f"WHAT IS ON MY SCREEN (from {prov}{stamp}): {title} — {s.get('url')}. "
+            f"Media playback error visible on screen: \"{playback_error.get('message') or VIDEO_PLAYBACK_ERROR_TEXT}\". "
+            "This is a black video player error state; I should report the error, not describe nonexistent video pixels."
+        )
     if not has_readable_content(s):
         return (f"WHAT IS ON MY SCREEN: I have the address — {title} ({s.get('url')}){stamp} — "
                 f"but my {prov} extractor returned no contents; the page may still be rendering "
                 f"or blocking reads. I should re-read before describing it.")
     parts = [f"WHAT IS ON MY SCREEN (from {prov}{stamp}): {title} — {s.get('url')}."]
+    if playback_error:
+        parts.append(
+            f"Media playback error visible on screen: \"{playback_error.get('message') or VIDEO_PLAYBACK_ERROR_TEXT}\". "
+            "This is a black video player error state; do not describe a photo/video frame as if pixels are available."
+        )
+    sponsored = s.get("sponsored") or []
+    if sponsored:
+        sp_texts = [str(x.get("text") or "")[:60] for x in sponsored if x.get("text")][:4]
+        parts.append("Sponsored / ad content visible: " + "; ".join(sp_texts) + ".")
     if s.get("headings"):
         parts.append("Headings: " + "; ".join(s["headings"][:5]) + ".")
     if s.get("image_alts"):
@@ -354,6 +450,8 @@ __all__ = [
     "latest_page_state",
     "has_readable_content",
     "page_state_block",
+    "media_playback_error_from_state",
+    "VIDEO_PLAYBACK_ERROR_TEXT",
     "is_my_own_browser_playback",
     "MEDIA_PLAYBACK_DOMAINS",
 ]

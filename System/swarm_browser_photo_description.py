@@ -300,7 +300,7 @@ def latest_photo_description(
     """Freshest described photo (optionally for a specific url) with freshness."""
     rows = [r for r in _rows(state_dir) if r.get("status") == "described" and r.get("description")]
     if url:
-        rows = [r for r in rows if r.get("url") == url] or rows
+        rows = [r for r in rows if r.get("url") == url]
     if not rows:
         return {}
     row = max(rows, key=lambda r: float(r.get("ts", 0) or 0))
@@ -315,6 +315,24 @@ def latest_photo_description(
     epoch = frame_epoch(state_dir=state_dir)
     out["frame_stale"] = bool(epoch and ts < epoch)
     return out
+
+
+def latest_same_url_photo_description(
+    *, url: str, now: Optional[float] = None, max_age_s: float = 7200.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Freshest described receipt for exactly this URL, never falling back elsewhere.
+
+    This is the repair path for selected-eye failures. If the fresh arm fails but a
+    same-URL photo was described moments earlier, Alice may answer from that anchored
+    receipt while being explicit that it is not a fresh scan. Cross-URL fallback stays
+    forbidden because that is how stale Instagram photos bled into current answers.
+    """
+    p = latest_photo_description(url=url, now=now, max_age_s=max_age_s, state_dir=state_dir)
+    if not p or p.get("frame_stale"):
+        return {}
+    p["same_url_anchor"] = True
+    return p
 
 
 def photo_description_block(
@@ -347,6 +365,7 @@ __all__ = [
     "pick_featured_image",
     "record_photo_description",
     "latest_photo_description",
+    "latest_same_url_photo_description",
     "photo_description_block",
     "mark_frame_changed",
     "frame_epoch",

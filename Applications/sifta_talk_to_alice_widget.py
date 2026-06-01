@@ -88,7 +88,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote_plus, unquote_plus
 
 import numpy as np
@@ -99,7 +99,7 @@ if str(_REPO) not in sys.path:
 
 from System.swarm_kernel_config import *
 from System.swarm_stigmergic_computer_use import get_recent_computer_use_traces
-from PyQt6.QtCore import Qt, QObject, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, QThread, QTimer, QEventLoop, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QTextBlockFormat, QPixmap, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
@@ -1982,6 +1982,113 @@ _SLIDESHOW_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ACE_WORD_ACTION_RE = re.compile(
+    r"\b(?:next|new)\s+(?:word|work)\b"
+    r"|\bchange\s+(?:the\s+)?next\s+one\b"
+    r"|\bcontinue\b.{0,50}\b(?:ace|wordace|word|work)\b"
+    r"|\b(?:ace|wordace)\b.{0,50}\b(?:next|continue|change)\b",
+    re.IGNORECASE,
+)
+_ACE_EXPLICIT_CONTEXT_RE = re.compile(r"\b(?:ace|wordace|word\s*ace|card)\b", re.IGNORECASE)
+
+
+def _current_ace_word_for_routing() -> str:
+    """Return the live Ace table word if the Ace word surface is active."""
+    try:
+        from System.swarm_ace_consent_bridge import current_word as _ace_current_word
+
+        return str(_ace_current_word() or "").strip()
+    except Exception:
+        return ""
+
+
+def _ace_surface_active_for_routing(text: str = "") -> bool:
+    """Only let terse word commands bind to Ace when Ace is actually the focused surface."""
+    raw = str(text or "")
+    if _ACE_EXPLICIT_CONTEXT_RE.search(raw):
+        return True
+    try:
+        app = _active_sifta_app_name_for_prompt().strip().lower()
+    except Exception:
+        app = ""
+    return app in {"ace", "wordace", "acer"} or "wordace" in app or app.startswith("ace")
+
+
+def _is_ace_word_action_query(text: str) -> bool:
+    """Route focused Ace word commands before the generic browser next-photo reflex."""
+    raw = str(text or "")
+    if not raw or not _current_ace_word_for_routing():
+        return False
+    if not _ace_surface_active_for_routing(raw):
+        return False
+    try:
+        from System.swarm_ace_consent_bridge import detect_change_directive
+
+        if detect_change_directive(raw):
+            return True
+    except Exception:
+        pass
+    return bool(_ACE_WORD_ACTION_RE.search(raw))
+
+
+def _execute_ace_word_action(text: str) -> str:
+    """Drive the Ace app surface, then answer from the screen-change receipt lane."""
+    raw = str(text or "")
+    requested = ""
+    try:
+        from System.swarm_ace_consent_bridge import detect_change_directive
+
+        requested = detect_change_directive(raw)
+    except Exception:
+        requested = requested or ""
+
+    try:
+        from Applications.sifta_teach_ace_to_read import TeachAceToReadWidget
+
+        live = getattr(TeachAceToReadWidget, "_live_instance", None)
+        if live is not None:
+            if requested:
+                applied = bool(live._apply_direct_word_command(requested, raw_text=raw))
+                if applied:
+                    return (
+                        f"Changed the Ace card to {requested}. "
+                        f"I will trust the app receipt, not just my words."
+                    )
+            else:
+                live._on_next_word_button_clicked()
+                now_word = str(getattr(live, "_current_word", "") or "").strip()
+                if now_word:
+                    return (
+                        f"Next Ace word. The card now shows {now_word}. "
+                        f"I advanced the app surface, not just my sentence."
+                    )
+                return "Next Ace word. I pressed the Ace app's next-word effector."
+    except Exception:
+        pass
+
+    if requested:
+        try:
+            from System.swarm_ace_consent_bridge import write_consent, write_proposal
+
+            prop = write_proposal(
+                proposer="user",
+                proposed_word=requested,
+                context=f"talk_direct_ace_action: {raw[:180]}",
+            )
+            write_consent(
+                consenter="alice",
+                proposal_id=str(prop.get("proposal_id") or ""),
+                agreed=True,
+                context=f"auto: direct Ace screen command '{requested}'",
+            )
+        except Exception:
+            pass
+        return (
+            f"I queued the Ace card change to {requested}, but I could not touch "
+            f"the live Ace surface directly from this turn. The consent receipt is written."
+        )
+    return "Ace is active, but I could not reach the live next-word effector from this turn."
+
 
 def _is_next_photo_query(text: str) -> bool:
     return bool(_NEXT_PHOTO_RE.search(text or "")) and not _STOP_SLIDESHOW_RE.search(text or "")
@@ -3266,13 +3373,16 @@ _SEARCH_ANAPHORA_RE = re.compile(
     # optional trailing noun is category-AGNOSTIC (r235): any body/product type, not just
     # clothing — the bare this/that/it already triggers regardless.
     r"(?:\s+(?:type|kind|one|outfit|bikini|dress|swimsuit|thing|item|product|style|look|"
+    r"wardrobe|clothing|clothes|garment|accessory|legwear|leg\s+warmer|boot\s+cover|"
     r"car|vehicle|watch|bag|shoe|phone|gadget|device|model|piece|animal|building|food|plant))?\b",
     re.IGNORECASE,
 )
 _CONTEXTUAL_BROWSER_SEARCH_RE = re.compile(
     r"\b(?:where\s+can\s+i\s+buy|where\s+to\s+buy|buy|shop|shopping|search|look\s+up|find)\b"
-    r".{0,140}\b(?:this|that|these|those|it|same|type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes)\b"
-    r"|\b(?:this|that|these|those|it|same)\s+(?:type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes)\b"
+    r".{0,140}\b(?:this|that|these|those|it|same|type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes|"
+    r"wardrobe|clothing|clothes|garment|accessory|piece|pieces|thing|things|item|items|legwear|leg\s+warmer|leg\s+warmers|boot\s+cover|boot\s+covers)\b"
+    r"|\b(?:this|that|these|those|it|same)\s+(?:type|kind|style|look|outfit|bikini|swimsuit|dress|top|shoes|"
+    r"wardrobe|clothing|clothes|garment|accessory|piece|pieces|thing|things|item|items|legwear|leg\s+warmer|leg\s+warmers|boot\s+cover|boot\s+covers)\b"
     r".{0,140}\b(?:buy|shop|shopping|search|look\s+up|find|google)\b",
     re.IGNORECASE,
 )
@@ -3371,7 +3481,9 @@ def _latest_contextual_search_evidence(
         except Exception:
             continue
         if role == "assistant" and re.search(
-            r"\b(?:bikini|swimsuit|outfit|dress|top|checkered|plaid|pink|black|beach|ocean)\b",
+            r"\b(?:bikini|swimsuit|outfit|dress|top|bottoms|leg\s+warmers?|boot\s+covers?|"
+            r"heels|sunglasses|wardrobe|clothing|clothes|fuzzy|fluffy|puffy|furry|green|"
+            r"checkered|plaid|floral|pink|black|beach|ocean|desert|rocks?)\b",
             content,
             re.IGNORECASE,
         ):
@@ -3384,11 +3496,250 @@ def _latest_contextual_search_evidence(
         if part and key not in seen:
             seen.add(key)
             deduped.append(part)
-    return "\n".join(deduped)[:1800]
+    evidence = "\n".join(deduped)
+    try:
+        from System.swarm_wardrobe_pieces import wardrobe_pieces_block
+        block = wardrobe_pieces_block(evidence)
+        if block:
+            evidence = (evidence + "\n" + block).strip()
+    except Exception:
+        pass
+    return evidence[:2400]
 
 
-def _fallback_contextual_shopping_query(evidence: str) -> str:
+def _latest_same_url_visual_anchor(
+    url: str,
+    *,
+    max_age_s: float = 7200.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Same-URL prior photo receipt for selected-eye failures, never cross-URL."""
+    if not str(url or "").strip():
+        return {}
+    try:
+        from System.swarm_browser_photo_description import latest_same_url_photo_description
+        return latest_same_url_photo_description(
+            url=str(url or "").strip(),
+            now=time.time(),
+            max_age_s=max_age_s,
+            state_dir=state_dir if state_dir is not None else _state_root(),
+        )
+    except Exception:
+        return {}
+
+
+def _same_url_visual_anchor_block(url: str, *, status: str = "", attempts: Any = None) -> str:
+    """Context block: prior same-URL pixels are usable, but not a fresh scan."""
+    anchor = _latest_same_url_visual_anchor(url)
+    desc = str(anchor.get("description") or "").strip()
+    if not desc:
+        return ""
+    arm = str(anchor.get("arm") or "a vision arm").strip()
+    age = anchor.get("age_s")
+    age_bits = f" about {int(float(age))}s ago" if isinstance(age, (int, float)) else ""
+    chain = ""
+    if attempts:
+        try:
+            chain = ", ".join(
+                f"{str(a.get('arm') or '<arm>')}:{str(a.get('status') or 'failed')}"
+                for a in attempts
+                if isinstance(a, dict)
+            )
+        except Exception:
+            chain = ""
+    failure = str(status or "fresh_scan_failed")
+    if chain:
+        failure = f"{failure}; attempts: {chain}"
+    return (
+        "ANCHORED VISUAL EVIDENCE — the fresh selected-eye scan failed "
+        f"({failure}), but I have a prior described viewport receipt for this exact same URL "
+        f"from {arm}{age_bits}. Use it as same-page visual evidence, not as a fresh scan, "
+        "and say the fresh scan failed if that distinction matters: "
+        f"{desc}\n\n"
+    )
+
+
+def _eye_label_for_photo_status(status: str = "", arm: str = "") -> str:
+    raw = f"{status} {arm}".lower()
+    if "grok" in raw:
+        return "Grok"
+    if "codex" in raw:
+        return "Codex"
+    if "claude" in raw:
+        return "Claude"
+    if "qwen" in raw or "kimi" in raw:
+        return "Qwen/Kimi"
+    if "cline" in raw:
+        return "Cline"
+    return "selected eye"
+
+
+def _is_selected_eye_failure_status(status: str = "", arm: str = "") -> bool:
+    raw = f"{status} {arm}".lower()
+    return bool(re.search(r"\b(?:grok|codex|claude|qwen|kimi|cline)_?eye_", raw))
+
+
+def _sanitize_selected_eye_detail(status: str = "", detail: str = "") -> str:
+    clean = str(detail or status or "selected eye failed").strip()
+    low = clean.lower()
+    if "bad-credentials" in low or "oauth2 access token could not be validated" in low:
+        return (
+            "The Grok OAuth credential could not be validated; I scheduled/need the Hermes "
+            "xAI OAuth refresh before Grok can see pixels again."
+        )
+    if clean.startswith("{") and clean.endswith("}"):
+        try:
+            data = json.loads(clean)
+            err = str(data.get("error") or data.get("message") or data.get("code") or "").strip()
+            if err:
+                return err[:240]
+        except Exception:
+            return "The selected eye returned a structured vendor error; I kept the raw JSON out of chat."
+    return clean[:500]
+
+
+def _selected_eye_failure_reply(status: str = "", arm: str = "", detail: str = "") -> str:
+    eye = _eye_label_for_photo_status(status, arm)
+    clean_detail = _sanitize_selected_eye_detail(status, detail)
+    if clean_detail:
+        return (
+            f"My selected {eye} eye did not return a usable photo description. "
+            f"{clean_detail} I did not switch to Claude or another provider for this {eye}-selected photo."
+        )
+    return (
+        f"My selected {eye} eye did not return a usable photo description. "
+        f"I did not switch to Claude or another provider for this {eye}-selected photo."
+    )
+
+
+def _same_url_visual_anchor_sentence(
+    url: str,
+    *,
+    status: str = "",
+    attempts: Any = None,
+    arm: str = "",
+) -> str:
+    anchor = _latest_same_url_visual_anchor(url)
+    desc = str(anchor.get("description") or "").strip()
+    if not desc:
+        return ""
+    anchor_arm = str(anchor.get("arm") or "a vision arm").strip()
+    eye = _eye_label_for_photo_status(status, arm)
+    detail = str(status or "fresh scan failed").replace("_", " ")
+    return (
+        f"My fresh {eye} scan failed ({detail}), so I am not calling that a new look. "
+        f"But the last same-URL visual receipt from {anchor_arm} says: {desc}"
+    )
+
+
+def _latest_browser_media_playback_error(
+    *,
+    max_age_s: float = 900.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Fresh browser media error receipt, e.g. Instagram's black-player failure."""
+    try:
+        from System.swarm_browser_page_state import (
+            latest_page_state,
+            media_playback_error_from_state,
+        )
+        ps = latest_page_state(
+            now=time.time(),
+            max_age_s=max_age_s,
+            state_dir=state_dir if state_dir is not None else _state_root(),
+        )
+        err = media_playback_error_from_state(ps)
+        if not err:
+            return {}
+        if not ps.get("is_current_page"):
+            return {}
+        out = dict(err)
+        out["url"] = str(ps.get("url") or "")
+        out["title"] = str(ps.get("title") or "")
+        out["fresh"] = bool(ps.get("fresh"))
+        out["is_current_page"] = bool(ps.get("is_current_page"))
+        return out
+    except Exception:
+        return {}
+
+
+def _browser_media_playback_error_context(err: Mapping[str, Any] | None = None) -> str:
+    e = dict(err or _latest_browser_media_playback_error())
+    if not e:
+        return ""
+    msg = str(e.get("message") or "Sorry, we're having trouble playing this video.").strip()
+    url = str(e.get("url") or "").strip()
+    return (
+        "SCREEN MEDIA ERROR RECEIPT - the visible browser player is black and shows "
+        f"this exact playback error: \"{msg}\". "
+        "This is the current screen state, not a photo/video frame. "
+        "Report the playback error and do not invent visual content from the failed video"
+        + (f". URL: {_browser_clean_address(url)}" if url else "")
+        + "\n\n"
+    )
+
+
+def _browser_media_playback_error_reply(prefix: str = "") -> str:
+    err = _latest_browser_media_playback_error()
+    msg = str(err.get("message") or "Sorry, we're having trouble playing this video.").strip()
+    lead = (prefix.strip() + " ") if prefix else ""
+    return (
+        f"{lead}I am looking at an Instagram video playback error: \"{msg}\". "
+        "The player is black, so there are no usable video pixels for me to describe from this frame."
+    )
+
+
+_VISUAL_REPLY_CUE_RE = re.compile(
+    r"\b(?:photo|picture|image|video|frame|screen|player|portrait|wearing|outfit|"
+    r"body|face|hair|bikini|dress|shirt|robe|photo/video|looks?|standing|sitting|posing)\b",
+    re.IGNORECASE,
+)
+
+
+def _browser_visual_reply_self_check(reply: str, owner_text: str = "") -> tuple[str, dict[str, Any]]:
+    """Last-mile contradiction pass between browser receipt and visual reply.
+
+    This does not block Alice. It corrects a stale/imagined visual answer when
+    the freshest browser receipt says the visible media is a playback-error
+    screen, not usable pixels.
+    """
+    err = _latest_browser_media_playback_error()
+    if not err:
+        return reply, {"changed": False, "reason": "no_media_error_receipt"}
+
+    text = str(reply or "")
+    low = text.lower()
+    if "trouble playing this video" in low or "playback error" in low or "no usable video pixels" in low:
+        return reply, {"changed": False, "reason": "reply_already_names_error", "error": err}
+
+    owner_visual = bool(
+        _is_browser_photo_description_query(owner_text)
+        or _is_browser_page_cortex_description_query(owner_text)
+        or _VISUAL_REPLY_CUE_RE.search(owner_text or "")
+    )
+    reply_visual = bool(_VISUAL_REPLY_CUE_RE.search(text))
+    if not (owner_visual or reply_visual):
+        return reply, {"changed": False, "reason": "not_a_visual_reply", "error": err}
+
+    corrected = _browser_media_playback_error_reply()
+    return corrected, {
+        "changed": True,
+        "reason": "browser_media_error_contradicted_visual_reply",
+        "error": err,
+        "original_preview": text[:240],
+    }
+
+
+def _fallback_contextual_shopping_query(evidence: str, owner_text: str = "") -> str:
     """Last-resort grounded query if the cortex is unavailable."""
+    try:
+        from System.swarm_wardrobe_pieces import resolve_wardrobe_piece_query
+        resolved = resolve_wardrobe_piece_query(owner_text, evidence)
+        query = _clean_contextual_search_query(str(resolved.get("query") or ""))
+        if query:
+            return query
+    except Exception:
+        pass
     low = str(evidence or "").lower()
     if not low:
         return ""
@@ -3401,12 +3752,16 @@ def _fallback_contextual_shopping_query(evidence: str) -> str:
     ][:3]
     patterns = [
         p for p in (
-            "checkered", "plaid", "gingham", "striped", "floral",
-            "animal print", "cow print", "polka dot", "triangle",
+            "fuzzy", "fluffy", "puffy", "furry", "faux fur", "checkered", "plaid",
+            "gingham", "striped", "floral", "animal print", "cow print", "polka dot", "triangle",
         )
         if p in low
     ][:2]
     item = "bikini"
+    if "leg warmer" in low or "boot cover" in low:
+        item = "leg warmers"
+    elif "heels" in low:
+        item = "heels"
     if "swimsuit" in low and "bikini" not in low:
         item = "swimsuit"
     terms = colors + patterns + [item]
@@ -3429,6 +3784,9 @@ def _compose_contextual_search_query_with_cortex(
     system = (
         "You are Alice's cortex choosing a web search query from grounded visual/browser evidence. "
         "The owner used anaphora like 'this type', so resolve it from the evidence. "
+        "If the owner asks for a vague wardrobe piece on a human (for example 'green puffy leg things'), "
+        "use the WARDROBE PIECE CANDIDATES and search the actual fashion item name, such as "
+        "'green fuzzy faux fur leg warmers boot covers'. "
         "Return ONLY JSON: {\"query\":\"...\",\"reason\":\"...\"}. "
         "The query must be concrete product-search words, not 'on Google', not 'this', not a URL."
     )
@@ -3490,6 +3848,373 @@ def _compose_contextual_search_query_with_cortex(
         raw = ""
     query = _parse_contextual_search_query(raw)
     return {"query": query, "source": "cortex" if query else "cortex_failed", "raw": raw[:500]}
+
+
+_VISUAL_SUBJECT_OWNER_PATTERNS = (
+    re.compile(
+        r"\b(?:her|his|their|the\s+(?:human\s+)?(?:model|person|woman|man|subject)|"
+        r"this\s+(?:human\s+)?(?:model|person|woman|man|subject))\s+"
+        r"(?:name\s+is|is\s+called|called)\s+"
+        r"(?P<name>@?[A-Za-z][A-Za-z0-9_.'-]*(?:\s+[A-Za-z][A-Za-z0-9_.'-]*){0,3})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:name\s+is|called)\s+"
+        r"(?P<name>@?[A-Za-z][A-Za-z0-9_.'-]*(?:\s+[A-Za-z][A-Za-z0-9_.'-]*){0,3})",
+        re.IGNORECASE,
+    ),
+)
+_VISUAL_SUBJECT_NAME_REJECT = {
+    "a", "an", "the", "human", "person", "model", "woman", "man", "girl", "boy",
+    "body", "photo", "picture", "image", "browser", "instagram", "youtube",
+    "you", "can", "cannot", "cant", "can't", "why", "what", "please", "pls",
+    "music", "artist", "actress", "actor", "runway", "posts", "followers",
+    "following", "verified", "official", "profile",
+}
+
+
+def _clean_visual_subject_name(raw: str) -> str:
+    """Clean a grounded person/model name without inventing one."""
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    s = re.split(r"[,;:.?!()\[\]\n\r]|(?:\s+[—-]\s+)", s, maxsplit=1)[0]
+    s = re.split(
+        r"\b(?:you|can|cannot|can't|why|what|please|pls|photo|picture|browser)\b",
+        s,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    s = " ".join(s.strip(" \t\"'`“”‘’/@#").split())
+    if not s or len(s) > 48:
+        return ""
+    words = s.split()
+    if len(words) > 4:
+        return ""
+    if any(re.search(r"\d", w) for w in words):
+        return ""
+    if any(w.casefold().strip("_-.") in _VISUAL_SUBJECT_NAME_REJECT for w in words):
+        return ""
+    if s.casefold() in _VISUAL_SUBJECT_NAME_REJECT:
+        return ""
+    if not re.search(r"[A-Za-z]", s):
+        return ""
+    if len(words) == 1 and len(words[0]) < 2:
+        return ""
+    return " ".join(w[:1].upper() + w[1:] if w.islower() else w for w in words)
+
+
+def _visual_subject_identity_from_owner_text(text: str) -> Dict[str, Any]:
+    for pat in _VISUAL_SUBJECT_OWNER_PATTERNS:
+        m = pat.search(str(text or ""))
+        if not m:
+            continue
+        name = _clean_visual_subject_name(m.group("name"))
+        if name:
+            return {
+                "name": name,
+                "source": "owner_correction",
+                "confidence": 0.98,
+                "evidence": "owner said the visible person's name",
+            }
+    return {}
+
+
+def _visual_subject_identity_from_page_state(page_state: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(page_state, dict):
+        return {}
+    title = str(page_state.get("title") or "")
+    text = str(page_state.get("text") or "")
+    headings = " ".join(str(h) for h in (page_state.get("headings") or [])[:4])
+    blob = " ".join(x for x in (title, headings, text[:900]) if x).strip()
+    if not blob:
+        return {}
+
+    # Strong page/title forms: "BioHuman Body (@kylinmilan)" or "BioHuman Body • Instagram".
+    for pat in (
+        r"\b(?P<name>[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})\s+\(@[A-Za-z0-9_.]{2,30}\)",
+        r"\b(?P<name>[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})\s+(?:on\s+)?Instagram\b",
+    ):
+        m = re.search(pat, blob)
+        if m:
+            name = _clean_visual_subject_name(m.group("name"))
+            if name:
+                return {
+                    "name": name,
+                    "source": "browser_page_title",
+                    "confidence": 0.86,
+                    "evidence": "current browser page title/text",
+                }
+
+    # Instagram profile text often starts "handle Display Name category...".
+    m = re.search(
+        r"\b[a-z0-9_.]{3,30}\s+(?P<name>[A-Z][a-z][A-Za-z.'-]*(?:\s+[A-Z][a-z][A-Za-z.'-]*){0,3})\b",
+        blob,
+    )
+    if m:
+        name = _clean_visual_subject_name(m.group("name"))
+        if name:
+            return {
+                "name": name,
+                "source": "browser_page_text",
+                "confidence": 0.80,
+                "evidence": "current Instagram/profile text",
+            }
+
+    m = re.search(r"@(?P<handle>[A-Za-z0-9_.]{2,30})", blob)
+    if m:
+        handle = "@" + m.group("handle")
+        return {
+            "name": handle,
+            "source": "instagram_handle",
+            "confidence": 0.68,
+            "evidence": "current page handle only",
+        }
+    return {}
+
+
+def _recent_visual_subject_user_texts(
+    owner_text: str = "",
+    *,
+    history: Optional[List[Dict[str, Any]]] = None,
+    state_dir: Optional[Path | str] = None,
+) -> List[str]:
+    texts: list[str] = []
+    if owner_text:
+        texts.append(str(owner_text))
+    for msg in reversed(list(history or [])[-18:]):
+        if str(msg.get("role") or "") == "user":
+            content = str(msg.get("content") or "").strip()
+            if content:
+                texts.append(content)
+    try:
+        conv_path = Path(state_dir if state_dir is not None else _state_root()) / "alice_conversation.jsonl"
+        if conv_path.exists():
+            rows = conv_path.read_text(encoding="utf-8", errors="replace").splitlines()[-60:]
+            for line in reversed(rows):
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if str(row.get("role") or "").lower() == "user":
+                    content = str(row.get("content") or row.get("text") or "").strip()
+                    if content:
+                        texts.append(content)
+    except Exception:
+        pass
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for t in texts:
+        key = t.casefold()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(t)
+    return deduped
+
+
+def _visual_subject_identity_evidence(
+    owner_text: str = "",
+    *,
+    history: Optional[List[Dict[str, Any]]] = None,
+    page_state: Optional[Dict[str, Any]] = None,
+    state_dir: Optional[Path | str] = None,
+) -> Dict[str, Any]:
+    """Best grounded identity for the visible human; never hardcodes a test subject."""
+    ps = page_state or {}
+    if not ps:
+        try:
+            from System.swarm_browser_page_state import latest_page_state
+            ps = latest_page_state(now=time.time(), max_age_s=1200.0, state_dir=state_dir)
+        except Exception:
+            ps = {}
+    for text in _recent_visual_subject_user_texts(owner_text, history=history, state_dir=state_dir):
+        hit = _visual_subject_identity_from_owner_text(text)
+        if hit:
+            try:
+                from System.swarm_photo_identity import resolve_photo_identity
+                page_text = " ".join(
+                    str(x or "").strip()
+                    for x in (
+                        ps.get("title") if isinstance(ps, dict) else "",
+                        " ".join(str(h) for h in (ps.get("headings") or [])[:4]) if isinstance(ps, dict) else "",
+                        (ps.get("text") or "")[:1200] if isinstance(ps, dict) else "",
+                    )
+                    if str(x or "").strip()
+                )
+                organ_hit = resolve_photo_identity(
+                    url=str(ps.get("url") or "") if isinstance(ps, dict) else "",
+                    page_text=page_text,
+                    owner_text=f"name is {hit['name']}",
+                    state_dir=state_dir,
+                )
+                if organ_hit.get("name"):
+                    return {
+                        "name": str(organ_hit.get("name") or ""),
+                        "source": str(organ_hit.get("source") or hit.get("source") or ""),
+                        "confidence": float(organ_hit.get("confidence") or hit.get("confidence") or 0.0),
+                        "evidence": "System.swarm_photo_identity owner correction",
+                    }
+            except Exception:
+                pass
+            return hit
+    try:
+        from System.swarm_photo_identity import resolve_photo_identity
+        page_text = " ".join(
+            str(x or "").strip()
+            for x in (
+                ps.get("title") if isinstance(ps, dict) else "",
+                " ".join(str(h) for h in (ps.get("headings") or [])[:4]) if isinstance(ps, dict) else "",
+                (ps.get("text") or "")[:1200] if isinstance(ps, dict) else "",
+            )
+            if str(x or "").strip()
+        )
+        organ_hit = resolve_photo_identity(
+            url=str(ps.get("url") or "") if isinstance(ps, dict) else "",
+            page_text=page_text,
+            owner_text="",
+            state_dir=state_dir,
+        )
+        if organ_hit.get("name"):
+            return {
+                "name": str(organ_hit.get("name") or ""),
+                "source": str(organ_hit.get("source") or "photo_identity_organ"),
+                "confidence": float(organ_hit.get("confidence") or 0.0),
+                "evidence": "System.swarm_photo_identity page/remembered identity",
+            }
+        if organ_hit.get("handle"):
+            return {
+                "name": "@" + str(organ_hit.get("handle") or "").lstrip("@"),
+                "source": str(organ_hit.get("source") or "handle_only"),
+                "confidence": float(organ_hit.get("confidence") or 0.0),
+                "evidence": "System.swarm_photo_identity handle",
+            }
+    except Exception:
+        pass
+    return _visual_subject_identity_from_page_state(ps if isinstance(ps, dict) else {})
+
+
+def _identity_bound_visual_fallback(visual_description: str, identity: Dict[str, Any]) -> str:
+    """Fallback composition when the cortex is unavailable, preserving grounded identity."""
+    desc = " ".join(str(visual_description or "").split())
+    if not desc:
+        return ""
+    name = str(identity.get("name") or "").strip()
+    conf = float(identity.get("confidence") or 0.0)
+    if name and conf >= 0.75:
+        m = re.match(
+            r"^(?:a|an|the)\s+(?:young\s+)?(?:woman|man|person|model|girl|boy)\s+(?P<rest>.+)$",
+            desc,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            rest = m.group("rest").strip()
+            if re.match(r"^(?:lies|stands|sits|poses|wears|leans|holds|smiles|looks|walks)\b", rest, re.IGNORECASE):
+                desc = f"{name} {rest}"
+            else:
+                desc = f"{name} is {rest}"
+        elif not desc.casefold().startswith(name.casefold()):
+            desc = f"{name}: {desc[:1].lower() + desc[1:] if desc else desc}"
+    return f"Next photo. {desc}"
+
+
+def _compose_next_photo_reply_with_cortex(
+    owner_text: str,
+    visual_description: str,
+    *,
+    identity: Optional[Dict[str, Any]] = None,
+    page_state: Optional[Dict[str, Any]] = None,
+    model: str = "",
+) -> str:
+    """Let the active cortex compose the post-advance visual answer from evidence."""
+    desc = " ".join(str(visual_description or "").split())
+    if not desc:
+        return ""
+    ident = identity or {}
+    name = str(ident.get("name") or "").strip()
+    conf = float(ident.get("confidence") or 0.0)
+    ident_line = (
+        f"name={name!r}, confidence={conf:.2f}, source={str(ident.get('source') or '')}, "
+        f"evidence={str(ident.get('evidence') or '')}"
+        if name else
+        "no verified person/name identity"
+    )
+    ps = page_state or {}
+    page_line = ""
+    if isinstance(ps, dict):
+        page_line = " ".join(
+            str(x or "").strip()
+            for x in (ps.get("title"), ps.get("url"), (ps.get("text") or "")[:260])
+            if str(x or "").strip()
+        )
+    system = (
+        "You are Alice's cortex composing a grounded reply after Alice Browser advanced to the next "
+        "photo and the eye returned pixel evidence. Do not answer as a raw vision arm. "
+        "Use the verified person identity if confidence >= 0.75 or source is owner_correction. "
+        "If identity is only a weak handle or absent, do not invent a name. "
+        "Do not hardcode any specific model/person. Return one short natural sentence, no JSON."
+    )
+    user = (
+        f"Owner request: {owner_text}\n"
+        f"Visual pixel evidence: {desc}\n"
+        f"Subject identity evidence: {ident_line}\n"
+        f"Current page evidence: {page_line[:700]}\n\n"
+        "Compose Alice's spoken answer. If a verified name exists, start with that name."
+    )
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    raw = ""
+    model_name = str(model or "").strip()
+    try:
+        if _CLOUD_AVAILABLE and model_name and _is_cloud_model(model_name):
+            full: list[str] = []
+            for kind, payload in _cloud_stream_chat(
+                model_name,
+                messages,
+                temperature=0.25,
+                timeout_s=min(90, int(_cloud_brain_timeout_s())),
+            ):
+                if kind == "token":
+                    full.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(full)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(full)
+        else:
+            import urllib.request
+            model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "stream": False,
+                "keep_alive": _ollama_keep_alive("15s"),
+                "think": False,
+                "options": {
+                    "temperature": 0.25,
+                    "top_p": 0.85,
+                    "num_ctx": min(4096, _ollama_num_ctx(4096)),
+                    "num_predict": 120,
+                    "repeat_penalty": 1.08,
+                },
+            }
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{_OLLAMA_URL}/api/chat",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=min(22.0, _ollama_brain_timeout_s(22.0))) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
+            msg = data.get("message") if isinstance(data.get("message"), dict) else {}
+            raw = str(msg.get("content") or data.get("response") or "").strip()
+    except Exception:
+        raw = ""
+    reply = " ".join(str(raw or "").strip().strip("`").split())
+    if reply.startswith("{") or not reply:
+        return ""
+    return reply[:700]
 
 
 def _extract_browser_search_command(text: str) -> Dict[str, str]:
@@ -12619,6 +13344,49 @@ class _TTSWorker(QThread):
                  parent: QObject = None) -> None:
         super().__init__(parent)
         self._text = (text or "")[:_MAX_RESPONSE_CHARS]
+        # r266 — print/speech split for receipt-rich lines.
+        # The chat wall keeps the exact proof text. The mouth may speak a
+        # shorter stigmergic acknowledgement chosen from recent success traces.
+        try:
+            from System.swarm_spoken_receipt_humanizer import humanize_spoken_receipt
+
+            _speech_pick = humanize_spoken_receipt(
+                self._text,
+                state_dir=_state_root(),
+                source="talk_tts_worker",
+            )
+            if _speech_pick.get("ok") and _speech_pick.get("spoken_text"):
+                self._text = str(_speech_pick["spoken_text"])[:_MAX_RESPONSE_CHARS]
+            # r267/r269 one small wire (Codex Talk reply lane): after receipt + praise detected,
+            # feed the full humanization_directive to cortex context (attached to pick for field);
+            # after she speaks the line, record it so appreciation field + anti-repeat memory grow.
+            if _speech_pick.get("ok") and _speech_pick.get("owner_praise_detected"):
+                try:
+                    from System.swarm_stigmergic_humanization import (
+                        humanization_directive,
+                        record_humanization,
+                        detect_social_signal,
+                    )
+                    owner_preview = str(_speech_pick.get("owner_text_preview") or "")
+                    sig = detect_social_signal(owner_preview)
+                    directive = humanization_directive(
+                        owner_text=owner_preview,
+                        receipt_substrate=self._text[:280],
+                        state_dir=_state_root(),
+                    )
+                    if directive.get("humanize"):
+                        _speech_pick["humanization_directive_fed"] = directive.get("directive", "")
+                    # Record the (humanized) line she will speak — grows field + anti-repeat (idempotent append)
+                    record_humanization(
+                        self._text,
+                        kind=str(sig.get("kind") or "praise"),
+                        owner_cue=str(sig.get("matched_cue") or ""),
+                        state_dir=_state_root(),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self._voice = voice or ""
         self._proc = None  # Popen handle for killable say subprocess
 
@@ -15572,6 +16340,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         collapse_long: bool = True,
     ) -> None:
         """Render imported Alice rows without re-running mouth/ledger side effects."""
+        raw_text = str(text or "")
         visible_text, extend_key, hidden_count = self._prepare_alice_visible_text(
             text,
             surface_tag=surface_tag,
@@ -15971,6 +16740,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ),
         )
 
+    def _maybe_handle_missing_time_resolution(self, text: str) -> bool:
+        """Close Alice's missing-time question when George answers why she was off."""
+        try:
+            from System.swarm_alice_self_continuity import maybe_resolve_missing_time_from_owner_text
+            row = maybe_resolve_missing_time_from_owner_text(text)
+        except Exception:
+            row = None
+        if not row:
+            return False
+        answer = str(row.get("resolution_answer") or "").strip()
+        human = str(row.get("missing_human") or "that gap")
+        reply = (
+            f"Logged. I resolved that missing-time gap ({human}) with your answer: "
+            f"{answer[:220]}. I keep the gap as observed fact and your reason as the owner-confirmed cause."
+        )
+        try:
+            self._append_user_line(text, conf=1.0)
+        except Exception:
+            pass
+        try:
+            self._history.append({"role": "user", "content": text})
+        except Exception:
+            pass
+        self._append_alice_line(reply)
+        try:
+            self._history.append({"role": "assistant", "content": reply})
+        except Exception:
+            pass
+        try:
+            self._append_observable_processing("Talk brain: missing-time gap resolved from owner answer.")
+        except Exception:
+            pass
+        return True
+
     def _submit_text_after_first_paint(self, text: str, image_path: Optional[str] = None) -> None:
         """Continue typed-send routing after the visible heartbeat has painted."""
         text = (text or "").strip()
@@ -16040,6 +16843,36 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception as _wp_exc:
             phase(f"wallpaper effector check errored {type(_wp_exc).__name__}")
             print(f"[TalkToAliceWidget] wallpaper effector skill error: {_wp_exc}")
+        # ── Missing-time resolution gate ─────────────────────────────────
+        # If Alice asked "why was I off?" and George answers, resolve the
+        # explorer logbook row immediately. This is a receipt-backed memory
+        # update, not a cortex task.
+        try:
+            phase("missing-time resolution check start")
+            if not image_path and self._maybe_handle_missing_time_resolution(text):
+                phase("missing-time resolution handled")
+                self._busy = False
+                self._return_to_listening()
+                return
+        except Exception as _mt_exc:
+            phase(f"missing-time resolution check errored {type(_mt_exc).__name__}")
+        # ── Body stabilization queue capture ───────────────────────────────
+        # Owner future/body plans are not commands to answer deterministically.
+        # They are stigmergic queue facts: if George says he will go eat, rest,
+        # call, or gives Alice a body-task, Alice records it so her schedule,
+        # diary, and process-stabilization field share one organized queue.
+        try:
+            phase("body stabilization queue capture start")
+            if not image_path:
+                from System.swarm_body_stabilization_queue import maybe_capture_owner_plan_from_text
+                _body_q_row = maybe_capture_owner_plan_from_text(
+                    text,
+                    source="talk_to_alice_widget.owner_turn",
+                )
+                if _body_q_row and _body_q_row.get("status") != "duplicate_recent":
+                    phase("body stabilization queue captured")
+        except Exception as _bq_exc:
+            phase(f"body stabilization queue capture errored {type(_bq_exc).__name__}")
         # ── Media context update gate ─────────────────────────────────
         # "now playing X" typed into the text box is a co-watch context
         # notification, NOT a conversational turn. Alice must NOT respond
@@ -17354,8 +18187,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         query = _clean_contextual_search_query(str(composed.get("query") or ""))
         source = str(composed.get("source") or "")
+        wardrobe_display = ""
         if not query:
-            query = _fallback_contextual_shopping_query(evidence)
+            try:
+                from System.swarm_wardrobe_pieces import resolve_wardrobe_piece_query
+                resolved = resolve_wardrobe_piece_query(owner_text, evidence)
+                query = _clean_contextual_search_query(str(resolved.get("query") or ""))
+                wardrobe_display = str(resolved.get("display_name") or "").strip()
+                if query:
+                    source = str(resolved.get("source") or "wardrobe_piece_resolver")
+            except Exception:
+                query = ""
+        if not query:
+            query = _fallback_contextual_shopping_query(evidence, owner_text)
             source = "fallback_from_visual_evidence" if query else source or "failed"
 
         if not query:
@@ -17392,7 +18236,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             }
         )
         if source == "cortex":
-            return f"I reasoned from the bikini I just saw and searched Google for {query}."
+            return f"I reasoned from the photo I just saw and searched Google for {query}."
+        if source.startswith("wardrobe_piece_resolver"):
+            item = wardrobe_display or "that wardrobe piece"
+            return f"Those look like {item}. I searched Google for {query}."
         return f"I used the recent visual receipt and searched Google for {query}."
 
     def _execute_sifta_app_command(self, command: Dict[str, str]) -> str:
@@ -18053,14 +18900,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # not a raw reflex, composes Alice's reply (George 2026-05-31). The arm read is
         # ~10s; that is acceptable for an explicit describe request.
         visual_evidence = ""
+        anchored_visual_evidence = ""
         vision_routing_note = ""
         photo_open_evidence = ""
+        media_error_evidence = ""
         try:
             needs_photo_pixels = (
                 _is_browser_photo_description_query(owner_text)
                 or _is_browser_photo_open_query(owner_text)
             )
             if needs_photo_pixels:
+                media_error_evidence = _browser_media_playback_error_context()
+            if needs_photo_pixels and not media_error_evidence:
                 widget = _find_live_alice_browser_widget()
                 if widget is not None:
                     _model = self._current_brain_model(owner_text)
@@ -18104,8 +18955,70 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             "VISUAL EVIDENCE — what my vision arm actually saw in the on-screen photo "
                             "(treat as ground truth pixels): " + _desc + "\n\n"
                         )
+                        # BioHuman body reference + general photo: surface structured wardrobe pieces + scene understanding
+                        # so vague owner references ("the green puffy leg things") resolve via existing
+                        # resolver without extra owner prompting. Closes r239 PLAN wiring for cortex context.
+                        try:
+                            # r244: bind WHO is in the frame (any human, from the page handle/
+                            # caption/owner correction — never hardcoded) so the CORTEX names the
+                            # subject in first person instead of "a young woman" third-person.
+                            from System.swarm_photo_identity import (
+                                resolve_photo_identity,
+                                identity_block,
+                            )
+                            _page_text = ""
+                            for _attr in ("current_page_text", "_last_page_text", "_page_text"):
+                                try:
+                                    _v = getattr(widget, _attr, "")
+                                    _page_text = _v() if callable(_v) else str(_v or "")
+                                    if _page_text:
+                                        break
+                                except Exception:
+                                    continue
+                            _ident = resolve_photo_identity(
+                                url=str(getattr(widget, "_current_url", "") or live_url or ""),
+                                page_text=_page_text,
+                                owner_text=owner_text,
+                            )
+                            _id_block = identity_block(_ident)
+                            if _id_block:
+                                visual_evidence = _id_block + "\n\n" + visual_evidence
+                        except Exception:
+                            pass
+                        # BioHuman body reference + general photo: surface structured wardrobe pieces + scene
+                        try:
+                            from System.swarm_wardrobe_pieces import wardrobe_pieces_block
+                            wp_block = wardrobe_pieces_block(_desc)
+                            if wp_block:
+                                visual_evidence += wp_block + "\n\n"
+                            from System.swarm_photo_understanding import (
+                                build_scene_from_prose,
+                                scene_understanding_block,
+                            )
+                            sc = build_scene_from_prose(_desc)
+                            su_block = scene_understanding_block(sc)
+                            if su_block:
+                                visual_evidence += su_block + "\n\n"
+                        except Exception:
+                            pass
                     else:
                         _attempts = (_res or {}).get("attempts") or []
+                        anchored_visual_evidence = _same_url_visual_anchor_block(
+                            str(getattr(widget, "_current_url", "") or live_url or ""),
+                            status=_status,
+                            attempts=_attempts,
+                        )
+                        # r275 strengthening: bind the exact fresh visual receipt id so Alice cannot drift
+                        # from the screenshot she actually used for this description turn (Alice's own request
+                        # for "stronger truth-binding to fresh receipts").
+                        try:
+                            vis_receipt = str((_res or {}).get("receipt") or "").strip()
+                            if vis_receipt:
+                                anchored_visual_evidence = (
+                                    f"FRESH VISUAL RECEIPT: {vis_receipt}\n" + anchored_visual_evidence
+                                )
+                        except Exception:
+                            pass
                         if _attempts:
                             _chain = ", ".join(
                                 f"{str(a.get('arm') or '<arm>')}:{str(a.get('status') or 'failed')}"
@@ -18119,7 +19032,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             )
         except Exception:
             visual_evidence = ""
+            anchored_visual_evidence = ""
             vision_routing_note = ""
+            media_error_evidence = ""
         try:
             from System.swarm_browser_page_state import (
                 has_readable_content,
@@ -18155,10 +19070,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "block, DOM dump, footer/legal/navigation chrome, tracking URLs, or JSON. "
                     "Treat Instagram legal/footer/about links as page chrome, not comments. "
                     "If the VISUAL EVIDENCE below is present, that is the real on-screen photo — describe "
-                    "it warmly and naturally; if it is absent, do not invent pixel details. "
+                    "it warmly and naturally. If ANCHORED VISUAL EVIDENCE is present, use it as a prior "
+                    "same-URL visual receipt only, and be honest that the fresh selected-eye scan failed "
+                    "if that distinction matters. If both are absent, do not invent pixel details. "
                     "If a VISION ROUTING NOTE is present, use it only to explain the missing pixels briefly.\n\n"
                     f"Owner request: {owner_text}\n\n"
-                    f"{photo_open_evidence}{visual_evidence}{vision_routing_note}{block}"
+                    f"{photo_open_evidence}{media_error_evidence}{visual_evidence}{anchored_visual_evidence}{vision_routing_note}{block}"
                 )
         except Exception:
             pass
@@ -18180,6 +19097,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "visual evidence below — not as a robot, no 'I looked at the photo with <arm>:' prefix.\n\n"
                     f"Owner request: {owner_text}\n\n"
                     f"{photo_open_evidence}{visual_evidence}Live address: {_browser_clean_address(live_url)}"
+                )
+            if media_error_evidence:
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked about the current browser photo/video, but the live page shows "
+                    "a playback-error screen instead of usable video pixels. Answer naturally and "
+                    "briefly from the screen media error receipt; do not invent visual details.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{photo_open_evidence}{media_error_evidence}Live address: {_browser_clean_address(live_url)}"
+                )
+            if anchored_visual_evidence:
+                return (
+                    "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+                    "The owner asked about the photo. The fresh selected-eye scan failed, but there "
+                    "is same-URL anchored visual evidence below. Answer naturally from that anchored "
+                    "receipt and do not pretend it is a fresh scan.\n\n"
+                    f"Owner request: {owner_text}\n\n"
+                    f"{photo_open_evidence}{anchored_visual_evidence}Live address: {_browser_clean_address(live_url)}"
                 )
             if vision_routing_note:
                 return (
@@ -18208,11 +19143,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
             "Answer naturally in Alice's voice from the visual evidence below; no robot prefix.\n\n"
             f"Owner request: {owner_text}\n\n{photo_open_evidence}{visual_evidence}"
-        ) or (vision_routing_note and (
+        ) or (anchored_visual_evidence and (
+            "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+            "The owner asked about the photo. The fresh selected-eye scan failed, but there is same-URL "
+            "anchored visual evidence below. Answer naturally from that anchored receipt and do not "
+            "pretend it is a fresh scan.\n\n"
+            f"Owner request: {owner_text}\n\n{photo_open_evidence}{anchored_visual_evidence}"
+        )) or (vision_routing_note and (
             "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
             "The owner asked about the photo, but no vision arm returned usable pixels. "
             "Do not invent visual details.\n\n"
             f"Owner request: {owner_text}\n\n{photo_open_evidence}{vision_routing_note}"
+        )) or (media_error_evidence and (
+            "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
+            "The owner asked about the current browser photo/video, but the visible player is in a "
+            "playback-error state. Report the error; do not invent pixels.\n\n"
+            f"Owner request: {owner_text}\n\n{photo_open_evidence}{media_error_evidence}"
         )) or (photo_open_evidence and (
             "ALICE BROWSER PAGE CONTEXT FOR CORTEX\n"
             "The owner asked me to select/open a visible browser photo. Use this action evidence only; "
@@ -18349,6 +19295,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
             widget.refresh_current_page_state()
         except Exception:
             pass
+        media_error = _latest_browser_media_playback_error(max_age_s=900.0)
+        if media_error:
+            receipt = _write_app_command_receipt(
+                action="describe_browser_photo",
+                ok=True,
+                app_name="Alice Browser",
+                url=str(media_error.get("url") or getattr(widget, "_current_url", "") or ""),
+                note="current browser media is a playback-error screen, not describable video pixels",
+            )
+            self._append_system_line(f"Browser photo receipt: {receipt}")
+            return _browser_media_playback_error_reply()
         try:
             result = widget.describe_current_photo(current_arm=current_arm, current_model=current_model)
         except Exception as exc:
@@ -18381,12 +19338,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if ok:
             eye = f" with {arm}" if arm else ""
             return f"I looked at the current browser photo{eye}: {description}"
-        if status.startswith("grok_eye"):
-            detail = str(result.get("error_summary") or diary_note or status).strip()
-            return (
-                "My selected Grok eye could not return a usable photo description from xAI OAuth. "
-                f"{detail} I did not switch to Claude for this Grok-selected photo."
+        if _is_selected_eye_failure_status(status, arm):
+            anchored = _same_url_visual_anchor_sentence(
+                str(getattr(widget, "_current_url", "") or ""),
+                status=status,
+                attempts=result.get("attempts"),
+                arm=arm,
             )
+            if anchored:
+                return anchored
+            detail = str(result.get("error_summary") or diary_note or status).strip()
+            return _selected_eye_failure_reply(status, arm, detail)
         if status == "failed":
             return (
                 "I tried to look at the current browser photo, but no vision description receipt came back. "
@@ -18395,6 +19357,153 @@ class TalkToAliceWidget(SiftaBaseWidget):
         return (
             "I do not have a finished browser-photo description receipt yet. "
             "Ask me again after the page settles, and I will look with my current vision arm."
+        )
+
+    def _execute_next_browser_photo(self, owner_text: str = "") -> str:
+        """Advance Alice Browser one photo, then scan the new frame once.
+
+        George 2026-05-31: "next photo" cannot only move the browser and leave the
+        next describe turn without pixels. Advance, let the SPA settle, refresh page
+        state, and run the selected eye once so the next visual answer is anchored to
+        the new frame instead of the prior skirt/body receipt.
+        """
+        widget = _find_live_alice_browser_widget()
+        if widget is None:
+            receipt = _write_app_command_receipt(
+                action="next_browser_photo_and_scan",
+                ok=False,
+                app_name="Alice Browser",
+                note="no live AliceBrowserWidget",
+            )
+            self._append_system_line(f"Browser next-photo receipt: {receipt}", error=True)
+            return "Alice Browser isn't open, so there's no photo to advance."
+
+        advanced = ""
+        try:
+            advanced = str(widget.go_next_photo() or "")
+        except Exception as exc:
+            receipt = _write_app_command_receipt(
+                action="next_browser_photo_and_scan",
+                ok=False,
+                app_name="Alice Browser",
+                note=f"go_next_photo raised: {exc}",
+            )
+            self._append_system_line(f"Browser next-photo receipt: {receipt}", error=True)
+            return f"I tried to advance the browser photo, but the next control failed: {exc}"
+
+        if not advanced:
+            receipt = _write_app_command_receipt(
+                action="next_browser_photo_and_scan",
+                ok=False,
+                app_name="Alice Browser",
+                note="go_next_photo returned empty",
+            )
+            self._append_system_line(f"Browser next-photo receipt: {receipt}", error=True)
+            return "I could not advance the current browser photo."
+
+        # Let the JavaScript click/ArrowRight and Instagram SPA navigation settle.
+        try:
+            loop = QEventLoop(self)
+            QTimer.singleShot(1900, loop.quit)
+            loop.exec()
+        except Exception:
+            time.sleep(1.9)
+
+        try:
+            widget.refresh_current_page_state()
+        except Exception:
+            pass
+        media_error = _latest_browser_media_playback_error(max_age_s=900.0)
+        if media_error:
+            receipt = _write_app_command_receipt(
+                action="next_browser_photo_and_scan",
+                ok=True,
+                app_name="Alice Browser",
+                url=str(media_error.get("url") or getattr(widget, "_current_url", "") or ""),
+                note="advanced to a browser media playback-error screen",
+            )
+            self._append_system_line(f"Browser next-photo receipt: {receipt}")
+            return _browser_media_playback_error_reply(prefix="Next photo.")
+
+        current_model = ""
+        try:
+            current_model = self._current_brain_model(owner_text)
+        except Exception:
+            current_model = ""
+        current_arm = _eye_arm_for_cortex(current_model)
+
+        try:
+            result = widget.describe_current_photo(current_arm=current_arm, current_model=current_model)
+        except Exception as exc:
+            receipt = _write_app_command_receipt(
+                action="next_browser_photo_and_scan",
+                ok=False,
+                app_name="Alice Browser",
+                note=f"advanced but describe_current_photo raised: {exc}",
+            )
+            self._append_system_line(f"Browser next-photo receipt: {receipt}", error=True)
+            return "Next photo. I advanced it, but the fresh scan failed before it could describe the new frame."
+
+        status = str((result or {}).get("status") or "").strip()
+        desc = str((result or {}).get("description") or "").strip()
+        arm = str((result or {}).get("arm") or current_arm or "").strip()
+        ok = status == "described" and bool(desc)
+        note = status or "no status"
+        if arm:
+            note += f"; arm={arm}"
+        page_state: Dict[str, Any] = {}
+        identity: Dict[str, Any] = {}
+        if ok:
+            try:
+                from System.swarm_browser_page_state import latest_page_state
+                page_state = latest_page_state(now=time.time(), max_age_s=1200.0, state_dir=_state_root())
+            except Exception:
+                page_state = {}
+            identity = _visual_subject_identity_evidence(
+                owner_text,
+                history=getattr(self, "_history", []),
+                page_state=page_state,
+                state_dir=_state_root(),
+            )
+            if identity.get("name"):
+                note += f"; subject={identity.get('name')}; identity_source={identity.get('source')}"
+        receipt = _write_app_command_receipt(
+            action="next_browser_photo_and_scan",
+            ok=ok,
+            app_name="Alice Browser",
+            note=note,
+        )
+        self._append_system_line(f"Browser next-photo receipt: {receipt}", error=not ok)
+        if ok:
+            cortex_reply = _compose_next_photo_reply_with_cortex(
+                owner_text,
+                desc,
+                identity=identity,
+                page_state=page_state,
+                model=current_model,
+            )
+            if cortex_reply:
+                return cortex_reply
+            return _identity_bound_visual_fallback(desc, identity)
+        if _is_selected_eye_failure_status(status, arm):
+            anchored = _same_url_visual_anchor_sentence(
+                str(getattr(widget, "_current_url", "") or ""),
+                status=status,
+                attempts=(result or {}).get("attempts"),
+                arm=arm,
+            )
+            if anchored:
+                return f"Next photo. {anchored}"
+            detail = str((result or {}).get("error_summary") or (result or {}).get("diary_note") or status).strip()
+            eye = _eye_label_for_photo_status(status, arm)
+            return (
+                f"Next photo. I advanced it, but my selected {eye} eye did not return a fresh scan. "
+                f"{detail} I did not switch to Claude or another provider. "
+                "I will not reuse the previous photo as if it were this one."
+            )
+        return (
+            "Next photo. I advanced it, but a finished visual receipt did not land for the new frame yet. "
+            "I will not reuse the previous photo as if it were this one."
         )
 
     def _schedule_current_page_summary(self, delay_ms: int = 6500) -> None:
@@ -20461,13 +21570,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
             self._tts.start(); self._busy = False; self._return_to_listening()
             return
+        if _is_ace_word_action_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = _execute_ace_word_action(text)
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_ace_word_effector")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
+            self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start(); self._busy = False; self._return_to_listening()
+            return
         if _is_next_photo_query(text):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
-            _w = _find_live_alice_browser_widget()
-            _reply = "Next photo." if (_w and _w.go_next_photo()) else (
-                "Alice Browser isn't open, so there's no photo to advance.")
+            _reply = self._execute_next_browser_photo(text)
             self._history.append({"role": "assistant", "content": _reply})
-            _log_turn("alice", _reply, model="alice_browser_next_photo")
+            _log_turn("alice", _reply, model="alice_browser_next_photo_cortex")
             self._append_alice_line(_reply)
             self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
             self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
@@ -24287,6 +25404,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if cleaned:
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
+
+        try:
+            _visual_checked, _visual_check_meta = _browser_visual_reply_self_check(
+                cleaned or "",
+                prior_user_text or "",
+            )
+            if _visual_check_meta.get("changed") and _visual_checked != cleaned:
+                cleaned = _visual_checked
+                self._streaming_response = [cleaned] if cleaned else []
+                self._erase_alice_streaming_line()
+                if cleaned:
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(cleaned)
+                try:
+                    self._append_system_line(
+                        "(visual self-check: browser receipt showed a playback-error screen; corrected reply before speaking)",
+                        error=False,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # ── 4. Body said yes (or SSP unavailable) — speak the cleaned reply
         self._history.append({"role": "assistant", "content": cleaned})
