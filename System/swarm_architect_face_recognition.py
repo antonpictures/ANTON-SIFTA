@@ -143,9 +143,29 @@ def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 # ── Latest frame loader ───────────────────────────────────────────────────────
 
+# The camera capture appends frames forever; nothing pruned them, so
+# owner_body_vision_frames/ grew to 9.8G / 84,709 files (r539). This read-path
+# janitor keeps only the newest _MAX_KEPT_FRAMES and unlinks the rest, bounding
+# the dir every time Alice looks. Newest are what recognition needs anyway.
+_MAX_KEPT_FRAMES = 300
+
+
+def _prune_frames(pngs: list[Path], keep: int = _MAX_KEPT_FRAMES) -> list[Path]:
+    """Unlink all but the newest `keep` PNGs (pngs sorted oldest→newest)."""
+    if len(pngs) <= keep:
+        return pngs
+    for stale in pngs[:-keep]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+    return pngs[-keep:]
+
+
 def _latest_frame_path() -> Optional[Path]:
     _FRAMES_DIR.mkdir(parents=True, exist_ok=True)
     pngs = sorted(_FRAMES_DIR.glob("*.png"), key=lambda p: p.stat().st_mtime)
+    pngs = _prune_frames(pngs)
     if not pngs:
         return None
     return pngs[-1]

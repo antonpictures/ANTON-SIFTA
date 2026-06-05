@@ -90,6 +90,33 @@ def test_pending_and_failed_not_surfaced_as_truth(tmp_path):
     assert pd.latest_photo_description(now=1002.0, state_dir=tmp_path) == {}
 
 
+def test_latest_viewport_capture_surfaces_pending_viewport_image(tmp_path):
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\nfake")
+    pd.record_photo_description(
+        "https://www.youtube.com/watch?v=P91dfSsHER4",
+        description="",
+        arm="ollama_vision_agent",
+        image_hash="h1",
+        image_ref=str(img),
+        status="pending",
+        source="viewport",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    cap = pd.latest_viewport_capture(
+        url="https://www.youtube.com/watch?v=P91dfSsHER4",
+        now=1001.0,
+        state_dir=tmp_path,
+    )
+
+    assert cap["status"] == "pending"
+    assert cap["image_ref"] == str(img)
+    assert cap["image_exists"] is True
+    assert cap["fresh"] is True
+
+
 def test_stale_flagged(tmp_path):
     pd.record_photo_description("https://x.com/p", description="a dog", arm="grok_agent",
                                 now=1000.0, state_dir=tmp_path)
@@ -176,6 +203,54 @@ def test_extract_plaintext_passthrough():
     assert pd.extract_arm_final_text("") == ""
 
 
+def test_extract_rejects_codex_cli_prompt_echo_without_final_answer():
+    raw = (
+        "warning: `--full-auto` is deprecated; use `--sandbox workspace-write` instead.\n"
+        "Reading additional input from stdin...\n"
+        "OpenAI Codex v0.133.0\n"
+        "--------\n"
+        "workdir: /Users/ioanganton/Music/ANTON_SIFTA\n"
+        "model: gpt-5.5\n"
+        "provider: openai\n"
+        "--------\n"
+        "user\n"
+        "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md first.\n"
+        "Look at the image at this exact path: /Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/browser_viewport/viewport_1780597521825.png\n"
+        "Describe the MAIN subject of the photo in 2 short sentences.\n"
+    )
+    assert pd.looks_like_non_visual_arm_reply(raw)
+    assert pd.extract_arm_final_text(raw) == ""
+    assert pd.clean_browser_photo_description_text(raw) == ""
+
+
+def test_extract_codex_cli_speaker_marker_final_answer_from_image_run():
+    raw = (
+        "Reading additional input from stdin...\n"
+        "OpenAI Codex v0.133.0\n"
+        "--------\n"
+        "workdir: /Users/ioanganton/Music/ANTON_SIFTA\n"
+        "model: gpt-5.5\n"
+        "provider: openai\n"
+        "--------\n"
+        "user\n"
+        "Look at the image at this exact path: /Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/browser_viewport/viewport_1780608373749.png\n"
+        "This is Alice Browser's rendered viewport from Alice's own browser organ.\n"
+        "\x1b[35m\x1b[3mcodex\x1b[0m\x1b[0m\n"
+        "I’ve read the covenant and am now inspecting the browser viewport pixels from the provided path.\n"
+        "\x1b[35m\x1b[3mcodex\x1b[0m\x1b[0m\n"
+        "Four women pose outdoors around a silver light stand, wearing colorful bikini-style swimwear and barefoot on artificial turf. "
+        "The setting is a sunny modern patio with glass doors, chairs, and hard shadows visible.\n"
+        "\x1b[2mtokens used\x1b[0m\n"
+        "23,066\n"
+    )
+
+    desc = pd.clean_browser_photo_description_text(raw)
+
+    assert desc.startswith("Four women pose outdoors")
+    assert "Look at the image at this exact path" not in desc
+    assert not pd.looks_like_non_visual_arm_reply(desc)
+
+
 def test_non_visual_arm_reply_is_not_counted_as_sight():
     reply = (
         "I’ve read the full `IDE_BOOT_COVENANT.md`. Can you describe the main large "
@@ -186,6 +261,54 @@ def test_non_visual_arm_reply_is_not_counted_as_sight():
     assert not pd.looks_like_non_visual_arm_reply(
         "A woman in a brown-and-white bikini poses outdoors near a bright beach."
     )
+
+
+def test_latest_photo_description_ignores_old_codex_cli_prompt_echo_rows(tmp_path):
+    url = "https://x.com/abellaskies/status/1931210051844493757/photo/1"
+    pd.record_photo_description(
+        url,
+        description="A woman sits on a pink ottoman in a mirror selfie; the room has white walls and a chair behind her.",
+        arm="ollama_vision_agent",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+    pd.record_photo_description(
+        url,
+        description=(
+            "OpenAI Codex v0.133.0\n"
+            "workdir: /Users/ioanganton/Music/ANTON_SIFTA\n"
+            "model: gpt-5.5\n"
+            "provider: openai\n"
+            "user\n"
+            "Look at the image at this exact path: /Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/browser_viewport/viewport.png\n"
+            "Describe the MAIN subject of the photo."
+        ),
+        arm="codex_agent",
+        now=1001.0,
+        state_dir=tmp_path,
+    )
+
+    latest = pd.latest_photo_description(url=url, now=1002.0, state_dir=tmp_path)
+
+    assert latest["arm"] == "ollama_vision_agent"
+    assert "mirror selfie" in latest["description"]
+
+
+def test_latest_photo_description_returns_empty_when_only_codex_prompt_echo_exists(tmp_path):
+    pd.record_photo_description(
+        "https://www.instagram.com/p/C1mzc4CvjRh/",
+        description=(
+            "OpenAI Codex v0.133.0\n"
+            "Reading additional input from stdin...\n"
+            "Look at the image at this exact path: /Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/browser_viewport/viewport.png\n"
+            "This is Alice Browser's rendered viewport from Alice's own browser organ."
+        ),
+        arm="codex_agent",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    assert pd.latest_photo_description(now=1001.0, state_dir=tmp_path) == {}
 
 
 def test_state_dir_root_or_state(tmp_path):

@@ -7,6 +7,7 @@ import json
 import os
 import pty
 import re
+import shlex
 import signal
 import struct
 import subprocess
@@ -638,7 +639,7 @@ def _matrix_ollama_model_candidates(primary: str) -> list[str]:
         primary,
         f"{primary}:latest" if primary and ":" not in primary else "",
         "alice-m5-cortex-8b-6.3gb:latest",
-        "alice-m1-scout-2.3b-2.7gb:latest",
+        "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
     ):
         name = (name or "").strip()
         if name and name not in names:
@@ -4141,6 +4142,27 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._append_plain("[shell not running - cannot execute]\n\nSIFTA > ")
             return
 
+        # Bypass the TUI picker/resume vision loops entirely when owner says
+        # "bypass the two screen selections", "direct", "no resume", or for
+        # clear delegation "ask grok ...". Use real grok binary flags:
+        # --continue + -p/--single for non-interactive, or grok_chat --one-shot.
+        # This is the hardware-up direct execute: no "I see Grok's main menu" gagging.
+        ui = user_input or ""
+        bypass = bool(re.search(r"\bbypass\b.*(screen|selection|picker|resume|two)|direct.*(type|launch|no resume)|no resume|headless", ui, re.I))
+        is_ask_grok = bool(re.search(r"\bask\s+grok\b|\btell\s+grok\b|\bsend\s+(?:to\s+)?grok\b", ui, re.I))
+        if bypass or is_ask_grok or (pending_prompt and not _matrix_terminal_grok_open_only(ui)):
+            grok_bin = "/Users/ioanganton/.grok/bin/grok"
+            prompt = (pending_prompt or user_input or "status").strip()
+            # Prefer --continue -p for last session + single turn output to PTY (no menus).
+            cmd = f"{grok_bin} --continue -p {shlex.quote(prompt[:2000])} --no-alt-screen"
+            self._append_plain("Alice > Bypassing Grok TUI menus with --continue -p (direct, no Ctrl-S/Enter picker). Output will stream here.\n")
+            self._append_matrix_command_receipt([cmd])
+            QTimer.singleShot(200, lambda c=cmd: self.write_command(c))
+            self._active_cli_name = "grok"
+            self._grok_cli_active = True
+            self._enter_alice_input_mode_for_tool("Grok")
+            return
+
         if _looks_like_owner_bowel_resume_encouragement(user_input):
             self._process_owner_bowel_positive_resume_encouragement(user_input)
 
@@ -4517,6 +4539,20 @@ class MatrixTerminalPane(QPlainTextEdit):
             or _matrix_terminal_grok_open_only(user_input)
             or not explicit_prompt
         ):
+            # For plain "start grok" / "open grok", launch with --continue so the
+            # real grok TUI resumes last session for cwd without the picker UI
+            # that triggers the "I see Grok's main menu... Pressing Ctrl-S" vision loop.
+            # Owner can then type inside; delegations use -p bypass.
+            if _matrix_terminal_grok_open_only(user_input) or not (user_input or "").strip() or re.search(r"^(?:alice\s*,?\s*)?(?:start|open|launch|resume)\s+(?:the\s+)?grok\b", user_input or "", re.I):
+                grok_bin = "/Users/ioanganton/.grok/bin/grok"
+                cmd = f"{grok_bin} --continue --no-alt-screen"
+                self._append_plain("Alice > Opening Grok with --continue (auto-resume last session, no picker screens).\n")
+                self._append_matrix_command_receipt([cmd])
+                QTimer.singleShot(150, lambda c=cmd: self.write_command(c))
+                self._active_cli_name = "grok"
+                self._grok_cli_active = True
+                self._enter_alice_input_mode_for_tool("Grok")
+                return
             self._execute_grok_resume_last_session(user_input, open_if_needed=True)
             return
         if not explicit_prompt:
@@ -4566,6 +4602,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._append_plain(f"Alice > Opening Grok tool organ (pure launch, no prompt sent).\n")
             self._active_cli_name = cli
             self._grok_cli_active = True
+            # Use the clean no-TUI wrapper for direct; real TUI grok still available via "grok --continue"
             full_launch = "python3 /Users/ioanganton/Music/ANTON_SIFTA/grok_chat.py"
             self._append_matrix_command_receipt([full_launch])
             QTimer.singleShot(300, lambda: self.write_command(full_launch))
@@ -4722,6 +4759,12 @@ class MatrixTerminalPane(QPlainTextEdit):
         )
         self._append_plain("\n🐝 Global chat ▸ " + question + "\n")
         self._execute_alice_cli_prompt_request("grok", f"ask grok {question}")
+        # Record as external tool skill for relearn (grok "organ" via matrix terminal PTY).
+        try:
+            from System.swarm_browser_site_playbook import record_skill_outcome as _rso
+            _rso("grok-cli", "delegation", True, note=question[:120], source="global_chat_terminal")
+        except Exception:
+            pass
         return {
             "ok": True,
             "status": "GROK_DELEGATION_DISPATCHED",

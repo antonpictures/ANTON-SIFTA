@@ -43,6 +43,28 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-phc-cure"
 
 
+def test_talk_to_alice_demoted_small_gemma_pin_normalizes_to_m5(tmp_path, monkeypatch):
+    from System import sifta_inference_defaults as defaults
+
+    monkeypatch.setattr(defaults, "_STATE", tmp_path)
+    monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+
+    defaults.set_default_ollama_model(defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
+    defaults.set_app_ollama_model("talk_to_alice", defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
+
+    assert (
+        defaults.resolve_ollama_model(
+            app_context="talk_to_alice",
+            query_text="I am watching your Alice Browser organ now your body",
+        )
+        == defaults.CANONICAL_OLLAMA_DAILY
+    )
+    assert (
+        defaults.normalize_talk_to_alice_model(defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
+        == defaults.CANONICAL_OLLAMA_DAILY
+    )
+
+
 def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
     import json as _json
@@ -86,7 +108,7 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
         query_text="debug the kernel router and run pytest",
     )
 
-    assert after_failure != initial_pick
+    assert after_failure == defaults.CANONICAL_OLLAMA_DAILY
     assert defaults._CORTEX_ROUTING_LEDGER.exists()
 
 
@@ -98,7 +120,7 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert defaults.CANONICAL_OLLAMA_DAILY == "alice-m5-cortex-8b-6.3gb:latest"
     assert defaults.CANONICAL_OLLAMA_DEFAULT == "alice-m5-cortex-8b-6.3gb:latest"
     assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "alice-m5-cortex-8b-6.3gb:latest"
     assert defaults.CANONICAL_OLLAMA_EXTRA == "alice-extra-cortex-25.8b-17gb:latest"
     assert defaults.CANONICAL_CLOUD_GROK == "grok:grok-4.3"
     assert defaults.CANONICAL_CLOUD_CLAUDE == "claude:claude-code-cli-default"

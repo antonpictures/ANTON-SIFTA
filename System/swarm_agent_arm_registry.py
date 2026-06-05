@@ -14,7 +14,7 @@ from typing import Mapping
 try:
     from System.sifta_inference_defaults import CANONICAL_OLLAMA_FALLBACK
 except Exception:
-    CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    CANONICAL_OLLAMA_FALLBACK = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 
 @dataclass(frozen=True)
@@ -233,6 +233,46 @@ CLINE_AGENT = AgentArmSpec(
     ),
 )
 
+ANTIGRAVITY_AGENT = AgentArmSpec(
+    arm_id="antigravity_agent",
+    display_name="Antigravity CLI (Google `agy`, multimodal)",
+    command=("agy",),  # marker; _build_command expands to `agy -p "<prompt>"`
+    model="antigravity-auto",  # see notes: `agy` has NO --model flag (auto-select / /model)
+    provider_base_url="antigravity_cli",
+    enabled=True,
+    live_env_var="SIFTA_AGENT_ARMS_ENABLE",
+    default_toolsets=(),
+    max_turns=1,
+    capabilities=(
+        "single_query_research",
+        "evidence_output",
+        "external_cortex",
+        "codebase_reading",
+        "codebase_build",
+        "shell_execution",
+        "multi_agent_team",
+        "native_multimodal",  # analyzes image files (@-refs) — tools + image
+    ),
+    notes=(
+        # George 2026-06-02 (r336): "ADD ANTYGRAVITY TO THE LIST, SET IT UP WITH A "
+        # "MODEL THAT HAS TOOLS IMAGE AND ALL NEEDED ... LET ME KNOW THE 7TH CLI."
+        # Web-verified (antigravity.google + DataCamp/DEV/Google-Cloud-Medium, May 2026):
+        # the CLI is `agy`, Google's Go-based terminal agent and the SUCCESSOR to Gemini
+        # CLI (migration deadline 2026-06-18). Headless: `agy -p \"<prompt>\"` (add "
+        # "`--output-format json` for structured output). IMPORTANT: there is NO `--model` "
+        # "flag — agy AUTO-SELECTS the optimal model, or you pick one with the `/model` "
+        # "command in the TUI. Available models span Gemini 3.5 Flash (High/Medium), "
+        # "Gemini 3.1 Pro (High/Low), Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B — "
+        # "all tool-capable, and multimodal (reference image files with @ and it analyzes "
+        # "them). So `model=antigravity-auto` here means 'let agy pick' / configure via "
+        # "/model; image+tools come for free with the Gemini-3 / Claude-4.6 backends. This "
+        # "is the SEVENTH external CLI arm in Alice's body, alongside hermes/codex/grok/"
+        # "claude/qwen/cline. Same covenant-boot + bridge-not-merge contract; Antigravity's "
+        # "output is its own voice (evidence), never Alice's. Uses agy's own Google auth "
+        # "(any AI Pro/Ultra/free account) — no key handled here."
+    ),
+)
+
 _ARMS: dict[str, AgentArmSpec] = {
     HERMES_AGENT.arm_id: HERMES_AGENT,
     CODEX_AGENT.arm_id: CODEX_AGENT,
@@ -241,6 +281,7 @@ _ARMS: dict[str, AgentArmSpec] = {
     CLAUDE_AGENT.arm_id: CLAUDE_AGENT,
     QWEN_AGENT.arm_id: QWEN_AGENT,
     CLINE_AGENT.arm_id: CLINE_AGENT,
+    ANTIGRAVITY_AGENT.arm_id: ANTIGRAVITY_AGENT,
 }
 
 

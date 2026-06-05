@@ -29,7 +29,7 @@ def load_verdicts() -> List[Dict[str, Any]]:
     for line in VERDICTS.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             rows.append(json.loads(line))
-        except:
+        except Exception:
             pass
     return rows
 
@@ -44,7 +44,7 @@ def load_golden_turns() -> List[Dict[str, Any]]:
             continue
         try:
             turns.append(json.loads(line))
-        except:
+        except Exception:
             pass
     return turns
 
@@ -68,7 +68,7 @@ def find_conversation_by_ref(ref: str) -> Dict[str, Any] | None:
             # Fallback: match on ts or event id if present
             if any(p in str(r) for p in parts[1:]):
                 return r
-        except:
+        except Exception:
             continue
     return None
 

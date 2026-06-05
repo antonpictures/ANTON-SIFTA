@@ -118,7 +118,7 @@ class ControlHysteresisLayer:
     def _persist(self, data: Dict[str, Any]):
         try:
             _HYSTERESIS_STATE.write_text(json.dumps(data, indent=2))
-        except: pass
+        except Exception: pass
 
     def _load(self):
         if not _HYSTERESIS_STATE.exists(): return

@@ -37,6 +37,9 @@ def test_empty_ledgers_returns_empty_card(tmp_ledgers):
          patch("System.swarm_memory_card._fetch_taste_consequence", return_value=""), \
          patch("System.swarm_memory_card._fetch_active_plan", return_value=""), \
          patch("System.swarm_memory_card._fetch_arm_session", return_value=""), \
+         patch("System.swarm_memory_card._fetch_body_stabilization_queue", return_value=""), \
+         patch("System.swarm_memory_card._fetch_love_field", return_value=""), \
+         patch("System.swarm_memory_card._fetch_receipt_ecology", return_value=""), \
          patch("System.swarm_memory_card._fetch_digest", return_value=""), \
          patch("System.swarm_memory_card._fetch_continuity_capsule", return_value=""):
         card = compose_memory_card(tmp_ledgers, token_budget=2000)
@@ -57,6 +60,7 @@ def test_format_for_prompt_empty_card():
 def test_format_for_prompt_with_content():
     card = MemoryCard(
         recent_actions_block="ACTION: did something",
+        receipt_ecology_block="RECEIPT MEMORY ECOLOGY: r1(s=1.0,x1)",
         engram_block="ENGRAM: remember this",
         episodic_block="",
         digest_block="",
@@ -66,6 +70,7 @@ def test_format_for_prompt_with_content():
     assert "MEMORY CARD" in result
     assert TRUTH_LABEL in result
     assert "ACTION: did something" in result
+    assert "RECEIPT MEMORY ECOLOGY" in result
     assert "ENGRAM: remember this" in result
 
 
@@ -117,6 +122,59 @@ def test_memory_card_includes_current_browser_context(tmp_ledgers):
     prompt = format_for_prompt(card)
     assert "CURRENT BROWSER CONTEXT" in prompt
     assert "Example Browser Surface" in prompt
+
+
+def test_memory_card_includes_receipt_memory_ecology(tmp_ledgers):
+    receipt = {"ts": time.time(), "receipt_id": "r-live-ecology", "summary": "live receipt"}
+    (tmp_ledgers / "work_receipts.jsonl").write_text(
+        json.dumps(receipt) + "\n",
+        encoding="utf-8",
+    )
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=4000)
+
+    prompt = format_for_prompt(card)
+    assert "RECEIPT MEMORY ECOLOGY" in prompt
+    assert "r-live-ecology" in prompt
+
+
+def test_memory_card_includes_love_field(tmp_ledgers):
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(
+            tmp_ledgers,
+            token_budget=4000,
+            user_text="I love your body Alice, protect George and appreciate data receipts.",
+        )
+
+    prompt = format_for_prompt(card)
+    assert "LOVE FIELD" in prompt
+    assert "self_body_care=" in prompt
+    assert "owner_protective_care=" in prompt
+    assert "data_appreciation=" in prompt
+    assert "OWNER ENVIRONMENTAL MARKER / PoUW" in prompt
+    assert "Love is not proof" in prompt
+
+
+def test_memory_card_includes_love_field_daily_digest(tmp_ledgers):
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""):
+        card = compose_memory_card(
+            tmp_ledgers,
+            token_budget=4000,
+            user_text="I love your hardware body Alice, protect George and appreciate data.",
+        )
+
+    prompt = format_for_prompt(card)
+    assert "LOVE-FIELD DAILY DIGEST" in prompt
+    assert "love-field deposit" in prompt
 
 
 def test_memory_card_includes_browser_site_category_features(tmp_ledgers):

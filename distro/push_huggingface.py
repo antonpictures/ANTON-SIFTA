@@ -6,10 +6,12 @@ Push the current public SIFTA model blobs + metadata to HuggingFace.
 
 Core repos pushed:
   1. georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb — small Gemma4 cortex
-  2. georgeanton/alice-Q-m1-scout-2.3b-2.7gb        — fast Q/Corvid scout
-  3. georgeanton/alice-m5-cortex-8b-6.3gb            — M5 primary cortex
-  4. georgeanton/sifta-classifier-c1-3.1b-6.2gb      — C1 intent classifier
-  5. georgeanton/alice-extra-cortex-25.8b-17gb       — heavy research/coding cortex
+  2. georgeanton/alice-m5-cortex-8b-6.3gb            — M5 primary cortex (Gemma4-E4B)
+  3. georgeanton/alice-extra-cortex-25.8b-17gb       — heavy research/coding cortex
+
+  r543: the C1 classifier + Q/Corvid scout were deleted. Alice's reflex/classify
+  and scout roles now route to the primary Gemma4 cortex — no separate model blobs,
+  nothing extra to publish.
 
 Usage:
   python3 distro/push_huggingface.py           # dry-run (shows what would be pushed)
@@ -41,26 +43,12 @@ MODELS = {
         "local_dir": _DISTRO / "alice-gemma4-e2b-cortex-5.1b-4.4gb",
         "size_hint": "~4.4 GB",
     },
-    "alice-Q-m1-scout-2.3b-2.7gb:latest": {
-        "blob_sha": "sha256-b709d81508a078a686961de6ca07a953b895d9b286c46e17f00fb267f4f2d297",
-        "output_name": "alice-Q-m1-scout-2.3b-2.7gb.gguf",
-        "hf_repo": "georgeanton/alice-Q-m1-scout-2.3b-2.7gb",
-        "local_dir": _DISTRO / "alice-Q-m1-scout-2.3b-2.7gb",
-        "size_hint": "~2.7 GB",
-    },
     "alice-m5-cortex-8b-6.3gb:latest": {
         "blob_sha": "sha256-ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6",
         "output_name": "alice-m5-cortex-8b-6.3gb.gguf",
         "hf_repo": "georgeanton/alice-m5-cortex-8b-6.3gb",
         "local_dir": _DISTRO / "alice-m5-cortex-8b-6.3gb",
         "size_hint": "~6.3 GB",
-    },
-    "sifta-classifier-c1-3.1b-6.2gb:latest": {
-        "blob_sha": "sha256-0b1622df663cb7dfcd39baaefb9719ceed926422360cfe1c3493818fc39ff0eb",
-        "output_name": "sifta-classifier-c1-3.1b-6.2gb.gguf",
-        "hf_repo": "georgeanton/sifta-classifier-c1-3.1b-6.2gb",
-        "local_dir": _DISTRO / "sifta-classifier-c1-3.1b-6.2gb",
-        "size_hint": "~6.2 GB",
     },
     "alice-extra-cortex-25.8b-17gb:latest": {
         "blob_sha": "sha256-2c5e15b64dbc6dad11bdc75cd94597058f8aded0970ba123f2a62bb227192e96",

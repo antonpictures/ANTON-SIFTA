@@ -142,7 +142,7 @@ class EigenFailureAnalyzer:
         
         try:
             _FAIL_STATE.write_text(json.dumps(res, indent=2))
-        except: pass
+        except Exception: pass
         
         return res
         
@@ -157,7 +157,7 @@ class EigenFailureAnalyzer:
         }
         try:
             _FAIL_STATE.write_text(json.dumps(res, indent=2))
-        except: pass
+        except Exception: pass
         return res
 
 def get_analyzer():

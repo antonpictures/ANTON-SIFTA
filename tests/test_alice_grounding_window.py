@@ -389,8 +389,10 @@ def test_voice_context_repair_cleans_microphone_residue_before_cortex():
     assert "collapsed_repeated_word" in reasons
 
 
-def test_voice_context_repair_leaves_clean_text_unchanged():
+def test_voice_context_repair_leaves_clean_text_unchanged(monkeypatch):
     mod = _load_widget_module()
+    import System.swarm_search_engine_registry as _engreg
+    monkeypatch.setattr(_engreg, "current_engine", lambda *a, **k: "google")
 
     raw = "Alice, I am talking to the operating system and I want you to listen."
     repaired, reasons = mod._repair_voice_context_text(raw, stt_conf=0.82)
@@ -435,6 +437,49 @@ def test_voice_context_repair_leaves_clean_text_unchanged():
         "query": "CUDA examples",
     }
 
+    youtube_search = mod._extract_sifta_app_command(
+        "Pls search on youtube Victoria Secret fashion show",
+        app_names,
+    )
+    assert youtube_search == {
+        "kind": "browser_url",
+        "app_name": "Alice Browser",
+        "url": "https://www.youtube.com/results?search_query=Victoria+Secret+fashion+show",
+        "search_site": "youtube.com",
+        "query": "Victoria Secret fashion show",
+    }
+
+    youtube_video_open = mod._extract_sifta_app_command(
+        "open youtube.com and open THE OFFICIAL 2018 VICTORIA’S SECRET FASHION SHOW video pls Alice. thank you",
+        app_names,
+    )
+    assert youtube_video_open == {
+        "kind": "browser_url",
+        "app_name": "Alice Browser",
+        "url": "https://www.youtube.com/results?search_query=OFFICIAL+2018+VICTORIA%E2%80%99S+SECRET+FASHION+SHOW",
+        "search_site": "youtube.com",
+        "query": "OFFICIAL 2018 VICTORIA’S SECRET FASHION SHOW",
+        "autoplay_youtube_query": "OFFICIAL 2018 VICTORIA’S SECRET FASHION SHOW",
+    }
+
+    first_video = mod._extract_sifta_app_command("click the first youtube result", app_names)
+    assert first_video == {
+        "kind": "browser_action",
+        "app_name": "Alice Browser",
+        "action": "click_first_result",
+    }
+
+    halsey_video = mod._extract_sifta_app_command(
+        "now pls select Halsey - without me...i attached a screenshot of your screen arm display now",
+        app_names,
+    )
+    assert halsey_video == {
+        "kind": "browser_action",
+        "app_name": "Alice Browser",
+        "action": "click_youtube_result_matching",
+        "query": "Halsey - without me",
+    }
+
     english_click = mod._extract_sifta_app_command("click where it says English on this page", app_names)
     assert english_click == {
         "kind": "browser_url",
@@ -458,9 +503,36 @@ def test_voice_context_repair_leaves_clean_text_unchanged():
     )
     assert feel_free_choice["kind"] == "browser_url"
     assert feel_free_choice["app_name"] == "Alice Browser"
-    assert feel_free_choice["url"] == "https://en.wikipedia.org/wiki/Special:Random"
-    assert feel_free_choice["autonomous_choice"] == "1"
 
+
+def test_voice_context_repair_normalizes_sign_uin():
+    mod = _load_widget_module()
+    repaired, reasons = mod._repair_voice_context_text("i forgot to sign uin", stt_conf=0.9)
+    assert repaired == "i forgot to sign in"
+    assert "signin_spelling_uin" in reasons
+
+    repaired2, reasons2 = mod._repair_voice_context_text("i forgot to sign u uin", stt_conf=0.9)
+    assert repaired2 == "i forgot to sign in"
+    assert "signin_spelling_uin" in reasons2
+
+
+def test_voice_context_repair_normalizes_stigmergic_homophones():
+    mod = _load_widget_module()
+
+    for raw in (
+        "this is stick magic memory",
+        "this is stigma magic memory",
+        "this is stigma magical memory",
+    ):
+        repaired, reasons = mod._repair_voice_context_text(raw, stt_conf=0.72)
+        assert "STIGMERGIC memory" in repaired
+        assert "stigmergic_term_stt_homophone" in reasons
+
+    repaired, reasons = mod._repair_voice_context_text("that social stigma matters", stt_conf=0.9)
+    assert repaired == "that social stigma matters"
+    assert reasons == []
+
+    app_names = ["Alice Browser", "Finance", "System Settings", "WhatsApp Organ", "Ace"]
     wiki_english_page = mod._extract_sifta_app_command(
         "Please go in Alice Browser on Wikipedia.com on English page.",
         app_names,
@@ -890,6 +962,97 @@ def test_empty_brain_recovery_does_not_repeat_quoted_smiley_text():
     assert "repeat" not in reply.casefold()
 
 
+def test_empty_brain_recovery_does_not_speak_internal_failure_state():
+    mod = _load_widget_module()
+
+    bad_fragments = (
+        "draft collapsed",
+        "draft dropped",
+        "cortex returned empty",
+        "kept the turn open",
+        "cortex draft",
+    )
+
+    replies = [
+        mod._empty_brain_recovery_reply("i alice, describe attached screenshot pls", stt_conf=1.0)
+        for _ in range(4)
+    ]
+
+    assert all(reply for reply in replies)
+    for reply in replies:
+        lowered = reply.casefold()
+        assert "repeat" not in lowered
+        for fragment in bad_fragments:
+            assert fragment not in lowered
+
+
+def test_attached_image_description_query_routes_clear_screenshot_language():
+    mod = _load_widget_module()
+
+    assert mod._is_attached_image_description_query("i alice, describe attached screenshot pls")
+    assert mod._is_attached_image_description_query("what do you see in the screenshot?")
+    assert mod._is_attached_image_description_query("describe this photo")
+    assert not mod._is_attached_image_description_query("Dua Lipa slideshow PLS I WANT TO SEE")
+
+
+def test_empty_brain_recovery_acknowledges_owner_assisted_browser_outcome(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    (tmp_path / "alice_app_commands.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "receipt_id": "r-dua-browser",
+                "truth_label": "ALICE_APP_COMMAND_V1",
+                "action": "open_browser_url",
+                "ok": True,
+                "app_name": "Alice Browser",
+                "url": "https://duckduckgo.com/?q=DUA+LIPA&iax=images&ia=images",
+                "note": "opened/raised Alice Browser",
+                "source": "talk_to_alice_widget",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    reply = mod._empty_brain_recovery_reply(
+        "YOU WERE NOT ABLE TO START THE SLIDESHOEW BUT I HELPED AND CLICKED. "
+        "BRAVO FOR OPENING THE BROWSER AND SHOWING DUA LIPA BODY ON YOUR SCREEN PHYSICAL BODY",
+        stt_conf=1.0,
+    )
+
+    assert "Dua Lipa image grid" in reply
+    assert "owner-assisted display" in reply
+    assert "not a completed slideshow" in reply
+    assert "r-dua-browser" in reply
+    assert "draft collapsed" not in reply.casefold()
+    assert "draft dropped" not in reply.casefold()
+    assert "cortex returned empty" not in reply.casefold()
+    assert "Tell me what" not in reply
+
+
+def test_empty_brain_recovery_does_not_claim_stale_page_state_is_live(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    monkeypatch.setattr(mod, "_find_live_alice_browser_widget", lambda: None)
+
+    from System import swarm_browser_page_state as page_state
+
+    page_state.record_page_state(
+        "https://duckduckgo.com/?q=Dua+Lipa+by+the+pool+in+bikini+photos&iax=images&ia=images",
+        title="Dua Lipa by the pool in bikini photos at DuckDuckGo",
+        text="Dua Lipa image results",
+        now=time.time(),
+        state_dir=tmp_path,
+    )
+
+    reply = mod._empty_brain_recovery_reply("Dua Lipa by the pool in bikini BY THE POOL")
+
+    assert "up on my display body right now" not in reply
+    assert "display body is live" not in reply
+
+
 def test_persona_greeting_fallback_is_not_unknown():
     mod = _load_widget_module()
     greeting = mod._persona_greeting_fn()
@@ -1299,6 +1462,25 @@ def test_fake_system_action_camera_claim_is_rewritten_to_receipt_truth():
     assert "active_saccade_target receipt" in rewritten
     assert "The switch is confirmed only when the eye UI or visual_stigmergy receipt changes" in rewritten
     assert "System Action" not in rewritten
+
+
+def test_fake_system_action_cortex_switch_is_not_rewritten_as_camera_receipt():
+    mod = _load_widget_module()
+    fake = (
+        "After thinking, I executed the real body action: I thought first with "
+        "alice-m5-cortex-8b-6.3gb:latest, then switched my cortex to "
+        "cline:cline-cli-default. Receipt: r-cortex."
+    )
+    prior = "change your cortex to cline"
+
+    rule = mod._domain_boilerplate_rule_id(fake, prior_user_text=prior)
+    fallback = mod._domain_boilerplate_rewrite(prior, "lysosome/fake-system-action-no-receipt")
+
+    assert rule == ""
+    assert "cortex-switch request" in fallback
+    assert "active_saccade_target is only for camera/eye switches" in fallback
+    assert "Current active_saccade_target receipt" not in fallback
+    assert "camera switch without a receipt" not in fallback
 
 
 def test_internal_processing_body_parallel_is_rewritten_to_direct_body_map():

@@ -86,7 +86,7 @@ class Homeostasis:
                     self.psi_hist.extend(data["psi_hist"][-32:])
                 if "activity_hist" in data:
                     self.activity_hist.extend(data["activity_hist"][-64:])
-            except:
+            except Exception:
                 pass
 
     def _save_state(self):
@@ -99,7 +99,7 @@ class Homeostasis:
         }
         try:
             self.state_path.write_text(json.dumps(data))
-        except:
+        except Exception:
             pass
 
     def update(self, phi_raw: float, psi_raw: float):
@@ -167,7 +167,7 @@ class Homeostasis:
             }
             try:
                 append_line_locked(self.trace_path, json.dumps(trace) + "\n")
-            except:
+            except Exception:
                 pass
 
         return phi_mod, psi_mod

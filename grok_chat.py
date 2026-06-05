@@ -39,6 +39,7 @@ _VISION_OK_MODELS = ("grok-4", "grok-2-vision", "grok-vision")
 # are product version strings the xAI /v1/chat/completions API does NOT accept; the valid
 # multimodal API id is "grok-4". Owner-overridable via SIFTA_GROK_VISION_MODEL.
 _DEFAULT_VISION_MODEL = (os.environ.get("SIFTA_GROK_VISION_MODEL", "grok-4").strip() or "grok-4")
+_XAI_OAUTH_LEDGER = Path(__file__).resolve().parent / ".sifta_state" / "xai_grok_oauth_calls.jsonl"
 
 
 def normalize_model_name(model: str) -> str:
@@ -113,6 +114,54 @@ def get_api_key():
     print("Log in via xAI OAuth (Hermes). Token is read from ~/.hermes/auth.json or "
           ".sifta_state/secrets/xai_grok_oauth_token.json.")
     sys.exit(1)
+
+
+def _redact_secret(value: str) -> str:
+    text = str(value or "")
+    if len(text) <= 10:
+        return "***"
+    return f"{text[:5]}...{text[-4:]}"
+
+
+def write_grok_chat_oauth_receipt(
+    *,
+    ok: bool,
+    reason: str,
+    model: str,
+    status_code: int | None = None,
+    response_text: str = "",
+    credential_value: str = "",
+    had_image: bool = False,
+    endpoint: str = "chat/completions",
+) -> dict:
+    """Record the actual Grok chat/completions health path Alice used.
+
+    The xAI OAuth organ records response-endpoint calls, while this CLI arm uses
+    chat/completions directly. Keep the receipt in the same health ledger so
+    future arms can inspect whether Grok OAuth is working or stale.
+    """
+    receipt = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "truth_label": "XAI_GROK_CHAT_COMPLETION_CALL_V1",
+        "ok": bool(ok),
+        "reason": str(reason or ""),
+        "status_code": status_code,
+        "model": model,
+        "endpoint": endpoint,
+        "had_image": bool(had_image),
+        "credential_kind": "oauth_access_token" if credential_value else None,
+        "credential_redacted": _redact_secret(credential_value) if credential_value else None,
+        "response_preview": str(response_text or "")[:500],
+        "source": "grok_chat.py",
+    }
+    try:
+        _XAI_OAUTH_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        with _XAI_OAUTH_LEDGER.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return receipt
 
 
 def mint_grok_delegation_swimmer(query: str, reply: str, invoker: str = "alice_matrix_terminal") -> dict:
@@ -194,9 +243,25 @@ def main():
             )
         except Exception as e:
             print(f"Request error: {e}")
+            write_grok_chat_oauth_receipt(
+                ok=False,
+                reason=f"request_error:{type(e).__name__}:{e}",
+                model=model,
+                credential_value=api_key,
+                had_image=has_image,
+            )
             sys.exit(2)
         if resp.status_code != 200:
             print(f"API error {resp.status_code}: {resp.text}")
+            write_grok_chat_oauth_receipt(
+                ok=False,
+                reason=f"api_error:{resp.status_code}",
+                model=model,
+                status_code=resp.status_code,
+                response_text=resp.text,
+                credential_value=api_key,
+                had_image=has_image,
+            )
             # George 2026-05-31: capture the EXACT xAI rejection so a future grok failure
             # is self-diagnosing (model-not-found vs 401-auth vs ...), not an opaque rc=3.
             try:
@@ -218,6 +283,15 @@ def main():
             print("Unexpected response format:", data)
             sys.exit(4)
         print(f"Grok: {reply}\n")
+        write_grok_chat_oauth_receipt(
+            ok=True,
+            reason="api_response",
+            model=model,
+            status_code=resp.status_code,
+            response_text=reply,
+            credential_value=api_key,
+            had_image=has_image,
+        )
         if args.receipt:
             rec = mint_grok_delegation_swimmer(query, reply, args.invoker)
             print(f"[organism receipt] swimmer_id={rec['swimmer_id']} stgm_cost={rec['stgm_cost']}")
@@ -259,10 +333,24 @@ def main():
             )
         except Exception as e:
             print(f"Request error: {e}")
+            write_grok_chat_oauth_receipt(
+                ok=False,
+                reason=f"request_error:{type(e).__name__}:{e}",
+                model=model,
+                credential_value=api_key,
+            )
             continue
 
         if resp.status_code != 200:
             print(f"API error {resp.status_code}: {resp.text}")
+            write_grok_chat_oauth_receipt(
+                ok=False,
+                reason=f"api_error:{resp.status_code}",
+                model=model,
+                status_code=resp.status_code,
+                response_text=resp.text,
+                credential_value=api_key,
+            )
             messages.pop()
             continue
 
@@ -275,6 +363,14 @@ def main():
             continue
 
         print(f"Grok: {reply}\n")
+        write_grok_chat_oauth_receipt(
+            ok=True,
+            reason="api_response",
+            model=model,
+            status_code=resp.status_code,
+            response_text=reply,
+            credential_value=api_key,
+        )
         messages.append({"role": "assistant", "content": reply})
 
 if __name__ == "__main__":

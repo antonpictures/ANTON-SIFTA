@@ -27,7 +27,7 @@ def main():
     try:
         with open(CONFIG_PATH, "r") as f:
             config = json.load(f)
-    except:
+    except Exception:
         config = {}
         
     token = config.get("DISCORD_BOT_TOKEN")

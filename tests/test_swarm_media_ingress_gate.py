@@ -156,6 +156,59 @@ def test_own_browser_playback_never_overrides_direct_owner_speech(monkeypatch):
     assert decision["source_class"] == "owner_direct_speech"
 
 
+def test_paused_own_browser_routes_owner_speech_direct(monkeypatch):
+    monkeypatch.setattr(
+        gate,
+        "is_my_own_browser_playback",
+        lambda **kwargs: (
+            False,
+            {
+                "domain": "www.youtube.com",
+                "playing": False,
+                "media_status": "paused",
+                "reason": "media_domain_but_not_playing",
+                "is_current_page": True,
+            },
+        ),
+    )
+
+    decision = classify_spoken_ingress(
+        "I paused the video and I want to talk to you now",
+        stt_conf=0.56,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=NEARFIELD_FP,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "paused_own_browser_no_media_audio"
+
+
+def test_paused_own_browser_still_suppresses_farfield_replay(monkeypatch):
+    monkeypatch.setattr(
+        gate,
+        "is_my_own_browser_playback",
+        lambda **kwargs: (
+            False,
+            {
+                "domain": "www.youtube.com",
+                "playing": False,
+                "media_status": "paused",
+                "reason": "media_domain_but_not_playing",
+                "is_current_page": True,
+            },
+        ),
+    )
+
+    decision = classify_spoken_ingress(
+        "the speaker continues talking about the fashion show",
+        stt_conf=0.70,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] != "direct"
+
+
 def test_direct_alice_address_still_reaches_the_cortex_during_youtube():
     decision = classify_spoken_ingress(
         "Alice, what are we watching together?",

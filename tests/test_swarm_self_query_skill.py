@@ -71,3 +71,31 @@ def test_self_query_receipt_writes_jsonl(tmp_path, monkeypatch):
     lines = (state / LEDGER_NAME).read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["trace_id"] == report.trace_id
+
+
+def test_self_query_body_map_reads_hallucination_and_unknown_ledgers(tmp_path, monkeypatch):
+    from System import swarm_organ_directory
+    from System.swarm_self_query_skill import build_self_query_report
+
+    now = time.time()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    (state / "hallucination_receipts.jsonl").write_text(
+        json.dumps({"ts": now, "category": "HALLUCINATION", "claim": "I saved the file"}) + "\n",
+        encoding="utf-8",
+    )
+    (state / "unknowns_ledger.jsonl").write_text(
+        json.dumps({"ts": now, "kind": "UNKNOWN", "text": "not provided"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(swarm_organ_directory, "list_organs", lambda: [])
+
+    report = build_self_query_report(root=tmp_path, owner_label="George", now=now)
+
+    assert report.hallucination_receipt_count == 1
+    assert report.unknown_count == 1
+    names = {area.name for area in report.body_map_areas}
+    assert "hallucination receipt lane" in names
+    assert "honest unknowns" in names
+    assert "hallucination_receipts=1" in report.prompt_block
+    assert "I should say 'I don't know yet'" in report.prompt_block

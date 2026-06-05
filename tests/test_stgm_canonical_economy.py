@@ -37,6 +37,33 @@ def test_memory_rewards_count_and_legacy_casino_is_ignored(tmp_path: Path) -> No
     assert "casino_rows_are_play_tokens_not_stgm" not in data["warnings"]
 
 
+def test_matrix_snapshot_separates_wallet_cache_spendable_and_pouw_stake(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(
+        json.dumps({"id": "ALICE_M5", "energy": 82, "stgm_balance": 97.188}),
+        encoding="utf-8",
+    )
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 10.0})
+    _append(repair_log, {"tx_type": "STGM_SPEND", "agent_id": "ALICE_M5", "amount": 2.0})
+    _append(state_dir / "stgm_memory_rewards.jsonl", {"amount": 15.0, "reason": "PoUW"})
+
+    snap = stgm_economy.economy_matrix_snapshot(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        memory_rewards=state_dir / "stgm_memory_rewards.jsonl",
+    )
+
+    assert snap["alice_m5_spendable_stgm"] == pytest.approx(8.0)
+    assert snap["spendable_total_stgm"] == pytest.approx(8.0)
+    assert snap["wallet_file_claims"]["ALICE_M5"]["stgm_balance_file"] == pytest.approx(97.188)
+    assert snap["wallet_cache_drifts"]["ALICE_M5"]["drift"] == pytest.approx(89.188)
+    assert snap["pouw_reputation_stgm"] == pytest.approx(15.0)
+    assert "not spendable" in snap["interpretation"]
+
+
 def test_deprecated_mint_attempts_are_audit_only(tmp_path: Path) -> None:
     repair_log = tmp_path / "repair_log.jsonl"
     state_dir = tmp_path / ".sifta_state"

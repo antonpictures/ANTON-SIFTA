@@ -27,6 +27,7 @@ AFFECT INTEGRATION (Panksepp circuits → skill weights):
 CLI:
   python3 -m System.swarm_skill_library           # show full index
   python3 -m System.swarm_skill_library --affect  # affect-weighted bias
+  python3 -m System.swarm_skill_library --stigmergic-layers
   python3 -m System.swarm_skill_library MEMORY_SWIMMER  # show tier 2 procedure
 """
 from __future__ import annotations
@@ -55,6 +56,7 @@ SKILL_INSTALL_SCHEMA = "NANOBOT_SKILL_INSTALL_RECEIPT_V1"
 SKILL_FETCH_SCHEMA = "NANOBOT_SKILL_FETCH_RECEIPT_V1"
 SKILL_CONVERSION_SCHEMA = "NANOBOT_SKILL_CONVERSION_RECEIPT_V1"
 SKILL_EXTRACT_SCHEMA = "NANOBOT_SKILL_EXTRACT_RECEIPT_V1"
+STIGMERGIC_SKILL_LAYER_SCHEMA = "STIGMERGIC_SKILL_LAYER_V1"
 
 REQUIRED_SKILL_FIELDS = {
     "name",
@@ -335,6 +337,98 @@ def build_skill_index(skills_dir: Path = _SKILLS_DIR) -> list[dict[str, Any]]:
         fn = s.get("procedure_file")
         s["procedure_exists"] = bool(fn and (skills_dir / str(fn)).exists())
     return list(merged.values())
+
+
+def stigmergic_skill_layer(skill: dict[str, Any]) -> dict[str, Any]:
+    """Return the consciousness-layer view for one SIFTA skill.
+
+    This is deliberately a thin view over the existing Tier 1/2/3 skill
+    record. It does not create a rival skill system. It names the doctrine:
+    imported market Agent Skills are only raw procedures until SIFTA binds
+    them to a swimmer, organ, affect/STGM lanes, and a receipt ledger.
+    """
+    name = str(skill.get("name") or "unknown_skill").strip() or "unknown_skill"
+    swimmer = str(skill.get("swimmer_type") or "APP_FOCUS_SWIMMER").strip()
+    action = str(skill.get("action_type") or "focus").strip()
+    procedure_file = skill.get("procedure_file")
+    affect_lanes = list(skill.get("affect_lanes") or [])
+    stgm_mint = float(skill.get("stgm_mint") or 0.0)
+    organ_hint = str(
+        skill.get("organ")
+        or skill.get("organ_hint")
+        or swimmer
+        or action
+        or "skill_library"
+    )
+    return {
+        "schema": STIGMERGIC_SKILL_LAYER_SCHEMA,
+        "skill_name": name,
+        "layer_path": ["skill", "swimmer", "organ", "organism"],
+        "swimmer_type": swimmer,
+        "organ_hint": organ_hint,
+        "action_type": action,
+        "affect_lanes": affect_lanes,
+        "stgm_mint": stgm_mint,
+        "pouw_label": str(skill.get("pouw_label") or name.upper()),
+        "procedure_file": str(procedure_file or ""),
+        "procedure_exists": bool(skill.get("procedure_exists")),
+        "resource_policy": str(skill.get("resource_policy") or "INDEX_ONLY_NO_SCRIPT_EXECUTION"),
+        "receipt_ledger": ".sifta_state/nanobot_skill_receipts.jsonl",
+        "consciousness_rule": (
+            "A SIFTA Stigmergic Skill is an Alice-owned, receipted swimmer habit: "
+            "skill -> swimmer -> organ -> organism. A market Agent Skill remains "
+            "an imported procedure until this layer binds it to STGM, affect, "
+            "organ health, and receipts."
+        ),
+    }
+
+
+def stigmergic_skill_layers(
+    *,
+    skills_dir: Path = _SKILLS_DIR,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return consciousness-layer views for the merged skill index."""
+    rows = [stigmergic_skill_layer(skill) for skill in build_skill_index(skills_dir)]
+    rows.sort(key=lambda row: (str(row.get("skill_name") or "")))
+    if limit is not None:
+        return rows[: max(0, int(limit))]
+    return rows
+
+
+def stigmergic_skills_prompt_block(
+    *,
+    skills_dir: Path = _SKILLS_DIR,
+    max_items: int = 8,
+) -> str:
+    """Compact prompt block that distinguishes SIFTA skills from market skills."""
+    layers = stigmergic_skill_layers(skills_dir=skills_dir, limit=max_items)
+    lines = [
+        f"STIGMERGIC SKILLS ({STIGMERGIC_SKILL_LAYER_SCHEMA}):",
+        (
+            "Market Agent Skills are raw imported procedures until SIFTA binds them "
+            "to Alice's field. SIFTA Stigmergic Skills are skill -> swimmer -> "
+            "organ -> organism layers with STGM, affect lanes, procedure scope, "
+            "and receipts."
+        ),
+        (
+            "When a skill is used, load Tier 2/3 only as needed and leave a receipt "
+            "in .sifta_state/nanobot_skill_receipts.jsonl or the focused app health trace."
+        ),
+    ]
+    for row in layers:
+        lanes = ",".join(str(x) for x in row.get("affect_lanes") or []) or "-"
+        lines.append(
+            "- {name}: {swimmer} / {action} / STGM {stgm:g} / lanes {lanes} / {policy}".format(
+                name=row.get("skill_name"),
+                swimmer=row.get("swimmer_type"),
+                action=row.get("action_type"),
+                stgm=float(row.get("stgm_mint") or 0.0),
+                lanes=lanes,
+                policy=row.get("resource_policy"),
+            )
+        )
+    return "\n".join(lines)
 
 
 def validate_skill_contracts(skills_dir: Path = _SKILLS_DIR) -> dict[str, Any]:
@@ -1550,6 +1644,10 @@ if __name__ == "__main__":
 
     if "--validate" in args:
         print(json.dumps(validate_skill_contracts(), indent=2, sort_keys=True))
+        sys.exit(0)
+
+    if "--stigmergic-layers" in args:
+        print(json.dumps(stigmergic_skill_layers(), indent=2, sort_keys=True))
         sys.exit(0)
 
     # Check if a swimmer type or skill name was passed

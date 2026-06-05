@@ -106,3 +106,19 @@ def test_cleanup_receipt_records_deleted_bytes(tmp_path):
     assert row["deleted_count"] == 1
     assert row["deleted_bytes"] == 3000
     assert row["truth_label"] == "OBSERVED_LOCAL_FILESYSTEM_DELETE"
+
+
+def test_scan_inventory_skips_non_utf8_manifest_like_files(tmp_path):
+    root = tmp_path / "models"
+    manifests = root / "manifests" / "registry.ollama.ai" / "library"
+
+    _manifest(manifests / "alice" / "latest", "sha256:shared", 1000)
+    bad = manifests / "broken" / "latest"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_bytes(b"\x86\x00not-json")
+    _blob(root, "sha256:shared", 1000)
+
+    inv = scan_inventory(root)
+
+    assert "alice:latest" in inv.model_tags
+    assert "broken:latest" not in inv.model_tags

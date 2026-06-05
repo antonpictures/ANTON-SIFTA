@@ -523,10 +523,10 @@ class ProteinFoldingBroker:
                         part = part.strip()
                         if part.startswith("score="):
                             try: score = float(part.split("=")[1])
-                            except: pass
+                            except Exception: pass
                         if part.startswith("seq_recovery="):
                             try: recovery = float(part.split("=")[1])
-                            except: pass
+                            except Exception: pass
                     designed_sequences.append({
                         "sequence": sequence,
                         "score": score,

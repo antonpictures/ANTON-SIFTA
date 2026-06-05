@@ -254,9 +254,9 @@ def live_saccade_loop(agent_id: str = "ALICE_M5", tick_hz: float = 2.0):
                             if "entropy_bits" in row:
                                 entropy = float(row["entropy_bits"])
                                 break
-                        except:
+                        except Exception:
                             pass
-            except:
+            except Exception:
                 pass
         
         # Determine face lock from C-Tactile/Mirror or assuming locked if high entropy for now
@@ -283,8 +283,8 @@ def live_saccade_loop(agent_id: str = "ALICE_M5", tick_hz: float = 2.0):
                                 if (now - ts) < 2.0:
                                     audio_rms = float(row["rms_amplitude"])
                                 break
-                        except: pass
-            except: pass
+                        except Exception: pass
+            except Exception: pass
 
         rf_anomaly = 0.0
         if _RF_LOG.exists():
@@ -302,8 +302,8 @@ def live_saccade_loop(agent_id: str = "ALICE_M5", tick_hz: float = 2.0):
                                     if row["event"] == "WIFI_BEAM_BROKEN":
                                         rf_anomaly = 1.0
                                 break
-                        except: pass
-            except: pass
+                        except Exception: pass
+            except Exception: pass
             
         return entropy, face_locked, audio_rms, rf_anomaly
 

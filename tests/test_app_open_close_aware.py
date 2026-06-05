@@ -305,6 +305,56 @@ def test_bare_site_category_in_browser_command_navigates_home():
     assert out2.get("url") == "https://www.tiktok.com", out2
 
 
+def test_forgotten_izzy_x_link_opens_remembered_profile_not_current_page(monkeypatch, tmp_path):
+    state = _use_tmp_state(monkeypatch, tmp_path)
+    (state / "stigmergic_browser_actions.jsonl").write_text(
+        json.dumps(
+            {
+                "action": "navigate_or_spa_change",
+                "url": "https://x.com/abellaskies",
+                "title": "Isabella (@abellaskies) / X",
+                "trigger": {"owner_text_head": "OPEN IZZY ON TWITTER https://x.com/abellaskies"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    phrase = "i forgot izzy link on x:( can u pls open it?"
+
+    assert not tw._is_current_page_query(phrase)
+    out = tw._extract_sifta_app_command(phrase)
+    assert out.get("kind") == "browser_url", out
+    assert out.get("app_name") == "Alice Browser", out
+    assert out.get("url") == "https://x.com/abellaskies", out
+    assert out.get("remembered_target") == "izzy_x", out
+
+
+def test_bare_handle_browser_open_recovers_platform_from_receipts_without_person_hardcode(monkeypatch, tmp_path):
+    state = _use_tmp_state(monkeypatch, tmp_path)
+    handle = "anymodel123"
+    (state / "app_action_diary.jsonl").write_text(
+        json.dumps(
+            {
+                "phase": "after_action",
+                "app": "Alice Browser",
+                "url": f"https://www.instagram.com/{handle}/",
+                "line": f"I opened Alice Browser at https://www.instagram.com/{handle}/.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    for phrase in (
+        f"pls open alice browser @{handle}",
+        f"open @{handle} in alice browser",
+    ):
+        out = tw._extract_sifta_app_command(phrase)
+        assert out.get("kind") == "browser_url", out
+        assert out.get("app_name") == "Alice Browser", out
+        assert out.get("url") == f"https://www.instagram.com/{handle}/", out
+
+
 def test_spoken_site_target_uses_stigmergic_playbook_not_hardcoded_person():
     for handle in ("surfcoach2026", "bodymodel_xyz"):
         out = tw._extract_sifta_app_command(

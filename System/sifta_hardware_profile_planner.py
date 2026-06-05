@@ -151,7 +151,6 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                     "24GB+ unified memory tier; model tag is historical, not a hardware lock",
                 ),
                 ModelSlot("alice-m1-cortex-4.5b-3.4gb:latest", "Alice low-RAM cortex/scout", "optional", "SIFTA-owned 4.5B / 3.4GB scout tag"),
-                ModelSlot("sifta-classifier-c1-3.1b-6.2gb:latest", "intent classifier", "optional", "only if C1 path is enabled"),
                 ModelSlot("alice-extra-cortex-25.8b-17gb:latest", "extra main cortex", "optional", "selectable 25.8B / 17GB test cortex from Settings > Inference"),
             ],
             skipped_models=[],
@@ -170,16 +169,13 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
             summary="Scout/sentry node. Local M1 cortex first; can borrow inference from any swarm node by receipt.",
             local_models=[
                 ModelSlot("alice-m1-cortex-4.5b-3.4gb:latest", "Alice main cortex", "recommended", "SIFTA-owned alias for uncensored 4B M1 cortex"),
-                ModelSlot("alice-m1-scout-2.3b-2.7gb:latest", "Alice low-RAM cortex/scout", "recommended", "tiny scout/corvid fallback when the 4B cortex is too expensive"),
             ],
             skipped_models=[
                 ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 does not fit safely in soldered 8GB RAM"),
-                ModelSlot("sifta-classifier-c1-3.1b-6.2gb:latest", "intent classifier", "skip", "classifier is too heavy for 8GB; build/use a smaller classifier"),
             ],
             optional_lanes=["borrow receipted inference from any capable SIFTA swarm node"],
             install_commands=[
                 "ollama pull alice-m1-cortex-4.5b-3.4gb:latest",
-                "ollama pull alice-m1-scout-2.3b-2.7gb:latest",
             ],
         )
 

@@ -1,3 +1,16 @@
+---
+name: grok_pty_arm
+description: >
+  Use when Alice needs the Grok PTY arm in the Matrix Terminal for bounded
+  coding, research, or diagnostic work with hash/span capture and receipts.
+swimmer_type: GROK_PTY_SWIMMER
+action_type: code
+affect_lanes: [SEEKING, CARE]
+stgm_mint: 4.0
+pouw_label: GROK_PTY_ARM
+version: 2026-06-05
+---
+
 # Grok PTY Arm
 
 ## Name

@@ -41,12 +41,25 @@ _WIL_RE = re.compile(r"what\s*is\s*left|what'?s\s*left|whats\s*left", re.IGNOREC
 _BULLET_RE = re.compile(r"^\s*([-*•]|\d+[.)])\s+(.*\S)")
 _CATEGORY_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s*:?\s*$")
 _END_RE = re.compile(r"^(##\s|###\s|Receipt:|For the Swarm)", re.IGNORECASE)
+_DATED_TOURNAMENT_RE = re.compile(r"^CONSCIOUSNESS_TOURNAMENT_(\d{4}-\d{2}-\d{2})\.md$")
+
+
+def _tournament_sort_key(path: Path) -> tuple[int, str, float]:
+    """Prefer the newest date-stamped carrier over mtime.
+
+    Multiple IDEs can append to yesterday's carrier after today's file exists.
+    That should not make the live list jump backward in time.
+    """
+    m = _DATED_TOURNAMENT_RE.match(path.name)
+    if m:
+        return (1, m.group(1), path.stat().st_mtime)
+    return (0, "", path.stat().st_mtime)
 
 
 def find_latest_tournament(docs_dir: Path = _DOCS) -> Path | None:
     cands = sorted(
         docs_dir.glob("CONSCIOUSNESS_TOURNAMENT_*.md"),
-        key=lambda p: p.stat().st_mtime,
+        key=_tournament_sort_key,
         reverse=True,
     )
     return cands[0] if cands else None

@@ -6,6 +6,7 @@ from Applications.sifta_talk_to_alice_widget import (
     _is_cowatch_quiet_exit,
     _is_face_recognition_query,
     _is_cowatch_quiet_trigger,
+    _is_youtube_ad_skip_request,
     _is_owner_typed_caps_signal,
     _last_user_message_reply,
 )
@@ -28,6 +29,20 @@ def test_sleeping_with_tv_enters_quiet_mode() -> None:
     )
     assert _is_cowatch_quiet_trigger(text)
     assert _cowatch_quiet_duration_s(text) == 20 * 60
+
+
+def test_free_will_arms_question_does_not_enter_quiet_mode() -> None:
+    text = (
+        "are you already consciouss of all of your arms? can you list them? "
+        "are you able to use them on free will?"
+    )
+    assert not _is_cowatch_quiet_trigger(text)
+
+
+def test_skip_ad_request_is_not_a_general_skip_match() -> None:
+    assert _is_youtube_ad_skip_request("Alice, click the skip ad button.")
+    assert _is_youtube_ad_skip_request("please skip the YouTube ad")
+    assert not _is_youtube_ad_skip_request("skip this word and continue the lesson")
 
 
 def test_quiet_mode_exits_on_direct_address() -> None:

@@ -2001,7 +2001,7 @@ class SwarmPhysiology:
                 "event_kind": "CORVID_APPRENTICE_HEARTBEAT",
                 "ts": now,
                 "task": "idle",
-                "model": "alice-m1-scout-2.3b-2.7gb:latest",
+                "model": "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
                 "latency_s": 0.0,
                 "success": True,
                 "heartbeat_only": True,

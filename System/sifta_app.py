@@ -110,6 +110,11 @@ try:
 except Exception:
     swarm_local_brain = None
 
+try:
+    from System import swarm_mlx_vlm_brain as swarm_mlx_vlm_brain
+except Exception:
+    swarm_mlx_vlm_brain = None
+
 if router is not None:
     parse_tool_calls = getattr(router, "parse_tool_calls", None)
     tools_for_alice_prompt = getattr(router, "tools_for_alice_prompt", None)
@@ -589,6 +594,34 @@ def _brain_tool_route(user_text: str) -> Dict[str, Any]:
             "provider": None,
             "error": "LLM routing disabled by SIFTA_APP_DISABLE_LLM=1",
         }
+    # Prefer MLX VLM native vision cortex (strong local model for image describe,
+    # attached screenshots, "on body screen" visuals, and chat). Fixes blanking 8b.
+    if swarm_mlx_vlm_brain is not None and swarm_mlx_vlm_brain.is_available():
+        try:
+            model = swarm_mlx_vlm_brain.get_default_model()
+            messages = [
+                {"role": "system", "content": _brain_system_prompt()},
+                {"role": "user", "content": user_text},
+            ]
+            events = list(swarm_mlx_vlm_brain.stream_chat(
+                model, messages, request_tag="sifta_app_chat_llm", temperature=0.3
+            ))
+            full_text = ""
+            for kind, payload in events:
+                if kind == "done":
+                    full_text = str(payload or "")
+                    break
+                if kind == "token" and isinstance(payload, str):
+                    full_text += payload
+            return {
+                "text": full_text,
+                "model": model,
+                "provider": "mlx-vlm",
+                "error": None,
+            }
+        except Exception:
+            pass  # fall to local ollama or others
+
     # Prefer new local brain module (Ollama /api/chat, proper messages)
     if swarm_local_brain is not None and swarm_local_brain.is_available():
         try:

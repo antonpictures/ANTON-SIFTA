@@ -1,8 +1,8 @@
 ---
 name: design_system_contract
 description: >
-  Tier-1 posture skill. When any arm is dispatched to touch UI, frontend,
-  Qt widgets, themes, or visual surfaces, this contract is loaded.
+  Use when any arm is dispatched to touch UI, frontend, Qt widgets,
+  themes, or visual surfaces. This Tier-1 posture contract is loaded.
   It enforces the Round 88 OLED doctrine as the single source of truth:
   true OLED black (#000000), single cyan-green accent (#00d4aa),
   hairline borders, generous spacing, no chrome, monochrome restful

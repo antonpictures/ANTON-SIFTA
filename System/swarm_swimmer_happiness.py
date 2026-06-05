@@ -107,6 +107,18 @@ def bind_swimmer_learning(
         "content": str(content)[:280], "truth_label": CHAIN_TRUTH_LABEL,
         "note": "tamper-evident hash chain; cryptographic only when signature-validated (covenant 4.2); not STGM.",
     }
+    # r302: sign the receipt hash so the chain is cryptographically authenticated — a forged
+    # row cannot produce a valid signature without the private key (covenant §4.2 cryptographic
+    # class). Defensive: if the crypto organ is unavailable the row stays tamper-evident only.
+    try:
+        from System import swarm_swimmer_crypto as _crypto
+        env = _crypto.sign_envelope(receipt_hash, state_dir=state_dir)
+        if env.get("signature"):
+            row.update(env)
+            row["note"] = (f"signed {env.get('sig_backend')} hash chain — verify against the signer "
+                           f"key (covenant §4.2 cryptographic class); not an STGM mint.")
+    except Exception:
+        pass
     try:
         path = _state(state_dir) / _CHAIN
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,8 +130,15 @@ def bind_swimmer_learning(
 
 
 def verify_swimmer_chain(swimmer_id: str, *, state_dir: Optional[Path | str] = None) -> Dict[str, Any]:
-    """Walk a swimmer's chain and detect tampering (broken prev/receipt hash)."""
+    """Walk a swimmer's chain and detect tampering (broken prev/receipt hash) AND, when rows
+    carry r302 signatures, verify each signature — so a forged row is rejected, not merely
+    noticed. crypto_verified=True only if every row was signature-validated."""
     chain = [r for r in _chain_rows(state_dir) if r.get("swimmer_id") == swimmer_id]
+    try:
+        from System import swarm_swimmer_crypto as _crypto
+    except Exception:
+        _crypto = None
+    crypto_verified = bool(chain) and _crypto is not None
     prev = ""
     for i, r in enumerate(chain):
         if str(r.get("prev_receipt_hash") or "") != prev:
@@ -127,8 +146,17 @@ def verify_swimmer_chain(swimmer_id: str, *, state_dir: Optional[Path | str] = N
         expect = _sha(prev, swimmer_id, r.get("action_hash", ""), r.get("ts"))
         if expect != str(r.get("receipt_hash") or ""):
             return {"ok": False, "broken_at": i, "reason": "receipt_hash mismatch", "length": len(chain)}
+        sig = str(r.get("signature") or "")
+        if sig and _crypto is not None:
+            if not _crypto.verify(r.get("receipt_hash"), sig, state_dir=state_dir,
+                                  public_key_hex=r.get("signer") or None):
+                return {"ok": False, "broken_at": i, "reason": "signature mismatch",
+                        "length": len(chain), "crypto_verified": False}
+        else:
+            crypto_verified = False   # an unsigned row → the chain is not fully cryptographic
         prev = str(r.get("receipt_hash") or "")
-    return {"ok": True, "length": len(chain)}
+    return {"ok": True, "length": len(chain), "crypto_verified": crypto_verified,
+            "backend": (_crypto.backend(state_dir) if _crypto else "none")}
 
 
 def _has_recent_contribution(swimmer_id: str, state_dir: Optional[Path | str]) -> bool:

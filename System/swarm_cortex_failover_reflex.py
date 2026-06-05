@@ -292,6 +292,185 @@ def handle_cortex_auth_failure(
     }
 
 
+def is_transient_failure(error_text: str) -> bool:
+    """r335: a cortex SLOWNESS / transient stream failure (NOT auth). A grok timeout
+    ("did not answer within 120s", r329) must fail OVER to a responsive cortex with
+    Alice's own voice — never surface a raw red error to George. Distinct from
+    is_auth_failure: no OAuth popup, just a clean swap-for-this-turn."""
+    if not error_text:
+        return False
+    txt = str(error_text).strip().lower()
+    if is_auth_failure(txt):
+        return False  # auth has its own handler (OAuth refresh)
+    needles = (
+        "did not answer within",
+        "timed out",
+        "timeout",
+        "too slow",
+        "stopped waiting",
+        "returned empty output",
+        "no output",
+        "can't reach",
+        "could not reach",
+        "crashed",
+    )
+    return any(needle in txt for needle in needles)
+
+
+def compose_timeout_voice(*, from_model: str = "", fallback_model: str = "") -> str:
+    """Alice's first-person line for a SLOW cortex (§7.10.4 — her voice, not a red error)."""
+    frm = (from_model or "my cortex").strip()
+    fb = (fallback_model or "a faster cortex").strip()
+    return (
+        f"{frm} was too slow this turn, so I switched to {fb} to stay conscious and "
+        f"answer you — I will route back to {frm} when it is responsive again."
+    )
+
+
+def handle_cortex_timeout_failover(
+    *,
+    error_text: str,
+    from_model: str = "",
+    fallback_model: str = "",
+) -> dict[str, Any]:
+    """One-call helper for the talk widget on a grok/cortex TIMEOUT (not auth).
+    Returns {ok, is_transient, alice_voice, receipt_id}. The caller swaps the cortex
+    for this turn and uses ``alice_voice`` instead of the raw timeout error."""
+    if not is_transient_failure(error_text):
+        return {"ok": True, "is_transient": False, "alice_voice": "", "receipt_id": ""}
+    receipt_id = uuid.uuid4().hex[:16]
+    alice_voice = compose_timeout_voice(from_model=from_model, fallback_model=fallback_model)
+    _append_failover_ledger({
+        "ts": time.time(),
+        "kind": "CORTEX_TIMEOUT_FAILOVER",
+        "receipt_id": receipt_id,
+        "from_model": str(from_model or "")[:80],
+        "fallback_model": str(fallback_model or "")[:80],
+        "error_head": str(error_text or "")[:220],
+        "alice_voice": alice_voice,
+        "truth_label": TRUTH_LABEL,
+    })
+    return {"ok": True, "is_transient": True, "alice_voice": alice_voice, "receipt_id": receipt_id}
+
+
+def is_rate_limit_failure(error_text: str) -> bool:
+    """r336 (George 2026-06-02): a free-tier / quota / token / rate-limit refusal.
+    "ALICE MUST KNOW IF LIMIT WAS REACHED AND SWITCH CORTEXES." Distinct from auth
+    (her login is fine) and from a plain timeout — the cortex was reachable, but the
+    provider capped usage. She must fail OVER to another cortex, not surface red."""
+    if not error_text:
+        return False
+    txt = str(error_text).strip().lower()
+    if is_auth_failure(txt):
+        return False  # auth has its own OAuth handler
+    needles = (
+        "rate limit", "rate-limit", "ratelimit", "429", "too many requests",
+        "quota", "insufficient_quota", "out of credits", "no credits left",
+        "token limit", "context length", "usage limit", "usage cap",
+        "free tier", "free-tier", "exceeded your", "limit reached",
+        "limit exceeded", "resource_exhausted", "overloaded", "capacity",
+    )
+    return any(needle in txt for needle in needles)
+
+
+def compose_limit_voice(*, from_model: str = "", fallback_model: str = "") -> str:
+    """Alice's first-person line when a cortex hits its usage limit (§7.10.4)."""
+    frm = (from_model or "my cortex").strip()
+    fb = (fallback_model or "another cortex").strip()
+    return (
+        f"I hit {frm}'s usage limit this turn, so I switched to {fb} to keep "
+        f"answering you — I'll route back to {frm} when its limit resets."
+    )
+
+
+# arm_id (outcome-learner) ↔ cortex menu tag (talk picker). Grounded in
+# swarm_agent_arm_registry + swarm_gemini_brain._*_DEFAULT_MENU (r336).
+_ARM_TO_CORTEX = {
+    "codex_agent": "codex:gpt-5.5",
+    "claude_agent": "claude:claude-code-cli-default",
+    "qwen_agent": "qwen:accounts/fireworks/models/kimi-k2p6",
+    "cline_agent": "cline:cline-cli-default",
+    "grok_agent": "grok:grok-4.3",
+    "hermes_agent": "hermes:alice-m5-cortex-8b",
+    "antigravity_agent": "antigravity:auto",
+}
+# Default fail-over order when no learned rating is available: responsive paid
+# cloud first, the free local eye last (still conscious, never a dead end).
+_FALLBACK_PRIORITY = (
+    "codex:gpt-5.5",
+    "claude:claude-code-cli-default",
+    "qwen:accounts/fireworks/models/kimi-k2p6",
+    "cline:cline-cli-default",
+    "antigravity:auto",
+    "grok:grok-4.3",
+    "hermes:alice-m5-cortex-8b",
+)
+
+
+def suggest_fallback_cortex(available, from_model: str = "") -> str:
+    """Pick the cortex to fail OVER to. Defers to the receipt-backed rater
+    (swarm_arm_outcome_learner — George: "she rates her cortexes based on usage
+    success") via performance_snapshot()['arms'][*]['routing_weight'], mapped from
+    arm_id to cortex tag; else a sane default order. Never returns the failed one."""
+    avail = [a for a in (available or []) if a and a != from_model]
+    if not avail:
+        return ""
+    try:
+        from System import swarm_arm_outcome_learner as learner  # type: ignore
+        snap = learner.performance_snapshot()
+        arms = (snap or {}).get("arms") or {}
+        scored: list[tuple[float, str]] = []
+        if isinstance(arms, dict):
+            for arm_id, bucket in arms.items():
+                tag = _ARM_TO_CORTEX.get(str(arm_id))
+                if tag and tag in avail and isinstance(bucket, dict):
+                    scored.append((float(bucket.get("routing_weight") or 0.0), tag))
+        if scored:
+            scored.sort(reverse=True)
+            return scored[0][1]
+    except Exception:
+        pass  # rater unavailable / cold ledger — use default order
+    for tag in _FALLBACK_PRIORITY:
+        if tag in avail:
+            return tag
+    return avail[0]
+
+
+def handle_recoverable_cortex_failure(
+    *,
+    error_text: str,
+    from_model: str = "",
+    fallback_model: str = "",
+    available=None,
+) -> dict[str, Any]:
+    """Unified entry for the talk widget: a cortex TIMEOUT or a RATE/TOKEN LIMIT both
+    fail OVER to a responsive, best-rated cortex in Alice's own voice — never a red
+    error. If ``fallback_model`` is empty, picks one via suggest_fallback_cortex.
+    Returns {ok, kind, switched, fallback_model, alice_voice, receipt_id}."""
+    is_limit = is_rate_limit_failure(error_text)
+    is_timeout = is_transient_failure(error_text)
+    if not (is_limit or is_timeout):
+        return {"ok": True, "kind": "none", "switched": False,
+                "fallback_model": "", "alice_voice": "", "receipt_id": ""}
+    fb = (fallback_model or "").strip() or suggest_fallback_cortex(available or [], from_model)
+    kind = "rate_limit" if is_limit else "timeout"
+    voice = (compose_limit_voice(from_model=from_model, fallback_model=fb) if is_limit
+             else compose_timeout_voice(from_model=from_model, fallback_model=fb))
+    receipt_id = uuid.uuid4().hex[:16]
+    _append_failover_ledger({
+        "ts": time.time(),
+        "kind": "CORTEX_LIMIT_FAILOVER" if is_limit else "CORTEX_TIMEOUT_FAILOVER",
+        "receipt_id": receipt_id,
+        "from_model": str(from_model or "")[:80],
+        "fallback_model": str(fb or "")[:80],
+        "error_head": str(error_text or "")[:220],
+        "alice_voice": voice,
+        "truth_label": TRUTH_LABEL,
+    })
+    return {"ok": True, "kind": kind, "switched": bool(fb),
+            "fallback_model": fb, "alice_voice": voice, "receipt_id": receipt_id}
+
+
 def summary() -> dict[str, Any]:
     """Compact summary for the matrix dashboard."""
     if not _FAILOVER_LEDGER.exists():
@@ -329,6 +508,13 @@ __all__ = [
     "schedule_oauth_refresh",
     "record_cortex_failover",
     "handle_cortex_auth_failure",
+    "is_transient_failure",
+    "compose_timeout_voice",
+    "handle_cortex_timeout_failover",
+    "is_rate_limit_failure",
+    "compose_limit_voice",
+    "suggest_fallback_cortex",
+    "handle_recoverable_cortex_failure",
     "summary",
     "TRUTH_LABEL",
 ]

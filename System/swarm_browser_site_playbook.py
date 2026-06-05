@@ -45,6 +45,26 @@ SITE_ALIASES = {
     "twitter": "x.com",
 }
 
+# George 2026-06-02: "every website has a CATEGORY NAME + all the tools Alice should
+# know." The domain is the stigmergic category key; this names the KIND of site so the
+# cortex block reads e.g. "CATEGORY: search engine". Unknown sites fall back to "website".
+SITE_KINDS = {
+    "google.com": "search engine",
+    "duckduckgo.com": "search engine",
+    "bing.com": "search engine",
+    "search.brave.com": "search engine",
+    "yahoo.com": "search engine",
+    "ecosia.org": "search engine",
+    "startpage.com": "search engine",
+    "yandex.com": "search engine",
+    "perplexity.ai": "answer engine",
+    "youtube.com": "video platform",
+    "tiktok.com": "short-video platform",
+    "instagram.com": "social photo platform",
+    "x.com": "social microblog",
+    "wikipedia.org": "encyclopedia",
+}
+
 _HANDLE_STOPWORDS = {
     "account",
     "alice",
@@ -84,6 +104,12 @@ def site_category(url_or_domain: str) -> str:
     host = re.sub(r"^www\.", "", host).split("/")[0]
     parts = host.split(".")
     return ".".join(parts[-2:]) if len(parts) >= 2 else (host or "unknown")
+
+
+def site_kind(url_or_domain: str) -> str:
+    """The category NAME of the site (its kind), e.g. 'search engine'. Falls back to
+    'website' for sites Alice has not categorized yet."""
+    return SITE_KINDS.get(site_category(url_or_domain), "website")
 
 
 def site_category_from_text(text: str) -> str:
@@ -213,6 +239,119 @@ def site_playbook(domain: str, *, state_dir: Optional[Path | str] = None) -> dic
     return dict(_load(state_dir).get("sites", {}).get(site_category(domain), {}))
 
 
+RELEARN_TRUTH_LABEL = "BROWSER_SITE_SKILL_RELEARN_V1"
+SKILL_OUTCOME_LEDGER = "browser_site_skill_outcomes.jsonl"
+
+
+def _persist(data: dict[str, Any], ts: float, state_dir: Optional[Path | str]) -> None:
+    data["truth_label"] = TRUTH_LABEL
+    data["updated_ts"] = ts
+    try:
+        path = _state(state_dir) / PLAYBOOK
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def record_skill_outcome(
+    domain: str, skill: str, ok: bool, *, note: str = "", source: str = "alice_browser",
+    now: Optional[float] = None, state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """George 2026-06-02: 'websites sometimes change. When they do and Alice executes
+    wrong — was good before — she learns once with the swarm.' So every time Alice runs
+    a site skill, record the outcome here. Success reinforces (confidence up, relearn
+    flag cleared). Failure decays confidence and — if this skill had worked before
+    (use_count > 0) — flags ``needs_relearn`` so the swarm relearns the move ONCE and
+    every IDE/arm inherits the new recipe via the receipt. Stigmergic: the field carries
+    success/failure, not a hardcoded cage."""
+    cat = site_category(domain)
+    sk = str(skill or "").strip().lower()
+    ts = float(now if now is not None else time.time())
+    data = _load(state_dir)
+    site = data.setdefault("sites", {}).setdefault(cat, {})
+    entry = dict(site.get(sk) or {"how_to": "", "owner_confirmed": False, "use_count": 0, "ts": ts})
+    had_worked = int(entry.get("use_count", 0)) > 0 or float(entry.get("success_count", 0)) > 0
+    conf = float(entry.get("confidence", 0.6 if had_worked else 0.4))
+    if ok:
+        entry["success_count"] = int(entry.get("success_count", 0)) + 1
+        entry["confidence"] = min(1.0, conf + 0.2)
+        entry["needs_relearn"] = False
+        entry["last_outcome"] = "ok"
+    else:
+        entry["fail_count"] = int(entry.get("fail_count", 0)) + 1
+        entry["confidence"] = max(0.0, conf - 0.34)
+        entry["last_outcome"] = "fail"
+        # A move that WORKED before and now fails => the site likely changed. Flag it
+        # for a single swarm relearn (learn once, then propagate).
+        entry["needs_relearn"] = bool(had_worked)
+    entry["last_note"] = str(note or "")[:300]
+    entry["last_source"] = str(source or "")
+    entry["ts"] = ts
+    site[sk] = entry
+    _persist(data, ts, state_dir)
+    _append_jsonl(_state(state_dir) / SKILL_OUTCOME_LEDGER, {
+        "ts": ts, "truth_label": RELEARN_TRUTH_LABEL, "kind": "SITE_SKILL_OUTCOME",
+        "category": cat, "skill": sk, "ok": bool(ok), "needs_relearn": bool(entry.get("needs_relearn")),
+        "confidence": entry["confidence"], "source": str(source or ""), "note": str(note or "")[:300],
+    })
+    return {"category": cat, "skill": sk, **entry}
+
+
+def relearn_site_skill(
+    domain: str, skill: str, new_how_to: str, *, owner_confirmed: bool = False,
+    source: str = "swarm", now: Optional[float] = None, state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Replace a stale skill's recipe ONCE the site has changed: install the new how_to,
+    bump ``version``, clear ``needs_relearn``, reset the fail streak, and receipt the change
+    so every IDE doctor and arm inherits the corrected move (learn once with the swarm)."""
+    cat = site_category(domain)
+    sk = str(skill or "").strip().lower()
+    ts = float(now if now is not None else time.time())
+    data = _load(state_dir)
+    site = data.setdefault("sites", {}).setdefault(cat, {})
+    prior = dict(site.get(sk) or {})
+    entry = dict(prior)
+    entry["how_to"] = str(new_how_to or "").strip()
+    entry["owner_confirmed"] = bool(owner_confirmed or prior.get("owner_confirmed"))
+    entry["use_count"] = int(prior.get("use_count", 0))
+    entry["version"] = int(prior.get("version", 1)) + 1
+    entry["needs_relearn"] = False
+    entry["fail_count"] = 0
+    entry["confidence"] = 0.7
+    entry["last_outcome"] = "relearned"
+    entry["ts"] = ts
+    site[sk] = entry
+    _persist(data, ts, state_dir)
+    _append_jsonl(_state(state_dir) / SKILL_OUTCOME_LEDGER, {
+        "ts": ts, "truth_label": RELEARN_TRUTH_LABEL, "kind": "SITE_SKILL_RELEARN",
+        "category": cat, "skill": sk, "version": entry["version"],
+        "old_how_to": str(prior.get("how_to") or "")[:300], "new_how_to": entry["how_to"][:300],
+        "source": str(source or ""),
+    })
+    return {"category": cat, "skill": sk, **entry}
+
+
+def skills_needing_relearn(
+    domain: Optional[str] = None, *, state_dir: Optional[Path | str] = None,
+) -> list[dict[str, Any]]:
+    """Every site skill currently flagged needs_relearn (the site changed under a move
+    that used to work). The swarm should relearn each once and receipt the fix."""
+    sites = _load(state_dir).get("sites", {})
+    want = site_category(domain) if domain else ""
+    out: list[dict[str, Any]] = []
+    for cat, skills in sites.items():
+        if want and cat != want:
+            continue
+        if not isinstance(skills, dict):
+            continue
+        for sk, e in skills.items():
+            if isinstance(e, dict) and e.get("needs_relearn"):
+                out.append({"category": cat, "skill": sk, "how_to": e.get("how_to", ""),
+                            "fail_count": e.get("fail_count", 0), "confidence": e.get("confidence")})
+    return out
+
+
 def _url_template_from_skill(entry: dict[str, Any], placeholder: str) -> str:
     how_to = str((entry or {}).get("how_to") or "")
     m = re.search(r"https?://\S+" + re.escape(placeholder) + r"\S*", how_to)
@@ -271,6 +410,7 @@ def _extract_search_query_from_text(text: str, domain: str) -> str:
     site_words = [domain.replace(".", r"\."), *[re.escape(a) for a, d in SITE_ALIASES.items() if d == domain]]
     site_re = r"(?:" + "|".join(site_words) + r")"
     patterns = [
+        rf"\b(?:search|look\s+up|find)\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?P<query>.+)$",
         rf"\b(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+?)\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\b",
         rf"\b(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
         r"\b(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
@@ -285,6 +425,38 @@ def _extract_search_query_from_text(text: str, domain: str) -> str:
             m.group("query"),
             flags=re.IGNORECASE,
         ).strip(" .?!,;:\"'")
+
+        # Spoken style can be "search on YouTube Victoria ..." where the
+        # engine sees "on <site>" as part of the query. Strip that prefix
+        # when it is still present so the generated URL is exactly what the
+        # owner said after removing the routing preposition.
+        query = re.sub(
+            rf"^\s*(?:the\s+)?(?:on|in|at)\s+(?:the\s+)?{site_re}\s+",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        # Spoken form can be "search with Google for ...", which currently leaves
+        # a leading "with <site>" or "with ... for" in the raw query. Strip these
+        # routing words so the final URL query remains exactly what the owner said
+        # after removing navigation sugar.
+        query = re.sub(
+            rf"^\s*(?:the\s+)?with\s+(?:the\s+)?{site_re}\s+",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        # Spoken form can be "search Google for ..." where the fallback
+        # pattern (no explicit routing preposition) leaves the site token
+        # in the query head. Remove it so URL builders get clean intent.
+        query = re.sub(
+            rf"^\s*(?:the\s+)?{site_re}\s+",
+            "",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        query = re.sub(r"^\s*for\s+", "", query, flags=re.IGNORECASE)
+
         if query and len(query) <= 120:
             return query
     return ""
@@ -467,15 +639,17 @@ def playbook_block(domain: str, *, state_dir: Optional[Path | str] = None) -> st
     """Cortex block: how to use this site inside Alice Browser. Falls back to
     general web-literacy when the site has no learned playbook yet."""
     cat = site_category(domain)
+    kind = site_kind(cat)
     skills = site_playbook(cat, state_dir=state_dir)
     if not skills:
-        return (f"HOW TO USE {cat} IN ALICE BROWSER: no site-specific playbook yet — "
+        return (f"HOW TO USE {cat} IN ALICE BROWSER (category: {kind}): no site-specific playbook yet — "
                 f"I approach it the way George does on a new site:\n{general_browsing_block()}\n"
                 "I learn this site's features under its category as we use it (owner-confirmable).")
-    lines = [f"HOW TO USE {cat} IN ALICE BROWSER:"]
+    lines = [f"HOW TO USE {cat} IN ALICE BROWSER:", f"CATEGORY: {kind}."]
     for sk, e in sorted(skills.items()):
         tag = " (owner-confirmed)" if e.get("owner_confirmed") else ""
-        lines.append(f"- {sk}: {e.get('how_to')}{tag}")
+        relearn = " (⚠ needs relearn — this site may have changed; the swarm should relearn this move once)" if e.get("needs_relearn") else ""
+        lines.append(f"- {sk}: {e.get('how_to')}{tag}{relearn}")
     return "\n".join(lines)
 
 
@@ -496,7 +670,9 @@ def seed_defaults(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
         state_dir=state_dir)
     out["google_search"] = ensure_site_skill(
         "google.com", "search",
-        "navigate to https://www.google.com/search?q=<query> (or type in Google's search box)",
+        "navigate to https://www.google.com/search?q=<query> (the current engine is "
+        "registry-controlled; default Google inside Alice Browser; owner can switch "
+        "engines stigmergically)",
         state_dir=state_dir)
     out["youtube_search"] = ensure_site_skill(
         "youtube.com", "search",
@@ -517,13 +693,33 @@ def seed_defaults(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
         "instagram.com", "open profile",
         "navigate to https://www.instagram.com/<handle>/",
         state_dir=state_dir)
+    # r383: slideshow habit per engine. "slideshow images of cats" defaults to
+    # DuckDuckGo; on google.com it runs on Google Images. One image every 3.5s via the
+    # Alice Browser slideshow overlay (click or Esc to stop).
+    out["duckduckgo_slideshow"] = ensure_site_skill(
+        "duckduckgo.com", "slideshow images",
+        "open https://duckduckgo.com/?q=<query>&iax=images&ia=images, then run the Alice "
+        "Browser image-slideshow overlay (one image every 3.5s; click/Esc to stop). This "
+        "is the DEFAULT engine for a slideshow when not already on a search site.",
+        state_dir=state_dir)
+    out["google_slideshow"] = ensure_site_skill(
+        "google.com", "slideshow images",
+        "open https://www.google.com/search?tbm=isch&q=<query>, then run the Alice Browser "
+        "image-slideshow overlay (one image every 3.5s; click/Esc to stop).",
+        state_dir=state_dir)
     return out
 
 
 __all__ = [
     "TRUTH_LABEL",
     "SEARCH_TRUTH_LABEL",
+    "RELEARN_TRUTH_LABEL",
     "site_category",
+    "site_kind",
+    "SITE_KINDS",
+    "record_skill_outcome",
+    "relearn_site_skill",
+    "skills_needing_relearn",
     "extract_search_query",
     "record_site_skill",
     "ensure_site_skill",

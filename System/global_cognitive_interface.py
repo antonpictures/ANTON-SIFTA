@@ -155,7 +155,7 @@ class _ContextWorker(QThread):
             text = route_inference(payload, timeout=30)
             
             self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-        except:
+        except Exception:
             pass
 
 
@@ -745,7 +745,7 @@ class GlobalCognitiveInterface(QWidget):
                                 data = json.loads(line)
                                 msg = f"Wi-Fi Disturbance mapping physical motion at Anchor {data.get('anchor_ip')}"
                                 motion_strings.append(msg)
-                            except: pass
+                            except Exception: pass
                         if motion_strings:
                             rf_motion = "\n[RECENT PHYSICAL MOTIONS DETECTED VIA WI-FI RF JITTER:]\n" + "\n".join(motion_strings)
             except Exception:

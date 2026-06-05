@@ -105,8 +105,80 @@ def test_attachment_context_prompt_block_turns_image_into_text_input(tmp_path):
 
     assert "ATTACHED IMAGE TEXT INPUT FOR CORTEX" in block
     assert "body-example.jpg" in block
-    assert "same-turn attachment context" in block
+    assert "USER ATTACHED IMAGE" in block
+    assert "TRUTH BOUNDARY" in block
     assert "WHITE PALACE" in block
+
+
+def test_browser_attachment_compare_query_detects_live_browser_compare_language():
+    from Applications.sifta_talk_to_alice_widget import _is_browser_attachment_compare_query
+
+    assert _is_browser_attachment_compare_query(
+        "pls compare attachment with what you see in your Alice Browser now"
+    )
+    assert _is_browser_attachment_compare_query(
+        "compare my screenshot against the current pixels on your body"
+    )
+    assert not _is_browser_attachment_compare_query("describe the attached screenshot")
+
+
+def test_browser_attachment_compare_evidence_uses_viewport_receipt(tmp_path):
+    from Applications.sifta_talk_to_alice_widget import _browser_attachment_compare_evidence
+
+    attachment = tmp_path / "owner-shot.png"
+    viewport = tmp_path / "viewport.png"
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+        b"\x90wS\xde"
+    )
+    attachment.write_bytes(png_bytes)
+    viewport.write_bytes(png_bytes)
+
+    out = _browser_attachment_compare_evidence(
+        "compare attachment with Alice Browser",
+        str(attachment),
+        state_dir=tmp_path,
+        viewport_row={
+            "url": "https://x.com/abellaskies",
+            "source": "viewport",
+            "status": "pending",
+            "image_ref": str(viewport),
+            "age_s": 0.8,
+            "fresh": True,
+            "frame_stale": False,
+        },
+        capture_live=False,
+    )
+
+    assert out["status"] == "ready"
+    assert out["viewport_image_path"] == str(viewport)
+    assert "ATTACHMENT VS ALICE BROWSER VIEWPORT EVIDENCE" in out["context"]
+    assert "owner_attachment_path=" in out["context"]
+    assert "browser_viewport_image_path=" in out["context"]
+    assert "image #1" in out["context"]
+    assert "image #2" in out["context"]
+
+
+def test_browser_attachment_compare_evidence_is_honest_without_viewport(tmp_path):
+    from Applications.sifta_talk_to_alice_widget import _browser_attachment_compare_evidence
+
+    attachment = tmp_path / "owner-shot.png"
+    attachment.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    out = _browser_attachment_compare_evidence(
+        "compare screenshot with your browser",
+        str(attachment),
+        state_dir=tmp_path,
+        viewport_row={},
+        capture_live=False,
+    )
+
+    assert out["status"] == "no_viewport_receipt"
+    assert out["viewport_image_path"] == ""
+    assert "browser_viewport_image_path=<missing>" in out["context"]
+    assert "Do not claim a live pixel comparison" in out["context"]
 
 
 # ── Turn-attachment binding (George 2026-05-30: act like a real chatbot) ──────

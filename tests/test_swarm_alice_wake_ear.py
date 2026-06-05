@@ -64,6 +64,37 @@ def test_farfield_replay_suppresses_fuzzy_wake():
     assert result["reason"] == "farfield_replay_suppressed"
 
 
+def test_exact_alice_name_only_wakes_when_nearfield(monkeypatch):
+    monkeypatch.setattr(ear, "_active_ai_names", lambda: ("alice",))
+    monkeypatch.setattr(ear, "_active_target_names", lambda: ("alice", "george"))
+
+    result = ear.classify_wake_turn(
+        "Alice",
+        stt_conf=0.64,
+        focus_context="YouTube video playing in Alice Browser",
+        acoustic_fingerprint=NEARFIELD_FP,
+    )
+
+    assert result["route"] == "direct"
+    assert result["reason"] == "layer1_name_only_wake"
+    assert result["features"]["bare_ai_name_wake"] is True
+
+
+def test_exact_alice_name_only_does_not_wake_on_farfield_media(monkeypatch):
+    monkeypatch.setattr(ear, "_active_ai_names", lambda: ("alice",))
+    monkeypatch.setattr(ear, "_active_target_names", lambda: ("alice", "george"))
+
+    result = ear.classify_wake_turn(
+        "Alice",
+        stt_conf=0.90,
+        focus_context="YouTube video playing in Alice Browser",
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert result["route"] == "ambient"
+    assert result["reason"] == "farfield_replay_suppressed"
+
+
 def test_narration_without_wake_name_stays_ambient():
     result = ear.classify_wake_turn(
         "The universe theory according to the speaker explains consciousness.",

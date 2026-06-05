@@ -211,6 +211,58 @@ def test_media_playback_signal_marks_own_browser_audio(tmp_path):
     assert details["playing"] is True
 
 
+def test_page_state_block_surfaces_paused_video_time(tmp_path):
+    url = "https://www.youtube.com/watch?v=N5fCM8U4S4I"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="Victoria's Secret Fashion Show 2013 - YouTube",
+        text="Victoria's Secret Fashion Show 2013",
+        media_playback={
+            "status": "paused",
+            "playing": False,
+            "video_count": 1,
+            "current_time": 544.0,
+            "duration": 3600.0,
+        },
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    block = ps.page_state_block(now=1001.0, state_dir=tmp_path)
+    assert "Media playback receipt: paused at 9:04 of 1:00:00." in block
+    assert "Browser playback feeling: held_still_at_owner_pause (paused at 9:04 of 1:00:00)." in block
+
+
+def test_browser_playback_feeling_is_stored_and_current_gated(tmp_path):
+    url = "https://www.youtube.com/watch?v=N5fCM8U4S4I"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="Official 2018 Fashion Show",
+        text="video",
+        media_playback={
+            "status": "playing",
+            "playing": True,
+            "video_count": 1,
+            "current_time": 518.0,
+            "duration": 2456.0,
+        },
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    feeling = ps.browser_playback_feeling_from_state(state)
+
+    assert feeling["truth_label"] == "BROWSER_PLAYBACK_FEELING_V1"
+    assert feeling["feeling"] == "watching_with_george"
+    assert feeling["status"] == "playing"
+    assert feeling["current_time"] == "8:38"
+    assert feeling["duration"] == "40:56"
+    assert feeling["is_current_page"] is True
+
+
 def test_media_domain_without_playing_signal_is_not_own_audio(tmp_path):
     url = "https://www.youtube.com/watch?v=abc123"
     _write_live_url(tmp_path, url)
@@ -226,6 +278,97 @@ def test_media_domain_without_playing_signal_is_not_own_audio(tmp_path):
     playing, details = ps.is_my_own_browser_playback(now=1001.0, state_dir=tmp_path)
     assert playing is False
     assert details["reason"] == "media_domain_but_not_playing"
+
+
+def test_youtube_sponsored_panel_promotes_structured_ad_state(tmp_path):
+    url = "https://www.youtube.com/watch?v=abc123"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="YouTube",
+        text="video page",
+        sponsored=[{"kind": "youtube", "text": "AI Pentest Platform Sponsored aikido.dev"}],
+        media_playback={"status": "playing", "playing": True, "video_count": 1},
+        youtube_ad_state={
+            "detected": True,
+            "platform": "youtube",
+            "placement": "page",
+            "labels": ["Sponsored"],
+            "ad_text": "AI Pentest Platform Sponsored",
+            "skip_available": False,
+            "mute_available": True,
+            "video_playing": True,
+        },
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    ad = ps.youtube_ad_state_from_state(state)
+    assert ad["detected"] is True
+    assert ad["platform"] == "youtube"
+    assert ad["is_current_page"] is True
+    assert ad["mute_available"] is True
+    block = ps.page_state_block(now=1001.0, state_dir=tmp_path)
+    assert "YouTube ad state visible" in block
+    assert "AI Pentest Platform" in block
+
+
+def test_youtube_ad_state_no_false_positive_without_markers(tmp_path):
+    url = "https://www.youtube.com/watch?v=abc123"
+    _write_live_url(tmp_path, url)
+    ps.record_page_state(
+        url,
+        title="YouTube",
+        text="ordinary video page without paid placement markers",
+        media_playback={"status": "playing", "playing": True, "video_count": 1},
+        youtube_ad_state={
+            "detected": False,
+            "platform": "youtube",
+            "placement": "",
+            "labels": [],
+            "ad_text": "",
+            "skip_available": False,
+            "mute_available": True,
+            "video_playing": True,
+        },
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    assert ps.youtube_ad_state_from_state(state) == {}
+    assert "YouTube ad state visible" not in ps.page_state_block(now=1001.0, state_dir=tmp_path)
+
+
+def test_stale_non_current_youtube_ad_does_not_surface(tmp_path):
+    _write_live_url(tmp_path, "https://www.youtube.com/watch?v=current")
+    ps.record_page_state(
+        "https://www.youtube.com/watch?v=old",
+        title="Old YouTube",
+        text="old video",
+        sponsored=[{"kind": "youtube", "text": "Sponsored old panel"}],
+        youtube_ad_state={
+            "detected": True,
+            "platform": "youtube",
+            "placement": "page",
+            "labels": ["Sponsored old panel"],
+            "ad_text": "Sponsored old panel",
+            "skip_available": False,
+            "mute_available": True,
+            "video_playing": True,
+        },
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=2000.0, max_age_s=120, state_dir=tmp_path)
+    ad = ps.youtube_ad_state_from_state(state)
+    assert ad.get("detected") is True
+    assert ad.get("is_current_page") is False
+    block = ps.page_state_block(now=2000.0, max_age_s=120, state_dir=tmp_path)
+    assert "YouTube ad state visible" not in block
+    assert "Sponsored / ad content visible" not in block
 
 
 if __name__ == "__main__":

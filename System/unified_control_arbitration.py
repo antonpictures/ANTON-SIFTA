@@ -105,7 +105,7 @@ class UnifiedControlArbiter:
     def _persist(self, data: Dict[str, Any]):
         try:
             _ARBITER_STATE.write_text(json.dumps(data, indent=2))
-        except: pass
+        except Exception: pass
 
 def get_arbiter() -> UnifiedControlArbiter:
     return UnifiedControlArbiter()

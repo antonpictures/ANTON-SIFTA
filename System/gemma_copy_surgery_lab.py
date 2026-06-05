@@ -37,8 +37,8 @@ from System.gguf_quant_codec import find_llama_quantize_binary, probe_codec_capa
 from System.llama_cpp_roundtrip import RoundtripPlan, run_roundtrip
 
 
-DEFAULT_REFERENCE_TAG = "alice-m1-scout-2.3b-2.7gb:latest"
-DEFAULT_OPERATING_TAG = "alice-m1-scout-2.3b-2.7gb:latest"
+DEFAULT_REFERENCE_TAG = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+DEFAULT_OPERATING_TAG = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 DEFAULT_LAMBDAS = (0.15, 0.35)
 
 

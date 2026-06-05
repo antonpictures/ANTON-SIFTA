@@ -154,7 +154,24 @@ def evaluate_field_slo(
     *,
     config: FieldSLOConfig = FieldSLOConfig(),
 ) -> FieldSLOReport:
-    field_payloads = [_payload(row) for row in list(field_rows)[-config.max_field_rows:]]
+    raw_field_payloads = [_payload(row) for row in list(field_rows)[-config.max_field_rows:]]
+    # cowork r394: only score TRUE organ-field-vector samples. Foreign writers
+    # (e.g. computer_use_organ, cortex_resource_field) sometimes append to the
+    # shared organ_field_vector ledger WITHOUT the organ-vector schema. Scoring
+    # those rows with punishing defaults (connected_organ_count=0,
+    # coupling_density=0.0, unknown_vector_count=999999) corrupted the SLO:
+    # 3 foreign rows out of 1000 forced min_connected=0 and coupling collapse,
+    # burying the two real signals (completeness dip + unknown-free rate). A real
+    # field sample carries the organ-vector schema; rows that carry none of these
+    # keys are not field-vector measurements and must not be scored here.
+    _VECTOR_KEYS = (
+        "connected_organ_count", "coupling_density", "field_vector", "field_completeness",
+    )
+    field_payloads = [p for p in raw_field_payloads if any(k in p for k in _VECTOR_KEYS)]
+    if not field_payloads and raw_field_payloads:
+        # Nothing carried the schema: keep raw rows so the failure stays visible
+        # rather than silently collapsing to "no rows available".
+        field_payloads = raw_field_payloads
     truth_payloads = [_payload(row) for row in list(truth_rows)[-config.max_truth_rows:]]
 
     failures: List[str] = []

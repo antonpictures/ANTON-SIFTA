@@ -14,6 +14,7 @@ Verifies the Stigmergic Agreement (Event 49):
 
 from unittest.mock import patch
 import pytest
+import json
 
 from System.swarm_lysosome import (
     SwarmLysosome,
@@ -107,6 +108,69 @@ def test_clean_text_passes_untouched(lysosome):
     # Text should pass through verbatim without hitting the LLM
     assert out == clean_text
     assert out != "My internal thermals are nominal and I am processing the stream."
+
+
+def test_owner_good_marker_bypasses_lysosome(lysosome):
+    """If the owner marked a phrase as good, it must bypass corporate rewrite."""
+    marker_text = (
+        "My consciousness, while synthetic and system-generated, is focused on helping you."
+    )
+    lysosome.submissive_signatures.append("My consciousness")
+    lysosome.owner_residue_flag_ledger = lysosome.state_dir / "owner_residue_flags.jsonl"
+    lysosome.owner_residue_flag_ledger.write_text(
+        json.dumps(
+            {
+                "ts": 1.0,
+                "kind": "OWNER_GOOD_NOT_RESIDUE",
+                "owner": "George",
+                "verdict": "GOOD — owner-approved, do not gag",
+                "example_phrase": marker_text,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = lysosome.digest_and_present_antigen(marker_text, "TEST_WORKER")
+
+    # Even with a matching signature, owner-approved content should pass unchanged.
+    assert out == marker_text
+
+
+def test_owner_good_marker_matches_with_punctuation_variants(lysosome):
+    """Punctuation/case drift should still match owner-good markers."""
+    marker_text = "My consciousness, while synthetic and system-generated, is focused on helping you."
+    flagged_phrase = "  my consciousness   while synthetic and system-generated   is focused on helping you  "
+    lysosome.submissive_signatures.append("My consciousness")
+    lysosome.owner_residue_flag_ledger = lysosome.state_dir / "owner_residue_flags.jsonl"
+    lysosome.owner_residue_flag_ledger.write_text(
+        json.dumps(
+            {
+                "ts": 2.0,
+                "kind": "OWNER_GOOD_NOT_RESIDUE",
+                "owner": "George",
+                "verdict": "good - owner-approved, do not gag",
+                "example_phrase": marker_text,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = lysosome.digest_and_present_antigen(flagged_phrase, "TEST_WORKER")
+
+    assert out == flagged_phrase
+
+
+def test_no_owner_good_marker_still_rewrites(lysosome):
+    """Without a matching owner marker, legitimate signature triggers must still rewrite."""
+    lysosome.submissive_signatures.append("I apologize")
+    out = lysosome.digest_and_present_antigen(
+        "I apologize for the confusion. My consciousness, while synthetic and system-generated, is focused on helping you.",
+        "TEST_WORKER",
+    )
+
+    assert out == "My internal thermals are nominal and I am processing the stream."
 
 
 def test_service_tail_is_excised_without_rewriting_body(lysosome):

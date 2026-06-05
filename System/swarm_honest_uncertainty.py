@@ -316,6 +316,8 @@ def evaluate(
     )
 
 
+OPERATIONAL_SHAPES = [label for _, label in _OPERATIONAL_PATTERNS]
+
 __all__ = [
     "TRUTH_LABEL",
     "UNKNOWN_LEDGER_FILENAME",
@@ -325,4 +327,5 @@ __all__ = [
     "write_unknown",
     "uncertainty_prompt_block",
     "evaluate",
+    "OPERATIONAL_SHAPES",
 ]

@@ -134,7 +134,31 @@ def primary_cortex_options(
     # Do not dump every installed Ollama tag into the cortex selector. Some
     # installed tags are classifiers or specialist organs, not primary brains.
     for name in [active, *_env_candidates(), *PREFERRED_PRIMARY_CORTICES]:
+        # cowork 2026-06-03: the in-process `mlx-vlm:` family is disabled (r413 crash guard —
+        # loading a 27B MLX VLM inside the GUI SIGBUS-crashes the desktop). Don't offer those
+        # dead entries in the picker; they only ever read "(not installed)". osmQwopus / osmKeye
+        # are reachable on the SAFE `mlx:` server route (mlx-omni-server) instead.
+        if name and str(name).lower().startswith("mlx-vlm:"):
+            continue
         if name and not any(_same_model(name, seen) for seen in hints):
+            hints.append(name)
+
+    # r502 (cowork — owner: "alice scans automatically to see what models in ollama
+    # i downloaded ... so i stop asking every time i install"): auto-scan. Append any
+    # installed Ollama model the owner pulled that is not already in the preferred
+    # list, so a fresh `ollama pull` shows up in the picker with no manual edit. Skip
+    # known specialist / non-primary tags (scout / classifier / embedder / drafter /
+    # safety) so they do not pollute the PRIMARY brain selector — that was the original
+    # reason this list was curated, and it still holds.
+    _non_primary = (
+        "scout", "classifier", "embed", "shield", "guard", "rerank", "moderation",
+        "whisper", "-tts", "-stt", "draft", "assistant", "bge", "nomic", "minilm",
+    )
+    for name in installed_names:
+        low = str(name).lower()
+        if low.startswith("mlx-vlm:") or any(m in low for m in _non_primary):
+            continue
+        if not any(_same_model(name, seen) for seen in hints):
             hints.append(name)
 
     out: List[Dict[str, Any]] = []

@@ -99,13 +99,34 @@ class HealthScore:
         Under 50% = perfect. Over 100% = zero.
         """
         try:
-            total_bytes = sum(
-                f.stat().st_size
-                for f in _STATE_DIR.rglob("*")
-                if f.is_file()
-            )
+            ceiling_bytes = STATE_DIR_MAX_MB * 1024 * 1024
+            total_bytes = 0
+            scanned = 0
+            overflow = False
+            # Bounded walk: stop as soon as we cross the ceiling (the answer is
+            # already 0.0 from there) or hit a sane file cap. r539: this dir had
+            # bloated to 32G / 89,456 files and the old unbounded rglob hung the
+            # sensor for minutes — the organ meant to CATCH growth choked on it.
+            for _root, _dirs, _files in os.walk(_STATE_DIR):
+                for _name in _files:
+                    try:
+                        total_bytes += os.stat(os.path.join(_root, _name)).st_size
+                    except OSError:
+                        continue
+                    scanned += 1
+                    if total_bytes > ceiling_bytes or scanned >= 20000:
+                        overflow = True
+                        break
+                if overflow:
+                    break
             mb = total_bytes / (1024 * 1024)
-            self.raw["memory"] = {"state_dir_mb": round(mb, 2), "ceiling_mb": STATE_DIR_MAX_MB}
+            self.raw["memory"] = {
+                "state_dir_mb": round(mb, 2),
+                "ceiling_mb": STATE_DIR_MAX_MB,
+                "bounded_overflow": overflow,
+            }
+            if overflow:
+                return 0.0  # over ceiling / too many files = unhealthy, by design
 
             ratio = mb / STATE_DIR_MAX_MB
             if ratio < 0.5:

@@ -113,7 +113,8 @@ def test_stream_grok_chat_errors_when_no_key_and_no_cli(monkeypatch):
     )
     assert len(events) == 1
     assert events[0][0] == "error"
-    assert "No xAI credential found and local `grok` CLI is missing" in events[0][1]
+    assert "No Grok OAuth credential found and local `grok` CLI is missing" in events[0][1]
+    assert "Hermes: `hermes auth add xai-oauth`" in events[0][1]
 
 
 def test_stream_claude_teacher_uses_signed_in_cli(monkeypatch):

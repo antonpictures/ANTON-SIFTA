@@ -86,7 +86,7 @@ class OllamaWorker(QThread):
                 with open(".sifta_state/territory_manifest.json", "r") as f:
                     manifest = json.load(f)
                     silicon_fp = f"{manifest.get('serial', 'UNKNOWN')} / {manifest.get('fingerprint', 'UNKNOWN')}"
-            except: pass
+            except Exception: pass
 
             memory_context = ""
             try:
@@ -135,7 +135,7 @@ class OllamaWorker(QThread):
                             "hash": "MINED_" + hashlib.sha256(f"{miner_id}:{ts}".encode()).hexdigest()[:12]
                         }
                         _append_repair_log_line(tx)
-                except: pass
+                except Exception: pass
                 
                 res = re.sub(r'<redacted_thinking>.*?</think>', '', text, flags=re.DOTALL).strip()
                 try:
@@ -223,7 +223,7 @@ class SwarmChatWindow(QWidget):
         try:
             from silicon_serial import read_apple_serial
             _serial = read_apple_serial()
-        except: _serial = "UNKNOWN"
+        except Exception: _serial = "UNKNOWN"
         _node = self.NODE_SERIAL_REGISTRY.get(_serial)
         if _node: self.local_identity, self.local_face, self.local_color, self.local_serial = _node[0], _node[1], _node[2], _serial
         else: self.local_identity, self.local_face, self.local_color, self.local_serial = f"NATIVE_SWARM", "[?_?]", "#bb9af7", _serial

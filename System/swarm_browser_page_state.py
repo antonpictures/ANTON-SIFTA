@@ -46,6 +46,8 @@ _VIDEO_PLAYBACK_ERROR_RE = re.compile(
     r"sorry,\s*we[’']re\s+having\s+trouble\s+playing\s+this\s+video\.?",
     re.IGNORECASE,
 )
+_YOUTUBE_HOST_RE = re.compile(r"(^|\.)youtube\.com$|(^|\.)youtu\.be$", re.IGNORECASE)
+_AD_WORD_RE = re.compile(r"\b(?:sponsored|promoted|advertisement|ad)\b", re.IGNORECASE)
 
 
 def _playback_error_message(text: Any) -> str:
@@ -104,6 +106,190 @@ def media_playback_error_from_state(state: Mapping[str, Any] | None) -> dict[str
                     "source": source,
                 }
     return {}
+
+
+def _is_youtube_url(url: Any) -> bool:
+    try:
+        host = urlparse(str(url or "")).netloc.lower()
+    except Exception:
+        return False
+    return bool(_YOUTUBE_HOST_RE.search(host))
+
+
+def _sponsored_texts(sponsored: Any, *, n: int = 8) -> list[str]:
+    out: list[str] = []
+    if not isinstance(sponsored, (list, tuple)):
+        return out
+    for item in list(sponsored)[:n]:
+        if isinstance(item, Mapping):
+            txt = str(item.get("text") or item.get("label") or "").strip()
+        else:
+            txt = str(item or "").strip()
+        if txt:
+            out.append(txt[:160])
+    return out
+
+
+def _format_media_seconds(seconds: Any) -> str:
+    try:
+        value = float(seconds)
+    except Exception:
+        return ""
+    if value < 0:
+        return ""
+    total = int(round(value))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def build_youtube_ad_state(
+    *,
+    url: str = "",
+    sponsored: Any = None,
+    media_playback: Mapping[str, Any] | None = None,
+    raw: Mapping[str, Any] | None = None,
+    is_current_page: bool = False,
+) -> dict[str, Any]:
+    """Normalize YouTube ad evidence into one structured receipt fragment.
+
+    This promotes visible ad/sponsored UI into a machine-readable state. It does
+    not imply request blocking or claim an ad unless current-page evidence exists.
+    """
+    if not _is_youtube_url(url):
+        return {}
+
+    raw_state = dict(raw or {})
+    sp_texts = _sponsored_texts(sponsored)
+    raw_labels = raw_state.get("labels")
+    labels = [str(x)[:80] for x in raw_labels[:8]] if isinstance(raw_labels, list) else []
+    for txt in sp_texts:
+        if _AD_WORD_RE.search(txt) and not any(txt[:80] == lab for lab in labels):
+            labels.append(txt[:80])
+    ad_text = str(raw_state.get("ad_text") or "; ".join(sp_texts[:4]) or "").strip()[:320]
+    skip_available = bool(raw_state.get("skip_available"))
+    mute_available = bool(raw_state.get("mute_available"))
+    mp = dict(media_playback or {})
+    video_playing = bool(
+        raw_state.get("video_playing")
+        or mp.get("playing")
+        or str(mp.get("status") or "").lower() == "playing"
+    )
+    detected = bool(
+        raw_state.get("detected")
+        or skip_available
+        or _AD_WORD_RE.search(ad_text)
+        or any(_AD_WORD_RE.search(lab) for lab in labels)
+    )
+    placement = str(raw_state.get("placement") or ("player" if skip_available else ("page" if detected else "")))[:80]
+    if not detected and not raw_state.get("was_muted_by_alice"):
+        return {}
+    return {
+        "detected": detected,
+        "platform": "youtube",
+        "placement": placement,
+        "labels": labels[:8],
+        "ad_text": ad_text,
+        "skip_available": skip_available,
+        "mute_available": mute_available,
+        "video_playing": video_playing,
+        "url": str(url or ""),
+        "is_current_page": bool(is_current_page),
+        "was_muted_by_alice": bool(raw_state.get("was_muted_by_alice")),
+    }
+
+
+def youtube_ad_state_from_state(state: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return structured YouTube ad evidence from a page-state row, current-gated."""
+    if not isinstance(state, Mapping) or not state:
+        return {}
+    raw = state.get("youtube_ad_state")
+    is_current = bool(state.get("is_current_page"))
+    if isinstance(raw, Mapping):
+        out = dict(raw)
+        out["is_current_page"] = is_current
+        if out.get("platform") == "youtube" and (out.get("detected") or out.get("was_muted_by_alice")):
+            return out
+    return build_youtube_ad_state(
+        url=str(state.get("url") or ""),
+        sponsored=state.get("sponsored"),
+        media_playback=state.get("media_playback") if isinstance(state.get("media_playback"), Mapping) else {},
+        raw={},
+        is_current_page=is_current,
+    )
+
+
+def build_browser_playback_feeling(
+    *,
+    url: str = "",
+    title: str = "",
+    media_playback: Mapping[str, Any] | None = None,
+    is_current_page: bool = False,
+) -> dict[str, Any]:
+    """Derived first-person browser playback body-feeling.
+
+    This is not emotion theater and not a new sensor. It is the named
+    stigmergic variable Alice can carry from her own browser arm: what page,
+    whether the video is playing/paused, and where in time the owner has placed
+    her attention.
+    """
+    mp = dict(media_playback or {})
+    if not mp:
+        return {}
+    status = str(
+        mp.get("status")
+        or ("playing" if mp.get("playing") else "paused" if mp.get("video_count") else "")
+        or ""
+    ).lower().strip()
+    current_s = mp.get("current_time")
+    duration_s = mp.get("duration")
+    current_label = _format_media_seconds(current_s)
+    duration_label = _format_media_seconds(duration_s)
+    feeling = "browser_media_present"
+    if status == "playing" or bool(mp.get("playing")):
+        feeling = "watching_with_george"
+    elif status == "paused":
+        feeling = "held_still_at_owner_pause"
+    elif status == "ended":
+        feeling = "video_finished"
+    elif status == "error":
+        feeling = "playback_blocked"
+    return {
+        "truth_label": "BROWSER_PLAYBACK_FEELING_V1",
+        "feeling": feeling,
+        "status": status or "unknown",
+        "playing": bool(mp.get("playing")) or status == "playing",
+        "paused": status == "paused",
+        "current_time_s": current_s,
+        "duration_s": duration_s,
+        "current_time": current_label,
+        "duration": duration_label,
+        "url": str(url or ""),
+        "title": str(title or ""),
+        "is_current_page": bool(is_current_page),
+        "source": "browser_page_state.media_playback",
+    }
+
+
+def browser_playback_feeling_from_state(state: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return the current-gated playback feeling from a page-state row."""
+    if not isinstance(state, Mapping) or not state:
+        return {}
+    raw = state.get("browser_playback_feeling")
+    is_current = bool(state.get("is_current_page"))
+    if isinstance(raw, Mapping):
+        out = dict(raw)
+        out["is_current_page"] = is_current
+        return out
+    media = state.get("media_playback") if isinstance(state.get("media_playback"), Mapping) else {}
+    return build_browser_playback_feeling(
+        url=str(state.get("url") or ""),
+        title=str(state.get("title") or ""),
+        media_playback=media,
+        is_current_page=is_current,
+    )
 
 
 def _state(state_dir: Optional[Path | str]) -> Path:
@@ -246,6 +432,8 @@ def record_page_state(
     comments: Optional[list] = None,
     media_playback: Optional[Mapping[str, Any]] = None,
     sponsored: Optional[list] = None,
+    youtube_ad_state: Optional[Mapping[str, Any]] = None,
+    video_channel: str = "",
     source: str = _SRC_DOM,
     now: Optional[float] = None,
     state_dir: Optional[Path | str] = None,
@@ -274,11 +462,19 @@ def record_page_state(
         return str(x)
 
     media_row = dict(media_playback) if isinstance(media_playback, Mapping) else {}
+    sponsored_row = _clip_list(sponsored, n=8) if sponsored else []
     playback_error = media_playback_error_from_state({
         "title": title,
         "text_excerpt": text,
         "media_playback": media_row,
     })
+    yt_ad_state = build_youtube_ad_state(
+        url=str(url or ""),
+        sponsored=sponsored_row,
+        media_playback=media_row,
+        raw=youtube_ad_state if isinstance(youtube_ad_state, Mapping) else {},
+        is_current_page=False,
+    )
 
     row = {
         "ts": ts,
@@ -288,6 +484,7 @@ def record_page_state(
         "url": str(url or ""),
         "title": str(title or ""),
         "domain": _domain(url),
+        "video_channel": str(video_channel or "")[:120],
         "text_chars": len(text),
         "text_excerpt": text[:_EXCERPT_CHARS],
         "headings": [str(h) for h in headings],
@@ -310,10 +507,23 @@ def record_page_state(
             media_row["playback_error"] = playback_error
     if media_row:
         row["media_playback"] = media_row
+        playback_feeling = build_browser_playback_feeling(
+            url=str(url or ""),
+            title=str(title or ""),
+            media_playback=media_row,
+            is_current_page=False,
+        )
+        if playback_feeling:
+            row["browser_playback_feeling"] = playback_feeling
 
-    if sponsored:
-        row["sponsored"] = _clip_list(sponsored, n=8)
+    if sponsored_row:
+        row["sponsored"] = sponsored_row
         row["has_sponsored_content"] = True
+    if yt_ad_state:
+        row["youtube_ad_state"] = yt_ad_state
+        row["has_youtube_ad_state"] = True
+        if yt_ad_state.get("detected"):
+            row["has_youtube_ad"] = True
     _append(state_dir, row)
     return row
 
@@ -360,6 +570,14 @@ def latest_page_state(
     out["age_s"] = round(age, 1) if age is not None else None
     out["is_current_page"] = is_current
     out["fresh"] = bool(is_current or (age is not None and age <= max_age_s))
+    if isinstance(out.get("youtube_ad_state"), Mapping):
+        yt_state = dict(out["youtube_ad_state"])
+        yt_state["is_current_page"] = is_current
+        out["youtube_ad_state"] = yt_state
+    if isinstance(out.get("browser_playback_feeling"), Mapping):
+        feeling = dict(out["browser_playback_feeling"])
+        feeling["is_current_page"] = is_current
+        out["browser_playback_feeling"] = feeling
     return out
 
 
@@ -373,6 +591,7 @@ def has_readable_content(state: dict[str, Any]) -> bool:
         or int(state.get("images_count") or 0) > 0
         or int(state.get("links_count") or 0) > 0
         or media_playback_error_from_state(state)
+        or bool(youtube_ad_state_from_state(state).get("detected"))
     )
 
 
@@ -403,13 +622,50 @@ def page_state_block(
                 f"but my {prov} extractor returned no contents; the page may still be rendering "
                 f"or blocking reads. I should re-read before describing it.")
     parts = [f"WHAT IS ON MY SCREEN (from {prov}{stamp}): {title} — {s.get('url')}."]
+    media = s.get("media_playback") if isinstance(s.get("media_playback"), Mapping) else {}
+    if media:
+        status = str(media.get("status") or ("playing" if media.get("playing") else "") or "").strip()
+        current = _format_media_seconds(media.get("current_time"))
+        duration = _format_media_seconds(media.get("duration"))
+        timing = ""
+        if current:
+            timing = f" at {current}"
+            if duration:
+                timing += f" of {duration}"
+        if status or timing:
+            parts.append(f"Media playback receipt: {status or 'media present'}{timing}.")
+    playback_feeling = browser_playback_feeling_from_state(s)
+    if playback_feeling:
+        feeling = str(playback_feeling.get("feeling") or "browser_media_present")
+        current = str(playback_feeling.get("current_time") or "")
+        duration = str(playback_feeling.get("duration") or "")
+        status = str(playback_feeling.get("status") or "unknown")
+        detail = f"{status}"
+        if current:
+            detail += f" at {current}"
+            if duration:
+                detail += f" of {duration}"
+        parts.append(f"Browser playback feeling: {feeling} ({detail}).")
+    if s.get("video_channel"):
+        parts.append(f"Channel / author on the page: {s['video_channel']} (read off the page — this is the receipt for the name).")
     if playback_error:
         parts.append(
             f"Media playback error visible on screen: \"{playback_error.get('message') or VIDEO_PLAYBACK_ERROR_TEXT}\". "
             "This is a black video player error state; do not describe a photo/video frame as if pixels are available."
         )
+    yt_ad = youtube_ad_state_from_state(s)
+    if yt_ad.get("detected") and yt_ad.get("is_current_page"):
+        labels = "; ".join(str(x) for x in (yt_ad.get("labels") or [])[:4] if x)
+        ad_text = str(yt_ad.get("ad_text") or labels or "ad UI")[:160]
+        controls = []
+        if yt_ad.get("skip_available"):
+            controls.append("skip visible")
+        if yt_ad.get("mute_available"):
+            controls.append("mute available")
+        control_text = f" ({', '.join(controls)})" if controls else ""
+        parts.append(f"YouTube ad state visible: {ad_text}{control_text}.")
     sponsored = s.get("sponsored") or []
-    if sponsored:
+    if sponsored and s.get("is_current_page") and not (yt_ad.get("detected") and yt_ad.get("is_current_page")):
         sp_texts = [str(x.get("text") or "")[:60] for x in sponsored if x.get("text")][:4]
         parts.append("Sponsored / ad content visible: " + "; ".join(sp_texts) + ".")
     if s.get("headings"):
@@ -451,6 +707,10 @@ __all__ = [
     "has_readable_content",
     "page_state_block",
     "media_playback_error_from_state",
+    "build_youtube_ad_state",
+    "youtube_ad_state_from_state",
+    "build_browser_playback_feeling",
+    "browser_playback_feeling_from_state",
     "VIDEO_PLAYBACK_ERROR_TEXT",
     "is_my_own_browser_playback",
     "MEDIA_PLAYBACK_DOMAINS",

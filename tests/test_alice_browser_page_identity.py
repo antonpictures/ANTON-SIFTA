@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import Applications.sifta_alice_browser_widget as browser
@@ -51,6 +52,17 @@ def test_address_snapshot_preserves_existing_text_for_same_url(monkeypatch, tmp_
     assert data["extra"]["source"] == "load_finished_text"
 
 
+def test_spa_visit_timer_resets_per_url_for_browse_dwell_receipts():
+    source = (Path(__file__).resolve().parents[1] / "Applications" / "sifta_alice_browser_widget.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "self._current_visit_started_at = now" in source
+    assert "started = getattr(self, \"_current_visit_started_at\"" in source
+    assert "dwell = max(0.0, now - float(started))" in source
+    assert "_write_browse_receipt(prev_url, prev_title, duration_s=dwell, opened_at=float(started), closed_at=now)" in source
+
+
 def test_owner_browser_actions_inferred_from_dom_result():
     actions = browser._owner_browser_actions_from_dom_result(
         {
@@ -94,6 +106,19 @@ def test_native_handoff_uses_signed_mp4_when_profile_url_has_decode_error():
     )
 
     assert url == "https://cdn.example/reel.mp4"
+
+
+def test_native_handoff_prefers_current_instagram_post_url_over_decode_error_src():
+    url = browser._choose_native_media_handoff_url(
+        {
+            "location": "https://www.instagram.com/p/C1mzc4CvjRh/",
+            "video_src": "https://cdn.example/visible-video.mp4",
+        },
+        fallback_url="https://www.instagram.com/explore/",
+        media_status={"recent_errors": [{"code": 4, "src": "https://cdn.example/error.mp4"}]},
+    )
+
+    assert url == "https://www.instagram.com/p/C1mzc4CvjRh/"
 
 
 def test_visible_media_candidate_scoring_prefers_ocean_metadata():

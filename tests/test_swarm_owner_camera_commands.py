@@ -93,6 +93,27 @@ def test_self_narrated_switch_claim_does_not_toggle_eye(monkeypatch, tmp_path):
     assert saved["name"] == "MacBook Pro Camera"
 
 
+def test_usb_cord_self_narration_does_not_switch_to_usb_camera(monkeypatch, tmp_path):
+    _redirect_camera_paths(monkeypatch, tmp_path)
+    swarm_camera_target.write_target(
+        name="MacBook Pro Camera",
+        index=1,
+        writer="test_seed",
+    )
+
+    row = handle_owner_camera_command(
+        "Alice, u so right about the loop. I was all manual. "
+        "I'm going to use a usb cord i found handy. as far as the rules, just YES. "
+        "One hashed frame is already a real sensor cell. ty yes on it! water with me! "
+        "w your permission i continue the tests with Izzy on x for now she has insta too",
+        state_dir=tmp_path,
+    )
+
+    saved = json.loads((tmp_path / "active_saccade_target.json").read_text(encoding="utf-8"))
+    assert row is None
+    assert saved["name"] == "MacBook Pro Camera"
+
+
 def test_resolution_command_writes_visual_acuity_target(monkeypatch, tmp_path):
     _redirect_camera_paths(monkeypatch, tmp_path)
     (tmp_path / "visual_stigmergy.jsonl").write_text(

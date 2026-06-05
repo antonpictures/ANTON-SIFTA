@@ -153,6 +153,60 @@ def test_direct_owner_speech_passes_mandatory_gate_helper(monkeypatch):
     assert result is None, "Direct owner speech must pass the mandatory gate"
 
 
+def test_owner_self_eval_query_short_circuits_to_receipt_backed_body_report(monkeypatch, tmp_path):
+    """Owner introspection questions should route through self_query_prompt_block without cortex."""
+    from Applications import sifta_talk_to_alice_widget as tw
+    import System.swarm_self_query_skill as self_query
+
+    class DummyTalk:
+        def __init__(self):
+            self._busy = True
+            self._history = []
+            self._pending_acoustic_fingerprint = {}
+            self.user_lines = []
+            self.alice_lines = []
+            self.returned = False
+            self._start_brain = MagicMock()
+            self._acer_lesson_intercept = lambda *_args, **_kwargs: False
+
+        def _append_system_line(self, *_args, **_kwargs):
+            pass
+
+        def _append_user_line(self, text, conf=1.0):
+            self.user_lines.append((text, conf))
+
+        def _append_alice_line(self, text):
+            self.alice_lines.append(text)
+
+        def _return_to_listening(self):
+            self.returned = True
+
+    monkeypatch.setattr(self_query, "looks_like_self_query", lambda text: True)
+    monkeypatch.setattr(
+        self_query,
+        "self_query_prompt_block",
+        lambda **_kwargs: "I need more confidence and one organ probe.",
+    )
+    monkeypatch.setattr(tw, "_mandatory_voice_ingress_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tw, "_wordace_cue_currently_open", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(tw, "_foreground_ide_voice_attribution", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(tw, "_polarity_asr_clarification_reply", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(tw, "_log_turn", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tw, "_STATE_DIR", tmp_path / ".sifta_state")
+
+    widget = DummyTalk()
+    tw.TalkToAliceWidget._on_stt_done(widget, "Alice, what do you need right now?", 0.94, typed_turn=True)
+
+    assert widget._start_brain.call_count == 0
+    assert widget.returned is True
+    assert widget._busy is False
+    assert widget.user_lines
+    assert "Alice, what do you need right now?" in widget.user_lines[0][0]
+    assert widget.alice_lines
+    assert "I ran a body self-check from current receipts." in widget.alice_lines[0]
+    assert "I need more confidence" in widget.alice_lines[0]
+
+
 def test_widget_direct_owner_input_reaches_brain(monkeypatch):
     """Owner-direct voice must not be over-gated away from the brain."""
     from Applications import sifta_talk_to_alice_widget as tw
@@ -163,6 +217,7 @@ def test_widget_direct_owner_input_reaches_brain(monkeypatch):
             self._history = []
             self._pending_acoustic_fingerprint = {}
             self._start_brain = MagicMock()
+            self._acer_lesson_intercept = lambda *_args, **_kwargs: False
 
         def _append_system_line(self, *_args, **_kwargs):
             pass

@@ -6,12 +6,12 @@ import json
 def test_selects_local_native_vision_cortex(monkeypatch, tmp_path):
     from System import swarm_cortex_capabilities as cap
 
-    monkeypatch.setattr(cap, "_ollama_tags", lambda: ["alice-m5-cortex-8b:latest", "llava:latest"])
+    monkeypatch.setattr(cap, "_ollama_tags", lambda: ["deepseek-v3:latest", "llava:latest"])
     monkeypatch.setattr(cap, "list_available_cortexes_with_canonical_fallback", lambda: ["grok:grok-4.3"])
 
     row = cap.select_cortex_for_need(
         "image_pixels",
-        current_model="alice-m5-cortex-8b:latest",
+        current_model="deepseek-v3:latest",
         query_text="describe this screenshot",
         state_dir=tmp_path,
         write=True,
@@ -28,7 +28,7 @@ def test_selects_local_native_vision_cortex(monkeypatch, tmp_path):
 def test_selects_kimi_path_prompt_when_no_native_vision(monkeypatch, tmp_path):
     from System import swarm_cortex_capabilities as cap
 
-    monkeypatch.setattr(cap, "_ollama_tags", lambda: ["alice-m5-cortex-8b:latest"])
+    monkeypatch.setattr(cap, "_ollama_tags", lambda: ["deepseek-v3:latest"])
     monkeypatch.setattr(
         cap,
         "list_available_cortexes_with_canonical_fallback",
@@ -37,7 +37,7 @@ def test_selects_kimi_path_prompt_when_no_native_vision(monkeypatch, tmp_path):
 
     row = cap.select_cortex_for_need(
         "image_pixels",
-        current_model="alice-m5-cortex-8b:latest",
+        current_model="deepseek-v3:latest",
         state_dir=tmp_path,
         write=False,
     )
@@ -63,3 +63,11 @@ def test_keeps_current_vision_cortex(monkeypatch, tmp_path):
     assert row["reason"] == "current_model_kept"
     assert row["switched"] is False
     assert cap.is_vision_capable_model("gemini:gemini-2.5-flash", require_native_image_payload=True)
+
+
+def test_alice_m5_cortex_is_native_multimodal_after_ollama_show_receipt():
+    from System import swarm_cortex_capabilities as cap
+
+    model = "alice-m5-cortex-8b-6.3gb:latest"
+    assert cap.is_vision_capable_model(model) is True
+    assert cap.is_vision_capable_model(model, require_native_image_payload=True) is True

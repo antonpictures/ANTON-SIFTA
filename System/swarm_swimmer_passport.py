@@ -90,7 +90,7 @@ class HealthChecker:
             for line in lines:
                 if not line.strip(): continue
                 try: row = json.loads(line)
-                except: continue
+                except Exception: continue
                 # Match trigger code inside pathogenic records
                 path = row.get("pathogen_signature", "")
                 auth = row.get("antibody_id", "")

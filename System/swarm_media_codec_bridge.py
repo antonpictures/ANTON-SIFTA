@@ -2,9 +2,10 @@
 """SIFTA media codec bridge for embedded browser limbs.
 
 This is not a new H.264/AAC bitstream implementation. It is the honest SIFTA
-layer around codec capability: detect embedded Qt media failures, explain them
-from MediaError evidence, and hand playback to the host-native decoder path when
-that is the correct repair.
+layer around per-stream media evidence: detect embedded Qt media failures,
+explain them from MediaError receipts, and hand playback to the host-native
+decoder path when that specific stream/page fails. A codec probe is advisory
+only; it must not become a global claim that every video route on a site fails.
 """
 from __future__ import annotations
 
@@ -68,7 +69,7 @@ def diagnose_media_error_code(code: Any) -> dict[str, Any]:
         }
 
     if value in CODEC_FAILURE_CODES:
-        likely = "embedded_qtwebengine_decode_or_codec_capability_failure"
+        likely = "this_stream_embedded_qtwebengine_decode_or_codec_capability_failure"
         action = "open_url_in_native_macos_browser_or_codec_enabled_engine"
     elif value == 2:
         likely = "network_login_bot_wall_or_fetch_failure"
@@ -199,8 +200,9 @@ def media_status_summary(media_status: Mapping[str, Any] | None, *, url: str = "
     if diagnosis["code"] in CODEC_FAILURE_CODES:
         return (
             "The embedded browser reported "
-            f"{diagnosis['label']} for {url or 'this page'}; SIFTA should hand "
-            "playback to the native decoder path or a codec-enabled browser."
+            f"{diagnosis['label']} for this observed stream/page ({url or 'no url'}); "
+            "SIFTA should hand this failing playback route to the native decoder path "
+            "or a codec-enabled browser. This does not prove all videos on the site fail."
         )
     return (
         "The embedded browser reported "

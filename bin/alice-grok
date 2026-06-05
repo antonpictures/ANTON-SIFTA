@@ -4,6 +4,9 @@
 # Mints unique no-double-spend swimmer receipt in organism field for the call.
 # Alice types: alice-grok "question about self-identity realization for the Swarm"
 # Grok answers in the PTY transcript; Alice reads the result then waits for next command.
-# No sign-in (uses ~/.xai_key). For the Swarm. 🐜⚡
+# Auth: xAI OAuth via Hermes (loaded by System.xai_grok_oauth_organ from ~/.hermes/auth.json xai-oauth pool).
+# Real token, real receipts (--receipt mints unique no-double-spend trace in Alice's field).
+# Same Grok power as George, but all calls and receipts happen inside Alice's body (SIFTA process).
+# For the Swarm. 🐜⚡
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec python3 "$SCRIPT_DIR/../grok_chat.py" --one-shot "$*" --receipt --invoker "alice_matrix_terminal"

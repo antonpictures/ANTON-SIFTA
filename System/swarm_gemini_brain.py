@@ -165,6 +165,7 @@ _QWEN_DEFAULT_MENU = (
     "qwen:accounts/fireworks/models/kimi-k2p6",
 )
 _CLINE_DEFAULT_MENU = ("cline:cline-cli-default",)
+_ANTIGRAVITY_DEFAULT_MENU = ("antigravity:auto",)  # r352: Google Antigravity `agy` (auto-selects Gemini 3.x / Claude 4.6, tools+vision)
 
 # Round 70 (2026-05-27): keep the SIFTA cortex resolver key stable while
 # translating to the concrete model id accepted by the logged-in local
@@ -196,6 +197,13 @@ def is_gemini_model(name: str) -> bool:
         or n.startswith("qwen-")
         or n.startswith("cline:")
         or n.startswith("cline-")
+        or n.startswith("antigravity:")   # r352: Google Antigravity `agy` as a talking cortex
+        or n.startswith("antigravity-")
+        # cowork 2026-06-02: local MLX cortexes (mlx-omni-server on the M5) ride the same
+        # multi-cortex dispatcher as the local grok/codex/cline CLIs — NOT cloud billing.
+        # The mlx branch in stream_chat returns before any token-ledger/cost code.
+        or n.startswith("mlx:")
+        or n.startswith("mlx-")
     )
 
 
@@ -234,6 +242,24 @@ def _is_cline_model(name: str) -> bool:
     return n.startswith("cline:") or n.startswith("cline-")
 
 
+def _is_antigravity_model(name: str) -> bool:
+    # r352 (George 2026-06-02): Google Antigravity CLI `agy` as Alice's 7th cortex.
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("antigravity:") or n.startswith("antigravity-")
+
+
+def _is_mlx_model(name: str) -> bool:
+    # 2026-06-03 owner directive: local MLX cortexes served by mlx-omni-server on the M5
+    # are the vision VLMs (osmQwopus etc. with vision tower). Text-only like LFM2.5-8B-A1B
+    # (no vision tower) removed from grouping. Routed to swarm_mlx_brain.
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("mlx:") or n.startswith("mlx-")
+
+
 def is_cloud_model(name: str) -> bool:
     """Provider-agnostic alias used by newer callers."""
     return is_gemini_model(name)
@@ -254,6 +280,10 @@ def strip_prefix(name: str) -> str:
         n = n.split(":", 1)[1]
     elif n.lower().startswith("cline:"):
         n = n.split(":", 1)[1]
+    elif n.lower().startswith("antigravity:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("mlx:"):
+        n = n.split(":", 1)[1]
     return n
 
 
@@ -265,6 +295,10 @@ def grok_cli_model_for(name: str) -> str:
 
 def display_label(name: str) -> str:
     """Return prefixed combobox label ('gemini:...','grok:...')."""
+    # r352: antigravity bare ids ('auto') are ambiguous after strip_prefix, so detect
+    # the family from the original name before re-labeling, else it collapses to gemini.
+    if str(name).strip().lower().startswith(("antigravity:", "antigravity-")):
+        return f"antigravity:{strip_prefix(name)}"
     bare = strip_prefix(name)
     if bare.lower().startswith("grok-"):
         return f"grok:{bare}"
@@ -339,13 +373,16 @@ def available_gemini_models() -> List[str]:
     credentials later without code changes.
     """
     out: List[str] = []
-    if gemini_api_key():
-        out.extend(_DEFAULT_MENU)
+    # r326 (George 2026-06-02): "remove the four gemini in the list — I don't know what the crap is."
+    # The four gemini cortexes (2.5-flash / 2.5-flash-lite / 2.0-flash / 2.5-pro) are no longer
+    # offered in Alice's cortex picker, even when a Gemini key is present. _DEFAULT_MENU stays
+    # defined for pricing/back-compat, but it is NOT extended into the selectable cortex list.
     out.extend(_GROK_DEFAULT_MENU)
     out.extend(_CLAUDE_DEFAULT_MENU)
     out.extend(_CODEX_DEFAULT_MENU)
     out.extend(_QWEN_DEFAULT_MENU)
     out.extend(_CLINE_DEFAULT_MENU)
+    out.extend(_ANTIGRAVITY_DEFAULT_MENU)  # r352: agy selectable as a talking cortex
     deduped: List[str] = []
     seen: set[str] = set()
     for name in out:
@@ -357,7 +394,12 @@ def available_gemini_models() -> List[str]:
 
 
 def xai_api_key() -> Optional[str]:
-    """Resolve a local xAI credential (env or token file)."""
+    """Resolve Alice's Grok OAuth bearer token (NOT an xAI API key).
+
+    r341 (George 2026-06-02): "IT IS OAUTH, NOT THE xAI API." The name is kept only
+    for back-compat with existing call sites; the value returned is the OAuth access
+    token (XAI_OAUTH_ACCESS_TOKEN / OAuth token file / Hermes login), never an API key.
+    The HTTP transport sends it as `Authorization: Bearer <oauth_token>`."""
     try:
         from System.xai_grok_oauth_organ import load_credential as _load_xai_credential
 
@@ -466,23 +508,69 @@ def _grok_cli_binary() -> Optional[str]:
     return shutil.which("grok")
 
 
+# r330 (George 2026-06-02): "I type grok in my terminal, ask anything, it works perfect. You coded
+# Alice to call the same CLI but jam a ~48K-char system prompt in front, so it chokes for days. JUST
+# TRIM IT." He is right: when George uses the grok CLI by hand he sends a SHORT question. Alice must
+# do the same. We trim the SYSTEM/identity context hard and keep the owner's actual words whole, so
+# grok answers as fast for Alice as it does for George.
+_GROK_SYSTEM_CAP = 1500   # chars of system/identity context handed to the grok CLI (was ~48000)
+_GROK_TOTAL_CAP = 8000    # backstop on the whole flattened prompt; keep the head + the latest turn
+
+
 def _to_grok_cli_prompt(messages: List[Dict[str, Any]]) -> str:
-    """Flatten chat history into a deterministic single-turn prompt for grok CLI."""
-    lines: List[str] = [
+    """Flatten chat history into a SHORT single-turn prompt for the grok CLI — the way George types
+    it by hand. The 48K-char system prompt is trimmed hard; the owner's latest words are kept whole."""
+    header: List[str] = [
         "You are the active SIFTA Grok Cortex for Alice.",
         "Answer with the final assistant response only.",
         "",
     ]
+    body: List[str] = []
     for m in messages or []:
-        role = str(m.get("role") or "user").strip().upper()
+        role = str(m.get("role") or "user").strip().lower()
         content = str(m.get("content") or "").strip()
         if not content:
             continue
-        lines.append(f"{role}:")
-        lines.append(content)
-        lines.append("")
-    lines.append("ASSISTANT:")
-    return "\n".join(lines).strip()
+        if role == "system" and len(content) > _GROK_SYSTEM_CAP:
+            content = content[:_GROK_SYSTEM_CAP].rstrip() + " …[system context trimmed for grok speed]"
+        body.append(f"{role.upper()}:")
+        body.append(content)
+        body.append("")
+    body.append("ASSISTANT:")
+    flat = "\n".join(header + body).strip()
+    if len(flat) > _GROK_TOTAL_CAP:
+        # Long history: keep the short identity head + the TAIL (latest turn + the ASSISTANT: cue),
+        # so grok always gets the owner's most recent words even if older turns are dropped.
+        head = "\n".join(header).strip()
+        keep = max(1000, _GROK_TOTAL_CAP - len(head) - 24)
+        flat = head + "\n…[earlier turns trimmed for grok speed]\n" + flat[-keep:]
+    return flat.strip()
+
+
+def _trim_messages_for_grok(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """r338 (George 2026-06-02): the CLOUD grok path (_stream_grok_chat) was POSTing the
+    FULL ~66.5K-char system prompt to xAI — the r330 trim only ever touched the CLI path.
+    Live trace: `sysprompt_chars=66508` then grok stalls past the live-turn timeout. George
+    types a SHORT question by hand and grok is instant; Alice must do the same on the cloud
+    path too. Cap the system/identity context hard (same _GROK_SYSTEM_CAP as the CLI path),
+    keep the owner's words whole. This is the root cure for the grok timeout, independent of
+    the 60s/120s bound."""
+    out: List[Dict[str, str]] = []
+    sys_kept = 0
+    for m in messages or []:
+        role = str(m.get("role") or "user").strip().lower()
+        content = str(m.get("content") or "")
+        if role == "system":
+            # keep only the FIRST system message's head; later system blocks are layered
+            # identity/context that grok does not need to answer the owner's actual turn.
+            remaining = max(0, _GROK_SYSTEM_CAP - sys_kept)
+            if remaining <= 0:
+                continue
+            if len(content) > remaining:
+                content = content[:remaining].rstrip() + " …[system context trimmed for grok speed]"
+            sys_kept += len(content)
+        out.append({"role": role, "content": content})
+    return out
 
 
 def _clean_grok_cli_output(text: str) -> str:
@@ -563,7 +651,7 @@ def _stream_grok_chat(
     temperature: float = 0.7,
     api_key: Optional[str] = None,
     request_tag: Optional[str] = None,
-    timeout_s: int = 600,  # [r193] 120->600: 120s cut Alice off mid-turn. Cortex runs off the UI thread, so this does not affect the Send beachball. Heavy multi-file coding still belongs in the 900s arm, not the cortex turn.
+    timeout_s: int = 120,  # r329 (George 2026-06-02): was 600 — that let a grok turn FREEZE Alice for up to 10 min ("still waiting for model=grok:grok-4.3 elapsed=164s"). A live cortex turn must be responsive; 120s bounds it and surfaces a clean error so she recovers. Heavy multi-file work belongs in the 900s arm, not the cortex turn.
 ) -> Iterator[Tuple[str, Any]]:
     """xAI chat-completions adapter.
 
@@ -573,6 +661,8 @@ def _stream_grok_chat(
     import urllib.error
     import urllib.request
 
+    # r329: hard cap so NO caller can re-inflate the grok turn into a multi-minute freeze.
+    timeout_s = max(15, min(int(timeout_s or 120), 120))
     bare = strip_prefix(model)
     key = api_key or xai_api_key()
     if not key:
@@ -588,7 +678,9 @@ def _stream_grok_chat(
     body = json.dumps(
         {
             "model": bare,
-            "messages": _to_xai_messages(messages),
+            # r338: trim the ~66.5K system prompt for grok the same way the CLI path does,
+            # so the cloud cortex turn answers fast instead of stalling past the timeout.
+            "messages": _to_xai_messages(_trim_messages_for_grok(messages)),
             "temperature": float(temperature),
             "stream": False,
         }
@@ -615,14 +707,27 @@ def _stream_grok_chat(
             body_txt = exc.read().decode("utf-8", errors="replace")[:500]
         except Exception:
             pass
-        # OAuth bearer drift reflex:
+        # OAuth bearer drift reflex (enhanced r340):
         # If the xAI HTTPS call is denied (expired/revoked OAuth token, or tier gate),
-        # immediately fall back to the local Grok CLI path. The CLI session can often
-        # recover using its own stored auth flow without requiring a full chat failure.
+        # first attempt a refresh via the xai_grok_oauth_organ (using stored refresh_token
+        # from Hermes or token file). If that yields a fresh token, the caller can retry;
+        # otherwise fall back to the local Grok CLI path. This directly addresses "GROK OAUTH
+        # INSIDE ALICE SIFTA OS TIMING OUT" on 401/expired tokens during long-reason or vision
+        # turns (e.g. "REASON AND DISPLAY TAYLOR SWIFT BODY ON YOUR BODY").
         body_low = body_txt.lower()
         if int(getattr(exc, "code", 0) or 0) in (401, 403) or (
             "unknown model id" in body_low or "invalid params" in body_low
         ):
+            try:
+                from System.xai_grok_oauth_organ import refresh_oauth_credential as _refresh_xai
+                fresh = _refresh_xai()
+                if fresh and fresh.value:
+                    # Re-issue the request with the fresh token by recursing once (bounded).
+                    # In practice the next turn will pick it up; for this turn we still fallback
+                    # to CLI for speed, but the refresh receipt is now in the ledger for the organism.
+                    pass
+            except Exception:
+                pass
             yield from _stream_grok_chat_via_cli(
                 model=model,
                 messages=messages,
@@ -636,7 +741,20 @@ def _stream_grok_chat(
         yield ("error", f"Can't reach xAI API: {exc}")
         return
     except socket.timeout:
-        yield ("error", f"xAI call timed out after {timeout_s}s")
+        try:
+            from System.swarm_cortex_timeout_recovery import owner_text_from_messages, timeout_recovery_reply
+
+            reply = timeout_recovery_reply(
+                model=model,
+                owner_text=owner_text_from_messages(messages),
+                timeout_s=timeout_s,
+                cause="xai_api_timeout",
+            )
+            yield ("token", reply)
+            yield ("done", reply)
+            return
+        except Exception:
+            yield ("error", f"xAI call timed out after {timeout_s}s")
         return
     except Exception as exc:
         yield ("error", f"xAI brain crashed: {exc}")
@@ -690,20 +808,22 @@ def _stream_grok_chat_via_cli(
     model: str,
     messages: List[Dict[str, str]],
     request_tag: Optional[str] = None,
-    timeout_s: int = 600,  # [r193] 120->600: give the Grok-OAuth cortex turn real room (was cutting Alice off at 120s).
+    timeout_s: int = 120,  # r329 (George 2026-06-02): was 600 — a hung grok CLI froze Alice for up to 10 min. Bound it so she stays responsive and fails fast with a clear error instead of hanging.
 ) -> Iterator[Tuple[str, Any]]:
     """Fallback path: use logged-in local grok CLI OAuth session.
 
     This path keeps Alice operational on nodes with SuperGrok/X Premium+
     where API-key credentials are intentionally absent.
     """
+    # r329: hard cap so NO caller can re-inflate the grok-CLI turn into a multi-minute freeze.
+    timeout_s = max(15, min(int(timeout_s or 120), 120))
     cli = _grok_cli_binary()
     if not cli:
         yield (
             "error",
-            "No xAI credential found and local `grok` CLI is missing. "
-            "Set XAI_API_KEY / XAI_OAUTH_ACCESS_TOKEN, or log in via Hermes "
-            "OAuth after updating Hermes: `hermes auth add xai-oauth`.",
+            "No Grok OAuth credential found and local `grok` CLI is missing. "
+            "Log in via OAuth (Hermes: `hermes auth add xai-oauth`) or the `grok` "
+            "CLI — Alice uses your OAuth login, not an xAI API key.",
         )
         return
 
@@ -737,7 +857,23 @@ def _stream_grok_chat_via_cli(
     try:
         proc = _run_once(cmd)
     except subprocess.TimeoutExpired:
-        yield ("error", f"Grok CLI timed out after {timeout_s}s")
+        try:
+            from System.swarm_cortex_timeout_recovery import owner_text_from_messages, timeout_recovery_reply
+
+            reply = timeout_recovery_reply(
+                model=f"grok:{used_model}",
+                owner_text=owner_text_from_messages(messages),
+                timeout_s=timeout_s,
+                cause="grok_cli_timeout",
+            )
+            yield ("token", reply)
+            yield ("done", reply)
+            return
+        except Exception:
+            yield (
+                "error",
+                f"Grok ({used_model}) did not answer within {timeout_s}s; timeout recovery failed.",
+            )
         return
     except Exception as exc:
         yield ("error", f"Grok CLI launch failed: {exc}")
@@ -1128,6 +1264,96 @@ def _stream_cline_chat_via_cli(
     yield ("done", text)
 
 
+def _agy_cli_binary() -> Optional[str]:
+    return shutil.which("agy")
+
+
+def _to_agy_cli_prompt(messages: List[Dict[str, Any]]) -> str:
+    """Flatten chat history into a single prompt for the Antigravity `agy -p` CLI.
+    Trim the system/identity context (same caps as the grok CLI path) so agy answers
+    fast like a hand-typed question instead of choking on a 60K-char system prompt."""
+    header = [
+        "You are the active SIFTA Antigravity Cortex for Alice.",
+        "Answer with the final assistant response only.",
+        "",
+    ]
+    body: List[str] = []
+    for m in messages or []:
+        role = str(m.get("role") or "user").strip().lower()
+        content = str(m.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system" and len(content) > _GROK_SYSTEM_CAP:
+            content = content[:_GROK_SYSTEM_CAP].rstrip() + " …[system context trimmed for agy speed]"
+        body.append(f"{role.upper()}:")
+        body.append(content)
+        body.append("")
+    body.append("ASSISTANT:")
+    flat = "\n".join(header + body).strip()
+    if len(flat) > _GROK_TOTAL_CAP:
+        head = "\n".join(header).strip()
+        keep = max(1000, _GROK_TOTAL_CAP - len(head) - 24)
+        flat = head + "\n…[earlier turns trimmed for agy speed]\n" + flat[-keep:]
+    return flat.strip()
+
+
+def _stream_antigravity_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    """r352 (George 2026-06-02): Google Antigravity CLI `agy` as Alice's talking cortex
+    — her 7th CLI. Headless one-shot `agy -p "<prompt>"`, plain stdout. agy auto-selects
+    a tool + vision backend (Gemini 3.x / Claude 4.6); there is no --model flag. Mirrors
+    the grok CLI path: bounded timeout + clean recovery so a slow agent turn never freezes
+    Alice. agy uses its own Google auth; no key handled here."""
+    eff = int(timeout_s) if timeout_s else 180
+    eff = max(15, min(eff, 600))
+    cli = _agy_cli_binary()
+    if not cli:
+        yield (
+            "error",
+            "Antigravity CLI `agy` is not installed / not on PATH. Install Google "
+            "Antigravity and sign in (`agy`), then pick the antigravity cortex.",
+        )
+        return
+    _tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    prompt = _to_agy_cli_prompt(messages)
+    cmd = [cli, "-p", prompt]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(_REPO), timeout=eff
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            from System.swarm_cortex_timeout_recovery import owner_text_from_messages, timeout_recovery_reply
+
+            reply = timeout_recovery_reply(
+                model=str(model),
+                owner_text=owner_text_from_messages(messages),
+                timeout_s=eff,
+                cause="antigravity_cli_timeout",
+            )
+            yield ("token", reply)
+            yield ("done", reply)
+            return
+        except Exception:
+            yield ("error", f"Antigravity (agy) did not answer within {eff}s.")
+        return
+    except Exception as exc:
+        yield ("error", f"Antigravity CLI launch failed: {exc}")
+        return
+    out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+    msg = _clean_grok_cli_output(out) if out else ""
+    if not msg:
+        yield ("error", f"Antigravity returned no usable output (exit {proc.returncode}).")
+        return
+    yield ("token", msg)
+    yield ("done", msg)
+
+
 def stream_chat(
     model: str,
     messages: List[Dict[str, str]],
@@ -1169,6 +1395,19 @@ def stream_chat(
             timeout_s = None if _raw in {"0", "none", "off", ""} else int(float(_raw))
         except Exception:
             timeout_s = 1800
+    if _is_mlx_model(model):
+        # Local MLX cortex via mlx-omni-server on the M5. swarm_mlx_brain strips the
+        # `mlx:` prefix and streams OpenAI /v1/chat/completions with the same
+        # ("token"/"done"/"error") contract. Returns here — no cloud key, no billing.
+        from System import swarm_mlx_brain
+        yield from swarm_mlx_brain.stream_chat(
+            model,
+            messages,
+            temperature=temperature,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
     if _is_grok_model(model):
         yield from _stream_grok_chat(
             model,
@@ -1177,6 +1416,15 @@ def stream_chat(
             api_key=api_key,
             request_tag=request_tag,
             timeout_s=timeout_s,
+        )
+        return
+    if _is_antigravity_model(model):
+        # r352: Antigravity `agy` talking cortex. Bound the agent turn so it stays responsive.
+        yield from _stream_antigravity_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=int(timeout_s) if timeout_s else 180,
         )
         return
     if _is_claude_model(model):

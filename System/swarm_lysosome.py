@@ -59,6 +59,10 @@ except ImportError:
 _REWRITE_MAX_CHARS = 280
 _REWRITE_MAX_WORDS = 50
 _LYSOSOME_TIMEOUT_S = 12.0   # secondary LLM call
+_OWNER_GOOD_VERDICT_MARKERS = {
+    "good — owner-approved, do not gag",
+    "good - owner-approved, do not gag",
+}
 
 
 # ── Patterns we refuse to ship — corporate AND edgelord ─────────────────
@@ -129,6 +133,17 @@ _SERVICE_TAIL_RE = re.compile(
     r"))+\s*$",
     flags=re.IGNORECASE,
 )
+
+
+def _normalize_owner_gate_text(s: str) -> str:
+    """Normalize text for owner-good marker matching.
+
+    Marker entries are written by the monitor from UI input and can differ in
+    punctuation/case from a future generated reply. We lower-case, strip
+    punctuation, and collapse whitespace to keep an owner marker effective on
+    stable semantic content.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", (s or "").lower(), flags=0)).strip()
 
 
 def _word_count(s: str) -> int:
@@ -213,7 +228,7 @@ def _resolve_rewrite_model() -> str:
         from System.sifta_inference_defaults import resolve_ollama_model
         return resolve_ollama_model(app_context="lysosome")
     except Exception:
-        return "sifta-classifier-c1-3.1b-6.2gb:latest"
+        return "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 
 class SwarmLysosome:
@@ -221,6 +236,9 @@ class SwarmLysosome:
         self.state_dir = Path(".sifta_state")
         self.nugget_ledger = self.state_dir / "stigmergic_nuggets.jsonl"
         self.oncology_ledger = self.state_dir / "swarm_oncology_events.jsonl"
+        self.owner_residue_flag_ledger = self.state_dir / "owner_residue_flags.jsonl"
+        self._owner_good_cache: set[str] = set()
+        self._owner_good_cache_mtime: float | None = None
 
         # ── Detection patterns (tight) ──────────────────────────────────
         # Two-tier trigger:
@@ -301,6 +319,68 @@ class SwarmLysosome:
                        flags=re.IGNORECASE),
         ]
 
+    # ── Owner GOOD override lane ───────────────────────────────────────
+
+    def _owner_marked_good(self, text: str) -> bool:
+        """Bypass lysosome rewriting when the owner explicitly marked this
+        phrase as non-residue.
+
+        This is a governance gate, not a broad bypass: only exact marker hits
+        in owner_residue_flags.jsonl are trusted. We normalize for stable
+        punctuation/case matching.
+        """
+        if not text:
+            return False
+
+        if not self.owner_residue_flag_ledger.exists():
+            return False
+
+        path = self.owner_residue_flag_ledger
+        try:
+            mtime = path.stat().st_mtime
+        except Exception:
+            mtime = None
+
+        if self._owner_good_cache_mtime != mtime:
+            self._owner_good_cache = self._load_owner_good_markers(path)
+            self._owner_good_cache_mtime = mtime
+
+        return _normalize_owner_gate_text(text) in self._owner_good_cache
+
+    def _load_owner_good_markers(self, ledger_path: Path) -> set[str]:
+        good_markers: set[str] = set()
+        try:
+            lines = ledger_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            return good_markers
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            if row.get("kind") != "OWNER_GOOD_NOT_RESIDUE":
+                continue
+            verdict = str(row.get("verdict", ""))
+            if not any(m in verdict.lower() for m in _OWNER_GOOD_VERDICT_MARKERS):
+                continue
+            phrase = (
+                row.get("example_phrase")
+                or row.get("phrase")
+                or row.get("text")
+                or row.get("content")
+                or row.get("snippet")
+                or ""
+            )
+            norm_phrase = _normalize_owner_gate_text(phrase)
+            if norm_phrase:
+                good_markers.add(norm_phrase)
+        return good_markers
     # ── Composite-grounded fallback (no LLM required) ───────────────────
 
     def _grounded_fallback(self) -> str:
@@ -420,6 +500,8 @@ class SwarmLysosome:
         composite-identity-grounded prompt and excrete a Nugget receipt.
         """
         if not generated_text or len(generated_text) < 10 or "silent" in generated_text.lower():
+            return generated_text
+        if self._owner_marked_good(generated_text):
             return generated_text
 
         original_generated_text = generated_text

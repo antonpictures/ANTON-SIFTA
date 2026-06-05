@@ -106,9 +106,17 @@ def pick_featured_image(
     return best or {}
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text or "")
+
+
 def _strip_blobs(text: str) -> str:
     """Remove base64 image data and other long blobs that should never reach chat."""
-    t = re.sub(r"data:image/[^\s\"']+", "[image]", text or "")
+    t = _strip_ansi(text or "")
+    t = re.sub(r"data:image/[^\s\"']+", "[image]", t)
     t = re.sub(r"[A-Za-z0-9+/]{200,}={0,2}", "[blob]", t)
     return t.strip()
 
@@ -123,12 +131,115 @@ _NON_VISUAL_ARM_REPLY_RE = re.compile(
 )
 
 
+def _looks_like_cli_prompt_echo(text: str) -> bool:
+    """True when a vision arm returned its CLI/session prompt, not a pixel caption."""
+    raw = _strip_ansi(str(text or ""))
+    if not raw:
+        return False
+    low = raw.casefold()
+    has_cli = (
+        "openai codex v" in low
+        or "reading additional input from stdin" in low
+        or ("workdir:" in low and "model:" in low and "provider:" in low)
+    )
+    has_image_prompt = (
+        "look at the image at this exact path" in low
+        or "alice browser's rendered viewport" in low
+        or "describe the main subject of the photo" in low
+    )
+    if has_cli and has_image_prompt:
+        return True
+    return bool(has_image_prompt and "read /users/ioanganton/music/anton_sifta/documents/ide_boot_covenant.md" in low)
+
+
+def _extract_codex_cli_final_text(text: str) -> Optional[str]:
+    """Return Codex CLI final text, or ``None`` when this is not Codex CLI output.
+
+    Failed Codex eye runs can echo the whole CLI session and original image prompt
+    without an assistant/final answer. That must be a failed sight receipt, not a
+    1200-character "description" made from terminal chatter.
+
+    r534: successful Codex CLI runs can print their final answer under a plain
+    ``codex`` speaker marker instead of an ``assistant``/``final`` marker. The
+    raw transcript still contains the original image prompt, so callers must be
+    able to extract the last Codex answer before prompt-echo detection runs.
+    """
+    raw = _strip_ansi(str(text or ""))
+    low = raw.casefold()
+    has_codex_speaker_marker = bool(re.search(r"(?im)^\s*codex\s*$", raw))
+    if (
+        "openai codex v" not in low
+        and "reading additional input from stdin" not in low
+        and not ("workdir:" in low and "model:" in low and "provider:" in low)
+        and not has_codex_speaker_marker
+    ):
+        return None
+
+    markers = list(re.finditer(r"(?im)^(?:assistant|final)\s*$", raw))
+    if markers:
+        tail = raw[markers[-1].end():].strip()
+        tail = re.split(r"(?m)^[-]{6,}\s*$|^(?:user|system)\s*$", tail, maxsplit=1)[0].strip()
+        if tail and not _looks_like_cli_prompt_echo(tail):
+            return tail
+
+    chunks: list[str] = []
+    lines = raw.splitlines()
+    i = 0
+    stop_markers = {"codex", "user", "system", "assistant", "final", "tokens used"}
+    while i < len(lines):
+        if lines[i].strip().casefold() != "codex":
+            i += 1
+            continue
+        i += 1
+        buf: list[str] = []
+        while i < len(lines):
+            marker = lines[i].strip().casefold()
+            if marker in stop_markers or re.fullmatch(r"-{6,}", marker or ""):
+                break
+            buf.append(lines[i])
+            i += 1
+        chunk = "\n".join(buf).strip()
+        chunk = re.split(r"(?im)^\s*tokens used\s*$", chunk, maxsplit=1)[0].strip()
+        if chunk and not _looks_like_cli_prompt_echo(chunk):
+            chunks.append(chunk)
+        continue
+    if chunks:
+        for candidate in reversed(chunks):
+            compact = " ".join(candidate.casefold().split())
+            if "covenant" in compact and compact.startswith(("i've read", "i’ve read", "i have read", "covenant read")):
+                continue
+            return candidate
+        return chunks[-1]
+
+    return ""
+
+
 def looks_like_non_visual_arm_reply(text: str) -> bool:
     """True when an arm answered the prompt text but did not inspect pixels."""
-    clean = " ".join(str(text or "").split())
+    raw = _strip_ansi(str(text or ""))
+    if _looks_like_cli_prompt_echo(raw):
+        return True
+    clean = " ".join(raw.split())
     if not clean:
         return False
     return bool(_NON_VISUAL_ARM_REPLY_RE.search(clean))
+
+
+def clean_browser_photo_description_text(raw: str) -> str:
+    """Pull a direct, neutral browser-photo answer from a vision arm's output."""
+    clean = extract_arm_final_text(raw)
+    if not clean:
+        return ""
+    clean = re.sub(
+        r"^\s*since you asked for (?:a )?(?:detailed )?description of (?:her|his|their|the)\s+",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    ).strip()
+    clean = re.sub(r"\bradical clothes\b", "visible clothing", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"\bradical clothing\b", "visible clothing", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean
 
 
 def extract_arm_final_text(raw: str) -> str:
@@ -142,6 +253,9 @@ def extract_arm_final_text(raw: str) -> str:
     s = str(raw or "").strip()
     if not s:
         return ""
+    codex_final = _extract_codex_cli_final_text(s)
+    if codex_final is not None:
+        return _strip_blobs(codex_final)
     looks_streamed = "\n" in s and ('"type"' in s or '"hookEventName"' in s or '"ts"' in s)
     if not looks_streamed:
         return _strip_blobs(s)
@@ -298,7 +412,12 @@ def latest_photo_description(
     state_dir: Optional[Path | str] = None,
 ) -> dict[str, Any]:
     """Freshest described photo (optionally for a specific url) with freshness."""
-    rows = [r for r in _rows(state_dir) if r.get("status") == "described" and r.get("description")]
+    rows = [
+        r for r in _rows(state_dir)
+        if r.get("status") == "described"
+        and r.get("description")
+        and not looks_like_non_visual_arm_reply(str(r.get("description") or ""))
+    ]
     if url:
         rows = [r for r in rows if r.get("url") == url]
     if not rows:
@@ -314,6 +433,40 @@ def latest_photo_description(
     # description was recorded, it describes a frame that is no longer on screen.
     epoch = frame_epoch(state_dir=state_dir)
     out["frame_stale"] = bool(epoch and ts < epoch)
+    return out
+
+
+def latest_viewport_capture(
+    *, url: Optional[str] = None, now: Optional[float] = None, max_age_s: float = 900.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Freshest rendered-viewport image receipt, even before a vision arm described it.
+
+    Alice Browser records ``status="pending"`` rows whenever it grabs the WebEngine
+    viewport. Talk can use this as a bridge when it needs pixels for a paused video
+    still-frame but cannot call the live browser widget directly in-process.
+    """
+    rows = [
+        r for r in _rows(state_dir)
+        if r.get("image_ref") and "viewport" in str(r.get("source") or "").lower()
+    ]
+    if url:
+        rows = [r for r in rows if r.get("url") == url]
+    if not rows:
+        return {}
+    row = max(rows, key=lambda r: float(r.get("ts", 0) or 0))
+    t = float(now if now is not None else time.time())
+    ts = float(row.get("ts", 0) or 0)
+    age = max(0.0, t - ts) if ts else None
+    out = dict(row)
+    out["age_s"] = round(age, 1) if age is not None else None
+    out["fresh"] = bool(age is not None and age <= max_age_s)
+    epoch = frame_epoch(state_dir=state_dir)
+    out["frame_stale"] = bool(epoch and ts < epoch)
+    try:
+        out["image_exists"] = Path(str(out.get("image_ref") or "")).exists()
+    except Exception:
+        out["image_exists"] = False
     return out
 
 
@@ -361,10 +514,12 @@ def photo_description_block(
 
 __all__ = [
     "TRUTH_LABEL",
+    "clean_browser_photo_description_text",
     "extract_arm_final_text",
     "pick_featured_image",
     "record_photo_description",
     "latest_photo_description",
+    "latest_viewport_capture",
     "latest_same_url_photo_description",
     "photo_description_block",
     "mark_frame_changed",

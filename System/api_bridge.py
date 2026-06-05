@@ -77,7 +77,7 @@ def block_on_dead_drop(tx_hash, timeout=60):
                         resp = json.loads(line)
                         if f"WHATSAPP" in resp.get("sender", "") and tx_hash in resp.get("sender", ""):
                             return resp.get("text", "...")
-                    except: pass
+                    except Exception: pass
         time.sleep(0.2)
     return "🧠📡 (GATEWAY TIMEOUT: The Swarm cognitive loop failed to return a block in time.)"
 

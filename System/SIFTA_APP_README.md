@@ -138,7 +138,14 @@ python3 setup.py py2app
 # → dist/SIFTA.app
 ```
 
-For a signed, notarized `.dmg`: requires your Apple Developer ID, `codesign`, `notarytool`, and `create-dmg`. Worth one focused afternoon when v0.1 is feeling good. Not blocking the demo.
+**The `.dmg` is now committed (r554), not prose.** The recipe lives in `System/setup.py` (py2app, matching the shipped bundle id `com.anton.sifta`) and `System/build_sifta_dmg.sh` (builds the `.app`, then wraps it into `dist/SIFTA.dmg`). Build it:
+
+```bash
+cd /Users/ioanganton/Music/ANTON_SIFTA/System
+./build_sifta_dmg.sh                 # unsigned demo .dmg — fine to show a lawyer
+```
+
+For a signed, notarized image (only needed to ship to other people's Macs without the Gatekeeper warning), set `SIGN_ID` (and `NOTARY_PROFILE`) before running — see the header of `build_sifta_dmg.sh`. For the pretty drag-to-Applications window install `create-dmg` (`brew install create-dmg`); otherwise the script falls back to `hdiutil`.
 
 ## What's NOT in v0.1 (explicitly)
 

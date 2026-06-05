@@ -88,7 +88,7 @@ def scan_inventory(root: Path | None = None) -> OllamaInventory:
 
     for manifest in sorted(p for p in manifests_root.rglob("*") if p.is_file()):
         try:
-            data = json.loads(manifest.read_text())
+            data = json.loads(manifest.read_text(encoding="utf-8", errors="replace"))
         except (OSError, json.JSONDecodeError):
             continue
 

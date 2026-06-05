@@ -286,6 +286,22 @@ def build_voice_pipeline_report(
             reason="degraded fallback that preserves control flow without audio",
         )
     )
+    # MisoTTS signature (offline cloned) — the de-risked quick win for "Alice sounds great".
+    # Pre-generated clips live in Voices/misotts_signature/. Exact phrase matches play the high-quality
+    # sample; arbitrary text falls back to the selected live backend (Piper/macos_say).
+    # Future: when MLX/Metal port lands, this becomes the live misotts_mlx backend.
+    SIGNATURE_DIR = REPO_ROOT / "Voices" / "misotts_signature"
+    tts_candidates.append(
+        _candidate(
+            role="tts",
+            backend_id="misotts_signature",
+            label="MisoTTS signature (offline cloned high-quality voice)",
+            available=(SIGNATURE_DIR.exists() and any(SIGNATURE_DIR.glob("*"))),
+            reason="Pre-generated Alice signature clips (MisoTTS or foundation macOS say) are present for known phrases",
+            setup_hint="Run: python3 tools/alice_misotts_signature_voice_clone.py --generate (or --misotts --reference your_clip.wav). Then SIFTA_TTS_BACKEND=misotts_signature",
+            model_path=str(SIGNATURE_DIR),
+        )
+    )
 
     tts_override = str(
         env_map.get(TTS_BACKEND_ENV)
@@ -306,6 +322,10 @@ def build_voice_pipeline_report(
             "macos_say": "macos_say",
             "piper": "piper",
             "null": "null",
+            "signature": "misotts_signature",
+            "misotts": "misotts_signature",
+            "misotts_signature": "misotts_signature",
+            "high_quality": "misotts_signature",
         },
     )
 

@@ -1,3 +1,16 @@
+---
+name: grok_macos_arm
+description: >
+  Use when Alice needs the external macOS Grok reserve or diagnostic witness
+  as a bounded, cross-checked arm with explicit receipt boundaries.
+swimmer_type: GROK_RESERVE_SWIMMER
+action_type: diagnose
+affect_lanes: [SEEKING, CARE]
+stgm_mint: 2.0
+pouw_label: GROK_MACOS_ARM
+version: 2026-06-05
+---
+
 # Grok macOS Arm (Reserve / Diagnostic)
 
 ## Name

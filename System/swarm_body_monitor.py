@@ -565,7 +565,7 @@ class OrganEngine:
                     f"tasks={corvid_count}  heartbeats={corvid_heartbeats}  "
                     f"ok={corvid_success}  last={corvid_last_task}"
                 ),
-                "sub":   f"latency={corvid_last_s:.1f}s  alice-m1-scout-2.3b-2.7gb:latest  async",
+                "sub":   f"latency={corvid_last_s:.1f}s  alice-gemma4-e2b-cortex-5.1b-4.4gb:latest  async",
                 "pct":   corvid_pct,
                 **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
             },

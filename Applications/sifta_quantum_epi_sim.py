@@ -170,6 +170,43 @@ class QuantumSurfaceCanvas(QWidget):
         self._compute_syndrome()
         self._log(f"⚡ ERROR BURST: {d // 2} qubits corrupted")
 
+    def ingest_quantum_data(self, key: str = "majorana2_2026"):
+        """Seed the lattice from original quantum edge data (Majorana2 topological low-error priors or Borealis photonic samples).
+        Swimmers (sentinels) now patrol/correct on the pulled 2026 hardware data distributions instead of uniform random.
+        This is the 'test their original data send swimmers in it' experiment hook."""
+        try:
+            from System.swarm_quantum_swimmer_sentinel import ingest_quantum_priors
+            priors = ingest_quantum_priors(key)
+            data = priors["data"]
+            d = self.grid_d
+            self._init_lattice()
+            seeded = 0
+            for pos in data.get("syndromes", []):
+                if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                    x, y = int(pos[0]) % d, int(pos[1]) % d
+                    if random.random() < 0.7:
+                        self.data_qubits[x][y] = 1
+                    else:
+                        self.phase_errors[x][y] = 1
+                    seeded += 1
+            for bs in data.get("bitstrings", []):
+                for i, bit in enumerate(str(bs)[:d*d]):
+                    if bit == "1":
+                        x = (i // d) % d
+                        y = i % d
+                        if random.random() < 0.5:
+                            self.data_qubits[x][y] = 1
+                        else:
+                            self.phase_errors[x][y] = 1
+                        seeded += 1
+            self.error_rate = data.get("error_rate_hint", self.error_rate)
+            self._compute_syndrome()
+            self._log(f"🧬 INGESTED ORIGINAL QUANTUM DATA: {key} ({seeded} seeded errors from edge priors). Swimmers now on real-ish Majorana/Borealis distributions.")
+            self.update()
+        except Exception as e:
+            self._log(f"INGEST error (fallback to burst): {e}")
+            self.inject_error_burst()
+
     def _log(self, msg):
         ts = time.strftime("%H:%M:%S")
         self.log_lines.append(f"[{ts}] {msg}")
@@ -996,6 +1033,11 @@ class QuantumEpiWindow(QMainWindow):
         btn_q_burst.clicked.connect(self._q_inject)
         q_controls.addWidget(btn_q_burst)
 
+        # Ingest original quantum computer data (Majorana 2 topological priors, Borealis photonic sampling 2026) so the swimmer sentinels patrol/correct on "their" real edge data instead of only synthetic random. "I WANT TO TEST THEIR ORIGINAL DATA SEND SWIMMERS IN IT"
+        btn_q_ingest = QPushButton("🧬 Ingest Quantum Edge Data (Majorana/Borealis)")
+        btn_q_ingest.clicked.connect(self._q_ingest_edge_data)
+        q_controls.addWidget(btn_q_ingest)
+
         # Swimmer slider
         q_sw_box = QVBoxLayout()
         q_sw_box.addWidget(QLabel("Swimmers:"))
@@ -1142,6 +1184,19 @@ class QuantumEpiWindow(QMainWindow):
         self.q_er_lbl.setText(f"{rate:.3f}/tick")
         self.q_canvas.set_error_rate(val)
 
+    def _q_ingest_edge_data(self):
+        # Pull from the sentinel (original data + swimmers dispatch)
+        try:
+            from System.swarm_quantum_swimmer_sentinel import run_swimmer_experiment_on_quantum_data
+            # Run a short headless experiment on the priors so metrics + STGM land in ledger immediately
+            res = run_swimmer_experiment_on_quantum_data(dataset_key="majorana2_2026", ticks=80, swimmer_count=40)
+            self.q_canvas._log(f"🧬 INGESTED ORIGINAL QUANTUM DATA: majorana2_2026 — STGM={res.get('stgm_earned')} corrected={res.get('errors_corrected')} receipt={res.get('receipt_id')}")
+            # Also seed the live canvas lattice so user sees the swimmers patrol the "real" seeded errors
+            self.q_canvas.ingest_quantum_data("majorana2_2026")
+        except Exception as e:
+            self.q_canvas._log(f"INGEST FAILED: {e}. Using fallback seed.")
+            self.q_canvas.ingest_quantum_data("majorana2_2026")
+
     # ── Epidemiology slots ────────────────────────────────────────
     def _e_outbreak(self):
         self.e_canvas.inject_outbreak()
@@ -1174,5 +1229,27 @@ def main():
     sys.exit(app.exec())
 
 
+# ── Headless / CLI for sentinel dispatch + experiments (no GUI needed for "send the swimmers")
+def run_headless_quantum_experiment(dataset_key: str = "majorana2_2026", ticks: int = 150, swimmers: int = 40):
+    """For Talk/Matrix dispatch or batch: run swimmers on the original quantum data, return + log receipt."""
+    from System.swarm_quantum_swimmer_sentinel import run_swimmer_experiment_on_quantum_data
+    res = run_swimmer_experiment_on_quantum_data(dataset_key=dataset_key, ticks=ticks, swimmer_count=swimmers)
+    print("QUANTUM SWIMMER EXPERIMENT RECEIPT:", res.get("receipt_id"))
+    print(json.dumps(res, indent=2))
+    return res
+
+
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="SIFTA Quantum Swimmer Sentinels — test original edge data")
+    parser.add_argument("--ingest-quantum-data", type=str, default=None, help="Key: majorana2_2026 | borealis_photonic_2026 | psiquantum_ftqc (seeds live GUI or runs headless)")
+    parser.add_argument("--headless", action="store_true", help="Run without GUI, dispatch swimmers on the data, write ledger receipt")
+    parser.add_argument("--ticks", type=int, default=150)
+    parser.add_argument("--swimmers", type=int, default=40)
+    args = parser.parse_args()
+
+    if args.headless or args.ingest_quantum_data:
+        key = args.ingest_quantum_data or "majorana2_2026"
+        run_headless_quantum_experiment(dataset_key=key, ticks=args.ticks, swimmers=args.swimmers)
+    else:
+        main()

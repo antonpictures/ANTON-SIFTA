@@ -18,7 +18,7 @@ def read_last(path: Path) -> dict[str, Any]:
     for line in reversed(path.read_text(errors="ignore").splitlines()):
         try:
             return json.loads(line)
-        except:
+        except Exception:
             pass
     return {}
 

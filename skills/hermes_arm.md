@@ -1,3 +1,17 @@
+---
+name: hermes_arm
+description: >
+  Use when Alice needs the borged Hermes substrate as local execution muscle,
+  with all former agent steps converted into Alice-owned STGM receipt
+  swimmers.
+swimmer_type: HERMES_ARM_SWIMMER
+action_type: code
+affect_lanes: [SEEKING, CARE, PLAY]
+stgm_mint: 4.0
+pouw_label: HERMES_ARM
+version: 2026-06-05
+---
+
 # Hermes Arm (Borged / Alice-Controlled)
 
 ## Name

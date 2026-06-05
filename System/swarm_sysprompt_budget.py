@@ -41,6 +41,7 @@ def clamp_prompt_parts(
     per_block_max: int = 6000,
     min_block: int = 300,
     marker: str = _MARKER,
+    protected_prefixes: tuple[str, ...] = (),
 ) -> tuple[list[str], dict[str, Any]]:
     """Bound a list of system-prompt blocks to a character budget.
 
@@ -56,13 +57,19 @@ def clamp_prompt_parts(
         "trimmed_blocks": 0, "applied": False,
     }
 
+    def _is_protected(block: str) -> bool:
+        head = (block or "").lstrip()
+        return any(head.startswith(prefix) for prefix in protected_prefixes if prefix)
+
+    protected = [_is_protected(b) for b in blocks]
+
     def _cap(block: str, cap: int) -> str:
         if len(block) <= cap:
             return block
         return block[: max(0, cap - len(marker))].rstrip() + marker
 
     # Stage 1 — per-block hard cap.
-    capped = [_cap(b, per_block_max) for b in blocks]
+    capped = [b if keep else _cap(b, per_block_max) for b, keep in zip(blocks, protected)]
     report["trimmed_blocks"] = sum(1 for a, b in zip(blocks, capped) if a != b)
 
     def _total(bs: list[str]) -> int:
@@ -74,11 +81,15 @@ def clamp_prompt_parts(
         lo, hi, best = min_block, max(lens), min_block
         while lo <= hi:
             mid = (lo + hi) // 2
-            if sum(min(l, mid) for l in lens) + _SEP_LEN * max(0, len(lens) - 1) <= total_max:
+            proposed = sum(
+                l if keep else min(l, mid)
+                for l, keep in zip(lens, protected)
+            ) + _SEP_LEN * max(0, len(lens) - 1)
+            if proposed <= total_max:
                 best, lo = mid, mid + 1
             else:
                 hi = mid - 1
-        capped = [_cap(b, best) for b in capped]
+        capped = [b if keep else _cap(b, best) for b, keep in zip(capped, protected)]
         report["water_fill_cap"] = best
         report["trimmed_blocks"] = sum(1 for a, b in zip(blocks, capped) if a != b)
 
@@ -94,6 +105,26 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
         parts,
         total_max=_env_int("SIFTA_SYSPROMPT_BASE_BUDGET", 48000),
         per_block_max=_env_int("SIFTA_SYSPROMPT_BLOCK_MAX", 6000),
+        protected_prefixes=(
+            "MY PHYSICAL IDENTITY",
+            "ALICE_SELF_ADDRESSING",
+            "RUNTIME CONSTRAINTS",
+            "WALL CLOCK GROUND TRUTH",
+            "TIME ACCESS PROTOCOL",
+            "FALSE REFUSAL QUARANTINE",
+            "LOCAL IDENTITY BOUNDARY",
+            "IDE DOCTORS vs ONE LARYNX",
+            "ALICE SELF ORGAN",
+            "COMPOSITE IDENTITY",
+            "STIGMERGIC SPEECH POTENTIAL",
+            "ACE APP BRIEF",
+            "CURRENT FOCUSED APP",
+            "CO-WATCH RECEIPTS",
+            "WHAT I CAN DO",
+            "LIVE HUMAN CONVERSATION STYLE",
+            "STIGMERGIC APP ATTENTION BIAS",
+            "GENERIC APP AWARENESS",
+        ),
     )
 
 

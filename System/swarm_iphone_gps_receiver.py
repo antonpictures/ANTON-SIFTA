@@ -213,9 +213,19 @@ class _GPSHandler(BaseHTTPRequestHandler):
     server_version = "SiftaIphoneGPS/1.0"
 
     def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write(
-            f"[iphone_gps] {self.address_string()} - {fmt % args}\n"
-        )
+        # r331 (George 2026-06-02): this access log flooded .sifta_state/iphone_gps_receiver.log to
+        # 18 MB with ONE repeated line — '"GET / HTTP/1.1" 404' from a local poller hitting the wrong
+        # path — and forced George to shut SIFTA down. A GPS receiver does not need a per-request
+        # access log; the real signal is the stored fix (latest_iphone_gps), not this line. So drop
+        # the routine request noise (GET probes, 404/403 misses, health checks) and keep ONLY genuine
+        # server-side (5xx) errors, so the log can never balloon again.
+        try:
+            line = (fmt % args) if args else str(fmt)
+        except Exception:
+            line = str(fmt)
+        if (" 500 " in line) or (" 502 " in line) or (" 503 " in line) or (" 504 " in line):
+            sys.stderr.write(f"[iphone_gps] {self.address_string()} - {line}\n")
+        # else: silence — never flood the disk with routine probe traffic again.
 
     def _reject(self, code: int, msg: str) -> None:
         body = json.dumps({"status": "REJECTED", "error": msg}).encode()

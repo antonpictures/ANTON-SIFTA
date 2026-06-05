@@ -26,7 +26,7 @@ import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 _OLLAMA_HOST = "http://localhost:11434"
-_DEFAULT_MODEL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # good local cortex model on this M5
+_DEFAULT_MODEL = "alice-m5-cortex-8b-6.3gb:latest"  # primary local Alice cortex on this M5
 
 
 def is_available() -> bool:
@@ -97,6 +97,8 @@ def stream_chat(
         "stream": True,
         "options": {
             "temperature": float(temperature),
+            "num_ctx": 8192,
+            "num_predict": 700,
         },
     }
 
@@ -142,5 +144,8 @@ def stream_chat(
 def get_default_model() -> str:
     models = available_models()
     if models:
+        preferred = f"ollama:{_DEFAULT_MODEL}"
+        if preferred in models:
+            return preferred
         return models[0]
     return f"ollama:{_DEFAULT_MODEL}"

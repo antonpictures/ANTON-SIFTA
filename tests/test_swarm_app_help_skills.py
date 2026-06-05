@@ -96,6 +96,8 @@ def test_effective_skills_merges_stigmergic_with_static_seed(monkeypatch, tmp_pa
         )
         if first_static_idx is not None:
             assert first_static_idx >= len(es.stigmergic)
+    assert es.consciousness_layers
+    assert es.consciousness_layers[0]["layer_path"] == ["skill", "swimmer", "organ", "organism"]
 
 
 def test_effective_skills_last_seen_ts_is_max_across_rows(monkeypatch, tmp_path: Path):
@@ -237,6 +239,9 @@ def test_materialize_help_file_emits_valid_markdown(monkeypatch, tmp_path: Path)
     assert "phonics" in body
     assert "initial_seed" in body
     assert "Seed row" in body
+    assert "Stigmergic Skill Consciousness" in body
+    assert "skill -> swimmer -> organ -> organism" in body
+    assert "`phonics` ->" in body
 
 
 def test_materialize_help_file_handles_app_with_no_health_rows(monkeypatch, tmp_path: Path):

@@ -19,6 +19,12 @@ from typing import Any, Mapping, Optional
 
 from System.jsonl_file_lock import append_line_locked, read_text_locked
 
+try:
+    from System.swarm_metabolic_homeostasis import MetabolicHomeostat
+    _HOMEOSTAT = MetabolicHomeostat()
+except Exception:
+    _HOMEOSTAT = None
+
 _REPO = Path(__file__).resolve().parent.parent
 DEFAULT_STATE = _REPO / ".sifta_state"
 WATCH_LEDGER = "youtube_watch_memory.jsonl"

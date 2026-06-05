@@ -8,6 +8,7 @@ These tests pin grok's new --image path: the screenshot is inlined as an xAI
 image_url base64 data URI, the launcher hands grok the path, and capabilities now
 keep grok selected as its own eye."""
 import importlib.util
+import json
 import os
 import sys
 import tempfile
@@ -85,6 +86,32 @@ def test_capability_grok_now_transports_local_image():
     pick = cc.pick_vision_arm(current_arm="grok_agent", local_image_required=True)
     assert pick["selected_arm"] == "grok_agent"
     assert pick["switched"] is False
+
+
+def test_grok_chat_writes_oauth_health_receipt(tmp_path, monkeypatch):
+    ledger = tmp_path / "xai_grok_oauth_calls.jsonl"
+    monkeypatch.setattr(gc, "_XAI_OAUTH_LEDGER", ledger)
+
+    rec = gc.write_grok_chat_oauth_receipt(
+        ok=True,
+        reason="api_response",
+        model="grok-4",
+        status_code=200,
+        response_text="READY",
+        credential_value="oauth-token-1234567890",
+        had_image=False,
+    )
+
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["truth_label"] == "XAI_GROK_CHAT_COMPLETION_CALL_V1"
+    assert row["ok"] is True
+    assert row["reason"] == "api_response"
+    assert row["status_code"] == 200
+    assert row["model"] == "grok-4"
+    assert row["credential_kind"] == "oauth_access_token"
+    assert row["credential_redacted"] == "oauth...7890"
+    assert row["response_preview"] == "READY"
+    assert row["trace_id"] == rec["trace_id"]
 
 
 if __name__ == "__main__":

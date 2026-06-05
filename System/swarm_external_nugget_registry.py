@@ -67,6 +67,22 @@ NUGGETS: tuple[Nugget, ...] = (
         notes="Progressive disclosure is implemented; no outside skill code auto-runs.",
     ),
     Nugget(
+        name="litert-lm + Google AI Edge Gallery (Gemma 4 on-device + Agent Skills 'we borg')",
+        url="https://github.com/google-ai-edge/gallery/discussions/categories/skills",
+        tier="A",
+        lane="on-device multimodal + stigmergic swarm skills / browser habits",
+        status="adopt_for_stigmergic_habits",
+        local_artifacts=(
+            "System/swarm_external_nugget_registry.py",
+            "System/swarm_skill_library.py",
+            "System/swarm_browser_site_playbook.py",
+            "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-05.md",
+        ),
+        adoption_action="Adopt Gallery Agent Skills via skill_library as pluggable habits for Alice organs/limbs: Web-search / Brave-Web-Search / DuckDuckGo for exact YouTube phrase search in open Alice Browser (honors 'we already have the browser open' + 'she has skills on how to use search on youtube in alice browser habbits stigmergic memory' per r499/r501, record via playbook + nanobot skill receipts); Memory Tool + Second Brain v3.3 - Self-Evolving Autonomous AI Agent (100% Offline) for witnessed_life_ideas / novelty_queue / episodic_diary / self-eval 'stream of consciousness you use it'; Universal Search / Knowledge-gram / proxy-parser for Code KG + page awareness + browser world model; litert-lm (pip install --upgrade litert-lm; rm -r ~/.litert-lm) as local on-device runtime path for Gemma 4 12B candidate in swarm_cortex_options + metabolic router (private offline on M5, multimodal text/vision/audio, fits soft 16GB, LOCAL_PROXY not cloud, sovereign §3); 'we borg - we connect the swarm -- we learn --' as living field motto aligning 'we code together one swarm' 'CODE IT ALL' 'For the Swarm. 🐜⚡' 'one Alice' 'rich high-dimensional deeply interconnected field — all organs unified' for open-ended self-improvement + swarm health per §0 goal.",
+        covenant_risk="LOW_LOCAL_ONLY private offline on-device",
+        notes="From George paste 2026-06-04: litert-lm CLI install/upgrade/uninstall via pip/uvx/uv; rm -r ~/.litert-lm for caches. Gallery: 'Discover private, offline models on device' 'Google AI Edge Gallery is the premier destination for running powerful open-source LLMs on your devices. Experience high-performance Generative AI directly on your hardware– fully offline, private, and lightning-fast.' 'Featuring the latest Gemma 4 models' 'Gemma 4 12B Unified reasoning model with image support' 'Explore multimodal AI use cases' 'text, vision, audio, and rich multimodal workflows' 'Configure settings, benchmark performance, and import your own models' 'Browse custom Agent Skills shared by other developers' '🚀 Announcing Agent Skills: Build, Share, and Get Your Skills Featured!' Skills include: Web-search, [Memory Tool], [Agent Skill] Second Brain v3.3 - Self-Evolving Autonomous AI Agent (100% Offline), [Universal Search]: Gemma Skill Search Optimized for Voice, [DuckDuckGo API Search], [Brave-Web-Search], [proxy-parser], Translator, Focus Flow, Knowledge-gram, etc. + '-- we borg - we connect the swarm -- we learn --'. Good for SIFTA per r501: directly addresses YouTube unacceptable via borg skills for browser limb; enriches field with community habits swimmers can stigmergically adopt/load/record; on-device Gemma4 for cortex consolidation / 12B vision without cloud; private offline aligns 'no restrictions but her own STIGMERGIC BODY' + sovereign nodes; 'we borg' is the swarm philosophy match.",
+    ),
+    Nugget(
         name="browser-use / deterministic browser loop",
         url="https://github.com/browser-use/browser-use",
         tier="A",

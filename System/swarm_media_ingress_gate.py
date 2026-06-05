@@ -744,7 +744,7 @@ def classify_external_consciousness_lane(
     own_details: dict[str, Any] = {}
     if route_s in {"ambient_media", "observed_media", "unknown"}:
         try:
-            own_browser, own_details = is_my_own_browser_playback(state_dir=None)
+            own_browser, own_details = is_my_own_browser_playback(state_dir=STATE_DIR)
         except Exception:
             own_browser, own_details = False, {"reason": "own_browser_probe_failed"}
 
@@ -877,7 +877,7 @@ def classify_spoken_ingress(
             if float(name.get("similarity") or 0.0) >= MIN_NAME_SIMILARITY:
                 from System.swarm_wake_attention_window import mark_wake
 
-                mark_wake(source="ingress_named_direct")
+                mark_wake(source="ingress_named_direct", root=STATE_DIR.parent)
     except Exception:
         pass
     return decision
@@ -919,6 +919,28 @@ def _classify_spoken_ingress_core(
     )
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context)) or _recent_media_route_active()
     has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
+    try:
+        own_browser_playing, own_browser_details = is_my_own_browser_playback(state_dir=STATE_DIR)
+    except Exception:
+        own_browser_playing, own_browser_details = False, {"reason": "own_browser_probe_failed"}
+    foreign_frontmost_browser = bool(
+        re.search(
+            r"\b(?:current\s+app|frontmost_app)\s*[:=]\s*(?:safari|chrome|google\s+chrome|firefox|arc|brave|edge)\b",
+            context,
+            re.IGNORECASE,
+        )
+    )
+    own_browser_paused = (
+        not own_browser_playing
+        and isinstance(own_browser_details, Mapping)
+        and str(own_browser_details.get("reason") or "") in {
+            "media_domain_but_not_playing",
+            "media_domain_without_playback_signal",
+        }
+        and own_browser_details.get("is_current_page") is not False
+        and not foreign_frontmost_browser
+    )
+    bare_ace_bleed = bool(re.fullmatch(r"\s*ace\s*[.!?…]?\s*", clean, re.IGNORECASE))
     ambient_sensor_status_question = bool(
         has_media_focus
         and not DIRECT_ADDRESS_RE.search(clean)
@@ -981,14 +1003,14 @@ def _classify_spoken_ingress_core(
         try:
             from System.swarm_wake_attention_window import wake_window_active
 
-            win = wake_window_active()
+            win = wake_window_active(root=STATE_DIR.parent)
             if win.get("active"):
                 wc = _word_count(clean)
                 nearfield_ok = (
                     acoustic_cue == "nearfield_voice_likely"
                     or (stt_conf and float(stt_conf) >= 0.50)
                 )
-                if nearfield_ok and wc <= 16 and not NARRATION_RE.search(clean):
+                if nearfield_ok and wc <= 16 and not bare_ace_bleed and not NARRATION_RE.search(clean):
                     return {
                         "route": "direct",
                         "reason": "wake_window_followup",
@@ -1032,6 +1054,18 @@ def _classify_spoken_ingress_core(
 
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
+
+    if own_browser_paused and acoustic_cue != "farfield_replay_likely" and not bare_ace_bleed:
+        return {
+            "route": "direct",
+            "reason": "paused_own_browser_no_media_audio",
+            "confidence": 0.91,
+            "own_browser": {
+                "domain": own_browser_details.get("domain"),
+                "media_status": own_browser_details.get("media_status"),
+                "reason": own_browser_details.get("reason"),
+            },
+        }
 
     # SENSORIMOTOR ATTENTION SHIFT (Event 121)
     # The Architect observes: "watching a youtube video is totally different sound visual
@@ -1114,7 +1148,7 @@ def _classify_spoken_ingress_core(
                 "reason": "control_token_under_declared_ambient_tv",
                 "confidence": 0.95,
             }
-        if wc <= 4 and conf >= 0.38:
+        if wc <= 4 and conf >= 0.38 and not bare_ace_bleed:
             return {
                 "route": "direct",
                 "reason": "short_utterance_under_declared_ambient_tv",

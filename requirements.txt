@@ -16,6 +16,15 @@ websockets==15.0.1
 ecdsa>=0.19.0  # used by System/swarm_bishop_mrna.py — RFC6979 deterministic signing of dual-IDE mRNA traces
 faster-whisper>=1.2.1  # local speech-to-text backend for Talk to Alice
 
+# ── Optional: native MLX VLM vision cortex (M5 / Apple silicon) ──────────────
+# System/swarm_mlx_vlm_brain.py — strong local image-text-to-text model
+# (osmQwopus-3.6-27B OptiQ-3.7bpw-mlx or sibling). Replaces blanking 8b for
+# describe attached / "on your body screen" / visual grids. Direct mlx_vlm, no Ollama.
+# Install: pip install -U "huggingface_hub[cli]" mlx-vlm
+# Then: hf download <the-repo> --local-dir ~/Music/ANTON_SIFTA/models/<name>
+# mlx-vlm>=0.5.0
+# huggingface_hub>=0.25.0
+
 # ── Optional preferred modular speech lane ──────────────────────────────────
 # System/swarm_local_voice_pipeline.py prefers sherpa-onnx for streaming ASR/VAD
 # when a local model is configured via SIFTA_SHERPA_ONNX_MODEL_DIR or

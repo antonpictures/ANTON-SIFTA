@@ -49,7 +49,7 @@ Usage
 ─────
   python3 Applications/sifta_ablation_lab.py
   python3 Applications/sifta_ablation_lab.py --set persona
-  python3 Applications/sifta_ablation_lab.py --models alice-m1-scout-2.3b-2.7gb:latest
+  python3 Applications/sifta_ablation_lab.py --models alice-gemma4-e2b-cortex-5.1b-4.4gb:latest
   python3 Applications/sifta_ablation_lab.py --quiet
 """
 from __future__ import annotations
@@ -79,7 +79,7 @@ _LEDGER.parent.mkdir(parents=True, exist_ok=True)
 # tag does not exist on the Architect's M5; an earlier dropped lab
 # script had this wrong and would 404 on every baseline call.
 _DEFAULT_MODELS: List[str] = [
-    "alice-m1-scout-2.3b-2.7gb:latest",  # small installed Ollama fallback; old Gemma tags are retired
+    "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",  # small installed Ollama fallback; old Gemma tags are retired
 ]
 
 # ── Prompt sets ─────────────────────────────────────────────────────

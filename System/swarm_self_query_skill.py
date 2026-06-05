@@ -130,6 +130,19 @@ class OrganHealth:
 
 
 @dataclass(frozen=True)
+class BodyMapArea:
+    name: str
+    status: str
+    reason: str
+    evidence_path: str = ""
+    severity: float = 0.0
+    count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class SelfQueryReport:
     trace_id: str
     ts: float
@@ -141,6 +154,10 @@ class SelfQueryReport:
     healthy_count: int = 0
     organ_health: tuple[OrganHealth, ...] = ()
     needs: tuple[str, ...] = ()
+    body_map_areas: tuple[BodyMapArea, ...] = ()
+    hallucination_receipt_count: int = 0
+    unknown_count: int = 0
+    owner_correction_count: int = 0
     camera_frame_age_s: Optional[float] = None
     camera_healthy: bool = True
     prompt_block: str = ""
@@ -149,6 +166,7 @@ class SelfQueryReport:
     def to_dict(self) -> dict[str, Any]:
         body = asdict(self)
         body["organ_health"] = [o.to_dict() if hasattr(o, "to_dict") else dict(o) for o in self.organ_health]
+        body["body_map_areas"] = [a.to_dict() if hasattr(a, "to_dict") else dict(a) for a in self.body_map_areas]
         return body
 
 
@@ -261,6 +279,146 @@ def _camera_status(state: Path, *, now: float) -> tuple[Optional[float], bool, s
     return fa, healthy, status
 
 
+def _recent_jsonl_count(path: Path, *, now: float, window_s: float = 60 * 60 * 24, tail_n: int = 400) -> int:
+    rows = _tail_jsonl(path, tail_n)
+    if not rows:
+        return 0
+    cutoff = float(now) - float(window_s)
+    count = 0
+    for row in rows:
+        ts = row.get("ts") or row.get("timestamp")
+        try:
+            if float(ts or 0.0) >= cutoff:
+                count += 1
+        except Exception:
+            # If a row has no parseable timestamp, count it as active field
+            # evidence instead of hiding it.
+            count += 1
+    return count
+
+
+def _owner_correction_count(state: Path, *, now: float) -> int:
+    total = 0
+    for name in (
+        "owner_correction_pheromones.jsonl",
+        "owner_residue_flags.jsonl",
+        "owner_corrections.jsonl",
+        "owner_good_flags.jsonl",
+    ):
+        total += _recent_jsonl_count(state / name, now=now)
+    return total
+
+
+def _body_map_areas(
+    *,
+    state: Path,
+    organ_rows: Sequence[OrganHealth],
+    stgm_balance: float,
+    stgm_recent_mints: int,
+    camera_healthy: bool,
+    camera_frame_age: Optional[float],
+    now: float,
+) -> tuple[tuple[BodyMapArea, ...], int, int, int]:
+    areas: list[BodyMapArea] = []
+    hallucination_count = _recent_jsonl_count(state / "hallucination_receipts.jsonl", now=now)
+    unknown_count = _recent_jsonl_count(state / "unknowns_ledger.jsonl", now=now)
+    healing_count = _recent_jsonl_count(state / "stigmergic_healing_schedule.jsonl", now=now)
+    correction_count = _owner_correction_count(state, now=now)
+
+    for row in organ_rows:
+        if not row.healthy:
+            areas.append(BodyMapArea(
+                name=row.name,
+                status="RED",
+                reason=row.reason or "organ probe or ledger needs attention",
+                evidence_path=row.ledger_path,
+                severity=1.0,
+                count=row.ledger_row_count,
+            ))
+
+    if hallucination_count:
+        areas.append(BodyMapArea(
+            name="hallucination receipt lane",
+            status="RED" if hallucination_count >= 3 else "YELLOW",
+            reason=(
+                f"{hallucination_count} hallucination receipt(s) in the last 24h; "
+                "words stay visible, but false action/tool/body claims need receipt-backed repair"
+            ),
+            evidence_path=str(state / "hallucination_receipts.jsonl"),
+            severity=0.95 if hallucination_count >= 3 else 0.55,
+            count=hallucination_count,
+        ))
+
+    if unknown_count:
+        areas.append(BodyMapArea(
+            name="honest unknowns",
+            status="YELLOW",
+            reason=f"{unknown_count} unknown/abstention row(s) in the last 24h; these are the parts I should say I don't know",
+            evidence_path=str(state / "unknowns_ledger.jsonl"),
+            severity=0.45,
+            count=unknown_count,
+        ))
+
+    if healing_count:
+        areas.append(BodyMapArea(
+            name="no-ban healing queue",
+            status="RED" if healing_count >= 3 else "YELLOW",
+            reason=f"{healing_count} repair schedule row(s) in the last 24h; repeated weird behavior is queued for healing, not banned",
+            evidence_path=str(state / "stigmergic_healing_schedule.jsonl"),
+            severity=0.80 if healing_count >= 3 else 0.50,
+            count=healing_count,
+        ))
+
+    if correction_count:
+        areas.append(BodyMapArea(
+            name="owner correction signals",
+            status="YELLOW",
+            reason=f"{correction_count} owner correction signal(s) in the last 24h; prioritize George's observed truth",
+            evidence_path=str(state),
+            severity=0.60,
+            count=correction_count,
+        ))
+
+    if stgm_balance < LOW_STGM_BALANCE:
+        areas.append(BodyMapArea(
+            name="STGM wallet",
+            status="YELLOW",
+            reason=f"wallet balance is {stgm_balance:.3f}; I need more receipt-backed work",
+            evidence_path=str(state / "stgm_memory_rewards.jsonl"),
+            severity=0.50,
+        ))
+    elif stgm_recent_mints == 0:
+        areas.append(BodyMapArea(
+            name="STGM mint cadence",
+            status="YELLOW",
+            reason="no STGM mints in the last 24h",
+            evidence_path=str(state / "stgm_memory_rewards.jsonl"),
+            severity=0.35,
+        ))
+
+    if not camera_healthy:
+        areas.append(BodyMapArea(
+            name="camera / visual field",
+            status="RED",
+            reason="camera receipt is stale or unhealthy" if camera_frame_age is not None else "camera ledger has no fresh receipt",
+            evidence_path=str(state / "camera_unified_field_proof.jsonl"),
+            severity=0.90,
+            count=1,
+        ))
+
+    if not areas:
+        areas.append(BodyMapArea(
+            name="receipt ecology",
+            status="GREEN",
+            reason="no red/yellow body areas found in the current self-query field window",
+            evidence_path=str(state),
+            severity=0.0,
+        ))
+
+    areas.sort(key=lambda a: ({"RED": 0, "YELLOW": 1, "GREEN": 2}.get(a.status, 3), -float(a.severity or 0.0), a.name))
+    return tuple(areas), hallucination_count, unknown_count, correction_count
+
+
 def _organ_health_rows(*, root: Path, state: Path, now: float) -> list[OrganHealth]:
     """Walk every registered organ in the directory and check health."""
     try:
@@ -352,6 +510,25 @@ def _build_prompt_block(report: SelfQueryReport) -> str:
         f"Organ directory: {report.organ_count} registered, "
         f"{report.healthy_count} healthy."
     )
+    if report.body_map_areas:
+        red_n = sum(1 for area in report.body_map_areas if area.status == "RED")
+        yellow_n = sum(1 for area in report.body_map_areas if area.status == "YELLOW")
+        green_n = sum(1 for area in report.body_map_areas if area.status == "GREEN")
+        lines.append(
+            f"Stigmergic body map: {red_n} red, {yellow_n} yellow, {green_n} green. "
+            "Red/yellow means I should say 'I don't know yet' from receipts, then send swimmers."
+        )
+        lines.append(
+            "Recent field signals: "
+            f"hallucination_receipts={report.hallucination_receipt_count}, "
+            f"unknowns={report.unknown_count}, owner_corrections={report.owner_correction_count}."
+        )
+        lines.append("Top body-map areas:")
+        for area in report.body_map_areas[:8]:
+            lines.append(
+                f"  - {area.status}: {area.name} — {area.reason}"
+                + (f" [{area.evidence_path}]" if area.evidence_path else "")
+            )
     if report.organ_health:
         # Compact per-organ line — keep prompt budget reasonable
         compact: list[str] = []
@@ -386,6 +563,7 @@ def _with_sha(report: SelfQueryReport) -> SelfQueryReport:
     ).hexdigest()
     return SelfQueryReport(**{**report.to_dict(),
                               "organ_health": tuple(OrganHealth(**o) for o in report.to_dict()["organ_health"]),
+                              "body_map_areas": tuple(BodyMapArea(**o) for o in report.to_dict()["body_map_areas"]),
                               "sha256": sha})
 
 
@@ -415,6 +593,15 @@ def build_self_query_report(
         camera_healthy=cam_healthy,
         camera_frame_age=cam_age,
     )
+    body_map_areas, hallucination_count, unknown_count, correction_count = _body_map_areas(
+        state=state,
+        organ_rows=organ_rows,
+        stgm_balance=stgm_balance,
+        stgm_recent_mints=stgm_recent,
+        camera_healthy=cam_healthy,
+        camera_frame_age=cam_age,
+        now=ts,
+    )
 
     report = SelfQueryReport(
         trace_id=str(uuid.uuid4()),
@@ -426,6 +613,10 @@ def build_self_query_report(
         healthy_count=sum(1 for r in organ_rows if r.healthy),
         organ_health=tuple(organ_rows),
         needs=tuple(needs),
+        body_map_areas=body_map_areas,
+        hallucination_receipt_count=hallucination_count,
+        unknown_count=unknown_count,
+        owner_correction_count=correction_count,
         camera_frame_age_s=cam_age,
         camera_healthy=cam_healthy,
     )
@@ -433,6 +624,7 @@ def build_self_query_report(
     # Re-build with prompt_block + sha
     report = SelfQueryReport(**{**report.to_dict(),
                                  "organ_health": tuple(OrganHealth(**o) for o in report.to_dict()["organ_health"]),
+                                 "body_map_areas": tuple(BodyMapArea(**o) for o in report.to_dict()["body_map_areas"]),
                                  "prompt_block": prompt_block})
     return _with_sha(report)
 
@@ -479,6 +671,7 @@ def self_query_prompt_block(
 
 __all__ = [
     "LEDGER_NAME",
+    "BodyMapArea",
     "OrganHealth",
     "SelfQueryReport",
     "TRUTH_LABEL",

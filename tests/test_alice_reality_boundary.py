@@ -61,6 +61,16 @@ def test_prediction_marker_labels_imagined() -> None:
     assert out["reality_boundary"]["label"] == "IMAGINED"
 
 
+def test_explicit_hallucination_label_wins_over_receipt() -> None:
+    out = boundary.label_knowledge(
+        {"receipt_id": "r1", "category": "HALLUCINATION", "claim": "I saved the file"},
+        now=NOW,
+    )
+
+    assert out["reality_boundary"]["label"] == "HALLUCINATION"
+    assert out["metabolic_fate"]["status"] == "residue_for_composting"
+
+
 def test_unmarked_row_defaults_unverified() -> None:
     out = boundary.label_knowledge({"note": "plain memory"}, now=NOW)
 
@@ -87,6 +97,7 @@ def test_counts_include_all_labels() -> None:
         [
             {"receipt_id": "r1"},
             {"truth_label": "ARCHITECT_DOCTRINE"},
+            {"category": "HALLUCINATION"},
             {"derived_from": ["r1"]},
             {"source": "prediction"},
             {"note": "unknown"},
@@ -97,6 +108,7 @@ def test_counts_include_all_labels() -> None:
     counts = boundary.get_reality_boundary_counts(labeled)
     assert counts == {
         "ARCHITECT_DOCTRINE": 1,
+        "HALLUCINATION": 1,
         "IMAGINED": 1,
         "INFERRED": 1,
         "OBSERVED": 1,

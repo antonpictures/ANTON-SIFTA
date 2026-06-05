@@ -50,5 +50,50 @@ def test_idempotent_double_call():
     gc.set_threshold(700, 10, 10)
 
 
+# ── r315: disable auto-GC + manual shallow-stack collect ─────────────────────
+
+
+def test_disable_auto_collection_force_turns_gc_off():
+    was = gc.isenabled()
+    try:
+        r = h.disable_auto_collection(force=True)
+        assert r["disabled"] is True
+        assert gc.isenabled() is False  # auto-GC can no longer fire inside a slot
+    finally:
+        if was:
+            gc.enable()
+
+
+def test_disable_auto_collection_skips_on_stable_python():
+    # Without force, on <3.14 we must NOT touch the runtime (auto-GC stays on).
+    if h.should_harden():
+        pytest.skip("running on 3.14+; the skip path is not exercised here")
+    was = gc.isenabled()
+    r = h.disable_auto_collection(force=False)
+    assert r["disabled"] is False and "skipped" in r.get("reason", "")
+    assert gc.isenabled() == was
+
+
+def test_max_thread_frame_depth_is_positive_int():
+    d = h.max_thread_frame_depth()
+    assert isinstance(d, int) and d > 0
+
+
+def test_safe_manual_collect_runs_when_stack_is_shallow():
+    r = h.safe_manual_collect(force=True, max_frame_depth=100_000)
+    assert r["skipped"] is False
+    assert isinstance(r["collected"], int)
+    assert r["frame_depth"] > 0
+
+
+def test_safe_manual_collect_defers_when_stack_too_deep():
+    # An impossibly low ceiling forces the defer branch — proving we never collect
+    # from a deep stack (the C-stack-overflow path inside mark_stacks).
+    r = h.safe_manual_collect(force=True, max_frame_depth=0)
+    assert r["skipped"] is True
+    assert "stack_too_deep" in r.get("reason", "")
+    assert r["collected"] is None
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

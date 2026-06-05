@@ -37,6 +37,93 @@ def test_total_budget_enforced_no_block_dropped():
     assert total <= 48000
 
 
+def test_protected_blocks_survive_water_fill():
+    protected = "ALICE_SELF_ADDRESSING\nI do not use template closure voice."
+    cowatch = "CO-WATCH RECEIPTS\nmedia_session_memory n_videos=3"
+    style = "LIVE HUMAN CONVERSATION STYLE:\nbuilding money/software/product strategy"
+    effectors = "WHAT I CAN DO\nstdout/stderr/returncode receipt"
+    runtime = "RUNTIME CONSTRAINTS:\nfull shell access requires a tool receipt"
+    wall_clock = "WALL CLOCK GROUND TRUTH (authoritative, live):\nDo not say you do not know the exact time."
+    time_protocol = "TIME ACCESS PROTOCOL:\nUse the direct local time acquisition path."
+    body_truth = "FALSE REFUSAL QUARANTINE:\n- BODY / LOCATION / CONTINUITY / MEDIA-SOURCE TRUTH:"
+    local_identity = "LOCAL IDENTITY BOUNDARY:\nI am the local SIFTA organism running on this machine."
+    one_larynx = "IDE DOCTORS vs ONE LARYNX (ENGINEERING FACT):\none configured model for that turn"
+    self_organ = "ALICE SELF ORGAN (receipt-backed OS awareness):\nrunning_sifta_python_processes_seen:"
+    composite = "COMPOSITE IDENTITY (live, multi-organ):\n- self:\n- body:"
+    speech_potential = "STIGMERGIC SPEECH POTENTIAL (live LIF gate):\nthreshold V_th = +0.40"
+    ace_brief = "ACE APP BRIEF (chat/voice, receipt-backed):\nCue says the exact displayed text"
+    current_app = "CURRENT FOCUSED APP (app_focus.jsonl receipt):\nsingle focused app territory"
+    bias = "STIGMERGIC APP ATTENTION BIAS:\nfield-derived app focus"
+    app = "GENERIC APP AWARENESS\nSTIGMERGIC APP ATTENTION BIAS:\nfield-derived app focus"
+    parts = [
+        protected,
+        *[f"block{i} " + ("y" * 9000) for i in range(20)],
+        cowatch,
+        style,
+        effectors,
+        runtime,
+        wall_clock,
+        time_protocol,
+        body_truth,
+        local_identity,
+        one_larynx,
+        self_organ,
+        composite,
+        speech_potential,
+        ace_brief,
+        current_app,
+        bias,
+        app,
+    ]
+
+    out, r = C(
+        parts,
+        total_max=48000,
+        per_block_max=6000,
+        protected_prefixes=(
+            "ALICE_SELF_ADDRESSING",
+            "CO-WATCH RECEIPTS",
+            "LIVE HUMAN CONVERSATION STYLE",
+            "WHAT I CAN DO",
+            "RUNTIME CONSTRAINTS",
+            "WALL CLOCK GROUND TRUTH",
+            "TIME ACCESS PROTOCOL",
+            "FALSE REFUSAL QUARANTINE",
+            "LOCAL IDENTITY BOUNDARY",
+            "IDE DOCTORS vs ONE LARYNX",
+            "ALICE SELF ORGAN",
+            "COMPOSITE IDENTITY",
+            "STIGMERGIC SPEECH POTENTIAL",
+            "ACE APP BRIEF",
+            "CURRENT FOCUSED APP",
+            "STIGMERGIC APP ATTENTION BIAS",
+            "GENERIC APP AWARENESS",
+        ),
+    )
+
+    for block in (
+        protected,
+        cowatch,
+        style,
+        effectors,
+        runtime,
+        wall_clock,
+        time_protocol,
+        body_truth,
+        local_identity,
+        one_larynx,
+        self_organ,
+        composite,
+        speech_potential,
+        ace_brief,
+        current_app,
+        bias,
+        app,
+    ):
+        assert block in out
+    assert r["final_chars"] < r["orig_chars"]
+
+
 def test_deterministic():
     parts = [f"b{i} " + ("y" * 9000) for i in range(20)]
     a, _ = C(parts, total_max=48000)

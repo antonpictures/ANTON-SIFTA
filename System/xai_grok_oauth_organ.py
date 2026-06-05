@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """SIFTA xAI Grok authenticated-client organ.
 
-This module does not mint credentials. It consumes node-local credentials only:
-`XAI_API_KEY`, `XAI_OAUTH_ACCESS_TOKEN`, or a chmod-600 token file under
-`.sifta_state/secrets/`. It can also reuse Hermes OAuth state from
-`~/.hermes/auth.json` when xAI OAuth is logged in there.
+This module does not mint credentials. It consumes node-local OAuth credentials ONLY
+(r341, George: "it is OAuth, not the xAI API — remove XAI API everywhere"):
+`XAI_OAUTH_ACCESS_TOKEN`, or a chmod-600 OAuth token file under `.sifta_state/secrets/`.
+It can also reuse Hermes OAuth state from `~/.hermes/auth.json` when xAI OAuth is logged
+in there. There is no XAI_API_KEY path — Alice uses the owner's Grok OAuth login.
 Every attempted call writes a redacted local receipt.
 """
 
@@ -117,9 +118,10 @@ def load_credential(
     env: Optional[dict[str, str]] = None,
 ) -> Optional[XaiCredential]:
     env = os.environ if env is None else env
-    api_key = env.get("XAI_API_KEY")
-    if api_key:
-        return XaiCredential("api_key", api_key, "env:XAI_API_KEY")
+    # r341 (George 2026-06-02): "IT IS OAUTH, NOT THE xAI API — REMOVE XAI API EVERYWHERE."
+    # Alice authenticates Grok with the owner's OAuth login (his $300 Grok subscription via
+    # Hermes / the `grok` CLI), NEVER a raw xAI API key. The XAI_API_KEY env branch and the
+    # api_key token-file fallback are removed; only OAuth bearer sources remain below.
     token = env.get("XAI_OAUTH_ACCESS_TOKEN")
     if token:
         return XaiCredential("oauth_access_token", token, "env:XAI_OAUTH_ACCESS_TOKEN")
@@ -128,10 +130,9 @@ def load_credential(
             payload = json.loads(token_file.read_text(encoding="utf-8"))
         except Exception:
             payload = {}
-        value = payload.get("access_token") or payload.get("api_key")
+        value = payload.get("access_token")
         if isinstance(value, str) and value:
-            kind = "oauth_access_token" if payload.get("access_token") else "api_key"
-            return XaiCredential(kind, value, str(token_file))
+            return XaiCredential("oauth_access_token", value, str(token_file))
 
     # Hermes OAuth compatibility:
     # If owner signed into xAI through Hermes, reuse that bearer token.
@@ -190,6 +191,73 @@ def load_credential(
     except Exception:
         pass
     return None
+
+
+def refresh_oauth_credential(
+    *,
+    token_file: Path = _TOKEN_FILE,
+    hermes_auth_file: Path = _HERMES_AUTH_FILE,
+    trace_path: Path = _TRACE,
+    ledger_path: Path = _LEDGER,
+) -> Optional[XaiCredential]:
+    """Attempt to refresh an OAuth access_token using stored refresh_token (from Hermes or token file).
+    Writes a receipt for the attempt. Falls back to re-loading if no refresh material.
+    This addresses 'GROK OAUTH' token expiry or drift that can cause 401s and slow/failed cortex turns.
+    """
+    # First, try to find a refresh_token in the usual places.
+    refresh_token = None
+    source = None
+    try:
+        if token_file.exists():
+            payload = json.loads(token_file.read_text(encoding="utf-8"))
+            refresh_token = payload.get("refresh_token")
+            if refresh_token:
+                source = str(token_file)
+    except Exception:
+        pass
+    if not refresh_token:
+        try:
+            if hermes_auth_file.exists():
+                raw = json.loads(hermes_auth_file.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for alias in _HERMES_XAI_PROVIDER_ALIASES:
+                        rec = (raw.get("providers") or {}).get(alias) or (raw.get("credential_pool") or {}).get(alias)
+                        if isinstance(rec, dict):
+                            rt = rec.get("refresh_token") or (rec.get("tokens") or {}).get("refresh_token")
+                            if rt:
+                                refresh_token = rt
+                                source = f"{hermes_auth_file}:{alias}"
+                                break
+                        if isinstance(rec, list):
+                            for r in rec:
+                                if isinstance(r, dict):
+                                    rt = r.get("refresh_token") or (r.get("tokens") or {}).get("refresh_token")
+                                    if rt:
+                                        refresh_token = rt
+                                        source = f"{hermes_auth_file}:{alias}[list]"
+                                        break
+        except Exception:
+            pass
+    if not refresh_token:
+        # No refresh material; just re-discover (may pick up a fresh Hermes login).
+        return load_credential(token_file=token_file, hermes_auth_file=hermes_auth_file)
+
+    # r346: do not POST to a guessed xAI refresh endpoint. It is not part of the
+    # observed Hermes PKCE surface on this node and produced false 404 "refresh"
+    # failures while the current Hermes access token was actually valid. Hermes
+    # owns reauth; Alice should rediscover the current token and leave an honest
+    # receipt that manual Hermes re-login is needed if the bearer later 401/403s.
+    cred = load_credential(token_file=token_file, hermes_auth_file=hermes_auth_file)
+    row = _receipt(
+        ok=cred is not None,
+        reason="oauth_refresh_managed_by_hermes_reauth_if_stale",
+        credential=cred,
+        ledger_path=ledger_path,
+    )
+    row["refresh_source"] = source
+    row["manual_reauth"] = "hermes auth remove xai-oauth && hermes auth add xai-oauth --type oauth"
+    _append_jsonl(ledger_path, row)
+    return cred
 
 
 def write_token_file(payload: dict[str, Any], *, token_file: Path = _TOKEN_FILE) -> Path:
@@ -367,22 +435,22 @@ def describe_image_via_grok_cli(
     cli = cli_path or discover_official_grok_cli()
     if not cli:
         return GrokVisionResult(ok=False, status="grok_cli_missing", model=_grok_cli_model_for(model))
+    # George 2026-06-03: grok-build attaches an image via an inline
+    # `[Image #N: <abs-path>]` token in the PLAIN prompt — exactly what the grok TUI
+    # pastes when the owner attaches a photo, e.g.
+    #   [Image #1: /Users/ioanganton/.grok/sessions/.../images/image-<uuid>.jpg]
+    # The old ACP base64 `--prompt-json` content blocks were NOT accepted by this CLI
+    # (Grok kept replying "no image received"). We now feed the owner-found token
+    # through the same `--single` text surface that already works for Grok text, so the
+    # logged-in OAuth CLI actually receives the pixels.
     try:
-        mime = mimetypes.guess_type(p.name)[0] or "image/png"
-        payload = [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image",
-                "data": base64.b64encode(p.read_bytes()).decode("ascii"),
-                "mimeType": mime,
-            },
-        ]
-    except Exception as exc:
-        return GrokVisionResult(ok=False, status="image_read_failed", stderr=str(exc),
-                                model=_grok_cli_model_for(model))
+        abs_img = str(p.resolve())
+    except Exception:
+        abs_img = str(p)
+    grok_prompt = f"[Image #1: {abs_img}]\n{prompt}"
     cmd = [
         cli,
-        "--prompt-json", json.dumps(payload, ensure_ascii=False),
+        "--single", grok_prompt,
         "--model", _grok_cli_model_for(model),
         "--output-format", "plain",
         "--no-alt-screen",

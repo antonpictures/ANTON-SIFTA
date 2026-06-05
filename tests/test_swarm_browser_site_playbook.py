@@ -139,5 +139,62 @@ def test_home_url_does_not_fire_without_a_site():
     assert pb.home_url_from_text("") == ""
 
 
+def test_site_kind_is_the_category_name():
+    assert pb.site_kind("https://www.google.com/search?q=x") == "search engine"
+    assert pb.site_kind("youtube.com") == "video platform"
+    assert pb.site_kind("https://example.org/foo") == "website"  # unknown -> generic
+
+
+def test_playbook_block_names_the_category(tmp_path):
+    pb.seed_defaults(state_dir=tmp_path)
+    block = pb.playbook_block("google.com", state_dir=tmp_path)
+    assert "CATEGORY: search engine" in block
+    assert "slideshow images" in block  # the new slideshow habit is seeded
+
+
+# George 2026-06-02: websites change; a habit that was good before can fail. Alice
+# learns once with the swarm and the fix propagates via the receipt.
+def test_skill_outcome_failure_flags_relearn_when_it_worked_before(tmp_path):
+    pb.record_site_skill("tiktok.com", "search", "v1 https://www.tiktok.com/search?q=<query>", state_dir=tmp_path)
+    # it worked before -> a fresh failure means the site likely changed
+    out = pb.record_skill_outcome("tiktok.com", "search", False, note="selector gone", state_dir=tmp_path)
+    assert out["needs_relearn"] is True
+    assert out["fail_count"] == 1
+    stale = pb.skills_needing_relearn("tiktok.com", state_dir=tmp_path)
+    assert any(s["skill"] == "search" for s in stale)
+    block = pb.playbook_block("tiktok.com", state_dir=tmp_path)
+    assert "needs relearn" in block
+
+
+def test_skill_outcome_success_does_not_flag_relearn(tmp_path):
+    pb.record_site_skill("tiktok.com", "search", "v1", state_dir=tmp_path)
+    out = pb.record_skill_outcome("tiktok.com", "search", True, state_dir=tmp_path)
+    assert out["needs_relearn"] is False
+    assert out["success_count"] == 1
+    assert pb.skills_needing_relearn("tiktok.com", state_dir=tmp_path) == []
+
+
+def test_relearn_clears_flag_bumps_version_and_propagates(tmp_path):
+    pb.record_site_skill("tiktok.com", "search", "old", state_dir=tmp_path)
+    pb.record_skill_outcome("tiktok.com", "search", False, state_dir=tmp_path)
+    assert pb.skills_needing_relearn("tiktok.com", state_dir=tmp_path)
+    relearned = pb.relearn_site_skill(
+        "tiktok.com", "search",
+        "navigate to https://www.tiktok.com/search?q=<query> (new layout 2026)",
+        source="swarm", state_dir=tmp_path,
+    )
+    assert relearned["needs_relearn"] is False
+    assert relearned["version"] == 2
+    assert pb.skills_needing_relearn("tiktok.com", state_dir=tmp_path) == []
+    # the corrected recipe is now what the playbook serves to every IDE/arm
+    assert "new layout 2026" in pb.site_playbook("tiktok.com", state_dir=tmp_path)["search"]["how_to"]
+
+
+def test_first_time_failure_on_unknown_skill_does_not_falsely_flag(tmp_path):
+    # never worked before -> a failure is not evidence the site changed
+    out = pb.record_skill_outcome("newsite.com", "checkout", False, state_dir=tmp_path)
+    assert out["needs_relearn"] is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

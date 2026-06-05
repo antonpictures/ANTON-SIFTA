@@ -11,10 +11,10 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import time
 import uuid
+from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -31,18 +31,6 @@ _STATE = _REPO / ".sifta_state"
 SNAPSHOT_NAME = "canonical_organ_registry_snapshot.json"
 QUERY_LEDGER_NAME = "canonical_organ_query_map.jsonl"
 TRUTH_LABEL = "CANONICAL_ORGAN_REGISTRY_V1"
-
-RECEIPT_EVIDENCE_KEYS = {
-    "receipt",
-    "receipt_id",
-    "receipt_hash",
-    "work_receipt",
-    "stigauth",
-    "signature",
-    "truth_label",
-    "event",
-    "event_id",
-}
 
 RESEARCH_BASIS = (
     {
@@ -302,21 +290,22 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 def _read_jsonl_tail(path: Path, *, limit: int = 80) -> list[dict[str, Any]]:
     if not path.exists() or path.suffix != ".jsonl":
         return []
-    line_limit = max(1, int(limit))
-    byte_window = max(64 * 1024, min(32 * 1024 * 1024, line_limit * 8192))
+    limit = max(1, int(limit))
+    # True tail via seek-from-end: read only a bounded window of bytes off the
+    # end of the file. The old deque(handle) iterated EVERY line, so a ledger
+    # grown to gigabytes (e.g. fractal_pheromone_field.jsonl ~1.9G, r539) made
+    # this O(filesize) and hung build_registry / the eval matrix for minutes.
     try:
+        size = path.stat().st_size
+        window = min(size, max(65536, limit * 4096))  # ~4KB/line budget, >=64KB
         with path.open("rb") as handle:
-            handle.seek(0, 2)
-            size = handle.tell()
-            start = max(0, size - byte_window)
-            handle.seek(start)
-            payload = handle.read()
-        if start > 0:
-            _partial, sep, rest = payload.partition(b"\n")
-            payload = rest if sep else payload
-        lines = payload.decode("utf-8", errors="replace").splitlines()[-line_limit:]
+            if size > window:
+                handle.seek(size - window)
+                handle.readline()  # discard the partial first line
+            blob = handle.read()
     except OSError:
         return []
+    lines = blob.decode("utf-8", errors="replace").splitlines()[-limit:]
     rows: list[dict[str, Any]] = []
     for line in lines:
         if not line.strip():
@@ -337,73 +326,11 @@ def _row_text(row: Mapping[str, Any]) -> str:
         return str(row).casefold()
 
 
-def _text_values(value: Any) -> Iterable[str]:
-    if isinstance(value, Mapping):
-        for nested in value.values():
-            yield from _text_values(nested)
-    elif isinstance(value, (list, tuple, set)):
-        for nested in value:
-            yield from _text_values(nested)
-    elif isinstance(value, str):
-        yield value.casefold()
-    elif value is not None and not isinstance(value, (bool, int, float)):
-        yield str(value).casefold()
-
-
-def _nonempty_error_value(value: Any) -> bool:
-    if value is None or value is False or value == 0:
-        return False
-    if isinstance(value, str):
-        return value.strip().casefold() not in {"", "none", "null", "false", "ok", "no_error", "no error"}
-    if isinstance(value, Mapping):
-        return any(_nonempty_error_value(v) for v in value.values())
-    if isinstance(value, (list, tuple, set)):
-        return any(_nonempty_error_value(v) for v in value)
-    return bool(value)
-
-
-def _meaningful_receipt_value(value: Any) -> bool:
-    if value is None or value is False:
-        return False
-    if isinstance(value, str):
-        return value.strip().casefold() not in {"", "none", "null", "false"}
-    if isinstance(value, Mapping):
-        return bool(value)
-    if isinstance(value, (list, tuple, set)):
-        return bool(value)
-    return bool(value)
-
-
-def _has_structured_error(row: Mapping[str, Any]) -> bool:
-    for key, value in row.items():
-        key_l = str(key).casefold()
-        if key_l in {"error", "exception", "traceback"}:
-            if _nonempty_error_value(value):
-                return True
-        elif isinstance(value, Mapping):
-            if _has_structured_error(value):
-                return True
-        elif isinstance(value, (list, tuple, set)):
-            for nested in value:
-                if isinstance(nested, Mapping) and _has_structured_error(nested):
-                    return True
-    return False
-
-
-def _row_has_receipt_evidence(row: Mapping[str, Any]) -> bool:
-    for key in RECEIPT_EVIDENCE_KEYS:
-        if key in row and _meaningful_receipt_value(row.get(key)):
-            return True
-    return False
-
-
 def _row_outcome(row: Mapping[str, Any]) -> tuple[bool | None, bool, bool]:
     """Return (ok, timeout, error) from common receipt row shapes."""
-    value_text = " ".join(_text_values(row))
-    timeout = "timeout" in value_text or "timed out" in value_text
-    error = _has_structured_error(row) or any(
-        token in value_text for token in ("exception", "traceback", "error:", "failed", "failure")
-    )
+    text = _row_text(row)
+    timeout = "timeout" in text or "timed out" in text
+    error = any(token in text for token in ("exception", "traceback", '"error"', "error:", "failed", "failure"))
 
     candidates: list[Any] = [
         row.get("ok"),
@@ -418,20 +345,12 @@ def _row_outcome(row: Mapping[str, Any]) -> tuple[bool | None, bool, bool]:
         if isinstance(candidate, bool):
             return candidate, timeout, error or (not candidate)
     status = str(row.get("status") or row.get("health") or row.get("result") or "").casefold()
-    if any(token in status for token in ("ok", "success", "captured", "healthy", "complete", "green", "done")):
+    if any(token in status for token in ("ok", "success", "captured", "healthy", "complete", "green")):
         return True, timeout, error
     if any(token in status for token in ("fail", "error", "timeout", "degraded", "quarantine", "broken")):
         return False, timeout or "timeout" in status, True
     if timeout or error:
         return False, timeout, error
-    event = str(row.get("event") or "").casefold()
-    if event:
-        if any(token in event for token in ("fail", "error", "timeout", "exception", "traceback", "broken")):
-            return False, timeout, True
-        # Sensor/event ledgers often carry explicit event names plus an
-        # `error: null` field. Emitting the event is a valid receipt; absence of a
-        # detected face/object is not a failure unless the error field is non-empty.
-        return True, timeout, False
     return None, timeout, error
 
 
@@ -470,7 +389,6 @@ def _ledger_health(state: Path, ledgers: Iterable[str]) -> dict[str, Any]:
     ages: list[float] = []
     present = 0
     rows: list[dict[str, Any]] = []
-    rel_rows: list[dict[str, Any]] = []
     for ledger in ledger_names:
         path = state / ledger
         if not path.exists():
@@ -480,12 +398,7 @@ def _ledger_health(state: Path, ledgers: Iterable[str]) -> dict[str, Any]:
             ages.append(max(0.0, now - path.stat().st_mtime))
         except OSError:
             pass
-        # One read per ledger. _read_jsonl_tail scans the whole file regardless of
-        # limit, so we read once at the deeper reliability depth and slice the last
-        # 60 for the freshness/receipt/truth sample — avoiding a second full scan.
-        deep = _read_jsonl_tail(path, limit=500)
-        rel_rows.extend(deep)
-        rows.extend(deep[-60:])
+        rows.extend(_read_jsonl_tail(path, limit=60))
 
     ledger_count = len(ledger_names)
     coverage = present / max(1, ledger_count)
@@ -513,59 +426,15 @@ def _ledger_health(state: Path, ledgers: Iterable[str]) -> dict[str, Any]:
             timeout_rows += 1
         if error:
             error_rows += 1
-        if _row_has_receipt_evidence(row):
+        if any(k in row for k in ("receipt", "receipt_id", "work_receipt", "stigauth", "signature")):
             receipt_rows += 1
 
-    # --- Reliability over outcome-bearing rows only ---
-    # Patched 2026-05-22 (Cowork/Claude, trace bdef3d8d): the previous formula
-    # scored reliability as (ok + 0.5*unknown)/sample - 0.08*timeout. That counted
-    # rows carrying NO ok/status signal (e.g. EDGE_INTENT_DECISION routing traces)
-    # as half-failures, and applied a flat un-normalized timeout penalty. On a
-    # high-volume routing organ that floored tool_truth_router to 0.07 while its
-    # true execution success rate was ~0.75. We now measure reliability ONLY over
-    # rows that carry a definite outcome (ok or bad), drawn from a deeper tail so
-    # executions are not diluted by decision/trace rows, with a sample-normalized
-    # timeout penalty. Freshness, coverage, and truth_alignment are left untouched.
-    rel_ok = rel_bad = rel_timeout = 0
-    for row in rel_rows:
-        ok, timeout, _error = _row_outcome(row)
-        if ok is True:
-            rel_ok += 1
-        elif ok is False:
-            rel_bad += 1
-        if timeout:
-            rel_timeout += 1
-    rel_classified = rel_ok + rel_bad
-
     sample_rows = len(rows)
-    if present:
-        # Shrinkage toward a neutral 0.5 prior with K pseudo-counts. This keeps tiny
-        # outcome samples honest: 1 bad row no longer reads as 0.00 and 5 ok rows no
-        # longer read as 1.00 -- they pull toward 0.5 until enough evidence accrues.
-        # Large samples (hundreds of classified rows) are barely moved. Timeout
-        # penalty is normalized by sample size, not a flat per-event subtraction.
-        K = 10.0
-        denom = rel_classified + K
-        timeout_penalty = 0.08 * rel_timeout / max(rel_classified, 1)
-        functional_reliability = _clamp((rel_ok + 0.5 * K) / denom - timeout_penalty)
-    else:
-        functional_reliability = 0.50 if ledger_count == 0 else 0.25
-    # --- Truth alignment: receipt coverage minus NORMALIZED error/bad rates ---
-    # Patched 2026-05-22 (Cowork/Claude, trace 067cdd6f, Round 4): the previous
-    # formula subtracted FLAT per-event penalties (0.15*error_rows + 0.10*bad_rows).
-    # Un-normalized, a handful of error/bad rows in the sample drove the clamp to
-    # 0.0 -- e.g. tool_truth_router: 59/120 - 0.15*6 - 0.10*9 -> 0.0. That floored
-    # truth_alignment across most canonical organs and dragged the 0.25-weighted
-    # health score. We now subtract penalties as RATES (fractions of the sample,
-    # bounded by 0.15 and 0.10) and shrink the receipt-coverage base toward a 0.5
-    # neutral prior with K pseudo-counts, mirroring the reliability fix (bdef3d8d).
     if sample_rows:
-        K = 10.0
-        shrunk_receipt = (receipt_rows + 0.5 * K) / (sample_rows + K)
-        error_rate = error_rows / sample_rows
-        bad_rate = bad_rows / sample_rows
-        truth_alignment = _clamp(shrunk_receipt - 0.15 * error_rate - 0.10 * bad_rate)
+        functional_reliability = _clamp((ok_rows + 0.5 * unknown_rows) / sample_rows - 0.08 * timeout_rows)
+        truth_alignment = _clamp((receipt_rows / sample_rows) - 0.15 * error_rows - 0.10 * bad_rows)
     else:
+        functional_reliability = 0.55 if present else (0.50 if ledger_count == 0 else 0.25)
         truth_alignment = 0.50 if present or ledger_count == 0 else 0.25
     score = (
         0.35 * functional_reliability
@@ -601,10 +470,6 @@ def _ledger_health(state: Path, ledgers: Iterable[str]) -> dict[str, Any]:
         "receipt_rows": receipt_rows,
         "timeout_rows": timeout_rows,
         "error_rows": error_rows,
-        "rel_ok_rows": rel_ok,
-        "rel_bad_rows": rel_bad,
-        "rel_classified_rows": rel_classified,
-        "rel_timeout_rows": rel_timeout,
         "present_ledgers": present,
         "newest_ledger_age_s": None if newest is None else round(newest, 3),
         "formula": "0.35*functional_reliability + 0.25*truth_alignment + 0.20*freshness + 0.20*coverage",
@@ -979,35 +844,9 @@ def write_registry_snapshot(
     return {"snapshot": snapshot}
 
 
-def _live_prompt_registry_enabled() -> bool:
-    value = os.environ.get("SIFTA_PROMPT_LIVE_ORGAN_REGISTRY", "")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _prompt_registry_snapshot(state: Path) -> dict[str, Any]:
-    """Return bounded prompt context without walking ledger tails every turn."""
-    if _live_prompt_registry_enabled():
-        return build_registry(state_dir=state, include_dynamic=False)
-    snap = _read_json(state / SNAPSHOT_NAME)
-    if isinstance(snap, dict):
-        return snap
-    return {
-        "counts": {
-            "system_python_organs": _count_files(_REPO, "System/*.py"),
-            "application_surfaces": _count_files(_REPO, "Applications/*.py"),
-            "state_ledgers": _count_files(state, "*.jsonl"),
-            "registry_organs": len(CANONICAL_ORGANS),
-            "desktop_body_present": _exists(_REPO, "sifta_os_desktop.py"),
-        },
-        "merged_sources": {"canonical": len(CANONICAL_ORGANS)},
-        "organs": [],
-    }
-
-
 def summary_for_prompt(query: str = "", *, state_dir: Path | str | None = None, max_lines: int = 8) -> str:
     """Compact prompt block for Alice's cortex."""
-    state = _state_dir(state_dir)
-    snap = _prompt_registry_snapshot(state)
+    snap = build_registry(state_dir=state_dir, include_dynamic=False)
     counts = snap.get("counts", {})
     merged = snap.get("merged_sources", {})
     lines = [

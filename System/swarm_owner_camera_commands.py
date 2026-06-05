@@ -47,6 +47,16 @@ _SWITCH_RE = re.compile(
 _ACUITY_RE = re.compile(r"\b(?:camera\s+)?(?:resolution|acuity|quality|sharpness|photon\s+density)\b", re.IGNORECASE)
 _ACUITY_UP_RE = re.compile(r"\b(?:increase|up|higher|more|boost|improve|raise|sharpen|one\s+step)\b", re.IGNORECASE)
 _ACUITY_DOWN_RE = re.compile(r"\b(?:decrease|down|lower|less|reduce|drop|coarser)\b", re.IGNORECASE)
+_USB_ACCESSORY_RE = re.compile(
+    r"\busb\s+(?:cord|cable|wire|charger|adapter|hub|drive|stick|dongle|plug)\b"
+    r"|"
+    r"\b(?:cord|cable|wire|charger|adapter|hub|drive|stick|dongle|plug)\s+(?:for\s+)?usb\b",
+    re.IGNORECASE,
+)
+_CAMERA_WORD_RE = re.compile(
+    r"\b(?:camera|eye|webcam|logitech|external\s+camera|side\s+camera|macbook\s+camera|iphone\s+camera|obs\s+camera)\b",
+    re.IGNORECASE,
+)
 
 _SELF_ACTION_RE = re.compile(
     r"^\s*(?:"
@@ -61,6 +71,11 @@ _SELF_ACTION_RE = re.compile(
 def _target_from_text(text: str, *, current: dict[str, Any] | None = None) -> dict[str, Any] | None:
     clean = " ".join(str(text or "").replace("’", "'").split()).casefold()
     if _SELF_ACTION_RE.search(clean):
+        return None
+    # r522: "I'm going to use a USB cord" is owner self-narration about a cable,
+    # not an order to switch Alice's eye to the USB camera. USB by itself is too
+    # ambiguous when accessory words are present; require an actual camera/eye word.
+    if _USB_ACCESSORY_RE.search(clean) and not _CAMERA_WORD_RE.search(clean):
         return None
     if not _SWITCH_RE.search(clean):
         return None

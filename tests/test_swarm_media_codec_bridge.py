@@ -18,6 +18,7 @@ def test_diagnoses_codec_failure_codes():
     assert d4["label"] == "MEDIA_ERR_SRC_NOT_SUPPORTED"
     assert d3["native_handoff_recommended"] is True
     assert "codec" in d3["likely_cause"]
+    assert d3["likely_cause"].startswith("this_stream_")
 
 
 def test_network_error_recommends_handoff_without_codec_claim():
@@ -80,6 +81,8 @@ def test_media_status_summary_names_codec_path():
     msg = bridge.media_status_summary({"last_error_code": 3}, url="https://example.test/video")
     assert "MEDIA_ERR_DECODE" in msg
     assert "native decoder" in msg
+    assert "this observed stream/page" in msg
+    assert "does not prove all videos on the site fail" in msg
 
 
 if __name__ == "__main__":

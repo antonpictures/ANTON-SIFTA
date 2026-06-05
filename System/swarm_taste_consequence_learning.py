@@ -120,7 +120,11 @@ def _search_url(domain: str, query: str) -> str:
     if domain == "tiktok.com":
         return f"https://www.tiktok.com/search?q={query}"
     if domain == "google.com":
-        return f"https://www.google.com/search?q={query}"
+        try:
+            from System.swarm_search_engine_registry import search_url as _reg_search
+            return _reg_search(query) or f"https://www.google.com/search?q={query}"
+        except Exception:
+            return f"https://www.google.com/search?q={query}"
     return f"https://{domain}/search?q={query}" if domain != "unknown" else ""
 
 

@@ -533,7 +533,7 @@ def load_agents():
                                 "starting_stgm": float(entry.get("starting_stgm", 0.0)),
                                 "serial": entry.get("hardware_serial")
                             }
-                    except: pass
+                    except Exception: pass
         except Exception as e:
             print(f"Genesis verification error: {e}")
 
@@ -2029,7 +2029,7 @@ class MarketplaceTab(QWidget):
                     _tags = json.loads(_resp.read())
                     offer_models = [m["name"] for m in _tags.get("models", [])]
             except Exception:
-                offer_models = ["alice-m1-scout-2.3b-2.7gb:latest"]
+                offer_models = ["alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"]
             listings[self.local_serial] = {
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,
@@ -2059,7 +2059,7 @@ class MarketplaceTab(QWidget):
             try:
                 with open(self.market_file) as f:
                     return json.load(f)
-            except: pass
+            except Exception: pass
         return {}
 
     def load_market(self):

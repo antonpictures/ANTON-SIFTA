@@ -147,6 +147,16 @@ def _spawn_detached(argv: list[str], *, log_path: Optional[Path] = None) -> bool
 def ensure_iphone_gps_bridge() -> Dict[str, Any]:
     """If nothing listens on :8765, spawn swarm_iphone_gps_receiver --daemon."""
     out: Dict[str, Any] = {"iphone_gps_port": _GPS_PORT}
+    # r332 (George 2026-06-02): "setting up Shortcuts on the iPhone is a piece of crap feature,
+    # that's why it's not working — REMOVE IT, or get real GPS access." The iPhone-Shortcuts GPS
+    # path is manual and never worked, and its receiver flooded the log to 18 MB (r331). So do NOT
+    # spawn the daemon by default. Reversible: set SIFTA_ENABLE_IPHONE_GPS=1 to bring it back. The
+    # real-location path is macOS CoreLocation (the laptop's own positioning) — wire next with
+    # George's permission, no iPhone setup required.
+    import os as _os
+    if _os.environ.get("SIFTA_ENABLE_IPHONE_GPS", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        out["iphone_gps_receiver"] = "disabled_by_owner_r332"
+        return out
     if _port_open("127.0.0.1", _GPS_PORT):
         out["iphone_gps_receiver"] = "already_listening"
         pid = _read_pidfile(_GPS_PIDFILE)
@@ -209,6 +219,14 @@ def _hw_prompt_line() -> Optional[str]:
         return hw.prompt_line()
     except Exception:
         return None
+
+
+def _display_body_boot_receipt(reason: str) -> Dict[str, Any]:
+    try:
+        from System import alice_hardware_body as hw  # type: ignore
+        return hw.record_display_body_boot_receipt(reason=reason)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _eye_prompt_line() -> Optional[str]:
@@ -442,6 +460,9 @@ def ensure_autonomic_services(*, boot_channel: str = "manual") -> Dict[str, Any]
     snap.update(ensure_iphone_gps_bridge())
     snap.update(ensure_local_mcp_bridge())
     snap["organs"] = inspect_body()
+    snap["display_body_boot_receipt"] = _display_body_boot_receipt(
+        f"alice_body_autopilot:{boot_channel}"
+    )
     snap["governed_surface"] = (
         "resident machine governance: GPS bridge, local Ollama, MCP bridge, "
         "hot reload, self-restart. Whitelisted only; no arbitrary shell, no sudo."
@@ -461,6 +482,7 @@ def ensure_autonomic_services(*, boot_channel: str = "manual") -> Dict[str, Any]
         "hw.volume", "hw.input_volume", "hw.brightness", "hw.clipboard",
         "hw.processes", "hw.audio_io", "hw.system_info", "hw.idle_time",
         "hw.sockets", "hw.kexts_count", "hw.fans", "hw.appearance",
+        "hw.display_body_boot_receipt",
         "hw.full_scan",
         # — write/touch effectors —
         "hw.set_volume", "hw.set_input_volume", "hw.set_mute",

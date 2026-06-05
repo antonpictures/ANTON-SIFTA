@@ -84,4 +84,114 @@ def harden_runtime_for_gc(
     return result
 
 
-__all__ = ["python_version_tuple", "should_harden", "harden_runtime_for_gc"]
+# ── r315 (cowork_claude) ────────────────────────────────────────────────────
+# George re-booted on 3.14.4 after r246 and Alice STILL took the SIGSEGV: thread 11
+# was `self_narration` (its while-True loop), thread 0 (main) crashed in `mark_stacks`
+# at a C-stack-guard gap — an automatic collection fired INSIDE a QTimer slot via
+# `_Py_HandlePending` and recursed off the end of the C stack. r246 shrank the marking
+# surface (freeze) but never stopped auto-GC from firing mid-slot. These two functions
+# add the missing lever George approved: turn OFF automatic collection so it can never
+# fire inside a slot, and collect manually ONLY when no thread holds a dangerously deep
+# Python frame chain (the exact surface `mark_stacks` walks). Still pure stdlib, no Qt —
+# the desktop owns the timer that drives `safe_manual_collect`. The real fix is still
+# Python 3.12; this keeps her alive on 3.14 until George downgrades.
+
+
+def disable_auto_collection(*, force: bool = False, log: Optional[Callable[[str], None]] = None) -> dict[str, Any]:
+    """Disable CPython's automatic garbage collection so a collection can NEVER be
+    triggered from inside a QTimer slot via `_Py_HandlePending` (the crash path).
+
+    No-op on Python <3.14 (the stable target has no `mark_stacks` overflow, so we leave
+    its GC alone). After this, something MUST drive `safe_manual_collect` on a cadence or
+    memory grows unbounded — the desktop wires a recurring shallow-stack timer for that."""
+    result: dict[str, Any] = {"disabled": False, "python": sys.version.split()[0]}
+    if not (force or should_harden()):
+        result["reason"] = "skipped: python<3.14, automatic GC left enabled"
+        return result
+    import gc
+    try:
+        result["was_enabled"] = gc.isenabled()
+        gc.disable()
+        result["disabled"] = True
+        if log:
+            try:
+                log("[gc_hardening] automatic GC disabled; manual shallow-stack collection only")
+            except Exception:
+                pass
+    except Exception as exc:
+        result["reason"] = f"disable_failed:{type(exc).__name__}:{exc}"
+    return result
+
+
+def max_thread_frame_depth() -> int:
+    """Deepest Python frame chain across ALL live threads.
+
+    `gc.mark_stacks` recurses over every thread's frame stack on the collecting thread's
+    C stack, so the deepest chain anywhere — not the caller's depth — is what overflows.
+    We gate manual collection on this number."""
+    import sys as _sys
+    deepest = 0
+    try:
+        frames = _sys._current_frames()
+    except Exception:
+        return 0
+    for _tid, top in list(frames.items()):
+        depth = 0
+        f = top
+        # Cap the walk so a runaway chain can't make THIS function expensive.
+        while f is not None and depth < 100_000:
+            depth += 1
+            f = f.f_back
+        if depth > deepest:
+            deepest = depth
+    return deepest
+
+
+def safe_manual_collect(
+    *,
+    max_frame_depth: int = 150,
+    force: bool = False,
+    log: Optional[Callable[[str], None]] = None,
+) -> dict[str, Any]:
+    """Run `gc.collect()` ONLY when no thread holds a Python frame chain deeper than
+    `max_frame_depth`. If something is mid-deep-call (e.g. a timer storm, a deep render),
+    defer — collecting then is what overflowed the C stack inside `mark_stacks`.
+
+    Returns {collected, skipped, frame_depth, reason}. No-op on Python <3.14."""
+    result: dict[str, Any] = {"collected": None, "skipped": False, "frame_depth": 0}
+    if not (force or should_harden()):
+        result["skipped"] = True
+        result["reason"] = "python<3.14"
+        return result
+    import gc
+    depth = max_thread_frame_depth()
+    result["frame_depth"] = depth
+    if depth > max_frame_depth:
+        result["skipped"] = True
+        result["reason"] = f"stack_too_deep:{depth}>{max_frame_depth}"
+        if log:
+            try:
+                log(f"[gc_hardening] manual collect deferred — deepest frame chain {depth} > {max_frame_depth}")
+            except Exception:
+                pass
+        return result
+    try:
+        result["collected"] = gc.collect()
+        if log:
+            try:
+                log(f"[gc_hardening] manual collect ok — freed {result['collected']} (deepest chain {depth})")
+            except Exception:
+                pass
+    except Exception as exc:
+        result["reason"] = f"collect_failed:{type(exc).__name__}:{exc}"
+    return result
+
+
+__all__ = [
+    "python_version_tuple",
+    "should_harden",
+    "harden_runtime_for_gc",
+    "disable_auto_collection",
+    "max_thread_frame_depth",
+    "safe_manual_collect",
+]

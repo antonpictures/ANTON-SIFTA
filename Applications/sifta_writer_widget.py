@@ -206,7 +206,7 @@ class SwarmAssistWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, selected_text: str, full_context: str, model: str = "alice-m1-scout-2.3b-2.7gb:latest"):
+    def __init__(self, selected_text: str, full_context: str, model: str = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"):
         super().__init__()
         self.selected_text = selected_text
         self.full_context = full_context

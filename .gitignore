@@ -240,3 +240,9 @@ Bonsai-Image-Demo/
 
 # r218: vendored claude-code clone (has own .git) — not a submodule, keep out of tree
 Vendor/claude-code-python/
+
+# r575: large/external/generated artifacts — not git work (regenerable / cloned / weights)
+models/
+gallery-main/
+Voices/
+.sifta_trash/

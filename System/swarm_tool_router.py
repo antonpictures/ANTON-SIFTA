@@ -1358,6 +1358,34 @@ def _exec_set_cortex_alias(params: Dict[str, str]) -> Dict[str, Any]:
             "alice_summary": "set_cortex_alias requires a name (cheap, kimi, long, local, etc).",
         }
 
+    from_cortex = ""
+    try:
+        from System.sifta_inference_defaults import get_default_ollama_model
+
+        from_cortex = str(get_default_ollama_model() or "")
+    except Exception:
+        from_cortex = ""
+
+    try:
+        diary = _STATE / "episodic_diary.jsonl"
+        diary.parent.mkdir(parents=True, exist_ok=True)
+        with diary.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "ts": time.time(),
+                "kind": "CORTEX_SWITCH_CONTINUITY",
+                "truth_label": "ALICE_CORTEX_SWITCH_CONTINUITY_V2",
+                "phase": "tool_call_before_switch",
+                "from_cortex": from_cortex,
+                "to_alias": name,
+                "tool": "set_cortex_alias",
+                "note": (
+                    f"My current cortex ({from_cortex or 'unknown'}) emitted set_cortex_alias('{name}'). "
+                    "I record this trace before changing the assignment so the switch has no unrecorded gap."
+                ),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
     try:
         from System.swarm_cortex_aliases import set_cortex_by_alias
         result = set_cortex_by_alias(name)
@@ -1377,14 +1405,15 @@ def _exec_set_cortex_alias(params: Dict[str, str]) -> Dict[str, Any]:
             "alice_summary": result.get("error", f"Could not switch to alias '{name}'"),
         }
 
+    model = result.get("model") or result.get("resolved_tag") or ""
     return {
         "ok": True,
         "status": "CORTEX_SWITCHED",
         "alias": name,
-        "model": result.get("model"),
+        "model": model,
         "receipt": result.get("receipt"),
         "alice_summary": (
-            f"Switched to alias '{name}'. Now thinking through {result.get('model')}. "
+            f"Switched to alias '{name}'. Now thinking through {model}. "
             f"Receipt: {result.get('receipt', '')[:16]}"
         ),
     }

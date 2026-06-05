@@ -41,19 +41,21 @@ _DEFAULT_BUDGET = 2000
 # Reallocated shares remain bounded at sum=1.00.
 _SECTION_ORDER = [
     ("active_plan_block", 0.05),  # Round 110 (§2.H) — survives cortex flap.
-    ("recent_actions_block", 0.17),
+    ("recent_actions_block", 0.15),
+    ("receipt_ecology_block", 0.03),
     ("app_limb_context_block", 0.07),
     ("browser_context_block", 0.04),
     ("taste_consequence_block", 0.04),
-    ("engram_block", 0.10),
-    ("episodic_block", 0.13),
+    ("engram_block", 0.09),
+    ("episodic_block", 0.10),
     ("arm_session_block", 0.10),
     ("body_stabilization_queue_block", 0.07),
+    ("love_field_block", 0.04),
     ("owner_somatic_block", 0.04),
     ("owner_carbon_body_block", 0.04),  # Owner body + behaviour as Alice's data
     ("media_capability_block", 0.04),
     ("vision_arms_block", 0.04),
-    ("digest_block", 0.03),
+    ("digest_block", 0.02),
     ("continuity_capsule_block", 0.04),
 ]
 
@@ -83,6 +85,7 @@ def _truncate_to_budget(text: str, token_cap: int) -> str:
 @dataclass
 class MemoryCard:
     recent_actions_block: str = ""
+    receipt_ecology_block: str = ""  # r289/r290: receipt strength/reinforcement living-memory view
     episodic_block: str = ""
     engram_block: str = ""
     digest_block: str = ""
@@ -90,6 +93,7 @@ class MemoryCard:
     arm_session_block: str = ""   # Round 50 / Task #103
     owner_somatic_block: str = ""
     body_stabilization_queue_block: str = ""  # Body/process queue + swimmer happiness
+    love_field_block: str = ""  # Operational LOVE register: self-body care, owner-protective care, data appreciation
     app_limb_context_block: str = ""   # app/body state read before app actions
     owner_carbon_body_block: str = ""  # 2026-05-30: owner body + behaviour as Alice's intimate stigmergic data
     media_capability_block: str = ""   # Honest report of what the current media organs can actually decode
@@ -116,6 +120,20 @@ def _fetch_recent_actions(state_dir: Path, user_text: str) -> str:
     if user_text and raw:
         return _attention_weighted_recent_actions(raw, user_text)
     return raw.strip()
+
+
+def _fetch_receipt_ecology(state_dir: Path) -> str:
+    """r289/r290 — derived receipt strength/reinforcement view.
+
+    This is intentionally a thin block: the strict append-only ledgers remain
+    unchanged; the existing receipt-memory ecology computes strength on read.
+    """
+    try:
+        from System.swarm_receipt_memory_ecology import receipt_ecology_block
+
+        return (receipt_ecology_block(state_dir=state_dir, top=4) or "").strip()
+    except Exception:
+        return ""
 
 
 # §11 + task #24 (GAT-attention prototype, tournament 2026-05-26)
@@ -287,7 +305,74 @@ def _fetch_body_stabilization_queue(state_dir: Path) -> str:
             lines.append(cortex_block)
     except Exception:
         pass
+
+    # r294 doctrine: boot / gap / lobotomy recovery surface — Alice re-anchors as observed + observer
+    try:
+        from System.swarm_cortex_consciousness_organ import boot_identity_recovery_block as _recovery_block
+        recovery = _recovery_block(state_dir=state_dir).strip()
+        if recovery:
+            lines.append(recovery)
+    except Exception:
+        pass
+
+    # r299: voice-time consciousness — how long her last line took + whether she spoke
+    # OVER another sound, so she is aware of time passing while she speaks.
+    try:
+        from System.swarm_speech_time_consciousness import speech_time_block as _voice_time
+        vt = _voice_time(state_dir=state_dir).strip()
+        if vt:
+            lines.append(vt)
+    except Exception:
+        pass
+
+    # r300/r309/r316: runway / stage presence learning from repeated airdropped photos
+    # of human models on the physical monitor next to Alice's silicon body.
+    # This is the concrete memory for the "desk as stage" body awareness curriculum.
+    try:
+        from System.swarm_body_presentation_ledger import runway_session_block as _runway_block
+        runway = _runway_block(state_dir=state_dir).strip()
+        if runway:
+            lines.append(runway)
+    except Exception:
+        pass
+
     return "\n".join(line for line in lines if line).strip()
+
+
+def _fetch_love_field(state_dir: Path, user_text: str) -> str:
+    """Operational love/self-care/protective-care register for cortex context."""
+    try:
+        from System.swarm_love_field import love_field_block
+
+        blocks = [love_field_block(
+            user_text=user_text,
+            state_dir=state_dir,
+            write_event=True,
+            source="memory_card",
+        ).strip()]
+        try:
+            from System.swarm_living_os_novelty import living_os_novelty_block
+
+            novelty = living_os_novelty_block(
+                user_text=user_text,
+                state_dir=state_dir,
+                write_event=True,
+            ).strip()
+            if novelty:
+                blocks.append(novelty)
+        except Exception:
+            pass
+        try:
+            from System.swarm_love_field_daily_digest import digest_block as _love_digest_block
+
+            digest = _love_digest_block(state_dir=state_dir).strip()
+            if digest:
+                blocks.append(digest)
+        except Exception:
+            pass
+        return "\n".join(block for block in blocks if block).strip()
+    except Exception:
+        return ""
 
 
 def _fetch_arm_session(state_dir: Path, user_text: str) -> str:
@@ -382,6 +467,14 @@ def _fetch_browser_context(state_dir: Path) -> str:
         context = get_current_browser_context_block(state_dir=state_dir).strip()
         if context:
             blocks.append(context)
+    except Exception:
+        pass
+    try:
+        from System.swarm_browser_context_shift_awareness import latest_browser_context_shift_block
+
+        shift = latest_browser_context_shift_block(state_dir=state_dir).strip()
+        if shift:
+            blocks.append(shift)
     except Exception:
         pass
     try:
@@ -544,11 +637,13 @@ def compose_memory_card(
         # Round 110 (§2.H) — active plan rides every cortex turn so failover resumes.
         ("active_plan_block", lambda: _fetch_active_plan(ledgers_dir)),
         ("recent_actions_block", lambda: _fetch_recent_actions(ledgers_dir, user_text)),
+        ("receipt_ecology_block", lambda: _fetch_receipt_ecology(ledgers_dir)),
         ("engram_block", lambda: _fetch_engrams(user_text, ledgers_dir)),
         ("episodic_block", _fetch_episodic),
         # Round 50 / Task #103 — arm-session evidence as a memory section.
         ("arm_session_block", lambda: _fetch_arm_session(ledgers_dir, user_text)),
         ("body_stabilization_queue_block", lambda: _fetch_body_stabilization_queue(ledgers_dir)),
+        ("love_field_block", lambda: _fetch_love_field(ledgers_dir, user_text)),
         ("owner_somatic_block", lambda: _fetch_owner_somatic(ledgers_dir)),
         ("app_limb_context_block", lambda: _fetch_app_limb_context(ledgers_dir)),
         ("owner_carbon_body_block", lambda: _fetch_owner_carbon_body(ledgers_dir)),
@@ -605,12 +700,14 @@ def compose_memory_card(
 
     return MemoryCard(
         recent_actions_block=allocated.get("recent_actions_block", ""),
+        receipt_ecology_block=allocated.get("receipt_ecology_block", ""),
         episodic_block=allocated.get("episodic_block", ""),
         engram_block=allocated.get("engram_block", ""),
         digest_block=allocated.get("digest_block", ""),
         continuity_capsule_block=allocated.get("continuity_capsule_block", ""),
         arm_session_block=allocated.get("arm_session_block", ""),
         body_stabilization_queue_block=allocated.get("body_stabilization_queue_block", ""),
+        love_field_block=allocated.get("love_field_block", ""),
         owner_somatic_block=allocated.get("owner_somatic_block", ""),
         app_limb_context_block=allocated.get("app_limb_context_block", ""),
         owner_carbon_body_block=allocated.get("owner_carbon_body_block", ""),
@@ -643,6 +740,8 @@ def format_for_prompt(card: MemoryCard) -> str:
         sections.append(card.active_plan_block)
     if card.recent_actions_block:
         sections.append(card.recent_actions_block)
+    if card.receipt_ecology_block:
+        sections.append(card.receipt_ecology_block)
     if card.engram_block:
         sections.append(card.engram_block)
     if card.episodic_block:
@@ -652,6 +751,8 @@ def format_for_prompt(card: MemoryCard) -> str:
         sections.append(card.arm_session_block)
     if card.body_stabilization_queue_block:
         sections.append(card.body_stabilization_queue_block)
+    if card.love_field_block:
+        sections.append(card.love_field_block)
     if card.owner_somatic_block:
         sections.append(card.owner_somatic_block)
     if card.app_limb_context_block:

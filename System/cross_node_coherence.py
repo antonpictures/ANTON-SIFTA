@@ -146,7 +146,7 @@ class CrossNodeCoherenceAnalyzer:
     def _emit(self, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             _NODE_STATE.write_text(json.dumps(data, indent=2))
-        except: pass
+        except Exception: pass
         return data
 
 def get_node_analyzer() -> CrossNodeCoherenceAnalyzer:

@@ -402,7 +402,11 @@ def _app_capabilities() -> List[Capability]:
             cost_stgm=0.0,  # opening a window has no STGM debit on its own
             permissions={
                 "owner_present_preferred": True,
-                "single_app_at_a_time": True,
+                # r532 (George 2026-06-04): upgraded the single-app policy to a max of TWO apps
+                # open at once. The desktop MDI already allows multiple windows (no hard close-gate);
+                # this descriptor is the source of truth Alice reads for the policy.
+                "single_app_at_a_time": False,
+                "max_apps_open": 2,
                 "autostart": bool(entry.get("autostart")),
             },
             receipts={"count": 0, "latest_ts": None, "latest_hash": None},
@@ -867,7 +871,7 @@ def _co_occurrence_affinity(app_name: str, habit_name: str, window_seconds: int 
                     row = json.loads(line)
                     if app_lower in row.get("app", "").lower() or app_lower in str(row.get("selection", "")).lower():
                         focus_events.append(row.get("ts", 0))
-                except:
+                except Exception:
                     pass
         if not focus_events:
             return 0.0
@@ -896,9 +900,9 @@ def _co_occurrence_affinity(app_name: str, habit_name: str, window_seconds: int 
                                 if abs(ts - fts) <= window_seconds:
                                     matches += 1
                                     break
-                        except:
+                        except Exception:
                             pass
-            except:
+            except Exception:
                 pass
 
         # Return a score that grows with repeated co-occurrence

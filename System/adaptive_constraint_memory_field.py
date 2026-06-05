@@ -232,7 +232,11 @@ class AdaptiveConstraintMemoryField:
         self._persist()
 
     def prune(self, min_fitness: float = 0.12):
-        """Remove entries that have decayed below the survival threshold."""
+        """Remove entries that have decayed below the survival threshold.
+        Per owner directive and covenant: prune must be receipted with reason
+        (yield/throttle/prune/quarantine with reason or it is a body breach and
+        learning signal). Unfair silent kill (bypass this path) is breach.
+        """
         before = len(self._cache)
         self._cache = {
             tid: e for tid, e in self._cache.items()
@@ -241,6 +245,19 @@ class AdaptiveConstraintMemoryField:
         pruned = before - len(self._cache)
         if pruned > 0:
             self._persist()
+            # Consequence receipt: explicit reason, append-only, feeds health/ecology.
+            # Value conserved in broader ecology (trophallaxis in apoptosis for full death).
+            receipt = {
+                "ts": time.time(),
+                "type": "prune_receipt",
+                "reason": f"fitness below survival threshold {min_fitness}",
+                "pruned": pruned,
+                "before_count": before,
+                "after_count": len(self._cache),
+                "source": "adaptive_constraint_memory_field.prune"
+            }
+            with open(_STATE_DIR / "prune_receipts.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(receipt) + "\n")
         return pruned
 
     def report(self) -> dict:

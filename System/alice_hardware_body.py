@@ -67,11 +67,13 @@ Refused (require password / TCC consent / root)
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -79,6 +81,9 @@ from typing import Any, Dict, List, Optional, Tuple
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TOUCH_LEDGER = _STATE / "alice_hardware_touch.jsonl"
+_DISPLAY_BODY_LEDGER = _STATE / "alice_display_body.jsonl"
+_DISPLAY_PROMPT_CACHE: Dict[str, Any] = {"ts": 0.0, "result": None}
+_DISPLAY_PROMPT_CACHE_TTL_S = 120.0
 
 _AIRPORT = (
     "/System/Library/PrivateFrameworks/Apple80211.framework/"
@@ -367,12 +372,111 @@ def displays() -> Dict[str, Any]:
     monitors = blob.get("spdisplays_ndrvs", []) or []
     out_list = []
     for mon in monitors:
+        connection = _clean_system_profiler_value(mon.get("spdisplays_connection_type"))
+        display_type = _clean_system_profiler_value(mon.get("spdisplays_display_type"))
+        pixel_mode = _clean_system_profiler_value(mon.get("spdisplays_pixelresolution"))
+        rotation = _clean_system_profiler_value(mon.get("spdisplays_rotation"))
+        mirror = _clean_system_profiler_value(mon.get("spdisplays_mirror"))
+        main = mon.get("spdisplays_main") == "spdisplays_yes"
+        built_in = connection == "internal" or (display_type and "built-in" in display_type)
+        television = mon.get("spdisplays_television") == "spdisplays_yes"
+        if main:
+            body_role = "main_display_arm"
+        elif built_in:
+            body_role = "built_in_display_arm"
+        else:
+            body_role = "external_display_arm"
         out_list.append({
             "name": mon.get("_name"),
             "resolution": mon.get("_spdisplays_resolution") or mon.get("spdisplays_resolution"),
-            "main": mon.get("spdisplays_main") == "spdisplays_yes",
+            "pixels": mon.get("_spdisplays_pixels"),
+            "pixel_mode": pixel_mode,
+            "display_id": mon.get("_spdisplays_displayID"),
+            "main": main,
+            "online": mon.get("spdisplays_online") == "spdisplays_yes",
+            "mirror": mirror,
+            "rotation": rotation,
+            "television": television,
+            "connection_type": connection,
+            "display_type": display_type,
+            "ambient_brightness": mon.get("spdisplays_ambient_brightness") == "spdisplays_yes",
+            "vendor_id": mon.get("_spdisplays_display-vendor-id"),
+            "product_id": mon.get("_spdisplays_display-product-id"),
+            "serial": mon.get("_spdisplays_display-serial-number"),
+            "manufacture_week": mon.get("_spdisplays_display-week"),
+            "manufacture_year": mon.get("_spdisplays_display-year"),
+            "body_role": body_role,
         })
-    return {"ok": True, "displays": out_list, "gpu_name": blob.get("sppci_model")}
+    return {
+        "ok": True,
+        "displays": out_list,
+        "gpu_name": blob.get("sppci_model"),
+        "gpu_cores": blob.get("sppci_cores"),
+        "gpu_bus": _clean_system_profiler_value(blob.get("sppci_bus")),
+        "gpu_vendor": _clean_system_profiler_value(blob.get("spdisplays_vendor")),
+        "metal_support": _clean_system_profiler_value(blob.get("spdisplays_mtlgpufamilysupport")),
+    }
+
+
+def _clean_system_profiler_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value)
+    if text.startswith("spdisplays_"):
+        text = text[len("spdisplays_"):]
+    if text.startswith("sppci_vendor_"):
+        text = text[len("sppci_vendor_"):]
+    if text == "builtin":
+        return "built-in"
+    m = re.fullmatch(r"metal(\d+)", text, re.IGNORECASE)
+    if m:
+        return f"Metal {m.group(1)}"
+    return text.replace("_", " ")
+
+
+def _displays_for_prompt(snap: Dict[str, Any]) -> Dict[str, Any]:
+    d = snap.get("displays")
+    if isinstance(d, dict):
+        return d
+    now = time.time()
+    cached = _DISPLAY_PROMPT_CACHE.get("result")
+    if cached is not None and now - float(_DISPLAY_PROMPT_CACHE.get("ts", 0.0)) < _DISPLAY_PROMPT_CACHE_TTL_S:
+        return cached
+    d = displays()
+    if d.get("ok"):
+        _DISPLAY_PROMPT_CACHE["ts"] = now
+        _DISPLAY_PROMPT_CACHE["result"] = d
+    return d
+
+
+def _format_display_prompt(displays_result: Dict[str, Any]) -> Optional[str]:
+    if not displays_result.get("ok"):
+        return None
+    rows = displays_result.get("displays") or []
+    if not rows:
+        return None
+    parts: List[str] = []
+    for row in rows[:4]:
+        name = str(row.get("name") or "display")
+        res = str(row.get("resolution") or "").replace("@ ", "@")
+        flags = []
+        if row.get("main"):
+            flags.append("main")
+        if row.get("body_role"):
+            flags.append(str(row["body_role"]).replace("_", "-"))
+        if row.get("pixels"):
+            flags.append(f"pixels {row['pixels']}")
+        if row.get("online"):
+            flags.append("online")
+        if row.get("mirror"):
+            flags.append(f"mirror {row['mirror']}")
+        parts.append(f"{name} {res} ({', '.join(flags)})".strip())
+    gpu = displays_result.get("gpu_name")
+    gpu_bits = [str(gpu)] if gpu else []
+    if displays_result.get("gpu_cores"):
+        gpu_bits.append(f"{displays_result['gpu_cores']}gpu")
+    prefix = f"display arms on {'/'.join(gpu_bits)}: " if gpu_bits else "display arms: "
+    return prefix + "; ".join(parts)
 
 
 def volume() -> Dict[str, Any]:
@@ -656,9 +760,46 @@ def set_input_volume(level: int) -> Dict[str, Any]:
 def say(text: str, voice: Optional[str] = None) -> Dict[str, Any]:
     """Speak via the native macOS `say` command (NSSpeechSynthesizer).
     This is independent of Alice's main TTS pipeline; it's the OS-level
-    voice and is useful as an alarm / announcement channel."""
+    voice and is useful as an alarm / announcement channel.
+
+    Special voice="signature" or "misotts_signature": if a pre-generated clip
+    for the exact text exists in Voices/misotts_signature/, play the high-quality
+    offline clone instead (the MisoTTS quick-win path). Falls back to normal say.
+    """
+    sig_dir = _REPO / "Voices" / "misotts_signature"
+    if voice in ("signature", "misotts_signature", "misotts") and sig_dir.exists():
+        # Try key-based clip first (from the clone tool), then normalized text match.
+        # The clone tool generates hello.aiff etc. for the known phrases.
+        key_map = {
+            "hello": "hello", "self_evaluate": "self_evaluate", "browser_open": "browser_open",
+            "stgm_healthy": "stgm_healthy", "covenant": "covenant", "matrix": "matrix",
+            "for_the_swarm": "for_the_swarm", "offline_note": "offline_note",
+        }
+        for key, fname in key_map.items():
+            if key.lower() in text.lower():
+                for ext in (".aiff", ".wav"):
+                    candidate = sig_dir / f"{fname}{ext}"
+                    if candidate.exists():
+                        try:
+                            subprocess.Popen(["afplay", str(candidate)], start_new_session=True)
+                            res = {"ok": True, "pid": None, "len": len(text), "voice": "signature", "clip": str(candidate), "method": "pregen_clip"}
+                            _log("say", "voice_signature", {"text": text, "clip": str(candidate)}, res)
+                            return res
+                        except Exception:
+                            pass
+        # Fallback normalized text match for custom phrases
+        for ext in (".aiff", ".wav", ".mp3"):
+            candidate = sig_dir / f"{text[:50].replace(' ', '_').replace('.', '').lower()}{ext}"
+            if candidate.exists():
+                try:
+                    subprocess.Popen(["afplay", str(candidate)], start_new_session=True)
+                    res = {"ok": True, "pid": None, "len": len(text), "voice": "signature", "clip": str(candidate), "method": "pregen_clip"}
+                    _log("say", "voice_signature", {"text": text, "clip": str(candidate)}, res)
+                    return res
+                except Exception:
+                    break  # fall through to normal say
     argv = ["say"]
-    if voice:
+    if voice and voice not in ("signature", "misotts_signature", "misotts"):
         argv += ["-v", voice]
     argv += [text]
     try:
@@ -898,6 +1039,9 @@ def prompt_line(snap: Optional[Dict[str, Any]] = None) -> str:
     v = snap.get("volume", {})
     if v.get("ok"):
         bits.append(f"vol {v.get('output_volume')}{' MUTED' if v.get('muted') else ''}")
+    display_line = _format_display_prompt(_displays_for_prompt(snap))
+    if display_line:
+        bits.append(display_line)
     idle = snap.get("idle_time", {})
     if idle.get("ok") and idle.get("idle_seconds") is not None:
         secs = idle["idle_seconds"]
@@ -911,6 +1055,101 @@ def prompt_line(snap: Optional[Dict[str, Any]] = None) -> str:
     if si.get("ok") and si.get("uptime_s"):
         bits.append(f"uptime {int(si['uptime_s']/3600)}h")
     return "hardware body: " + " · ".join(bits) if bits else "hardware body: (warming up)"
+
+
+def _last_jsonl_row(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        if not path.exists():
+            return None
+        with path.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
+            buf = bytearray()
+            while pos > 0:
+                pos -= 1
+                f.seek(pos)
+                b = f.read(1)
+                if b == b"\n" and buf:
+                    break
+                if b != b"\n":
+                    buf.extend(b)
+        if not buf:
+            return None
+        return json.loads(bytes(reversed(buf)).decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+
+
+def _display_body_fingerprint(displays_result: Dict[str, Any], boot_unix_ts: Any) -> str:
+    payload = {
+        "boot_unix_ts": boot_unix_ts,
+        "gpu_name": displays_result.get("gpu_name"),
+        "gpu_cores": displays_result.get("gpu_cores"),
+        "gpu_bus": displays_result.get("gpu_bus"),
+        "gpu_vendor": displays_result.get("gpu_vendor"),
+        "metal_support": displays_result.get("metal_support"),
+        "displays": displays_result.get("displays") or [],
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def record_display_body_boot_receipt(reason: str = "boot") -> Dict[str, Any]:
+    """Idempotently record the display arms detected for this Mac boot."""
+    display_info = displays()
+    if not display_info.get("ok"):
+        return {"ok": False, "error": "display probe failed", "display_info": display_info}
+    sys_info = system_info()
+    boot_unix_ts = sys_info.get("boot_unix_ts") if sys_info.get("ok") else None
+    fingerprint = _display_body_fingerprint(display_info, boot_unix_ts)
+    last = _last_jsonl_row(_DISPLAY_BODY_LEDGER)
+    if (
+        last
+        and last.get("schema_version") == "alice_display_body.v1"
+        and last.get("fingerprint") == fingerprint
+        and last.get("boot_unix_ts") == boot_unix_ts
+    ):
+        return {
+            "ok": True,
+            "reused": True,
+            "receipt": last.get("trace_id"),
+            "fingerprint": fingerprint,
+            "display_count": last.get("display_count"),
+        }
+    row = {
+        "schema_version": "alice_display_body.v1",
+        "event": "ALICE_DISPLAY_BODY",
+        "trace_id": str(uuid.uuid4()),
+        "ts": time.time(),
+        "iso": datetime.now(tz=timezone.utc).isoformat(),
+        "agent": "ALICE_M5",
+        "source": "System.alice_hardware_body.record_display_body_boot_receipt",
+        "reason": reason,
+        "boot_unix_ts": boot_unix_ts,
+        "fingerprint": fingerprint,
+        "display_count": len(display_info.get("displays") or []),
+        "display_body_prompt": prompt_line({"displays": display_info}),
+        "displays": display_info,
+        "system_info": {
+            "model": sys_info.get("model"),
+            "hostname": sys_info.get("hostname"),
+            "os_version": sys_info.get("os_version"),
+            "build": sys_info.get("build"),
+        } if sys_info.get("ok") else {},
+    }
+    try:
+        _STATE.mkdir(parents=True, exist_ok=True)
+        with _DISPLAY_BODY_LEDGER.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "ok": True,
+        "reused": False,
+        "receipt": row["trace_id"],
+        "fingerprint": fingerprint,
+        "display_count": row["display_count"],
+    }
 
 
 def govern(action: str, **kwargs) -> Dict[str, Any]:
@@ -928,6 +1167,14 @@ def govern(action: str, **kwargs) -> Dict[str, Any]:
         )}
     if action == "prompt_line":
         return {"ok": True, "action": action, "result": prompt_line()}
+    if action == "display_body_boot_receipt":
+        return {
+            "ok": True,
+            "action": action,
+            "result": record_display_body_boot_receipt(
+                reason=str(kwargs.get("reason") or "manual")
+            ),
+        }
     return {
         "ok": False,
         "action": action,

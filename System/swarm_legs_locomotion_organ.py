@@ -190,6 +190,14 @@ def walking_laptop_plan(*, available_budget_usd: float = 0.0) -> Dict[str, Any]:
         "five_slide_presentation": LEROBOT_5SLIDE_PRESENTATION,
         "organ_skeleton_reference": LEROBOT_ORGAN_SKELETON_REF,
         "outsourcing_notes": "Hubs.ca / Protolabs Network (CA 2-day) / Gentle Giant LA / Additive Plus LA / Xometry. Nylon/PETG SLS packs better for strength (no layer weakness). Assembly guided after motor commissioning first.",
+        # New stigmergic inspiration (2026-06-01): real high-power device that could become the "head"
+        "stigmergic_walking_laptop_example": (
+            "Imagine the NVIDIA DGX Spark (the 1-petaf lop 'supercomputer in a laptop' shown in the "
+            "YouTube video the Architect was watching) mounted on these LeRobot legs. That is the "
+            "ultimate stigmergic walking laptop: serious local Blackwell-class compute for all of "
+            "Alice's swimmers and organs, carried on the low-cost 3D-printed biped. One-time hardware "
+            "purchase (the legs + a high-end laptop), then infinite stigmergic use as Alice's physical body."
+        ),
     }
 
 

@@ -19,6 +19,7 @@ _REPO = Path(__file__).resolve().parent.parent
 REPAIR_LOG = _REPO / "repair_log.jsonl"
 STATE_DIR = _REPO / ".sifta_state"
 MEMORY_REWARDS = STATE_DIR / "stgm_memory_rewards.jsonl"
+STGM_CACHE = STATE_DIR / "stgm_economy_cache.json"
 
 DEVELOPMENT_AGENTS = {
     "AG31",
@@ -316,6 +317,151 @@ def canonical_wallet_balance(agent_id: str) -> float:
         return 0.0
 
 
+def wallet_file_claims(state_dir: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """Return local wallet-file claims as cache evidence, not spendable truth.
+
+    The JSON body files are useful body telemetry: they show what a swimmer or
+    old organ last wrote. They are not allowed to mint or spend by themselves.
+    `scan_economy()` remains the spendable-wallet source; this helper lets the
+    eval matrix show cache drift explicitly instead of hiding the discrepancy.
+    """
+    state_dir = state_dir or STATE_DIR
+    out: Dict[str, Dict[str, Any]] = {}
+    if not state_dir.is_dir():
+        return out
+    for fp in sorted(state_dir.glob("*.json")):
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if "id" not in data and "stgm_balance" not in data and "energy" not in data:
+            continue
+        aid = _normalize_agent_id(data.get("id") or fp.stem)
+        if not aid:
+            continue
+        out[aid] = {
+            "file": fp.name,
+            "stgm_balance_file": round(_float(data.get("stgm_balance")), 4),
+            "energy": data.get("energy"),
+            "homeworld_serial": data.get("homeworld_serial"),
+            "architect_seal": data.get("architect_seal"),
+            "ts_written": data.get("ts_written"),
+            "written_by": data.get("written_by"),
+        }
+    return out
+
+
+def economy_matrix_snapshot(
+    repair_log: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    memory_rewards: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """One matrix-safe view of STGM money, stake/reputation, and cache drift.
+
+    Follow-the-money rule:
+    - spendable STGM comes from the canonical ledger scan,
+    - wallet JSON files are cache/body claims,
+    - memory rewards / PoUW are reputation or stake signal, not spendable money.
+    """
+    state_dir = state_dir or STATE_DIR
+    snap = scan_economy(repair_log=repair_log, state_dir=state_dir, memory_rewards=memory_rewards)
+    d = snap.as_dict()
+    canonical_balances = {
+        str(k).upper(): _float(v)
+        for k, v in (d.get("canonical_wallet_balances") or {}).items()
+    }
+    claims = wallet_file_claims(state_dir)
+    drifts: Dict[str, Dict[str, Any]] = {}
+    for aid, claim in claims.items():
+        file_balance = _float(claim.get("stgm_balance_file"))
+        canonical = canonical_balances.get(aid, 0.0)
+        drift = round(file_balance - canonical, 4)
+        if abs(drift) > 0.0001:
+            drifts[aid] = {
+                "file": claim.get("file"),
+                "stgm_balance_file": round(file_balance, 4),
+                "canonical_spendable": round(canonical, 4),
+                "drift": drift,
+            }
+
+    alice_m5 = canonical_balances.get("ALICE_M5", 0.0)
+    return {
+        "truth_label": "STGM_ECONOMY_MATRIX_SNAPSHOT_V2",
+        "schema": d.get("schema"),
+        "ts": d.get("ts"),
+        "spendable_wallet_source": d.get("spendable_wallet_source"),
+        "spendable_total_stgm": d.get("canonical_wallet_sum"),
+        "alice_m5_spendable_stgm": round(alice_m5, 4),
+        "canonical_wallet_balances": canonical_balances,
+        "net_supply_stgm": d.get("net_stgm"),
+        "canonical_minted_stgm": d.get("canonical_minted"),
+        "canonical_spent_stgm": d.get("canonical_spent"),
+        "atp_minted_stgm": d.get("atp_minted"),
+        "repair_lines": d.get("repair_lines"),
+        "repair_parse_ok": d.get("repair_parse_ok"),
+        "memory_rewards_source": d.get("reputation_source"),
+        "pouw_reputation_stgm": d.get("memory_reward_amount"),
+        "pouw_reputation_rows": d.get("memory_reward_lines"),
+        "wallet_file_claims": claims,
+        "wallet_cache_drifts": drifts,
+        "warnings": d.get("warnings") or [],
+        "interpretation": (
+            "ALICE_M5 97-style numbers are spendable only when the canonical ledger agrees. "
+            "stgm_memory_rewards is PoUW/reputation stake, not spendable wallet. "
+            "Wallet JSON files are body caches and may drift; drift is shown instead of hidden."
+        ),
+        "cache_source": "computed",
+    }
+    # Persist cheap cache for fast matrix / self-eval reads (out-of-band refresh recommended).
+    try:
+        STGM_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(STGM_CACHE, "w") as f:
+            json.dump(result, f, indent=2)
+        result["cache_written"] = str(STGM_CACHE)
+    except Exception as _e:
+        result.setdefault("warnings", []).append(f"cache_write_failed:{_e}")
+    return result
+
+
+def load_stgm_economy_cache() -> Optional[Dict[str, Any]]:
+    """Fast path: read the last persisted layered snapshot (no scan).
+
+    Matrix and self-eval use this so generation stays <2s even if the
+    underlying scan_economy(repair_log) would be expensive.
+    """
+    if not STGM_CACHE.exists():
+        return None
+    try:
+        with open(STGM_CACHE) as f:
+            data = json.load(f)
+        data = dict(data)
+        data["source"] = "cache"
+        data["cache_path"] = str(STGM_CACHE)
+        return data
+    except Exception:
+        return None
+
+
+def refresh_stgm_economy_cache(
+    repair_log: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    memory_rewards: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Out-of-band: force a full scan and write the cheap cache file.
+
+    Call this after economy-affecting changes (new repair rows, PoUW mints,
+    wallet updates) so the next matrix render is both honest and fast.
+    """
+    data = economy_matrix_snapshot(
+        repair_log=repair_log, state_dir=state_dir, memory_rewards=memory_rewards
+    )
+    # economy_matrix_snapshot already wrote the cache; we just return the fresh dict.
+    data["refreshed"] = True
+    return data
+
+
 _CACHE_LAST_SCAN = None
 _CACHE_FILES_MTIME = {}
 
@@ -566,9 +712,11 @@ __all__ = [
     "EconomySnapshot",
     "canonical_wallet_balance",
     "development_cost_row",
+    "economy_matrix_snapshot",
     "investor_safe_summary",
     "make_economic_attribution_key",
     "requires_economic_attribution",
     "scan_economy",
     "validate_economic_attribution",
+    "wallet_file_claims",
 ]

@@ -59,7 +59,7 @@ from typing import Any, Dict, List, Optional
 try:
     from System.sifta_inference_defaults import CANONICAL_OLLAMA_FALLBACK
 except Exception:
-    CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    CANONICAL_OLLAMA_FALLBACK = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 try:
     from System.jsonl_file_lock import append_line_locked

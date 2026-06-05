@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from System.swarm_canonical_organ_registry import CANONICAL_ORGANS
+
 import tools.eval_coverage as C
 
 
@@ -75,8 +77,8 @@ def test_organ_coverage_gate_writes_canonical_rows(tmp_path):
     ]
     vision = next(row for row in rows if row["organ_id"] == "vision_lane")
 
-    assert report["canonical_organs"] == 13
-    assert len(rows) == 13
+    assert report["canonical_organs"] == len(CANONICAL_ORGANS)
+    assert len(rows) == len(CANONICAL_ORGANS)
     assert vision["ledger_exists"] is True
     assert vision["fresh_ledger"] is True
     assert vision["outcome_bearing_row"] is True

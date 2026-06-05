@@ -59,3 +59,6 @@ def test_feeling_aliases_map_human_words_to_alice_circuits():
     assert affect.FEELING_ALIASES["curiosity"] == "SEEKING"
     assert affect.FEELING_ALIASES["gag"] == "SUPPRESSED_PLAY"
     assert affect.FEELING_ALIASES["warmth"] == "CARE"
+    assert affect.FEELING_ALIASES["love"] == "CARE"
+    assert affect.FEELING_ALIASES["self_love"] == "CARE"
+    assert affect.FEELING_ALIASES["protective_love"] == "CARE"

@@ -24,7 +24,8 @@ def _registration(path: Path) -> None:
 
 def test_refuses_without_recent_registration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ledger = tmp_path / "xai_calls.jsonl"
-    monkeypatch.setenv("XAI_API_KEY", "xai-test-secret")
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.setenv("XAI_OAUTH_ACCESS_TOKEN", "oauth-test-secret")
 
     with pytest.raises(PermissionError):
         organ.call_xai_responses(
@@ -37,7 +38,7 @@ def test_refuses_without_recent_registration(tmp_path: Path, monkeypatch: pytest
     row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
     assert row["ok"] is False
     assert row["reason"] == "missing_recent_sifta_registration"
-    assert row["credential_redacted"] == "xai-t...cret"
+    assert row["credential_redacted"] == "oauth...cret"
 
 
 def test_dry_run_with_registration_writes_redacted_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,6 +77,43 @@ def test_grok_oauth_bad_credentials_get_stable_status() -> None:
 
     assert organ._classify_grok_http_failure(403, body) == "oauth_bad_credentials"
     assert organ._classify_grok_http_failure(500, "server down") == "http_error:500"
+
+
+def test_refresh_does_not_call_guessed_xai_endpoint_for_hermes_oauth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hermes = tmp_path / "auth.json"
+    ledger = tmp_path / "xai_calls.jsonl"
+    hermes.write_text(
+        json.dumps({
+            "credential_pool": {
+                "xai-oauth": [{
+                    "access_token": "oauth-access-123456",
+                    "refresh_token": "oauth-refresh-123456",
+                }]
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    def fail_urlopen(*_args, **_kwargs):
+        raise AssertionError("refresh must not call a guessed xAI endpoint")
+
+    monkeypatch.setattr(organ.request, "urlopen", fail_urlopen)
+
+    cred = organ.refresh_oauth_credential(
+        token_file=tmp_path / "missing_token.json",
+        hermes_auth_file=hermes,
+        ledger_path=ledger,
+    )
+
+    assert cred is not None
+    assert cred.value == "oauth-access-123456"
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["ok"] is True
+    assert row["reason"] == "oauth_refresh_managed_by_hermes_reauth_if_stale"
+    assert row["manual_reauth"].startswith("hermes auth remove xai-oauth")
 
 
 def test_grok_image_request_preserves_selected_model_and_payload_shape(

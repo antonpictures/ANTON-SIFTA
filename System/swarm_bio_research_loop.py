@@ -5,7 +5,7 @@ Event 105 — BioSIFTA Research Loop
 
 Pipeline: paper_chunk → register_claim (deterministic claim_id) → organ_mapping
 → test_proposal → experiment receipt; tournament ranks claims by heuristic product.
-Cortex: promoted Alice default | alice-m1-scout-2.3b-2.7gb:latest (scout)
+Cortex: promoted Alice default | alice-gemma4-e2b-cortex-5.1b-4.4gb:latest (scout)
 Retrieval: TF-IDF cosine over bio_papers.jsonl (no external embed deps)
 Truth label: BIOSIFTA_RESEARCH_EVENT_105
 """
@@ -61,7 +61,7 @@ _ORGAN_KEYWORDS: tuple[str, ...] = (
 # ── Ollama config ─────────────────────────────────────────────────────────────
 OLLAMA_BASE     = "http://localhost:11434"
 CORTEX_MODEL    = CANONICAL_OLLAMA_DEFAULT      # promoted Alice cortex
-SCOUT_MODEL     = "alice-m1-scout-2.3b-2.7gb:latest"                  # cheap scout
+SCOUT_MODEL     = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"                  # cheap scout
 OLLAMA_TIMEOUT  = 90
 
 

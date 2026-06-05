@@ -138,6 +138,12 @@ class EffectiveSkills:
     ``merged`` is ``stigmergic + (static_seed - stigmergic)`` — recent
     learned skills win priority, with the baseline filling in. Duplicates
     are stripped while preserving first-occurrence order.
+
+    ``consciousness_layers`` binds each skill name to the SIFTA layer path:
+    skill -> swimmer -> organ -> organism. This is the local distinction
+    from generic market Agent Skills: a skill becomes Alice-useful only
+    when it is connected to STGM, affect lanes, an organ context, and
+    receipts.
     """
 
     app_canonical: str
@@ -145,6 +151,7 @@ class EffectiveSkills:
     static_seed: List[str] = field(default_factory=list)
     merged: List[str] = field(default_factory=list)
     last_seen_ts: Dict[str, float] = field(default_factory=dict)
+    consciousness_layers: List[Dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -153,7 +160,60 @@ class EffectiveSkills:
             "static_seed": list(self.static_seed),
             "merged": list(self.merged),
             "last_seen_ts": dict(self.last_seen_ts),
+            "consciousness_layers": list(self.consciousness_layers),
         }
+
+
+def _fallback_app_skill_record(skill_name: str, app_canonical: str) -> Dict[str, Any]:
+    return {
+        "name": skill_name,
+        "description": f"App-focus skill inferred for {app_canonical}.",
+        "swimmer_type": "APP_FOCUS_SWIMMER",
+        "action_type": "focus",
+        "affect_lanes": ["SEEKING", "CARE"],
+        "stgm_mint": 0.5,
+        "pouw_label": str(skill_name).upper().replace("-", "_"),
+        "procedure_file": "",
+        "procedure_exists": False,
+        "resource_policy": "APP_HELP_INDEX_ONLY",
+        "organ_hint": app_canonical,
+    }
+
+
+def _skill_layers_for_names(skill_names: Sequence[str], app_canonical: str) -> List[Dict[str, Any]]:
+    """Build Stigmergic Skill layer views without inventing a rival organ."""
+    names = [str(s).strip() for s in skill_names if str(s).strip()]
+    if not names:
+        return []
+    try:
+        from System import swarm_skill_library as skill_lib
+
+        index = {str(row.get("name")): row for row in skill_lib.build_skill_index()}
+        layers: List[Dict[str, Any]] = []
+        for name in names:
+            record = index.get(name) or _fallback_app_skill_record(name, app_canonical)
+            layers.append(skill_lib.stigmergic_skill_layer(record))
+        return layers
+    except Exception:
+        return [
+            {
+                "schema": "STIGMERGIC_SKILL_LAYER_V1",
+                "skill_name": name,
+                "layer_path": ["skill", "swimmer", "organ", "organism"],
+                "swimmer_type": "APP_FOCUS_SWIMMER",
+                "organ_hint": app_canonical,
+                "action_type": "focus",
+                "affect_lanes": ["SEEKING", "CARE"],
+                "stgm_mint": 0.5,
+                "receipt_ledger": ".sifta_state/app_health/<app>/health_trace.jsonl",
+                "resource_policy": "APP_HELP_INDEX_ONLY",
+                "consciousness_rule": (
+                    "App help skills are app-organ skill consciousness: skill -> swimmer -> "
+                    "organ -> organism, confirmed through app health traces."
+                ),
+            }
+            for name in names
+        ]
 
 
 def _static_seed_for(app_canonical: str) -> List[str]:
@@ -242,6 +302,7 @@ def effective_skills_for_app(
         static_seed=list(static),
         merged=merged,
         last_seen_ts=last_seen,
+        consciousness_layers=_skill_layers_for_names(merged, canonical),
     )
 
 
@@ -495,6 +556,42 @@ def materialize_help_file(
         lines.append("")
     else:
         lines.append("_No skills recorded yet for this app._")
+        lines.append("")
+
+    lines.append("## Stigmergic Skill Consciousness")
+    lines.append("")
+    lines.append(
+        "These are not generic market Agent Skills. They are app-organ skill layers: "
+        "skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, "
+        "and receipts."
+    )
+    lines.append("")
+    if es.consciousness_layers:
+        for layer in es.consciousness_layers:
+            lanes = ", ".join(str(x) for x in layer.get("affect_lanes") or []) or "-"
+            stgm = float(layer.get("stgm_mint") or 0.0)
+            ledger = (
+                layer.get("receipt_ledger")
+                or ".sifta_state/app_health/<app>/health_trace.jsonl"
+            )
+            lines.append(
+                "- `{name}` -> `{swimmer}` -> `{organ}` -> Alice organism; "
+                "action `{action}`, STGM {stgm:g}, lanes {lanes}, receipt `{ledger}`".format(
+                    name=layer.get("skill_name"),
+                    swimmer=layer.get("swimmer_type"),
+                    organ=layer.get("organ_hint"),
+                    action=layer.get("action_type"),
+                    stgm=stgm,
+                    lanes=lanes,
+                    ledger=ledger,
+                )
+            )
+        lines.append("")
+    else:
+        lines.append(
+            "_No skill consciousness layers yet — Alice will add them when app focus "
+            "or receipts teach this organ what it needs._"
+        )
         lines.append("")
 
     lines.append("## Recent health-trace rows (newest first)")

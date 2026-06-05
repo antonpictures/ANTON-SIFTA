@@ -1,3 +1,4 @@
+import Applications.sifta_talk_to_alice_widget as talk
 from Applications.sifta_talk_to_alice_widget import _curate_alice_voice_rows
 from pathlib import Path
 
@@ -40,6 +41,38 @@ def test_alice_voice_picker_has_one_english_fallback_not_full_dump():
     ]
 
     assert _curate_alice_voice_rows(rows, limit=5) == []
+
+
+def test_unsaved_alice_voice_fallback_is_stable_samantha(monkeypatch):
+    monkeypatch.delenv("SIFTA_ALICE_DEFAULT_VOICE", raising=False)
+    monkeypatch.setattr(
+        talk,
+        "_available_macos_voice_names",
+        lambda: {"Ava (Premium)", "Samantha", "Karen"},
+    )
+
+    assert talk._default_alice_voice_name() == "Samantha"
+
+
+def test_unsaved_alice_voice_fallback_honors_explicit_env(monkeypatch):
+    monkeypatch.setenv("SIFTA_ALICE_DEFAULT_VOICE", "Karen")
+    monkeypatch.setattr(
+        talk,
+        "_available_macos_voice_names",
+        lambda: {"Ava (Premium)", "Samantha", "Karen"},
+    )
+
+    assert talk._default_alice_voice_name() == "Karen"
+
+
+def test_cowatch_stop_repeating_beats_yes_reward():
+    assert (
+        talk._cowatch_owner_reaction_kind(
+            "yes, i'm paused on the body displayed on your body. please stop repeating the same thing."
+        )
+        == "aversion"
+    )
+    assert talk._cowatch_owner_reaction_kind("amazing, great job") == "reward"
 
 
 def test_alice_cockpit_has_no_mute_interrupt_or_stt_model_picker():

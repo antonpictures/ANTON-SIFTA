@@ -527,7 +527,7 @@ def _build_command(
         # Hermes gets the covenant text INLINED (its file tool was failing), not a
         # "go read this path" instruction — see hermes_covenant_inline_prefix.
         prompt = hermes_covenant_inline_prefix() + (prompt or "")
-    elif arm.arm_id in {"grok_agent", "claude_agent", "codex_agent", "qwen_agent", "cline_agent"}:
+    elif arm.arm_id in {"grok_agent", "claude_agent", "codex_agent", "qwen_agent", "cline_agent", "antigravity_agent"}:
         prompt = _COVENANT_BOOT_PREFIX + (prompt or "")
     if arm.arm_id == "corvid_scout":
         return [arm.command[0], "--task", "evidence", "--query", prompt]
@@ -623,6 +623,18 @@ def _build_command(
             "--json",
             prompt,
         ]
+    if arm.arm_id == "antigravity_agent":
+        # r336 (George 2026-06-02): Google Antigravity CLI `agy`, headless one-shot.
+        # `agy -p "<prompt>"` runs non-interactively and prints the answer to stdout
+        # (captured by the default runner). agy has NO --model flag — it AUTO-SELECTS a
+        # tool+vision-capable backend (Gemini 3.x / Claude 4.6); pick explicitly with
+        # /model in the TUI. Multimodal path: agy resolves `@<path>` file references, so an
+        # attached image is handed over as an @-ref appended to the prompt — that is how
+        # antigravity SEES with its own eye.
+        agy_prompt = prompt
+        if image_path:
+            agy_prompt = f"{prompt}\n\n@{image_path}"
+        return [arm.command[0], "-p", agy_prompt]
     command = list(arm.command)
     if arm.arm_id == "codex_agent":
         command += [prompt]

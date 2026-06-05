@@ -28,6 +28,16 @@ _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 
+# Ensure desktop boot uses the repo virtualenv whenever available so local vision
+# and MLX/VLM tooling stay available. This protects launches made via ad-hoc
+# `python3 sifta_os_desktop.py` from silently using a global interpreter.
+if (
+    os.environ.get("SIFTA_SKIP_VENV_REEXEC", "").strip() != "1"
+    and _VENV_PYTHON.exists()
+    and Path(sys.executable).resolve() != _VENV_PYTHON.resolve()
+):
+    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]])
+
 # Owner heartbeat mode sensor. The single event spine remains swarm_behavior_clock.
 try:
     from System import owner_heartbeat as _owner_heartbeat
@@ -2316,8 +2326,22 @@ class SiftaDesktop(QMainWindow):
         try:
             def _post_boot_gc_harden() -> None:
                 try:
-                    from System.swarm_gc_stack_hardening import harden_runtime_for_gc
+                    from System.swarm_gc_stack_hardening import (
+                        harden_runtime_for_gc, disable_auto_collection, safe_manual_collect,
+                    )
                     harden_runtime_for_gc(log=print)
+                    # r315 (George approved "Both", 2026-06-01): r246's freeze shrank the mark
+                    # surface but auto-GC still fired inside a QTimer slot and overflowed the C
+                    # stack. Turn OFF automatic collection so it can never fire mid-slot, then
+                    # collect on our OWN timer whose slot is shallow — and only when no thread
+                    # holds a deep frame chain (the surface mark_stacks recurses over).
+                    disable_auto_collection(log=print)
+                    self._gc_safe_collect_timer = QTimer(self)
+                    self._gc_safe_collect_timer.setInterval(45000)
+                    self._gc_safe_collect_timer.timeout.connect(
+                        lambda: safe_manual_collect(log=print)
+                    )
+                    self._gc_safe_collect_timer.start()
                 except Exception as _gc_exc:
                     print(f"[gc_hardening] skipped: {type(_gc_exc).__name__}: {_gc_exc}")
             QTimer.singleShot(16000, _post_boot_gc_harden)
@@ -4057,6 +4081,12 @@ class SiftaDesktop(QMainWindow):
             pass
         try:
             self.mdi.setActiveSubWindow(sub)
+        except Exception:
+            pass
+        # r290: an app may declare it wants to open maximized (e.g. Alice Browser).
+        try:
+            if getattr(widget, "OPEN_MAXIMIZED", False):
+                sub.showMaximized()
         except Exception:
             pass
         self._active_app_title = str(slot_key)
@@ -5940,6 +5970,19 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
 
     desktop = SiftaDesktop()
+    # r451/r452: after first paint, keep Alice's persisted body map current.
+    # Headless swarm_boot already runs the same cheap refresh; this covers the
+    # owner-facing Desktop/Talk boot path so the matrix Alice opens does not
+    # drift behind the canonical organ registry.
+    def _body_matrix_boot_refresh() -> None:
+        try:
+            from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix
+
+            refresh_body_matrix(force=False)
+        except Exception as _matrix_exc:
+            sys.stderr.write(f"[BOOT] body matrix refresh skipped: {_matrix_exc}\n")
+
+    QTimer.singleShot(250, _body_matrix_boot_refresh)
     if kernel_table is not None:
         if _install_kernel_scheduler_timer(app, kernel_table, desktop_body=desktop) is not None:
             sys.stderr.write(

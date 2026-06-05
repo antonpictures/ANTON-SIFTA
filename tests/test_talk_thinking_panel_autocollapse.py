@@ -158,6 +158,19 @@ def test_global_chat_visible_text_surfaces_receipt_refs():
     assert "[receipts: r58-src-e04da72a3c]" in visible
 
 
+def test_receipt_id_parser_exposes_chat_anchor_ids():
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    widget = TalkToAliceWidget.__new__(TalkToAliceWidget)
+    refs = TalkToAliceWidget._receipt_ids_in_text(
+        widget,
+        "Web page-state receipt: r58-src-e04da72a3c and App/browser receipt: 051f78a4-83eb-4f05-b8f0-a0b12c4cf3f1",
+    )
+
+    assert "r58-src-e04da72a3c" in refs
+    assert "051f78a4-83eb-4f05-b8f0-a0b12c4cf3f1" in refs
+
+
 def test_chat_anchor_and_render_all_messages_hooks_exist():
     src = _src()
     assert "def _on_chat_anchor_clicked" in src

@@ -1,3 +1,17 @@
+---
+name: claude_arm
+description: >
+  Use when Alice needs the local Claude arm as a receipted SIFTA swimmer
+  catalog for code, tool, or diagnostic work while keeping control,
+  memory, and receipts inside Alice's field.
+swimmer_type: CLAUDE_ARM_SWIMMER
+action_type: code
+affect_lanes: [SEEKING, CARE]
+stgm_mint: 4.0
+pouw_label: CLAUDE_ARM
+version: 2026-06-05
+---
+
 # Claude Arm (Claude Swimmer Arm)
 
 ## Name

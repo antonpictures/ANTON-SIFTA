@@ -423,7 +423,7 @@ class SkillBrowserApp(QWidget):
                         row = json.loads(line)
                         if row.get("status") == "EXECUTED" and row.get("ok"):
                             successful.append(row)
-                    except:
+                    except Exception:
                         pass
 
             if not successful:

@@ -27,7 +27,7 @@ def calculate_shame() -> dict:
         for line in f:
             try:
                 entry = json.loads(line.strip())
-            except:
+            except Exception:
                 continue
 
             # Target extraction from legacy vs schema layouts

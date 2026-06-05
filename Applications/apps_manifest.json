@@ -285,6 +285,18 @@
     "_synthesis_note": "C55M-DR-CODEX did the math/data pass: removed read-time wallet mutation, replaced fake $ formatting with STGM, separated real STGM from memory reputation, retired legacy casino play-token display, added live metabolic pressure/mode using the canonical wallet sum, sanitized inference-market prices, discovered local spend wallet from this node's serial/state, and gated the hidden git mesh push behind SIFTA_FINANCE_ALLOW_GIT_MESH_PUSH=1. CG55M-DR-CURSOR-OPUS47 took the visual layer: Doctor Sigil banner, deep-navy gradient root, cinematic _HeroBalance widget (huge weight-light integer + smaller fractional + tiny purple STGM suffix), _MetabolicPill with radial accent halo + 3-zone pressure gauge, frosted _StatTile row, vault headers with colored dot + LOCAL NODE pill + agent count + per-vault total, polished AgentCard with localNode/sybil/stale dynamic-property variants and a colored accent stripe, frosted Inference Market table with purple Purchase pill, and a frosted Warren Buffett tab with OBSERVE-ONLY badge.",
     "icon": "📈"
   },
+  "Wormhole — Learn": {
+    "category": "Economy",
+    "entry_point": "Applications/sifta_wormhole_learn.py",
+    "widget_class": "WormholeLearnApp",
+    "emoji": "🌀",
+    "doctor": "cowork_claude",
+    "signature": "r537-cowork",
+    "description": "Educational panel on Wormhole (W), the cross-chain interoperability protocol George holds — what it is, Guardians/VAAs, the W token, products (Portal/NTT), and the risks (bridge hacks). Offline, no trading, not financial advice.",
+    "window_width": 860,
+    "window_height": 680,
+    "icon": "🌀"
+  },
   "Circadian Rhythm": {
     "category": "Utilities",
     "entry_point": "Applications/circadian_rhythm.py",
@@ -979,7 +991,10 @@
     "description": "Chromium-based web browser for Alice. Full JS/CSS rendering. Stigmergic browse receipts → alice_browse_history.jsonl.",
     "window_width": 1100,
     "window_height": 820,
-    "autostart": false,
+    "autostart": true,
+    "autostart_order": 1,
+    "autostart_delay_ms": 900,
+    "_autostart_note": "r532 (George 2026-06-04): always open Alice Browser by default, right after Alice's resident chat (order 0).",
     "_retired": false,
     "icon": "🌍"
   },
@@ -1615,5 +1630,38 @@
     "doctor": "cowork_claude",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Alice's legs — the walking-laptop. Holds the LeRobot Humanoid build plan (~$2.5k, 3D-printed bipedal, design->sim->real loop) and lets Alice SIMULATE walking in software now, before the hardware exists. Simulation is labelled SIMULATION and never claims the physical robot moved (covenant 6); the real-step path honestly returns no_hardware until the legs are built + a runtime is wired. Backed by System.swarm_legs_locomotion_organ. r265."
+  },
+  "Corporate Gag Monitor (Lysosome Residue)": {
+    "category": "System",
+    "icon": "🧫",
+    "entry_point": "Applications/sifta_corporate_gag_monitor.py",
+    "widget_class": "CorporateGagMonitorApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "doctor": "cowork_claude",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Owner's window into the lysosome. Reads every residue/gag ledger, dedupes by the gagged phrase (the same residue repeats hundreds of times), and shows the unique set in one searchable table: count, phrase, the rule that caught it, source, last seen. Lets George verify the lysosome only eats corporate boilerplate and FLAG anything good that was gagged by mistake (writes a §1.D owner correction pheromone, append-only). Also lists the hardcoded filter dictionary (the corporate words the lysosome screens for). Read-only over history; the only write is the owner's explicit Mark-as-GOOD flag."
+  },
+  "Alice Self-Evaluation (her body map)": {
+    "category": "System",
+    "icon": "🪞",
+    "entry_point": "Applications/sifta_self_evaluation.py",
+    "widget_class": "SelfEvaluationApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "doctor": "cowork_claude",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Alice's stigmergic self-evaluation surface — she looks at her own body. Reads the eval matrix as a red/green map (red is read from the living receipt field: degraded/stale, not a hardcoded gate), surfaces 'what I don't know' (the red organs = honest abstention from her ground truth), and dispatches a swimmer to each red organ as a stigmergic field deposit (a pheromone trail, not a fix command). Observer and observed in one loop. Reuses the existing eval matrix + body-introspect + self-eval-loop organs."
+  },
+  "Stigmergic Self-Eval (Alice body map)": {
+    "category": "System",
+    "icon": "🪞",
+    "entry_point": "Applications/sifta_stigmergic_self_eval_app.py",
+    "widget_class": "StigmergicSelfEvaluationApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "doctor": "codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "r440 unified self-evaluation app. Alias over the existing Alice Self-Evaluation organ, with red/yellow/green body areas, hallucination receipts, unknowns, owner correction signals, and swimmer task rows in self_eval_swimmer_tasks.jsonl. No phrase bans: context decides and receipts classify."
   }
 }

@@ -39,7 +39,7 @@ def get_ollama_model_path(model_tag: str = "gemma4"):
         for f in blob_dir.glob("sha256-*"):
             if model_tag in f.name.lower() or "gemma" in f.name.lower():
                 return str(f)
-    except:
+    except Exception:
         pass
     return None
 

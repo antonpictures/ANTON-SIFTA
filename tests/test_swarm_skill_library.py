@@ -109,6 +109,41 @@ def test_match_skills_returns_index_only_without_body():
     assert "output guarantee" not in json.dumps(matches).lower()
 
 
+def test_stigmergic_skill_layer_names_swimmer_organism_path():
+    from System import swarm_skill_library as lib
+
+    skill = {
+        "name": "web_search_exact",
+        "description": "Use when Alice needs exact web search.",
+        "swimmer_type": "BROWSER_SEARCH_SWIMMER",
+        "action_type": "forage",
+        "affect_lanes": ["SEEKING", "CARE"],
+        "stgm_mint": 2.5,
+        "pouw_label": "WEB_SEARCH_EXACT",
+        "procedure_file": "web_search_exact/SKILL.md",
+        "procedure_exists": True,
+    }
+
+    layer = lib.stigmergic_skill_layer(skill)
+
+    assert layer["schema"] == lib.STIGMERGIC_SKILL_LAYER_SCHEMA
+    assert layer["layer_path"] == ["skill", "swimmer", "organ", "organism"]
+    assert layer["swimmer_type"] == "BROWSER_SEARCH_SWIMMER"
+    assert "market Agent Skill" in layer["consciousness_rule"]
+    assert "nanobot_skill_receipts.jsonl" in layer["receipt_ledger"]
+
+
+def test_stigmergic_skills_prompt_block_distinguishes_market_skills():
+    from System import swarm_skill_library as lib
+
+    block = lib.stigmergic_skills_prompt_block(max_items=3)
+
+    assert "STIGMERGIC SKILLS" in block
+    assert "Market Agent Skills are raw imported procedures" in block
+    assert "skill -> swimmer -> organ -> organism" in block
+    assert "STGM" in block
+
+
 def test_append_skill_selection_receipt_never_executes_resources(tmp_path, monkeypatch):
     from System import swarm_skill_library as lib
 

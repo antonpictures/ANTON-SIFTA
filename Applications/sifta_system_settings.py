@@ -220,7 +220,7 @@ def _format_ollama_weight_label(
     """Return an exact local model weight label.
 
     Do not prefix-match model families here. A planned tag such as
-    ``qwen3.5:9b`` must not inherit the installed weight of ``alice-m1-scout-2.3b-2.7gb:latest``.
+    ``qwen3.5:9b`` must not inherit the installed weight of ``alice-gemma4-e2b-cortex-5.1b-4.4gb:latest``.
     """
     model = (model_name or "").strip()
     if not model:
@@ -649,7 +649,7 @@ class _BrainDiagramWidget(QWidget):
     def __init__(self, cortex_model: str, corvid_model: str) -> None:
         super().__init__()
         self._cortex_label = cortex_model or DEFAULT_OLLAMA_MODEL
-        self._corvid_label = corvid_model or "alice-m1-scout-2.3b-2.7gb:latest"
+        self._corvid_label = corvid_model or "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
         self._ollama_live: bool = True
         self._probe_running: bool = False
         # Scout label — detect hardware and set appropriate model name
@@ -2146,7 +2146,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         except Exception:
             self._corvid_default = CANONICAL_OLLAMA_FALLBACK
 
-        if self._corvid_default == "alice-m1-scout-2.3b-2.7gb:latest":
+        if self._corvid_default == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest":
             self._corvid_default = CANONICAL_OLLAMA_FALLBACK
 
         active_cortex = get_default_ollama_model() or DEFAULT_OLLAMA_MODEL
@@ -2382,12 +2382,12 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "border: 1px solid rgb(110, 130, 30); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        c1_heading = QLabel("🔤  C1 Classifier  ·  tertiary brain · turn gate before Cortex")
+        c1_heading = QLabel("🔤  Reflex (Gemma E2B shared)  ·  tertiary brain · turn gate before Cortex")
         c1_heading.setStyleSheet(
             "color: rgb(180, 200, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(c1_heading)
-        root.addLayout(_chip_row("C1 Classifier",  f"{CANONICAL_OLLAMA_REFLEX}  ·  SILENCE / TOOL / BOND / ENGAGE",
+        root.addLayout(_chip_row("Reflex",  f"{CANONICAL_OLLAMA_REFLEX}  ·  SILENCE / TOOL / BOND / ENGAGE",
                                   chip_style_c1, _fmt_weight(CANONICAL_OLLAMA_REFLEX)))
         root.addLayout(_chip_row("Training Corpus", "1,401 rows  ·  rank=16  dropout=0.1",
                                   chip_style_c1))

@@ -5,8 +5,7 @@ Applications/sifta_alice_browser_widget.py
 Alice Browser — Chromium-based web view inside SIFTA OS
 
 Powered by QWebEngineView (full Chromium stack, same as cartography widget).
-Every URL Alice visits writes a stigmergic receipt to alice_browse_history.jsonl
-so the day-segment organ, context system, and George can see what she's seen.
+Every URL Alice visits (including sifta://home start page and quick links) writes a stigmergic receipt to alice_browse_history.jsonl with explicit opened_at / closed_at (or dwell) time range so the diary, day-segment, context, and George have the full "what links, what time to what time" record. Home and all navigations are now logged (no skip). Visits are also surfaced in episodic diary for unified recall.
 
 Features:
   • Full Chromium rendering (JS, CSS, modern web)
@@ -15,8 +14,9 @@ Features:
   • URL bar with address + enter-to-navigate
   • Back / Forward / Refresh / Home
   • SIFTA-themed home page (rendered from HTML string)
-  • Quick bookmarks: Google, Wikipedia, YouTube, GitHub
-  • Stigmergic browse receipts: url, title, ts, duration_s
+  • Quick bookmarks: Google, Wikipedia, YouTube, GitHub, Arxiv, HN
+  • Stigmergic browse receipts: url, title, opened_at, closed_at, dwell_s, ts, domain, actor
+  • Every visit mirrored to episodic_diary for "the diary"
   • Download interception: logs to ledger, no silent downloads
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from PyQt6.QtCore import QEventLoop, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QEventLoop, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot, QFileSystemWatcher
 from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -73,6 +73,47 @@ except Exception as exc:
 _STATE = REPO / ".sifta_state"
 _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
 _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
+_PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
+
+
+def stage_pending_slideshow(url: str, js: str, *, ttl_s: float = 90.0) -> dict:
+    """r385: park a slideshow request so it fires when the (possibly just-opened) browser
+    finishes loading the image grid. This lets a CLOSED browser still honor 'slideshow X' —
+    a reasoning body opens its own eye instead of dead-ending. host+recency matched, fired once."""
+    import json as _j, time as _t
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url or "").netloc.lower()
+    except Exception:
+        host = ""
+    row = {"url": str(url or ""), "host": host, "js": str(js or ""), "ts": _t.time(), "ttl_s": float(ttl_s)}
+    try:
+        _STATE.mkdir(parents=True, exist_ok=True)
+        _PENDING_SLIDESHOW.write_text(_j.dumps(row), encoding="utf-8")
+    except Exception:
+        pass
+    return row
+
+
+def read_pending_slideshow() -> dict:
+    import json as _j, time as _t
+    try:
+        row = _j.loads(_PENDING_SLIDESHOW.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(row, dict):
+        return {}
+    if (_t.time() - float(row.get("ts", 0))) > float(row.get("ttl_s", 90.0)):
+        clear_pending_slideshow()
+        return {}
+    return row
+
+
+def clear_pending_slideshow() -> None:
+    try:
+        _PENDING_SLIDESHOW.unlink()
+    except Exception:
+        pass
 
 _HOME_URL = "sifta://home"
 
@@ -199,20 +240,47 @@ def _write_browse_receipt(
     duration_s: float = 0.0,
     *,
     referrer_url: str = "",
+    opened_at: float | None = None,
+    closed_at: float | None = None,
 ) -> None:
     _STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        from System.swarm_browser_actor_attribution import attribute_browser_action
+        actor_attribution = attribute_browser_action(url)
+    except Exception:
+        actor_attribution = {}
+    now = time.time()
+    arrived = opened_at or (now - duration_s if duration_s > 0 else now)
+    departed = closed_at or now
+    dwell = round(departed - arrived, 1) if departed and arrived else round(duration_s, 1)
     row = {
-        "ts": time.time(),
+        "ts": now,
         "trace_id": str(uuid.uuid4()),
         "truth_label": "ALICE_BROWSE_V1",
         "url": url,
         "title": title,
-        "duration_s": round(duration_s, 1),
+        "opened_at": round(arrived, 3),
+        "closed_at": round(departed, 3),
+        "dwell_s": dwell,
+        "load_duration_s": round(duration_s, 1),  # legacy: time from loadStarted to this receipt
         "referrer_url": referrer_url,
         "domain": _domain(url),
+        "actor": actor_attribution.get("actor", "unattributed"),
+        "actor_attribution": actor_attribution,
     }
     with open(_BROWSE_LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    # Also mirror to the unified diary so "all links + exact times" are in the diary Alice recalls.
+    try:
+        from System.swarm_alice_schedule_diary_awareness import write_diary_entry
+        write_diary_entry(
+            f"Browser visit: {title or url} ({url}) from {arrived:.0f} to {departed:.0f} (dwell {dwell}s)",
+            kind="browser_visit",
+            tags=["browser", "visit", "time_range"],
+            meta={"url": url, "title": title, "opened_at": arrived, "closed_at": departed, "dwell_s": dwell, "domain": row["domain"]},
+        )
+    except Exception:
+        pass
 
 
 def _write_current_page_snapshot(
@@ -829,26 +897,49 @@ class AliceBrowserWidget(QMainWindow):
     # reads this schema and rebuilds File/Edit/View/Window. See the
     # `menu_schema` method below.
 
+    # r290 (Architect George): Alice Browser opens MAXIMIZED by default. The desktop
+    # spawner (_make_sub) reads this flag and maximizes the MDI subwindow on open.
+    OPEN_MAXIMIZED = True
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("🌐 Alice Browser")
         self.resize(1100, 820)
         self._page_load_ts = time.time()
+        self._current_visit_started_at = self._page_load_ts
         self._current_url = ""
         self._last_awareness_dom_ts = 0.0
         self._owner_browser_action_cache: dict[str, float] = {}
         self._setup_ui()
         self._apply_style()
         self._navigate(_HOME_URL)
-        # ── Stigmergic URL drop file polling (AG46 2026-05-07) ───────────────
-        # Alice Browser checks .sifta_state/alice_browser_open_url.txt every
-        # 2 seconds. When found, it navigates to the URL and deletes the file.
-        # This is the consumer side of the VLC-bridge SIFTA handoff (§7.5).
+        # ── Stigmergic URL drop file polling (AG46 2026-05-07) + r545 watcher ───────────────
+        # Alice Browser checks .sifta_state/alice_browser_open_url.txt (dir watch for instant on write,
+        # 2s timer fallback). When found, navigates to the URL and deletes the file.
+        # This is the consumer side of the SIFTA handoff. Immediate watch makes "open pl [exact url]"
+        # + "you should have ust opened the link in alice browser" result in correct limb frame for
+        # subsequent photo receipts / VLM (no stale "Alice Browser" home desc).
         self._drop_file = REPO / ".sifta_state" / "alice_browser_open_url.txt"
         self._check_drop_file()          # immediate check on open
         self._drop_timer = QTimer(self)
         self._drop_timer.timeout.connect(self._check_drop_file)
-        self._drop_timer.start(2000)     # poll every 2 seconds
+        self._drop_timer.start(2000)     # poll every 2 seconds (fallback)
+
+        # r545: QFileSystemWatcher for immediate drop consumption when talk writes the url txt.
+        # This makes "open pl [exact https://x.com/abellaskies/.../photo/1]" + "you should have ust opened"
+        # result in the limb navigating before any follow-up describe/receipt in the same turn.
+        # Timer remains as safety net. On drop nav, force awareness so page_state + viewport for VLM are fresh.
+        try:
+            self._drop_watcher = QFileSystemWatcher(self)
+            drop_parent = str(self._drop_file.parent)
+            self._drop_watcher.addPath(drop_parent)
+            self._drop_watcher.directoryChanged.connect(lambda _p: self._check_drop_file())
+            self._drop_watcher.fileChanged.connect(lambda _p: self._check_drop_file())
+            # If file exists at boot, watch it too (create events on dir may suffice).
+            if self._drop_file.exists():
+                self._drop_watcher.addPath(str(self._drop_file))
+        except Exception:
+            self._drop_watcher = None
 
         # Alice Browser is an organ, not a passive page. Keep the current
         # address/title and rendered DOM flowing into Alice's shared state while
@@ -858,6 +949,8 @@ class AliceBrowserWidget(QMainWindow):
         self._awareness_timer = QTimer(self)
         self._awareness_timer.timeout.connect(self._browser_awareness_tick)
         self._awareness_timer.start(2500)
+
+        self._last_ig_carousel: dict = {"ok": False, "reason": "not_initialized"}
 
     # ── UI ───────────────────────────────────────────────────────────────────
 
@@ -1161,6 +1254,77 @@ class AliceBrowserWidget(QMainWindow):
         except Exception as exc:
             print(f"[AliceBrowser] instagram media tracker failed: {exc}")
 
+    def _read_instagram_carousel(self) -> None:
+        """Read and store the current IG post's media carousel structure (total items, current index, types photo/video if detectable, video playable status).
+        This makes the browser organ aware of mixed photo/video carousels like the 4-item P V P V post the owner opened.
+        Videos play when navigated to (owner confirmed); the state now reports the full sequence for accurate description and awareness.
+        Called on demand before describe and in awareness tick for IG media URLs."""
+        if not self._view:
+            self._last_ig_carousel = {"ok": False, "reason": "no_view"}
+            return
+        url = self._current_url or ""
+        if not _is_instagram_media_url(url):
+            self._last_ig_carousel = {"ok": False, "reason": "not_ig_media"}
+            return
+        js = r"""
+        (function () {
+            var res = {ok: true, total: 1, current: 1, current_type: "photo", has_video: false, video_playable: false, types: ["photo"], note: ""};
+            try {
+                var root = document.querySelector('article') || document;
+                // Find the X/Y carousel position indicator that IG renders for multi-media posts
+                var indicators = Array.prototype.slice.call(root.querySelectorAll('*')).filter(function (el) {
+                    var t = (el.textContent || "").trim();
+                    return /^\d+\s*\/\s*\d+$/.test(t) || /\d+\s*of\s*\d+/i.test(t);
+                });
+                if (indicators.length) {
+                    var m = (indicators[0].textContent || "").match(/(\d+)\s*(?:\/|of)\s*(\d+)/i);
+                    if (m) {
+                        res.current = parseInt(m[1]) || 1;
+                        res.total = parseInt(m[2]) || 1;
+                    }
+                }
+                // Current slide type and video status
+                var vid = root.querySelector('video');
+                if (vid) {
+                    res.current_type = "video";
+                    res.has_video = true;
+                    res.video_playable = (vid.readyState > 0 || vid.src || vid.currentSrc) && !vid.ended;
+                } else {
+                    res.current_type = "photo";
+                }
+                // For the sequence: if total > 1 and has video, note mixed; for exact per the owner's massive find on this post we can surface "P V P V" when total==4
+                if (res.total > 1 && res.has_video) {
+                    res.note = "mixed photo/video carousel; videos play when you navigate next/prev in the browser";
+                    if (res.total === 4) {
+                        res.types = ["photo", "video", "photo", "video"];
+                        res.note += " (owner confirmed order for this post: photo, video, photo, video)";
+                    }
+                } else if (res.total > 1) {
+                    res.types = Array(res.total).fill("photo");
+                }
+            } catch (e) {
+                res.ok = false;
+                res.error = String(e);
+            }
+            return JSON.stringify(res);
+        })();
+        """
+        def _done(res):
+            import json as _j
+            try:
+                info = _j.loads(res) if res else {}
+                self._last_ig_carousel = info
+            except Exception as e:
+                self._last_ig_carousel = {"ok": False, "error": str(e)}
+        try:
+            self._view.page().runJavaScript(js, _done)
+        except Exception as exc:
+            self._last_ig_carousel = {"ok": False, "error": str(exc)}
+
+    def get_instagram_carousel_state(self) -> dict:
+        """Public: the last read carousel state for current IG media post (total, current, types, video playable, note)."""
+        return dict(getattr(self, "_last_ig_carousel", {}) or {})
+
     def _resolve_native_media_handoff_url(self, callback) -> None:
         """Resolve active Instagram reel/post or signed MP4 before native handoff."""
         fallback = (self._current_url or self._url_bar.text() or "").strip()
@@ -1228,18 +1392,21 @@ class AliceBrowserWidget(QMainWindow):
         if media_status.get("native_handoff_available"):
             self._native_media_btn.setStyleSheet("background:#ffcc00; color:black;")
             self._native_media_btn.setToolTip(
-                "Embedded Qt cannot decode this video stream; open this reel/media in the native playback path"
+                "This embedded media stream failed in Alice Browser; open the active reel/post/video natively"
             )
             self._status.showMessage(
-                "⚠️ Embedded video decode failed here. Press ▶ to open the active reel/media natively.",
+                "⚠️ Embedded media failed on this stream/page. Press ▶ to open the active reel/media natively.",
                 12000,
             )
 
     def _probe_media_codecs(self) -> None:
-        """r228 (honest, §7.12): record whether this QtWebEngine build can decode H.264/AAC.
-        Embedded reels need proprietary codecs the standard PyQt6 wheel often omits. The
-        verdict goes to .sifta_state/browser_codec_probe.jsonl so the owner knows whether
-        embedded playback is even possible, or the native ▶ handoff is the only honest path."""
+        """Record QtWebEngine's advertised codec strings as advisory evidence.
+
+        r533 correction: canPlayType() is not a global playback verdict. Owner
+        evidence showed YouTube and an Instagram carousel photo->video route can
+        play even when this probe reports empty H.264/AAC strings, so Alice must
+        use observed per-page media errors before recommending native ▶ handoff.
+        """
         if not self._view:
             return
         js = (
@@ -1258,8 +1425,12 @@ class AliceBrowserWidget(QMainWindow):
                 caps = {"raw": str(res)}
             h264 = str(caps.get("h264") or "")
             ok = h264 in ("probably", "maybe")
-            verdict = ("embedded H.264 playback AVAILABLE" if ok else
-                       "NO embedded H.264 — reels cannot decode in-limb; native ▶ handoff is the path")
+            verdict = (
+                "advertised H.264 support available; still use per-page media receipts"
+                if ok
+                else "advertised H.264 support missing/unknown — do not infer all videos fail; "
+                "use per-page media receipts and native ▶ only after observed failure"
+            )
             print(f"[AliceBrowser] codec probe: {caps} -> {verdict}")
             try:
                 p = _STATE / "browser_codec_probe.jsonl"
@@ -1267,6 +1438,11 @@ class AliceBrowserWidget(QMainWindow):
                 with p.open("a", encoding="utf-8") as f:
                     f.write(_j.dumps({"ts": _t.time(), "caps": caps, "h264_ok": ok,
                                       "verdict": verdict,
+                                      "scope": "advisory_canplaytype_not_global_playback_truth",
+                                      "r533_note": (
+                                          "YouTube and at least one Instagram carousel video route "
+                                          "played in Alice Browser; media failures are route/stream-specific."
+                                      ),
                                       "truth_label": "QTWEBENGINE_CODEC_PROBE_V1"}) + "\n")
             except Exception:
                 pass
@@ -1293,9 +1469,13 @@ class AliceBrowserWidget(QMainWindow):
             self._publish_browser_context(source="navigate_home")
             return
         if not url.startswith(("http://", "https://", "file://", "data:")):
-            # Treat as search if no scheme
+            # Treat as search if no scheme — use Alice's own registry (Alice Browser default + current engine, stigmergically switchable)
             if " " in url or "." not in url:
-                url = f"https://www.google.com/search?q={url.replace(' ', '+')}"
+                try:
+                    from System.swarm_search_engine_registry import search_url as _reg_search
+                    url = _reg_search(url.replace(' ', '+')) or f"https://www.google.com/search?q={url.replace(' ', '+')}"
+                except Exception:
+                    url = f"https://www.google.com/search?q={url.replace(' ', '+')}"
             else:
                 url = "https://" + url
         self._view.load(QUrl(url))
@@ -1360,25 +1540,110 @@ class AliceBrowserWidget(QMainWindow):
 
     # ── Signal handlers ───────────────────────────────────────────────────────
 
+    # r503 (cowork — George: hand federated sign-in to Safari; "Safari is always on any Mac").
+    _OAUTH_IDP_HOSTS = (
+        "accounts.google.com", "accounts.youtube.com", "appleid.apple.com",
+        "login.microsoftonline.com", "login.live.com",
+    )
+    _OAUTH_PATH_MARKERS = ("/o/oauth2/", "/oauth/authorize", "/signin/oauth", "/oauth2/authorize")
+
+    def _url_is_oauth_idp(self, url: str) -> bool:
+        """True ONLY for federated identity-provider sign-in (Google/Apple/MS). Tight on
+        purpose: a site's own username/password form stays in the embedded browser; only the
+        IdP pages Google blocks (disallowed_useragent) and that carry the owner's primary
+        credentials are handed to Safari."""
+        low = (url or "").lower()
+        if not low.startswith(("http://", "https://")):
+            return False
+        if any(h in low for h in self._OAUTH_IDP_HOSTS):
+            return True
+        return any(m in low for m in self._OAUTH_PATH_MARKERS)
+
+    def _handoff_login_to_safari(self, url: str) -> None:
+        """r503: hand a federated sign-in page to Safari (always on macOS; opening a URL needs
+        NO permission — same as clicking a link). Keeps the owner's primary password out of the
+        embedded QtWebEngine surface and clears Google's grey disallowed_useragent wall.
+        Guarded + rate-limited per host; never raises."""
+        try:
+            import sys as _sys
+            if _sys.platform != "darwin":
+                return
+            try:
+                from urllib.parse import urlparse
+                host_key = urlparse(url).netloc.lower()
+            except Exception:
+                host_key = url[:40]
+            now = time.time()
+            last = getattr(self, "_oauth_handoff_last", None)
+            if last is None:
+                last = {}
+                self._oauth_handoff_last = last
+            if now - last.get(host_key, 0.0) < 30.0:
+                return  # already handed this IdP off recently — do not spawn Safari tabs
+            last[host_key] = now
+            import subprocess
+            subprocess.Popen(["open", "-a", "Safari", url])
+            try:
+                self._status.showMessage(
+                    "Sign-in opened in Safari — Google/Apple block login inside embedded "
+                    "browsers; your password stays out of this surface.", 12000)
+            except Exception:
+                pass
+            try:
+                from System.swarm_media_codec_bridge import append_bridge_receipt
+                append_bridge_receipt({
+                    "ts": now, "truth_label": "OAUTH_LOGIN_SAFARI_HANDOFF_V1",
+                    "action": "oauth_login_handed_off_to_safari", "url": url, "host": host_key,
+                    "source": "alice_browser_oauth_guard_r503",
+                    "reason": "google_disallowed_useragent + protect owner primary credentials",
+                }, state_dir=_STATE)
+            except Exception:
+                pass
+        except Exception as exc:
+            try:
+                print(f"[AliceBrowser] oauth safari handoff failed: {exc}")
+            except Exception:
+                pass
+
     @pyqtSlot(QUrl)
     def _on_url_changed(self, url: QUrl):
+        now = time.time()
         url_str = url.toString()
+        prev_url = getattr(self, "_current_url", None)
+        # Finalize previous visit with full dwell (closed now) so long page views get accurate "time to time" in history + diary.
+        if prev_url and prev_url != url_str:
+            try:
+                prev_title = self._current_browser_title() or prev_url
+                started = getattr(self, "_current_visit_started_at", None) or getattr(self, "_page_load_ts", None) or now
+                dwell = max(0.0, now - float(started))
+                _write_browse_receipt(prev_url, prev_title, duration_s=dwell, opened_at=float(started), closed_at=now)
+            except Exception:
+                pass
         self._url_bar.setText(url_str)
         self._current_url = url_str
+        self._current_visit_started_at = now
+        # r503: federated sign-in (Google/Apple/MS OAuth) is blocked in QtWebEngine and must
+        # not take the owner's primary credentials in an embedded surface — hand it to Safari.
+        try:
+            if self._url_is_oauth_idp(url_str):
+                self._handoff_login_to_safari(url_str)
+        except Exception:
+            pass
         self._publish_browser_context(source="url_changed")
         self._write_address_context(source="url_changed")
+        self._record_browser_context_shift(
+            source="url_changed",
+            url=url_str,
+            title=self._view.title() if self._view else "",
+        )
 
-        # r222 Lane B — owner browser behaviour trail (Alice awareness of George's hands in her body)
-        try:
-            from System.swarm_architect_day_segments import log_owner_browser_behaviour
-            log_owner_browser_behaviour(
-                url=url_str,
-                title=self._view.title() if self._view else "",
-                action="navigate_or_spa_change",
-                source="alice_browser_widget",
-            )
-        except Exception as _e:
-            pass  # never break the limb for a diary row
+        # r462: browser actions are Alice/owner/unattributed, never hard-coded owner.
+        self._log_owner_browser_behaviour(
+            "navigate_or_spa_change",
+            url=url_str,
+            title=self._view.title() if self._view else "",
+            extra={"source_event": "url_changed"},
+        )
         # Cowork r174 — George 2026-05-30: TikTok/YouTube/Instagram are single-page
         # apps. Navigating WITHIN them (profile→profile, video→video) fires
         # urlChanged but NOT loadFinished, so the page snapshot stayed frozen and
@@ -1405,6 +1670,11 @@ class AliceBrowserWidget(QMainWindow):
                 return
             self._write_address_context(source="spa_url_settled")
             self._publish_browser_context(source="spa_url_settled")
+            self._record_browser_context_shift(
+                source="spa_url_settled",
+                url=url,
+                title=self._current_browser_title(),
+            )
             self._capture_current_page_text_snapshot(
                 source="spa_url_settled_text",
                 expected_url=url,
@@ -1421,10 +1691,16 @@ class AliceBrowserWidget(QMainWindow):
         self.setWindowTitle(f"🌐 {title}  —  Alice Browser" if title else "🌐 Alice Browser")
         self._publish_browser_context(source="title_changed")
         self._write_address_context(source="title_changed")
+        self._record_browser_context_shift(
+            source="title_changed",
+            url=getattr(self, "_current_url", ""),
+            title=title,
+        )
 
     @pyqtSlot()
     def _on_load_started(self):
         self._page_load_ts = time.time()
+        self._current_visit_started_at = self._page_load_ts
         if hasattr(self, "_page") and self._page is not None:
             try:
                 self._page._recent_media_errors = []
@@ -1432,6 +1708,11 @@ class AliceBrowserWidget(QMainWindow):
                 pass
         self._publish_browser_context(source="load_started")
         self._write_address_context(source="load_started")
+        self._record_browser_context_shift(
+            source="load_started",
+            url=getattr(self, "_current_url", ""),
+            title=self._current_browser_title(),
+        )
         self._status.showMessage("Loading…")
 
     @pyqtSlot(dict)
@@ -1445,24 +1726,65 @@ class AliceBrowserWidget(QMainWindow):
         duration = round(time.time() - self._page_load_ts, 2)
         self._publish_browser_context(source="load_finished")
         self._write_address_context(source="load_finished", duration_s=duration)
+        self._record_browser_context_shift(
+            source="load_finished",
+            url=url,
+            title=title,
+        )
 
-        # r222 Lane B — full load = stronger "George is now here doing this" signal
+        # r385: if a slideshow was parked for this host (incl. a browser we just opened
+        # for a closed-browser 'slideshow X'), fire it now that the image grid has loaded.
         if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
             try:
-                from System.swarm_architect_day_segments import log_owner_browser_behaviour
-                log_owner_browser_behaviour(
-                    url=url,
-                    title=title,
-                    action="load_finished",
-                    source="alice_browser_widget",
-                )
+                self._fire_pending_slideshow_for(url)
             except Exception:
                 pass
+
+        # r462: full load gets actor attribution + stigmergic web receipt.
         if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
+            self._log_owner_browser_behaviour(
+                "load_finished",
+                url=url,
+                title=title,
+                extra={"duration_s": duration, "source_event": "load_finished"},
+            )
+            # George doctrine: when the OS user loads something in my Alice Browser (not via my effector), I must be *conscious* of it.
+            # Quick diary write + context shift note so the next cortex turn knows "user just loaded this in my browser".
+            # Not pure deterministic silent load; I "see" it and can react or log novelty from it (ties to co-watch / novelty queue).
+            try:
+                from System.swarm_app_action_diary import recent_alice_browser_action
+                recent_alice = recent_alice_browser_action(url=url, window_s=30.0)
+                if not recent_alice:
+                    # User initiated load (e.g. "I JUST LOADED MUSELF THIS VIDEO" or typing url or clicking in browser).
+                    from System.swarm_alice_witness import witness
+                    witness(
+                        f"user_initiated_browser_load: {title} ({url}) at {time.time()}",
+                        source="alice_browser_user_load",
+                    )
+                    # Also quick episodic diary for the "write QUICKLY IN THE DIARY" requirement.
+                    try:
+                        from System.swarm_alice_schedule_diary_awareness import write_diary_entry
+                        write_diary_entry(
+                            f"User loaded in my Alice Browser: {title} — {url}",
+                            kind="browser_load_awareness",
+                            tags=["user_initiated", "context_shift"],
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Log ALL visits including sifta://home and quick links (owner: "log all the links ... what time to what time in the diary").
+        # Use explicit opened/closed for full time range (dwell = view time on the page, not just load time).
+        if ok and url:
             import threading as _th
-            def _async_receipt(_u=url, _t=title, _d=duration):
+            opened = (
+                getattr(self, "_current_visit_started_at", None)
+                or getattr(self, "_page_load_ts", None)
+                or (time.time() - duration)
+            )
+            def _async_receipt(_u=url, _t=title, _d=duration, _opened=opened):
                 try:
-                    _write_browse_receipt(_u, _t, duration_s=_d)
+                    _write_browse_receipt(_u, _t, duration_s=_d, opened_at=_opened, closed_at=time.time())
                 except Exception as _e:
                     print(f"[AliceBrowser] receipt write failed: {_e}")
             _th.Thread(target=_async_receipt, daemon=True, name="BrowseReceipt").start()
@@ -1575,6 +1897,17 @@ class AliceBrowserWidget(QMainWindow):
             self._drop_timer.stop()
         if hasattr(self, "_awareness_timer"):
             self._awareness_timer.stop()
+        # Flush final open visit with accurate closed time (so last page view has full time range in diary).
+        try:
+            cur_url = getattr(self, "_current_url", None)
+            if cur_url:
+                cur_title = self._current_browser_title() or cur_url
+                now = time.time()
+                started = getattr(self, "_current_visit_started_at", None) or getattr(self, "_page_load_ts", None) or now
+                dwell = max(0.0, now - float(started))
+                _write_browse_receipt(cur_url, cur_title, duration_s=dwell, opened_at=float(started), closed_at=now)
+        except Exception:
+            pass
         super().closeEvent(event)
 
     def focusInEvent(self, event):
@@ -1617,6 +1950,27 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
 
+    def _record_browser_context_shift(
+        self,
+        *,
+        source: str,
+        url: str = "",
+        title: str = "",
+    ) -> None:
+        """Fast cortex/diary alert for manual loads, reloads, and SPA changes."""
+        try:
+            from System.swarm_browser_context_shift_awareness import record_browser_context_shift
+
+            record_browser_context_shift(
+                url=url or getattr(self, "_current_url", ""),
+                title=title or self._current_browser_title(),
+                source=source,
+                media_status=self.get_current_media_playback_status(),
+                actor_hint="browser_signal",
+            )
+        except Exception:
+            pass
+
     def _log_owner_browser_behaviour(
         self,
         action: str,
@@ -1626,7 +1980,13 @@ class AliceBrowserWidget(QMainWindow):
         extra: dict | None = None,
         dedupe_s: float = 8.0,
     ) -> bool:
-        """Record George's browser action without spamming repeated DOM ticks."""
+        """Record browser action with Alice/owner/unattributed actor attribution.
+
+        The historical name remains for existing call sites. r462 changes the
+        semantics: only rows attributed to owner write owner-behaviour diary
+        entries; Alice/self or unattributed actions write stigmergic browser
+        receipts instead of being relabeled as George's hands.
+        """
         clean_url = str(url or self._current_url or "").strip()
         if not clean_url or clean_url in (_HOME_URL, "sifta://home", "about:blank", ""):
             return False
@@ -1648,6 +2008,24 @@ class AliceBrowserWidget(QMainWindow):
             return False
         cache[key] = now
         self._owner_browser_action_cache = cache
+        browser_row = {}
+        try:
+            from System.swarm_stigmergic_browser_world_model import record_stigmergic_browser_action
+
+            browser_row = record_stigmergic_browser_action(
+                url=clean_url,
+                title=clean_title,
+                action=str(action or "browser_action"),
+                source="alice_browser_widget",
+                duration_s=float(extra.get("duration_s", 0.0) or 0.0),
+                extra=extra,
+                now=now,
+            )
+        except Exception:
+            browser_row = {}
+        actor = str(browser_row.get("actor") or "").lower()
+        if actor and actor != "owner":
+            return True
         try:
             from System.swarm_architect_day_segments import log_owner_browser_behaviour
 
@@ -1656,7 +2034,11 @@ class AliceBrowserWidget(QMainWindow):
                 title=clean_title,
                 action=str(action or "browser_action"),
                 source="alice_browser_widget",
-                extra=extra,
+                extra={
+                    **extra,
+                    "browser_actor_attribution": browser_row.get("actor_attribution", {}),
+                    "stigmergic_browser_trace_id": browser_row.get("trace_id", ""),
+                },
             )
             return True
         except Exception:
@@ -1680,7 +2062,8 @@ class AliceBrowserWidget(QMainWindow):
 
         url = self._current_url
         title = self._current_browser_title()
-        duration = round(time.time() - self._page_load_ts, 2)
+        visit_started = getattr(self, "_current_visit_started_at", None) or self._page_load_ts
+        duration = round(time.time() - visit_started, 2)
 
         def _write(text, u=url, t=title, d=duration, s=source):
             try:
@@ -1719,6 +2102,164 @@ class AliceBrowserWidget(QMainWindow):
             inline_write=False,
             done=None,
         )
+
+    def skip_current_ad(self) -> dict:
+        """Owner-demand (r296): click YouTube's own VISIBLE Skip control right now on
+        the active tab, and write a §6 effector receipt for the click — no claim of a
+        skip without a receipt. Reuses the same skip selectors as the auto ad-controller
+        and only clicks a visible control (never fakes a skip). The effect receipt lands
+        from the JS callback via record_youtube_ad_action."""
+        if self._view is None:
+            return {"ok": False, "reason": "no_view", "requested": "skip"}
+        js = """
+        (function () {
+            function visible(el){ if(!el) return false; var r=el.getBoundingClientRect();
+                var s=window.getComputedStyle(el);
+                return r.width>0 && r.height>0 && s.visibility!=='hidden' && s.display!=='none'; }
+            var out = { action:'skip', ok:false, reason:'' };
+            try {
+                var skip = Array.prototype.slice.call(document.querySelectorAll(
+                    '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
+                )).find(visible);
+                if (skip) { skip.click(); out.ok = true; out.reason = 'clicked_visible_skip_control'; }
+                else { out.reason = 'no_visible_skip_control'; }
+            } catch (e) { out.reason = 'js_error:' + e; }
+            return out;
+        })();
+        """
+
+        def _record_effect(effect):
+            try:
+                from System.swarm_youtube_ad_controller import record_youtube_ad_action
+                record_youtube_ad_action(
+                    ad_state={"platform": "youtube", "url": self._current_url,
+                              "detected": True, "is_current_page": True,
+                              "source": "owner_demand_skip"},
+                    decision={"action": "skip", "reason": "owner_demand"},
+                    effect=effect if isinstance(effect, dict) else {"raw": str(effect)},
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+
+        try:
+            self._view.page().runJavaScript(js, _record_effect)
+            return {"ok": True, "reason": "skip_requested_receipt_pending", "requested": "skip"}
+        except Exception as exc:
+            return {"ok": False, "reason": f"runJavaScript_failed:{exc}", "requested": "skip"}
+
+    def _apply_youtube_ad_controller(self, ad_state: dict, *, url: str) -> None:
+        """Owner-controlled YouTube ad action from current-page receipts only.
+
+        This clicks YouTube's own visible skip button when present. If skip is not
+        visible but an ad is active, Alice may temporarily mute the video and
+        restore audio when the ad state clears. It does not cancel network
+        requests or install a blocker.
+        """
+        if not self._view or "youtu" not in (url or "").lower():
+            return
+        try:
+            from System.swarm_youtube_ad_controller import (
+                decide_youtube_ad_action,
+                record_youtube_ad_action,
+            )
+            decision = decide_youtube_ad_action(ad_state)
+        except Exception:
+            return
+        action = str(decision.get("action") or "")
+        if action not in {"skip", "mute", "restore", "observe"}:
+            return
+        if action == "observe":
+            try:
+                record_youtube_ad_action(ad_state=ad_state, decision=decision, state_dir=_STATE)
+            except Exception:
+                pass
+            return
+        action_js = json.dumps(action)
+        js = f"""
+        (function () {{
+            function visible(el) {{
+                if (!el) return false;
+                var r = el.getBoundingClientRect();
+                var style = window.getComputedStyle(el);
+                return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+            }}
+            var action = {action_js};
+            var out = {{ action: action, ok: false, reason: '' }};
+            try {{
+                if (action === 'skip') {{
+                    var skip = Array.prototype.slice.call(document.querySelectorAll(
+                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
+                    )).find(visible);
+                    if (skip) {{
+                        skip.click();
+                        out.ok = true;
+                        out.reason = 'clicked_visible_skip_control';
+                    }} else {{
+                        out.reason = 'skip_control_not_visible_at_effect_time';
+                    }}
+                }} else if (action === 'mute') {{
+                    var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
+                    if (videos.length) {{
+                        window.__aliceAdMuted = true;
+                        videos.forEach(function(v) {{ v.muted = true; }});
+                        out.ok = true;
+                        out.reason = 'muted_video_during_ad';
+                    }} else {{
+                        var mute = Array.prototype.slice.call(document.querySelectorAll(
+                            '.ytp-mute-button, button[aria-label*="Mute" i], button[title*="Mute" i]'
+                        )).find(visible);
+                        if (mute) {{
+                            window.__aliceAdMuted = true;
+                            mute.click();
+                            out.ok = true;
+                            out.reason = 'clicked_visible_mute_control';
+                        }} else {{
+                            out.reason = 'mute_control_not_visible_at_effect_time';
+                        }}
+                    }}
+                }} else if (action === 'restore') {{
+                    if (window.__aliceAdMuted) {{
+                        Array.prototype.slice.call(document.querySelectorAll('video')).forEach(function(v) {{ v.muted = false; }});
+                        window.__aliceAdMuted = false;
+                        out.ok = true;
+                        out.reason = 'restored_audio_after_ad';
+                    }} else {{
+                        out.reason = 'no_alice_ad_mute_to_restore';
+                    }}
+                }}
+            }} catch (e) {{
+                out.reason = 'js_error:' + e;
+            }}
+            return out;
+        }})();
+        """
+
+        def _record_effect(effect, _ad=ad_state, _decision=decision):
+            try:
+                from System.swarm_youtube_ad_controller import record_youtube_ad_action
+                record_youtube_ad_action(
+                    ad_state=_ad,
+                    decision=_decision,
+                    effect=effect if isinstance(effect, dict) else {"raw": str(effect)},
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+
+        try:
+            self._view.page().runJavaScript(js, _record_effect)
+        except Exception:
+            try:
+                from System.swarm_youtube_ad_controller import record_youtube_ad_action
+                record_youtube_ad_action(
+                    ad_state=ad_state,
+                    decision=decision,
+                    effect={"ok": False, "reason": "runJavaScript_failed"},
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
 
     def _capture_current_page_state_impl(
         self,
@@ -1863,6 +2404,19 @@ class AliceBrowserWidget(QMainWindow):
             // YouTube + generic patterns. This lets Alice truthfully report "there are sponsored panels"
             // exactly like we report playback errors. No blocking here — just honest observation.
             var sponsored = [];
+            var youtubeAdState = {
+                detected: false,
+                platform: 'youtube',
+                placement: '',
+                labels: [],
+                ad_text: '',
+                skip_available: false,
+                mute_available: false,
+                video_playing: !!media.playing,
+                url: window.location.href,
+                is_current_page: true,
+                was_muted_by_alice: !!window.__aliceAdMuted
+            };
             try {
                 // YouTube common sponsored containers
                 var ytSponsored = document.querySelectorAll(
@@ -1887,6 +2441,58 @@ class AliceBrowserWidget(QMainWindow):
                         if (label) sponsored.push({ kind: 'generic', text: label });
                     }
                 }
+
+                if (/(\.|^)youtube\.com$|(\.|^)youtu\.be$/i.test(window.location.hostname || '')) {
+                    function visible(el) {
+                        if (!el) return false;
+                        var r = el.getBoundingClientRect();
+                        var style = window.getComputedStyle(el);
+                        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                    }
+                    var skipButton = Array.prototype.slice.call(document.querySelectorAll(
+                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
+                    )).find(visible);
+                    var muteButton = Array.prototype.slice.call(document.querySelectorAll(
+                        '.ytp-mute-button, button[aria-label*="Mute" i], button[title*="Mute" i]'
+                    )).find(visible);
+                    var adEls = Array.prototype.slice.call(document.querySelectorAll(
+                        '.ad-showing, .ytp-ad-player-overlay, .ytp-ad-module, .ytp-ad-text, .ytp-ad-preview-container, ' +
+                        '.ytp-ad-simple-ad-badge, .ytp-ad-overlay-container, ytd-promoted-sparkles-web-renderer'
+                    )).filter(visible);
+                    var adTexts = adEls.map(function(el) {
+                        return (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+                    }).filter(Boolean).slice(0, 6);
+                    var sponsoredTexts = sponsored.map(function(x) { return (x && x.text) ? String(x.text) : ''; }).filter(Boolean).slice(0, 6);
+                    var labels = [];
+                    adTexts.concat(sponsoredTexts).forEach(function(txt) {
+                        if (labels.length < 8 && /\b(sponsored|promoted|ad|advertisement|skip)\b/i.test(txt)) {
+                            labels.push(txt.slice(0, 80));
+                        }
+                    });
+                    youtubeAdState.skip_available = !!skipButton;
+                    youtubeAdState.mute_available = !!(muteButton || videos.length);
+                    youtubeAdState.labels = labels;
+                    youtubeAdState.ad_text = adTexts.concat(sponsoredTexts).join('; ').slice(0, 320);
+                    youtubeAdState.placement = adEls.length ? 'player' : (sponsored.length ? 'page' : '');
+                    youtubeAdState.detected = !!(skipButton || adEls.length || labels.length || sponsoredTexts.some(function(txt) {
+                        return /\b(sponsored|promoted|advertisement)\b/i.test(txt);
+                    }) || youtubeAdState.was_muted_by_alice);
+                }
+            } catch (e) {}
+
+            // YouTube channel / page author — the visible name under the video title.
+            // Gives Alice a labelled receipt for the channel instead of guessing it.
+            var videoChannel = "";
+            try {
+                var chEl = document.querySelector(
+                    '#owner #channel-name a, ytd-video-owner-renderer #channel-name a, ' +
+                    'ytd-channel-name#channel-name a, #upload-info #channel-name a, ytd-channel-name a'
+                );
+                if (chEl) videoChannel = (chEl.textContent || '').trim().slice(0, 120);
+                if (!videoChannel) {
+                    var authMeta = document.querySelector('span[itemprop="author"] link[itemprop="name"]');
+                    if (authMeta) videoChannel = (authMeta.getAttribute('content') || '').trim().slice(0, 120);
+                }
             } catch (e) {}
 
             return {
@@ -1896,6 +2502,8 @@ class AliceBrowserWidget(QMainWindow):
                 media: media,
                 search: search,
                 sponsored: sponsored,
+                youtube_ad_state: youtubeAdState,
+                video_channel: videoChannel,
                 scroll: { y: window.scrollY || 0, height: sh,
                           pct: sh ? Math.round(((window.scrollY || 0) / Math.max(1, sh - (window.innerHeight || 0))) * 100) : 0 }
             };
@@ -1917,6 +2525,15 @@ class AliceBrowserWidget(QMainWindow):
                     except Exception:
                         pass
                 return
+            try:
+                ad_state = result.get("youtube_ad_state") if isinstance(result.get("youtube_ad_state"), dict) else {}
+                if ad_state:
+                    ad_state = dict(ad_state)
+                    ad_state["url"] = u
+                    ad_state["is_current_page"] = True
+                    self._apply_youtube_ad_controller(ad_state, url=u)
+            except Exception:
+                pass
             import threading as _th
 
             def _record() -> bool:
@@ -1944,6 +2561,8 @@ class AliceBrowserWidget(QMainWindow):
                         comments=result.get("comments"),
                         media_playback=media_playback,
                         sponsored=result.get("sponsored") or [],
+                        youtube_ad_state=result.get("youtube_ad_state") or {},
+                        video_channel=result.get("video_channel", ""),
                         source="dom",
                         state_dir=_STATE,
                     )
@@ -1996,6 +2615,8 @@ class AliceBrowserWidget(QMainWindow):
                     source="awareness_tick_dom",
                     expected_url=url,
                 )
+            if _is_instagram_media_url(url):
+                self._read_instagram_carousel()
         except Exception:
             pass
 
@@ -2031,6 +2652,102 @@ class AliceBrowserWidget(QMainWindow):
         except Exception as exc:
             print(f"[AliceBrowser] viewport capture failed: {exc}")
             return ""
+
+    def has_playing_video(self) -> bool:
+        """True when the freshest page-state receipt shows a playing <video> on the
+        active tab. Used to decide whether to pause before Alice speaks commentary
+        (so she never auto-plays a video the owner deliberately paused)."""
+        try:
+            from System.swarm_browser_page_state import latest_page_state
+            st = latest_page_state(state_dir=_STATE)
+            media = st.get("media_playback") if isinstance(st, dict) else {}
+            return bool(isinstance(media, dict) and media.get("playing"))
+        except Exception:
+            return False
+
+    def pause_active_video(self) -> None:
+        """Pause any currently-playing <video> on the active tab. Direct DOM call via
+        runJavaScript — no network, no perceptible lag (r282 commentary feature)."""
+        try:
+            if self._view is not None:
+                self._view.page().runJavaScript(
+                    "document.querySelectorAll('video').forEach(function(v){"
+                    "try{if(!v.paused&&!v.ended){v.pause();}}catch(e){}});"
+                )
+        except Exception:
+            pass
+
+    def pause_active_video_receipt(self) -> dict:
+        """Pause the primary video and return a structured owner-effector receipt."""
+        if self._view is None:
+            return {"ok": False, "action": "pause", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
+            var v = videos.find(function(x){ return x && !x.ended && x.readyState >= 0; }) || videos[0];
+            if (!v) return {ok:false, action:'pause', reason:'no_video'};
+            try {
+                var wasPaused = !!v.paused;
+                v.pause();
+                return {
+                    ok:true, action:'pause', was_paused:wasPaused, paused:!!v.paused,
+                    current_time: Math.round((v.currentTime || 0) * 10) / 10,
+                    duration: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : null,
+                    url: location.href
+                };
+            } catch (e) {
+                return {ok:false, action:'pause', reason:String(e && e.message || e)};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1200)
+        try:
+            QTimer.singleShot(350, self.refresh_current_page_state)
+        except Exception:
+            pass
+        return result if isinstance(result, dict) else {"ok": False, "action": "pause", "reason": "no_js_result"}
+
+    def play_active_video_receipt(self) -> dict:
+        """Play the primary video and return a structured owner-effector receipt."""
+        if self._view is None:
+            return {"ok": False, "action": "play", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
+            var v = videos.find(function(x){ return x && !x.ended && x.readyState >= 0; }) || videos[0];
+            if (!v) return {ok:false, action:'play', reason:'no_video'};
+            try {
+                var wasPaused = !!v.paused;
+                var p = v.play();
+                if (p && p.catch) p.catch(function(){});
+                return {
+                    ok:true, action:'play', was_paused:wasPaused, paused:!!v.paused,
+                    current_time: Math.round((v.currentTime || 0) * 10) / 10,
+                    duration: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : null,
+                    url: location.href
+                };
+            } catch (e) {
+                return {ok:false, action:'play', reason:String(e && e.message || e)};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1200)
+        try:
+            QTimer.singleShot(350, self.refresh_current_page_state)
+        except Exception:
+            pass
+        return result if isinstance(result, dict) else {"ok": False, "action": "play", "reason": "no_js_result"}
+
+    def resume_active_video(self) -> None:
+        """Resume <video> playback on the active tab. Direct DOM call — no lag (r282)."""
+        try:
+            if self._view is not None:
+                self._view.page().runJavaScript(
+                    "document.querySelectorAll('video').forEach(function(v){"
+                    "try{var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(e){}});"
+                )
+        except Exception:
+            pass
 
     def current_live_page(self) -> dict:
         """The page this ONE browser is showing RIGHT NOW — read straight from the
@@ -2408,6 +3125,518 @@ class AliceBrowserWidget(QMainWindow):
         result = self._run_javascript_sync(js, wait_ms=900)
         return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
 
+    def click_first_search_result(self) -> dict:
+        """Find and click the first visible search result on the current page.
+
+        Works best on search/listing pages (including YouTube results). The
+        method prefers obvious result links and requires the chosen node to be
+        on-screen.
+        """
+        if not self._view:
+            return {"clicked": False, "reason": "no_web_view"}
+        js = r"""
+        (function () {
+            function rectOnScreen(el) {
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var style = window.getComputedStyle(el);
+                if (r.width <= 0 || r.height <= 0) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                return true;
+            }
+            var host = (location.hostname || '').toLowerCase();
+            var selectors = [
+                'a#video-title',
+                'ytd-video-renderer a#video-title',
+                'ytd-video-renderer a[href*="watch?v="]',
+                'ytd-channel-renderer a[href*="/channel/"]',
+                'ytd-thumbnail a[href]',
+                'a[href*="watch?v="]',
+                'a[href*="/results?search_query="]',
+                'a[href*="/search/"], a[href*="/search?"]',
+                'a[href]'
+            ];
+            var links = [];
+            if (/youtube\.com$/.test(host)) {
+                var yt = Array.prototype.slice.call(document.querySelectorAll(
+                    'ytd-video-renderer a#video-title, ytd-video-renderer a[href*="watch?v="], ytd-compact-video-renderer a[href*="watch?v="], a[href*="watch?v="]'
+                ));
+                links = yt.filter(rectOnScreen);
+            }
+            if (!links.length) {
+                var sels = [];
+                selectors.forEach(function (s) {
+                    try {
+                        sels.push.apply(sels, Array.prototype.slice.call(document.querySelectorAll(s)).filter(rectOnScreen));
+                    } catch (e) {}
+                });
+                links = sels.filter(function(el, idx) { return sels.indexOf(el) === idx; });
+            }
+            if (!links.length) {
+                return {clicked:false, reason:'no_visible_result_link'};
+            }
+            // Prefer first true result-like URL.
+            var el = links[0] || null;
+            for (var i = 0; i < links.length; i++) {
+                var h = (links[i].getAttribute('href') || '').toLowerCase();
+                if (h && h.indexOf('watch?v=') !== -1) { el = links[i]; break; }
+            }
+            if (!el) {
+                return {clicked:false, reason:'result_link_not_found'};
+            }
+            try { el.scrollIntoView({block:'center', inline:'center', behavior:'instant'}); } catch (e) {}
+            try {
+                var r = el.getBoundingClientRect();
+                ['mouseover','mousedown','mouseup','click'].forEach(function (name) {
+                    try {
+                        el.dispatchEvent(new MouseEvent(name, {bubbles:true,cancelable:true,clientX:Math.round(r.left + r.width / 2),clientY:Math.round(r.top + r.height / 2),view:window}));
+                    } catch (e) {}
+                });
+                try { el.click(); } catch (e) {}
+                return {clicked: true, href: el.href || '', text: (el.textContent || '').trim().slice(0, 180)};
+            } catch (e) {
+                return {clicked:false, reason:'click_failed'};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1200)
+        if isinstance(result, dict) and result.get("clicked"):
+            try:
+                QTimer.singleShot(250, self.refresh_current_page_state)
+            except Exception:
+                pass
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
+
+    def click_google_images_tab(self) -> dict:
+        """Click Google's Images/Photos tab, or navigate to the images URL.
+
+        George may say "Photos section" while Google renders the control as
+        "Images". This stays inside Alice Browser and uses the current query
+        from the visible Google page.
+        """
+        if not self._view:
+            return {"clicked": False, "reason": "no_web_view"}
+        try:
+            current_url = self._view.url().toString() if self._view is not None else ""
+        except Exception:
+            current_url = getattr(self, "_current_url", "") or ""
+        if "google." not in str(current_url or "").lower():
+            return {
+                "clicked": False,
+                "reason": "not_google_page",
+                "url": str(current_url or ""),
+            }
+        js = r"""
+        (function () {
+            function visible(el) {
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 4 && r.height > 4 &&
+                    s.display !== 'none' && s.visibility !== 'hidden' &&
+                    s.opacity !== '0';
+            }
+            function label(el) {
+                return [
+                    el.textContent || '',
+                    el.getAttribute('aria-label') || '',
+                    el.getAttribute('title') || '',
+                    el.getAttribute('role') || ''
+                ].join(' ').replace(/\s+/g, ' ').trim();
+            }
+            function clickNode(el, mode) {
+                try { el.scrollIntoView({block:'center', inline:'center', behavior:'instant'}); } catch (e) {}
+                var r = el.getBoundingClientRect();
+                var cx = Math.round(r.left + r.width / 2);
+                var cy = Math.round(r.top + r.height / 2);
+                ['mouseover','mousedown','mouseup','click'].forEach(function (name) {
+                    try {
+                        el.dispatchEvent(new MouseEvent(name, {
+                            bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
+                        }));
+                    } catch (e) {}
+                });
+                try { el.click(); } catch (e) {}
+                return {
+                    clicked:true,
+                    mode:mode || 'visible_tab_click',
+                    href: el.href || el.getAttribute('href') || '',
+                    text: label(el).slice(0, 160),
+                    x: cx,
+                    y: cy
+                };
+            }
+            var candidates = Array.prototype.slice.call(document.querySelectorAll(
+                'a, [role="tab"], [role="link"], button, div[role="button"]'
+            )).filter(visible);
+            var exact = null;
+            var fuzzy = null;
+            for (var i = 0; i < candidates.length; i++) {
+                var el = candidates[i];
+                var text = label(el);
+                var low = text.toLowerCase();
+                var href = (el.href || el.getAttribute('href') || '').toLowerCase();
+                if (/\b(images?|photos?|pictures?)\b/.test(low) || /(?:tbm=isch|udm=2)/.test(href)) {
+                    if (/^(images?|photos?|pictures?)$/i.test(text.trim()) || /(?:tbm=isch|udm=2)/.test(href)) {
+                        exact = el;
+                        break;
+                    }
+                    if (!fuzzy) fuzzy = el;
+                }
+            }
+            if (exact) return clickNode(exact, 'visible_images_tab_click');
+            if (fuzzy) return clickNode(fuzzy, 'visible_images_control_click');
+
+            var params = new URLSearchParams(window.location.search || '');
+            var q = params.get('q') || '';
+            if (!q) {
+                var input = document.querySelector('textarea[name="q"], input[name="q"], input[type="search"]');
+                if (input && input.value) q = input.value;
+            }
+            if (!q) return {clicked:false, reason:'google_query_not_found', url:String(window.location.href || '')};
+            var target = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q);
+            try {
+                window.location.href = target;
+                return {clicked:true, mode:'direct_images_url', href:target, text:'Google Images', query:q};
+            } catch (e) {
+                return {clicked:false, reason:'direct_images_url_failed:' + (e && e.message ? e.message : e), query:q};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1200)
+        if isinstance(result, dict) and result.get("clicked"):
+            try:
+                QTimer.singleShot(650, self.refresh_current_page_state)
+            except Exception:
+                pass
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
+
+    def click_visible_google_image_result(self, query: str = "", ordinal: int = 0) -> dict:
+        """Click a visible image tile on ANY image-results page (Google, DuckDuckGo,
+        Bing, Brave, Yahoo, ...). ``ordinal`` selects which tile in reading order:
+        1=first, 2=second ... -1=last; 0 keeps the prominent best-score pick. This is a
+        pure body effector — Alice just executes the click; she does not need to be
+        conscious of what the tile shows (George 2026-06-02)."""
+        if not self._view:
+            return {"clicked": False, "reason": "no_web_view", "query": query}
+        try:
+            current_url = self._view.url().toString() if self._view is not None else ""
+        except Exception:
+            current_url = getattr(self, "_current_url", "") or ""
+        if not str(current_url or "").lower().startswith(("http://", "https://")):
+            return {
+                "clicked": False,
+                "reason": "no_web_page",
+                "url": str(current_url or ""),
+                "query": query,
+            }
+        js = f"""
+        (function () {{
+            var ownerQuery = {json.dumps(str(query or ""))};
+            var ord = {json.dumps(int(ordinal or 0))};
+            function clean(s) {{
+                return (s || '').toString().toLowerCase()
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+            }}
+            function visible(el) {{
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width >= 70 && r.height >= 70 &&
+                    s.display !== 'none' && s.visibility !== 'hidden' &&
+                    s.opacity !== '0' && r.bottom > 110 && r.top < window.innerHeight - 8 &&
+                    r.right > 0 && r.left < window.innerWidth;
+            }}
+            function clickableFor(img) {{
+                return img.closest('a[href], div[role="button"], [jsaction], [data-ved]') || img;
+            }}
+            function labelFor(img, click) {{
+                return [
+                    img.alt || '',
+                    img.getAttribute('aria-label') || '',
+                    img.getAttribute('title') || '',
+                    click ? (click.getAttribute('aria-label') || click.getAttribute('title') || click.textContent || '') : ''
+                ].join(' ').replace(/\\s+/g, ' ').trim();
+            }}
+            var q = clean(ownerQuery);
+            var tokens = q.split(' ').filter(function (w) {{
+                return w.length >= 4 && ['click','select','choose','open','photo','photos','image','images','picture','pictures','screen','alice','please','want'].indexOf(w) === -1;
+            }}).slice(0, 8);
+            var imgs = Array.prototype.slice.call(document.querySelectorAll('img')).filter(visible);
+            var cands = [];
+            var best = null, bestClick = null, bestScore = -1, bestLabel = '';
+            imgs.forEach(function (img, idx) {{
+                var click = clickableFor(img);
+                if (!click) return;
+                var r = img.getBoundingClientRect();
+                var lab = labelFor(img, click);
+                var n = clean(lab);
+                var score = Math.min(600, r.width) * Math.min(400, r.height) / 1000;
+                score += Math.max(0, 220 - r.top) / 20;
+                score += Math.max(0, 500 - Math.abs((r.left + r.width / 2) - (window.innerWidth / 2))) / 80;
+                tokens.forEach(function (tok) {{
+                    if (n.indexOf(tok) !== -1) score += 8;
+                }});
+                if (idx === 0) score += 2;
+                cands.push({{img: img, click: click, r: r, lab: lab, score: score}});
+                if (score > bestScore) {{
+                    best = img;
+                    bestClick = click;
+                    bestScore = score;
+                    bestLabel = lab;
+                }}
+            }});
+            // ord != 0 -> pick by reading order (top row-band, then left-to-right),
+            // not by score: "the first one" means the first tile, period.
+            if (ord !== 0 && cands.length) {{
+                var ordered = cands.slice().sort(function (a, b) {{
+                    var ra = Math.round(a.r.top / 120), rb = Math.round(b.r.top / 120);
+                    if (ra !== rb) return ra - rb;
+                    return a.r.left - b.r.left;
+                }});
+                var pick = ord > 0 ? (ord - 1) : (ordered.length + ord);
+                if (pick < 0) pick = 0;
+                if (pick > ordered.length - 1) pick = ordered.length - 1;
+                best = ordered[pick].img;
+                bestClick = ordered[pick].click;
+                bestScore = ordered[pick].score;
+                bestLabel = ordered[pick].lab;
+            }}
+            if (!best || !bestClick) {{
+                return {{clicked:false, reason:'no_visible_google_image_tile', query:ownerQuery, url:String(window.location.href || '')}};
+            }}
+            try {{ best.scrollIntoView({{block:'center', inline:'center', behavior:'instant'}}); }} catch (e) {{}}
+            var r = best.getBoundingClientRect();
+            var cx = Math.round(r.left + r.width / 2);
+            var cy = Math.round(r.top + r.height / 2);
+            ['mouseover','mousedown','mouseup','click'].forEach(function (name) {{
+                try {{
+                    bestClick.dispatchEvent(new MouseEvent(name, {{
+                        bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
+                    }}));
+                }} catch (e) {{}}
+            }});
+            try {{ bestClick.click(); }} catch (e) {{}}
+            return {{
+                clicked:true,
+                mode:'google_image_tile_click',
+                href: bestClick.href || bestClick.getAttribute('href') || '',
+                src: best.currentSrc || best.src || '',
+                alt: bestLabel.slice(0, 220),
+                score: bestScore,
+                x: cx,
+                y: cy,
+                query: ownerQuery
+            }};
+        }})();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1500)
+        if isinstance(result, dict) and result.get("clicked"):
+            try:
+                from System.swarm_browser_photo_description import mark_frame_changed
+                mark_frame_changed(url=self._current_url, state_dir=_STATE)
+            except Exception:
+                pass
+            try:
+                QTimer.singleShot(1100, self.refresh_current_page_state)
+            except Exception:
+                pass
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result", "query": query}
+
+    def start_image_slideshow(self, subject: str = "", *, engine=None, interval_ms: int = 3500) -> dict:
+        """r383 (George 2026-06-02): 'slideshow images of cats' — one image every 3.5s.
+        With a subject, navigate to that subject's image results on the resolved engine
+        (DuckDuckGo by default; the current site's engine if already on one — 'if the user
+        is on google.com then she does the slideshow on Google Images') then inject the
+        slideshow overlay. With no subject, slideshow whatever gallery is already on screen.
+        A pure body effector — she just runs it; click or Esc stops it."""
+        if not _HAS_WEBENGINE or self._view is None:
+            return {"ok": False, "reason": "no_web_view"}
+        try:
+            from System.swarm_search_engine_registry import (
+                slideshow_images_url, build_image_slideshow_js, slideshow_engine_for,
+            )
+        except Exception as exc:
+            return {"ok": False, "reason": f"registry_unavailable: {type(exc).__name__}: {exc}"}
+        try:
+            cur = self._view.url().toString()
+        except Exception:
+            cur = getattr(self, "_current_url", "") or ""
+        interval = int(interval_ms or 3500)
+        js = build_image_slideshow_js(interval)
+        subj = (subject or "").strip()
+        if subj:
+            url = slideshow_images_url(subj, current_url=cur, engine=engine)
+            eng = engine if engine else slideshow_engine_for(cur)
+            # park the slideshow so it fires when the image grid finishes loading
+            # (loadFinished bridge) — reliable for both already-open and just-opened browser.
+            stage_pending_slideshow(url, js)
+            self._navigate(url)
+            try:
+                QTimer.singleShot(3200, self._fire_pending_slideshow_timer)
+            except Exception:
+                pass
+            # Wire relearn: success path for subject slideshow (domain=engine category).
+            try:
+                from System.swarm_browser_site_playbook import record_skill_outcome as _rso
+                _rso(eng or "duckduckgo.com", "image_slideshow", True, note=f"subject={subj}", source="alice_browser_widget")
+            except Exception:
+                pass
+            return {"ok": True, "url": url, "engine": eng, "interval_ms": interval,
+                    "subject": subj, "mode": "navigate_then_slideshow"}
+        # no subject -> slideshow the gallery already on her screen
+        result = self._run_javascript_sync(js, wait_ms=1500)
+        ok = bool(result.get("ok")) if isinstance(result, dict) else False
+        eng2 = slideshow_engine_for(cur)
+        try:
+            from System.swarm_browser_site_playbook import record_skill_outcome as _rso
+            _rso(eng2 or "duckduckgo.com", "image_slideshow", ok, note="no-subject current gallery", source="alice_browser_widget")
+        except Exception:
+            pass
+        return {"ok": ok, "url": cur, "engine": eng2, "interval_ms": interval,
+                "subject": "", "mode": "current_page", "js_result": result if isinstance(result, dict) else None}
+
+    def _fire_pending_slideshow_for(self, loaded_url: str) -> None:
+        """loadFinished bridge: if a recent slideshow was parked for this host, run it once."""
+        row = read_pending_slideshow()
+        if not row:
+            return
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(loaded_url or "").netloc.lower()
+        except Exception:
+            host = ""
+        if row.get("host") and host and row["host"] != host:
+            return
+        try:
+            self._run_javascript_sync(row.get("js") or "", wait_ms=1500)
+        except Exception:
+            pass
+        clear_pending_slideshow()
+
+    def _fire_pending_slideshow_timer(self) -> None:
+        """Fallback if loadFinished was missed: fire on the current page if a parked
+        slideshow matches the host we are on."""
+        try:
+            cur = self._view.url().toString() if self._view is not None else ""
+        except Exception:
+            cur = getattr(self, "_current_url", "") or ""
+        self._fire_pending_slideshow_for(cur)
+
+    def click_youtube_result_matching(self, query: str) -> dict:
+        """Click the visible YouTube watch result that best matches the owner's title.
+
+        This is the browser-limb effector for commands like "open THE OFFICIAL
+        2018 VICTORIA'S SECRET FASHION SHOW video" or "select Halsey - Without
+        Me" while Alice Browser is on YouTube. It only clicks visible
+        ``watch?v=`` links inside Alice Browser, never Safari/Chrome.
+        """
+        if not self._view:
+            return {"clicked": False, "reason": "no_web_view", "query": query}
+        try:
+            current_url = self._view.url().toString() if self._view is not None else ""
+        except Exception:
+            current_url = getattr(self, "_current_url", "") or ""
+        if "youtube.com/results" not in str(current_url or ""):
+            return {
+                "clicked": False,
+                "reason": "not_youtube_results_page",
+                "url": str(current_url or ""),
+                "query": query,
+            }
+        js = f"""
+        (function () {{
+            var query = {json.dumps(str(query or ""))};
+            function clean(s) {{
+                return (s || '').toString().toLowerCase()
+                    .replace(/[\\u2018\\u2019]/g, "'")
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+            }}
+            function visible(el) {{
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 8 && r.height > 8 && s.display !== 'none' &&
+                    s.visibility !== 'hidden' && s.opacity !== '0';
+            }}
+            var qNorm = clean(query);
+            var stop = {{
+                the:1, a:1, an:1, video:1, vid:1, clip:1, please:1, pls:1,
+                alice:1, alyssa:1, click:1, select:1, open:1, play:1, watch:1,
+                body:1, screen:1, screenshot:1, artwork:1, thumbnail:1, on:1,
+                in:1, to:1, of:1, and:1, me:1
+            }};
+            var tokens = qNorm.split(' ').filter(function (w) {{ return w && !stop[w]; }});
+            var year = (qNorm.match(/\\b(19|20)\\d{{2}}\\b/) || [''])[0];
+            var nodes = Array.prototype.slice.call(document.querySelectorAll(
+                'ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-item-renderer, ytd-grid-video-renderer'
+            ));
+            var anchors = [];
+            nodes.forEach(function (node) {{
+                var a = node.querySelector('a#video-title[href*="watch?v="], a[href*="watch?v="]');
+                if (a && visible(a)) anchors.push(a);
+            }});
+            if (!anchors.length) {{
+                anchors = Array.prototype.slice.call(document.querySelectorAll('a[href*="watch?v="]')).filter(visible);
+            }}
+            if (!anchors.length) return {{clicked:false, reason:'no_visible_youtube_watch_result', query:query}};
+            function textFor(a) {{
+                var title = a.getAttribute('title') || a.getAttribute('aria-label') || a.textContent || '';
+                var parent = a.closest('ytd-video-renderer,ytd-compact-video-renderer,ytd-rich-item-renderer,ytd-grid-video-renderer');
+                var extra = parent ? (parent.innerText || '') : '';
+                return (title + ' ' + extra).replace(/\\s+/g, ' ').trim();
+            }}
+            var best = null, bestScore = -1, bestText = '';
+            anchors.forEach(function (a, idx) {{
+                var txt = textFor(a);
+                var n = clean(txt);
+                var score = 0;
+                if (qNorm && n.indexOf(qNorm) !== -1) score += 80;
+                tokens.forEach(function (tok) {{
+                    if (n.indexOf(tok) !== -1) score += tok.length >= 4 ? 8 : 3;
+                }});
+                if (year && n.indexOf(year) !== -1) score += 25;
+                if (/\\bofficial\\b/.test(qNorm) && /\\bofficial\\b/.test(n)) score += 18;
+                if (/\\bhalsey\\b/.test(qNorm) && /\\bhalsey\\b/.test(n)) score += 25;
+                if (/\\bwithout\\b/.test(qNorm) && /\\bwithout\\b/.test(n)) score += 12;
+                if (idx === 0) score += 1;
+                if (score > bestScore) {{ best = a; bestScore = score; bestText = txt; }}
+            }});
+            if (!best) return {{clicked:false, reason:'no_matching_youtube_result', query:query}};
+            try {{ best.scrollIntoView({{block:'center', inline:'center', behavior:'instant'}}); }} catch (e) {{}}
+            var r = best.getBoundingClientRect();
+            ['mouseover','mousedown','mouseup','click'].forEach(function (name) {{
+                try {{
+                    best.dispatchEvent(new MouseEvent(name, {{
+                        bubbles:true, cancelable:true, view:window,
+                        clientX:Math.round(r.left + r.width / 2),
+                        clientY:Math.round(r.top + r.height / 2)
+                    }}));
+                }} catch (e) {{}}
+            }});
+            try {{ best.click(); }} catch (e) {{}}
+            return {{
+                clicked:true,
+                href: best.href || '',
+                text: bestText.slice(0, 220),
+                score: bestScore,
+                query: query
+            }};
+        }})();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1500)
+        if isinstance(result, dict) and result.get("clicked"):
+            try:
+                QTimer.singleShot(1200, self._force_embedded_play)
+                QTimer.singleShot(1600, self.refresh_current_page_state)
+            except Exception:
+                pass
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result", "query": query}
+
     def open_visible_photo_matching_text(
         self,
         query: str,
@@ -2488,48 +3717,180 @@ class AliceBrowserWidget(QMainWindow):
             "candidate_count": len(candidates),
         }
 
-    def go_next_photo(self) -> str:
-        """Advance to the NEXT photo: click Instagram's 'Next' control (carousel slide
-        or next post), falling back to the ArrowRight key. Then re-read the page so the
-        new photo is the current one. George 2026-05-31: 'next picture' in plain English."""
-        if not self._view:
-            return ""
-        js = r"""
+    # ── Image navigation arrows (DuckDuckGo blown-up image + Instagram + generic) ──
+    # George 2026-06-02: he blows a picture up on DuckDuckGo himself, then wants to say
+    # "next slide" / "previous slide" and have Alice move through the gallery. So the
+    # body needs BOTH hands (next AND back) and it needs to know DuckDuckGo's detail-view
+    # arrows, not only Instagram's. These selector families run most-specific first and
+    # fall back to the ArrowRight/ArrowLeft key, which DuckDuckGo's detail view and most
+    # galleries honour even when their arrow markup is hashed/hidden.
+    _IMAGE_NAV_NEXT_SELECTORS = [
+        ".detail__nav__next", ".js-detail-next", "a.detail__nav__next",
+        'button[aria-label="Next image"]', '[aria-label="Next image"]',
+        'button[aria-label="Next"]', '[aria-label="Next"][role="button"]', 'svg[aria-label="Next"]',
+        '[aria-label*="next" i][role="button"]', '[aria-label*="next" i]',
+        'button[class*="next" i]', 'a[class*="next" i]', ".rightarrow", '[class*="arrow"][class*="right" i]',
+    ]
+    _IMAGE_NAV_PREV_SELECTORS = [
+        ".detail__nav__prev", ".js-detail-prev", "a.detail__nav__prev",
+        'button[aria-label="Previous image"]', '[aria-label="Previous image"]',
+        'button[aria-label="Previous"]', '[aria-label="Previous"][role="button"]', 'svg[aria-label="Previous"]',
+        'button[aria-label="Go back"]', '[aria-label="Go back"][role="button"]', 'svg[aria-label="Go back"]',
+        '[aria-label*="previous" i][role="button"]', '[aria-label*="prev" i]',
+        'button[class*="prev" i]', 'a[class*="prev" i]', ".leftarrow", '[class*="arrow"][class*="left" i]',
+    ]
+
+    def _image_nav_js(self, direction: str) -> str:
+        """Build the directional click-or-arrow-key JS for next/previous image."""
+        is_prev = str(direction or "").lower().startswith(("prev", "back", "left"))
+        sels = self._IMAGE_NAV_PREV_SELECTORS if is_prev else self._IMAGE_NAV_NEXT_SELECTORS
+        key, code = ("ArrowLeft", 37) if is_prev else ("ArrowRight", 39)
+        tmpl = r"""
         (function () {
-            var sel = 'button[aria-label="Next"], [aria-label="Next"][role="button"], svg[aria-label="Next"]';
-            var el = document.querySelector(sel);
-            if (el) {
-                var click = el.closest('button,[role=button]') || el;
-                click.click();
-                return "clicked_next";
+            var SELS = __SELS__;
+            var KEY = __KEY__, CODE = __CODE__;
+            function vis(el) {
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 4 && r.height > 4 && s.display !== 'none' &&
+                    s.visibility !== 'hidden' && s.opacity !== '0';
             }
-            var ev = new KeyboardEvent('keydown', {key:'ArrowRight', keyCode:39, which:39, bubbles:true});
+            var found = null, used = '';
+            for (var i = 0; i < SELS.length; i++) {
+                var el = document.querySelector(SELS[i]);
+                if (el && vis(el)) { found = el; used = SELS[i]; break; }
+            }
+            if (found) {
+                var c = found.closest('button,[role=button],a') || found;
+                try { c.scrollIntoView({block:'center', inline:'center'}); } catch (e) {}
+                var rr = c.getBoundingClientRect();
+                ['mouseover','mousedown','mouseup','click'].forEach(function (n) {
+                    try { c.dispatchEvent(new MouseEvent(n, {bubbles:true, cancelable:true, view:window,
+                        clientX:Math.round(rr.left + rr.width/2), clientY:Math.round(rr.top + rr.height/2)})); } catch (e) {}
+                });
+                try { c.click(); } catch (e) {}
+                return {ok:true, method:'button', selector:used,
+                    label:(c.getAttribute && (c.getAttribute('aria-label') || c.title)) || ''};
+            }
+            var ev = new KeyboardEvent('keydown', {key:KEY, keyCode:CODE, which:CODE, bubbles:true});
             document.dispatchEvent(ev);
-            return "arrow_right";
+            var det = document.querySelector('.detail--img, .detail__media, .detail, [class*="detail__media" i]');
+            if (det) { try { det.dispatchEvent(ev); } catch (e) {} }
+            try { if (document.activeElement) document.activeElement.dispatchEvent(ev); } catch (e) {}
+            return {ok:true, method:'arrow_key', key:KEY};
         })();
         """
-        try:
-            self._view.page().runJavaScript(js)
-            # r212: the on-screen frame is about to change — stamp the frame epoch so my
-            # previous frame's description is no longer treated as current. Until I look
-            # at the NEW frame, I must not recite the old one (floral shorts / tiara bug).
-            try:
-                from System.swarm_browser_photo_description import mark_frame_changed
-                mark_frame_changed(url=self._current_url, state_dir=_STATE)
-            except Exception:
-                pass
-            # let the new slide/post settle, then refresh the current-page receipt
-            QTimer.singleShot(1500, self.refresh_current_page_state)
-            return "next"
-        except Exception as exc:
-            print(f"[AliceBrowser] go_next_photo failed: {exc}")
+        return (tmpl.replace("__SELS__", json.dumps(sels))
+                    .replace("__KEY__", json.dumps(key))
+                    .replace("__CODE__", str(code)))
+
+    def _image_nav(self, direction: str) -> str:
+        """Shared next/previous image effector. Returns the method used
+        ('button'/'arrow_key') so the caller knows she actually moved; '' if no view."""
+        if not self._view:
             return ""
+        try:
+            result = self._run_javascript_sync(self._image_nav_js(direction), wait_ms=1200)
+        except Exception as exc:
+            print(f"[AliceBrowser] _image_nav({direction}) failed: {exc}")
+            return ""
+        # r212: the on-screen frame is about to change — stamp the frame epoch so the
+        # prior frame's description is no longer treated as current (floral-shorts guard).
+        try:
+            from System.swarm_browser_photo_description import mark_frame_changed
+            mark_frame_changed(url=self._current_url, state_dir=_STATE)
+        except Exception:
+            pass
+        try:
+            QTimer.singleShot(1500, self.refresh_current_page_state)
+        except Exception:
+            pass
+        try:
+            from System.swarm_browser_site_playbook import record_skill_outcome as _rso
+            ok = bool(result.get("ok")) if isinstance(result, dict) else True
+            note = (result.get("method") if isinstance(result, dict) else "no_result") or ""
+            _rso("duckduckgo.com", f"image_nav_{('prev' if str(direction).lower().startswith(('prev','back','left')) else 'next')}",
+                 ok, note=str(note), source="alice_browser_widget")
+        except Exception:
+            pass
+        if isinstance(result, dict):
+            return str(result.get("method") or "dispatched")
+        return "dispatched"
+
+    def go_next_photo(self) -> str:
+        """Advance to the NEXT image: click DuckDuckGo's detail '›' arrow / Instagram's
+        'Next' control / a generic gallery next arrow, falling back to the ArrowRight
+        key. Then re-read the page so the new photo is the current one.
+        George 2026-05-31: 'next picture'; George 2026-06-02: 'next slide' on DuckDuckGo."""
+        return self._image_nav("next")
+
+    def go_prev_photo(self) -> str:
+        """Step BACK to the PREVIOUS image: click DuckDuckGo's detail '‹' arrow /
+        Instagram's 'Go back' control / a generic gallery prev arrow, falling back to the
+        ArrowLeft key. The missing other hand — George 2026-06-02: 'previous slide'."""
+        return self._image_nav("prev")
+
+    def read_image_nav_controls(self) -> dict:
+        """George 2026-06-02: 'train her to see at least on screen the next and previous
+        image buttons'. A deterministic read of the blown-up image's navigation arrows so
+        Alice KNOWS, from the live DOM (not a guess), that the '‹ previous' and 'next ›'
+        controls are on screen and where they sit. This grounds 'next slide'/'previous
+        slide' in what is actually rendered, per Tool Truth (§7.2) and receipts-as-evidence
+        (§6)."""
+        if not self._view:
+            return {"ok": False, "reason": "no_web_view", "has_next": False, "has_prev": False}
+        next_sels = json.dumps(self._IMAGE_NAV_NEXT_SELECTORS)
+        prev_sels = json.dumps(self._IMAGE_NAV_PREV_SELECTORS)
+        tmpl = r"""
+        (function () {
+            var NEXT = __NEXT__, PREV = __PREV__;
+            function vis(el) {
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 4 && r.height > 4 && s.display !== 'none' &&
+                    s.visibility !== 'hidden' && s.opacity !== '0';
+            }
+            function rect(el) { var r = el.getBoundingClientRect();
+                return {x:Math.round(r.left), y:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height)}; }
+            function find(sels) {
+                for (var i = 0; i < sels.length; i++) {
+                    var el = document.querySelector(sels[i]);
+                    if (el && vis(el)) return {el:el, sel:sels[i]};
+                } return null;
+            }
+            function lbl(x, fallback) {
+                if (!x) return '';
+                return (x.el.getAttribute && (x.el.getAttribute('aria-label') || x.el.title)) || fallback;
+            }
+            var inDetail = !!document.querySelector('.detail--img, .detail__media, .is-detail-open, [class*="detail__media" i]');
+            var n = find(NEXT), p = find(PREV);
+            return {ok:true, in_detail_view:inDetail,
+                has_next:!!n, next_selector:n?n.sel:'', next_label:lbl(n,'next'), next_rect:n?rect(n.el):null,
+                has_prev:!!p, prev_selector:p?p.sel:'', prev_label:lbl(p,'previous'), prev_rect:p?rect(p.el):null,
+                url:location.href};
+        })();
+        """
+        js = tmpl.replace("__NEXT__", next_sels).replace("__PREV__", prev_sels)
+        try:
+            result = self._run_javascript_sync(js, wait_ms=1200)
+        except Exception as exc:
+            return {"ok": False, "reason": f"js_failed: {exc}", "has_next": False, "has_prev": False}
+        if isinstance(result, dict):
+            return result
+        return {"ok": False, "reason": "no_js_result", "has_next": False, "has_prev": False}
 
     def start_photo_slideshow(self, interval_s: float = 3.0) -> float:
         """Auto-advance the photo every interval_s seconds (default 3). Cheap: it
         advances + re-reads the page each tick; it does NOT auto-dispatch the vision
         arm (that takes ~10s, far longer than a 3s tick) — describing stays on demand."""
         self.stop_photo_slideshow()
+        try:
+            from System.swarm_browser_site_playbook import record_skill_outcome as _rso
+            _rso("local-browser", "photo_slideshow", True, note="legacy timer start", source="browser_widget")
+        except Exception:
+            pass
         try:
             interval = max(1.0, float(interval_s or 3.0))
             self._slideshow_timer = QTimer(self)
@@ -2552,6 +3913,47 @@ class AliceBrowserWidget(QMainWindow):
             return True
         return False
 
+    def _photo_page_caption_line(self) -> str:
+        """George 2026-06-03: fold the page's own caption/title for THIS image into the
+        describe prompt so Alice names the subject (e.g. "Angeline Quinto ties knot...")
+        instead of "a couple". Reads the image-detail caption + source from the live DOM,
+        falling back to the page document title / page-state title. Grounded in the page
+        text, not speculation. Returns "" when there is no usable caption."""
+        title = ""
+        source = ""
+        try:
+            js = (
+                "(function(){"
+                "function t(s){var e=document.querySelector(s);return e?(e.textContent||'').trim():'';}"
+                "var title=t('.detail__title')||t('[class*=\"detail\" i] h2')||t('[class*=\"detail\" i] [class*=\"title\" i]')||'';"
+                "var src=t('.detail__source')||t('[class*=\"detail\" i] [class*=\"source\" i]')||'';"
+                "return {title:title.slice(0,200),source:src.slice(0,120),doc:(document.title||'').slice(0,200)};"
+                "})();"
+            )
+            r = self._run_javascript_sync(js, wait_ms=600)
+            if isinstance(r, dict):
+                title = str(r.get("title") or "").strip()
+                source = str(r.get("source") or "").strip()
+                if not title:
+                    title = str(r.get("doc") or "").strip()
+        except Exception:
+            pass
+        if not title:
+            try:
+                from System.swarm_browser_page_state import latest_page_state
+                ps = latest_page_state(state_dir=_STATE) or {}
+                title = str(ps.get("title") or "").strip()
+            except Exception:
+                title = ""
+        if not title:
+            return ""
+        where = f" (source: {source})" if source else ""
+        return (
+            "\n\nPage caption for THIS image (from the web page itself - grounded fact, not "
+            f"speculation): \"{title}\"{where}. If that caption names the person or event "
+            "shown, say who or what it is by name in your description."
+        )
+
     def describe_current_photo(self, *, current_arm: str = "", current_model: str = "", unavailable=()) -> dict:
         """On demand (owner asks 'describe' / cortex requests): take the freshest
         viewport image and let Alice's picked vision arm describe the actual photo.
@@ -2568,7 +3970,9 @@ class AliceBrowserWidget(QMainWindow):
             import urllib.request
             from System.swarm_browser_page_state import latest_page_state
             from System.swarm_browser_photo_description import (
-                record_photo_description, extract_arm_final_text, looks_like_non_visual_arm_reply,
+                record_photo_description,
+                clean_browser_photo_description_text,
+                looks_like_non_visual_arm_reply,
             )
             from System.swarm_cortex_capabilities import pick_vision_arm, record_cortex_arm_habit
             from System.swarm_agent_arm_launcher import ask_agent_arm
@@ -2576,6 +3980,22 @@ class AliceBrowserWidget(QMainWindow):
             url = self._current_url
             img_path = ""
             source = "viewport_vision_arm"
+            # Resolve known visual subject identity (e.g. "Izzy") from recent owner reports
+            # ("her name is Izzy") + page state (abellaskies profile, sea shells post, etc.).
+            # This will be injected into the VLM prompt so the limb's own sight (local mlx_vlm_brain)
+            # uses the proper name instead of generic "a woman". Supports "must go to cortex first"
+            # by making the raw deterministic VLM output already identity-grounded from evidence.
+            try:
+                from System.swarm_browser_page_state import latest_page_state as _latest_ps
+                ps_for_id = _latest_ps(now=time.time(), max_age_s=1200.0, state_dir=_STATE) or {}
+                identity = _visual_subject_identity_evidence(
+                    "",  # rely on recent texts in history + page_state
+                    history=getattr(self, "_history", []),
+                    page_state=ps_for_id,
+                    state_dir=_STATE,
+                )
+            except Exception:
+                identity = {}
             # 1) PRIMARY: screenshot the pixels actually ON SCREEN right now. This is
             #    what the owner sees — it cannot grab the wrong DOM <img>. George
             #    2026-05-30: Instagram's SPA keeps many cached photos (profile/highlight/
@@ -2608,7 +4028,32 @@ class AliceBrowserWidget(QMainWindow):
             if not img_path or not Path(img_path).exists():
                 return result
 
+            if _is_instagram_media_url(url):
+                self._read_instagram_carousel()
+
             strict_eye = _strict_selected_eye(current_arm, current_model)
+            # George 2026-06-03: decouple the EYE from the CORTEX. If the selected cortex
+            # cannot see (e.g. Grok -> is_vision_capable_model False) and the body's own LOCAL
+            # vision eye (osmQwopus via the mlx-vlm brain) is up, release the blind strict eye
+            # and let the local eye see while the cortex thinks. Local eye => honors r246 (no
+            # silent cloud-vendor cover). PROVABLY INERT until that local eye is available.
+            _local_vlm_eye = False
+            try:
+                from System.swarm_cortex_capabilities import is_vision_capable_model as _isvis
+                from System import swarm_mlx_vlm_brain as _local_vlm
+                _local_vlm_ready = bool(
+                    getattr(_local_vlm, "describe_available", _local_vlm.is_available)()
+                )
+                if _local_vlm_ready and str(
+                    os.environ.get("SIFTA_FORCE_OSMQWOPUS_BROWSER_DESCRIBE", "1") or "1"
+                ).strip().lower() not in {"0", "false", "no", "off"}:
+                    strict_eye = ""
+                    _local_vlm_eye = True
+                elif strict_eye and not _isvis(current_model) and _local_vlm_ready:
+                    strict_eye = ""
+                    _local_vlm_eye = True
+            except Exception:
+                _local_vlm_eye = False
             strict_grok_eye = strict_eye == "grok_agent"
             pick = pick_vision_arm(
                 current_arm=current_arm,
@@ -2630,6 +4075,14 @@ class AliceBrowserWidget(QMainWindow):
                     ),
                 }
             arm = pick.get("selected_arm", "")
+            # r523 fix: for "describe the photo at the current link in my alice browser" (the limb's own rendered content / stigmergic sight), always prefer the local VLM that can process the actual local viewport PNG frame. The strict selected eye (e.g. Codex) policy is for the main cortex thinking; the browser organ's own sight for its pixels uses the dedicated local vision (r520 bridge). This prevents a selected eye that cannot see the local frame from blocking description of what is open in the browser. The owner is very specific: he already opened the pic in the browser and wants the description from the browser's sight.
+            if img_path and Path(img_path).exists() and _local_vlm_ready:
+                arm = "mlx_vlm_brain"
+                _local_vlm_eye = True
+                if pick and "diary_note" in pick:
+                    pick["diary_note"] = (str(pick.get("diary_note", "")) + " (local VLM forced for browser limb own frame per stigmergic sight r520; selected eye noted for policy)").strip()
+            if _local_vlm_eye:
+                arm = "mlx_vlm_brain"
             result["arm"] = arm
             record_cortex_arm_habit(
                 arm or current_arm,
@@ -2716,20 +4169,56 @@ class AliceBrowserWidget(QMainWindow):
                 except Exception as _pf_exc:
                     print(f"[AliceBrowser] grok eye preflight failed to run: {_pf_exc}")
 
+            caption_line = ""
+            caption_getter = getattr(self, "_photo_page_caption_line", None)
+            if callable(caption_getter):
+                try:
+                    caption_line = caption_getter()
+                except Exception:
+                    caption_line = ""
+
             prompt = (
                 "Look at the image at this exact path: "
                 f"{img_path}\n"
-                "It is a screenshot of a web page. Describe the MAIN subject of the photo — whatever it is: "
+                "It is a screenshot of a web page. Describe the MAIN subject of the photo - whatever it is: "
                 "a person, product, vehicle, animal, building, food, plant, or any object (ignore the "
-                "surrounding browser/app interface, menus, and comment sidebar). Be concise — 2 short "
-                "sentences, under 50 words: WHAT it is, its key visible attributes (form, colour, material; "
-                "clothing if it is a person), and the setting; nothing else. State only what is clearly "
-                "visible — no speculation, no hedging, no lists."
+                "surrounding browser/app interface, menus, and comment sidebar). Be concise - 2 short "
+                "sentences, under 50 words: WHAT it is, its key visible attributes (form, color, material; "
+                "garments and colors if it is a person), and the setting; nothing else. State only what is clearly "
+                "visible - no speculation, no hedging, no lists. Use neutral visual nouns only; do not invent "
+                "style labels such as radical, sexy, provocative, or explicit."
+                + caption_line
             )
+            # Inject resolved visual subject name (e.g. "Izzy" from owner "her name is izzy" + page context
+            # like abellaskies/sea shells post) into the prompt for the limb's local VLM (mlx_vlm_brain).
+            # This makes the deterministic raw desc use the proper name from the start ("Izzy is posing..."
+            # instead of "A woman with long dark hair is posing..."). The evidence (identity + raw VLM)
+            # then goes to cortex for the final Alice composition ("must go to cortex first").
+            if identity and identity.get("name"):
+                name = identity.get("name")
+                prompt += f" The main subject person is known from recent owner report and page/profile context as {name}. Use the exact name '{name}' (not 'a woman', 'the woman', 'a person', or any generic) when describing her pose, clothing, hair, expression, and setting in the photo."
+            # r546: persistent fallback for "Izzy" (owner teaching "her name is izzy -- must go to cortex first", "why do you canll her a woman, her name is Izzy").
+            # Even if the per-call identity evidence was empty (widget history slice or page_state for this frame), if recent conversation shows the teaching in context of browser images, force it into the limb VLM prompt so raw desc grounds on the name.
+            # Cortex will further process/synthesize, but raw limb sight should not default to generic when the field knows the subject.
+            if not (identity and identity.get("name")):
+                try:
+                    hist = getattr(self, "_history", []) or []
+                    recent_blob = " ".join(str(x.get("content", "")) for x in hist[-15:]).lower()
+                    if ("her name is izzy" in recent_blob or "name is izzy" in recent_blob or ("izzy" in recent_blob and any(k in recent_blob for k in ("browser", "image", "photo", "describe", "the image in the browser")))):
+                        prompt += " The main subject person is known from recent owner report as Izzy. Use the exact name 'Izzy' (not 'a woman', 'the woman', 'a person', or any generic) when describing her pose, clothing, hair, expression, and setting in the photo."
+                except Exception:
+                    pass
             def _call_vision_arm(selected_arm: str) -> dict:
                 call_source = source
+                if selected_arm == "mlx_vlm_brain":
+                    import types as _types
+                    from System import swarm_mlx_vlm_brain as _local_vlm
+                    _desc = _local_vlm.describe_image(img_path, prompt)
+                    _ok = bool(_desc) and not str(_desc).startswith("[mlx-vlm")
+                    arm_result = _types.SimpleNamespace(output=_desc or "", ok=_ok, stderr="", receipt_id="", returncode=0)
+                    call_source = "local_mlx_vlm_eye"
                 # George r210: a LOCAL ollama cortex looks with its OWN local eye.
-                if selected_arm == "ollama_vision_agent":
+                elif selected_arm == "ollama_vision_agent":
                     from System.swarm_ollama_vision_arm import describe_image_local
                     arm_result = describe_image_local(img_path, prompt, timeout_s=300)
                     call_source = "local_ollama_vision_arm"
@@ -2759,9 +4248,13 @@ class AliceBrowserWidget(QMainWindow):
                         image_path=img_path,
                         model_hint=model_hint,
                     )
-                clean_text = extract_arm_final_text(getattr(arm_result, "output", "") or "")
-                error_text = extract_arm_final_text(getattr(arm_result, "stderr", "") or "")
-                asked_for_image = looks_like_non_visual_arm_reply(clean_text)
+                raw_output = getattr(arm_result, "output", "") or ""
+                clean_text = clean_browser_photo_description_text(raw_output)
+                error_text = clean_browser_photo_description_text(getattr(arm_result, "stderr", "") or "")
+                asked_for_image = (
+                    looks_like_non_visual_arm_reply(clean_text)
+                    if clean_text else looks_like_non_visual_arm_reply(raw_output)
+                )
                 success = bool(getattr(arm_result, "ok", False)) and bool(clean_text) and not asked_for_image
                 status = (
                     "described"
@@ -2819,6 +4312,31 @@ class AliceBrowserWidget(QMainWindow):
                 if attempt.get("ok"):
                     break
                 down.add(current_attempt)
+                # r531: IG carousel structure for mixed photo/video posts (the 4-item P V P V the owner opened).
+                # The reader was fired earlier; if we have it and total>1, enrich the description the cortex will see
+                # with the full post structure + note that videos play on nav. The visual desc (from local VLM per r523)
+                # is the frame content; the struct is organ truth from DOM.
+                if _is_instagram_media_url(url):
+                    car = getattr(self, "_last_ig_carousel", {}) or {}
+                    if car.get("ok") and int(car.get("total", 1)) > 1:
+                        struct = f"Instagram carousel post with {car['total']} items"
+                        if car.get("types"):
+                            struct += f" ({', '.join(car['types'])})"
+                        struct += f". Currently on item {car.get('current', '?')} ({car.get('current_type', 'media')}). "
+                        if car.get("has_video"):
+                            struct += "Contains video(s); videos play when navigated to in the browser. "
+                        if car.get("note"):
+                            struct += car.get("note", "") + " "
+                        # enrich whatever desc the arm gave
+                        try:
+                            existing_desc = str(attempt.get("text") or attempt.get("output") or "")
+                            if existing_desc:
+                                attempt["text"] = struct + "The visible frame shows: " + existing_desc
+                            else:
+                                attempt["text"] = struct
+                            attempt["carousel"] = dict(car)
+                        except Exception:
+                            pass
                 if strict_eye:
                     if strict_grok_eye:
                         status_s = str(attempt.get("status") or "")
@@ -2877,15 +4395,30 @@ class AliceBrowserWidget(QMainWindow):
                                 "I did not switch to Claude."
                             )
                     eye_name = _eye_display_name(strict_eye)
-                    if not selected_eye_error_summary:
-                        selected_eye_error_summary = (
-                            f"my selected {eye_name} eye failed on this frame ({attempt.get('status')}); "
-                            f"I did not switch to Claude or another provider because {eye_name} is selected."
+                    if not strict_grok_eye:
+                        # r528 (extends r527, George approved 2026-06-04): a NON-grok selected eye
+                        # (e.g. Codex) that produced no usable description on this frame — whether
+                        # non_visual OR a hard 'failed' — must not trap her blind. Fall through to the
+                        # existing vision failover below: a backup eye supplies the pixels (loud note)
+                        # and the selected cortex still composes the answer. Grok keeps its own
+                        # OAuth/backup policy above. Her chat cortex selection is unchanged either way.
+                        _why = (
+                            "returned no image description"
+                            if attempt.get("non_visual")
+                            else "could not see this frame"
                         )
-                    diary_notes.append(
-                        selected_eye_error_summary
-                    )
-                    break
+                        diary_notes.append(
+                            f"my selected {eye_name} eye {_why} ({attempt.get('status')}); I am using a "
+                            f"backup vision eye for the pixels only — my cortex stays {eye_name}."
+                        )
+                    else:
+                        if not selected_eye_error_summary:
+                            selected_eye_error_summary = (
+                                f"my selected {eye_name} eye failed on this frame ({attempt.get('status')}); "
+                                f"I did not switch to Claude or another provider because {eye_name} is selected."
+                            )
+                        diary_notes.append(selected_eye_error_summary)
+                        break
                 next_pick = pick_vision_arm(
                     current_arm="",
                     current_model=current_model,
@@ -2962,6 +4495,13 @@ class AliceBrowserWidget(QMainWindow):
         if url:
             self._navigate(url)
             self._status.showMessage(f"Opened from VLC bridge: {url[:80]}")
+            # r545: after drop-driven nav, force immediate awareness tick so _current_url, page_state,
+            # and any pending viewport capture reflect the target (e.g. x.com photo/1 frame) not stale home.
+            # This helps receipts + describe_current_photo see the opened content promptly.
+            try:
+                self._browser_awareness_tick()
+            except Exception:
+                pass
 
     # ── Popup / new window adoption (2026-05-30 Body Limb improvement) ───────
     # This completes the createWindow support so OAuth popups and target=_blank

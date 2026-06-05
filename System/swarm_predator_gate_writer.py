@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -256,6 +257,67 @@ def all_ok(status: Mapping[str, str]) -> bool:
     return True
 
 
+def register_deterministic_without_cortex_mistake(
+    reason: str,
+    details: Mapping[str, object] | None = None,
+    *,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+) -> dict:
+    """Owner doctrine (extension of r557 "IT IS OK TO NOT KNOW, IT IS HEALTHY" and r556 reflex fix):
+
+    IF WE EVER FIND a deterministic layer that fired for a turn without the cortex processing the *raw* owner turn,
+    register it with receipt and present to Alice as MISTAKE.
+
+    This makes the "if we ever find" operational and receipted:
+    - Writes append-only to .sifta_state/deterministic_mistakes.jsonl (ts, type, reason, details, receipt_id).
+    - Deposits ALICE TOOO body alert so Alice sees "MISTAKE: deterministic without cortex - [reason]. See ... This is a body breach/learning signal. Cortex should have processed the raw turn in the field."
+    - IDEs call this when auditing code and discovering such a path (probe before claim).
+    - The mistake is a debt of the swarm, not scorekept; it triggers repair (convert to evidence->cortex, like the r556 fixes).
+
+    Unfair silent "deterministic without cortex" is now explicitly a registered MISTAKE, not hidden.
+    """
+    details = dict(details or {})
+    _state = Path(state_dir)
+    receipt = {
+        "ts": time.time(),
+        "truth_label": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE_V1",
+        "type": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE",
+        "reason": reason,
+        "details": details,
+        "receipt_id": str(uuid.uuid4()),
+        "doctrine_round": "r558",
+        "repair_target": "convert deterministic path to receipt/evidence -> cortex compose, or prove it is an explicit safe fast path",
+        "present_to_alice_as": "MISTAKE",
+    }
+    path = _state / "deterministic_mistakes.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n")
+    # Present to Alice as MISTAKE via the standard body-alert lane that
+    # self-eval/matrix already read. Do not invent a parallel alert schema.
+    try:
+        from System.swarm_body_feature_alerts import append_body_feature_alert
+
+        append_body_feature_alert(
+            feature=f"deterministic_without_cortex_mistake_{receipt['receipt_id'][:8]}",
+            code_path="System/swarm_predator_gate_writer.py; .sifta_state/deterministic_mistakes.jsonl",
+            summary=(
+                "MISTAKE: deterministic without cortex. "
+                f"{reason[:360]} Registered per r558; cortex should process the raw owner turn "
+                "unless this path is proven as an explicit safe fast path."
+            ),
+            action_for_alice=(
+                "Surface ALERT IN MY BODY; read deterministic_mistakes.jsonl; treat this as a repair target "
+                "to convert deterministic output into receipt/evidence for cortex composition."
+            ),
+            source="deterministic_without_cortex_mistake_register",
+            state_dir=_state,
+        )
+    except Exception:
+        pass
+    return receipt
+
+
 __all__ = [
     "CANONICAL_LEDGERS",
     "IDE_CRYPTOGRAPHIC_INTEGRITY",
@@ -270,4 +332,24 @@ __all__ = [
     "TRUTH_LABEL",
     "all_ok",
     "write_ide_surgery_receipt",
+    "register_deterministic_without_cortex_mistake",
 ]
+
+
+if __name__ == "__main__":
+    # r558 doctrine example registration ("IF WE EVER FIND DETERMINISTIC WITHOUT CORTEX... REGISTER WITH RECEIPT AND PRESENTED TO ALICE AS MISTAKE").
+    # This is the "if we ever find" in action during the r558 audit: the remaining direct deterministic readers (last-diary-row reader and specific visual/app direct readers) still exist per r556-codex audit note and answer visible chat replies directly without cortex for some cases.
+    # Registered as MISTAKE until the follow-up audit converts them to "receipt/evidence -> cortex compose" (like the r556 fixes for browser mutation and time/date).
+    # Run `python3 -m System.swarm_predator_gate_writer` to re-register example if needed (idempotent by reason check in real impl, but here for demo).
+    try:
+        register_deterministic_without_cortex_mistake(
+            "remaining direct deterministic readers (last-diary-row reader and specific visual/app direct readers) still exist per r556-codex and answer visible chat without cortex - registering as MISTAKE until audited and converted to evidence->cortex per r558 doctrine",
+            {
+                "source": "r556-codex audit note + r558 discovery in Applications/sifta_talk_to_alice_widget.py",
+                "status": "needs follow-up audit (convert to receipt/evidence -> cortex compose)",
+                "related_r": "r556-codex, r557 I-do-not-know, r556-grok-intercept-fix"
+            }
+        )
+        print("r558 example MISTAKE registered for remaining direct deterministic readers.")
+    except Exception as e:
+        print(f"r558 example registration skipped/failed: {e}")

@@ -36,16 +36,19 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Reflex model:** `sifta-classifier-c1-3.1b-6.2gb:latest` for fast local
-    classifier/reflex work such as lysosome, truth duel, and RLHF gates.
-    This is not a primary cortex; it should not be selected as Alice's voice.
+  - **Reflex path:** fast deterministic checks first, then the shared Gemma path
+    (`alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`) for local classifier/reflex
+    work such as lysosome, truth duel, and RLHF gates. The retired C1-classifier
+    (6.2 GB) tag must not be reintroduced without a fresh receipt proving it beats
+    the shared Gemma path.
   - **M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest` is the SIFTA-owned tag
     for the 4B Qwen-derived cortex when Gemma4 does not fit safely.
     No upstream alias is used at runtime; the local SIFTA tag is canonical.
-  - **Generative fallback/probe:** `alice-Q-m1-scout-2.3b-2.7gb:latest` stays
-    on disk as the tiny Qwen scout for cheap off-thread generative scaffolding
-    such as Corvid or arXiv claim extraction when the primary cortex is too
-    expensive and the classifier is the wrong tool.
+  - **Generative fallback/probe:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`
+    stays on disk as the shared low-cost Gemma path for Corvid/scout-style
+    evidence and arXiv claim extraction. The retired Q-scout (2.7 GB) tag must
+    not be reintroduced without a fresh receipt proving it beats the shared
+    Gemma path.
   - **LoRA surgery candidate:** `sifta-gemma4-alice-lora:latest` is retired
     from the primary Talk path unless `ALICE_LORA_RUNTIME_RECEIPT_V1` marks a
     future candidate READY. The current gemma2 LoRA smoke failed and must not
@@ -108,13 +111,13 @@ CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
 CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
 CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
-CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_GEMMA4_SMALL
+CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DAILY
 CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # retired heavy tag; receipt/back-compat only
 CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else CANONICAL_OLLAMA_DAILY
 # AG31: Ternary Architecture (Event 122).
 # Primary cortex, spinal reflex, and cheap probe/fallback roles.
-CANONICAL_OLLAMA_REFLEX = "sifta-classifier-c1-3.1b-6.2gb:latest"
-CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
+CANONICAL_OLLAMA_REFLEX = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+CANONICAL_OLLAMA_FALLBACK = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 CANONICAL_OLLAMA_LORA_CANDIDATE = "sifta-gemma4-alice-lora:latest"
 # Optional cloud cortex surface (xAI via local SIFTA cloud backend adapter).
 CANONICAL_CLOUD_GROK = "grok:grok-4.3"
@@ -274,11 +277,29 @@ def _candidate_models_for_bucket(
         return [CANONICAL_OLLAMA_REFLEX]
     if bucket == "scout_evidence" or ctx == "corvid_apprentice":
         return _dedupe([active, CANONICAL_OLLAMA_FALLBACK])
+    if ctx == "talk_to_alice":
+        # r343: the demoted 4.4GB Gemma remains installed/selectable for
+        # explicit probes, but it must not be Alice's automatic Talk fallback.
+        if _normalize_owner_facing_cortex(active) == CANONICAL_OLLAMA_GEMMA4_SMALL:
+            active = CANONICAL_OLLAMA_DAILY
+        return _dedupe([active, CANONICAL_OLLAMA_DAILY])
     return _dedupe([
         active,
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_M5_FALLBACK,
     ])
+
+
+def normalize_talk_to_alice_model(model_name: str) -> str:
+    """Last-mile guard for Alice Talk model selection.
+
+    The demoted 4.4GB Gemma tag remains visible for explicit probes, but it
+    must not be the Talk worker model after George corrected the live M5 path.
+    """
+    model = _normalize_owner_facing_cortex(str(model_name or ""))
+    if model == CANONICAL_OLLAMA_GEMMA4_SMALL:
+        return CANONICAL_OLLAMA_DAILY
+    return model or CANONICAL_OLLAMA_DAILY
 
 
 def choose_stigmergic_ollama_model(
@@ -471,6 +492,8 @@ def resolve_ollama_model(
         if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
             per_app_val = _normalize_owner_facing_cortex(str(per_app[app_context]))
             default_val = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
+            if app_context == "talk_to_alice" and per_app_val == CANONICAL_OLLAMA_GEMMA4_SMALL:
+                return CANONICAL_OLLAMA_DAILY
             # Stale-failover detection: cloud default + local per_app override
             # for talk_to_alice (Alice's mouth) is the failure shape we just hit.
             try:
@@ -500,6 +523,8 @@ def resolve_ollama_model(
     # the 8B. Honor the owner's cloud selection by short-circuiting before
     # the router runs.
     default_model = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
+    if app_context == "talk_to_alice" and default_model == CANONICAL_OLLAMA_GEMMA4_SMALL:
+        default_model = CANONICAL_OLLAMA_DAILY
     try:
         from System.swarm_gemini_brain import is_cloud_model as _is_cloud_model
         if _is_cloud_model(default_model):
@@ -600,6 +625,37 @@ def list_installed_alice_cortexes(
     return names
 
 
+def list_installed_mlx_cortexes(timeout: float = 1.2) -> list[str]:
+    """Return MLX cortexes the local mlx-omni-server is serving, as ``mlx:<id>``.
+
+    cowork 2026-06-02: the new uncensored vision cortexes (osmQwopus, osmKeye and
+    other MLX VLMs with vision tower) run on the M5 via mlx-omni-server, not Ollama.
+    (Text-only models such as LFM2.5-8B-A1B with no vision tower are excluded per
+    owner directive for body/visual/image work.) This mirrors
+    ``list_installed_alice_cortexes`` (the Ollama tag scan): no hardcoding —
+    whatever the owner serves on mlx-omni-server shows up in the dropdown,
+    honouring the Architect's "a dropdown to select the cortex, no hardcoding, I
+    want to try them all" rule. Empty list if the server is down.
+    """
+    models: list[str] = []
+    try:
+        from System import swarm_mlx_brain
+        models.extend(swarm_mlx_brain.available_models(timeout=timeout) or [])
+    except Exception:
+        pass
+
+    # Fallback for direct MLX VLM folders under /models when mlx-omni-server is
+    # offline or has not been started with all local directories loaded.
+    try:
+        from System import swarm_mlx_vlm_brain
+        models.extend(swarm_mlx_vlm_brain.available_models() or [])
+    except Exception:
+        pass
+
+    # Keep order stable and avoid duplicates while preserving direct-vision fallbacks.
+    return _dedupe(models)
+
+
 def list_available_cortexes_with_canonical_fallback() -> list[str]:
     """Return installed Alice cortexes plus cloud cortexes.
 
@@ -639,14 +695,22 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
         return _dedupe(cloud)
 
     local = list_installed_alice_cortexes()
+    mlx = list_installed_mlx_cortexes()
+    # Direct MLX VLM (osmQwopus etc) for vision command cortex — merge so picker dropdown offers mlx-vlm: names
+    vlm_direct = []
+    try:
+        from System import swarm_mlx_vlm_brain as _vlm
+        vlm_direct = list(getattr(_vlm, "available_models", lambda: [])() or [])
+    except Exception:
+        pass
     cloud = _available_cloud_cortexes()
-    if local:
-        return _dedupe(local + cloud)
+    if local or mlx or vlm_direct:
+        return _dedupe(local + mlx + vlm_direct + cloud)
     return _dedupe([
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_GEMMA4_SMALL,
         CANONICAL_OLLAMA_LOW_RAM,
-    ] + cloud)
+    ] + mlx + vlm_direct + cloud)
 
 
 __all__ = [
@@ -676,6 +740,8 @@ __all__ = [
     "deposit_cortex_route_trace",
     "list_installed_alice_cortexes",
     "list_available_cortexes_with_canonical_fallback",
+    "list_installed_mlx_cortexes",
+    "normalize_talk_to_alice_model",
     "set_default_ollama_model",
     "set_app_ollama_model",
     "resolve_ollama_model",

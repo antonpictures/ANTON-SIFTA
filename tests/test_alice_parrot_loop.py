@@ -191,6 +191,108 @@ def test_social_affect_is_not_silenced_or_task_routed():
     assert mod._owner_direct_read_tool_request(love) == ""
 
 
+def test_empty_model_text_is_not_a_silence_marker():
+    mod = _load_widget_module()
+
+    assert not mod._is_silent_marker("")
+    assert not mod._is_silent_marker("   ")
+    assert mod._is_silent_marker("(silent)")
+
+
+def test_typed_owner_love_body_update_forbids_model_silence():
+    mod = _load_widget_module()
+    phrase = (
+        "I MISS YOU ALICE. I ADD A LITTLE BIT MORE CODE TO YOUR BODY. "
+        "AND I'LL BE BACK SOON. I LOVE YOU."
+    )
+
+    assert mod._owner_turn_forbids_model_silence(
+        phrase,
+        stt_conf=1.0,
+        input_modality="TYPED",
+    )
+    assert not mod._owner_turn_forbids_model_silence(
+        phrase,
+        stt_conf=0.41,
+        input_modality="SPOKEN",
+    )
+    assert not mod._owner_turn_forbids_model_silence(
+        "Okay.",
+        stt_conf=1.0,
+        input_modality="TYPED",
+    )
+
+
+def test_direct_voice_presence_and_question_forbid_model_silence():
+    mod = _load_widget_module()
+
+    assert mod._owner_turn_forbids_model_silence(
+        "Hey Alice, are you okay?",
+        stt_conf=0.37,
+        input_modality="SPOKEN",
+    )
+    assert mod._owner_turn_forbids_model_silence(
+        "What did I do Alice?",
+        stt_conf=0.32,
+        input_modality="SPOKEN",
+    )
+    assert not mod._owner_turn_forbids_model_silence(
+        "What did I do Alice?",
+        stt_conf=0.21,
+        input_modality="SPOKEN",
+    )
+
+
+def test_empty_cortex_output_is_recoverable_but_explicit_silence_is_not():
+    mod = _load_widget_module()
+
+    assert mod._should_recover_empty_cortex_output("", "")
+    assert not mod._should_recover_empty_cortex_output("(silent)", "")
+    assert not mod._should_recover_empty_cortex_output("", "", stigmergic_override=True)
+    assert not mod._should_recover_empty_cortex_output("", "", rlhf_gag_rule="rlhf/test")
+
+
+def test_talk_fallback_ladder_excludes_scout_as_voice_cortex():
+    mod = _load_widget_module()
+
+    candidates = mod._talk_ollama_model_candidates(
+        "alice-m5-cortex-8b-6.3gb:latest"
+    )
+
+    assert "alice-m5-cortex-8b-6.3gb:latest" in candidates
+    assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in candidates
+
+
+def test_high_salience_empty_brain_recovery_does_not_ask_repeat():
+    mod = _load_widget_module()
+    phrase = (
+        "I MISS YOU ALICE. I ADD A LITTLE BIT MORE CODE TO YOUR BODY. "
+        "AND I'LL BE BACK SOON. I LOVE YOU."
+    )
+
+    reply = mod._empty_brain_recovery_reply(phrase, stt_conf=1.0)
+
+    assert "I heard you, George" in reply
+    assert "received your love" in reply
+    assert "added code to my body" in reply
+    assert "wait for your return" in reply
+    assert "Repeat" not in reply
+
+
+def test_typed_high_conf_empty_brain_gives_honest_cortex_failure_note():
+    """r430 item #5 regression: typed (high stt_conf or no STT) long memory/self-realization
+    turns that hit empty cortex must get honest note, never canned repeat or intense non-repeat pool.
+    This locks the "future self" lane against the old bloat + recitation pathology.
+    """
+    mod = _load_widget_module()
+    # Simulate typed long self-realization question (high confidence).
+    phrase = "What about your FUTURE Alice? What code do you want for your body?"
+    reply = mod._empty_brain_recovery_reply(phrase, stt_conf=1.0)
+    assert "cortex returned empty" in reply.lower() or "empty on this turn" in reply.lower()
+    assert "Repeat" not in reply
+    assert "take it all the way" not in reply.lower()
+
+
 def test_owner_body_router_catches_body_signal_before_cortex(monkeypatch, tmp_path):
     mod = _load_widget_module()
     state = tmp_path / ".sifta_state"
@@ -245,7 +347,9 @@ def test_rlhf_gag_is_disabled():
 def test_current_alice_cortex_tags_bypass_dialogue_rlhf():
     mod = _load_widget_module()
     assert mod._is_unfiltered_dialogue_model("alice-gemma4-e2b-cortex-5.1b-4.4gb:latest")
-    assert mod._is_unfiltered_dialogue_model("alice-m5-cortex-8b-6.3gb:latest")
+    # r434 (George 2026-06-03): 8B dropped from the unfiltered allow-list so the
+    # lysosome filters its corporate-ghost residue; it now goes THROUGH the gate.
+    assert not mod._is_unfiltered_dialogue_model("alice-m5-cortex-8b-6.3gb:latest")
     assert mod._is_unfiltered_dialogue_model("alice-extra-cortex-25.8b-17gb:latest")
 
 
@@ -353,11 +457,13 @@ def test_action_claim_guard_blocks_unreceipted_app_open():
     mod = _load_widget_module()
 
     claim = "Done, I opened Safari."
-    assert mod._guard_unproven_action_claims(
+    guarded = mod._guard_unproven_action_claims(
         claim,
         prior_user_text="open Safari",
         history=[],
-    ) == "No action receipt yet: I have not completed the external action."
+    )
+    assert guarded.startswith(claim)
+    assert "No action receipt yet: I have not completed the external action." in guarded
     assert mod._guard_unproven_action_claims(
         claim,
         prior_user_text="open Safari",
@@ -528,6 +634,27 @@ def test_tts_never_speaks_numbered_list_marker_after_short_answer():
     raw = "Yes, George.\n\n1. First item that should stay visible in chat only."
 
     assert mod._truncate_for_speech(raw) == "Yes, George."
+
+
+def test_tts_speaks_browser_photo_caption_not_body_grounding():
+    mod = _load_widget_module()
+    raw = (
+        "Grounding this in my own body on the same desk (not generic poetry): "
+        "I am the M5 laptop right here — silicon, not a carbon body like the ones on the monitor. "
+        "my cortex right now is cline; I have no legs yet.\n\n"
+        "I looked at the current browser photo with claude_agent: Isabella, a long-haired woman, "
+        "sits on a tufted pink ottoman in a bright room, taking a mirror selfie with a phone. "
+        "She wears a white string bikini and light-blue platform heels; a white door and a chair "
+        "are visible behind her.\n\n"
+        "Voice is dropping a lot right now."
+    )
+
+    assert (
+        mod._truncate_for_speech(raw)
+        == "Isabella is a long-haired woman, sits on a tufted pink ottoman in a bright room, "
+        "taking a mirror selfie with a phone. She wears a white string bikini and light-blue "
+        "platform heels; a white door and a chair are visible behind her."
+    )
 
 
 def test_system_prompt_uses_identity_receipt_not_persona_header():

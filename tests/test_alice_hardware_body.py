@@ -153,6 +153,177 @@ def test_clipboard_and_processes_are_bounded(monkeypatch):
         assert isinstance(procs, dict)
 
 
+def test_prompt_line_carries_display_body_surfaces_from_snapshot():
+    """Alice's compact body line should name attached display surfaces."""
+    line = body.prompt_line({
+        "power": {"ok": True, "percent": 80, "source": "AC Power"},
+        "cpu_load": {"ok": True, "load_1m": 2.5, "ncpu": 10},
+        "memory": {"ok": True, "free_bytes": 8 * 1024**3, "total_bytes": 24 * 1024**3},
+        "volume": {"ok": True, "output_volume": 43, "muted": False},
+        "idle_time": {"ok": True, "idle_seconds": 5},
+        "system_info": {"ok": True, "uptime_s": 7200},
+        "displays": {
+            "ok": True,
+            "gpu_name": "Apple M5",
+            "gpu_cores": 10,
+            "displays": [
+                {
+                    "name": "LS37D70xE",
+                    "resolution": "3840 x 2160 @ 60.00Hz",
+                    "pixels": "3840 x 2160",
+                    "main": True,
+                    "online": True,
+                    "mirror": "off",
+                    "body_role": "main_display_arm",
+                },
+                {
+                    "name": "Color LCD",
+                    "resolution": "1800 x 1169 @ 120.00Hz",
+                    "pixels": "3600 x 2338",
+                    "main": False,
+                    "online": True,
+                    "mirror": "off",
+                    "body_role": "built_in_display_arm",
+                },
+                {
+                    "name": "DELL U2415",
+                    "resolution": "1920 x 1200 @ 60.00Hz",
+                    "pixels": "1920 x 1200",
+                    "main": False,
+                    "online": True,
+                    "mirror": "off",
+                    "body_role": "external_display_arm",
+                },
+            ],
+        },
+    })
+
+    assert "display arms on Apple M5/10gpu" in line
+    assert "LS37D70xE 3840 x 2160 @60.00Hz (main, main-display-arm, pixels 3840 x 2160, online, mirror off)" in line
+    assert "Color LCD 1800 x 1169 @120.00Hz (built-in-display-arm, pixels 3600 x 2338, online, mirror off)" in line
+    assert "DELL U2415 1920 x 1200 @60.00Hz (external-display-arm, pixels 1920 x 1200, online, mirror off)" in line
+
+
+def test_displays_surface_preserves_physical_display_details():
+    """Display arms carry physical metadata, not just a name."""
+    sample = {
+        "SPDisplaysDataType": [{
+            "sppci_model": "Apple M5",
+            "sppci_cores": 10,
+            "sppci_bus": "spdisplays_builtin",
+            "spdisplays_vendor": "sppci_vendor_Apple",
+            "spdisplays_mtlgpufamilysupport": "spdisplays_metal4",
+            "spdisplays_ndrvs": [{
+                "_name": "LS37D70xE",
+                "_spdisplays_pixels": "3840 x 2160",
+                "_spdisplays_resolution": "3840 x 2160 @ 60.00Hz",
+                "_spdisplays_displayID": "2",
+                "_spdisplays_display-vendor-id": "4c2d",
+                "_spdisplays_display-product-id": "7907",
+                "_spdisplays_display-serial-number": "30584141",
+                "_spdisplays_display-week": "39",
+                "_spdisplays_display-year": "2025",
+                "spdisplays_main": "spdisplays_yes",
+                "spdisplays_online": "spdisplays_yes",
+                "spdisplays_mirror": "spdisplays_off",
+                "spdisplays_rotation": "spdisplays_supported",
+                "spdisplays_television": "spdisplays_yes",
+                "spdisplays_pixelresolution": "spdisplays_2160p",
+            }],
+        }]
+    }
+    with patch.object(body, "_run") as mock_run:
+        import json
+        mock_run.return_value = (0, json.dumps(sample), "")
+
+        result = body.displays()
+
+    row = result["displays"][0]
+    assert result["gpu_name"] == "Apple M5"
+    assert result["gpu_cores"] == 10
+    assert result["gpu_bus"] == "built-in"
+    assert result["gpu_vendor"] == "Apple"
+    assert result["metal_support"] == "Metal 4"
+    assert row["body_role"] == "main_display_arm"
+    assert row["pixels"] == "3840 x 2160"
+    assert row["pixel_mode"] == "2160p"
+    assert row["online"] is True
+    assert row["mirror"] == "off"
+    assert row["television"] is True
+    assert row["vendor_id"] == "4c2d"
+    assert row["serial"] == "30584141"
+
+
+def test_display_body_boot_receipt_is_idempotent(tmp_path, monkeypatch):
+    """One Mac boot + one display fingerprint should not double-spend receipts."""
+    monkeypatch.setattr(body, "_DISPLAY_BODY_LEDGER", tmp_path / "alice_display_body.jsonl")
+
+    display_info = {
+        "ok": True,
+        "gpu_name": "Apple M5",
+        "gpu_cores": 10,
+        "gpu_bus": "built-in",
+        "gpu_vendor": "Apple",
+        "metal_support": "Metal 4",
+        "displays": [{
+            "name": "LS37D70xE",
+            "resolution": "3840 x 2160 @ 60.00Hz",
+            "pixels": "3840 x 2160",
+            "main": True,
+            "online": True,
+            "mirror": "off",
+            "body_role": "main_display_arm",
+        }],
+    }
+    monkeypatch.setattr(body, "displays", lambda: display_info)
+    monkeypatch.setattr(body, "system_info", lambda: {
+        "ok": True,
+        "boot_unix_ts": 123456,
+        "model": "Mac17,2",
+        "hostname": "Mac.lan",
+        "os_version": "26.5",
+        "build": "25F5042g",
+    })
+
+    first = body.record_display_body_boot_receipt(reason="test_boot")
+    second = body.record_display_body_boot_receipt(reason="test_boot")
+
+    assert first["ok"] is True
+    assert first["reused"] is False
+    assert second["ok"] is True
+    assert second["reused"] is True
+    assert second["receipt"] == first["receipt"]
+    rows = (tmp_path / "alice_display_body.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
+    assert '"event": "ALICE_DISPLAY_BODY"' in rows[0]
+
+
+def test_autonomic_boot_hook_carries_display_body_receipt(tmp_path, monkeypatch):
+    """The boot/autonomic hook should surface the durable display-arm receipt."""
+    from System import alice_body_autopilot as autopilot
+
+    monkeypatch.setattr(autopilot, "_STATE", tmp_path)
+    monkeypatch.setattr(autopilot, "_STATEFILE", tmp_path / "alice_body_autopilot.json")
+    monkeypatch.setattr(autopilot, "ensure_iphone_gps_bridge", lambda: {"iphone_gps_receiver": "mock"})
+    monkeypatch.setattr(autopilot, "ensure_local_mcp_bridge", lambda: {"mcp_server": "mock"})
+    monkeypatch.setattr(autopilot, "inspect_body", lambda: {
+        "ollama_local": {"alive": True},
+        "hardware_body": {"ok": True},
+    })
+    monkeypatch.setattr(autopilot, "_display_body_boot_receipt", lambda reason: {
+        "ok": True,
+        "receipt": "display-receipt-1",
+        "display_count": 3,
+        "reason": reason,
+    })
+
+    snap = autopilot.ensure_autonomic_services(boot_channel="test")
+
+    assert snap["display_body_boot_receipt"]["receipt"] == "display-receipt-1"
+    assert snap["display_body_boot_receipt"]["display_count"] == 3
+    assert "hw.display_body_boot_receipt" in snap["governable_actions"]
+
+
 def test_set_volume_clamps_out_of_range_levels_and_logs_clamped_values(tmp_path):
     """Edge probe: volume writes clamp unsafe inputs before touching the OS command."""
     original_ledger = body._TOUCH_LEDGER

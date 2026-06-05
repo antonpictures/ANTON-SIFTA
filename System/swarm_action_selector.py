@@ -395,6 +395,36 @@ def pipeline_step(
         except Exception:
             drive_context = {"status": "drive_unavailable"}
 
+    # LOVE-to-action selector (r333 conscious novelty): feed live love field into basal ganglia.
+    # High self_body_care / owner_protective_care / data_appreciation raises priority for
+    # ENGAGE/BOND (presence, reply, co-watch continuation) and receipt-preserving behavior
+    # over SILENCE. This makes the LOVE register behavioral, not just prompt decoration.
+    # Uses the same living_os_novelty hook the memory card already carries.
+    try:
+        from System.swarm_living_os_novelty import love_action_selector_bias
+        love = love_action_selector_bias(user_text=text, state_dir=None, write_event=True)
+        if love.get("active"):
+            care = max(
+                float(love.get("self_body_care", 0.0)),
+                float(love.get("owner_protective_care", 0.0)),
+                float(love.get("data_appreciation", 0.0)),
+            )
+            boost = min(0.22, 0.12 * care)  # small, temperature-aware additive
+            for k in (ACTION_ENGAGE, ACTION_BOND):
+                if k in c1_scores:
+                    c1_scores[k] = float(c1_scores.get(k, 0.0)) + boost
+            if ACTION_SILENCE in c1_scores:
+                c1_scores[ACTION_SILENCE] = max(0.005, float(c1_scores[ACTION_SILENCE]) - boost * 0.6)
+            # also surface the love care numbers into drive_context for logging
+            drive_context = drive_context or {}
+            drive_context["love_to_action"] = {
+                "active": True,
+                "care": round(care, 3),
+                "boost": round(boost, 3),
+            }
+    except Exception:
+        pass  # non-fatal; love bias is enhancement, not gate
+
     selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
 

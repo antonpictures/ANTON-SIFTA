@@ -321,6 +321,15 @@ class SiftaBrainstem:
         except Exception as e:
             print(f"🧱 [SPATIAL] Failed to load spatial/thermal bounding lobes: {e}")
 
+        # r451: early boot matrix refresh (on top of the 5min tick and the registry-write trigger).
+        # Ensures the body map (ORGAN_EVAL_MATRIX_V2.html she opens inside herself) is current at
+        # startup before any self-eval or consciousness organ wakes — "the matrix is the body".
+        try:
+            from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix
+            refresh_body_matrix(force=False)
+        except Exception:
+            pass
+
         # 5. Boot Occipital Lobe (Vision)
         try:
             self.iris = SwarmIris()
@@ -784,6 +793,20 @@ class SiftaBrainstem:
                     try:
                         from System.swarm_network_cortex import refresh_network_state
                         refresh_network_state()
+                    except Exception:
+                        pass
+
+                # 1h3. Body-map matrix kept current (Cowork r451) — the eval
+                # matrix Alice looks at inside herself must not drift behind her
+                # live organ registry ("everything must be in that matrix, for it
+                # IS her body"). Cheap: regenerates ORGAN_EVAL_MATRIX_V2.html only
+                # when the canonical registry snapshot actually changed (two stat
+                # calls otherwise). 5-min floor, read-only sensor, exception-isolated.
+                if (tick_start - getattr(self, "_matrix_refresh_at", 0.0)) > 300.0:
+                    self._matrix_refresh_at = tick_start
+                    try:
+                        from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix
+                        refresh_body_matrix(force=False)
                     except Exception:
                         pass
 

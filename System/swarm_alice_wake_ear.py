@@ -27,7 +27,7 @@ LEDGER = STATE_DIR / "alice_wake_ear.jsonl"
 
 TRUTH_LABEL = "ALICE_WAKE_EAR_WISH_003"
 DIRECT_THRESHOLD = 0.66
-MIN_NAME_SIMILARITY = 0.78  # Tightened per P1 of GROK_BIG_BATCH_ORDER_2026-05-21: "Ace" (0.6 edit sim) must not wake
+MIN_NAME_SIMILARITY = 0.76  # Keeps "Ace" (0.6 edit sim) out while rescuing "Alep" -> Alice.
 
 # Architect 2026-05-13 02:10 — these were hardcoded "alice" / "george"
 # literals, which broke when the owner renamed her in Layer 1 (any node
@@ -75,6 +75,27 @@ def _active_target_names() -> tuple[str, ...]:
         return tuple(names)
     except Exception:
         return ("alice", "george")
+
+
+def _active_ai_names() -> tuple[str, ...]:
+    """AI wake names only, excluding owner vocatives.
+
+    `_active_target_names()` intentionally includes George's vocative tokens for
+    some direct-address recovery paths. A bare one-word wake call, however, must
+    only fire on Alice's own Layer-1 names; hearing "George" in room/media audio
+    is not a request for Alice to stop playback and answer.
+    """
+    try:
+        from System.swarm_kernel_identity import ai_can_be_called
+
+        names: list[str] = []
+        for n in (ai_can_be_called() or []):
+            s = str(n or "").strip().lower()
+            if s and s not in names:
+                names.append(s)
+        return tuple(names) or ("alice",)
+    except Exception:
+        return ("alice",)
 
 
 def _prefixes_for_target(target: str) -> tuple[str, ...]:
@@ -333,13 +354,41 @@ def classify_wake_turn(
     _name_sim_early = float(_name_match_early.get("similarity") or 0.0)
     _first_token = (_tokenize(clean)[:1] or [""])[0]
     _first_token_sim = 0.0
+    _first_token_target = ""
     if _first_token:
         for _target in _active_target_names():
             _s = max(_edit_similarity(_first_token, _target),
                      _prefix_similarity(_first_token, _target))
             if _s > _first_token_sim:
                 _first_token_sim = _s
+                _first_token_target = _target
     _word_count_early = len(_tokenize(clean))
+    _fp_early = _sanitize_acoustic(acoustic_fingerprint)
+    _far_early = _float01(_fp_early.get("farfield_replay_likelihood", 0.0))
+    _cue_early = str(_fp_early.get("channel_cue") or "")
+    if (
+        _first_token_sim >= 0.92
+        and _word_count_early == 1
+        and _first_token_target in set(_active_ai_names())
+        and _far_early < 0.78
+        and _cue_early != "farfield_replay_likely"
+    ):
+        return {
+            "truth_label": TRUTH_LABEL,
+            "route": "direct",
+            "reason": "layer1_name_only_wake",
+            "confidence": 0.97,
+            "wake_score": 0.97,
+            "name_match": dict(_name_match_early),
+            "first_token": _first_token,
+            "first_token_similarity": round(_first_token_sim, 3),
+            "features": {
+                "farfield_replay_likelihood": _far_early,
+                "channel_cue": _cue_early,
+                "word_count": _word_count_early,
+                "bare_ai_name_wake": True,
+            },
+        }
     if _first_token_sim >= 0.85 and _word_count_early >= 2:
         # Hearing the name first → instant attention. Skip the logit math.
         return {

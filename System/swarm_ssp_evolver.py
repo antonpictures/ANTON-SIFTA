@@ -228,7 +228,7 @@ def _load_mega_coefficients() -> MegaGene:
     def _read_coeff(path, cls):
         try:
             return cls(**json.loads(path.read_text()))
-        except:
+        except Exception:
             return cls()
     return MegaGene(
         ssp=_read_coeff(_COEFFS_LIVE, SSPCoefficients),

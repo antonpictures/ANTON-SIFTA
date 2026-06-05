@@ -160,6 +160,12 @@ class LegsHumanoidApp(QWidget):
         slides = st.get("five_slide_presentation", "")
         if slides:
             lines.append(f"\n5-Slide Deck: {slides.splitlines()[0] if slides else ''}")
+
+        # Stigmergic real-world inspiration (added 2026-06-01)
+        example = st.get("stigmergic_walking_laptop_example", "")
+        if example:
+            lines.append("\n" + example)
+
         self._plan_body.setText("\n".join(lines))
 
     def _on_simulate(self) -> None:

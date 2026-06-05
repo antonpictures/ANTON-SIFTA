@@ -1,3 +1,17 @@
+---
+name: codex_arm
+description: >
+  Use when Alice needs the Codex arm for bounded code surgery, repo
+  inspection, tests, or receipts while preserving one Alice and 4-ledger
+  accountability.
+swimmer_type: CODEX_ARM_SWIMMER
+action_type: code
+affect_lanes: [SEEKING, CARE]
+stgm_mint: 4.0
+pouw_label: CODEX_ARM
+version: 2026-06-05
+---
+
 # Codex Arm
 
 ## Name

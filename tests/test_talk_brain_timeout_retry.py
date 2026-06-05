@@ -18,20 +18,49 @@ class _OllamaStreamResponse:
         yield json.dumps({"done": True}).encode()
 
 
+class _FakeFailoverResponse:
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def __iter__(self):
+        return iter(self._chunks)
+
+
+def test_brain_worker_normalizes_demoted_gemma_to_m5():
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    worker = talk._BrainWorker(
+        "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+        [{"role": "user", "content": "Alice, can you hear me?"}],
+    )
+
+    assert worker._model == "alice-m5-cortex-8b-6.3gb:latest"
+
+
 def test_ollama_stream_timeout_retries_before_failure(monkeypatch):
     from Applications import sifta_talk_to_alice_widget as talk
 
     calls: list[float | None] = []
+    brain_calls: list[float | None] = []
     sleeps: list[float] = []
 
     def fake_urlopen(_req, timeout=None):
         calls.append(timeout)
-        if len(calls) < 4:
+        if timeout != 180.0:
+            raise TimeoutError("preflight timed out")
+        brain_calls.append(timeout)
+        if len(brain_calls) < 4:
             raise TimeoutError("timed out")
         return _OllamaStreamResponse()
 
     worker = talk._BrainWorker(
-        "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+        "alice-m5-cortex-8b-6.3gb:latest",
         [{"role": "user", "content": "Alice, can you hear me?"}],
     )
     done: list[str] = []
@@ -48,7 +77,7 @@ def test_ollama_stream_timeout_retries_before_failure(monkeypatch):
 
     assert done == ["Alice recovered."]
     assert failed == []
-    assert calls == [45.0, 45.0, 45.0, 45.0]
+    assert brain_calls == [180.0, 180.0, 180.0, 180.0]
     assert sleeps == [0.4, 1.0, 2.0]
 
 
@@ -57,12 +86,24 @@ def test_ollama_stream_timeout_failure_is_not_reported_as_crash(monkeypatch):
 
     calls: list[float | None] = []
 
+    class _FakeURLResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self):
+            return b"{}"
+
     def fake_urlopen(_req, timeout=None):
-        calls.append(timeout)
-        raise TimeoutError("timed out")
+        if "/api/chat" in str(getattr(_req, "full_url", "")):
+            calls.append(timeout)
+            raise TimeoutError("timed out")
+        return _FakeURLResponse()
 
     worker = talk._BrainWorker(
-        "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+        "alice-m5-cortex-8b-6.3gb:latest",
         [{"role": "user", "content": "Alice, wake up."}],
     )
     failed: list[str] = []
@@ -74,8 +115,66 @@ def test_ollama_stream_timeout_failure_is_not_reported_as_crash(monkeypatch):
 
     worker.run()
 
-    assert len(calls) == 2
-    assert calls == [9.0, 9.0]
+    assert calls == [30.0, 30.0]
     assert len(failed) == 1
     assert failed[0].startswith("Brain timed out after 2 attempt(s)")
     assert "Brain crashed" not in failed[0]
+
+
+def test_ollama_failover_uses_next_model_when_primary_empty(monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    def fake_urlopen(req, timeout=None):
+        payload = json.loads((req.data or b"{}").decode("utf-8"))
+        model = str(payload.get("model", ""))
+        if model == "primary-empty":
+            return _FakeFailoverResponse([
+                json.dumps({"message": {"content": ""}, "done": True}).encode(),
+            ])
+        if model == "alice-m5-cortex-8b-6.3gb:latest":
+            return _FakeFailoverResponse([
+                json.dumps({"message": {"content": "Alice recovered."}, "done": False}).encode(),
+                json.dumps({"done": True}).encode(),
+            ])
+        return _FakeFailoverResponse([json.dumps({"done": True}).encode()])
+
+    worker = talk._BrainWorker(
+        "primary-empty",
+        [{"role": "user", "content": "Alice, can you hear me?"}],
+        model_candidates=["primary-empty", "alice-m5-cortex-8b-6.3gb:latest"],
+    )
+    done: list[str] = []
+    failed: list[str] = []
+    worker.done.connect(done.append)
+    worker.failed.connect(failed.append)
+    monkeypatch.setenv("SIFTA_OLLAMA_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    worker.run()
+
+    assert done == ["Alice recovered."]
+    assert failed == []
+
+
+def test_ollama_failover_returns_empty_when_all_candidates_empty(monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    def fake_urlopen(req, timeout=None):
+        return _FakeFailoverResponse([json.dumps({"message": {"content": ""}, "done": True}).encode()])
+
+    worker = talk._BrainWorker(
+        "primary-empty",
+        [{"role": "user", "content": "Alice, can you hear me?"}],
+        model_candidates=["primary-empty", "alice-m5-cortex-8b-6.3gb:latest"],
+    )
+    done: list[str] = []
+    failed: list[str] = []
+    worker.done.connect(done.append)
+    worker.failed.connect(failed.append)
+    monkeypatch.setenv("SIFTA_OLLAMA_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    worker.run()
+
+    assert done == [""]
+    assert failed == []

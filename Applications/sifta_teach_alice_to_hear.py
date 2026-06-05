@@ -1185,6 +1185,21 @@ class TeachAliceToHearWidget(QWidget):
             "ground_truth": str(ground_truth or "").strip(),
             "row_id": uuid.uuid4().hex[:12],
         }
+        try:
+            from System.swarm_stigmergic_hearing_lexicon import apply_hearing_lexicon
+
+            lex = apply_hearing_lexicon(
+                str(row.get("whisper_text") or ""),
+                source="sifta_teach_alice_to_hear.record_training_pair",
+                stt_conf=float(row.get("stt_conf") or 0.0),
+                persist=True,
+            )
+            row["lexicon_normalized_text"] = lex.get("normalized_text")
+            row["hearing_lexicon_corrections"] = lex.get("corrections", [])
+            if lex.get("trace_id"):
+                row["hearing_lexicon_trace_id"] = lex.get("trace_id")
+        except Exception:
+            pass
         row["whisper_changed"] = row["whisper_text"] != row["ground_truth"]
         # Sign the row through the physics gate so it carries a receipt.
         try:

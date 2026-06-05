@@ -46,8 +46,18 @@ LOCAL_VISION_NEEDLES = (
     "internvl",
     "phi-3.5-vision",
     "llama3.2-vision",
+    # Direct MLX VLM cortexes (osmQwopus solid vision, Keye experimental) — added so
+    # is_vision_capable_model("mlx-vlm:osmQwopus...") returns True for image turns / command cortex.
+    "mlx-vlm",
+    "qwopus",
+    "keye",
     # Gemma multimodal family — George 2026-05-31 designated gemma4 as Alice's local
     # eye; gemma3 4B+ and the SIFTA gemma4-alice cortex carry a vision head.
+    # r467: `ollama show alice-m5-cortex-8b-6.3gb:latest` reports completion,
+    # vision, audio, tools, and thinking. Do not classify Alice's current local
+    # cortex as text-only just because its tag does not contain "gemma4".
+    "alice-m5-cortex",
+    "alice-gemma4-e2b-cortex",
     "gemma4",
     "gemma-4",
     "gemma3",
@@ -60,7 +70,23 @@ CLOUD_VISION_NEEDLES = (
     "gemini-",
     "kimi-k2p6",
     "kimi",
+    # r310: George set the default Cline cortex to the image-capable openai/gpt-5.4-mini
+    # (Vendor/alice-cli .../builtins.ts). Recognize the real model id so Alice's DEFAULT
+    # path can SEE the airdropped runway photos (r308/r309) instead of routing vision away.
+    "gpt-5.4-mini",
+    # r324: George selected `codex:gpt-5.5` as his cortex (sifta_inference_defaults
+    # CANONICAL_CLOUD_CODEX). The codex_agent arm is native_multimodal at gpt-5.5 and receives a
+    # local image PATH, so this cortex CAN decode an attached image — it must be TRIED first, with
+    # local ollama only as the on-failure fallback. Recognize the model id and the codex: family.
+    "gpt-5.5",
+    "codex:",
+    "codex-",
 )
+
+# r310: the Cline default ALIAS ("cline:cline-cli-default") resolves to that image-capable
+# model in the live TS config. This flag tracks builtins.ts defaultModelId — flip to False if
+# the default Cline model is ever set back to a text-only one.
+CLINE_DEFAULT_VISION_CAPABLE = True
 
 
 def _state_dir(state_dir: str | Path | None = None) -> Path:
@@ -121,11 +147,15 @@ def is_vision_capable_model(model: str, *, require_native_image_payload: bool = 
     if not low:
         return False
     local = any(needle in low for needle in LOCAL_VISION_NEEDLES)
+    cloud = any(needle in low for needle in CLOUD_VISION_NEEDLES)
     gemini = low.startswith(("gemini:", "gemini-"))
-    kimi = "kimi-k2p6" in low or low.endswith("kimi")
+    # r310: the Cline default alias resolves to the image-capable gpt-5.4-mini.
+    cline_default = CLINE_DEFAULT_VISION_CAPABLE and low.startswith("cline")
     if require_native_image_payload:
+        # only transports that can send raw image bytes (local Ollama vision, Gemini REST);
+        # CLI teachers (cline / gpt-5.4-mini) receive an image PATH in the prompt, not bytes.
         return bool(local or gemini)
-    return bool(local or gemini or kimi)
+    return bool(local or cloud or gemini or cline_default)
 
 
 def _capability_row(model: str) -> dict[str, Any]:

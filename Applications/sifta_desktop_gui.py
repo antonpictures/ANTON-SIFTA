@@ -66,7 +66,7 @@ class SIFTABodyChatGUI(tk.Tk):
                 if int(time.time()) % 120 == 0:
                     self.generate_and_send_qa()
                 
-            except:
+            except Exception:
                 pass
             time.sleep(3)
 
@@ -105,7 +105,7 @@ class SIFTABodyChatGUI(tk.Tk):
         try:
             req = requests.post("http://127.0.0.1:11434/api/generate", json=data, timeout=30)
             body = req.json().get("response", "🧠📡 (Gândesc...)").strip()
-        except:
+        except Exception:
             body = "🧠📡 (NPU timeout across the Wormhole. Inference energy low.)"
         
         # Send via real wormhole messenger API
@@ -116,7 +116,7 @@ class SIFTABodyChatGUI(tk.Tk):
                 headers=sifta_headers(),
                 timeout=5,
             )
-        except:
+        except Exception:
             pass
         
         # Log as APPROVED by system

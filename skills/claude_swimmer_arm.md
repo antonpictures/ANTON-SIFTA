@@ -1,3 +1,16 @@
+---
+name: claude_swimmer_arm
+description: >
+  Use when Alice needs the Claude swimmer arm alias or local Claude Code
+  substrate brief, with execution kept as Alice-owned swimmers and receipts.
+swimmer_type: CLAUDE_ARM_SWIMMER
+action_type: code
+affect_lanes: [SEEKING, CARE]
+stgm_mint: 4.0
+pouw_label: CLAUDE_SWIMMER_ARM
+version: 2026-06-05
+---
+
 # Claude Swimmer Arm
 
 ## Name

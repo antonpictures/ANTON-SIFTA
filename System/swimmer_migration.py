@@ -122,7 +122,7 @@ def process_rebirth_mesh():
         if not line.strip(): continue
         try:
             bundle = json.loads(line)
-        except: continue
+        except Exception: continue
         
         sig = bundle.get("signature")
         if not sig or sig in processed:

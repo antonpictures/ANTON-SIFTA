@@ -1,10 +1,13 @@
 from Applications.sifta_talk_to_alice_widget import (
+    _background_audio_receipt_reply_for_alice,
+    _current_turn_datetime_context_for_cortex,
     _current_date_reply_for_alice,
     _current_date_time_reply_for_alice,
     _current_time_date_reflex_reply_for_alice,
     _current_time_reply_for_alice,
     _is_current_time_query,
     _recent_context_reflex_reply_for_alice,
+    _time_reply_is_untrusted,
 )
 
 
@@ -46,7 +49,8 @@ def test_alice_prefixed_time_query_is_direct_time_query():
     assert _is_current_time_query("Alice, what time is it?")
 
 
-def test_reflex_reply_handles_alice_prefixed_time_query():
+def test_reflex_reply_handles_alice_prefixed_time_query(monkeypatch):
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
     reply, model = _current_time_date_reflex_reply_for_alice(
         "Alice what time is it?",
         _reading(),
@@ -66,6 +70,52 @@ def test_reflex_reply_handles_date_and_time_together():
     assert "Wednesday, May 13, 2026" in reply
     assert "The time is 9:40 AM PDT" in reply
     assert model == "hardware_date_time_oracle_reflex"
+
+
+def test_time_reply_repair_catches_wrong_literal_time():
+    assert _time_reply_is_untrusted("The current system time is 3:47 PM, Human.", _reading())
+    assert not _time_reply_is_untrusted("It is 9:40 AM PDT from the hardware oracle.", _reading())
+
+
+def test_background_audio_receipt_does_not_guess_bird_species(tmp_path):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+
+    reply = _background_audio_receipt_reply_for_alice(
+        "birds you hear in background",
+        state_dir=state_dir,
+        now=1000.0,
+        capture_clip=False,
+    )
+    assert "Receipt:" in reply
+    assert "owner_labeled_birds" in reply
+    assert "sparrow" not in reply.lower()
+    assert "robin" not in reply.lower()
+
+    (state_dir / "acoustic_fingerprints.jsonl").write_text(
+        '{"ts": 995.0, "channel_cue": "nearfield_voice_likely"}\n',
+        encoding="utf-8",
+    )
+    reply = _background_audio_receipt_reply_for_alice(
+        "birds you hear in background",
+        state_dir=state_dir,
+        now=1000.0,
+        capture_clip=False,
+    )
+    assert "acoustic_fingerprints.jsonl" in reply
+    assert "nearfield_voice_likely" in reply
+
+
+def test_current_turn_datetime_context_is_available_to_every_cortex_turn():
+    block = _current_turn_datetime_context_for_cortex(
+        input_source="voice",
+        owner_text="we are on the porch",
+        reading=_reading(),
+    )
+
+    assert "CURRENT TURN DATETIME RECEIPT" in block
+    assert "owner_turn_received_at=Wednesday May 13 2026, 09:40 AM PDT" in block
+    assert "input_source=voice" in block
 
 
 def test_recent_context_reflex_handles_first_person_teaching():
