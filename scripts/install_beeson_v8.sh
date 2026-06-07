@@ -9,7 +9,7 @@ FORCE_PULL=0
 
 usage() {
   cat <<'EOF'
-BeeSon v8.0 installer
+BeeSon v8.1 installer
 
 Usage:
   bash scripts/install_beeson_v8.sh [--with-models] [--no-smoke] [--target DIR] [--pull]
@@ -50,7 +50,7 @@ banner() {
   printf '\033[1;33m'
   cat <<'EOF'
   ================================================
-       BeeSon v8.0 installer - SIFTA Living OS
+       BeeSon v8.1 installer - SIFTA Living OS
        Fresh Mac path: code, venv, receipts, smoke
   ================================================
 EOF
@@ -81,13 +81,30 @@ else
   cd "$REPO_DIR"
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
+PYTHON_BOOT="${PYTHON_BOOT:-}"
+if [[ -z "$PYTHON_BOOT" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BOOT="$(command -v python3)"
+  fi
+  if [[ -x ".venv/bin/python" ]]; then
+    if [[ -z "$PYTHON_BOOT" ]] || ! "$PYTHON_BOOT" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+    then
+      PYTHON_BOOT=".venv/bin/python"
+      echo "[beeson] using existing repo venv python because machine python3 is too old"
+    fi
+  fi
+fi
+
+if [[ -z "$PYTHON_BOOT" ]] || ! command -v "$PYTHON_BOOT" >/dev/null 2>&1; then
   echo "ERROR: python3 not found. Install Xcode command line tools or Homebrew Python first." >&2
   echo "Try: xcode-select --install" >&2
   exit 1
 fi
 
-python3 - <<'PY'
+"$PYTHON_BOOT" - <<'PY'
 import sys
 if sys.version_info < (3, 11):
     raise SystemExit(f"Python 3.11+ required; found {sys.version.split()[0]}")
@@ -96,7 +113,7 @@ PY
 
 if [[ ! -d ".venv" ]]; then
   echo "[beeson] creating .venv"
-  python3 -m venv .venv
+  "$PYTHON_BOOT" -m venv .venv
 fi
 
 # shellcheck source=/dev/null
@@ -129,9 +146,6 @@ from huggingface_hub import snapshot_download
 models = [
     ("georgeanton/alice-m5-cortex-8b-6.3gb", "alice-m5-cortex-8b-6.3gb"),
     ("georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb", "alice-gemma4-e2b-cortex-5.1b-4.4gb"),
-    ("georgeanton/alice-Q-m1-scout-2.3b-2.7gb", "alice-Q-m1-scout-2.3b-2.7gb"),
-    ("georgeanton/sifta-classifier-c1-3.1b-6.2gb", "sifta-classifier-c1-3.1b-6.2gb"),
-    ("georgeanton/alice-extra-cortex-25.8b-17gb", "alice-extra-cortex-25.8b-17gb"),
 ]
 root = Path(".sifta_models/huggingface")
 for repo_id, name in models:
@@ -145,9 +159,24 @@ for repo_id, name in models:
     if "local_dir_use_symlinks" in inspect.signature(snapshot_download).parameters:
         kwargs["local_dir_use_symlinks"] = False
     snapshot_download(**kwargs)
+
+retired = (
+    "alice-Q-m1-scout-2.3b-2.7gb",
+    "sifta-classifier-c1-3.1b-6.2gb",
+    "alice-extra-cortex-25.8b-17gb",
+)
+for name in retired:
+    target = root / name
+    if target.exists():
+        print(f"[beeson] removing retired local model dir {target}")
+        import shutil
+        shutil.rmtree(target)
 PY
   if command -v ollama >/dev/null 2>&1; then
     if ollama list >/dev/null 2>&1; then
+      ollama rm "alice-Q-m1-scout-2.3b-2.7gb:latest" >/dev/null 2>&1 || true
+      ollama rm "sifta-classifier-c1-3.1b-6.2gb:latest" >/dev/null 2>&1 || true
+      ollama rm "alice-extra-cortex-25.8b-17gb:latest" >/dev/null 2>&1 || true
       for model_dir in "$MODEL_ROOT"/*; do
         [[ -f "$model_dir/Modelfile" ]] || continue
         tag="$(basename "$model_dir"):latest"
@@ -185,6 +214,17 @@ with path.open("a", encoding="utf-8") as f:
 print(f"[beeson] install receipt {row['trace_id']} -> {path}")
 PY
 
+if [[ -d "$HOME/Desktop" ]]; then
+  cat > "$HOME/Desktop/SIFTA OS.command" <<'SH'
+#!/bin/zsh
+cd "$HOME/Music/ANTON_SIFTA" || exit 1
+exec "$HOME/Music/ANTON_SIFTA/SIFTA OS.command"
+SH
+  chmod +x "$HOME/Desktop/SIFTA OS.command"
+  xattr -c "$HOME/Desktop/SIFTA OS.command" 2>/dev/null || true
+  echo "[beeson] Desktop launcher ready: $HOME/Desktop/SIFTA OS.command"
+fi
+
 if [[ "$RUN_SMOKE" == "1" ]]; then
   bash scripts/beeson_smoke_test.sh
 fi
@@ -194,8 +234,6 @@ cat <<EOF
 [beeson] Install complete.
 
 Next:
-  cp "SIFTA OS.command" ~/Desktop/
-  chmod +x ~/Desktop/"SIFTA OS.command"
   open ~/Desktop/"SIFTA OS.command"
 
 macOS permissions to grant on first boot:
