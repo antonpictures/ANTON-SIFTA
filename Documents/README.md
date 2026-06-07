@@ -161,9 +161,9 @@ Navigate to `http://localhost:7433`. The swarm is alive. Click the **📋 PROPOS
 
 ---
 
-## 📚 The Deep Lore: Origins & Architecture
+## 📚 Origins & Architecture
 
-*(Everything past this point is the original deep dive for the architects and historians.)*
+*(Everything past this point is the original architecture record for the architects and historians.)*
 He later produced **Stigcode** (2006), a high-level language for specifying these swarm
 behaviors declaratively.
 

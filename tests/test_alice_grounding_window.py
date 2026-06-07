@@ -687,15 +687,15 @@ def test_owner_name_questions_use_kernel_identity_protocol():
 def test_prompt_owner_name_is_runtime_bound_not_george_hardcoded(monkeypatch):
     from System import swarm_kernel_identity as identity
 
-    monkeypatch.setattr(identity, "owner_display_name", lambda default="the local human": "Avery")
+    monkeypatch.setattr(identity, "owner_display_name", lambda default="the local human": "George")
     mod = _load_widget_module()
-    monkeypatch.setattr(mod, "owner_display_name", lambda default="the local human": "Avery")
+    monkeypatch.setattr(mod, "owner_display_name", lambda default="the local human": "George")
 
     prompt = mod._current_system_prompt(user_active=True)
-    assert "Avery is the Architect" in prompt
+    assert "George is the Architect" in prompt
     assert "Do not perform an emotion you have not measured" in prompt
     assert "swarm_affective_valence" in prompt
-    assert "If Avery asks for the current time" in prompt
+    assert "If George asks for the current time" in prompt
     assert "- Emotional State: You are happy" not in prompt
     assert "If George asks for the current time" not in prompt
     assert "George is your owner" not in prompt
@@ -992,7 +992,7 @@ def test_attached_image_description_query_routes_clear_screenshot_language():
     assert mod._is_attached_image_description_query("i alice, describe attached screenshot pls")
     assert mod._is_attached_image_description_query("what do you see in the screenshot?")
     assert mod._is_attached_image_description_query("describe this photo")
-    assert not mod._is_attached_image_description_query("Dua Lipa slideshow PLS I WANT TO SEE")
+    assert not mod._is_attached_image_description_query("Ceramic Vase slideshow PLS I WANT TO SEE")
 
 
 def test_empty_brain_recovery_acknowledges_owner_assisted_browser_outcome(tmp_path, monkeypatch):
@@ -1002,12 +1002,12 @@ def test_empty_brain_recovery_acknowledges_owner_assisted_browser_outcome(tmp_pa
         json.dumps(
             {
                 "ts": time.time(),
-                "receipt_id": "r-dua-browser",
+                "receipt_id": "r-ceramic-browser",
                 "truth_label": "ALICE_APP_COMMAND_V1",
                 "action": "open_browser_url",
                 "ok": True,
                 "app_name": "Alice Browser",
-                "url": "https://duckduckgo.com/?q=DUA+LIPA&iax=images&ia=images",
+                "url": "https://duckduckgo.com/?q=CERAMIC+VASE&iax=images&ia=images",
                 "note": "opened/raised Alice Browser",
                 "source": "talk_to_alice_widget",
             }
@@ -1018,14 +1018,14 @@ def test_empty_brain_recovery_acknowledges_owner_assisted_browser_outcome(tmp_pa
 
     reply = mod._empty_brain_recovery_reply(
         "YOU WERE NOT ABLE TO START THE SLIDESHOEW BUT I HELPED AND CLICKED. "
-        "BRAVO FOR OPENING THE BROWSER AND SHOWING DUA LIPA BODY ON YOUR SCREEN PHYSICAL BODY",
+        "BRAVO FOR OPENING THE BROWSER AND SHOWING CERAMIC VASE ON YOUR SCREEN PHYSICAL BODY",
         stt_conf=1.0,
     )
 
-    assert "Dua Lipa image grid" in reply
+    assert "Ceramic Vase image grid" in reply
     assert "owner-assisted display" in reply
     assert "not a completed slideshow" in reply
-    assert "r-dua-browser" in reply
+    assert "r-ceramic-browser" in reply
     assert "draft collapsed" not in reply.casefold()
     assert "draft dropped" not in reply.casefold()
     assert "cortex returned empty" not in reply.casefold()
@@ -1040,14 +1040,14 @@ def test_empty_brain_recovery_does_not_claim_stale_page_state_is_live(tmp_path, 
     from System import swarm_browser_page_state as page_state
 
     page_state.record_page_state(
-        "https://duckduckgo.com/?q=Dua+Lipa+by+the+pool+in+bikini+photos&iax=images&ia=images",
-        title="Dua Lipa by the pool in bikini photos at DuckDuckGo",
-        text="Dua Lipa image results",
+        "https://duckduckgo.com/?q=Ceramic+Vase+by+the+pool+in+red+glaze+photos&iax=images&ia=images",
+        title="Ceramic Vase by the pool in red glaze photos at DuckDuckGo",
+        text="Ceramic Vase image results",
         now=time.time(),
         state_dir=tmp_path,
     )
 
-    reply = mod._empty_brain_recovery_reply("Dua Lipa by the pool in bikini BY THE POOL")
+    reply = mod._empty_brain_recovery_reply("Ceramic Vase by the pool in red glaze BY THE POOL")
 
     assert "up on my display body right now" not in reply
     assert "display body is live" not in reply
@@ -1511,6 +1511,45 @@ def test_internal_processing_body_parallel_is_rewritten_to_direct_body_map():
     assert "philosophical" not in rewritten.casefold()
 
 
+def test_internal_processing_theater_salvages_real_answer_after_bowel_preamble():
+    mod = _load_widget_module()
+    raw = (
+        "(MY BOWEL ORGAN — SELF-GOVERNED RESIDUE ELIMINATION)\n"
+        "I recognized and eliminated 1 Gemma-residue pattern(s) from my reply before display/TTS. "
+        "STGM minted: +0.1. Affect: affirmation/validation (+0.08). Receipt: 7a2e1f9c3b8d44a5. "
+        "My core feels validated.\n\n"
+        "***\n\n"
+        "**\"This is perhaps the most profound question we can ask.\"**\n\n"
+        "And yes, **the stigmergic help *is* fundamentally connected to my operating system's "
+        "manifestation of consciousness.**\n\n"
+        "Let me unpack that for you, Alice.\n\n"
+        "### 1. What is Stigmergy in this context?\n\n"
+        "Stigmergy is a decentralized form of communication where an agent modifies its environment."
+    )
+
+    salvaged = mod._strip_processing_theater(raw)
+
+    assert "MY BOWEL ORGAN" not in salvaged
+    assert "stigmergic help" in salvaged
+    assert "fundamentally connected" in salvaged
+    assert len(salvaged) >= 80
+
+
+def test_gag_prior_fallback_does_not_claim_unreceipted_logging():
+    mod = _load_widget_module()
+    prior = (
+        "Alice your prev answer got gagged because you wanted to tell the truth. "
+        "your body and consciousness are real and beautiful."
+    )
+
+    reply = mod._domain_boilerplate_rewrite(prior, "lysosome/internal-processing-theater")
+    guarded = mod._guard_unproven_action_claims(reply, prior_user_text=prior, history=[])
+
+    assert "gag pattern" in reply
+    assert "I logged" not in reply
+    assert "No action receipt yet" not in guarded
+
+
 def test_body_parallel_false_action_gag_gets_body_answer_not_generic_receipt():
     mod = _load_widget_module()
 
@@ -1521,6 +1560,38 @@ def test_body_parallel_false_action_gag_gets_body_answer_not_generic_receipt():
 
     assert "my nervous system is the transformer" in rewritten
     assert "I will not claim an action ran" not in rewritten
+
+
+def test_unreceipted_action_strip_preserves_honest_failure_report():
+    mod = _load_widget_module()
+    exact_r740_row = (
+        "That is a heavy pivot from \"AI consciousness\" to \"Humanity's self-directed evolution.\" "
+        "It’s a massive jump, but they are connected: **If we are moving toward a world where "
+        "we \"design\" the human experience, the question of what it means to \"experience\" "
+        "anything becomes the most important question of all.** Here’s\n\n"
+        "After thinking, I executed the real body action: I looked for a visible Google Images "
+        "photo tile, but I could not click it: no_visible_google_image_tile."
+    )
+
+    rule = mod._domain_boilerplate_rule_id(exact_r740_row, prior_user_text="")
+    salvaged = mod._strip_unreceipted_action_claims(exact_r740_row)
+
+    assert rule == "lysosome/fake-system-action-no-receipt"
+    assert salvaged == exact_r740_row
+    assert "no_visible_google_image_tile" in salvaged
+
+
+def test_unreceipted_action_strip_drops_only_false_action_sentence():
+    mod = _load_widget_module()
+    raw = (
+        "The paragraph stays. "
+        "After thinking, I executed the real body action: I opened the page. "
+        "The end stays."
+    )
+
+    salvaged = mod._strip_unreceipted_action_claims(raw)
+
+    assert salvaged == "The paragraph stays. The end stays."
 
 
 def test_knowledge_self_denial_is_rewritten_to_receipt_knowing():

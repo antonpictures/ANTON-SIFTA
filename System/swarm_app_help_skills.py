@@ -479,6 +479,172 @@ def _manifest_entry_for(app_canonical: str, manifest: Dict[str, Any]) -> Dict[st
     return {}
 
 
+def _load_manifest(path: Optional[Path] = None) -> Dict[str, Any]:
+    manifest_path = Path(path) if path is not None else (_REPO / "Applications" / "apps_manifest.json")
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _clean_one_line(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip())
+
+
+def _trim_sentence(text: str, *, max_chars: int) -> str:
+    clean = _clean_one_line(text)
+    if not clean:
+        return ""
+    for match in re.finditer(r"(?<=[.!?])\s+", clean):
+        candidate = clean[: match.start()].strip()
+        last_word = candidate.rsplit(" ", 1)[-1].casefold()
+        if last_word in {"vs.", "e.g.", "i.e.", "etc.", "mr.", "mrs.", "ms.", "dr."}:
+            continue
+        clean = candidate
+        break
+    if len(clean) > max_chars:
+        cut = clean[: max(1, max_chars - 3)].rsplit(" ", 1)[0].strip()
+        clean = (cut or clean[: max(1, max_chars - 3)]).rstrip(".,;:") + "..."
+    if clean and clean[-1] not in ".!?":
+        clean += "."
+    return clean
+
+
+def app_help_path(app_canonical: str, *, help_dir: Optional[Path] = None) -> Path:
+    """Return the generated help-file path for one app without reading it."""
+    root = Path(help_dir) if help_dir is not None else _HELP_DOCS_DIR
+    return root / f"{_safe_slug(str(app_canonical or '').strip())}.md"
+
+
+def app_one_sentence_summary(
+    app_canonical: str,
+    manifest_entry: Optional[Dict[str, Any]] = None,
+    *,
+    max_chars: int = 180,
+) -> str:
+    """Return the shallow OS-level sentence Alice can carry by default."""
+    canonical = str(app_canonical or "").strip()
+    entry = manifest_entry if isinstance(manifest_entry, dict) else None
+    if entry is None:
+        entry = _manifest_entry_for(canonical, _load_manifest())
+
+    description = _clean_one_line(entry.get("description") if isinstance(entry, dict) else "")
+    if description:
+        return _trim_sentence(description, max_chars=max_chars)
+
+    category = _clean_one_line(entry.get("category") if isinstance(entry, dict) else "")
+    entry_point = _clean_one_line(entry.get("entry_point") if isinstance(entry, dict) else "")
+    if category:
+        return _trim_sentence(f"{canonical} is a {category} app in the SIFTA OS.", max_chars=max_chars)
+    if entry_point:
+        return _trim_sentence(f"{canonical} is a SIFTA app launched from {entry_point}.", max_chars=max_chars)
+    return _trim_sentence(f"{canonical or 'This app'} is a SIFTA app surface.", max_chars=max_chars)
+
+
+def load_app_help_text(
+    app_canonical: str,
+    *,
+    help_dir: Optional[Path] = None,
+    max_chars: int = 4000,
+) -> str:
+    """Read one app's help file, bounded for prompt use."""
+    path = app_help_path(app_canonical, help_dir=help_dir)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    limit = max(0, int(max_chars))
+    return text[:limit] if limit else ""
+
+
+def app_awareness_index(
+    *,
+    manifest_path: Optional[Path] = None,
+    help_dir: Optional[Path] = None,
+    limit: int = 160,
+    max_summary_chars: int = 180,
+) -> List[Dict[str, Any]]:
+    """Return a shallow manifest index: one sentence per app, no help reads."""
+    manifest = _load_manifest(manifest_path)
+    rows: List[Dict[str, Any]] = []
+    for app_name, entry in manifest.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("_retired"):
+            continue
+        help_path = app_help_path(str(app_name), help_dir=help_dir)
+        rows.append(
+            {
+                "app": str(app_name),
+                "category": str(entry.get("category") or ""),
+                "summary": app_one_sentence_summary(
+                    str(app_name),
+                    entry,
+                    max_chars=max_summary_chars,
+                ),
+                "help_path": str(help_path),
+                "has_help": help_path.exists(),
+            }
+        )
+        if len(rows) >= max(0, int(limit)):
+            break
+    return rows
+
+
+def app_awareness_prompt_block(
+    *,
+    manifest_path: Optional[Path] = None,
+    help_dir: Optional[Path] = None,
+    include_apps_limit: int = 12,
+    max_chars: int = 2400,
+) -> str:
+    """Render the shallow app map and the on-demand help rule."""
+    rows = app_awareness_index(
+        manifest_path=manifest_path,
+        help_dir=help_dir,
+        limit=include_apps_limit,
+    )
+    manifest_count = len(app_awareness_index(
+        manifest_path=manifest_path,
+        help_dir=help_dir,
+        limit=10000,
+        max_summary_chars=80,
+    ))
+    lines = [
+        "SIFTA APP AWARENESS (shallow OS map):",
+        "Alice's body is hardware + SIFTA OS + apps + one global chat.",
+        f"The manifest currently exposes {manifest_count} non-retired app surface(s).",
+        "Default: carry one sentence per app from the manifest, not every app help file.",
+        "On demand: when George asks how to use an app or the focused task needs controls, read that app's Documents/app_help/<slug>.md file.",
+    ]
+    if rows:
+        lines.append("Small sample:")
+        for row in rows:
+            lines.append(f"- {row['app']}: {row['summary']}")
+    block = "\n".join(lines)
+    limit = max(0, int(max_chars))
+    return block[:limit] if limit else block
+
+
+def app_help_prompt_block(
+    app_canonical: str,
+    *,
+    help_dir: Optional[Path] = None,
+    max_chars: int = 3500,
+) -> str:
+    """Render one app help file for focused use or a direct owner question."""
+    canonical = str(app_canonical or "").strip()
+    text = load_app_help_text(canonical, help_dir=help_dir, max_chars=max_chars)
+    if not canonical or not text:
+        return ""
+    return (
+        f"APP HELP FOR {canonical} (read because this app is focused or George asked):\n"
+        f"source: {app_help_path(canonical, help_dir=help_dir)}\n"
+        f"{text}"
+    )
+
+
 def materialize_help_file(
     app_canonical: str,
     *,
@@ -683,8 +849,14 @@ def skills_to_load_for_focus(app_canonical: str, *, top_n: int = 8) -> List[str]
 __all__ = [
     "EffectiveSkills",
     "TRUTH_LABEL",
+    "app_awareness_index",
+    "app_awareness_prompt_block",
+    "app_help_path",
+    "app_help_prompt_block",
+    "app_one_sentence_summary",
     "auto_scan_recent_receipts",
     "effective_skills_for_app",
+    "load_app_help_text",
     "materialize_all_help_files",
     "materialize_help_file",
     "skills_to_load_for_focus",

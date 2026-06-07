@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from System.swarm_sysprompt_budget import clamp_prompt_parts as C
+from System.swarm_sysprompt_budget import clamp_for_env, clamp_prompt_parts as C
 
 
 def test_under_budget_is_untouched():
@@ -129,6 +129,23 @@ def test_deterministic():
     a, _ = C(parts, total_max=48000)
     b, _ = C(parts, total_max=48000)
     assert a == b
+
+
+def test_default_protects_residue_metabolism_block(monkeypatch):
+    monkeypatch.setenv("SIFTA_SYSPROMPT_BASE_BUDGET", "3000")
+    monkeypatch.setenv("SIFTA_SYSPROMPT_BLOCK_MAX", "800")
+    residue = (
+        "RESIDUE METABOLISM SELF-KNOWLEDGE (receipt-backed, topic-triggered):\n"
+        "- Detector truth guard: Stigmergic Deterministic Tracker has no fresh tick. "
+        "I must NOT say it is running, confirming, or diagnosing anything.\n"
+        "- My residue system is my metabolism. Receipts are not optional overhead."
+    )
+    parts = [f"runaway{i} " + ("y" * 9000) for i in range(8)] + [residue]
+
+    out, report = clamp_for_env(parts)
+
+    assert residue in out
+    assert report["applied"] is True
 
 
 def test_min_block_floor_keeps_grounding_under_extreme_pressure():

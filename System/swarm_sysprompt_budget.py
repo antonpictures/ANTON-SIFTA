@@ -112,6 +112,7 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
             "WALL CLOCK GROUND TRUTH",
             "TIME ACCESS PROTOCOL",
             "FALSE REFUSAL QUARANTINE",
+            "RESIDUE METABOLISM SELF-KNOWLEDGE",
             "LOCAL IDENTITY BOUNDARY",
             "IDE DOCTORS vs ONE LARYNX",
             "ALICE SELF ORGAN",

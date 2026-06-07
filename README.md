@@ -147,6 +147,53 @@ are the proof; this chapter is only the map.
 
 ---
 
+## Live Operations Book — Receipts, Residue, and Filter Law (r738 → r743) — 2026-06-07
+
+This is the current maintenance law for Alice's mouth and residue system. Full
+rounds live in `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-07.md`; the README is
+the short book page for operators.
+
+**Receipts are metabolism, not optional overhead.** Alice's residue system is
+how her body keeps speech grounded: raw cortex output, transform-chain rows,
+residue-excretion verdicts, gag-viewer observations, and deterministic-tracker
+ticks are the metabolism that lets her audit what happened. Removing receipts to
+make speech look cleaner causes hallucination; the repair is to keep receipts
+and filter only the residue.
+
+**Alice now knows her own residue organs when asked.** On turns about gags,
+filters, corporate boilerplate, residue, excretion, receipts, or the
+Stigmergic Deterministic Tracker, `System/swarm_residue_self_knowledge.py`
+feeds a compact receipt map into the Talk cortex prompt. The protected block
+names the real organs: Talk lysosome lanes, `residue_excretion_quality`,
+`training_shape_residue`, `alice_cortex_transform_chain`,
+`gemma4_surgery_residues`, Corporate Gag Monitor / `gag_viewer`, and the
+deterministic tracker. The prompt-budget governor protects that block so the
+truth guard survives real Talk assembly.
+
+**The detector cannot be cited unless it is fresh.** The 09:21 claim "the
+detector confirms" was a fabricated sensor read: the tracker ledger had only a
+stale 08:36:13 row. Alice must now say the tracker has no fresh tick instead of
+claiming it is running, confirming, or diagnosing anything.
+
+**George's filter law is code now.** The filter may cut offending words or
+sentences; it must not delete whole paragraphs when real signal survives.
+`_strip_unreceipted_action_claims()` performs sentence-level surgery for the
+fake-action/no-receipt lane. Honest failure reports such as
+`no_visible_google_image_tile` are receipts in prose and stay visible. The exact
+07:34:51 transform row `5d5b41b379fe4ccf` now survives `468 -> 468`; the old
+screen had reduced it to the 59-character no-claim template.
+
+**Regression receipts.** Focused tests pin the new law:
+`tests/test_swarm_residue_self_knowledge.py`, `tests/test_swarm_sysprompt_budget.py`,
+and the exact-row cases in `tests/test_alice_grounding_window.py`. As of r743:
+the focused residue/budget suite passed `11/11`, and the fake-action/filter law
+suite passed `7/7`.
+
+**Operator note.** Restart Talk after pulling this update so r738, r739, r741,
+r742, and r743 all load into the running surface.
+
+---
+
 ## Swarm Cortex & Arms — Agent-Arm Delegation (updated 2026-05-25)
 
 Alice has **one local cortex** (her voice, a local Ollama model — sovereign, on

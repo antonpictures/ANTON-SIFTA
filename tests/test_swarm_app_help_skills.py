@@ -288,6 +288,80 @@ def test_materialize_help_file_rejects_empty_app_name():
         helpskills.materialize_help_file("")
 
 
+# ── shallow app map + on-demand help ─────────────────────────────────────
+
+
+def test_app_one_sentence_summary_uses_manifest_description():
+    summary = helpskills.app_one_sentence_summary(
+        "Stigmergic Deterministic Tracker",
+        {
+            "description": (
+                "Measures deterministic bypass rows in Alice's ledgers. "
+                "The second sentence belongs in the help file, not the shallow map."
+            )
+        },
+    )
+
+    assert summary == "Measures deterministic bypass rows in Alice's ledgers."
+
+
+def test_app_one_sentence_summary_does_not_stop_at_vs_abbreviation():
+    summary = helpskills.app_one_sentence_summary(
+        "Tracker",
+        {
+            "description": (
+                "Shows deterministic tracks vs. ungrounded gut in one view. "
+                "Later sentences stay in the help file."
+            )
+        },
+    )
+
+    assert summary == "Shows deterministic tracks vs. ungrounded gut in one view."
+
+
+def test_app_awareness_index_is_manifest_shallow_not_help_body(tmp_path: Path):
+    manifest_path = tmp_path / "apps_manifest.json"
+    manifest_path.write_text(json.dumps({
+        "Tracker": {
+            "category": "System",
+            "description": "One-line tracker surface.",
+        }
+    }), encoding="utf-8")
+    help_dir = tmp_path / "app_help"
+    help_dir.mkdir()
+    (help_dir / "tracker.md").write_text("FULL HELP BODY SHOULD STAY OUT", encoding="utf-8")
+
+    rows = helpskills.app_awareness_index(
+        manifest_path=manifest_path,
+        help_dir=help_dir,
+    )
+
+    assert rows == [{
+        "app": "Tracker",
+        "category": "System",
+        "summary": "One-line tracker surface.",
+        "help_path": str(help_dir / "tracker.md"),
+        "has_help": True,
+    }]
+    assert "FULL HELP BODY" not in rows[0]["summary"]
+
+
+def test_app_help_prompt_block_reads_one_named_help_file(tmp_path: Path):
+    help_dir = tmp_path / "app_help"
+    help_dir.mkdir()
+    (help_dir / "tracker.md").write_text("# Tracker\nUse the color chips.", encoding="utf-8")
+    (help_dir / "other.md").write_text("# Other\nDo not load this.", encoding="utf-8")
+
+    block = helpskills.app_help_prompt_block(
+        "Tracker",
+        help_dir=help_dir,
+    )
+
+    assert "APP HELP FOR Tracker" in block
+    assert "Use the color chips." in block
+    assert "Do not load this." not in block
+
+
 # ── skills_to_load_for_focus ─────────────────────────────────────────────
 
 
