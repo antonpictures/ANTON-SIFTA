@@ -16,6 +16,7 @@ Single-instance per §7.6.2.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -134,35 +135,29 @@ class BonsaiImageStudioApp(QWidget):
         hint.setStyleSheet("color: rgb(150,153,180); font-size: 11px;")
         root.addWidget(hint)
 
+        # r746 — George's order: "leave only one button generate another export jpg
+        # and only one box to type the text, simple." One box, two buttons.
+        # The teach contract survives underneath: label + meaning derive from the
+        # prompt, so every image still lands in Alice's field with her lesson.
         self.prompt = QLineEdit()
-        self.prompt.setPlaceholderText("Prompt — e.g. A bonsai tree in a quiet ceramic studio, soft morning light")
+        self.prompt.setPlaceholderText("Type what you want to see — Generate does the rest")
         root.addWidget(self.prompt)
 
-        teach_row = QHBoxLayout()
-        self.owner_label = QLineEdit()
-        self.owner_label.setPlaceholderText("Stigmergic label — e.g. bonsai-in-studio")
-        self.meaning = QLineEdit()
-        self.meaning.setPlaceholderText("Meaning to teach — e.g. a small cultivated tree, calm, craft, patience")
-        teach_row.addWidget(self.owner_label)
-        teach_row.addWidget(self.meaning)
-        root.addLayout(teach_row)
+        self._seed = 42  # internal; the receipt still carries it
+        self._last_image_path = ""
+        self._last_trace_ts = 0.0  # r747: 0 on open → newest field render shows on first tick (§1.A history-is-identity)
 
         ctl_row = QHBoxLayout()
-        ctl_row.addWidget(QLabel("Seed:"))
-        self.seed = QSpinBox()
-        self.seed.setRange(0, 2_147_483_647)
-        self.seed.setValue(42)
-        ctl_row.addWidget(self.seed)
-        self.compose_btn = QPushButton("Ant Cortex Compose")
-        self.compose_btn.clicked.connect(self._on_compose)
-        ctl_row.addWidget(self.compose_btn)
-        self.generate_btn = QPushButton("Generate & Teach")
+        self.generate_btn = QPushButton("Generate")
         self.generate_btn.clicked.connect(self._on_generate)
         ctl_row.addWidget(self.generate_btn)
+        self.export_btn = QPushButton("Export JPG")
+        self.export_btn.clicked.connect(self._on_export_jpg)
+        ctl_row.addWidget(self.export_btn)
         ctl_row.addStretch(1)
         root.addLayout(ctl_row)
 
-        self.status = QLabel("Ready. Compose from the field, or type a prompt + meaning, then Generate & Teach.")
+        self.status = QLabel("Ready. Type a prompt, hit Generate.")
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: rgb(150,153,180); font-size: 11px;")
         root.addWidget(self.status)
@@ -176,7 +171,7 @@ class BonsaiImageStudioApp(QWidget):
         root.addWidget(self.image, stretch=1)
 
         self._idle_timer = QTimer(self)
-        self._idle_timer.setInterval(15_000)
+        self._idle_timer.setInterval(5_000)  # r747: also polls the visual field; chat renders appear within ~5s
         self._idle_timer.timeout.connect(self._idle_tick)
         self._idle_timer.start()
 
@@ -200,7 +195,57 @@ class BonsaiImageStudioApp(QWidget):
             return ""
         return str(status.get("error") or "Bonsai backend is not ready.")
 
+    def _check_field_for_new_renders(self) -> None:
+        """r747 — the open app is a WINDOW into Alice's visual field (§1.A).
+
+        When Cole (or any owner) crafts an image in conversation and tells
+        Alice 'bonsai a photo of …', her chat hand fires the same organ this
+        app's Generate button calls. This watch tails the organ's own ledger
+        (bonsai_image_trace.jsonl) so that render appears HERE too — image on
+        the glass, her prompt mirrored into the box, Export JPG live. One
+        organ, many hands, one visible field.
+        """
+        try:
+            trace_path = _REPO / ".sifta_state" / "bonsai_image_trace.jsonl"
+            if not trace_path.exists():
+                return
+            with open(trace_path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 65536))
+                lines = [ln for ln in f.read().decode("utf-8", "replace").splitlines() if ln.strip()]
+            if not lines:
+                return
+            row = json.loads(lines[-1])
+            ts = float(row.get("ts") or 0)
+            path = str(row.get("image_path") or "")
+            if ts <= self._last_trace_ts or not path or path == self._last_image_path:
+                self._last_trace_ts = max(self._last_trace_ts, ts)
+                return
+            if not Path(path).exists():
+                return
+            pix = QPixmap(path)
+            if pix.isNull():
+                return
+            self._last_trace_ts = ts
+            self._last_image_path = path
+            self.image.setPixmap(
+                pix.scaled(self.image.width(), self.image.height(),
+                           Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+            )
+            prompt = str(row.get("prompt") or "")
+            if prompt:
+                self.prompt.setText(prompt)
+            self.status.setText(
+                f"Alice rendered this from the field: '{str(row.get('owner_label') or '')}' "
+                f"(receipt {str(row.get('receipt_id') or '?')[:12]}). Export JPG is live."
+            )
+        except Exception:
+            pass
+
     def _idle_tick(self) -> None:
+        self._check_field_for_new_renders()
         if self._worker is not None and not self._worker.isRunning():
             self._worker = None
         if self._compose_worker is not None and not self._compose_worker.isRunning():
@@ -211,7 +256,7 @@ class BonsaiImageStudioApp(QWidget):
             return
         if not self.status.text().startswith("Idle."):
             self.status.setText(
-                "Idle. No Bonsai generation is running; Compose or Generate when you want work."
+                "Idle. No Bonsai generation is running; Generate when you want work."
             )
 
     def mark_idle_from_desktop(
@@ -243,39 +288,6 @@ class BonsaiImageStudioApp(QWidget):
             "app_name": app_name,
         }
 
-    def _on_compose(self) -> None:
-        if self._compose_worker is not None and self._compose_worker.isRunning():
-            return
-        self._mark_active()
-        self.compose_btn.setEnabled(False)
-        self.status.setText("Ants sampling visual pheromones; Alice cortex selecting a teachable prompt…")
-        self._compose_worker = _BonsaiComposeWorker(int(self.seed.value()), parent=self)
-        self._compose_worker.done.connect(self._on_compose_done)
-        self._compose_worker.start()
-
-    def _on_compose_done(self, result: Dict[str, Any]) -> None:
-        self._mark_active()
-        self.compose_btn.setEnabled(True)
-        self._compose_worker = None
-        if not result.get("ok"):
-            self.status.setText(f"Ant Cortex Compose did not select a prompt: {result.get('error', 'unknown error')}")
-            return
-        selected = result.get("selected", {}) if isinstance(result.get("selected"), dict) else {}
-        prompt = str(selected.get("prompt") or "").strip()
-        owner_label = str(selected.get("owner_label") or "").strip()
-        meaning = str(selected.get("meaning") or "").strip()
-        if prompt:
-            self.prompt.setText(prompt)
-        if owner_label:
-            self.owner_label.setText(owner_label)
-        if meaning:
-            self.meaning.setText(meaning)
-        rationale = str(selected.get("rationale") or "").strip()
-        self.status.setText(
-            "Ants sampled field → cortex selected/refined. "
-            f"{rationale[:220]} Trace: {result.get('receipt_id', '?')}"
-        )
-
     def _on_generate(self) -> None:
         self._mark_active()
         prompt = self.prompt.text().strip()
@@ -288,13 +300,72 @@ class BonsaiImageStudioApp(QWidget):
         if preflight_error:
             self.status.setText(f"Idle. Bonsai generation backend is not ready: {preflight_error}")
             return
-        owner_label = self.owner_label.text().strip() or "untitled"
-        meaning = self.meaning.text().strip()
+        # r746 — label + meaning derive from the prompt: Alice still learns
+        # every image, George types one thing.
+        words = [w.strip(".,!?\"'()[]") for w in prompt.split() if w.strip(".,!?\"'()[]")]
+        owner_label = "-".join(words[:4]).lower() or "untitled"
+        meaning = prompt
         self.generate_btn.setEnabled(False)
         self.status.setText("Rendering on-device (ternary MLX, ~6s for 512²)… teaching Alice on landing.")
-        self._worker = _BonsaiWorker(prompt, owner_label, meaning, int(self.seed.value()), parent=self)
+        self._worker = _BonsaiWorker(prompt, owner_label, meaning, int(self._seed), parent=self)
         self._worker.done.connect(self._on_done)
         self._worker.start()
+
+    def _on_export_jpg(self) -> None:
+        """r746 — Export the last generated image as JPG to the Desktop."""
+        self._mark_active()
+        src = str(self._last_image_path or "")
+        if not src or not Path(src).exists():
+            self.status.setText("Nothing to export yet — Generate first.")
+            return
+        pix = QPixmap(src)
+        if pix.isNull():
+            self.status.setText(f"Export failed: could not read {src}")
+            return
+        dest_dir = Path.home() / "Desktop"
+        if not dest_dir.exists():
+            dest_dir = Path(src).parent
+        dest = dest_dir / f"bonsai_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+        if pix.save(str(dest), "JPG", 92):
+            self.status.setText(f"Exported JPG: {dest}")
+        else:
+            self.status.setText(f"Export failed writing {dest}")
+
+    def accept_generated_image_from_chat(
+        self,
+        *,
+        prompt: str,
+        image_path: str,
+        trace: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Mirror a Talk-driven Bonsai generation into the open app surface.
+
+        The real generation still happens through System.swarm_bonsai_image_organ,
+        which writes the visual-field receipts. This method keeps the UI body in
+        sync: one prompt box shows what Alice generated, the image panel displays
+        it, and Export JPG becomes available without asking the owner to repeat.
+        """
+        self._mark_active()
+        trace = trace if isinstance(trace, dict) else {}
+        self.prompt.setText(str(prompt or ""))
+        self._last_image_path = str(image_path or "")
+        pix = QPixmap(self._last_image_path)
+        if not pix.isNull():
+            self.image.setPixmap(
+                pix.scaled(self.image.width(), self.image.height(),
+                           Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+            )
+        self.status.setText(
+            f"Talk generated and taught Alice: '{trace.get('owner_label', 'chat request')}' — "
+            f"{trace.get('meaning', prompt)}  "
+            f"(OBSERVED_AI_GENERATED, sha8={trace.get('sha8', '?')}). Export JPG is ready."
+        )
+        try:
+            self.show(); self.raise_(); self.activateWindow()
+        except Exception:
+            pass
+        return {"ok": True, "mirrored": True, "image_path": self._last_image_path}
 
     def _on_done(self, result: Dict[str, Any]) -> None:
         self._mark_active()
@@ -304,6 +375,7 @@ class BonsaiImageStudioApp(QWidget):
             self.status.setText(f"Did not generate: {result.get('error', 'unknown error')}")
             return
         path = result.get("image_path", "")
+        self._last_image_path = str(path or "")
         trace = result.get("trace", {}) if isinstance(result.get("trace"), dict) else {}
         pix = QPixmap(path)
         if not pix.isNull():

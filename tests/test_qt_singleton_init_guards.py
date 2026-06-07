@@ -17,6 +17,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
+QtGui = pytest.importorskip("PyQt6.QtGui")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -149,8 +150,10 @@ def test_bonsai_widget_constructs_before_singleton_reentry():
     assert bonsai.BonsaiImageStudioApp._live_instance is w
     assert id(w) in bonsai.BonsaiImageStudioApp._initialized_instance_ids
     button_texts = [button.text() for button in w.findChildren(QtWidgets.QPushButton)]
-    assert "Ant Cortex Compose" in button_texts
-    assert "Generate & Teach" in button_texts
+    assert "Generate" in button_texts
+    assert "Export JPG" in button_texts
+    assert "Ant Cortex Compose" not in button_texts
+    assert "Generate & Teach" not in button_texts
     assert w._idle_timer.isActive()
 
     again = bonsai.BonsaiImageStudioApp()
@@ -177,6 +180,38 @@ def test_bonsai_widget_generate_stays_idle_when_backend_missing(monkeypatch):
     assert w._worker is None
     assert w.generate_btn.isEnabled()
     assert w.status.text().startswith("Idle. Bonsai generation backend is not ready:")
+
+    w.close()
+    bonsai.BonsaiImageStudioApp._clear_live_instance(id(w))
+
+
+def test_bonsai_widget_mirrors_chat_generated_image(tmp_path):
+    import Applications.sifta_bonsai_image_app as bonsai
+
+    _app()
+    bonsai.BonsaiImageStudioApp._live_instance = None
+    bonsai.BonsaiImageStudioApp._initialized_instance_ids.clear()
+
+    img = tmp_path / "chat_bonsai.png"
+    pix = QtGui.QPixmap(12, 12)
+    pix.fill(QtGui.QColor("green"))
+    assert pix.save(str(img), "PNG")
+
+    w = bonsai.BonsaiImageStudioApp()
+    result = w.accept_generated_image_from_chat(
+        prompt="a green walking laptop robot",
+        image_path=str(img),
+        trace={
+            "owner_label": "walking-laptop",
+            "meaning": "future body sketch",
+            "sha8": "abc12345",
+        },
+    )
+
+    assert result["ok"] is True
+    assert w.prompt.text() == "a green walking laptop robot"
+    assert w._last_image_path == str(img)
+    assert "Export JPG is ready" in w.status.text()
 
     w.close()
     bonsai.BonsaiImageStudioApp._clear_live_instance(id(w))

@@ -8,7 +8,7 @@
     "window_height": 760,
     "doctor": "cowork_claude",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Generate AI images on-device (ternary MLX, Apple Silicon) and teach Alice what they are in stigmergic language. Ant Cortex Compose lets ant swimmers sample the visual pheromone field, then asks Alice's live cortex to refine a prompt/label/meaning before the owner chooses Generate & Teach. Each render lands in Alice's visual_stigmergy field tagged OBSERVED_AI_GENERATED with honest AI provenance, so she learns from it like a camera frame but never mistakes it for a real scene (covenant 7.16). Backed by System.swarm_bonsai_image_organ; rounds r207-r209."
+    "description": "Generate AI images on-device (ternary MLX, Apple Silicon) and teach Alice what they are in stigmergic language. The app is one prompt box plus Generate and Export JPG; label and meaning derive from the prompt. If Alice generates from Talk while Bonsai is open, the app mirrors the prompt and image so Export JPG is ready. Each render lands in Alice's visual_stigmergy field tagged OBSERVED_AI_GENERATED with honest AI provenance, so she learns from it like a camera frame but never mistakes it for a real scene (covenant 7.16). Backed by System.swarm_bonsai_image_organ; rounds r207-r209/r746-r747."
   },
   "Pheromone Symphony (Generative Music)": {
     "category": "Creative",

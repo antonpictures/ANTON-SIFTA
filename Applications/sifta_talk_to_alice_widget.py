@@ -23675,6 +23675,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
             f"Image: {img_path}  Receipt: {receipt}"
         )
 
+        # r747: if the Bonsai app is open, mirror the chat-driven result into
+        # that body surface too: prompt box filled, image visible, Export JPG
+        # ready. The organ receipt remains the source of truth.
+        try:
+            from Applications.sifta_bonsai_image_app import BonsaiImageStudioApp
+
+            bonsai_app = getattr(BonsaiImageStudioApp, "_live_instance", None)
+            if bonsai_app is not None and img_path:
+                mirror = bonsai_app.accept_generated_image_from_chat(
+                    prompt=prompt,
+                    image_path=str(img_path),
+                    trace=result.get("trace", {}) if isinstance(result, dict) else {},
+                )
+                if isinstance(mirror, dict) and mirror.get("ok"):
+                    self._append_system_line(
+                        "Bonsai app mirrored the chat generation; Export JPG is ready in the app."
+                    )
+        except Exception:
+            pass
+
         # Rich inline display in global chat transcript (finish the polish): the generated image is now
         # "printed" via system note + staged attachment path (consumed by render paths for pixmap/html
         # in the conversation document, same as browser photos / eye captures / drops). This makes
