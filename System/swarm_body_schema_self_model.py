@@ -72,12 +72,13 @@ def compose_body_schema(*, state_dir: Optional[Path | str] = None) -> dict[str, 
     power = _tail_json(base / "battery_metabolism.jsonl")
     batt = power.get("battery") if isinstance(power.get("battery"), dict) else {}
     metabolic = power.get("metabolic") if isinstance(power.get("metabolic"), dict) else {}
-    band = metabolic.get("band") or ""
+    band = metabolic.get("band") or soma.get("power_air_band") or ""
     pct = batt.get("percent")
-    source = batt.get("source") or ""
+    source = batt.get("source") or soma.get("power_air_source") or ""
+    reserve = soma.get("power_air_reserve")
 
     have_felt = soma_label != "" or soma_score is not None
-    have_power = band != "" or pct is not None
+    have_power = band != "" or pct is not None or source != "" or reserve is not None
 
     return {
         "ts": time.time(),
@@ -91,6 +92,7 @@ def compose_body_schema(*, state_dir: Optional[Path | str] = None) -> dict[str, 
             "band": band,
             "percent": pct,
             "source": source,
+            "reserve": reserve,
             "present": bool(have_power),
         },
         "first_person": _first_person(soma_label, soma_score, band, pct, source,

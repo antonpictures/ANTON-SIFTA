@@ -781,6 +781,19 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                         _persisted = True
                     except Exception:
                         _persisted = False
+                    _feeling_line = ""
+                    if _persisted:
+                        try:
+                            from System.swarm_cortex_switch_interoception import receipt_cortex_switch_feeling
+
+                            _feeling = receipt_cortex_switch_feeling(
+                                _from_tag,
+                                _tag,
+                                state_dir=_state_root(),
+                            )
+                            _feeling_line = str(_feeling.get("felt") or "").strip()
+                        except Exception:
+                            _feeling_line = ""
                     _rid = _write_app_command_receipt(
                         action="cortex_switch",
                         ok=_persisted,
@@ -793,9 +806,10 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                     except Exception:
                         pass
                     if _persisted:
+                        _body = f" Body feeling: {_feeling_line}" if _feeling_line else ""
                         return (
                             f"Switched my cortex to {_tag} (you said \"{_spoken}\"). "
-                            f"Receipt: {_rid}. It takes hold on my next turn."
+                            f"Receipt: {_rid}. It takes hold on my next turn.{_body}"
                         )
                     return (
                         f"I tried to switch my cortex to {_tag} but the write failed — I am still "
@@ -13021,6 +13035,15 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_body_schema_self_model import prompt_block as _self_body_schema_prompt
+
+        _self_body = _self_body_schema_prompt(state_dir=_REPO).strip()
+        if _self_body:
+            parts.append(_self_body)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_composite_identity import working_body_field_digest
         _working_body = working_body_field_digest().strip()
         if _working_body:
@@ -13041,6 +13064,18 @@ def _current_system_prompt(
                 + _working_body
             )
             parts.append(_working_body_directive)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_cortex_switch_interoception import cortex_switch_feeling_block
+
+        _cortex_switch_feeling = cortex_switch_feeling_block(
+            state_dir=_state_root(),
+            max_age_s=3600.0,
+        ).strip()
+        if _cortex_switch_feeling:
+            parts.append(_cortex_switch_feeling)
     except Exception:
         pass
 
@@ -26457,6 +26492,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 ok = True
             except Exception:
                 ok = False
+            somatic_felt = ""
+            if ok:
+                try:
+                    from System.swarm_cortex_switch_interoception import receipt_cortex_switch_feeling
+
+                    somatic = receipt_cortex_switch_feeling(from_tag, tag, state_dir=_state_root())
+                    somatic_felt = str(somatic.get("felt") or "").strip()
+                except Exception:
+                    somatic_felt = ""
             receipt = _write_app_command_receipt(
                 action="cortex_switch",
                 ok=ok,
@@ -26470,9 +26514,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
             self._append_system_line(f"App/browser receipt: {receipt}", error=not ok)
             if ok:
+                felt_line = f" Body feeling: {somatic_felt}" if somatic_felt else ""
                 return (
                     f"I thought first with {from_tag}, wrote the switch continuity diary, "
                     f"then switched my cortex to {tag}. Receipt: {receipt}. It takes hold on my next turn."
+                    f"{felt_line}"
                 )
             return (
                 f"I thought first with {from_tag} and wrote the switch diary, but the write to {tag} failed. "

@@ -52,6 +52,23 @@ def test_handles_missing_power_honestly(tmp_path):
     assert "cannot feel my electricity yet" in out["first_person"]
 
 
+def test_power_falls_back_to_visceral_air_signal(tmp_path):
+    state = tmp_path / ".sifta_state"
+    _write(state / "visceral_field.jsonl", {
+        "soma_score": 1.0,
+        "soma_label": "THRIVING",
+        "power_air_band": "FLUSH",
+        "power_air_source": "ac",
+        "power_air_reserve": 1.0,
+    })
+    out = bs.compose_body_schema(state_dir=tmp_path)
+    assert out["power"]["present"] is True
+    assert out["power"]["band"] == "FLUSH"
+    assert out["power"]["source"] == "ac"
+    assert out["power"]["reserve"] == 1.0
+    assert "wall power" in out["first_person"]
+
+
 def test_handles_missing_felt_honestly(tmp_path):
     _seed(tmp_path, soma=False)
     out = bs.compose_body_schema(state_dir=tmp_path)

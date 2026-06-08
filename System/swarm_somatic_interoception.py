@@ -36,11 +36,9 @@ WHAT THIS IS:
         - Pain (swarm_pain.jsonl, amygdala_nociception.jsonl)
         - Digestive state (digested_nutrients.jsonl — is the gut active?)
 
-    But NO ORGAN fuses these into a unified visceral field. Each organ
-    reads its own ledger in isolation. The organism has no holistic
-    sense of "how I feel right now."
-
-    This module creates that sense.
+    Earlier notes described the fuser as missing. This module is now the
+    fuser: it reads the ledgers together, writes visceral_field.jsonl, and
+    gives the organism a holistic sense of "how I feel right now."
 
 ARCHITECTURE:
 

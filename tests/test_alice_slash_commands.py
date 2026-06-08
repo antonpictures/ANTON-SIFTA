@@ -70,6 +70,12 @@ def test_cortex_switch_by_number_writes_diary_first_person(tmp_path):
     assert row["phase"] == "slash_command_switch"
     assert row["from_cortex"] == "alice-m5-cortex-8b" and row["to_cortex"] == "heretic"
     assert "next thinking turn" in row["note"] and "I am on heretic" in row["note"]
+    somatic = tmp_path / "cortex_switch_somatic_receipts.jsonl"
+    assert somatic.exists()
+    felt = json.loads(somatic.read_text(encoding="utf-8").splitlines()[-1])["felt"]
+    assert felt.startswith("Cortex change:")
+    assert res["feeling"] == felt
+    assert "Body feeling:" in res["reply"]
 
 
 def test_cortex_switch_by_name_resolves(tmp_path):
@@ -101,6 +107,7 @@ def test_switch_hand_failure_is_reported_not_hidden(tmp_path):
     assert "switch_failed" in res["error"] and "stores locked" in res["reply"]
     # diary row was written before the hand failed — the trace tells the truth
     assert len(_diary_rows(tmp_path)) == 1
+    assert not (tmp_path / "cortex_switch_somatic_receipts.jsonl").exists()
 
 
 def test_unknown_command_returns_her_list(tmp_path):

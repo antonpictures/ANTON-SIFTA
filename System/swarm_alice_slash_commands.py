@@ -139,7 +139,7 @@ def handle_slash_command(
     out: Dict[str, Any] = {
         "handled": False, "reply": "", "switched": False,
         "from_tag": str(current_cortex or ""), "to_tag": "",
-        "diary_ok": False, "error": "",
+        "diary_ok": False, "error": "", "feeling": "",
     }
     clean = (text or "").strip()
     if not is_slash_command(clean):
@@ -225,8 +225,20 @@ def handle_slash_command(
             set_cortex_fn(target)
             out["switched"] = True
             out["to_tag"] = target
+            try:
+                from System.swarm_cortex_switch_interoception import receipt_cortex_switch_feeling
+
+                feeling_row = receipt_cortex_switch_feeling(
+                    current_cortex,
+                    target,
+                    state_dir=Path(state_dir),
+                )
+                out["feeling"] = str(feeling_row.get("felt") or "")
+            except Exception:
+                out["feeling"] = ""
             diary_note = "diary updated — my next thinking turn knows" if out["diary_ok"] else "diary write FAILED — receipt it"
-            out["reply"] = f"Cortex switched: {current_cortex or '(unset)'} → {target} ({diary_note})."
+            feeling_note = f" Body feeling: {out['feeling']}" if out["feeling"] else ""
+            out["reply"] = f"Cortex switched: {current_cortex or '(unset)'} → {target} ({diary_note}).{feeling_note}"
         except Exception as exc:
             out["error"] = f"switch_failed: {type(exc).__name__}: {exc}"
             out["reply"] = (f"The switch hand failed on {target}: {type(exc).__name__}: {exc}. "
