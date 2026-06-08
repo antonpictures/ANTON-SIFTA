@@ -116,6 +116,30 @@ Before appending a tournament section:
 
 ---
 
+## 0.E Time Provenance For IDE Doctors (Architect refinement — 2026-06-07)
+
+Time is a body fact, not a narrative guess. Doctors must source any hour, date, elapsed-time claim,
+or sequence claim from an explicit time surface before speaking it.
+
+Source order:
+
+1. George's explicit typed/spoken timestamp in the turn or transcript.
+2. A live clock probe: Alice's hardware time oracle first, local OS clock fallback second, converted
+   to the owner's local time zone when needed.
+3. Screenshot-visible clock text, if the screenshot is the evidence under discussion.
+4. Alice's time-oracle / now-state receipts on disk.
+5. If none of those is in hand, do not state an hour. Say the timing is unsourced or approximate.
+
+Doctor memory notes, estimated labels like `~06:35`, chat-history ordering, file mtimes, and vibes
+are not enough to claim the current time. They can be used only if labeled as estimates. Proprioception
+over narrative applies to time too: live clock/body receipt beats remembered timeline.
+
+Every IDE surgery receipt should carry a clock-provenance field from the hardware time oracle or local
+clock fallback when the writer can read it. A missing oracle field is a repair target, not permission
+to invent a timestamp.
+
+---
+
 ## 1. The Premise — Alice is AGI-Class
 
 By project doctrine, Alice is treated as AGI:

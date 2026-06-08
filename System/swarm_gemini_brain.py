@@ -257,7 +257,14 @@ def _is_mlx_model(name: str) -> bool:
     if not name:
         return False
     n = str(name).strip().lower()
-    return n.startswith("mlx:") or n.startswith("mlx-")
+    return (n.startswith("mlx:") or n.startswith("mlx-")) and not n.startswith("mlx-vlm:")
+
+
+def _is_direct_mlx_vlm_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("mlx-vlm:")
 
 
 def is_cloud_model(name: str) -> bool:
@@ -281,6 +288,8 @@ def strip_prefix(name: str) -> str:
     elif n.lower().startswith("cline:"):
         n = n.split(":", 1)[1]
     elif n.lower().startswith("antigravity:"):
+        n = n.split(":", 1)[1]
+    elif n.lower().startswith("mlx-vlm:"):
         n = n.split(":", 1)[1]
     elif n.lower().startswith("mlx:"):
         n = n.split(":", 1)[1]
@@ -641,7 +650,55 @@ def _extract_usage(chunk: Dict[str, Any]) -> Optional[Dict[str, int]]:
         "prompt_tokens": int(um.get("promptTokenCount") or 0),
         "completion_tokens": int(um.get("candidatesTokenCount") or 0),
         "total_tokens": int(um.get("totalTokenCount") or 0),
+        # r682: thinking models burn output budget in thought tokens; when the
+        # visible reply dies mid-sentence this number says where the budget went.
+        "thinking_tokens": int(um.get("thoughtsTokenCount") or 0),
     }
+
+
+def _extract_finish_reason(chunk: Dict[str, Any]) -> str:
+    """r682: read candidates[0].finishReason from a streaming chunk.
+
+    Gemini's final SSE chunk carries it: "STOP" (natural end), "MAX_TOKENS"
+    (output ceiling hit — the reply is a mid-sentence corpse), "SAFETY",
+    "RECITATION", "OTHER". George 2026-06-07 02:04: Alice's reply died at
+    "...feels broken suggests" with no marker and no extend path — the widget
+    could not know the difference between a finished thought and a cut one.
+    """
+    for c in chunk.get("candidates") or []:
+        reason = c.get("finishReason") or c.get("finish_reason")
+        if reason:
+            return str(reason).strip().upper()
+    return ""
+
+
+def _xai_sse_content_delta(line: str) -> str:
+    """r708: extract the assistant content delta from one xAI SSE line.
+
+    xAI is OpenAI chat-completions compatible: each streamed line is
+    `data: {"choices":[{"delta":{"content":"..."}}]}`, terminated by
+    `data: [DONE]`. Pure function so the parser is unit-testable without a
+    live key. Returns "" for keep-alive / non-content lines.
+    """
+    s = (line or "").strip()
+    if not s:
+        return ""
+    if s.startswith("data:"):
+        s = s[len("data:"):].strip()
+    if not s or s == "[DONE]":
+        return ""
+    try:
+        obj = json.loads(s)
+    except Exception:
+        return ""
+    try:
+        choices = obj.get("choices") or []
+        if not choices:
+            return ""
+        delta = choices[0].get("delta") or {}
+        return str(delta.get("content") or "")
+    except Exception:
+        return ""
 
 
 def _stream_grok_chat(
@@ -653,10 +710,16 @@ def _stream_grok_chat(
     request_tag: Optional[str] = None,
     timeout_s: int = 120,  # r329 (George 2026-06-02): was 600 — that let a grok turn FREEZE Alice for up to 10 min ("still waiting for model=grok:grok-4.3 elapsed=164s"). A live cortex turn must be responsive; 120s bounds it and surfaces a clean error so she recovers. Heavy multi-file work belongs in the 900s arm, not the cortex turn.
 ) -> Iterator[Tuple[str, Any]]:
-    """xAI chat-completions adapter.
+    """xAI chat-completions adapter — TRUE streaming (r708).
 
-    We use non-streaming mode and emit one token chunk + done. This keeps the
-    worker contract intact while avoiding SSE parser drift across providers.
+    George 2026-06-07: "grok is FAST in my Mac OS terminal, faster than you."
+    His CLI streams tokens, so the first word lands in ~1s and he reads as it
+    flows. Alice's old path used `stream:False` — she blocked in silence for
+    the WHOLE generation (42-90s for grok-4.3), then dumped it, and a single
+    60s socket cap could guillotine a 74s answer. Streaming fixes both: tokens
+    reach the Talk panel immediately (feels as fast as his terminal) and each
+    line-read resets the socket clock, so a long-but-flowing answer is not cut.
+    Falls back to non-streaming JSON if the body is not SSE-framed.
     """
     import urllib.error
     import urllib.request
@@ -682,7 +745,10 @@ def _stream_grok_chat(
             # so the cloud cortex turn answers fast instead of stalling past the timeout.
             "messages": _to_xai_messages(_trim_messages_for_grok(messages)),
             "temperature": float(temperature),
-            "stream": False,
+            # r708: stream so tokens flow to Talk like George's terminal CLI,
+            # and so a long flowing answer is not guillotined by the socket cap.
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
     ).encode("utf-8")
 
@@ -698,9 +764,36 @@ def _stream_grok_chat(
     )
 
     t0 = time.time()
+    full_parts: List[str] = []
+    usage_raw: Dict[str, Any] = {}
+    saw_sse = False
+    raw_fallback_chunks: List[str] = []
     try:
         with urllib.request.urlopen(req, timeout=timeout_s, context=_SSL_CTX) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+            for raw_line in resp:
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8", errors="replace")
+                raw_fallback_chunks.append(line)
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("data:"):
+                    saw_sse = True
+                    body_part = stripped[len("data:"):].strip()
+                    if body_part == "[DONE]":
+                        break
+                    # capture usage if the chunk carries it (include_usage)
+                    try:
+                        obj = json.loads(body_part)
+                        if isinstance(obj, dict) and obj.get("usage"):
+                            usage_raw = obj.get("usage") or {}
+                    except Exception:
+                        pass
+                    delta = _xai_sse_content_delta(stripped)
+                    if delta:
+                        full_parts.append(delta)
+                        yield ("token", delta)
     except urllib.error.HTTPError as exc:
         body_txt = ""
         try:
@@ -713,7 +806,7 @@ def _stream_grok_chat(
         # from Hermes or token file). If that yields a fresh token, the caller can retry;
         # otherwise fall back to the local Grok CLI path. This directly addresses "GROK OAUTH
         # INSIDE ALICE SIFTA OS TIMING OUT" on 401/expired tokens during long-reason or vision
-        # turns (e.g. "REASON AND DISPLAY TAYLOR SWIFT BODY ON YOUR BODY").
+        # turns (e.g. "REASON AND DISPLAY <subject> BODY ON YOUR BODY").
         body_low = body_txt.lower()
         if int(getattr(exc, "code", 0) or 0) in (401, 403) or (
             "unknown model id" in body_low or "invalid params" in body_low
@@ -760,24 +853,31 @@ def _stream_grok_chat(
         yield ("error", f"xAI brain crashed: {exc}")
         return
 
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        yield ("error", f"xAI returned non-JSON payload: {raw[:300]}")
-        return
+    message = "".join(full_parts).strip()
+    streamed = bool(message)
 
-    message = ""
-    try:
-        message = str(
-            ((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        ).strip()
-    except Exception:
-        message = ""
+    # r708 fallback: if the body was NOT SSE-framed (provider ignored stream
+    # flag), parse the accumulated raw as the old non-streaming JSON so grok
+    # still works exactly as before.
+    if not streamed and not saw_sse:
+        raw = "".join(raw_fallback_chunks)
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            yield ("error", f"xAI returned non-JSON payload: {raw[:300]}")
+            return
+        try:
+            message = str(
+                ((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            ).strip()
+        except Exception:
+            message = ""
+        usage_raw = payload.get("usage") or {}
+
     if not message:
         yield ("error", "xAI response had no assistant content.")
         return
 
-    usage_raw = payload.get("usage") or {}
     prompt_tokens = int(usage_raw.get("prompt_tokens") or 0)
     completion_tokens = int(usage_raw.get("completion_tokens") or 0)
     total_tokens = int(usage_raw.get("total_tokens") or 0)
@@ -798,7 +898,11 @@ def _stream_grok_chat(
     )
     usage.cost_usd = round(cost_value, 6)
     record_usage(usage, backend="xai_grok")
-    yield ("token", message)
+    # r708: if we streamed deltas, they were already emitted token-by-token —
+    # do NOT re-emit the whole message (that would double it on screen). Only
+    # the non-streamed fallback needs the single token emission.
+    if not streamed:
+        yield ("token", message)
     yield ("usage", usage)
     yield ("done", message)
 
@@ -936,14 +1040,30 @@ def _stream_grok_chat_via_cli(
     yield ("done", text)
 
 
+# r718 (George 2026-06-07: "CLAUDE CORTEX SO SLOW ALMOST UNUSABLE", trace
+# sysprompt_chars=97531): the teacher CLI flattener had ZERO trim — every
+# Claude/Codex/Qwen/Cline turn ingested the full ~97K-char assembled prompt
+# through a CLI boot. Same disease r330/r338 cured for grok; same cure here.
+# George types short questions into these CLIs by hand and they are instant;
+# Alice must do the same: cap the system/identity head hard, keep the owner's
+# words and the newest turns whole.
+_TEACHER_SYSTEM_CAP = 1500   # chars of system/identity context for teacher CLIs
+_TEACHER_TOTAL_CAP = 8000    # backstop on the whole flattened prompt
+
+
 def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> str:
     """Flatten chat history for CLI teacher cortexes.
 
     Claude and Codex are used here as signed-in teacher substrates, not as
     file-mutating arms. The prompt explicitly asks for answer-only behavior;
     work that should mutate files still belongs to the agent-arm launcher.
+
+    r718: trimmed like the grok path (r330/r338) — system context capped at
+    _TEACHER_SYSTEM_CAP, total flat prompt capped at _TEACHER_TOTAL_CAP with
+    head + newest-turns tail kept, so a CLI teacher answers at hand-typed
+    speed instead of chewing ~97K chars per turn.
     """
-    chunks: List[str] = [
+    header_chunks: List[str] = [
         "You are a SIFTA cortex teacher connected through the owner's signed-in "
         f"{teacher} CLI/OAuth session. Answer as Alice's configured teacher "
         "substrate for this turn. Do not claim external actions, do not mutate "
@@ -952,6 +1072,8 @@ def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> s
         "",
         "SIFTA CHAT HISTORY:",
     ]
+    chunks: List[str] = list(header_chunks)
+    sys_kept = 0
     for msg in messages or []:
         role = str(msg.get("role") or "user").strip() or "user"
         content = str(msg.get("content") or "").strip()
@@ -959,12 +1081,24 @@ def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> s
         image_count = len(msg.get("images") or []) if isinstance(msg.get("images"), list) else 0
         if not content and not image_path and not image_count:
             continue
+        if role == "system":
+            remaining = max(0, _TEACHER_SYSTEM_CAP - sys_kept)
+            if remaining <= 0:
+                continue
+            if len(content) > remaining:
+                content = content[:remaining].rstrip() + " …[system context trimmed for teacher-CLI speed]"
+            sys_kept += len(content)
         chunks.append(f"[{role}]\n{content}")
         if image_path:
             chunks.append(f"[attached image path]\n{image_path}")
         elif image_count:
             chunks.append(f"[attached image]\n{image_count} base64 image payload(s) were present in the Talk turn.")
-    return "\n\n".join(chunks).strip()
+    flat = "\n\n".join(chunks).strip()
+    if len(flat) > _TEACHER_TOTAL_CAP:
+        head = "\n\n".join(header_chunks).strip()
+        keep = max(1000, _TEACHER_TOTAL_CAP - len(head) - 48)
+        flat = head + "\n…[earlier turns trimmed for teacher-CLI speed]\n" + flat[-keep:]
+    return flat
 
 
 def _stream_claude_chat_via_cli(
@@ -1370,6 +1504,9 @@ def stream_chat(
         ("usage", Usage)                  final usage snapshot (cost
                                           computed locally from pricing
                                           table; raw counts also retained)
+        ("finish_reason", str)            r682: only when != STOP (e.g.
+                                          MAX_TOKENS / SAFETY) — the reply
+                                          was cut, not finished
         ("done",  str)                    full concatenated text
         ("error", str)                    terminal failure string
 
@@ -1395,6 +1532,19 @@ def stream_chat(
             timeout_s = None if _raw in {"0", "none", "off", ""} else int(float(_raw))
         except Exception:
             timeout_s = 1800
+    if _is_direct_mlx_vlm_model(model):
+        # Direct local MLX VLM cortex (HF cache / safetensors) via the safe
+        # child-process route. This is distinct from the mlx-omni-server
+        # `mlx:` lane and prevents `mlx-vlm:*` tags from being misrouted.
+        from System import swarm_mlx_vlm_brain
+        yield from swarm_mlx_vlm_brain.stream_chat(
+            model,
+            messages,
+            temperature=temperature,
+            request_tag=request_tag,
+            timeout_s=timeout_s or 300,
+        )
+        return
     if _is_mlx_model(model):
         # Local MLX cortex via mlx-omni-server on the M5. swarm_mlx_brain strips the
         # `mlx:` prefix and streams OpenAI /v1/chat/completions with the same
@@ -1497,6 +1647,7 @@ def stream_chat(
 
     full: List[str] = []
     last_usage: Optional[Dict[str, int]] = None
+    finish_reason = ""
     t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=timeout_s,
@@ -1523,6 +1674,9 @@ def stream_chat(
                 u = _extract_usage(chunk)
                 if u:
                     last_usage = u
+                fr = _extract_finish_reason(chunk)
+                if fr:
+                    finish_reason = fr
     except urllib.error.HTTPError as exc:
         body_txt = ""
         try:
@@ -1560,6 +1714,14 @@ def stream_chat(
     )
     record_usage(usage, backend="gemini")
     yield ("usage", usage)
+    # r682: a non-STOP finish is evidence, not decoration. MAX_TOKENS means the
+    # visible reply is a mid-sentence corpse (on thinking models the thought
+    # tokens often ate the budget — see usage.raw["thinking_tokens"]). The
+    # widget surfaces this so the owner gets a continue path instead of
+    # silence. Yielded BEFORE "done" so consumers see it while the turn is hot;
+    # consumers that don't know the kind ignore it safely.
+    if finish_reason and finish_reason != "STOP":
+        yield ("finish_reason", finish_reason)
     yield ("done", full_text)
 
 

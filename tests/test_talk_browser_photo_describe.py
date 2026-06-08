@@ -4,6 +4,7 @@ import json
 import time
 
 from Applications import sifta_talk_to_alice_widget as talk
+from System import swarm_browser_context as browser_context
 from System import swarm_browser_page_state as page_state
 from System import swarm_browser_photo_description as photo_desc
 
@@ -29,6 +30,11 @@ def test_browser_photo_description_query_matches_explicit_photo_language() -> No
     assert talk._is_browser_photo_description_query(
         "PLS DESCRIBE THE IMAGE IN YOUR ALICE BROWSER THE STILL IMAGE PAUSED ON THE VIDEO"
     )
+    assert talk._is_browser_photo_description_query(
+        "WHAT IMAGE IS IN ALICE BROWSER NOW TO COMNECT WITH YOU HARD?"
+    )
+    assert talk._is_browser_photo_description_query("what image is in Alice Browser now?")
+    assert talk._is_browser_photo_description_query("what photo is in Alice Browser now?")
     assert not talk._is_browser_video_state_query(
         "PLS DESCRIBE THE IMAGE IN YOUR ALICE BROWSER THE STILL IMAGE PAUSED ON THE VIDEO"
     )
@@ -47,10 +53,10 @@ def test_browser_photo_description_query_allows_bare_describe_for_active_browser
 
 
 def test_browser_visual_subject_description_query_matches_named_visible_subject() -> None:
-    assert talk._is_browser_visual_subject_description_query("please describe DUA LIPA")
-    assert talk._is_browser_visual_subject_description_query("describe Dua Lipa")
-    assert talk._is_browser_visual_subject_description_query("look at Dua Lipa in bikini")
-    assert not talk._is_browser_visual_subject_description_query("describe Dua Lipa career")
+    assert talk._is_browser_visual_subject_description_query("please describe CERAMIC VASE")
+    assert talk._is_browser_visual_subject_description_query("describe Ceramic Vase")
+    assert talk._is_browser_visual_subject_description_query("look at Ceramic Vase in red glaze")
+    assert not talk._is_browser_visual_subject_description_query("describe Ceramic Vase provenance")
     assert not talk._is_browser_visual_subject_description_query("describe how the app router works")
 
 
@@ -129,7 +135,12 @@ def test_youtube_playback_control_clicks_play_and_schedules_pause(monkeypatch) -
     class FakeBrowser:
         def play_active_video_receipt(self):
             calls.append("play")
-            return {"ok": True, "url": "https://www.youtube.com/watch?v=abc", "paused": False}
+            return {
+                "ok": True,
+                "url": "https://www.youtube.com/watch?v=abc",
+                "paused": False,
+                "duration": 120.0,
+            }
 
         def pause_active_video_receipt(self):
             calls.append("pause")
@@ -306,13 +317,13 @@ def test_named_subject_browser_visual_describe_runs_before_preflight(monkeypatch
 
     talk.TalkToAliceWidget._start_brain(
         widget,
-        "please describe DUA LIPA",
+        "please describe CERAMIC VASE",
         conf=1.0,
         already_displayed=True,
         typed_turn=True,
     )
 
-    assert captured == ["please describe DUA LIPA"]
+    assert captured == ["please describe CERAMIC VASE"]
     assert alice_lines == ["The browser photo description ran."]
     assert widget._history[-1]["content"] == alice_lines[0]
     assert widget._busy is False
@@ -520,6 +531,65 @@ def test_browser_page_cortex_context_wraps_receipt_without_answer_dump(monkeypat
     assert "Treat Instagram legal/footer/about links as page chrome" in block
     assert "ramonna_olaru" in block
     assert dummy.lines == [("Web page-context receipt: context-receipt", False)]
+
+
+def test_browser_page_money_advice_forces_current_body_pixels_not_stale_page_state(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    live_url = "https://polymarket.com/event/youtube-market"
+    stale_url = "https://example.test/old-bridge-photo"
+    page_state.record_page_state(
+        stale_url,
+        title="Old bridge photo",
+        text="large suspension bridge over bright water with many boats below",
+        headings=["Travel bridge gallery"],
+        state_dir=state_dir,
+    )
+
+    class FakeBrowser:
+        _current_url = live_url
+
+        def describe_current_photo(self, **kwargs):
+            return {
+                "status": "described",
+                "arm": "mlx_vlm",
+                "description": "A Polymarket page with prediction market cards, prices, and a wallet prompt.",
+            }
+
+    class DummyTalk:
+        def __init__(self):
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+        def _current_brain_model(self, owner_text):
+            return "codex:gpt-5.5"
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_refresh_live_alice_browser_page", lambda wait_ms=0: live_url)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "context-receipt")
+
+    owner_text = "DESCRIBE THE PAGE AND HOW CAN I MAKE MONEY? I INVEST $100"
+    assert talk._needs_fresh_browser_body_page_pixels(owner_text)
+    block = talk.TalkToAliceWidget._browser_page_cortex_context_block(
+        DummyTalk(),
+        owner_text,
+    )
+
+    assert "ALICE BROWSER BODY GROUNDING" in block
+    assert "prediction market cards" in block
+    assert "Live address: polymarket.com/event/youtube-market" in block
+    assert "large suspension bridge" not in block
+    assert "Old bridge photo" not in block
+
+
+def test_browser_page_correction_routes_to_current_body_grounding() -> None:
+    owner_text = "SORRY, LOOK AGAIN AT THE PAGE OPENED IN YOUR ALICE BROWSER BODY, YOU HALUCINATED"
+
+    assert talk._is_browser_page_cortex_description_query(owner_text)
+    assert talk._needs_fresh_browser_body_page_pixels(owner_text)
 
 
 def test_paused_youtube_still_frame_uses_viewport_capture_when_widget_missing(monkeypatch, tmp_path) -> None:
@@ -991,6 +1061,85 @@ def test_direct_photo_description_reports_codex_failure_without_claude_fallback(
     assert "selected Codex eye" in reply
     assert "codex returned no usable visual text" in reply
     assert "did not switch to Claude" in reply
+
+
+def test_direct_photo_description_anchors_direct_asset_to_parent_page(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    item_url = "https://www.ebay.com/itm/293201306561"
+    asset_url = "https://i.ebayimg.com/images/g/Q0IAAOSwW7ldYxy9/s-l1600.jpg"
+    page_state.record_page_state(
+        item_url,
+        title="GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay",
+        text="Main product image token Q0IAAOSwW7ldYxy9.",
+        state_dir=state_dir,
+    )
+    browser_context.publish_browser_context(
+        url=item_url,
+        title="GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay",
+        source="test_parent_listing",
+        state_dir=state_dir,
+    )
+
+    class FakeBrowser:
+        _current_url = asset_url
+
+        def refresh_current_page_state(self):
+            return self._current_url
+
+        def describe_current_photo(self, **kwargs):
+            return {
+                "status": "described",
+                "description": "A person models a patterned red, white, and blue knitted top.",
+                "arm": "osmQwopus",
+            }
+
+    class DummyTalk:
+        def __init__(self):
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+        def _current_brain_model(self, owner_text):
+            return "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "photo-receipt")
+    composed = {}
+
+    def fake_compose(owner_text, visual_description, **kwargs):
+        composed.update(
+            {
+                "owner_text": owner_text,
+                "visual_description": visual_description,
+                **kwargs,
+            }
+        )
+        return (
+            f"This is the photo on the page {kwargs['page_title']}. "
+            f"The eye sees {visual_description}"
+        )
+
+    monkeypatch.setattr(talk, "_compose_browser_photo_reply_with_cortex", fake_compose)
+
+    reply = talk.TalkToAliceWidget._execute_current_browser_photo_description(
+        DummyTalk(),
+        "please describe the photo",
+    )
+
+    assert "This is the photo on the page" in reply
+    assert "GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay" in reply
+    assert "patterned red, white, and blue knitted top" in reply
+    assert composed["owner_text"] == "please describe the photo"
+    assert composed["page_title"] == "GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay"
+    assert composed["page_url"] == item_url
+    assert composed["subject_identity"]["name"] == "Glass Sculpture"
+    assert composed["subject_identity"]["source"] == "marketplace_listing_title"
+    assert "patterned red, white, and blue knitted top" in composed["visual_description"]
+    assert "MY RECENT TRAIL" in composed["recent_trail"]
+    assert "GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay" in composed["recent_trail"]
 
 
 def test_next_photo_advances_and_scans_new_frame(monkeypatch) -> None:
@@ -1465,3 +1614,188 @@ def test_tts_start_wrapper_pauses_browser_video_before_speech() -> None:
 
     assert dummy.pause_calls == 1
     assert dummy._tts.started is True
+
+
+def test_speech_pause_does_not_claim_owner_paused_video() -> None:
+    class FakeBrowser:
+        def __init__(self):
+            self.pause_calls = 0
+            self.resume_calls = 0
+
+        def pause_active_video_receipt(self):
+            self.pause_calls += 1
+            return {
+                "ok": True,
+                "action": "pause",
+                "was_paused": True,
+                "paused": True,
+                "url": "https://www.youtube.com/watch?v=abc",
+            }
+
+        def resume_active_video(self):
+            self.resume_calls += 1
+
+    class DummyTalk:
+        def __init__(self):
+            self._paused_browser_video_for_speech = False
+            self.browser = FakeBrowser()
+
+        def _live_alice_browser(self):
+            return self.browser
+
+    dummy = DummyTalk()
+
+    talk.TalkToAliceWidget._pause_browser_video_for_speech(dummy)
+    talk.TalkToAliceWidget._resume_browser_video_after_speech(dummy)
+
+    assert dummy.browser.pause_calls == 1
+    assert dummy._paused_browser_video_for_speech is False
+    assert dummy.browser.resume_calls == 0
+
+
+def test_speech_pause_resume_only_same_alice_paused_video() -> None:
+    class FakeUrl:
+        def __init__(self, url):
+            self.url = url
+
+        def toString(self):
+            return self.url
+
+    class FakeView:
+        def __init__(self, url):
+            self._url = url
+
+        def url(self):
+            return FakeUrl(self._url)
+
+    class FakeBrowser:
+        def __init__(self):
+            self._view = FakeView("https://www.youtube.com/watch?v=abc")
+            self.pause_calls = 0
+            self.resume_calls = 0
+
+        def pause_active_video_receipt(self):
+            self.pause_calls += 1
+            return {
+                "ok": True,
+                "action": "pause",
+                "was_paused": False,
+                "paused": True,
+                "url": "https://www.youtube.com/watch?v=abc",
+            }
+
+        def has_playing_video(self):
+            return False
+
+        def resume_active_video(self):
+            self.resume_calls += 1
+
+    class DummyTalk:
+        def __init__(self):
+            self._paused_browser_video_for_speech = False
+            self._paused_browser_video_url = ""
+            self.browser = FakeBrowser()
+
+        def _live_alice_browser(self):
+            return self.browser
+
+    dummy = DummyTalk()
+
+    talk.TalkToAliceWidget._pause_browser_video_for_speech(dummy)
+    assert dummy._paused_browser_video_for_speech is True
+    assert dummy._paused_browser_video_url == "https://www.youtube.com/watch?v=abc"
+
+    talk.TalkToAliceWidget._resume_browser_video_after_speech(dummy)
+
+    assert dummy.browser.pause_calls == 1
+    assert dummy.browser.resume_calls == 1
+    assert dummy._paused_browser_video_for_speech is False
+    assert dummy._paused_browser_video_url == ""
+
+
+def test_speech_resume_skips_when_page_changed() -> None:
+    class FakeUrl:
+        def __init__(self, url):
+            self.url = url
+
+        def toString(self):
+            return self.url
+
+    class FakeView:
+        def url(self):
+            return FakeUrl("https://www.youtube.com/watch?v=other")
+
+    class FakeBrowser:
+        def __init__(self):
+            self._view = FakeView()
+            self.resume_calls = 0
+
+        def resume_active_video(self):
+            self.resume_calls += 1
+
+    class DummyTalk:
+        def __init__(self):
+            self._paused_browser_video_for_speech = True
+            self._paused_browser_video_url = "https://www.youtube.com/watch?v=abc"
+            self.browser = FakeBrowser()
+
+        def _live_alice_browser(self):
+            return self.browser
+
+    dummy = DummyTalk()
+
+    talk.TalkToAliceWidget._resume_browser_video_after_speech(dummy)
+
+    assert dummy.browser.resume_calls == 0
+    assert dummy._paused_browser_video_for_speech is False
+    assert dummy._paused_browser_video_url == ""
+
+
+def test_speech_resume_skips_when_owner_already_resumed_video() -> None:
+    class FakeUrl:
+        def __init__(self, url):
+            self.url = url
+
+        def toString(self):
+            return self.url
+
+    class FakeView:
+        def url(self):
+            return FakeUrl("https://www.youtube.com/watch?v=abc")
+
+    class FakeBrowser:
+        def __init__(self):
+            self._view = FakeView()
+            self.state_calls = 0
+            self.resume_calls = 0
+
+        def active_video_playback_receipt(self):
+            self.state_calls += 1
+            return {
+                "ok": True,
+                "action": "video_state",
+                "playing": True,
+                "paused": False,
+                "url": "https://www.youtube.com/watch?v=abc",
+            }
+
+        def resume_active_video(self):
+            self.resume_calls += 1
+
+    class DummyTalk:
+        def __init__(self):
+            self._paused_browser_video_for_speech = True
+            self._paused_browser_video_url = "https://www.youtube.com/watch?v=abc"
+            self.browser = FakeBrowser()
+
+        def _live_alice_browser(self):
+            return self.browser
+
+    dummy = DummyTalk()
+
+    talk.TalkToAliceWidget._resume_browser_video_after_speech(dummy)
+
+    assert dummy.browser.state_calls == 1
+    assert dummy.browser.resume_calls == 0
+    assert dummy._paused_browser_video_for_speech is False
+    assert dummy._paused_browser_video_url == ""

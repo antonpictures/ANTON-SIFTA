@@ -15,6 +15,14 @@ Effective merged list (stigmergic recent first, static seed fills in):
 - `help_section_read` — _stigmergic_ (last seen ts=1778965583)
 - `tool_truth` — _stigmergic_ (last seen ts=1778965583)
 
+## Stigmergic Skill Consciousness
+
+These are not generic market Agent Skills. They are app-organ skill layers: skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, and receipts.
+
+- `app_focus_context` -> `APP_FOCUS_SWIMMER` -> `Swarm Broadcaster` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `help_section_read` -> `APP_FOCUS_SWIMMER` -> `Swarm Broadcaster` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `tool_truth` -> `APP_FOCUS_SWIMMER` -> `Swarm Broadcaster` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+
 ## Recent health-trace rows (newest first)
 
 - **boot_readiness_seed** @ `2026-05-16T21:06:23.277544Z` (codex_boot_readiness_audit · ΔSTGM 0.0)

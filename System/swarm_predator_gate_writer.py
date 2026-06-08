@@ -193,8 +193,32 @@ def write_ide_surgery_receipt(
         return {name: msg for name in CANONICAL_LEDGERS}
 
     ts = time.time()
+    # r534 standing + r580: every IDE action receipt now carries WALL CLOCK GROUND TRUTH
+    # from the hardware time oracle (in addition to local time.time()). This makes
+    # "timestamp every action" pervasive for receipts fanned by the writer.
+    oracle_ts = None
+    oracle_epoch = None
+    oracle_source = "unavailable"
+    oracle_timezone = ""
+    oracle_signature = ""
+    try:
+        from System import swarm_hardware_time_oracle
+        reading = swarm_hardware_time_oracle.current_time_for_alice()
+        if isinstance(reading, dict) and reading.get("ok"):
+            oracle_ts = reading.get("local_iso") or reading.get("utc_iso") or reading.get("local_human")
+            oracle_epoch = reading.get("epoch")
+            oracle_source = reading.get("source", "oracle")
+            oracle_timezone = str(reading.get("timezone") or "")
+            oracle_signature = str(reading.get("signature") or "")
+    except Exception:
+        pass
     base: dict[str, object] = {
         "ts": ts,
+        "action_oracle_ts": oracle_ts,
+        "action_oracle_epoch": oracle_epoch,
+        "action_oracle_source": oracle_source,
+        "action_oracle_timezone": oracle_timezone,
+        "action_oracle_signature": oracle_signature,
         "receipt_id": _norm(receipt_id) or f"r-unknown-{int(ts)}",
         "round_id": _norm(round_id),
         "doctor": _norm(doctor),

@@ -40,3 +40,22 @@ def test_apply_generation_chat_template_counts_image_media(monkeypatch):
     assert calls["num_images"] == 2
     assert calls["num_audios"] == 0
     assert calls["enable_thinking"] is False
+
+
+def test_hf_cached_gemma4_12b_mlx_resolves_to_repo_tag(monkeypatch, tmp_path):
+    from System import swarm_mlx_vlm_brain as vlm
+
+    repo_root = tmp_path / "hub" / "models--SuperagenticAI--gemma-4-12b-it-8bit-mlx"
+    snap = repo_root / "snapshots" / "abc123"
+    snap.mkdir(parents=True)
+    (repo_root / "refs").mkdir()
+    (repo_root / "refs" / "main").write_text("abc123", encoding="utf-8")
+    (snap / "config.json").write_text('{"model_type":"gemma4_unified"}', encoding="utf-8")
+
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    monkeypatch.setattr(vlm, "MLX_VLM_AVAILABLE", True)
+
+    assert vlm._hf_cached_model_dir("SuperagenticAI/gemma-4-12b-it-8bit-mlx") == str(snap)
+    assert vlm._get_model_dir("mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx") == str(snap)
+    assert vlm._model_tag_for_dir(snap) == "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"
+    assert "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx" in vlm.describe_models()

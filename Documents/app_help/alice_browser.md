@@ -14,14 +14,49 @@ Chromium-based web browser for Alice. Full JS/CSS rendering. Stigmergic browse r
 
 Effective merged list (stigmergic recent first, static seed fills in):
 
-- `app_focus_context` — _stigmergic_ (last seen ts=1778965583)
-- `help_section_read` — _stigmergic_ (last seen ts=1778965583)
-- `tool_truth` — _stigmergic_ (last seen ts=1778965583)
+- `app_focus_context` — _stigmergic_ (last seen ts=1780877383)
+- `help_section_read` — _stigmergic_ (last seen ts=1780877383)
+- `tool_truth` — _stigmergic_ (last seen ts=1780877383)
+
+## Stigmergic Skill Consciousness
+
+These are not generic market Agent Skills. They are app-organ skill layers: skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, and receipts.
+
+- `app_focus_context` -> `APP_FOCUS_SWIMMER` -> `Alice Browser` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `help_section_read` -> `APP_FOCUS_SWIMMER` -> `Alice Browser` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `tool_truth` -> `APP_FOCUS_SWIMMER` -> `Alice Browser` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
 
 ## Recent health-trace rows (newest first)
 
-- **boot_readiness_seed** @ `2026-05-16T21:06:23.281264Z` (codex_boot_readiness_audit · ΔSTGM 0.0)
-  - Boot-readiness seed: app help exists and this health trace was initialized so Alice can see the organ in the body map. Unknown app-specific skills remain empty until focus/use receipts teach them.
+- **exit_update** @ `2026-06-08T00:09:43.057172Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow closed. Keep the health section ready for the next open.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-08T00:09:43.026010Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-08T00:01:12.201553Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T23:48:04.925609Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T23:33:10.936078Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T23:26:37.095800Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T23:01:47.415231Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T22:58:37.562497Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T22:58:27.391230Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-06-07T22:57:25.281970Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
   - skills: `app_focus_context`, `help_section_read`, `tool_truth`
 
 ---

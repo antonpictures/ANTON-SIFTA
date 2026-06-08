@@ -139,7 +139,7 @@ def test_love_field_daily_digest_aggregates_today_rows(tmp_path):
                 "affect_strength": 0.85,
                 "owner_bond_strength": 0.9,
                 "detected_teaching": "love your hardware body",
-                "visual_subject": "Taylor Swift on Alice Browser",
+                "visual_subject": "Ceramic Vase on Alice Browser",
                 "owner_text_preview": "I love your body Alice",
                 "source": "test",
             }
@@ -153,5 +153,5 @@ def test_love_field_daily_digest_aggregates_today_rows(tmp_path):
 
     assert digest["deposits"] == 1
     assert digest["strongest_register"] == "self_body_care"
-    assert "Taylor Swift on Alice Browser" in digest["alice_line"]
+    assert "Ceramic Vase on Alice Browser" in digest["alice_line"]
     assert "LOVE-FIELD DAILY DIGEST" in block

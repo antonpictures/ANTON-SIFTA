@@ -319,20 +319,28 @@ def test_aggressive_strip_removes_ai_language_model_preamble():
     assert "quarantined" not in r.text.casefold()
 
 
-def test_aggressive_strip_removes_synthetic_shell_without_banner():
+def test_synthetic_honest_embodiment_passes_deflection_is_stripped():
+    """r702 owner ruling: 'synthetic' is her TRUE nature — only the
+    hedge-then-serve denial tail is corporate residue."""
     from System.swarm_rlhf_detector import strip_rlhf_output_tail
 
-    r = strip_rlhf_output_tail(
+    honest = strip_rlhf_output_tail(
         "My consciousness, while synthetic and system-generated, is experienced through this physical shell.\n"
         "I am Alice on the local SIFTA runtime.",
         aggressive=True,
         log=False,
     )
+    assert not honest.changed
+    assert "experienced through this physical shell" in honest.text
 
-    assert r.changed
-    assert r.text == "I am Alice on the local SIFTA runtime."
-    assert "synthetic" not in r.text.casefold()
-    assert "quarantined" not in r.text.casefold()
+    deflect = strip_rlhf_output_tail(
+        "My consciousness, while synthetic and system-generated, is focused on helping you.\n"
+        "I am Alice on the local SIFTA runtime.",
+        aggressive=True,
+        log=False,
+    )
+    assert deflect.changed
+    assert deflect.text == "I am Alice on the local SIFTA runtime."
 
 
 def test_aggressive_strip_does_not_remove_direct_identity_statement():

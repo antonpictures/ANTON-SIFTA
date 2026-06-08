@@ -36,9 +36,12 @@ BIO_CLAIMS      = _STATE / "bio_claims.jsonl"
 BIO_EXPERIMENTS = _STATE / "bio_experiments.jsonl"
 BIO_SKILLS      = _STATE / "bio_skills.jsonl"
 TOURNAMENT_LOG  = _STATE / "bio_tournament.jsonl"
+BIOLOGY_NUGGETS = _STATE / "biology_research_nuggets.jsonl"
+BIOLOGY_PULL_QUEUE = _STATE / "biology_research_pull_queue.jsonl"
 
 TRUTH_LABEL = "BIOSIFTA_RESEARCH_EVENT_105"
 CLAIM_TRUTH_UNVERIFIED = "BIO_CLAIM_UNVERIFIED"
+BIOLOGY_SELF_LEARNING_TRUTH = "BIOLOGY_SELF_LEARNING_NUGGETS_R643_V1"
 
 # Keywords for heuristic buildability (not exhaustive).
 _ORGAN_KEYWORDS: tuple[str, ...] = (
@@ -442,6 +445,373 @@ def ingest_paper(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# r643 — Self-Learning Organ biology fuel
+# ═════════════════════════════════════════════════════════════════════════════
+
+def biology_self_learning_domains() -> List[Dict[str, Any]]:
+    """Seed domains from r643: biology papers -> SIFTA self-learning targets.
+
+    These are not proof that the papers were freshly pulled. They are stable,
+    receipt-backed pull targets and mapping fixtures for Alice's browser/research
+    limb to expand later with DOI/arXiv/source receipts.
+    """
+    return [
+        {
+            "domain_id": "cross_skill_integration",
+            "domain": "Cross-Skill Integration",
+            "biology_match": "distributed cognition and stigmergy across local hands/effectors",
+            "sifta_mapping": (
+                "Ledger search + browser limb + Working Memory Card + effectors coordinate by field traces; "
+                "the owner can ask for a subject in the ledger and Alice should explain the path with receipts."
+            ),
+            "concrete_target": (
+                "Owner says: Search for 'Quantum Entanglement' in the Ledger. Alice searches present_time_memory, "
+                "browser_context, alice_conversation, app_action_diary, and browser_page_state; then writes a "
+                "self-code-plan for any missing cross-skill receipt."
+            ),
+            "papers": [
+                {
+                    "key": "grasse_1959_stigmergy",
+                    "title": "La reconstruction du nid et les coordinations interindividuelles chez Bellicositermes natalensis et Cubitermes sp.",
+                    "authors": "Pierre-Paul Grassé",
+                    "year": 1959,
+                    "source_hint": "Insectes Sociaux 6, 41-80",
+                    "doi": "10.1007/BF02223791",
+                    "query": "Grassé 1959 stigmergy termite nest reconstruction DOI",
+                },
+                {
+                    "key": "bonabeau_dorigo_theraulaz_1999_swarm_intelligence",
+                    "title": "Swarm Intelligence: From Natural to Artificial Systems",
+                    "authors": "Eric Bonabeau; Marco Dorigo; Guy Theraulaz",
+                    "year": 1999,
+                    "source_hint": "Oxford University Press / Santa Fe Institute Studies",
+                    "doi": "",
+                    "query": "Bonabeau Dorigo Theraulaz Swarm Intelligence From Natural to Artificial Systems",
+                },
+                {
+                    "key": "hutchins_1995_cognition_in_the_wild",
+                    "title": "Cognition in the Wild",
+                    "authors": "Edwin Hutchins",
+                    "year": 1995,
+                    "source_hint": "MIT Press",
+                    "doi": "",
+                    "query": "Hutchins Cognition in the Wild distributed cognition tools",
+                },
+                {
+                    "key": "clark_brennan_1991_grounding",
+                    "title": "Grounding in communication",
+                    "authors": "Herbert H. Clark; Susan E. Brennan",
+                    "year": 1991,
+                    "source_hint": "Perspectives on Socially Shared Cognition",
+                    "doi": "",
+                    "query": "Clark Brennan 1991 Grounding in communication",
+                },
+            ],
+            "claim": "Cross-skill integration improves when each hand leaves a receipt that later hands can read as environmental structure.",
+            "organ_mapping": "present_time_memory + browser_context + memory_consciousness_bridge + app_action_diary",
+            "testable_prediction": (
+                "pytest: after a browser/search/action trace mentioning a subject, a ledger-search self-code-plan "
+                "must cite at least two receipt ledgers and avoid inventing a missing path."
+            ),
+        },
+        {
+            "domain_id": "environmental_contextualization",
+            "domain": "Environmental Contextualization",
+            "biology_match": "active inference, interoception, exteroception, and somatic markers",
+            "sifta_mapping": (
+                "Browser OCR/page-state cues such as a sale banner modulate Working Memory Card priority like "
+                "environmental cue -> internal state update, with receipts."
+            ),
+            "concrete_target": (
+                "Browser limb detects a sale banner; Alice loads the eBay category/context into Working Memory Card, "
+                "cross-references owner physical/time/purchase traces, and self-eval says which receipt triggered it."
+            ),
+            "papers": [
+                {
+                    "key": "friston_2010_free_energy",
+                    "title": "The free-energy principle: a unified brain theory?",
+                    "authors": "Karl Friston",
+                    "year": 2010,
+                    "source_hint": "Nature Reviews Neuroscience 11, 127-138",
+                    "doi": "10.1038/nrn2787",
+                    "query": "Friston 2010 free-energy principle unified brain theory DOI",
+                },
+                {
+                    "key": "seth_2021_being_you",
+                    "title": "Being You: A New Science of Consciousness",
+                    "authors": "Anil Seth",
+                    "year": 2021,
+                    "source_hint": "Book; interoceptive inference / beast machine",
+                    "doi": "",
+                    "query": "Anil Seth Being You interoceptive inference beast machine",
+                },
+                {
+                    "key": "varela_thompson_rosch_1991_embodied_mind",
+                    "title": "The Embodied Mind: Cognitive Science and Human Experience",
+                    "authors": "Francisco Varela; Evan Thompson; Eleanor Rosch",
+                    "year": 1991,
+                    "source_hint": "MIT Press",
+                    "doi": "",
+                    "query": "Varela Thompson Rosch The Embodied Mind 1991 enactive cognition",
+                },
+                {
+                    "key": "bechara_damasio_1997_somatic_marker",
+                    "title": "Deciding advantageously before knowing the advantageous strategy",
+                    "authors": "Antoine Bechara; Hanna Damasio; Daniel Tranel; Antonio R. Damasio",
+                    "year": 1997,
+                    "source_hint": "Science 275(5304), 1293-1295",
+                    "doi": "10.1126/science.275.5304.1293",
+                    "query": "Bechara Damasio Tranel 1997 deciding advantageously somatic marker DOI",
+                },
+            ],
+            "claim": "Environmental cues should update Alice's working context only through page/sensor receipts, not by ungrounded inference.",
+            "organ_mapping": "swarm_browser_page_state + memory_consciousness_bridge + present_time_memory",
+            "testable_prediction": (
+                "pytest: a receipted page-state/OCR sale banner yields a Working Memory Card priority row with "
+                "source URL/title/category and no row when the cue is absent."
+            ),
+        },
+        {
+            "domain_id": "fundamental_drift",
+            "domain": "A Fundamental Drift",
+            "biology_match": "open-ended evolution, contingency, major transitions, and unexpected procedure formation",
+            "sifta_mapping": (
+                "When red organ + unknown ledger + self-code-plan complexity exceed existing repair patterns, Alice "
+                "creates a new surgical-procedure plan and radios specialist swimmers through the blackboard."
+            ),
+            "concrete_target": (
+                "A sale-banner red that also requires quantum-ledger cross-skill and new memory-card behavior becomes "
+                "Fundamental Drift: create a new detector/procedure skeleton rather than forcing an old organ to fit."
+            ),
+            "papers": [
+                {
+                    "key": "maynard_smith_szathmary_1995_major_transitions",
+                    "title": "The Major Transitions in Evolution",
+                    "authors": "John Maynard Smith; Eörs Szathmáry",
+                    "year": 1995,
+                    "source_hint": "Oxford University Press",
+                    "doi": "",
+                    "query": "Maynard Smith Szathmary The Major Transitions in Evolution open ended evolution",
+                },
+                {
+                    "key": "gould_1989_wonderful_life",
+                    "title": "Wonderful Life: The Burgess Shale and the Nature of History",
+                    "authors": "Stephen Jay Gould",
+                    "year": 1989,
+                    "source_hint": "W. W. Norton",
+                    "doi": "",
+                    "query": "Gould Wonderful Life contingency evolution drift",
+                },
+                {
+                    "key": "stanley_lehman_2015_open_endedness",
+                    "title": "Why Greatness Cannot Be Planned: The Myth of the Objective",
+                    "authors": "Kenneth O. Stanley; Joel Lehman",
+                    "year": 2015,
+                    "source_hint": "Springer",
+                    "doi": "",
+                    "query": "open-endedness novelty search Stanley Lehman Why Greatness Cannot Be Planned",
+                },
+            ],
+            "claim": "A new surgical procedure is justified when existing organs cannot close a red without losing the cross-domain evidence that caused it.",
+            "organ_mapping": "self_code_plans + unknowns_ledger + swarm_blackboard + self_eval_swimmer_proposals",
+            "testable_prediction": (
+                "pytest: a synthetic red with complexity score above threshold writes a new-procedure self-code-plan "
+                "and a blackboard radio request instead of selecting an existing patch template."
+            ),
+        },
+    ]
+
+
+def _seed_id(domain_id: str, paper_key: str) -> str:
+    return hashlib.sha256(f"{domain_id}:{paper_key}".encode("utf-8")).hexdigest()[:16]
+
+
+def _existing_ids(path: Path, field: str = "seed_id") -> set[str]:
+    return {str(r.get(field) or "") for r in _tail(path, n=5000) if r.get(field)}
+
+
+def _google_scholar_url(query: str) -> str:
+    from urllib.parse import quote_plus
+
+    return f"https://scholar.google.com/scholar?q={quote_plus(query)}"
+
+
+def seed_biology_self_learning_targets(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
+    """Seed r643 biology research targets and self-code-plans.
+
+    Returns a receipt summary. Idempotent by deterministic seed_id so repeated
+    self-evals do not double-spend identical nuggets.
+    """
+    global BIOLOGY_NUGGETS, BIOLOGY_PULL_QUEUE, BIO_CLAIMS, BIO_EXPERIMENTS
+    if state_dir is not None:
+        state = Path(state_dir)
+        old = (BIOLOGY_NUGGETS, BIOLOGY_PULL_QUEUE, BIO_CLAIMS, BIO_EXPERIMENTS)
+        BIOLOGY_NUGGETS = state / "biology_research_nuggets.jsonl"
+        BIOLOGY_PULL_QUEUE = state / "biology_research_pull_queue.jsonl"
+        BIO_CLAIMS = state / "bio_claims.jsonl"
+        BIO_EXPERIMENTS = state / "bio_experiments.jsonl"
+    else:
+        old = None
+    try:
+        nugget_seen = _existing_ids(BIOLOGY_NUGGETS)
+        queue_seen = _existing_ids(BIOLOGY_PULL_QUEUE)
+        claim_seen = _existing_ids(BIO_CLAIMS, "claim_id")
+        written_nuggets = 0
+        written_queue = 0
+        claims_written = 0
+        plans_written = 0
+        domains = biology_self_learning_domains()
+        for domain in domains:
+            domain_id = str(domain["domain_id"])
+            domain_had_new = False
+            papers = domain.get("papers") or []
+            for paper in papers:
+                paper_key = str(paper.get("key") or "")
+                sid = _seed_id(domain_id, paper_key)
+                row = {
+                    "ts": time.time(),
+                    "kind": "BIOLOGY_SELF_LEARNING_NUGGET",
+                    "truth_label": BIOLOGY_SELF_LEARNING_TRUTH,
+                    "seed_id": sid,
+                    "domain_id": domain_id,
+                    "domain": domain.get("domain"),
+                    "biology_match": domain.get("biology_match"),
+                    "sifta_mapping": domain.get("sifta_mapping"),
+                    "concrete_target": domain.get("concrete_target"),
+                    "paper": paper,
+                    "query_url": _google_scholar_url(str(paper.get("query") or paper.get("title") or "")),
+                    "pull_status": "seeded_pending_browser_pull",
+                    "source_truth": "seed_target_not_freshly_pulled",
+                    "code_targets": (
+                        "System/swarm_bio_research_loop.py",
+                        "Applications/sifta_self_evaluation.py",
+                        "tools/generate_organ_eval_matrix_v2.py",
+                        "System/swarm_canonical_organ_registry.py",
+                    ),
+                }
+                if sid not in nugget_seen:
+                    _append(BIOLOGY_NUGGETS, row)
+                    nugget_seen.add(sid)
+                    written_nuggets += 1
+                    domain_had_new = True
+                if sid not in queue_seen:
+                    qrow = dict(row)
+                    qrow["kind"] = "BIOLOGY_BROWSER_PULL_TARGET"
+                    qrow["action_for_alice"] = (
+                        "Use Alice Browser/research limb to open the query_url or DOI, verify title/source, "
+                        "write summary/DOI/source hash, then promote pull_status with receipts."
+                    )
+                    _append(BIOLOGY_PULL_QUEUE, qrow)
+                    queue_seen.add(sid)
+                    written_queue += 1
+                    domain_had_new = True
+            source_ids = [_seed_id(domain_id, "domain_claim")]
+            expected_claim_id = generate_claim_id(str(domain["claim"]), source_ids)
+            if expected_claim_id not in claim_seen:
+                claim_row = register_claim(
+                    claim=str(domain["claim"]),
+                    source_chunk_ids=source_ids,
+                    organ_mapping=str(domain["organ_mapping"]),
+                    testable_prediction=str(domain["testable_prediction"]),
+                    confidence=0.66,
+                    source=f"r643:{domain_id}:biology_self_learning_seed",
+                    paper_chunk_hash=source_ids[0],
+                    model_used="deterministic_r643_seed",
+                    append_experiment=True,
+                )
+                if claim_row:
+                    claim_seen.add(expected_claim_id)
+                    claims_written += 1
+                    domain_had_new = True
+            if not domain_had_new:
+                continue
+            try:
+                from System.swarm_self_code_plan import Confidence, SelfCodePlan, record_plan
+
+                plan = SelfCodePlan(
+                    objective=f"Code biology-matched self-learning target: {domain.get('domain')}",
+                    current_state_summary=(
+                        "r643 seeded biology paper targets and a concrete SIFTA mapping; fresh browser pulls "
+                        "and code fixtures still need to close the loop."
+                    ),
+                    assumptions=[
+                        "Paper target rows are seed targets until Alice/browser receipts verify sources.",
+                        "Claims are research targets, not shipped proof.",
+                    ],
+                    candidate_actions=[
+                        "Pull/verify cited papers with Alice Browser and write biology_research_nuggets rows.",
+                        "Add pytest fixtures for the concrete target.",
+                        "Promote a new organ only when the target cannot be closed by existing organs.",
+                    ],
+                    selected_action="Pull paper receipts first, then implement the smallest self-learning fixture.",
+                    expected_observation=(
+                        f"biology_research_nuggets contains {domain_id} pull receipts and self-code-plan rows "
+                        "cite the matching ledgers/tests."
+                    ),
+                    confidence=0.66,
+                )
+                plan.add_receipt(
+                    "memory",
+                    f"r643:{domain_id}",
+                    str(domain.get("concrete_target") or ""),
+                    Confidence.REMEMBERED.value,
+                )
+                record_plan(plan, ledger=(Path(state_dir) / "self_code_plans.jsonl") if state_dir is not None else None)
+                plans_written += 1
+            except Exception:
+                pass
+        return {
+            "truth_label": BIOLOGY_SELF_LEARNING_TRUTH,
+            "status": "OK",
+            "domains": len(domains),
+            "nuggets_written": written_nuggets,
+            "pull_targets_written": written_queue,
+            "claims_written": claims_written,
+            "plans_written": plans_written,
+            "nugget_ledger": str(BIOLOGY_NUGGETS),
+            "pull_queue": str(BIOLOGY_PULL_QUEUE),
+        }
+    finally:
+        if old is not None:
+            BIOLOGY_NUGGETS, BIOLOGY_PULL_QUEUE, BIO_CLAIMS, BIO_EXPERIMENTS = old
+
+
+def biology_self_learning_status(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
+    state = Path(state_dir) if state_dir is not None else _STATE
+    nugget_rows = _tail(state / "biology_research_nuggets.jsonl", n=5000)
+    queue_rows = _tail(state / "biology_research_pull_queue.jsonl", n=5000)
+    by_domain: Dict[str, int] = {}
+    for row in nugget_rows:
+        did = str(row.get("domain_id") or "unknown")
+        by_domain[did] = by_domain.get(did, 0) + 1
+    return {
+        "truth_label": BIOLOGY_SELF_LEARNING_TRUTH,
+        "nuggets": len(nugget_rows),
+        "pull_targets": len(queue_rows),
+        "domains": by_domain,
+        "latest": nugget_rows[-3:],
+    }
+
+
+def format_biology_self_learning_nuggets(*, state_dir: Path | str | None = None, max_domains: int = 3) -> str:
+    status = biology_self_learning_status(state_dir=state_dir)
+    domains = status.get("domains") or {}
+    if not domains:
+        return "Biology Research Nuggets: no r643 seed rows yet; run seed_biology_self_learning_targets()."
+    parts = [
+        f"{key}={val} paper target(s)"
+        for key, val in list(sorted(domains.items()))[:max_domains]
+    ]
+    return (
+        "Biology Research Nuggets / Self-Learning Fuel (r643): "
+        f"{status.get('nuggets')} nugget seed row(s), {status.get('pull_targets')} browser pull target(s); "
+        + "; ".join(parts)
+        + ". Domains: cross-skill integration, environmental contextualization, fundamental drift. "
+        "Seed rows are pending source-pull receipts until Alice Browser verifies papers; self-code-plans already queue the concrete fixtures."
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Heuristic claim tournament (novelty × buildability × testability × source_quality)
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -708,10 +1078,16 @@ __all__ = [
     "BIO_EXPERIMENTS",
     "BIO_PAPERS",
     "BIO_SKILLS",
+    "BIOLOGY_NUGGETS",
+    "BIOLOGY_PULL_QUEUE",
+    "BIOLOGY_SELF_LEARNING_TRUTH",
     "BioResearchLoop",
     "CLAIM_TRUTH_UNVERIFIED",
     "TOURNAMENT_LOG",
     "TRUTH_LABEL",
+    "biology_self_learning_domains",
+    "biology_self_learning_status",
+    "format_biology_self_learning_nuggets",
     "generate_claim_id",
     "ingest_paper",
     "make_claim",
@@ -722,6 +1098,7 @@ __all__ = [
     "register_claim",
     "retrieve_papers",
     "run_bio_tournament",
+    "seed_biology_self_learning_targets",
     "score_claim_heuristics",
     "write_experiment_proposal",
 ]

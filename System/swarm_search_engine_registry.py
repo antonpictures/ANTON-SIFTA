@@ -205,8 +205,8 @@ _SHOW_IMAGES_RE = re.compile(
 def parse_show_images_intent(text: str) -> Dict[str, Any]:
     """r378: 'select Images' / 'show me the images (of X)' on an existing results page is a
     TAB SWITCH to image results — NOT a fresh web search of the owner's whole sentence. (The
-    Dua Lipa bug: when George said 'GOOGLE SEARCH HAS IMAGES SECTION YOU CAN SELECT FOR DUA
-    LIPA...' Alice re-searched that literal sentence instead of reading the page already on her
+    Image-search bug: when George said the current search page had an Images section Alice
+    re-searched that literal sentence instead of reading the page already on her
     body and switching to Images.) Returns {is_images, subject}. `subject` is set ONLY for an
     explicit 'images of/for <X>'; otherwise empty, so the caller uses the CURRENT browser
     subject read from page-state — swimmers go where the action already is."""
@@ -287,6 +287,14 @@ def parse_select_result_intent(text: str) -> Dict[str, Any]:
     low = t.lower()
     noun = bool(_SELECT_NOUN_RE.search(low))
     ordinal = _extract_ordinal(low)
+    # r641: "use your cortex ... first move ..." is a doctrine/instruction, not "use the first
+    # result". The weak verb "use" may select a page item only when an actual selectable noun
+    # appears ("use the first one/photo/result"). Strong click/select verbs still work with a
+    # bare ordinal.
+    mverb = _SELECT_VERB_RE.search(t)
+    verb = (mverb.group(0).lower() if mverb else "").strip()
+    if verb == "use" and not noun:
+        return {"is_select": False, "ordinal": 0}
     if not noun and ordinal == 0:
         return {"is_select": False, "ordinal": 0}
     # never hijack a fresh search / explicit URL open unless the owner named an ordinal
@@ -458,4 +466,4 @@ __all__ = [
 if __name__ == "__main__":
     print(search_engine_knowledge_block())
     print("switch ->", parse_switch_engine_command("Alice, switch your search engine to duck duck go"))
-    print("url    ->", search_url("taylor swift", engine="bing"))
+    print("url    ->", search_url("avery stone", engine="bing"))

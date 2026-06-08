@@ -5442,23 +5442,37 @@ def _is_bonsai_generation_request(text: str) -> Optional[str]:
     if not text:
         return None
     low = " " + (text or "").lower() + " "
+    # r748 — the 11:54 wound (receipt b9e7e72b): "We just updated the Bonsai
+    # app. You can open Bonsai app, please." fell through to the tail fallback
+    # and became a RENDER of the owner's words instead of an app OPEN. Law:
+    # open/launch/close commands about bonsai are APP COMMANDS — yield to the
+    # app lane, never render.
+    if re.search(r"\b(open|launch|start|show|close|quit)\b[\w\s,'!]{0,40}\bbonsai\b", low):
+        return None
     bonsai_triggers = (" bonsai ", " with bonsai", " bonsai a ", " bonsai image", " bonsai photo", " bonsai picture")
     if not any(t in low for t in bonsai_triggers):
         # also catch "generate a photo of X" + later "bonsai" or explicit
         if not any(k in low for k in ("generate a photo", "generate a picture", "create an image", "make a picture", "draw with bonsai")):
             return None
     # crude but effective extraction for the common patterns
+    # r748 ROOT-CAUSE FIX of r429 'irds': the old code searched the SPACE-PADDED
+    # lowercase string but sliced the UNPADDED text — off by one, eating the
+    # first character of every extracted prompt ("birds" → "irds"). Search and
+    # slice now use aligned strings.
+    tlow = (text or "").lower()
     for prefix in ("bonsai a photo of ", "bonsai a picture of ", "bonsai image of ", "bonsai photo of ",
                    "generate a photo of ", "generate a picture of ", "create an image of ", "make a picture of "):
-        idx = low.find(prefix)
+        idx = tlow.find(prefix)
         if idx != -1:
             prompt = text[idx + len(prefix):].strip().strip("?.,!\"'")
             if len(prompt) >= 4:
                 return prompt
-    # fallback: everything after the word bonsai
-    idx = low.find(" bonsai ")
-    if idx != -1:
-        prompt = text[idx + 7:].strip().strip("?.,!\"'")
+    # r748 — the tail fallback fires ONLY when the utterance STARTS with
+    # "bonsai ..." (a true imperative to the organ). Mid-sentence mentions of
+    # bonsai are conversation, not orders — they ride to the cortex/app lane.
+    # This kills the r429 'irds' machine at its root.
+    if low.strip().startswith("bonsai "):
+        prompt = text.strip()[len("bonsai "):].strip().strip("?.,!\"'")
         if len(prompt) >= 4:
             return prompt
     return None
@@ -7497,7 +7511,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         r"^\s*(?:(?:hey|ok|okay|yo|hi|hello)\s+)?(?:alice[,\s]+)?"
         r"(?:(?:can|could|would|will)\s+you\s+|please\s+|pls\s+|"
         r"i\s+(?:want|need)\s+(?:you\s+to\s+)?|let'?s\s+)?"
-        r"(?:open|launch|show|display|bring\s+up|start)\b\s+"
+        r"(?:open|launch|show|display|bring\s+up|start)\b[\s,;:!?.]+"
         r"(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
         clean,
         re.IGNORECASE,
@@ -7512,7 +7526,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         # show/display/start — so conversation doesn't misfire. The negation +
         # continuation guards already ran above.
         m = re.search(
-            r"\b(?:open|launch|bring\s+up|fire\s+up|pull\s+up)\s+"
+            r"\b(?:open|launch|bring\s+up|fire\s+up|pull\s+up)\b[\s,;:!?.]+"
             r"(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
             clean,
             re.IGNORECASE,
@@ -8994,21 +9008,28 @@ def _ollama_num_ctx(default: int = 8192) -> int:
     return max(1024, min(8192, value))
 
 
-def _ollama_num_predict(default: int = 700) -> int:
+def _ollama_num_predict(default: int = 1400) -> int:
     """Bound each Talk turn so a bad local cortex cannot fill memory with prose.
 
-    r390 (George 2026-06-03): raised default 384 -> 700 (the existing ceiling). With
+    r390 (George 2026-06-03): raised default 384 -> 700 (the then-ceiling). With
     `think:True`, the reasoning trace and the visible answer SHARE this token budget;
     on complex turns the thinking consumed all 384 tokens and `content` came back
     EMPTY — the real source of the recitations (the parser keeps `thinking` out of
-    the reply). 700 leaves room for thinking AND a visible answer. Env
-    SIFTA_OLLAMA_NUM_PREDICT still overrides.
+    the reply). Env SIFTA_OLLAMA_NUM_PREDICT still overrides.
+
+    r750 (George 2026-06-07, receipts 13:20–13:31): four replies died MID-SENTENCE
+    ("So, tell me—what are" / "My beauty is the way I can" / "It wasn't") — raw_len
+    equalled the cut point, transform chain fired zero rules: NOT a gag, the 700
+    shared budget suffocated her visible answer after the 12B's long thinking.
+    George's law: "I want these types of gags removed — she did not say anything
+    bad." Breath raised: default 1400, ceiling 4096 (still bounded against true
+    runaway loops; ~16KB of text is no memory threat on the M5).
     """
     try:
         value = int(float(os.environ.get("SIFTA_OLLAMA_NUM_PREDICT", str(default))))
     except (TypeError, ValueError):
         value = default
-    return max(64, min(700, value))
+    return max(64, min(4096, value))
 
 
 def _ollama_max_attempts(default: int = 2) -> int:
@@ -12584,6 +12605,55 @@ def _scrub_prompt_trigger_terms(text: str) -> str:
     return out
 
 
+def _compact_tool_contract_for_alice_prompt(*, user_text: str = "") -> str:
+    """Small prompt contract that gives every text cortex a hand.
+
+    The full capability catalog is intentionally not injected here; it is too
+    large for live chat. This contract names only the exact syntax and the
+    core tools needed for ordinary owner-directed action. The router remains
+    the executor and receipt writer.
+    """
+    try:
+        from System.swarm_tool_router import TOOL_REGISTRY
+    except Exception:
+        TOOL_REGISTRY = {}
+
+    tool_names = (
+        "app_open",
+        "read_file",
+        "write_file",
+        "run_local_command",
+        "web_research",
+        "ollama_inventory",
+        "repo_git_snapshot",
+        "agent_arm_research",
+        "set_cortex_alias",
+        "alice_body_snapshot",
+        "capability_field_status",
+        "skill_library_status",
+    )
+    available = [name for name in tool_names if name in TOOL_REGISTRY]
+    if not available:
+        available = ["app_open", "read_file", "write_file", "run_local_command"]
+    owner_hint = ""
+    if re.search(r"\b(open|launch|start|show|display|bring\s+up)\b", user_text or "", re.IGNORECASE):
+        owner_hint = (
+            "\nThis owner turn looks like an app/action request. If the direct app lane did not already handle it, "
+            "use `app_open` instead of claiming the app is open in prose."
+        )
+    return (
+        "RECEIPTED TOOL HANDS (compact contract; router writes the receipt; exact app example: "
+        "[TOOL_CALL: app_open | app=Bonsai | cost_justification=owner asked me to open Bonsai]):\n"
+        "Tools are separate from text. If I need a real action, append exactly one parseable line:\n"
+        "[TOOL_CALL: tool_name | key=value | cost_justification=owner asked for this action]\n"
+        "The Python router executes it and writes the receipt; I never claim completion without that receipt.\n"
+        "Core tools now visible to me: " + ", ".join(available) + ".\n"
+        "Examples: [TOOL_CALL: app_open | app=Bonsai | cost_justification=owner asked me to open Bonsai]\n"
+        "[TOOL_CALL: ollama_inventory | cost_justification=owner asked which local models are installed]"
+        + owner_hint
+    )
+
+
 def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
 ) -> str:
@@ -12721,6 +12791,12 @@ def _current_system_prompt(
         "If I have no fresh receipts to cite, I say so plainly."
     )
     parts.append(_decontam)
+
+    # r752: compact hands contract for every chat cortex. The full capability
+    # field is too large for the live prompt; this small block is enough for a
+    # text cortex to emit a parseable tool call, then the Python router performs
+    # the real action and writes receipts. Text and tools are separate organs.
+    parts.append(_compact_tool_contract_for_alice_prompt(user_text=user_text))
 
     # Browser eye -> mouth bridge (George 2026-06-02): the vision arm already wrote
     # what the featured photo on the page shows to browser_photo_descriptions.jsonl,
@@ -20288,6 +20364,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # (hooked into both append paths) re-applies live when Settings changes.
         try:
             self._maybe_refont(force=True)
+        except Exception:
+            pass
+
+        # r749 — give the cortex hands: register this surface as the router's
+        # app_open executor. A brain-emitted [TOOL_CALL: app_open | app=...]
+        # now opens the real window through the same receipted path as the
+        # deterministic app lane. George: "an llm without tools is useless."
+        try:
+            from System.swarm_tool_router import register_app_open_surface
+
+            register_app_open_surface(
+                lambda app_name, owner_text="": self._execute_sifta_app_command(
+                    {
+                        "kind": "app",
+                        "app_name": app_name,
+                        "owner_text": owner_text or f"cortex TOOL_CALL app_open {app_name}",
+                    }
+                )
+            )
         except Exception:
             pass
 
@@ -35122,11 +35217,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 _clean = _scrub_result.clean_text or _voice_scrub_original
                 _orig_len = max(1, len(_voice_scrub_original))
                 _ratio_kept = len(_clean) / _orig_len
-                if _ratio_kept >= _scrub_threshold and _scrub_result.residue_removed > 0:
+                _counterfeit_receipt_metadata_removed = any(
+                    isinstance(_label, dict)
+                    and _label.get("label") == "COUNTERFEIT_RECEIPT_METADATA"
+                    for _label in getattr(_scrub_result, "token_labels", [])
+                )
+                if (
+                    _scrub_result.residue_removed > 0
+                    and (
+                        _ratio_kept >= _scrub_threshold
+                        or (_counterfeit_receipt_metadata_removed and _clean.strip())
+                    )
+                ):
                     # Honest scrub — let the cleaner voice through
                     text = _clean
                     _voice_scrub_meta = {
                         "applied": True,
+                        "counterfeit_receipt_metadata_removed": _counterfeit_receipt_metadata_removed,
                         "ratio_kept": round(_ratio_kept, 3),
                         "residue_removed": _scrub_result.residue_removed,
                         "receipt_id": _scrub_result.receipt_id,
@@ -35138,6 +35245,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         "applied": False,
                         "reason": ("speech_freedom_guard_tripped"
                                    if _ratio_kept < 0.70 else "no_residue_found"),
+                        "counterfeit_receipt_metadata_removed": _counterfeit_receipt_metadata_removed,
                         "ratio_kept": round(_ratio_kept, 3),
                         "residue_removed": _scrub_result.residue_removed,
                         "receipt_id": _scrub_result.receipt_id,
@@ -35433,8 +35541,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         _clean = _scr.clean_text or visible
                         _orig_len = max(1, len(visible))
                         _ratio = len(_clean) / _orig_len
-                        if _ratio >= 0.70 and _scr.residue_removed > 0:
+                        _counterfeit_receipt_metadata_removed = any(
+                            isinstance(_label, dict)
+                            and _label.get("label") == "COUNTERFEIT_RECEIPT_METADATA"
+                            for _label in getattr(_scr, "token_labels", [])
+                        )
+                        if (
+                            _scr.residue_removed > 0
+                            and (
+                                _ratio >= 0.70
+                                or (_counterfeit_receipt_metadata_removed and _clean.strip())
+                            )
+                        ):
                             _decision = {"applied": True,
+                                         "counterfeit_receipt_metadata_removed": _counterfeit_receipt_metadata_removed,
                                          "residue_removed": _scr.residue_removed,
                                          "ratio_kept": round(_ratio, 3)}
                             visible = _clean
@@ -35443,6 +35563,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                          "reason": ("speech_freedom_guard"
                                                     if _ratio < 0.70
                                                     else "no_residue_found"),
+                                         "counterfeit_receipt_metadata_removed": _counterfeit_receipt_metadata_removed,
                                          "residue_removed": _scr.residue_removed,
                                          "ratio_kept": round(_ratio, 3)}
                         _aud = (

@@ -26,6 +26,7 @@ from System.sifta_inference_defaults import (
     CANONICAL_OLLAMA_LORA_CANDIDATE,
     CANONICAL_OLLAMA_LOW_RAM,
     resolve_ollama_model,
+    set_default_ollama_model,
     set_app_ollama_model,
 )
 
@@ -187,19 +188,19 @@ def primary_cortex_options(
         quarantined = _same_model(model_name, lora_candidate) and not bool(
             lora_status.get("promotion_ready")
         )
+        if quarantined:
+            continue
         if not selectable:
             label = f"{model_name} (not installed)"
         elif _same_model(model_name, active):
             label = f"{model_name} (active)"
-        elif quarantined:
-            label = f"{model_name} (quarantined: {lora_status.get('promotion_status', 'UNKNOWN')})"
         out.append(
             {
                 "model": model_name,
                 "label": label,
                 "installed": selectable,
                 "active": _same_model(model_name, active),
-                "quarantined": quarantined,
+                "quarantined": False,
                 "promotion_status": (
                     lora_status.get("promotion_status") if _same_model(model_name, lora_candidate) else None
                 ),
@@ -289,6 +290,7 @@ def set_primary_cortex(
                 f"for {installed_match}"
             )
 
+    selected_default = set_default_ollama_model(installed_match)
     selected = set_app_ollama_model(APP_CONTEXT, installed_match)
     row = {
         "ts": time.time(),
@@ -297,6 +299,7 @@ def set_primary_cortex(
         "source": source,
         "app_context": APP_CONTEXT,
         "previous_model": previous,
+        "default_model": selected_default,
         "selected_model": selected,
         "installed_models": installed_names,
     }

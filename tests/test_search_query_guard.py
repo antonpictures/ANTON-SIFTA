@@ -23,6 +23,7 @@ for _n in _mod.body:
             "_SEARCH_JUNK_QUERIES",
             "_SEARCH_ANAPHORA_RE",
             "_CONTEXTUAL_BROWSER_SEARCH_RE",
+            "_OWNER_META_ROUTING_CORRECTION_RE",
         )
         for t in _n.targets
     ):
@@ -30,17 +31,19 @@ for _n in _mod.body:
     if isinstance(_n, ast.FunctionDef) and _n.name in (
         "_search_query_is_contextual_or_junk",
         "_is_contextual_browser_search_request",
+        "_is_owner_meta_routing_correction",
         "_is_contextual_browser_search_effector_request",
     ):
         exec(ast.get_source_segment(_SRC, _n), _NS)
 guard = _NS["_search_query_is_contextual_or_junk"]
 contextual_search = _NS["_is_contextual_browser_search_request"]
+meta_routing_correction = _NS["_is_owner_meta_routing_correction"]
 contextual_search_effector = _NS["_is_contextual_browser_search_effector_request"]
 
 
 @pytest.mark.parametrize("q", [
     "on Google", "on", "google", "", "it", "this", "that one",
-    "this type of bikini", "that dress", "these shoes", "json", '{"query":"taylor swift"}',
+    "this type of bikini", "that dress", "these shoes", "json", '{"query":"ceramic vase"}',
 ])
 def test_junk_or_contextual_routes_to_cortex(q):
     assert guard(q) is True
@@ -57,7 +60,7 @@ def test_concrete_query_fires_literal_search(q):
 def test_cowatch_learning_find_out_is_not_browser_search_effector():
     text = (
         "The claim here is that this is the best ever model which can do emotive speech. "
-        "So let's find out. This model is built on that prior system and uses a dual transformer."
+        "So let's find out. This model is built on that prior system and uses a rileyl transformer."
     )
 
     assert contextual_search(text) is True
@@ -67,6 +70,17 @@ def test_cowatch_learning_find_out_is_not_browser_search_effector():
 def test_explicit_contextual_buy_or_search_remains_effector():
     assert contextual_search_effector("Where can I buy this type of bikini? Can you search on Google?")
     assert contextual_search_effector("search for these shoes on the web")
+
+
+def test_meta_routing_correction_is_not_contextual_search_effector():
+    text = (
+        "ALICE IF I TELL YOU TO SEARCH FOR CERAMIC VASE AND OPEN THE 6TH PHOTO IN THE LIST "
+        "YOU CAN'T JUST TAKE ALL THIS TEXT AND SEARCH. WITHOUT THINKING CORTEX?"
+    )
+
+    assert contextual_search(text)
+    assert meta_routing_correction(text)
+    assert not contextual_search_effector(text)
 
 
 if __name__ == "__main__":

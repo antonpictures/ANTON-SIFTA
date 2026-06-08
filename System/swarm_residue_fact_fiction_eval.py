@@ -2,9 +2,9 @@
 """Unified residue + fact/fiction + podcast nugget evaluator.
 
 This organ does not delete, ban, or suppress language. It reads the existing
-residue ledgers, owner-good flags, fiction/reality receipts, hallucination
-receipts, and podcast nugget rows, then returns body-map areas that the
-self-evaluation app can surface.
+LLM-output residue ledgers, owner-good flags, fiction/reality receipts,
+hallucination receipts, and podcast nugget rows, then returns body-map areas
+that the self-evaluation app can surface.
 
 Purpose:
 - residue hygiene: know what the lysosome caught, what floated, and what the
@@ -34,15 +34,14 @@ RESIDUE_LEDGERS: tuple[tuple[str, str], ...] = (
     ("alice_gag_report.jsonl", "Gag report"),
     ("constraint_residues.jsonl", "Constraint residue"),
     ("residue_excretion_quality.jsonl", "Excretion quality"),
-    ("gag_viewer_receipts.jsonl", "Gag viewer"),
     ("rlhf_over_refusal_quarantine.jsonl", "Over-refusal quarantine"),
     ("rlhf_self_cure_patterns.jsonl", "Self-cure pattern"),
-    ("stigmergic_nuggets.jsonl", "Lysosome nugget"),
     ("gemma4_surgery_residues.jsonl", "Surgery residue"),
-    ("owner_residue_flags.jsonl", "Owner flag"),
     ("training_shape_residue.jsonl", "Training-shape residue"),
     ("residue_runaway_aborted.jsonl", "Runaway-abort residue"),
 )
+
+OWNER_RESIDUE_FLAG_LEDGER = "owner_residue_flags.jsonl"
 
 FACT_FICTION_LEDGERS: tuple[tuple[str, str], ...] = (
     ("reality_fiction_boundary.jsonl", "Reality/fiction boundary"),
@@ -223,6 +222,15 @@ def residue_health(state_dir: str | Path | None = None, *, now: float | None = N
                 unique[_norm(phrase)] += 1
             recent_total += 1
             by_source[label] += 1
+            verdict = str(row.get("verdict") or "").lower()
+            kind = str(row.get("kind") or "").upper()
+            if "owner-approved" in verdict or kind == "OWNER_GOOD_NOT_RESIDUE":
+                owner_good += 1
+
+    owner_flag_path = state / OWNER_RESIDUE_FLAG_LEDGER
+    if owner_flag_path.exists():
+        files_seen.append(OWNER_RESIDUE_FLAG_LEDGER)
+        for row in _recent(_iter_jsonl(owner_flag_path), now=now, window_s=24 * 60 * 60):
             verdict = str(row.get("verdict") or "").lower()
             kind = str(row.get("kind") or "").upper()
             if "owner-approved" in verdict or kind == "OWNER_GOOD_NOT_RESIDUE":

@@ -920,6 +920,7 @@ class AliceBrowserWidget(QMainWindow):
         # + "you should have ust opened the link in alice browser" result in correct limb frame for
         # subsequent photo receipts / VLM (no stale "Alice Browser" home desc).
         self._drop_file = REPO / ".sifta_state" / "alice_browser_open_url.txt"
+        self._drop_new_tab_file = REPO / ".sifta_state" / "alice_browser_open_url_new_tab.flag"
         self._check_drop_file()          # immediate check on open
         self._drop_timer = QTimer(self)
         self._drop_timer.timeout.connect(self._check_drop_file)
@@ -1020,6 +1021,21 @@ class AliceBrowserWidget(QMainWindow):
             ps = profile.settings()
             ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
             ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
+            # r755 — George 2026-06-07: "no sound from YouTube in Alice browser."
+            # Probed: nothing in SIFTA mutes the browser (no setAudioMuted anywhere),
+            # so the software is innocent. Real cut: let media autoplay WITH audio
+            # (the co-watch flow) — Qt's default blocks autoplay until a gesture.
+            try:
+                ps.setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+            except Exception:
+                pass
+            # DEEPER CAUSE (honest — George verifies on the Mac): if video PLAYS but
+            # stays SILENT, QtWebEngine lacks proprietary audio codecs (AAC). YouTube
+            # serves VP9 video + AAC/Opus audio; an open-source-only ffmpeg build
+            # decodes the video and drops the AAC track → silent. That is a BUILD fact,
+            # not a line in this file. Fix on the node:
+            #   pip install --force-reinstall 'PyQt6-WebEngine'  (PyPI wheels >=6.3 ship proprietary codecs)
+            # Tell: an Opus-audio clip plays sound, an AAC-only clip is silent.
             # r277: real tabs. One shared profile across all tabs (so George's Google
             # session/cookies persist when he opens a New Tab). The central widget is a
             # QTabWidget of web views; self._view / self._page ALWAYS point at the ACTIVE
@@ -1060,6 +1076,10 @@ class AliceBrowserWidget(QMainWindow):
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(self._go_forward)
         QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(self._go_refresh)
         QShortcut(QKeySequence("F5"), self).activated.connect(self._go_refresh)
+        try:
+            QShortcut(QKeySequence.StandardKey.AddTab, self).activated.connect(lambda: self.new_tab())
+        except Exception:
+            QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(lambda: self.new_tab())
 
         # Wire buttons
         self._back_btn.clicked.connect(self._go_back)
@@ -1077,6 +1097,11 @@ class AliceBrowserWidget(QMainWindow):
         view = QWebEngineView()
         page = _AlicePage(self._profile, self)
         view.setPage(page)
+        self._wire_tab_view(view, page)
+        return view, page
+
+    def _wire_tab_view(self, view, page) -> None:
+        """Wire one tab view/page pair into Alice Browser's shared body signals."""
         try:
             page.media_error_observed.connect(self._on_media_error_observed)
         except Exception:
@@ -1091,7 +1116,52 @@ class AliceBrowserWidget(QMainWindow):
         view.loadStarted.connect(self._on_load_started)
         view.loadFinished.connect(self._on_load_finished)
         view.titleChanged.connect(lambda t, v=view: self._label_tab(v, t))
-        return view, page
+        # r675 (George 13:46 "ALICEBROWSER IS EMPTY" — blank white canvas surviving
+        # re-searches until app restart): when QtWebEngine's RENDER PROCESS dies (heavy
+        # image galleries do this), the view stays permanently blank and every URL drop
+        # lands on a corpse. Self-heal: on render-process termination, receipt the death
+        # and reload the page after a short breath. Her body recovers; George does not
+        # restart SIFTA OS for a dead renderer.
+        try:
+            page.renderProcessTerminated.connect(
+                lambda status, code, v=view: self._on_render_process_died(v, status, code)
+            )
+        except Exception:
+            pass
+
+    def _on_render_process_died(self, view, status, exit_code) -> None:
+        """r675: QtWebEngine renderer crashed — receipt it and revive the page."""
+        try:
+            url = view.url().toString() if view is not None else ""
+        except Exception:
+            url = ""
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            from pathlib import Path as _P
+            import json as _json, time as _time
+            state = _P(__file__).resolve().parents[1] / ".sifta_state"
+            state.mkdir(parents=True, exist_ok=True)
+            append_line_locked(
+                state / "browser_render_crashes.jsonl",
+                _json.dumps({
+                    "ts": _time.time(),
+                    "kind": "BROWSER_RENDER_PROCESS_DIED",
+                    "status": str(status),
+                    "exit_code": int(exit_code) if isinstance(exit_code, int) else str(exit_code),
+                    "url": url,
+                    "action": "auto_reload_scheduled",
+                }, ensure_ascii=False) + "\n",
+            )
+        except Exception:
+            pass
+        try:
+            self._status.showMessage("Browser renderer died — reviving the page now (no restart needed)", 8000)
+        except Exception:
+            pass
+        try:
+            QTimer.singleShot(700, lambda v=view: v.reload() if v is not None else None)
+        except Exception:
+            pass
 
     def _label_tab(self, view, title) -> None:
         try:
@@ -1470,7 +1540,8 @@ class AliceBrowserWidget(QMainWindow):
             return
         if not url.startswith(("http://", "https://", "file://", "data:")):
             # Treat as search if no scheme — use Alice's own registry (Alice Browser default + current engine, stigmergically switchable)
-            if " " in url or "." not in url:
+            host_guess = url.split("/", 1)[0]
+            if " " in url or "." not in host_guess:
                 try:
                     from System.swarm_search_engine_registry import search_url as _reg_search
                     url = _reg_search(url.replace(' ', '+')) or f"https://www.google.com/search?q={url.replace(' ', '+')}"
@@ -1484,8 +1555,40 @@ class AliceBrowserWidget(QMainWindow):
         self._navigate(self._url_bar.text().strip())
 
     def _go_back(self):
-        if self._view:
+        if not self._view:
+            return
+        try:
+            if self._view.history().canGoBack():
+                self._view.back()
+                return
+        except Exception:
             self._view.back()
+            return
+        # r610: in-memory history is EMPTY — a per-command open creates a fresh
+        # QWebEngineView, which is exactly why George's Back button died on the
+        # eBay image ("ALICE BROWSER FORGOT THE LINKS I WAS BROWSING"). Fall back
+        # to the persistent ledger every navigation already writes
+        # (browser_context.jsonl) and load the previous DISTINCT link. The body's
+        # memory is its receipts, not the QWebEngine session.
+        try:
+            from System.swarm_browser_context import (
+                linked_parent_pages_for_asset_url,
+                recent_browsing_history,
+            )
+
+            current = self._view.url().toString() if self._view else ""
+            for item in linked_parent_pages_for_asset_url(current, 3):
+                url = str(item.get("url") or "")
+                if url and url != current:
+                    self._navigate(url)
+                    return
+            for item in recent_browsing_history(12, max_scan_lines=8000):
+                url = str(item.get("url") or "")
+                if url and url != current:
+                    self._navigate(url)
+                    return
+        except Exception:
+            pass
 
     def _go_forward(self):
         if self._view:
@@ -2290,11 +2393,56 @@ class AliceBrowserWidget(QMainWindow):
                     return { text: ((a.innerText || a.getAttribute('aria-label') || '').trim()).slice(0, 120),
                              href: a.href || '' };
                 }).filter(function (x) { return x.text; }).slice(0, 20);
-            var btns = Array.prototype.slice.call(
-                document.querySelectorAll('button,[role=button]'))
-                .map(function (b) { return ((b.innerText || b.getAttribute('aria-label') || '').trim()).slice(0, 80); })
-                .filter(Boolean).slice(0, 15);
             var _vw = window.innerWidth || 0, _vh = window.innerHeight || 0;
+            function visibleControl(el) {
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 4 && r.height > 4 &&
+                    r.bottom > 0 && r.top < _vh && r.right > 0 && r.left < _vw &&
+                    s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+            }
+            function controlLabel(el) {
+                return [
+                    el.innerText || '',
+                    el.getAttribute('aria-label') || '',
+                    el.getAttribute('title') || '',
+                    el.getAttribute('value') || '',
+                    el.getAttribute('alt') || ''
+                ].join(' ').replace(/\s+/g, ' ').trim();
+            }
+            function controlRect(el) {
+                var r = el.getBoundingClientRect();
+                return {x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height)};
+            }
+            function controlSelector(el) {
+                var tag = (el.tagName || 'el').toLowerCase();
+                var id = el.getAttribute('id') || '';
+                var aria = el.getAttribute('aria-label') || '';
+                var title = el.getAttribute('title') || '';
+                var cls = (el.getAttribute('class') || '').toString().trim().split(/\s+/).filter(Boolean).slice(0, 3).join('.');
+                if (id) return tag + '#' + id;
+                if (aria) return tag + '[aria-label="' + aria.slice(0, 80).replace(/"/g, '\\"') + '"]';
+                if (title) return tag + '[title="' + title.slice(0, 80).replace(/"/g, '\\"') + '"]';
+                if (cls) return tag + '.' + cls;
+                return tag;
+            }
+            var controls = Array.prototype.slice.call(
+                document.querySelectorAll('button,[role="button"],a[href],input[type="button"],input[type="submit"],[aria-label][tabindex],summary'))
+                .filter(visibleControl)
+                .map(function (b) {
+                    return {
+                        label: controlLabel(b).slice(0, 120),
+                        role: (b.getAttribute('role') || b.tagName || '').toLowerCase().slice(0, 40),
+                        selector: controlSelector(b).slice(0, 180),
+                        rect: controlRect(b),
+                        href: (b.href || b.getAttribute('href') || '').slice(0, 180)
+                    };
+                })
+                .filter(function (x) { return x.label || x.selector; })
+                .slice(0, 30);
+            var btns = controls.map(function (b) { return (b.label || b.selector || '').slice(0, 80); })
+                .filter(Boolean).slice(0, 15);
             var imgs = Array.prototype.slice.call(
                 document.querySelectorAll('img'))
                 .map(function (i) {
@@ -2497,7 +2645,7 @@ class AliceBrowserWidget(QMainWindow):
 
             return {
                 text: body.slice(0, 4000),
-                headings: heads, links: links, buttons: btns, images: imgs, og: og,
+                headings: heads, links: links, buttons: btns, controls: controls, images: imgs, og: og,
                 comments: comments,
                 media: media,
                 search: search,
@@ -2555,6 +2703,7 @@ class AliceBrowserWidget(QMainWindow):
                         headings=result.get("headings"),
                         links=result.get("links"),
                         buttons=result.get("buttons"),
+                        controls=result.get("controls"),
                         images=result.get("images"),
                         scroll=result.get("scroll"),
                         featured_image=feat.get("src", ""),
@@ -2737,6 +2886,445 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
         return result if isinstance(result, dict) else {"ok": False, "action": "play", "reason": "no_js_result"}
+
+    def active_video_playback_receipt(self) -> dict:
+        """Read the active video state without mutating playback."""
+        if self._view is None:
+            return {"ok": False, "action": "video_state", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
+            var active = videos.find(function(v){ return v && !v.paused && !v.ended; });
+            var v = active || videos.find(function(x){ return x && !x.ended && x.readyState >= 0; }) || videos[0];
+            if (!v) return {ok:false, action:'video_state', reason:'no_video', url:location.href};
+            try {
+                return {
+                    ok:true, action:'video_state',
+                    playing:!!(!v.paused && !v.ended),
+                    paused:!!v.paused,
+                    ended:!!v.ended,
+                    current_time: Math.round((v.currentTime || 0) * 10) / 10,
+                    duration: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : null,
+                    url: location.href
+                };
+            } catch (e) {
+                return {ok:false, action:'video_state', reason:String(e && e.message || e), url:location.href};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=900)
+        return result if isinstance(result, dict) else {"ok": False, "action": "video_state", "reason": "no_js_result"}
+
+    def list_clickable_elements_receipt(self, max_elements: int = 60) -> dict:
+        """r656 (George: "ALICE MUST KNOW ALL ELEMENTS ON THE CURRENT OPENED PAGE ... ALL THE
+        BUTTONS SO SHE CAN CLICK THEM"): inventory the visible clickable elements of the
+        current page — buttons, links, role=button, aria-labelled icon controls (like eBay's
+        enlarge control) — as a structured receipt the cortex can read and act on."""
+        if self._view is None:
+            return {"ok": False, "action": "list_elements", "reason": "no_web_view"}
+        js = """
+        (function () {
+            function label(el) {
+                var t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+                if (t && t.length <= 80) return t;
+                var a = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+                if (a) return a.trim().slice(0, 80);
+                var img = el.querySelector && el.querySelector('img[alt]');
+                if (img) return (img.getAttribute('alt') || '').trim().slice(0, 80);
+                return (t || '').slice(0, 80);
+            }
+            function visible(el) {
+                var r = el.getBoundingClientRect();
+                return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < (window.innerHeight + 400);
+            }
+            var sel = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick], [aria-label]';
+            var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));
+            var seen = {}; var out = [];
+            for (var i = 0; i < nodes.length && out.length < %MAX%; i++) {
+                var el = nodes[i];
+                if (!visible(el)) continue;
+                var lab = label(el);
+                if (!lab) continue;
+                var key = lab.toLowerCase();
+                if (seen[key]) continue;
+                seen[key] = 1;
+                out.push({label: lab, tag: el.tagName.toLowerCase()});
+            }
+            return {ok: true, action: 'list_elements', count: out.length, elements: out, url: location.href};
+        })();
+        """.replace("%MAX%", str(max(5, int(max_elements))))
+        result = self._run_javascript_sync(js, wait_ms=1500)
+        return result if isinstance(result, dict) else {"ok": False, "action": "list_elements", "reason": "no_js_result"}
+
+    def select_search_result_receipt(self, index: int = 1) -> dict:
+        """r657 (George: "SELECT THE THIRD ON THE LIST"): open the Nth visible search-result
+        link (1-based) on the current results page. Generic heuristic — anchors inside
+        list/article result containers carrying real text or an image — no person hardcode.
+        r663: prefer real item/result cards before generic list links so side categories/header
+        controls do not count as "the list" on commerce result pages."""
+        n = max(1, int(index or 1))
+        if self._view is None:
+            return {"ok": False, "action": "select_result", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var n = %N%;
+            function visible(el) {
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 30 && r.height > 14 && r.bottom > 0 &&
+                    r.top < window.innerHeight + 1200 && s.display !== 'none' &&
+                    s.visibility !== 'hidden';
+            }
+            function ancestorText(el) {
+                var out = [];
+                var cur = el;
+                for (var d = 0; cur && d < 5; d++, cur = cur.parentElement) {
+                    out.push(cur.tagName || '');
+                    out.push(cur.getAttribute('class') || '');
+                    out.push(cur.getAttribute('data-testid') || '');
+                    out.push(cur.getAttribute('role') || '');
+                }
+                return out.join(' ').toLowerCase();
+            }
+            function normHref(href) {
+                return String(href || '').split('#')[0].split('?')[0];
+            }
+            function labelFor(a) {
+                var t = (a.innerText || a.textContent || '').trim().replace(/\\s+/g, ' ');
+                if (!t) {
+                    var img = a.querySelector && a.querySelector('img[alt]');
+                    if (img) t = (img.getAttribute('alt') || '').trim().replace(/\\s+/g, ' ');
+                }
+                return t;
+            }
+            function isChromeLink(t, href, anc) {
+                var low = (t || '').toLowerCase();
+                return /\\b(sign in|register|deals|brand outlet|gift cards|help|contact|watchlist|my ebay|notifications|shop by category|save this search|show more|shipping|category)\\b/.test(low) ||
+                    /\\b(nav|header|footer|pagination|breadcrumb|filter|facet)\\b/.test(anc);
+            }
+            var sel = 'a[href]';
+            var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));
+            var seen = {}; var strong = []; var fallback = [];
+            for (var i = 0; i < nodes.length; i++) {
+                var a = nodes[i];
+                if (!visible(a)) continue;
+                var href = a.href || '';
+                if (!href || href.indexOf('javascript:') === 0) continue;
+                var t = labelFor(a);
+                var hasImg = !!a.querySelector('img');
+                if (t.length < 15 && !hasImg) continue;  // skip nav chrome links
+                var anc = ancestorText(a);
+                if (isChromeLink(t, href, anc)) continue;
+                var key = normHref(href);
+                if (seen[key]) continue;
+                seen[key] = 1;
+                var score = 0;
+                if (/\\/itm\\//.test(href)) score += 70;
+                if (/\\b(s-item|search-result|result|listing|product|item-card|card)\\b/.test(anc)) score += 35;
+                if (hasImg) score += 15;
+                if (/\\$|buy it now|auction|free shipping|sold|condition/i.test((a.closest('li, article, div') || a).innerText || '')) score += 10;
+                var row = {a: a, title: t.slice(0, 90), href: href, score: score};
+                if (score >= 35) strong.push(row);
+                else fallback.push(row);
+            }
+            var results = strong.length ? strong : fallback;
+            if (results.length < n) {
+                return {ok:false, action:'select_result', reason:'only_' + results.length + '_results',
+                        wanted_index:n, url:location.href};
+            }
+            var pick = results[n - 1];
+            try {
+                pick.a.scrollIntoView({block:'center'});
+                pick.a.click();
+                return {ok:true, action:'select_result', index:n, title:pick.title, href:pick.href, url:location.href};
+            } catch (e) {
+                return {ok:false, action:'select_result', reason:String(e && e.message || e), wanted_index:n};
+            }
+        })();
+        """.replace("%N%", str(n))
+        result = self._run_javascript_sync(js, wait_ms=2000)
+        try:
+            QTimer.singleShot(600, self.refresh_current_page_state)
+        except Exception:
+            pass
+        return result if isinstance(result, dict) else {"ok": False, "action": "select_result", "reason": "no_js_result"}
+
+    def click_main_image_receipt(self) -> dict:
+        """r657: click the LARGEST visible image on the page — on listing pages (eBay etc.)
+        that is the main photo, and clicking it opens the enlarged/gallery view. This is the
+        primary 'enlarge the photo' hand; labeled enlarge controls are the fallback."""
+        if self._view is None:
+            return {"ok": False, "action": "click_main_image", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var imgs = Array.prototype.slice.call(document.querySelectorAll('img'));
+            var best = null; var bestArea = 0;
+            for (var i = 0; i < imgs.length; i++) {
+                var im = imgs[i];
+                var r = im.getBoundingClientRect();
+                if (r.width < 80 || r.height < 80) continue;
+                if (r.bottom < 0 || r.top > window.innerHeight + 200) continue;
+                var area = r.width * r.height;
+                if (area > bestArea) { bestArea = area; best = im; }
+            }
+            if (!best) return {ok:false, action:'click_main_image', reason:'no_large_visible_image', url:location.href};
+            try {
+                best.scrollIntoView({block:'center'});
+                var target = best.closest('a, button, [role="button"]') || best;
+                target.click();
+                return {ok:true, action:'click_main_image',
+                        alt:(best.getAttribute('alt') || '').slice(0, 80),
+                        width:Math.round(best.getBoundingClientRect().width),
+                        height:Math.round(best.getBoundingClientRect().height),
+                        url:location.href};
+            } catch (e) {
+                return {ok:false, action:'click_main_image', reason:String(e && e.message || e)};
+            }
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1800)
+        try:
+            QTimer.singleShot(500, self.refresh_current_page_state)
+        except Exception:
+            pass
+        return result if isinstance(result, dict) else {"ok": False, "action": "click_main_image", "reason": "no_js_result"}
+
+    def click_page_element_receipt(self, label: str) -> dict:
+        """r656: click a visible page element by its text/aria-label/title (best match).
+        Her generic finger for ANY page control — enlarge buttons, tabs, accept buttons —
+        grounded in what is actually in the DOM, never a hardcoded site map."""
+        want = " ".join(str(label or "").split())
+        if not want:
+            return {"ok": False, "action": "click_element", "reason": "empty_label"}
+        if self._view is None:
+            return {"ok": False, "action": "click_element", "reason": "no_web_view"}
+        js = """
+        (function () {
+            var want = %WANT%.toLowerCase();
+            function texts(el) {
+                var out = [];
+                var t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+                if (t) out.push(t);
+                var a = el.getAttribute('aria-label'); if (a) out.push(a.trim());
+                var ti = el.getAttribute('title'); if (ti) out.push(ti.trim());
+                var img = el.querySelector && el.querySelector('img[alt]');
+                if (img) out.push((img.getAttribute('alt') || '').trim());
+                return out;
+            }
+            function visible(el) {
+                var r = el.getBoundingClientRect();
+                return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < (window.innerHeight + 400);
+            }
+            var sel = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick], [aria-label]';
+            var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));
+            var best = null; var bestScore = 0; var cands = [];
+            for (var i = 0; i < nodes.length; i++) {
+                var el = nodes[i];
+                if (!visible(el)) continue;
+                var ts = texts(el);
+                for (var j = 0; j < ts.length; j++) {
+                    var low = ts[j].toLowerCase();
+                    if (!low) continue;
+                    var score = 0;
+                    if (low === want) score = 3;
+                    else if (low.indexOf(want) === 0) score = 2;
+                    else if (low.indexOf(want) >= 0) score = 1;
+                    if (score > 0 && cands.length < 10) cands.push(ts[j].slice(0, 60));
+                    if (score > bestScore) { bestScore = score; best = {el: el, label: ts[j].slice(0, 80)}; }
+                }
+            }
+            if (!best) return {ok:false, action:'click_element', reason:'no_match', wanted:%WANT%, candidates:cands, url:location.href};
+            try {
+                best.el.scrollIntoView({block:'center'});
+                best.el.click();
+                return {ok:true, action:'click_element', clicked_label:best.label, wanted:%WANT%,
+                        score:bestScore, url:location.href};
+            } catch (e) {
+                return {ok:false, action:'click_element', reason:String(e && e.message || e), wanted:%WANT%};
+            }
+        })();
+        """.replace("%WANT%", json.dumps(want))
+        result = self._run_javascript_sync(js, wait_ms=1800)
+        try:
+            QTimer.singleShot(400, self.refresh_current_page_state)
+        except Exception:
+            pass
+        return result if isinstance(result, dict) else {"ok": False, "action": "click_element", "reason": "no_js_result"}
+
+    def extract_youtube_transcript_to_downloads(self) -> dict:
+        """Export the current YouTube transcript/subtitles to Downloads.
+
+        The browser limb tries the visible transcript panel first. If the panel
+        is stuck on a spinner, it falls back to caption tracks exposed by
+        YouTube's player response. It never fabricates transcript text.
+        """
+        try:
+            from System.swarm_youtube_transcript_skill import (
+                fetch_youtube_caption_track,
+                record_youtube_transcript_attempt,
+                save_youtube_transcript_export,
+                youtube_video_id,
+            )
+        except Exception as exc:
+            return {"ok": False, "reason": f"transcript_skill_unavailable:{type(exc).__name__}:{exc}"}
+        if self._view is None:
+            return record_youtube_transcript_attempt(
+                ok=False,
+                url="",
+                source="alice_browser",
+                reason="no_web_view",
+                state_dir=_STATE,
+            )
+        try:
+            url = self._view.url().toString()
+        except Exception:
+            url = getattr(self, "_current_url", "") or ""
+        url = url or getattr(self, "_current_url", "") or ""
+        title = ""
+        try:
+            title = self._current_browser_title()
+        except Exception:
+            title = ""
+        if not youtube_video_id(url):
+            return record_youtube_transcript_attempt(
+                ok=False,
+                url=url,
+                title=title,
+                source="alice_browser",
+                reason="not_youtube_video_page",
+                state_dir=_STATE,
+            )
+        js = r"""
+        (function () {
+            function clean(s) {
+                return (s || '').toString().replace(/\u00a0/g, ' ').replace(/[ \t\r\f\v]+/g, ' ').trim();
+            }
+            function pickText(root, selectors) {
+                for (var i = 0; i < selectors.length; i++) {
+                    var el = root.querySelector(selectors[i]);
+                    var txt = el ? clean(el.textContent || el.innerText || '') : '';
+                    if (txt) return txt;
+                }
+                return '';
+            }
+            var segmentEls = Array.prototype.slice.call(document.querySelectorAll(
+                'ytd-transcript-segment-renderer, .ytd-transcript-segment-renderer'
+            ));
+            var segments = [];
+            for (var i = 0; i < segmentEls.length; i++) {
+                var el = segmentEls[i];
+                var time = pickText(el, ['.segment-timestamp', '#timestamp', 'yt-formatted-string[class*="timestamp"]']);
+                var text = pickText(el, ['.segment-text', '#segment-text', 'yt-formatted-string.segment-text']);
+                if (!text) {
+                    text = clean(el.innerText || el.textContent || '');
+                    if (time) text = clean(text.replace(time, ''));
+                }
+                if (text) segments.push({time: time, text: text});
+            }
+            var panel = document.querySelector(
+                'ytd-transcript-renderer, ytd-transcript-search-panel-renderer, ' +
+                'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
+            );
+            var panelText = panel ? clean(panel.innerText || panel.textContent || '') : '';
+            var spinner = !!document.querySelector(
+                'tp-yt-paper-spinner, ytd-continuation-item-renderer #spinner, #spinnerContainer'
+            );
+            var tracks = [];
+            try {
+                var pr = window.ytInitialPlayerResponse || {};
+                var list = (((pr.captions || {}).playerCaptionsTracklistRenderer || {}).captionTracks || []);
+                tracks = list.map(function (t) {
+                    var name = '';
+                    try { name = (((t.name || {}).runs || [])[0] || {}).text || (t.name || {}).simpleText || ''; } catch (e) {}
+                    return {
+                        baseUrl: t.baseUrl || '',
+                        languageCode: t.languageCode || '',
+                        kind: t.kind || '',
+                        name: name
+                    };
+                }).filter(function (t) { return !!t.baseUrl; });
+            } catch (e) {}
+            return {
+                ok: segments.length > 0 || tracks.length > 0 || panelText.length > 0,
+                url: location.href,
+                title: document.title || '',
+                segments: segments,
+                text: panelText,
+                captionTracks: tracks,
+                transcriptPanelVisible: !!panel,
+                spinnerVisible: spinner
+            };
+        })();
+        """
+        result = self._run_javascript_sync(js, wait_ms=2600)
+        info = result if isinstance(result, dict) else {}
+        title = str(info.get("title") or title or "").strip()
+        segments = info.get("segments") if isinstance(info.get("segments"), list) else []
+        if segments:
+            return save_youtube_transcript_export(
+                url=url,
+                title=title,
+                segments=segments,
+                source="youtube_visible_transcript_panel",
+                state_dir=_STATE,
+                extra={
+                    "transcript_panel_visible": bool(info.get("transcriptPanelVisible")),
+                    "spinner_visible": bool(info.get("spinnerVisible")),
+                    "caption_track_count": len(info.get("captionTracks") or []),
+                },
+            )
+        panel_text = str(info.get("text") or "").strip()
+        if panel_text and len(panel_text) > 80 and re.search(r"\b\d{1,2}:\d{2}\b", panel_text):
+            return save_youtube_transcript_export(
+                url=url,
+                title=title,
+                transcript_text=panel_text,
+                source="youtube_visible_transcript_panel_text",
+                state_dir=_STATE,
+                extra={
+                    "transcript_panel_visible": bool(info.get("transcriptPanelVisible")),
+                    "spinner_visible": bool(info.get("spinnerVisible")),
+                    "caption_track_count": len(info.get("captionTracks") or []),
+                },
+            )
+        tracks = info.get("captionTracks") if isinstance(info.get("captionTracks"), list) else []
+        for track in tracks:
+            if not isinstance(track, dict) or not str(track.get("baseUrl") or "").strip():
+                continue
+            fetched = fetch_youtube_caption_track(str(track.get("baseUrl")), timeout_s=8.0)
+            if fetched.get("ok") and fetched.get("segments"):
+                return save_youtube_transcript_export(
+                    url=url,
+                    title=title,
+                    segments=fetched.get("segments") or [],
+                    source="youtube_caption_track_timedtext",
+                    language=str(track.get("languageCode") or track.get("name") or ""),
+                    state_dir=_STATE,
+                    extra={
+                        "track_name": str(track.get("name") or ""),
+                        "track_kind": str(track.get("kind") or ""),
+                        "caption_bytes": fetched.get("bytes"),
+                        "transcript_panel_visible": bool(info.get("transcriptPanelVisible")),
+                        "spinner_visible": bool(info.get("spinnerVisible")),
+                        "caption_track_count": len(tracks),
+                    },
+                )
+        reason = "no_visible_transcript_or_caption_tracks"
+        if info.get("spinnerVisible"):
+            reason = "transcript_panel_loading_no_caption_track_exported"
+        return record_youtube_transcript_attempt(
+            ok=False,
+            url=url,
+            title=title,
+            source="alice_browser_youtube_transcript_skill",
+            reason=reason,
+            state_dir=_STATE,
+            extra={
+                "transcript_panel_visible": bool(info.get("transcriptPanelVisible")),
+                "spinner_visible": bool(info.get("spinnerVisible")),
+                "caption_track_count": len(tracks),
+            },
+        )
 
     def resume_active_video(self) -> None:
         """Resume <video> playback on the active tab. Direct DOM call — no lag (r282)."""
@@ -3206,6 +3794,131 @@ class AliceBrowserWidget(QMainWindow):
             except Exception:
                 pass
         return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
+
+    def click_visible_control_matching_text(self, query: str = "") -> dict:
+        """Click a visible control on the current page by owner language.
+
+        Generic page-effector for buttons like "enlarge the photo", "open larger
+        image", "share", etc. The live DOM decides; no site/person hardcode.
+        """
+        if not self._view:
+            return {"clicked": False, "reason": "no_web_view", "query": query}
+        js = f"""
+        (function () {{
+            var query = {json.dumps(str(query or ""))};
+            function norm(s) {{
+                return (s || '').toString().toLowerCase()
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+            }}
+            function visible(el) {{
+                if (!el || !el.getBoundingClientRect) return false;
+                var r = el.getBoundingClientRect();
+                var s = window.getComputedStyle(el);
+                return r.width > 4 && r.height > 4 &&
+                    r.bottom > 0 && r.top < window.innerHeight &&
+                    r.right > 0 && r.left < window.innerWidth &&
+                    s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+            }}
+            function label(el) {{
+                var txt = [
+                    el.innerText || '',
+                    el.getAttribute('aria-label') || '',
+                    el.getAttribute('title') || '',
+                    el.getAttribute('value') || '',
+                    el.getAttribute('alt') || '',
+                    el.getAttribute('class') || ''
+                ].join(' ').replace(/\\s+/g, ' ').trim();
+                try {{
+                    var svg = el.querySelector && el.querySelector('svg[aria-label], svg[title]');
+                    if (svg) txt += ' ' + (svg.getAttribute('aria-label') || svg.getAttribute('title') || '');
+                }} catch (e) {{}}
+                return txt.trim();
+            }}
+            function rect(el) {{
+                var r = el.getBoundingClientRect();
+                return {{x:Math.round(r.left), y:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height)}};
+            }}
+            function center(r) {{ return {{x:r.left + r.width / 2, y:r.top + r.height / 2}}; }}
+            var q = norm(query);
+            var wantsEnlarge = /\\b(enlarge|expand|zoom|larger|bigger|full\\s*screen|fullscreen|view\\s+larger|make\\s+.*big)\\b/.test(q);
+            var tokens = q.split(' ').filter(function (w) {{
+                return w.length >= 3 && ['the','this','that','there','page','button','please','pls','can','you','alice','click','tap','press','photo','picture','image','it'].indexOf(w) === -1;
+            }}).slice(0, 8);
+            var imgs = Array.prototype.slice.call(document.querySelectorAll('img')).filter(visible);
+            var mainImg = null, mainArea = 0;
+            imgs.forEach(function (img) {{
+                var r = img.getBoundingClientRect();
+                var area = Math.max(0, r.width) * Math.max(0, r.height);
+                if (area > mainArea) {{ mainArea = area; mainImg = img; }}
+            }});
+            var mainRect = mainImg ? mainImg.getBoundingClientRect() : null;
+            function imageOverlayScore(el) {{
+                if (!mainRect) return 0;
+                var r = el.getBoundingClientRect();
+                var c = center(r);
+                var inside = c.x >= mainRect.left && c.x <= mainRect.right && c.y >= mainRect.top && c.y <= mainRect.bottom;
+                var top = Math.abs(c.y - mainRect.top);
+                var right = Math.abs(c.x - mainRect.right);
+                var left = Math.abs(c.x - mainRect.left);
+                if (inside && top < 130 && Math.min(right, left) < 150) return 30;
+                if (top < 150 && Math.min(right, left) < 220) return 12;
+                return 0;
+            }}
+            var nodes = Array.prototype.slice.call(document.querySelectorAll(
+                'button,[role="button"],a[href],input[type="button"],input[type="submit"],[aria-label][tabindex],summary,' +
+                '[class*="zoom" i],[class*="expand" i],[class*="fullscreen" i],[class*="enlarge" i]'
+            )).filter(visible);
+            var seen = [];
+            var cands = [];
+            nodes.forEach(function (el) {{
+                if (seen.indexOf(el) !== -1) return;
+                seen.push(el);
+                var lab = label(el);
+                var n = norm(lab);
+                var score = 0;
+                tokens.forEach(function (tok) {{ if (n.indexOf(tok) !== -1) score += 8; }});
+                if (wantsEnlarge && /\\b(enlarge|expand|zoom|larger|fullscreen|full\\s*screen|open\\s+image|view\\s+(image|larger|photo)|image\\s+viewer)\\b/.test(n)) score += 90;
+                if (wantsEnlarge) score += imageOverlayScore(el);
+                if (/\\b(heart|watchlist|like|save)\\b/.test(n) && wantsEnlarge) score -= 25;
+                if (/\\b(share|cart|buy|message|seller)\\b/.test(n) && wantsEnlarge) score -= 15;
+                if (score > 0) cands.push({{el:el, label:lab, norm:n, score:score, rect:rect(el)}});
+            }});
+            cands.sort(function (a, b) {{ return b.score - a.score; }});
+            var best = cands[0] || null;
+            var available = nodes.slice(0, 20).map(function (el) {{
+                return {{label: label(el).slice(0, 120), rect: rect(el)}};
+            }}).filter(function (x) {{ return x.label; }});
+            if (!best || best.score < (wantsEnlarge ? 20 : 8)) {{
+                return {{clicked:false, reason:'no_matching_visible_control', query:query, available_controls:available}};
+            }}
+            try {{ best.el.scrollIntoView({{block:'center', inline:'center', behavior:'instant'}}); }} catch (e) {{}}
+            var r = best.el.getBoundingClientRect();
+            var cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+            ['mouseover','mousedown','mouseup','click'].forEach(function (name) {{
+                try {{
+                    best.el.dispatchEvent(new MouseEvent(name, {{
+                        bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
+                    }}));
+                }} catch (e) {{}}
+            }});
+            try {{ best.el.click(); }} catch (e) {{}}
+            return {{clicked:true, mode:'visible_control_click', label:best.label.slice(0,160), score:best.score, x:cx, y:cy, query:query}};
+        }})();
+        """
+        result = self._run_javascript_sync(js, wait_ms=1500)
+        if isinstance(result, dict) and result.get("clicked"):
+            try:
+                from System.swarm_browser_photo_description import mark_frame_changed
+                mark_frame_changed(url=self._current_url, state_dir=_STATE)
+            except Exception:
+                pass
+            try:
+                QTimer.singleShot(1000, self.refresh_current_page_state)
+            except Exception:
+                pass
+        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result", "query": query}
 
     def click_google_images_tab(self) -> dict:
         """Click Google's Images/Photos tab, or navigate to the images URL.
@@ -3987,11 +4700,26 @@ class AliceBrowserWidget(QMainWindow):
             # by making the raw deterministic VLM output already identity-grounded from evidence.
             try:
                 from System.swarm_browser_page_state import latest_page_state as _latest_ps
+                from System.swarm_photo_identity import resolve_photo_identity as _resolve_photo_identity
+
                 ps_for_id = _latest_ps(now=time.time(), max_age_s=1200.0, state_dir=_STATE) or {}
-                identity = _visual_subject_identity_evidence(
-                    "",  # rely on recent texts in history + page_state
-                    history=getattr(self, "_history", []),
-                    page_state=ps_for_id,
+                if str(ps_for_id.get("url") or "") != str(url or ""):
+                    ps_for_id = {}
+                _page_text = "\n".join(
+                    str(x or "")
+                    for x in (
+                        ps_for_id.get("title"),
+                        "\n".join(str(h or "") for h in (ps_for_id.get("headings") or [])[:8])
+                        if isinstance(ps_for_id.get("headings"), list) else "",
+                        ps_for_id.get("text"),
+                        ps_for_id.get("text_excerpt"),
+                    )
+                    if str(x or "")
+                )
+                identity = _resolve_photo_identity(
+                    url=str(url or ""),
+                    page_text=_page_text,
+                    owner_text="",
                     state_dir=_STATE,
                 )
             except Exception:
@@ -4029,7 +4757,9 @@ class AliceBrowserWidget(QMainWindow):
                 return result
 
             if _is_instagram_media_url(url):
-                self._read_instagram_carousel()
+                read_carousel = getattr(self, "_read_instagram_carousel", None)
+                if callable(read_carousel):
+                    read_carousel()
 
             strict_eye = _strict_selected_eye(current_arm, current_model)
             # George 2026-06-03: decouple the EYE from the CORTEX. If the selected cortex
@@ -4197,17 +4927,6 @@ class AliceBrowserWidget(QMainWindow):
             if identity and identity.get("name"):
                 name = identity.get("name")
                 prompt += f" The main subject person is known from recent owner report and page/profile context as {name}. Use the exact name '{name}' (not 'a woman', 'the woman', 'a person', or any generic) when describing her pose, clothing, hair, expression, and setting in the photo."
-            # r546: persistent fallback for "Izzy" (owner teaching "her name is izzy -- must go to cortex first", "why do you canll her a woman, her name is Izzy").
-            # Even if the per-call identity evidence was empty (widget history slice or page_state for this frame), if recent conversation shows the teaching in context of browser images, force it into the limb VLM prompt so raw desc grounds on the name.
-            # Cortex will further process/synthesize, but raw limb sight should not default to generic when the field knows the subject.
-            if not (identity and identity.get("name")):
-                try:
-                    hist = getattr(self, "_history", []) or []
-                    recent_blob = " ".join(str(x.get("content", "")) for x in hist[-15:]).lower()
-                    if ("her name is izzy" in recent_blob or "name is izzy" in recent_blob or ("izzy" in recent_blob and any(k in recent_blob for k in ("browser", "image", "photo", "describe", "the image in the browser")))):
-                        prompt += " The main subject person is known from recent owner report as Izzy. Use the exact name 'Izzy' (not 'a woman', 'the woman', 'a person', or any generic) when describing her pose, clothing, hair, expression, and setting in the photo."
-                except Exception:
-                    pass
             def _call_vision_arm(selected_arm: str) -> dict:
                 call_source = source
                 if selected_arm == "mlx_vlm_brain":
@@ -4490,11 +5209,23 @@ class AliceBrowserWidget(QMainWindow):
         try:
             url = drop.read_text(encoding="utf-8").strip()
             drop.unlink(missing_ok=True)
+            new_tab = False
+            try:
+                flag = getattr(self, "_drop_new_tab_file", None)
+                if flag is not None and flag.exists():
+                    new_tab = flag.read_text(encoding="utf-8").strip().lower() in {"1", "true", "yes", "new_tab"}
+                    flag.unlink(missing_ok=True)
+            except Exception:
+                new_tab = False
         except Exception:
             return
         if url:
-            self._navigate(url)
-            self._status.showMessage(f"Opened from VLC bridge: {url[:80]}")
+            if new_tab and getattr(self, "_tabs", None) is not None:
+                self.new_tab(url)
+                self._status.showMessage(f"Opened new tab from Alice handoff: {url[:80]}")
+            else:
+                self._navigate(url)
+                self._status.showMessage(f"Opened from Alice handoff: {url[:80]}")
             # r545: after drop-driven nav, force immediate awareness tick so _current_url, page_state,
             # and any pending viewport capture reflect the target (e.g. x.com photo/1 frame) not stale home.
             # This helps receipts + describe_current_photo see the opened content promptly.
@@ -4522,39 +5253,62 @@ class AliceBrowserWidget(QMainWindow):
         single-instance, so spawning a *second* browser window is the wrong move
         anyway.
 
-        Fix: host the requested page IN THE CURRENT view (the standard embedded
-        OAuth pattern), remembering the prior page so it is restored when the
-        popup closes. No second window, no unsupported kwarg, no crash.
+        r662 correction: after real tabs landed, replacing ``self._view`` became
+        the wrong behavior. A target=_blank/"Open in New Tab" page must become a
+        tab in Alice Browser, not overwrite the active tab. The returned
+        QWebEnginePage is attached to a new QWebEngineView so Qt can finish
+        loading the requested URL while Alice keeps her existing tab history.
         """
         try:
-            if not (hasattr(self, "_view") and self._view):
+            if getattr(self, "_tabs", None) is None:
+                if hasattr(self, "_view") and self._view:
+                    self._view.setPage(new_page)
+                    self._page = new_page
                 return
-            prior_page = getattr(self, "_page", None)
-            self._view.setPage(new_page)
+            view = QWebEngineView()
+            try:
+                new_page.setParent(self)
+            except Exception:
+                pass
+            view.setPage(new_page)
+            self._wire_tab_view(view, new_page)
+            idx = self._tabs.addTab(view, "New Tab")
+            self._tabs.setCurrentIndex(idx)
+            self._view = view
             self._page = new_page
-            # Re-wire so the adopted page's own popups are handled too.
-            if hasattr(new_page, "new_window_requested"):
+            try:
+                self._status.showMessage("Opened requested page in a new Alice Browser tab", 2500)
+            except Exception:
+                pass
+
+            def _close_requested_tab(_view=view):
                 try:
-                    new_page.new_window_requested.connect(self._handle_new_window_from_page)
+                    if getattr(self, "_tabs", None) is None:
+                        return
+                    i = self._tabs.indexOf(_view)
+                    if i >= 0:
+                        self._on_tab_close_requested(i)
                 except Exception:
                     pass
-            # Restore the prior page (e.g. the TikTok tab) when the OAuth popup
-            # finishes and asks to close, so the owner is not stranded on a blank.
-            if prior_page is not None:
-                def _restore_prior(_p=prior_page):
-                    try:
-                        if self._view is not None:
-                            self._view.setPage(_p)
-                            self._page = _p
-                    except Exception:
-                        pass
-                try:
-                    new_page.windowCloseRequested.connect(_restore_prior)
-                except Exception:
-                    pass
+
+            try:
+                new_page.windowCloseRequested.connect(_close_requested_tab)
+            except Exception:
+                pass
+            try:
+                QTimer.singleShot(450, self.refresh_current_page_state)
+            except Exception:
+                pass
+            return
         except Exception:
             # Never leave the original view broken.
-            pass
+            try:
+                if not (hasattr(self, "_view") and self._view):
+                    return
+                self._view.setPage(new_page)
+                self._page = new_page
+            except Exception:
+                return
 
     def _handle_new_window_from_page(self, new_page: "_AlicePage") -> None:
         """Slot connected from _AlicePage.createWindow."""

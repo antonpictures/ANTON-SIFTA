@@ -65,3 +65,7 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert out["regenerated"] is True
     html = (eval_dir / "ORGAN_EVAL_MATRIX_V2.html").read_text(encoding="utf-8")
     assert "Test Body Spine" in html
+    assert "STIGMERGIC CONSCIOUSNESS" in html
+    assert "§7.11.1" in html
+    assert "observer and observed" in html.casefold()
+    assert "hard problem" not in html.casefold()

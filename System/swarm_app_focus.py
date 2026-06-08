@@ -40,6 +40,21 @@ from System.stigmergic_field import FieldConfig, StigmergicField
 
 _REPO  = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
+
+
+def resolve_max_open_apps() -> int:
+    """How many MDI app limbs may stay open inside SIFTA OS at once.
+
+    Default 1 (George 2026-06-07: one app while stability is still fragile).
+    Set SIFTA_MAX_OPEN_APPS=2 when ready for side-by-side dual-app work.
+    """
+    import os
+
+    raw = os.environ.get("SIFTA_MAX_OPEN_APPS", "1").strip()
+    try:
+        return max(1, min(8, int(raw)))
+    except ValueError:
+        return 1
 LEDGER = _STATE / "app_focus.jsonl"
 _ATTENTION_FIELD_PATH = _STATE / "app_focus_attention_field.json"
 _ATTENTION_RECEIPTS = _STATE / "app_focus_attention_receipts.jsonl"

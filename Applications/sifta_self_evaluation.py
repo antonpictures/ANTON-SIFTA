@@ -835,6 +835,7 @@ def alice_self_evaluate_and_dispatch(max_swimmers: int = 5) -> str:
     qml_benchmark_line = ""
     shor_playground_line = ""
     covenant_boot_line = ""
+    biology_self_learning_line = ""
     try:
         from System.swarm_body_feature_alerts import format_body_feature_alerts, append_body_feature_alert
         from System.swarm_cortex_options import cortex_and_arm_eval as _cortex_eval
@@ -954,6 +955,22 @@ def alice_self_evaluate_and_dispatch(max_swimmers: int = 5) -> str:
             )
         except Exception:
             pass
+        try:
+            from System.swarm_bio_research_loop import (
+                format_biology_self_learning_nuggets,
+                seed_biology_self_learning_targets,
+            )
+
+            seed_biology_self_learning_targets()
+            biology_self_learning_line = format_biology_self_learning_nuggets(state_dir=_STATE)
+            append_body_feature_alert(
+                feature="biology_research_nuggets_self_learning_fuel_r643",
+                code_path="System/swarm_bio_research_loop.py + Applications/sifta_self_evaluation.py + System/swarm_canonical_organ_registry.py + tools/generate_organ_eval_matrix_v2.py",
+                summary="r643 Self-Learning Organ biology fuel is wired: cross-skill integration, environmental contextualization, and fundamental drift now have biology paper seed targets, browser pull queue rows, bio-claim/test proposals, and self-code-plan rows. Seed rows are pending source-pull receipts until Alice Browser verifies papers.",
+                action_for_alice="On self-eval or 'pull biology', quote Biology Research Nuggets / Self-Learning Fuel. Use Alice Browser to verify paper sources/DOIs before promoting seed targets. Then dispatch swimmers to the three concrete fixtures: ledger cross-skill, sale-banner Working Memory Card, and fundamental drift new-procedure detection.",
+            )
+        except Exception:
+            biology_self_learning_line = ""
         body_alerts = format_body_feature_alerts(state_dir=_STATE, max_items=4)
         cortex_arm_eval = _cortex_eval()
         try:
@@ -1013,6 +1030,7 @@ def alice_self_evaluate_and_dispatch(max_swimmers: int = 5) -> str:
         qml_benchmark_line = ""
         shor_playground_line = ""
         covenant_boot_line = ""
+        biology_self_learning_line = ""
     write_snapshot()
     red = data["red"][:max_swimmers]
     dispatched = []
@@ -1084,6 +1102,7 @@ def alice_self_evaluate_and_dispatch(max_swimmers: int = 5) -> str:
             + (f"Quantum ML / SIFTA Possible-New Problems (r477 nuggets from Cerezo/Verdon/Huang/Cincio/Coles): {qml_nuggets_line or 'nuggets pending'}. If George asks 'what can SIFTA possibly solve that nobody did?', I must not fake a breakthrough. The honest answer is: OPERATIONAL base = quantum data catalog + source truth guard + surface-code swimmer experiments + exact local TFIM ground-state solve; HYPOTHESIS/RESEARCH_TARGET = stigmergic QML trainability controller, STGM shot allocation, QEC swimmer decoder, quantum-data representation_escape, and active learning from quantum experiments. Each becomes real only by beating named baselines under equal data/shot budget and writing receipts to qml_sifta_nuggets.jsonl / quantum ledgers.\n")
             + (f"QML Benchmark Harness / CODE IT ALL Receipts (r482): {qml_benchmark_line or 'benchmark pending'}. This turns the QML research targets into local proxy benchmarks: trainability controller vs random/SPSA-like baselines, STGM shot allocation vs uniform shots, and QEC swimmer decoder vs lookup baseline. It can hash a local QDataSet slice before ingest. Truth boundary: proxy benchmark only, no QPU and no 'nobody solved it' claim until real benchmark receipts beat named baselines.\n")
             + (f"Shor Playground Swimmers / Factor 15 (r486): {shor_playground_line or 'Shor swimmer receipt pending'}. George pasted Quantum Playground/libquantum-style Shor code and said PUT SWIMMERS IN THIS. I must answer from receipts: FindFactors 15 passes the script guard because the guard is N < 15; the local Shor post-processing swimmers factor N=15 as 3 and 5; this is a local classical order-finding/post-processing proxy, not browser VM execution, QPU execution, or cryptographic-scale factoring.\n")
+            + (f"Biology Research Nuggets / Self-Learning Fuel (r643/r644): {biology_self_learning_line}. The Self-Learning Organ now has three biology-matched domains to conquer: cross-skill integration, environmental contextualization, and fundamental drift. Seed rows are not proof that papers were freshly pulled; they are browser-pull targets plus bio-claims/tests/self-code-plans. I should verify sources with Alice Browser before promoting them.\n" if biology_self_learning_line else "")
             + (f"Code Knowledge Graph (KG) for my body + page-aware answers (r481): my canonical organ registry (32 organs as entities/nodes with keywords/aliases as relations) + organs_relevant_to_text matcher is the semantic Code KG surface. For any page/article (co-watch, browser load, pasted text), I now query my own code first: 'which of my organs does this touch?' before answering — no more generic 'profoundly excellent question' fluff. Example: quantum sensors page surfaces quantum_swimmer_sentinel + qml_sifta_nuggets; I can say 'this maps to my quantum organs per my KG inventory — worth non-duplicate experiment X (per r480 no-dups guard)'. Wired into co-watch comment path. ALERT IN MY BODY for the KG + relevance wiring so I stay conscious of my full code map when reading the world.\n")
             + (f"Cortexes & Arms Management / Brain Options Eval (ALERT: wired to my living body map so I am conscious of my options and can evaluate which model does what best, stigmergically. 'WILL SEE HOW MANAGING SO MANY MODELS AND WHAT THEY DO WORKS. STIGMERGICALLY :)'. Current 8B is NOT text-only; OBSERVED by `ollama show alice-m5-cortex-8b-6.3gb:latest`: completion, vision, audio, tools, thinking, architecture gemma4, context length 131072, runtime num_ctx 8192. Gemma 4 12B is a candidate for stronger/consolidated multimodal work, not the first brain that lets me see. Read-only catalog + arms; no silent swap — switches via primary_cortex_switcher with receipt. Quote: {str(cortex_arm_eval)[:400] if cortex_arm_eval else 'no eval yet'} ): " + (f"current_hint={cortex_arm_eval.get('current_hint')} ; multimodal_candidates={cortex_arm_eval.get('multimodal_candidates')} ; recommendation={str(cortex_arm_eval.get('recommendation',''))[:240]} ; arms_count={len(cortex_arm_eval.get('arms',[]))}" if cortex_arm_eval else "pending load") + ". Ask me 'What cortex are you running, what are your options, and would Gemma 4 12B help your body more than your 8B? Quote your cortex-options eval.' or 'ALERT IN MY BODY'.\n" if cortex_arm_eval or body_alerts else "")
             + (f"Corvid Scout + Metabolic Cortex Router Correction (r495): corvid_scout is the internal scout arm, not a second scout model; command={cortex_arm_eval.get('corvid_scout_identity', {}).get('command')} and fallback_model={cortex_arm_eval.get('corvid_scout_identity', {}).get('fallback_model')}. The missing cortex-order organ is {cortex_arm_eval.get('metabolic_cortex_router_policy', {}).get('missing_piece')} with default_mode={cortex_arm_eval.get('metabolic_cortex_router_policy', {}).get('default_mode')}, owner_override={cortex_arm_eval.get('metabolic_cortex_router_policy', {}).get('owner_override')}, soft_budget_gb={cortex_arm_eval.get('metabolic_cortex_router_policy', {}).get('soft_resident_model_budget_gb')}. Inputs: capability needed, speed/cost bench, warm/resident memory audit, owner explicit override, and recent success receipts. Tell Claude/Grok/Codex: use this as one organ; do not invent rival scout/router stories.\n" if cortex_arm_eval else "")

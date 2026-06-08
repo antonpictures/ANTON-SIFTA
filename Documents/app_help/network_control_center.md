@@ -18,6 +18,17 @@ Effective merged list (stigmergic recent first, static seed fills in):
 - `connectivity` — _stigmergic, seed_ (last seen ts=1778965583)
 - `p2p` — _stigmergic, seed_ (last seen ts=1778965583)
 
+## Stigmergic Skill Consciousness
+
+These are not generic market Agent Skills. They are app-organ skill layers: skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, and receipts.
+
+- `networking` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `mesh` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `ble` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `awdl` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `connectivity` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `p2p` -> `APP_FOCUS_SWIMMER` -> `Network Control Center` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+
 ## Recent health-trace rows (newest first)
 
 - **boot_readiness_seed** @ `2026-05-16T21:06:23.273781Z` (codex_boot_readiness_audit · ΔSTGM 0.0)

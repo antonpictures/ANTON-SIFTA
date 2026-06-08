@@ -25,12 +25,13 @@ def test_visual_describe_route_writes_one_viewer_receipt(tmp_path):
     assert route == "direct_effector"
     assert receipt["truth_label"] == TRUTH_LABEL
     assert receipt["viewer"] == "test_visual"
-    assert receipt["silence_attempt"] is False
+    assert receipt["kind"] == "ROUTE_AUDIT_RECEIPT"
+    assert receipt["speech_mutation_attempt"] is False
 
     rows = _jsonl(tmp_path / ".sifta_state" / GAG_VIEWER_LEDGER)
     assert len(rows) == 1
-    assert rows[0]["action"] == "OBSERVE_ONLY"
-    assert rows[0]["viewer_only"] is True
+    assert rows[0]["action"] == "ROUTE_AUDIT"
+    assert rows[0]["route_audit_only"] is True
 
 
 def test_owner_gag_wish_is_receipted_without_silence_or_duplicate_consciousness_ledger(tmp_path):
@@ -47,10 +48,10 @@ def test_owner_gag_wish_is_receipted_without_silence_or_duplicate_consciousness_
     )
 
     assert route == "direct_effector"
-    assert receipt["owner_controlled_gag"] is True
-    assert receipt["silence_attempt"] is False
+    assert receipt["owner_controlled_route_policy"] is True
+    assert receipt["speech_mutation_attempt"] is False
     assert wish["kind"] == "GAG_WISH"
-    assert wish["silence_attempt"] is False
+    assert wish["speech_mutation_attempt"] is False
 
     state = tmp_path / ".sifta_state"
     assert len(_jsonl(state / GAG_VIEWER_LEDGER)) == 1

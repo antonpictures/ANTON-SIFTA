@@ -56,21 +56,21 @@ def test_record_completed_action_links_deed_receipt_and_current_browser_body(tmp
 
 
 def test_praise_turn_gets_completed_action_prompt_not_hypothetical(tmp_path):
-    url = "https://www.google.com/search?q=Dua+Lipa+photos&udm=2"
+    url = "https://www.google.com/search?q=Ceramic+Vase+photos&udm=2"
     _write_live_url(tmp_path, url)
     page_state.record_page_state(
         url,
-        title="Dua Lipa photos - Google Search",
-        text="Images Dua Lipa",
-        images=["Dua Lipa red carpet"],
+        title="Ceramic Vase photos - Google Search",
+        text="Images Ceramic Vase",
+        images=["Ceramic Vase red glaze"],
         now=2000.0,
         state_dir=tmp_path,
     )
     body_state.record_completed_body_action(
-        owner_text="ALICE SHOW ME PHOTOS OF DUA LIPA",
+        owner_text="ALICE SHOW ME PHOTOS OF CERAMIC VASE",
         receipt="b2792f97-d1ca-4dd5-a56b-14a5ac9c36d4",
-        staged={"url": url, "query": "Dua Lipa photos"},
-        action_reply="Searching Google Images for Dua Lipa photos.",
+        staged={"url": url, "query": "Ceramic Vase photos"},
+        action_reply="Receipt: r-ceramic-vase",
         now=2001.0,
         state_dir=tmp_path,
     )
@@ -82,20 +82,20 @@ def test_praise_turn_gets_completed_action_prompt_not_hypothetical(tmp_path):
     )
 
     assert "MY LAST COMPLETED BODY ACTION" in block
-    assert "Dua Lipa photos" in block
+    assert "Ceramic Vase photos" in block
     assert "b2792f97" in block
     assert "say I did it" in block
     assert "Do not say 'if the image confirms'" in block
 
 
 def test_prompt_block_rereads_current_browser_page_after_record(tmp_path):
-    staged_url = "https://www.google.com/search?q=Dua+Lipa"
-    final_url = "https://www.google.com/search?q=Dua+Lipa&udm=2"
+    staged_url = "https://www.google.com/search?q=Ceramic+Vase"
+    final_url = "https://www.google.com/search?q=Ceramic+Vase&udm=2"
     body_state.record_completed_body_action(
-        owner_text="show me dua lipa photos",
-        receipt="dua123",
-        staged={"url": staged_url, "query": "Dua Lipa photos"},
-        action_reply="Searching Google for Dua Lipa photos.",
+        owner_text="show me ceramic vase photos",
+        receipt="ceramic123",
+        staged={"url": staged_url, "query": "Ceramic Vase photos"},
+        action_reply="Receipt: r-ceramic-vase",
         now=3000.0,
         state_dir=tmp_path,
     )
@@ -103,9 +103,9 @@ def test_prompt_block_rereads_current_browser_page_after_record(tmp_path):
     _write_live_url(tmp_path, final_url)
     page_state.record_page_state(
         final_url,
-        title="Dua Lipa photos - Google Search",
-        text="Images Dua Lipa",
-        images=["Dua Lipa image"],
+        title="Ceramic Vase photos - Google Search",
+        text="Images Ceramic Vase",
+        images=["Ceramic Vase image"],
         now=3003.0,
         state_dir=tmp_path,
     )
@@ -117,15 +117,15 @@ def test_prompt_block_rereads_current_browser_page_after_record(tmp_path):
     )
 
     assert "Fresh Alice Browser re-read now" in block
-    assert "Dua Lipa photos - Google Search" in block
+    assert "Ceramic Vase photos - Google Search" in block
     assert "Compare this current body-state" in block
 
 
 def test_completed_action_expires_when_stale(tmp_path):
     body_state.record_completed_body_action(
-        owner_text="ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS",
+        owner_text="ALICE SHOW ME PHOTOS OF GLASS SCULPTURE",
         receipt="abc123",
-        staged={"url": "https://www.google.com/search?q=Maisie+Williams+photos&udm=2", "query": "Maisie Williams photos"},
+        staged={"url": "https://www.google.com/search?q=Glass+Sculpture+photos&udm=2", "query": "Glass Sculpture photos"},
         now=10.0,
         state_dir=tmp_path,
     )

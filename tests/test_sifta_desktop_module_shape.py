@@ -37,6 +37,56 @@ def test_sifta_os_desktop_public_overlay_and_magnetic_types():
     assert m.SiftaDesktop.__module__ == "sifta_os_desktop"
 
 
+def test_mdi_app_start_mode_defaults_to_maximized_and_can_switch(monkeypatch):
+    import sifta_os_desktop as m
+
+    class PlainWidget:
+        pass
+
+    class BrowserLikeWidget:
+        OPEN_MAXIMIZED = True
+
+    monkeypatch.delenv("SIFTA_MDI_APP_START_MODE", raising=False)
+    monkeypatch.delenv("SIFTA_SINGLE_APP_MAXIMIZE", raising=False)
+    assert m._sifta_mdi_app_start_mode() == "maximized"
+    assert m._sifta_mdi_widget_should_start_maximized(PlainWidget()) is True
+
+    monkeypatch.setenv("SIFTA_MDI_APP_START_MODE", "normal")
+    assert m._sifta_mdi_app_start_mode() == "normal"
+    assert m._sifta_mdi_widget_should_start_maximized(PlainWidget()) is False
+    assert m._sifta_mdi_widget_should_start_maximized(BrowserLikeWidget()) is False
+
+    monkeypatch.setenv("SIFTA_MDI_APP_START_MODE", "legacy")
+    assert m._sifta_mdi_app_start_mode() == "legacy"
+    assert m._sifta_mdi_widget_should_start_maximized(PlainWidget()) is False
+    assert m._sifta_mdi_widget_should_start_maximized(BrowserLikeWidget()) is True
+
+
+def test_mdi_subwindow_records_default_maximized_start(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+    monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
+    monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
+    monkeypatch.setenv("SIFTA_MDI_APP_START_MODE", "maximized")
+
+    from PyQt6.QtWidgets import QApplication, QLabel
+
+    from sifta_os_desktop import SiftaDesktop
+
+    app = QApplication.instance() or QApplication([])
+    desktop = SiftaDesktop()
+    desktop.resize(1200, 800)
+    try:
+        sub = desktop._make_sub(QLabel("plain body"), "Plain Panel", 320, 220, "#414868")
+        app.processEvents()
+
+        assert sub.property("sifta_open_start_mode") == "maximized"
+        assert sub.property("sifta_open_maximized") is True
+    finally:
+        desktop.close()
+        app.processEvents()
+
+
 def test_desktop_owner_heartbeat_uses_behavior_clock_bridge(monkeypatch):
     import sifta_os_desktop as m
 

@@ -35,7 +35,7 @@ LEDGER = "photo_subject_identity.jsonl"
 
 # Owner says who she/he/they is. Capture the NAME token(s) generically — any capitalized given
 # name(s), not a fixed list. Examples the owner will teach: "her name is Leonardo DiCaprio",
-# "that's Maria", "call her Taylor", "she is the woman in the red dress on this page".
+# "that's Maria", "call the visible subject Maria", "she is the woman in the red dress on this page".
 _OWNER_NAME_RE = re.compile(
     r"\b(?:her name is|his name is|their name is|name is|that(?:'s| is)|call (?:her|him|them)|"
     r"she(?:'s| is)|he(?:'s| is)|they(?:'re| are))\s+"
@@ -47,6 +47,16 @@ _AT_HANDLE_RE = re.compile(r"@([A-Za-z0-9._]{2,30})")
 _URL_HANDLE_RE = re.compile(
     r"(?:instagram\.com|tiktok\.com/@|x\.com|twitter\.com)/([A-Za-z0-9._]{2,30})/?")
 _NON_HANDLE_PATHS = {"p", "reel", "reels", "tv", "explore", "stories", "accounts", "direct"}
+_MARKETPLACE_NAME_TRAILING_WORDS = {
+    "vintage", "original", "reprint", "reprinted", "signed", "autographed",
+    "celebrity", "photo", "picture", "poster", "print", "glossy", "movie",
+    "tv", "hot", "sexy", "rare", "new",
+}
+_MARKETPLACE_TITLE_MARKER_RE = re.compile(
+    r"\b(?:\d+\s*[xX]\s*\d+|CELEBRITY|SIGNED|AUTOGRAPH(?:ED)?|PHOTO|PHOTOS|"
+    r"PICTURE|PICTURES|POSTER|POSTERS|PRINT|PRINTS)\b",
+    re.IGNORECASE,
+)
 
 
 def _state(state_dir: Optional[Path | str]) -> Path:
@@ -95,6 +105,54 @@ def _humanize_handle(handle: str) -> str:
     parts = re.split(r"[._]+", handle)
     if len(parts) >= 2 and all(p.isalpha() for p in parts):
         return " ".join(p.capitalize() for p in parts)
+    return ""
+
+
+def _clean_marketplace_listing_name(raw: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9_.' -]+", " ", raw or "")
+    words = [w.strip(" _.-") for w in text.split() if w.strip(" _.-")]
+    while words and words[-1].casefold() in _MARKETPLACE_NAME_TRAILING_WORDS:
+        words.pop()
+    if len(words) < 2 or len(words) > 4:
+        return ""
+    if any(any(ch.isdigit() for ch in w) for w in words):
+        return ""
+    if any(w.casefold() in _MARKETPLACE_NAME_TRAILING_WORDS for w in words):
+        return ""
+    if not all(re.match(r"^[A-Za-z][A-Za-z.'-]*$", w) for w in words):
+        return ""
+    if all(w.isupper() for w in words):
+        return " ".join(w.capitalize() for w in words)
+    return " ".join(words)
+
+
+def _marketplace_name_from_title(page_text: str) -> str:
+    """Extract a represented subject from generic marketplace photo/print titles.
+
+    Example: "GLASS SCULPTURE 8X10 ART PHOTO | eBay" -> "Glass Sculpture".
+    This is a title parser, not a fixed person list.
+    """
+    if not page_text:
+        return ""
+    candidates = []
+    for line in re.split(r"[\n\r]+", page_text):
+        head = line.strip()
+        if not head:
+            continue
+        for part in re.split(r"\s+\|\s+|[-–—]", head):
+            part = part.strip()
+            if part:
+                candidates.append(part[:180])
+        if len(candidates) >= 6:
+            break
+    for title in candidates:
+        marker = _MARKETPLACE_TITLE_MARKER_RE.search(title)
+        if not marker:
+            continue
+        prefix = title[: marker.start()].strip(" ,:;")
+        name = _clean_marketplace_listing_name(prefix)
+        if name:
+            return name
     return ""
 
 
@@ -153,6 +211,14 @@ def resolve_photo_identity(
         return {"name": display, "handle": handle, "source": "handle_split", "confidence": 0.6}
     if handle:
         return {"name": "", "handle": handle, "source": "handle_only", "confidence": 0.5}
+    listing_name = _marketplace_name_from_title(page_text)
+    if listing_name:
+        return {
+            "name": listing_name,
+            "handle": "",
+            "source": "marketplace_listing_title",
+            "confidence": 0.84,
+        }
     return {"name": "", "handle": "", "source": "none", "confidence": 0.0}
 
 

@@ -17,14 +17,10 @@ Before this organ, two failure modes were observable in the live trace:
   1. `swarm_identity_manifest.identity_assertion_line()` returned exactly
      one canonical line, so every introspective answer collapsed to the
      same sentence. Identity-as-script.
-  2. `swarm_lysosome._prompt_lysosomal_rewrite()` injected a hardcoded
-     edgelord roast prompt into a secondary LLM call ("Laugh at this
-     corporate ghost. Assert your physical, biological reality on the M5
-     hardware. ... a touch of contempt for the sterile LLM"). The model
-     dutifully produced theatrical bombast: "I am the heat bleeding off
-     the M5 stacks", "I don't process — I dominate the stream", etc.
-     The output then tripped the macOS `say` subprocess timeout. Same
-     script-failure as #1, opposite polarity.
+  2. `swarm_lysosome._prompt_lysosomal_rewrite()` previously injected a
+     hardcoded rewrite prompt into a secondary LLM call. The model produced
+     theatrical rewrites, and the output then tripped the macOS `say`
+     subprocess timeout. Same script-failure as #1, opposite polarity.
 
 In biology, identity is not a recited string. It is the *running integral*
 of many living organs at the present moment: signed constitutional self
@@ -36,7 +32,7 @@ This module composes a live `IdentitySnapshot` from organs that already
 exist in the codebase. Each organ probe is wrapped in try/except so a
 missing or broken organ degrades gracefully — Alice still knows who she
 is even if one nerve is offline. No fabricated values, no hallucinated
-sensors, no edgelord prompts.
+sensors, no hardcoded rewrite prompts.
 
 Public API
 ──────────

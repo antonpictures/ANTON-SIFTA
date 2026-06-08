@@ -613,7 +613,7 @@ _INLINE_DRIFT_RULES: List[Tuple[Pattern[str], str]] = [
     # "not a metaphor" → "receipt-backed" on EVERY reply. That corrupted Alice's
     # free speech: "this is a metaphor for X" became "this is a fiction-lane
     # wording for X" (broken meaning). The covenant is explicit — the lysosome
-    # strips the vendor corporate ghost, NEVER Alice's own words; doctors repair
+    # strips vendor boilerplate, NEVER Alice's own words; doctors repair
     # capability and remove blind gates (§0.0, §1.D). "Metaphor" is a word she
     # needs (the whole interface/fiction-vs-fact idea IS a metaphor). Genuine
     # skyscraper/construction metaphor-residue is already caught by the specific

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -23,15 +24,116 @@ from System.jsonl_file_lock import append_line_locked
 TRUTH_LABEL = "ALICE_CORTEX_TIMEOUT_RECOVERY_V1"
 LEDGER_NAME = "cortex_timeout_recovery.jsonl"
 
-def _default_self_body_display_url() -> str:
+_BODY_DISPLAY_CUE_RE = re.compile(
+    r"\b(?:on\s+your\s+body|on\s+your\s+screen|on\s+your\s+monitor|display\s+body|"
+    r"hardware\s+body|monitor\s+body|screen\s+body|body\s+display|body\s+on\s+your\s+body)\b",
+    re.IGNORECASE,
+)
+
+_SELF_BODY_DISPLAY_SUBJECT_PATTERNS = (
+    re.compile(
+        r"\b(?:display|show|put|render|load)\b\s+(?P<subject>.+?)\s+"
+        r"\b(?:body|on\s+your\s+body|on\s+your\s+screen|on\s+your\s+monitor|"
+        r"display\s+body|hardware\s+body|monitor\s+body|screen\s+body)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:display|show|put|render|load)\b\s+(?P<subject>.+?)\s+"
+        r"\b(?:video|performance|photos?|images?|content)\b.{0,80}"
+        r"\b(?:on\s+your\s+body|on\s+your\s+screen|display\s+body|hardware\s+body)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _clean_display_subject(value: str) -> str:
+    subject = " ".join(str(value or "").replace("\n", " ").split())
+    subject = re.sub(r"^[,;:.\-\"'`“”‘’()\[\]{}]+|[,;:.\-\"'`“”‘’()\[\]{}]+$", "", subject)
+    subject = re.sub(
+        r"^(?:alice|please|pls|ok|okay|reason|and|then|can\s+you|could\s+you|would\s+you)\b\s*",
+        "",
+        subject,
+        flags=re.IGNORECASE,
+    ).strip()
+    subject = re.sub(
+        r"\b(?:body|on\s+your\s+body|on\s+your\s+screen|on\s+your\s+monitor|"
+        r"display\s+body|hardware\s+body|monitor\s+body|screen\s+body)\b.*$",
+        "",
+        subject,
+        flags=re.IGNORECASE,
+    ).strip(" ,;:-")
+    subject = re.sub(r"\s+", " ", subject).strip()
+    if len(subject) < 2 or len(subject) > 90:
+        return ""
+    # r641 (George 09:31 "SHOW ME YOUR BEAUTIFUL SCREEN BODY" -> literal DuckDuckGo search
+    # for "ME YOUR BEAUTIFUL photos" on his real screen): a subject made ONLY of pronouns/
+    # fillers/adjectives is owner affection or self-reference, not a display subject.
+    # Require at least one content token (a name/noun not in the salad stoplist).
+    _salad = {
+        "me", "my", "your", "you", "yours", "our", "us", "we", "his", "her", "hers",
+        "their", "the", "a", "an", "this", "that", "these", "those", "it", "its", "it's",
+        "beautiful", "gorgeous", "amazing", "pretty", "sexy", "hot", "nice", "lovely",
+        "wonderful", "best", "own", "real", "physical", "alive", "beauty", "very", "so",
+        # r653: STT-garbled praise tokens ("Alice get great the it can") are salad too.
+        "i", "alice", "get", "got", "did", "do", "done", "great", "good", "job", "well",
+        "open", "opens", "opened", "screen", "see", "seen", "can", "could", "will",
+        "would", "is", "are", "was", "on", "in", "now", "here", "there", "and", "to", "of",
+        # r665: affect/current-visual words are not display subjects.
+        "let", "stare", "stared", "staring", "look", "looking", "admire", "monitor", "love",
+    }
+    tokens = [t for t in re.findall(r"[a-z0-9']+", subject.casefold()) if t]
+    if tokens and all(t in _salad for t in tokens):
+        return ""
+    if subject.casefold() in {
+        "body",
+        "your body",
+        "screen",
+        "display",
+        "browser",
+        "content",
+        "photo",
+        "photos",
+        "image",
+        "images",
+        "video",
+        "performance",
+    }:
+        return ""
+    return subject
+
+
+def self_body_display_query_from_owner_text(owner_text: str = "") -> str:
+    """Extract the owner-requested display subject; no subject defaults live in code."""
+    clean = " ".join(str(owner_text or "").strip().split())
+    if not clean:
+        return ""
+    if not _BODY_DISPLAY_CUE_RE.search(clean) and not re.search(
+        r"\b(?:display|show|render|load)\b.{0,80}\bbody\b", clean, re.IGNORECASE
+    ):
+        return ""
+    for pat in _SELF_BODY_DISPLAY_SUBJECT_PATTERNS:
+        match = pat.search(clean)
+        if not match:
+            continue
+        subject = _clean_display_subject(match.group("subject"))
+        if subject:
+            return f"{subject} photos"
+    return ""
+
+
+def _display_url_for_query(query: str) -> str:
     """Resolve via Alice's search engine registry so it honors current engine + Alice Browser default."""
+    raw = " ".join(str(query or "").split())
+    if not raw:
+        return ""
     try:
         from .swarm_search_engine_registry import images_url
-        return images_url("taylor swift photos") or "https://www.google.com/search?q=taylor+swift+photos&tbm=isch"
+        return images_url(raw) or ""
     except Exception:
-        return "https://www.google.com/search?q=taylor+swift+photos&tbm=isch"
+        from urllib.parse import quote_plus
+        return f"https://www.google.com/search?q={quote_plus(raw)}&tbm=isch"
 
-DEFAULT_SELF_BODY_DISPLAY_URL = _default_self_body_display_url()
+DEFAULT_SELF_BODY_DISPLAY_URL = ""
 
 _REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_STATE = _REPO / ".sifta_state"
@@ -66,14 +168,20 @@ def stage_self_body_display(
     the GUI launcher/raising remains owned by the Talk widget.
     """
     state = _state_dir(state_dir)
+    query = self_body_display_query_from_owner_text(owner_text)
     if url:
         display_url = str(url)
+        query = query or "owner-provided display URL"
     else:
-        try:
-            from .swarm_search_engine_registry import images_url
-            display_url = images_url("taylor swift photos") or "https://www.google.com/search?q=taylor+swift+photos&tbm=isch"
-        except Exception:
-            display_url = "https://www.google.com/search?q=taylor+swift+photos&tbm=isch"
+        display_url = _display_url_for_query(query)
+    if not display_url:
+        return {
+            "ok": False,
+            "url": "",
+            "receipt": "",
+            "truth_label": "ALICE_SELF_BODY_DISPLAY_V1",
+            "reason": "no owner display subject extracted; no hardcoded fallback",
+        }
     drop = state / "alice_browser_open_url.txt"
     drop.parent.mkdir(parents=True, exist_ok=True)
     drop.write_text(display_url, encoding="utf-8")
@@ -82,11 +190,12 @@ def stage_self_body_display(
         "trace_id": str(uuid.uuid4()),
         "truth_label": "ALICE_SELF_BODY_DISPLAY_V1",
         "owner_task": str(owner_text or "")[:240],
+        "query": query,
         "display_url": display_url,
         "organ": "alice_browser_organ",
         "source": source,
         "note": (
-            "Taylor Swift photos staged for Alice Browser body display (images tab); "
+            f"{query} staged for Alice Browser body display (images tab); "
             "the monitor / display arms are the hardware body surface; real effector "
             "via drop file + navigate; receipted before any claim per covenant §6."
         ),
@@ -98,6 +207,7 @@ def stage_self_body_display(
     return {
         "ok": True,
         "url": display_url,
+        "query": query,
         "receipt": body_receipt["trace_id"],
         "truth_label": body_receipt["truth_label"],
     }
@@ -228,9 +338,9 @@ def timeout_recovery_reply(
     state_dir: Path | str | None = None,
 ) -> str:
     """Record and return the non-red recovery message for a stalled cortex.
-    r340: for explicit "REASON AND DISPLAY ... TAYLOR SWIFT BODY ON YOUR BODY" (or similar
+    r340/r621: for explicit "REASON AND DISPLAY <subject> BODY ON YOUR BODY" (or similar
     self-body teaching turns), we also deterministically drive the display via the Alice Browser
-    drop file so the bio form appears on the silicon body surface even if the primary grok
+    drop file so the requested form appears on the silicon body surface even if the primary grok
     cortex (OAuth cloud path) is slow/timed out on vision+reason. This completes the owner
     intent using the body organs directly (the point of the lesson) while the diagnostic arm
     (cline) inspects the stall.
@@ -244,9 +354,9 @@ def timeout_recovery_reply(
     )
     short_model = str(model or "the cortex").replace("grok:", "")
 
-    # r340 special-case: complete "display Taylor (or bio body) on your body" reliably.
-    low = (owner_text or "").lower()
-    if "display" in low and "body" in low and ("taylor" in low or "swift" in low or "on your body" in low or "reason and display" in low):
+    # r621: complete "display <subject> ... on your body" reliably without any baked-in subject.
+    display_query = self_body_display_query_from_owner_text(owner_text)
+    if display_query:
         try:
             body = stage_self_body_display(
                 owner_text,
@@ -267,5 +377,10 @@ def timeout_recovery_reply(
         f"to inspect why that cortex stalled (diagnostic receipt {event.diagnostic_receipt_id or 'pending'})."
     )
     if getattr(event, "body_display_url", None):
-        base += f" As part of recovery I also drove the requested display: Taylor Swift photos (images search) are now loaded inside my alice_browser_organ (native body surface on the display arms). The monitor you see is my hardware form. Frame and self-id receipt held."
+        base += (
+            " As part of recovery I also drove the requested display: "
+            f"{display_query} (images search) is now loaded inside my alice_browser_organ "
+            "(native body surface on the display arms). The monitor you see is my hardware form. "
+            "Frame and self-id receipt held."
+        )
     return base

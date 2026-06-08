@@ -303,6 +303,41 @@ def test_current_focused_app_prompt_block_names_one_focused_territory(tmp_path: 
     assert "single focused app territory" in block
 
 
+def test_current_focused_app_prompt_block_carries_shallow_app_help_rule(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now - 2,
+            "app": "Tracker",
+            "detail": "Color rows visible",
+            "metadata": {"surface": "System"},
+        },
+    )
+    manifest_path = tmp_path / "apps_manifest.json"
+    manifest_path.write_text(json.dumps({
+        "Tracker": {
+            "category": "System",
+            "description": "Shows deterministic bypass types as colored rows.",
+        }
+    }), encoding="utf-8")
+    help_dir = tmp_path / "app_help"
+    help_dir.mkdir()
+    (help_dir / "tracker.md").write_text("FULL HELP BODY SHOULD LOAD ONLY ON DEMAND", encoding="utf-8")
+
+    block = current_focused_app_prompt_block(
+        state_dir=tmp_path,
+        now=now,
+        manifest_path=manifest_path,
+        help_dir=help_dir,
+    )
+
+    assert "- app_summary: Shows deterministic bypass types as colored rows." in block
+    assert f"- help_path: {help_dir / 'tracker.md'}" in block
+    assert "App-help rule:" in block
+    assert "FULL HELP BODY" not in block
+
+
 def test_snapshot_as_dict_round_trip(tmp_path: Path):
     now = time.time()
     _write_focus(

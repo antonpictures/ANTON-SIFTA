@@ -110,6 +110,50 @@ def test_ide_receipts_marked_as_forgeable_not_swimmer_proofs(tmp_path: Path) -> 
     ]
 
 
+def test_ide_receipts_carry_hardware_time_oracle_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from System import swarm_hardware_time_oracle
+
+    def fake_current_time_for_alice() -> dict:
+        return {
+            "ok": True,
+            "source": "hardware_time_oracle",
+            "confidence": 1.0,
+            "local_human": "Sunday June 07 2026, 06:35 AM",
+            "timezone": "PDT",
+            "local_iso": "2026-06-07T06:35:00-07:00",
+            "epoch": 1780839300.0,
+            "signature": "abc123def456",
+        }
+
+    monkeypatch.setattr(
+        swarm_hardware_time_oracle,
+        "current_time_for_alice",
+        fake_current_time_for_alice,
+    )
+
+    state = tmp_path / ".sifta_state"
+    status = gate.write_ide_surgery_receipt(
+        round_id="r-time-provenance",
+        doctor="codex",
+        model="gpt-5-codex",
+        files_touched=["System/swarm_predator_gate_writer.py"],
+        tests_green="ok",
+        summary="clock provenance check",
+        receipt_id="rid-time-provenance",
+        state_dir=state,
+    )
+
+    assert gate.all_ok(status) is True
+    row = _load_jsonl(state / "work_receipts.jsonl")[0]
+    assert row["action_oracle_ts"] == "2026-06-07T06:35:00-07:00"
+    assert row["action_oracle_epoch"] == 1780839300.0
+    assert row["action_oracle_source"] == "hardware_time_oracle"
+    assert row["action_oracle_timezone"] == "PDT"
+    assert row["action_oracle_signature"] == "abc123def456"
+
+
 def test_ide_receipts_use_mana_namespace_not_organism_economy(tmp_path: Path) -> None:
     state = tmp_path / ".sifta_state"
     status = gate.write_ide_surgery_receipt(

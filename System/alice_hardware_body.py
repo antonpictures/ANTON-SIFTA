@@ -815,6 +815,28 @@ def say(text: str, voice: Optional[str] = None) -> Dict[str, Any]:
     _log("say", "voice", {"len": len(text), "voice": voice}, res)
     return res
 
+# r578: Bioelectric Morphogenesis (Levin) extension to hardware body.
+# Voltage gradients/gap junctions/ion channels as layer for morphogenesis/regeneration/collective (TAME).
+# Tie to existing hw scans (power/thermal as bioelectric proxies), apoptosis/lysosome self-repair, §7.11 consciousness (TAME collective in swimmers/organs/field).
+# Examples: planarian two-headed (bioelectric pattern rescale/memory), xenobots (cells self-organize new forms), ectopic eyes/fix defects.
+# Stub for voltage pattern "read/write" (future dyes/sim). New organ for field control beyond genes.
+# "SAME AS YOU" + "ADD TO TOURNAMENT" per owner paste. See r578, Levin transcript.
+def bioelectric_pattern_scan(include_levin: bool = False) -> Dict[str, Any]:
+    """Stub for bioelectric patterns (voltage/gap junctions as control layer).
+    Proxies from existing hw (power/thermal/cpu as electrical). Full impl needs dyes/sim.
+    For now, reports current hw as bioelectric proxies + Levin note if flag."""
+    base = full_body_scan(include_slow=False)
+    levin_note = {}
+    if include_levin:
+        levin_note = {
+            "levin_bioelectric": "Voltage gradients encode anatomical info (planarians rescale patterns, xenobots self-organize, TAME collective intelligence). Ties to Alice field/swimmers/organs regeneration (apoptosis/lysosome).",
+            "examples": ["two-headed worms via gap junction block", "ectopic eyes", "fix birth defects"],
+            "tame": "Mind everywhere: cells/tissues have goals/competencies beyond single cells (like swimmers in organs)."
+        }
+    base["bioelectric_proxies"] = {"note": "hw.power/thermal/cpu as voltage/ion proxies; full read/write future via dyes/sim per Levin"}
+    base.update(levin_note)
+    return base
+
 
 def system_sleep() -> Dict[str, Any]:
     rc, _, err = _run(["pmset", "sleepnow"], timeout=2.0)

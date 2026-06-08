@@ -43,8 +43,8 @@ def test_any_human_not_hardcoded(tmp_path):
 
 def test_handle_with_separators_humanizes(tmp_path):
     sd = tmp_path / ".sifta_state"; sd.mkdir()
-    r = pi.resolve_photo_identity(url="https://www.instagram.com/kylin.milan/", page_text="", state_dir=sd)
-    assert r["name"] == "BioHuman Milan" and r["source"] == "handle_split"
+    r = pi.resolve_photo_identity(url="https://www.instagram.com/bio.human/", page_text="", state_dir=sd)
+    assert r["name"] == "Bio Human" and r["source"] == "handle_split"
 
 
 def test_identity_block_first_person_and_named(tmp_path):
@@ -58,6 +58,29 @@ def test_identity_block_first_person_and_named(tmp_path):
 def test_no_name_no_handle_is_empty():
     assert pi.identity_block({"name": "", "handle": ""}) == ""
     assert pi.resolve_photo_identity()["source"] == "none"
+
+
+def test_marketplace_listing_title_binds_represented_subject(tmp_path):
+    sd = tmp_path / ".sifta_state"; sd.mkdir()
+    r = pi.resolve_photo_identity(
+        url="https://www.ebay.com/itm/123",
+        page_text="GLASS SCULPTURE 8X10 ART PHOTO PICTURE 1 | eBay",
+        state_dir=sd,
+    )
+    assert r["name"] == "Glass Sculpture"
+    assert r["source"] == "marketplace_listing_title"
+    assert r["confidence"] >= 0.8
+
+
+def test_marketplace_category_title_does_not_invent_person(tmp_path):
+    sd = tmp_path / ".sifta_state"; sd.mkdir()
+    r = pi.resolve_photo_identity(
+        url="https://www.ebay.com/sch/i.html",
+        page_text="Original Autographed Movie Photos for sale | eBay",
+        state_dir=sd,
+    )
+    assert r["name"] == ""
+    assert r["source"] == "none"
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ _FILLER = re.compile(
 # Verb + target. Accept "core text" and "core" as cortex synonyms (STT noise), and a bare
 # "switch to X" when co-watch/cortex context is implied by the caller.
 _SWITCH_RE = re.compile(
-    r"\b(?:switch|change|set|put|point|use|make)\b[^.?!]*?\b(?:cortex|core\s*text|core|brain|mind|"
+    r"\b(?P<verb>switch|change|set|put|point|use|make)\b[^.?!]*?\b(?:cortex|core\s*text|core|brain|mind|"
     r"model|llm)\b\s*(?:to|=|->|into)?\s*(?P<target>[A-Za-z0-9][\w .:\-/]{0,60})?",
     re.IGNORECASE,
 )
@@ -58,17 +58,41 @@ def parse_switch_command(text: str) -> Dict[str, object]:
     if not m:
         return {"is_switch": False, "target": ""}
     raw = (m.group("target") or "").strip()
+    verb = str((m.groupdict().get("verb") if hasattr(m, "groupdict") else "") or "").lower()
+
+    # r641: "use your cortex and know who you are / use tools" is an operating doctrine, not a
+    # request to switch to a model named "AND KNOW WHO YOU ARE". Keep "switch/change/set cortex to X"
+    # alive, but do not let identity/capability teaching turns become fake cortex targets.
+    lower_t = t.lower()
+    lower_raw = raw.lower()
+    if verb == "use" and re.search(r"\buse\s+(?:your|my|the)?\s*(?:cortex|brain|mind)\b", lower_t):
+        if not re.search(r"\buse\b[^.?!]{0,80}\b(?:cortex|brain|mind)\b\s*(?:to|=|->|into)\s*", lower_t):
+            return {"is_switch": False, "target": ""}
+        if re.search(
+            r"^(?:and|then|every\s*time|everytime|before|first|always|who|what|how|why|when)\b",
+            lower_raw,
+        ):
+            return {"is_switch": False, "target": ""}
+        if re.search(
+            r"\b(?:know\s+who|what\s+you\s+can\s+do|before\s+answering|every\s*time|everytime|"
+            r"use\s+tools|execute|operating\s+system|own\s+operating)\b",
+            lower_raw,
+        ):
+            return {"is_switch": False, "target": ""}
+
     # strip a trailing sentence and filler words; keep the meaningful cortex token(s)
     raw = re.split(r"[.?!,]", raw)[0]
     raw = re.split(
         r"\b(?:and|then|also)\s+"
-        r"(?:what|who|how|why|where|when|tell|describe|think|look|say|do|can|could|would)\b",
+        r"(?:what|who|how|why|where|when|tell|describe|think|look|say|do|know|use|execute|can|could|would)\b",
         raw,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0]
     cleaned = _FILLER.sub(" ", raw)
     cleaned = " ".join(cleaned.split()).strip(" .,:;-")
+    if not cleaned:
+        return {"is_switch": False, "target": ""}
     return {"is_switch": True, "target": cleaned}
 
 

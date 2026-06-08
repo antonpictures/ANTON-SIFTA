@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import Applications.sifta_alice_browser_widget as browser
+from System import swarm_browser_page_state as page_state
 
 
 def _patch_state(monkeypatch, tmp_path):
@@ -287,6 +288,55 @@ def test_describe_current_photo_stays_on_codex_after_empty_codex_scan(monkeypatc
     assert len(result["attempts"]) == 1
     assert "Codex is my selected cortex/eye" in result["diary_note"]
     assert "did not switch to Claude" in result["diary_note"]
+
+
+def test_describe_current_photo_does_not_inject_stale_identity_from_other_page(monkeypatch, tmp_path):
+    _patch_state(monkeypatch, tmp_path)
+    img = tmp_path / "viewport.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 9000)
+    page_state.record_page_state(
+        "https://x.com/abellaskies/status/old/photo/1",
+        title="Isabella (@abellaskies) / X",
+        text="@abellaskies Izzy photo post",
+        state_dir=tmp_path,
+    )
+
+    class DummyBrowser:
+        _current_url = "https://www.youtube.com/watch?v=current"
+        _history = [{"content": "her name is Izzy in the browser photo"}]
+
+        def _capture_viewport_image(self, expected_url=""):
+            return str(img)
+
+    prompts = []
+
+    def fake_local_eye(image_path, prompt, **kwargs):
+        prompts.append(prompt)
+        return SimpleNamespace(
+            ok=True,
+            output="A YouTube page is visible with a video player and sidebar.",
+            stderr="",
+            status="ok",
+            receipt_id="local-ok",
+            returncode=0,
+        )
+
+    monkeypatch.setattr("System.swarm_mlx_vlm_brain.is_available", lambda: False, raising=False)
+    monkeypatch.setattr("System.swarm_mlx_vlm_brain.describe_available", lambda: False, raising=False)
+    monkeypatch.setattr("System.swarm_ollama_vision_arm.local_vision_available", lambda **kwargs: True)
+    monkeypatch.setattr("System.swarm_ollama_vision_arm.describe_image_local", fake_local_eye)
+
+    result = browser.AliceBrowserWidget.describe_current_photo(
+        DummyBrowser(),
+        current_arm="ollama_vision_agent",
+        current_model="alice-m5-cortex-8b-6.3gb:latest",
+    )
+
+    assert result["status"] == "described"
+    assert prompts
+    assert "Izzy" not in prompts[0]
+    assert "abellaskies" not in prompts[0]
+    assert "known from recent owner report" not in prompts[0]
 
 
 def test_describe_current_photo_grok_subscription_failure_uses_local_backup(monkeypatch, tmp_path):

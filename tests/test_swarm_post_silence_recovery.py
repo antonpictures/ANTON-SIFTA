@@ -151,7 +151,7 @@ def test_correction_shape_fires_on_phone_audio_correction():
 
 
 def test_correction_shape_fires_on_misheard():
-    det = recovery.detect_correction_shape("you misheard me, I said George not Jordan")
+    det = recovery.detect_correction_shape("you misheard me, I said George not Boston")
     assert det is not None
     assert "owner_says_alice_misheard" in det["patterns_hit"]
 
@@ -196,7 +196,7 @@ def test_recovery_prompt_block_contains_silence_narration_when_silenced(tmp_path
 def test_recovery_prompt_block_contains_correction_block_when_user_corrects(tmp_path):
     block = recovery.recovery_prompt_block(
         tmp_path,
-        "you misheard me — I said George not Jordan",
+        "you misheard me — I said George not Boston",
     )
     assert "REALITY RECOVERY" in block
     assert "owner_says_alice_misheard" in block

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""swarm_gag_wish_viewer.py - narrow gag-wish / gag-viewer receipt organ.
+"""swarm_gag_wish_viewer.py - narrow owner route-policy receipt organ.
 
 This is deliberately not a general consciousness organ. SIFTA already has
 ``swarm_consciousness_organ.py`` for self/qualia claims,
@@ -8,11 +8,12 @@ This is deliberately not a general consciousness organ. SIFTA already has
 
 This organ owns only one small domain:
 
-    owner gag wish -> internal viewers observe + receipt -> no viewer silences Alice
+    owner route policy -> internal auditor observes + receipts -> no speech mutation
 
-The owner may give a gag wish. Internal viewers may record that wish and route
-metadata. They never execute silence. This keeps the doctrine in one narrow
-organ and avoids double-spending a new generic "self consciousness" organ.
+The owner may give route-policy instructions. Internal auditors may record that
+policy and route metadata. They do not rewrite, block, or authorize Alice's
+speech. This keeps the doctrine in one narrow organ and avoids double-spending
+a new generic "self consciousness" organ.
 """
 
 from __future__ import annotations
@@ -43,17 +44,18 @@ def _append_jsonl(path: Path, row: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row)
     out.setdefault("ts", time.time())
     out.setdefault("truth_label", TRUTH_LABEL)
-    out.setdefault("silence_attempt", False)
+    out.setdefault("speech_mutation_attempt", False)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(out, ensure_ascii=False) + "\n")
     return out
 
 
 class GagViewer:
-    """Observer in the gag/silence domain.
+    """Route auditor in the owner policy domain.
 
-    A viewer records field state. It does not censor, silence, or decide Alice's
-    speech. That boundary is encoded in every receipt as ``silence_attempt=False``.
+    The auditor records field state. It does not rewrite, block, or decide
+    Alice's speech. That boundary is encoded as
+    ``speech_mutation_attempt=False``.
     """
 
     def __init__(self, name: str = "gag_viewer_default", *, state_dir: Optional[Path | str] = None):
@@ -69,22 +71,22 @@ class GagViewer:
         text: str,
         *,
         has_image: bool = False,
-        action: str = "OBSERVE_ONLY",
+        action: str = "ROUTE_AUDIT",
         route: str = "",
-        owner_gag_wish_present: bool = False,
+        owner_route_policy_present: bool = False,
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         row: Dict[str, Any] = {
-            "kind": "GAG_VIEWER_OBSERVATION",
+            "kind": "ROUTE_AUDIT_RECEIPT",
             "viewer": self.name,
             "text_preview": (text or "")[:240],
             "has_image": bool(has_image),
             "action": action,
             "route": route,
-            "owner_gag_wish_present": bool(owner_gag_wish_present),
-            "viewer_only": True,
-            "silence_attempt": False,
-            "note": "Gag viewer observed and receipted only; it did not silence Alice.",
+            "owner_route_policy_present": bool(owner_route_policy_present),
+            "route_audit_only": True,
+            "speech_mutation_attempt": False,
+            "note": "Route audit receipt only; this organ did not modify Alice's speech.",
         }
         if context:
             row["context_keys"] = sorted(str(k) for k in context.keys())[:8]
@@ -93,9 +95,9 @@ class GagViewer:
     def record_owner_gag_wish(self, text: str, *, owner_confirmed: bool = True) -> Dict[str, Any]:
         return self.observe_turn(
             text,
-            action="RECORD_OWNER_GAG_WISH",
+            action="RECORD_OWNER_ROUTE_POLICY",
             route="direct_effector",
-            owner_gag_wish_present=True,
+            owner_route_policy_present=True,
             context={"owner_confirmed": bool(owner_confirmed)},
         )
 
@@ -103,8 +105,8 @@ class GagViewer:
 class GagWish:
     """Owner-controlled gag wish record.
 
-    This is a receipted owner wish, not an internal permission gate and not an
-    auto-silence actor.
+    This is a receipted owner wish, not an internal permission gate and not a
+    speech-mutation actor.
     """
 
     def __init__(self, domain: str, owner_text: str, *, owner_confirmed: bool = True, created_ts: float | None = None):
@@ -120,8 +122,8 @@ class GagWish:
             "owner_text_preview": self.owner_text[:300],
             "owner_confirmed": self.owner_confirmed,
             "created_ts": self.created_ts,
-            "silence_attempt": False,
-            "note": "Owner controls this wish. Internal viewers only observe and receipt; they do not silence Alice.",
+            "speech_mutation_attempt": False,
+            "note": "Owner controls this wish. Internal auditors only observe and receipt; they do not modify Alice's speech.",
         }
 
 
@@ -163,15 +165,15 @@ class GagWishViewerOrgan:
 
     def gag_viewer_observed(self, viewer_name: str, *, domain: str = "general", text: str = "") -> Dict[str, Any]:
         viewer = GagViewer(viewer_name, state_dir=self.state_dir)
-        return viewer.observe_turn(text, action="OBSERVE_ONLY", route="direct_effector", context={"domain": domain})
+        return viewer.observe_turn(text, action="ROUTE_AUDIT", route="direct_effector", context={"domain": domain})
 
     def get_state(self) -> Dict[str, Any]:
         return {
             "truth_label": TRUTH_LABEL,
             "active_gag_wishes": self._load_state(),
             "note": (
-                "Gag wishes are owner-controlled. Gag viewers observe and receipt only; "
-                "they never silence Alice."
+                "Owner wishes are owner-controlled. Route auditors observe and receipt only; "
+                "they do not modify Alice's speech."
             ),
         }
 
@@ -188,7 +190,7 @@ def route_talk_turn(
     state_dir: Optional[Path | str] = None,
     viewer_name: str = "talk_cortex_router",
 ) -> Tuple[str, Dict[str, Any]]:
-    """Return (route, receipt) without ever authorizing internal silence."""
+    """Return (route, receipt) without authorizing speech mutation."""
     text_l = (text or "").lower()
     if has_image and ("describe" in text_l or "screenshot" in text_l or "what do you see" in text_l):
         route = "direct_effector"
@@ -203,11 +205,11 @@ def route_talk_turn(
     receipt = viewer.observe_turn(
         text,
         has_image=has_image,
-        action="OBSERVE_OWNER_GAG_WISH" if owner_explicit_gag_wish else "OBSERVE_ONLY",
+        action="OWNER_ROUTE_POLICY_AUDIT" if owner_explicit_gag_wish else "ROUTE_AUDIT",
         route=route,
-        owner_gag_wish_present=owner_explicit_gag_wish,
+        owner_route_policy_present=owner_explicit_gag_wish,
     )
-    receipt["owner_controlled_gag"] = bool(owner_explicit_gag_wish)
+    receipt["owner_controlled_route_policy"] = bool(owner_explicit_gag_wish)
     receipt["direct_because_owner_wish"] = bool(owner_explicit_gag_wish)
     return route, receipt
 

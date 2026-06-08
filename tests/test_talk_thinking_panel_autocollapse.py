@@ -180,10 +180,14 @@ def test_chat_anchor_and_render_all_messages_hooks_exist():
     assert "anchorClicked.connect(self._on_chat_anchor_clicked)" in src
 
 
-def test_planning_mode_toggle_injects_cortex_prompt_block():
+def test_planning_mode_is_automatic_and_selector_hidden():
     src = _src()
     assert "self._planning_mode_toggle = QCheckBox(\"Plan\")" in src
+    assert "self._planning_mode_toggle.setVisible(False)" in src
+    assert "bar.addWidget(self._planning_mode_toggle)" not in src
     assert "def _planning_mode_active" in src
+    assert "# r663: no owner-facing Plan selector" in src
+    assert "return True" in src
     assert "from System.swarm_planning_mode import planning_prompt_block" in src
     assert "sysprompt = sysprompt + \"\\n\\n\" + _planning_context" in src
 

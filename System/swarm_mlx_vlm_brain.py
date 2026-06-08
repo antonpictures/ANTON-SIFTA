@@ -53,6 +53,9 @@ except Exception:
 _DEFAULT_MODEL_DIR = os.path.expanduser(
     "~/Music/ANTON_SIFTA/models/osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"
 )
+_HF_MLX_VLM_REPOS = (
+    "SuperagenticAI/gemma-4-12b-it-8bit-mlx",
+)
 _MODEL: Any = None
 _PROCESSOR: Any = None
 
@@ -83,9 +86,13 @@ def _get_model_dir(name: Optional[str] = None) -> str:
         cand = base / n
         if cand.exists() and _is_model_present(cand):
             return str(cand)
+        hf = _hf_cached_model_dir(n)
+        if hf and _is_model_present(Path(hf)):
+            return hf
         # try partial match on basename
         for d in _find_vision_model_dirs():
-            if n in Path(d).name or Path(d).name in n:
+            tag = _model_tag_for_dir(d).replace("mlx-vlm:", "")
+            if n in Path(d).name or Path(d).name in n or n.lower() == tag.lower():
                 return d
     env = os.environ.get("SIFTA_MLX_VLM_DIR")
     if env and Path(env).exists():
@@ -105,6 +112,100 @@ def _is_model_present(d: Path) -> bool:
     return has_config or has_weights or has_mlx_marker
 
 
+def _hf_cache_roots() -> tuple[Path, ...]:
+    hf_home = os.environ.get("HF_HOME")
+    roots = []
+    if hf_home:
+        roots.append(Path(hf_home).expanduser() / "hub")
+    roots.extend((
+        Path("~/.cache/huggingface/hub").expanduser(),
+        Path("~/Library/Caches/huggingface/hub").expanduser(),
+    ))
+    return tuple(dict.fromkeys(roots))
+
+
+def _hf_repo_cache_name(repo_id: str) -> str:
+    return "models--" + repo_id.strip().replace("/", "--")
+
+
+def _repo_id_from_hf_snapshot(path: str | Path) -> str:
+    p = Path(path)
+    for parent in (p, *p.parents):
+        if parent.name.startswith("models--"):
+            return parent.name.removeprefix("models--").replace("--", "/")
+    return ""
+
+
+def _known_mlx_vlm_repo_ids() -> tuple[str, ...]:
+    """Static allowlist + curated CORTEX_OPTIONS mlx-vlm repos (r633, r615-twin).
+
+    r615 lesson, mlx-vlm lane: once a model has a curated eval entry it must
+    appear automatically when its weights land in the HF cache — no per-model
+    code edit. George kept hitting "I pulled it, it's not in the picker" on the
+    Ollama side; this closes the same wound for `mlx-vlm:` repos (TyKaoz, AEON-7
+    abliterated unified, future candidates). Lazy import breaks the
+    cortex_options import cycle; planning rows whose weights are NOT on disk
+    still return no snapshot, so nothing fake appears.
+    """
+    repos: list[str] = list(_HF_MLX_VLM_REPOS)
+    try:
+        from System.swarm_cortex_options import CORTEX_OPTIONS as _CO
+        for opt in _CO:
+            raw = str(opt.get("id", "") or "").strip()
+            if raw.lower().startswith("mlx-vlm:"):
+                repo = raw.split(":", 1)[1].strip().strip("/")
+                if repo and repo not in repos:
+                    repos.append(repo)
+    except Exception:
+        pass
+    return tuple(repos)
+
+
+def _hf_cached_model_dir(repo_id_or_name: str) -> str:
+    """Resolve a Hugging Face cache snapshot for a known MLX VLM repo."""
+    requested = (repo_id_or_name or "").strip().strip("/")
+    if not requested:
+        return ""
+    requested_low = requested.lower()
+    for repo_id in _known_mlx_vlm_repo_ids():
+        if requested_low not in {repo_id.lower(), repo_id.rsplit("/", 1)[-1].lower()}:
+            continue
+        cache_name = _hf_repo_cache_name(repo_id)
+        for root in _hf_cache_roots():
+            model_root = root / cache_name
+            snapshots = model_root / "snapshots"
+            if not snapshots.exists():
+                continue
+            ref = model_root / "refs" / "main"
+            if ref.exists():
+                try:
+                    snap = snapshots / ref.read_text(encoding="utf-8").strip()
+                    if _is_model_present(snap):
+                        return str(snap)
+                except Exception:
+                    pass
+            for snap in sorted(snapshots.iterdir(), reverse=True):
+                if snap.is_dir() and _is_model_present(snap):
+                    return str(snap)
+    return ""
+
+
+def _hf_cached_mlx_vlm_dirs() -> List[str]:
+    out: List[str] = []
+    for repo_id in _known_mlx_vlm_repo_ids():
+        resolved = _hf_cached_model_dir(repo_id)
+        if resolved and resolved not in out:
+            out.append(resolved)
+    return out
+
+
+def _model_tag_for_dir(model_dir: str | Path) -> str:
+    repo_id = _repo_id_from_hf_snapshot(model_dir)
+    if repo_id:
+        return f"mlx-vlm:{repo_id}"
+    return f"mlx-vlm:{Path(model_dir).name}"
+
+
 def _find_vision_model_dirs() -> List[str]:
     """Discover all local vision model dirs under models/ (for unified field with multiple VLMs).
     Returns full paths to dirs that look like MLX vision weights (config + safetensors).
@@ -117,6 +218,9 @@ def _find_vision_model_dirs() -> List[str]:
     for d in sorted(base.iterdir()):
         if d.is_dir() and _is_model_present(d):
             found.append(str(d))  # all present models/ dirs with weights are our VLMs (osmQwopus solid + Keye experimental)
+    for d in _hf_cached_mlx_vlm_dirs():
+        if d not in found:
+            found.append(d)
     # r533 (cowork, George 2026-06-04): prefer the SMALL gemma-4 edge VLMs (e2b/e4b) as the
     # in-process eye. The big 27B/30B (osmQwopus/osmKeye) SIGBUS-crash when loaded in-process
     # (r413 guard) — which is why the local eye kept failing even though they were on disk all
@@ -241,10 +345,9 @@ def describe_models() -> List[str]:
         return []
     found = _find_vision_model_dirs()
     if found:
-        return [f"mlx-vlm:{os.path.basename(Path(d).name)}" for d in found]
+        return [_model_tag_for_dir(d) for d in found]
     if describe_available():
-        name = os.path.basename(_get_model_dir().rstrip("/"))
-        return [f"mlx-vlm:{name}"]
+        return [_model_tag_for_dir(_get_model_dir())]
     return []
 
 def available_models() -> List[str]:
@@ -258,10 +361,9 @@ def available_models() -> List[str]:
     found = _find_vision_model_dirs()
     if not found:
         if is_available():
-            name = os.path.basename(_get_model_dir().rstrip("/"))
-            return [f"mlx-vlm:{name}"]
+            return [_model_tag_for_dir(_get_model_dir())]
         return []
-    return [f"mlx-vlm:{os.path.basename(Path(d).name)}" for d in found]
+    return [_model_tag_for_dir(d) for d in found]
 
 def _load_if_needed(name: Optional[str] = None) -> bool:
     global _MODEL, _PROCESSOR

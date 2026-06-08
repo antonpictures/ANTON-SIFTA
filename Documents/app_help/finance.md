@@ -15,12 +15,41 @@ Robinhood-style Finance dashboard for the Swarm. Displays canonical spendable ST
 
 Effective merged list (stigmergic recent first, static seed fills in):
 
-- `app_focus_context` — _stigmergic_ (last seen ts=1778965583)
-- `help_section_read` — _stigmergic_ (last seen ts=1778965583)
-- `tool_truth` — _stigmergic_ (last seen ts=1778965583)
+- `app_focus_context` — _stigmergic_ (last seen ts=1780109292)
+- `help_section_read` — _stigmergic_ (last seen ts=1780109292)
+- `tool_truth` — _stigmergic_ (last seen ts=1780109292)
+
+## Stigmergic Skill Consciousness
+
+These are not generic market Agent Skills. They are app-organ skill layers: skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, and receipts.
+
+- `app_focus_context` -> `APP_FOCUS_SWIMMER` -> `Finance` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `help_section_read` -> `APP_FOCUS_SWIMMER` -> `Finance` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `tool_truth` -> `APP_FOCUS_SWIMMER` -> `Finance` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
 
 ## Recent health-trace rows (newest first)
 
+- **exit_update** @ `2026-05-30T02:48:12.476033Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow closed. Keep the health section ready for the next open.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-05-30T02:47:39.985541Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow opened. Alice should read this health section before guiding the app.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-05-30T02:47:39.981733Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **exit_update** @ `2026-05-20T04:00:29.137046Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow closed. Keep the health section ready for the next open.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-05-20T04:00:26.953289Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-05-20T03:53:17.851583Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow opened. Alice should read this health section before guiding the app.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
+- **enter_update** @ `2026-05-20T03:53:17.844681Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_focus_context`, `help_section_read`, `tool_truth`
 - **boot_readiness_seed** @ `2026-05-16T21:06:23.274775Z` (codex_boot_readiness_audit · ΔSTGM 0.0)
   - Boot-readiness seed: app help exists and this health trace was initialized so Alice can see the organ in the body map. Unknown app-specific skills remain empty until focus/use receipts teach them.
   - skills: `app_focus_context`, `help_section_read`, `tool_truth`

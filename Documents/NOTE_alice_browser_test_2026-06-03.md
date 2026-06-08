@@ -23,7 +23,7 @@ So the matcher got wired into the path that *wasn't* the problem. The real fix i
 
 ## Minor glitches also seen (low priority)
 
-- Non-sequitur offer to find "photos of Maisie Williams" mid-election-search — stale-context bleed, same family as #1.
+- Non-sequitur offer to find "photos of a celebrity" mid-election-search — stale-context bleed, same family as #1.
 - Asked to run the Shor-style `FindFactors 15` Playground script, Alice narrated the code but didn't actually execute it (no real interpreter for that DSL).
 
 ## Suggested next steps

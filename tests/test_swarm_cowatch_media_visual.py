@@ -18,7 +18,7 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 
 def _active_context() -> str:
-    return 'PREDATOR UNIFIED FIELD\n  [YouTube] "Joe Rogan Experience #2507 - Harland Williams"\n  co-watch media active'
+    return 'PREDATOR UNIFIED FIELD\n  [YouTube] "Joe Rogan Experience #2507 - Example Speaker"\n  co-watch media active'
 
 
 def _seed_youtube_context(state: Path, ts: float) -> None:
@@ -26,7 +26,7 @@ def _seed_youtube_context(state: Path, ts: float) -> None:
         state / "youtube_context_latest.json",
         {
             "ts": ts,
-            "title": "Joe Rogan Experience #2507 - Harland Williams",
+            "title": "Joe Rogan Experience #2507 - Example Speaker",
             "url": "https://www.youtube.com/watch?v=test123",
             "video_id": "test123",
         },

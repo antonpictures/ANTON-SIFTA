@@ -400,6 +400,13 @@ def current_focused_app(
         health_path = str(entry.get("health_trace_path") or "").strip()
     if not health_path and app:
         health_path = f".sifta_state/app_health/{_safe_slug(app)}/health_trace.jsonl"
+    app_summary = ""
+    try:
+        from System.swarm_app_help_skills import app_one_sentence_summary
+
+        app_summary = app_one_sentence_summary(app, entry)
+    except Exception:
+        app_summary = ""
 
     return {
         "ok": True,
@@ -413,7 +420,13 @@ def current_focused_app(
         "ts": snap.ts,
         "age_s": snap.age_s,
         "source": "app_focus.jsonl",
+        "app_summary": app_summary,
         "help_path": str(help_path) if help_path and help_path.exists() else "",
+        "app_help_policy": (
+            "Carry the one-sentence manifest summary by default; read help_path only "
+            "when George asks how to use this app, asks for tools/controls, or the "
+            "focused task needs app-specific procedure."
+        ),
         "health_trace_path": health_path,
         "manifest_category": str(entry.get("category") or "") if isinstance(entry, dict) else "",
     }
@@ -427,6 +440,8 @@ def current_focused_app_prompt_block(
     max_age_s: float = 30.0,
     now: Optional[float] = None,
     metadata_field_cap: int = 8,
+    manifest_path: Optional[Path] = None,
+    help_dir: Optional[Path] = None,
 ) -> str:
     """Render the current focused app for Alice's system prompt."""
     focus = current_focused_app(
@@ -435,6 +450,8 @@ def current_focused_app_prompt_block(
         ledger_path=ledger_path,
         max_age_s=max_age_s,
         now=now,
+        manifest_path=manifest_path,
+        help_dir=help_dir,
     )
     if not focus.get("ok"):
         return (
@@ -454,6 +471,8 @@ def current_focused_app_prompt_block(
         lines.append(f"- tab: {focus['tab']}")
     if focus.get("selection"):
         lines.append(f"- selection: {focus['selection']}")
+    if focus.get("app_summary"):
+        lines.append(f"- app_summary: {focus['app_summary']}")
     if focus.get("help_path"):
         lines.append(f"- help_path: {focus['help_path']}")
     if focus.get("health_trace_path"):
@@ -464,6 +483,11 @@ def current_focused_app_prompt_block(
         lines.append("- metadata: " + ", ".join(f"{k}={v!r}" for k, v in capped))
     lines.append(
         "Rule: this is the single focused app territory right now. Use only this fresh app context unless George explicitly names another app."
+    )
+    lines.append(
+        "App-help rule: Alice's body is hardware + SIFTA OS + apps + one global chat; "
+        "keep app knowledge shallow by default, then read help_path only on app use, "
+        "tool/control questions, or focused procedure need."
     )
     return "\n".join(lines)
 

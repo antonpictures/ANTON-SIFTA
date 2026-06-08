@@ -144,7 +144,7 @@ def youtube_results_url(query: str) -> str:
 
 
 # r356 (George 2026-06-02): the local cortex sometimes emits a JSON/format token instead of
-# the owner's subject — "instead of searching for taylor you searched 'json'". A search effector
+# the owner's subject — "instead of searching for the requested subject you searched 'json'". A search effector
 # must NEVER fire on a structural/format token: that is the cortex's output plumbing leaking into
 # the query. The effector should reject it and re-route to the cortex/owner, not search "json".
 _BOGUS_QUERY_TOKENS = frozenset({

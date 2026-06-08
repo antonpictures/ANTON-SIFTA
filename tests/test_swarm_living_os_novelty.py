@@ -18,10 +18,10 @@ def test_living_os_novelty_block_carries_all_hooks(tmp_path):
     _write_live_url(state, url)
     record_page_state(
         url=url,
-        title="Taylor Swift I Knew You Were Trouble Victoria's Secret Fashion Show 2013",
-        text="0:11 / 4:20 Taylor Swift on screen",
+        title="Ceramic Vase Glazing Tutorial - YouTube",
+        text="0:11 / 4:20 ceramic vase on screen",
         media_playback={"paused": True, "currentTime": 11.0, "duration": 260.0},
-        video_channel="Taylor Swift",
+        video_channel="Pottery Studio",
         state_dir=state,
         now=10.0,
     )
@@ -60,4 +60,3 @@ def test_owner_absence_reunion_writes_queue(tmp_path):
     ]
     assert queue[-1]["owner_plan"] is True
     assert queue[-1]["source"] == "living_os_novelty"
-

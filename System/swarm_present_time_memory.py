@@ -180,12 +180,80 @@ def latest_present_state(
     return state
 
 
+def recent_trail_rows(
+    *, n: int = 20, now: Optional[float] = None, state_dir: Optional[Path | str] = None
+) -> list[tuple[float, str, dict[str, Any]]]:
+    """Last `n` lived events merged across the action/diary ledgers, oldest→newest.
+
+    George 2026-06-06 (the eBay catch): Alice forgot the eBay item she was on ONE
+    click earlier — the present block held only the NEWEST row of each ledger, a
+    1-deep present with no short-term past. His doctrine: "she needs the last ~20
+    events from her diary — she is going through her life right now, so she can
+    recognize the present; she needs a little bit of the past." This is that trail.
+    """
+    t = float(now if now is not None else time.time())
+    base = _state(state_dir)
+    ledgers = {
+        "page": "browser_context.jsonl",
+        "browser": "browser_action_diary.jsonl",
+        "app": "app_action_diary.jsonl",
+        "shift": "browser_context_shift_alerts.jsonl",
+        "stig": "stigmergic_browser_actions.jsonl",
+        "diary": "episodic_diary.jsonl",
+    }
+    merged: list[tuple[float, str, dict[str, Any]]] = []
+    for label, filename in ledgers.items():
+        for row in _tail_jsonl(base / filename, max_rows=max(4, int(n))):
+            ts = _row_ts(row)
+            if ts <= 0 or ts > t + 60:
+                continue  # unparseable or future-stamped rows cannot order the trail
+            merged.append((ts, label, dict(row)))
+    merged.sort(key=lambda item: item[0])
+    return merged[-max(1, int(n)):]
+
+
+def recent_trail_block(
+    *,
+    n: int = 20,
+    now: Optional[float] = None,
+    state_dir: Optional[Path | str] = None,
+    max_chars: int = 2200,
+) -> str:
+    """One-line-per-event trail for the cortex prompt — hard bloat cap.
+
+    Kept deliberately small (the sysprompt is already over budget, r602 lane #5):
+    each line is clipped and the OLDEST lines drop first when over max_chars.
+    """
+    t = float(now if now is not None else time.time())
+    rows = recent_trail_rows(n=n, now=t, state_dir=state_dir)
+    if not rows:
+        return ""
+    lines = [
+        f"MY RECENT TRAIL — the last {len(rows)} events I lived (oldest → newest). "
+        "I recognize the present against this immediate past; when the owner says "
+        "'the page/item/photo from before', it is in here:"
+    ]
+    prev_body = None
+    for ts, label, row in rows:
+        body = f"[{label}] {_compact_row_summary(row)}"
+        if body == prev_body:
+            continue  # r610: collapse consecutive duplicates — focus ledgers re-record
+            # the same page many times (the live eBay image appeared 5×); the trail
+            # is HISTORY, not a focus log (George's stigmergic-dedup doctrine).
+        prev_body = body
+        lines.append(_short(f"  - {_age_label(ts, t)} {body}", 170))
+    while len("\n".join(lines)) > max(600, int(max_chars)) and len(lines) > 2:
+        lines.pop(1)  # drop oldest first; the newest past matters most
+    return "\n".join(lines)
+
+
 def present_time_memory_block(
     *,
     owner_text: str = "",
     now: Optional[float] = None,
     state_dir: Optional[Path | str] = None,
     max_lines: int = 9,
+    trail_rows: int = 20,
 ) -> str:
     """Compact prompt block read before the cortex writes a reply."""
     t = float(now if now is not None else time.time())
@@ -222,7 +290,15 @@ def present_time_memory_block(
             line = _line_from_row(label, row, t)
             if line:
                 lines.append(line)
-    return "\n".join(lines[: max(4, max_lines)])
+    block = "\n".join(lines[: max(4, max_lines)])
+    # r609: George's eBay catch — the 1-deep present made her forget the item she
+    # was on ONE click earlier. Append the short-term past (last ~20 lived events)
+    # so she recognizes the present against it. Rides the existing prompt wire.
+    if trail_rows > 0:
+        trail = recent_trail_block(n=trail_rows, now=t, state_dir=state_dir)
+        if trail:
+            block = block + "\n" + trail
+    return block
 
 
 _PRESENT_QUERY_RE = re.compile(
@@ -335,6 +411,8 @@ __all__ = [
     "TRUTH_LABEL",
     "latest_present_state",
     "present_time_memory_block",
+    "recent_trail_rows",
+    "recent_trail_block",
     "answer_present_time_query",
     "answer_last_diary_journal_row_query",
 ]

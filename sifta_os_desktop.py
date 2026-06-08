@@ -27,6 +27,52 @@ _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
+_MDI_APP_START_MODE_ENV = "SIFTA_MDI_APP_START_MODE"
+
+
+def _sifta_mdi_app_start_mode() -> str:
+    """Return the SIFTA child-window start mode.
+
+    Default is maximized because George is running one app at a time right now.
+    Future multi-app layouts can launch with SIFTA_MDI_APP_START_MODE=normal
+    or legacy without changing code.
+    """
+    if _MDI_APP_START_MODE_ENV in os.environ:
+        raw = str(os.environ.get(_MDI_APP_START_MODE_ENV, "maximized") or "").strip().lower()
+    else:
+        # Backward-compatible alias from the first one-app-at-a-time cut.
+        raw = str(os.environ.get("SIFTA_SINGLE_APP_MAXIMIZE", "maximized") or "").strip().lower()
+    aliases = {
+        "": "maximized",
+        "1": "maximized",
+        "true": "maximized",
+        "yes": "maximized",
+        "on": "maximized",
+        "full": "maximized",
+        "fullscreen": "maximized",
+        "max": "maximized",
+        "maximize": "maximized",
+        "maximized": "maximized",
+        "0": "normal",
+        "false": "normal",
+        "no": "normal",
+        "off": "normal",
+        "windowed": "normal",
+        "normal": "normal",
+        "legacy": "legacy",
+        "browser_only": "legacy",
+        "browser-only": "legacy",
+    }
+    return aliases.get(raw, "maximized")
+
+
+def _sifta_mdi_widget_should_start_maximized(widget) -> bool:
+    mode = _sifta_mdi_app_start_mode()
+    if mode == "normal":
+        return False
+    if mode == "legacy":
+        return bool(getattr(widget, "OPEN_MAXIMIZED", False))
+    return getattr(widget, "OPEN_MAXIMIZED", True) is not False
 
 # Ensure desktop boot uses the repo virtualenv whenever available so local vision
 # and MLX/VLM tooling stay available. This protects launches made via ad-hoc
@@ -43,6 +89,20 @@ try:
     from System import owner_heartbeat as _owner_heartbeat
 except Exception:
     _owner_heartbeat = None
+
+
+def _max_open_apps() -> int:
+    """MDI app-limb cap inside SIFTA OS (not the host macOS window)."""
+    try:
+        from System.swarm_app_focus import resolve_max_open_apps
+
+        return resolve_max_open_apps()
+    except Exception:
+        raw = os.environ.get("SIFTA_MAX_OPEN_APPS", "1").strip()
+        try:
+            return max(1, min(8, int(raw)))
+        except ValueError:
+            return 1
 
 
 def _mark_owner_activity_from_behavior_clock(source: str) -> None:
@@ -131,6 +191,11 @@ def _session_restore_from_wm_enabled() -> bool:
     """Re-open stigmergic_wm last_session (explicit; not implied by manifest autostart)."""
     v = os.environ.get("SIFTA_DESKTOP_ENABLE_SESSION_RESTORE", "").strip().lower()
     return v in ("1", "true", "yes")
+
+
+def _single_app_maximize_enabled() -> bool:
+    """Compatibility wrapper; prefer SIFTA_MDI_APP_START_MODE."""
+    return _sifta_mdi_app_start_mode() == "maximized"
 
 
 _OFFSCREEN_CLOSED_DESKTOPS: list[object] = []
@@ -1686,7 +1751,8 @@ def _append_app_idle_diary_row(
         "app_name": clean,
         "desktop_mode": str(desktop_mode or ""),
         "open_apps": list(open_apps or []),
-        "single_app_policy": True,
+        "single_app_policy": _max_open_apps() == 1,
+        "max_apps_open": _max_open_apps(),
         "reason": str(reason or ""),
         "hook_result": hook_result or {},
         "summary": (
@@ -3800,7 +3866,10 @@ class SiftaDesktop(QMainWindow):
                         pass
                     self._open_windows.pop(slot_key, None)
                 else:
-                    existing.showNormal()
+                    if bool(existing.property("sifta_open_maximized")):
+                        existing.showMaximized()
+                    else:
+                        existing.showNormal()
                     existing.raise_()
                     self.mdi.setActiveSubWindow(existing)
                     self._active_app_title = str(slot_key)
@@ -3816,7 +3885,10 @@ class SiftaDesktop(QMainWindow):
         existing = self._open_windows.get(slot_key)
         if existing is not None and existing != "_LOADING_":
             try:
-                existing.show()
+                if bool(existing.property("sifta_open_maximized")):
+                    existing.showMaximized()
+                else:
+                    existing.show()
                 existing.raise_()
                 self.mdi.setActiveSubWindow(existing)
                 self._active_app_title = str(slot_key)
@@ -4083,9 +4155,14 @@ class SiftaDesktop(QMainWindow):
             self.mdi.setActiveSubWindow(sub)
         except Exception:
             pass
-        # r290: an app may declare it wants to open maximized (e.g. Alice Browser).
+        # r755: maximize the app inside the MDI body, never the host macOS window.
+        # SIFTA_MDI_APP_START_MODE=maximized (default), normal, or legacy.
+        start_mode = _sifta_mdi_app_start_mode()
+        start_maximized = _sifta_mdi_widget_should_start_maximized(widget)
+        sub.setProperty("sifta_open_start_mode", start_mode)
+        sub.setProperty("sifta_open_maximized", bool(start_maximized))
         try:
-            if getattr(widget, "OPEN_MAXIMIZED", False):
+            if start_maximized:
                 sub.showMaximized()
         except Exception:
             pass
@@ -4416,26 +4493,24 @@ class SiftaDesktop(QMainWindow):
                 if replacement in {"Alice", "Talk to Alice", "What Alice Sees"}:
                     self._embed_alice_panel()
                 return
-        # ── Cowork CW47 2026-05-16 ─ Single-app rule ───────────────────
-        # Architect decree: one app at a time. Close any existing MDI
-        # subwindow before launching a new one. If the user re-clicks the
-        # *same* app, _make_sub's existing singleton-by-title guard raises
-        # the live window instead of double-spawning, so we skip the close
-        # in that case.
+        # ── r755: capacity-aware app slot ───────────────────────────────
+        # Close only when SIFTA_MAX_OPEN_APPS is exceeded. Default 1 for now;
+        # set SIFTA_MAX_OPEN_APPS=2 when George is ready for dual-app work.
         if app_name in self._apps_manifest_cache:
             try:
                 if app_name not in self._open_windows:
-                    closed = self.close_all_open_apps()
+                    closed = self._prepare_single_app_slot(str(app_name))
                     if closed:
                         try:
                             from System.swarm_app_focus import publish_focus as _publish_focus
                             _publish_focus(
                                 "SIFTA OS",
-                                f"Single-app rule: closed {closed} before opening {app_name!r}.",
+                                f"App capacity ({_max_open_apps()}): closed {closed} before opening {app_name!r}.",
                                 tab="launcher",
                                 metadata={
-                                    "rule": "single_app_at_a_time",
-                                    "doctor": "CW47",
+                                    "rule": "max_open_apps",
+                                    "max_apps_open": _max_open_apps(),
+                                    "doctor": "r755",
                                     "closed_titles": closed,
                                     "next_app": app_name,
                                 },
@@ -4822,7 +4897,8 @@ class SiftaDesktop(QMainWindow):
             "idle_apps": idle_apps,
             "open_app_count": len(open_apps),
             "alice_chat_resident": bool(getattr(self, "_alice_resident", None) is not None),
-            "single_app_policy": True,
+            "single_app_policy": _max_open_apps() == 1,
+            "max_apps_open": _max_open_apps(),
         }
 
     def _refresh_desktop_mode_label(self) -> None:
@@ -5007,9 +5083,31 @@ class SiftaDesktop(QMainWindow):
         return {"app_name": active, "hook_result": hook_result, "diary_row": diary_row}
 
     def _prepare_single_app_slot(self, next_title: str) -> list[str]:
+        """Close the minimum set of apps needed to stay within SIFTA_MAX_OPEN_APPS."""
         if next_title and next_title in self._open_windows and self._open_windows.get(next_title) != "_LOADING_":
             return []
-        return self.close_all_open_apps(except_title=next_title)
+        max_apps = _max_open_apps()
+        open_titles = [t for t in self.currently_open_app_titles() if t != next_title]
+        closed: list[str] = []
+        while len(open_titles) + 1 > max_apps:
+            victim = open_titles.pop(0)
+            sub = self._open_windows.get(victim)
+            if sub is None or sub == "_LOADING_":
+                self._open_windows.pop(victim, None)
+                continue
+            try:
+                sub.close()
+                self._open_windows.pop(victim, None)
+                closed.append(victim)
+            except Exception:
+                self._open_windows.pop(victim, None)
+        if closed:
+            self._write_desktop_app_state(
+                "close_for_capacity",
+                closed_titles=closed,
+                note=f"max_apps_open={max_apps}; next_title={next_title}",
+            )
+        return closed
 
     def close_all_open_apps(self, *, except_title: str = "") -> list[str]:
         """Close every MDI subwindow except Alice. Return list of closed titles."""

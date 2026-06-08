@@ -48,6 +48,7 @@ preserved per §6 (tool truth) and §7.2 (effector immunity).
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -57,6 +58,20 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _SKILLS_DIR = _REPO / "skills"
+
+
+def _resolve_max_open_apps() -> int:
+    """Mirror sifta_os_desktop SIFTA_MAX_OPEN_APPS (default 1)."""
+    try:
+        from System.swarm_app_focus import resolve_max_open_apps
+
+        return resolve_max_open_apps()
+    except Exception:
+        raw = os.environ.get("SIFTA_MAX_OPEN_APPS", "1").strip()
+        try:
+            return max(1, min(8, int(raw)))
+        except ValueError:
+            return 1
 
 
 def _local_owner_label(default: str = "the local owner") -> str:
@@ -395,18 +410,18 @@ def _app_capabilities() -> List[Capability]:
             when_to_use=(
                 f"When the user asks to open '{title}' or describes a task that "
                 f"matches its category ({category or 'misc'}). Launch via "
-                f"swarm_tool_router → manifest launcher; single-app rule auto-closes "
-                f"any other open app first."
+                f"swarm_tool_router → manifest launcher; respects SIFTA_MAX_OPEN_APPS "
+                f"(default 1; set to 2 for dual-app mode)."
             ),
             confidence=1.0 if widget_class else 0.7,
             cost_stgm=0.0,  # opening a window has no STGM debit on its own
             permissions={
                 "owner_present_preferred": True,
-                # r532 (George 2026-06-04): upgraded the single-app policy to a max of TWO apps
-                # open at once. The desktop MDI already allows multiple windows (no hard close-gate);
-                # this descriptor is the source of truth Alice reads for the policy.
-                "single_app_at_a_time": False,
-                "max_apps_open": 2,
+                # r755 (George 2026-06-07): default ONE app inside SIFTA OS while stability
+                # is still fragile. Desktop enforces via SIFTA_MAX_OPEN_APPS (default 1).
+                # Set SIFTA_MAX_OPEN_APPS=2 when ready for dual-app work.
+                "single_app_at_a_time": True,
+                "max_apps_open": _resolve_max_open_apps(),
                 "autostart": bool(entry.get("autostart")),
             },
             receipts={"count": 0, "latest_ts": None, "latest_hash": None},

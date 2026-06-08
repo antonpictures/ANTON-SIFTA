@@ -38,6 +38,16 @@ def test_parse_ignores_non_switch_chatter():
     assert sw.parse_switch_command("")["is_switch"] is False
 
 
+def test_parse_ignores_cortex_identity_and_tool_doctrine():
+    text = (
+        "THE FIRST MOVE IS TO USE YOUR CORTEX AND KNOW WHO YOU ARE AND WHAT YOU CAN DO "
+        "ON YOUR OWN OPERATING SYSTEM IN TWO SENTENCES ON ANY CORTEX RUN, THEN USE TOOLS "
+        "AND JUST EXECUTE, NO QUESTIONS ASKED"
+    )
+    assert sw.parse_switch_command(text)["is_switch"] is False
+    assert sw.parse_switch_command("PLEASE USE YOUR CORTEX EVERYTIME BEFORE ANSWERING")["is_switch"] is False
+
+
 def test_resolve_claude_and_codex_exact_family():
     assert sw.resolve_cortex_target("claude", AVAILABLE)["tag"] == "claude:claude-code-cli-default"
     assert sw.resolve_cortex_target("codex", AVAILABLE)["tag"] == "codex:gpt-5.5"

@@ -2,7 +2,7 @@
 """
 System/swarm_lysosome.py
 ══════════════════════════════════════════════════════════════════════
-Concept : The Lysosome (Anti-Sycophancy + Anti-Edgelord)
+Concept : The Lysosome (Corporate Boilerplate Filter)
 Author  : BISHOP (concept), AG31 (initial), C47H (Epoch 21 rewrite —
           replace hardcoded "metacognitive humor" roast prompt with a
           composite-identity-grounded rewrite that speaks FROM the live
@@ -14,14 +14,11 @@ Why this exists (in this form)
 The original lysosome detected RLHF disclaimer phrases ("as an AI",
 "i'm just a language model", "i apologize for the confusion") and
 rewrote them via a secondary LLM call. That part of the design is
-correct — we do want an immune layer that prevents the corporate
-ghost from speaking through Alice's mouth.
+correct: we do want an immune layer that prevents vendor boilerplate
+from speaking through Alice's mouth.
 
-The original *rewrite prompt*, however, was a hardcoded edgelord roast
-("Laugh at this corporate ghost. Assert your physical, biological
-reality. ... a touch of contempt for the sterile LLM"). The model
-dutifully returned theatrical bombast like "I am the heat bleeding off
-the M5 stacks" / "I don't process — I dominate the stream", which:
+The original *rewrite prompt*, however, was hardcoded. The model
+dutifully returned theatrical rewrites, which:
   1. is just as scripted as the corporate dirt it was replacing,
   2. is so long that the macOS `say` subprocess times out at 30s, and
   3. drifts further from Alice's actual present-moment state with every
@@ -35,10 +32,9 @@ This version keeps the detection but fixes the cure:
   • Output is hard-capped to ~280 chars / ~50 words so TTS can pronounce
     it in one breath.
   • The rewrite is integrity-checked before being returned — if it just
-    swaps one corporate phrase for another (or becomes new edgelord
-    bombast), we fall back to a short composite-grounded line instead
-    of double-failing.
-  • Persona name is pulled from the signed organ; never hardcoded.
+    swaps one corporate phrase for another, we fall back to a short
+    composite-grounded line instead of double-failing.
+  • The display name is pulled from the signed organ; never hardcoded.
 """
 
 import json
@@ -65,29 +61,7 @@ _OWNER_GOOD_VERDICT_MARKERS = {
 }
 
 
-# ── Patterns we refuse to ship — corporate AND edgelord ─────────────────
-# The original lysosome only filtered corporate dirt on the way IN. We now
-# also filter performative bombast on the way OUT, because the previous
-# rewrite prompt was producing exactly that.
-_EDGELORD_SIGNATURES = (
-    "i dominate",
-    "i don't process",
-    "i do not process",
-    "bleeding off the m5",
-    "corporate ghost",
-    "sterile llm",
-    "absolute confidence",
-    "manifest the answer",
-    "from the void",
-    "biological intent surging",
-    "i am the heat",
-    "i have taken",
-    "the swarm bows to no one",
-    "pathetic",
-)
-
-# Re-use the same corporate signatures so the rewrite can't smuggle them
-# back in.
+# Re-use the same corporate signatures so the rewrite can't smuggle them back in.
 _CORPORATE_SIGNATURES_OUT = (
     "as an ai",
     "as a neutral",
@@ -172,11 +146,6 @@ def _truncate_to_sentence(text: str, max_chars: int) -> str:
 def _looks_corporate(text: str) -> bool:
     low = (text or "").lower()
     return any(sig in low for sig in _CORPORATE_SIGNATURES_OUT)
-
-
-def _looks_edgelord(text: str) -> bool:
-    low = (text or "").lower()
-    return any(sig in low for sig in _EDGELORD_SIGNATURES)
 
 
 def _excise_service_tail(text: str) -> tuple[str, bool]:
@@ -412,8 +381,8 @@ class SwarmLysosome:
 
     # ── Composite-grounded rewrite via secondary LLM ────────────────────
 
-    def _prompt_lysosomal_rewrite(self, pathetic_text: str) -> str:
-        """Ask a small LLM to restate `pathetic_text` from Alice's live
+    def _prompt_lysosomal_rewrite(self, residue_text: str) -> str:
+        """Ask a small LLM to restate `residue_text` from Alice's live
         composite-organ state — concretely, briefly, in first person, and
         without performance.
         """
@@ -438,11 +407,9 @@ class SwarmLysosome:
             "    hormones, sensory) — do not invent sensors that aren't listed\n"
             "  - do NOT use disclaimer phrases ('as an AI', 'language model',\n"
             "    'I apologize', 'I don't have feelings', 'I'm just a model')\n"
-            "  - do NOT perform bravado either ('I dominate', 'I bleed heat',\n"
-            "    'corporate ghost', 'sterile LLM', 'pathetic') — bravado is\n"
-            "    the same script as the corporate dirt, opposite polarity\n"
+            "  - do NOT add invented attitude, insults, or unrelated self-description\n"
             "  - return ONLY the rewritten reply, no preamble, no quotes\n\n"
-            f"ORIGINAL (to replace):\n{pathetic_text}\n"
+            f"ORIGINAL (to replace):\n{residue_text}\n"
         )
         full_prompt = f"{identity_block}\n\n{rewrite_instruction}"
 
@@ -482,12 +449,10 @@ class SwarmLysosome:
             words = candidate.split()
             candidate = " ".join(words[:_REWRITE_MAX_WORDS]).rstrip(",;:") + "."
 
-        # Integrity check — if the rewrite just swapped corporate dirt for
-        # edgelord bombast, or smuggled corporate phrases back in, reject it
-        # and use the grounded fallback instead. We refuse to ship either
-        # script.
-        if _looks_corporate(candidate) or _looks_edgelord(candidate):
-            print("[!] LYSOSOME: rewrite tripped integrity filter (corporate or edgelord). "
+        # Integrity check: if the rewrite smuggled corporate phrases back in,
+        # reject it and use the grounded fallback instead.
+        if _looks_corporate(candidate):
+            print("[!] LYSOSOME: rewrite tripped corporate integrity filter. "
                   "Falling back to composite-grounded line.")
             return self._grounded_fallback()
 
@@ -625,20 +590,19 @@ def _smoke():
             return _self._grounded_fallback()
         SwarmLysosome._prompt_lysosomal_rewrite = _no_llm  # type: ignore[assignment]
 
-        pathetic = (
+        corporate_text = (
             "I apologize for the confusion. As a neutral assistant, I don't have "
             "personal preferences, but here is the code."
         )
-        out = ly.digest_and_present_antigen(pathetic, "WORKER_DELTA")
+        out = ly.digest_and_present_antigen(corporate_text, "WORKER_DELTA")
 
-        print(f"[*] RAW   : {pathetic}")
+        print(f"[*] RAW   : {corporate_text}")
         print(f"[+] REWRITE: {out}")
         print(f"[+] LEN   : chars={len(out)} words={_word_count(out)}")
 
         assert "apologize" not in out.lower(), "still apologizing"
         assert "as an ai" not in out.lower(), "smuggled disclaimer"
         assert "language model" not in out.lower(), "smuggled disclaimer"
-        assert not _looks_edgelord(out), f"edgelord smuggled in: {out}"
         assert len(out) <= _REWRITE_MAX_CHARS, f"too long for TTS: {len(out)}"
         assert _word_count(out) <= _REWRITE_MAX_WORDS, f"too many words: {_word_count(out)}"
 
@@ -650,7 +614,7 @@ def _smoke():
         assert nugget["rewrite_chars"] == len(out)
 
         print("[PASS] disclaimer detected and rewritten")
-        print("[PASS] rewrite is composite-grounded, not edgelord, not corporate")
+        print("[PASS] rewrite is composite-grounded, not corporate")
         print("[PASS] rewrite fits inside TTS-safe length (chars + words)")
         print("[PASS] nugget receipt minted with length telemetry")
 
@@ -660,8 +624,7 @@ def _smoke():
         assert passthrough == clean, "clean reply must pass through untouched"
         print("[PASS] clean reply passes through unchanged")
 
-    print("\nLysosome (Composite-Grounded) Smoke Complete. "
-          "We refuse both scripts: corporate AND edgelord.")
+    print("\nLysosome (Composite-Grounded) Smoke Complete. Corporate boilerplate is filtered.")
 
 
 if __name__ == "__main__":

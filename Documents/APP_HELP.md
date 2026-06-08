@@ -1446,6 +1446,14 @@ layout.addWidget(mirror)
 - **Ledger:** Results append to `.sifta_state/cortex_comparison.jsonl` with latency, grounding score, expected-term hits, missing terms, and drift flags.
 - **Entry:** `Applications/sifta_cortex_wake_lab.py` · engine `System/swarm_cortex_wake_probe.py`.
 
+### Buzdugan LCR
+
+- **Purpose:** Test the SIFTA version of the long-context retrieval challenge: body storage plus exact receipt retrieval before the cortex speaks. It is not a raw LLM 800k-token attention benchmark.
+- **Run:** Use **Run 80k quick proof** for a fast smoke or **Run 820k body proof** for the Buzdugan-style buried-fact target. The app generates a deterministic corpus, hides multiple similar facts, builds a line/byte/hash index, and retrieves every fact on the first retrieval attempt.
+- **Read:** The top canvas shows the corpus as a long context bar, the hidden needles, and the SIFTA body index. The table lists each fact's token estimate, line, byte offset, and hash status. The claim box only gives a retweet-safe sentence if the latest receipt fully passed.
+- **Ledger:** Results append to `.sifta_state/buzdugan_lcr/buzdugan_lcr_receipts.jsonl`; corpus and index live beside it.
+- **Entry:** `Applications/sifta_buzdugan_lcr.py` · engine `System/swarm_buzdugan_lcr.py`.
+
 ---
 
 ## Active Plan Additions (r273 — 2026-06-01)

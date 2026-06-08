@@ -66,6 +66,12 @@ from System.sifta_inference_defaults import (
     set_default_ollama_model,
     set_app_ollama_model,
 )
+from System.swarm_inference_model_inventory import (
+    format_inventory_label,
+    inference_runtime_nuggets,
+    inventory_detail_text,
+    list_inference_model_inventory,
+)
 from System.sifta_base_widget import SiftaBaseWidget
 from System.sifta_desktop_themes import (
     THEMES,
@@ -723,8 +729,17 @@ class _BrainDiagramWidget(QWidget):
     # ── helpers ────────────────────────────────────────────────────────────
 
     def _node_center(self, idx: int, w: int, h: int) -> QPointF:
+        # Keep every node card fully inside the widget at any width. The cards are
+        # fixed-pixel (cortex half-width ~76, the rest ~55), but the positions are
+        # fractional — so at the live panel width the edge nodes (SCOUT/VOICE/C1/
+        # WhatsApp/DOCTOR/CORVID) spilled past the panel and their model tags
+        # overflowed. That is the "graphics do not fit" George reported. Clamp the
+        # center by a card-half margin so edges AND cards read the same in-bounds point.
         row = self._NODES[idx]
-        return QPointF(row[1] * w, row[2] * h)
+        pad_x, pad_y = 64.0, 34.0
+        x = min(max(row[1] * w, pad_x), w - pad_x)
+        y = min(max(row[2] * h, pad_y), h - pad_y)
+        return QPointF(x, y)
 
     def _node_color(self, idx: int, alpha: int = 255) -> QColor:
         row = self._NODES[idx]
@@ -786,7 +801,8 @@ class _BrainDiagramWidget(QWidget):
 
         # ── 2. Draw node cards ─────────────────────────────────────────────
         for idx, (_, nx, ny, label, _, r, g, b) in enumerate(self._NODES):
-            px, py = nx * w, ny * h
+            _c = self._node_center(idx, w, h)  # clamped in-bounds center (edges use the same)
+            px, py = _c.x(), _c.y()
             is_cortex = (idx == 0)
             is_memory = (idx == 7)
             is_input_node = idx in (1, 2, 8, 9, 10)  # sensory/classifier inputs
@@ -838,7 +854,12 @@ class _BrainDiagramWidget(QWidget):
                 p.setPen(sub_color)
                 p.setFont(QFont("Menlo", 8 if is_cortex else 6))
                 bot_rect = QRectF(rect.x(), rect.y() + rect.height() * 0.50, rect.width(), rect.height() * 0.48)
-                p.drawText(bot_rect, Qt.AlignmentFlag.AlignCenter, self._node_sublabel(idx))
+                # Elide long model tags ("gemma4-e2b-cortex-5.1b-4.4gb:") to the card width
+                # so they stop overflowing the node card.
+                _sub = p.fontMetrics().elidedText(
+                    self._node_sublabel(idx), Qt.TextElideMode.ElideRight, int(bot_rect.width()) - 6
+                )
+                p.drawText(bot_rect, Qt.AlignmentFlag.AlignCenter, _sub)
 
         # ── 3. Status bar ──────────────────────────────────────────────────
         status_text = "● Ollama online" if self._ollama_live else "● Ollama offline"
@@ -882,6 +903,8 @@ class MetricCard(QFrame):
 
 class SystemSettingsWidget(SiftaBaseWidget):
     APP_NAME = "System Settings"
+    # Maximize inside the SIFTA MDI body — never the host macOS window.
+    OPEN_MAXIMIZED = True
 
     def build_ui(self, layout: QVBoxLayout) -> None:
         shell = QHBoxLayout()
@@ -1013,7 +1036,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         ov_row.addWidget(_mk_color_btn("Text", "text_primary", lambda: getattr(effective_palette(), "text_primary", "#c0caf5")))
 
         self.font_spin = QSpinBox()
-        self.font_spin.setRange(9, 20)
+        self.font_spin.setRange(9, 28)  # r737: chat is wired to this knob now; real headroom
         self.font_spin.setValue(load_font_size_px())
         self.font_spin.setPrefix("Font ")
         self.font_spin.setSuffix(" px")
@@ -2149,7 +2172,14 @@ class SystemSettingsWidget(SiftaBaseWidget):
         if self._corvid_default == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest":
             self._corvid_default = CANONICAL_OLLAMA_FALLBACK
 
-        active_cortex = get_default_ollama_model() or DEFAULT_OLLAMA_MODEL
+        try:
+            active_cortex = (
+                resolve_ollama_model(app_context="talk_to_alice", use_stigmergic=False)
+                or get_default_ollama_model()
+                or DEFAULT_OLLAMA_MODEL
+            )
+        except Exception:
+            active_cortex = get_default_ollama_model() or DEFAULT_OLLAMA_MODEL
 
         # ── Fetch physical weights from Ollama once (no timer, cached) ──
         model_weights: dict[str, int] = {}
@@ -2318,6 +2348,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
             elif _looks_remote_model_name(tag) and tag.lower().startswith("cline"):
                 # Round 89 — Cline open-source CLI cortex (Apache 2.0, multi-provider).
                 display = f"{tag}  ·  Cline OAuth teacher (open-source)  ·  ☁ cloud"
+            elif tag.lower().startswith("mlx-vlm:"):
+                if "gemma-4-12b-it-8bit-mlx" in tag.lower():
+                    display = f"{tag}  ·  MLX local Gemma 4 12B original/censored test  ·  8-bit safetensors"
+                else:
+                    display = f"{tag}  ·  MLX local VLM  ·  safetensors"
             else:
                 weight_suffix = "☁ cloud" if _looks_remote_model_name(tag) else _fmt_weight(tag)
                 display = f"{tag}  ·  {weight_suffix}" if weight_suffix else tag
@@ -2325,9 +2360,14 @@ class SystemSettingsWidget(SiftaBaseWidget):
         # Pre-select the active cortex if it's in the list
         try:
             idx = installed_cortexes.index(active_cortex)
+            self._cortex_combo.blockSignals(True)
             self._cortex_combo.setCurrentIndex(idx)
+            self._cortex_combo.blockSignals(False)
         except ValueError:
-            pass
+            try:
+                self._cortex_combo.blockSignals(False)
+            except Exception:
+                pass
         self._cortex_combo.currentIndexChanged.connect(self._on_cortex_picker_changed)
         picker_row.addWidget(self._cortex_combo, stretch=1)
 
@@ -2341,8 +2381,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
         cycle_btn = QPushButton("↻  Cycle")
         cycle_btn.setFixedHeight(30)
         cycle_btn.setToolTip(
-            "Rotate the active cortex through every installed Alice cortex.\n"
-            "Each click loops to the next one and saves it as the default."
+            "Rescan Ollama for newly-pulled models, then rotate the active cortex\n"
+            "through every installed Alice cortex. Each click loops to the next one\n"
+            "and saves it as the default — no restart needed to see a fresh pull."
         )
         cycle_btn.setStyleSheet(
             "QPushButton { background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
@@ -2355,6 +2396,81 @@ class SystemSettingsWidget(SiftaBaseWidget):
         picker_row.addWidget(cycle_btn)
 
         root.addLayout(picker_row)
+
+        inventory_heading = QLabel("📦  Installed model bodies  ·  MLX / GGUF / server runtimes")
+        inventory_heading.setStyleSheet(
+            "color: rgb(160, 180, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        # r669 (George: "THERE IS A DUPLICATE DROPBOX — AND THE SELECTION DID NOT WORK"):
+        # this second model dropdown duplicated the Cortex picker above and confused the
+        # switch flow (selecting here did not change the live voice unless Apply hit a
+        # selectable row). ONE picker = the Cortex dropdown. The inventory machinery
+        # stays (body map/matrix read it); only the duplicate UI row is hidden.
+        inventory_heading.setVisible(False)
+        root.addWidget(inventory_heading)
+
+        inventory_row = QHBoxLayout()
+        inventory_row.setSpacing(8)
+        inventory_label = QLabel("Body")
+        inventory_label.setStyleSheet(
+            "color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;"
+        )
+        inventory_row.addWidget(inventory_label)
+
+        self._model_inventory_combo = QComboBox()
+        self._model_inventory_combo.setObjectName("InstalledModelBodyPicker")
+        self._model_inventory_combo.setEditable(False)
+        self._model_inventory_combo.setStyleSheet(
+            "QComboBox { background: rgb(22, 20, 40); color: rgb(190, 205, 255); "
+            "border: 1px solid rgb(95, 90, 180); border-radius: 8px; "
+            "padding: 6px 10px; font-size: 11px; font-family: Menlo; }"
+            "QComboBox::drop-down { border: none; width: 18px; }"
+            "QComboBox QAbstractItemView { background: rgb(16, 15, 30); "
+            "color: rgb(190, 205, 255); selection-background-color: rgb(45, 45, 90); }"
+        )
+        self._model_inventory_combo.currentIndexChanged.connect(self._on_model_inventory_changed)
+        inventory_row.addWidget(self._model_inventory_combo, stretch=1)
+
+        self._apply_model_body_btn = QPushButton("Apply")
+        self._apply_model_body_btn.setFixedHeight(30)
+        self._apply_model_body_btn.setToolTip(
+            "Use the selected installed model body as Alice's default cortex when it is directly selectable."
+        )
+        self._apply_model_body_btn.setStyleSheet(
+            "QPushButton { background: rgb(22, 20, 40); color: rgb(190, 205, 255); "
+            "border: 1px solid rgb(95, 90, 180); border-radius: 8px; "
+            "font-size: 11px; padding: 0 12px; font-family: Menlo; }"
+            "QPushButton:disabled { color: rgb(80, 82, 110); border-color: rgb(45, 45, 60); }"
+            "QPushButton:hover { background: rgb(35, 32, 70); border-color: rgb(130, 130, 230); }"
+        )
+        self._apply_model_body_btn.clicked.connect(self._apply_selected_model_body)
+        inventory_row.addWidget(self._apply_model_body_btn)
+        # r669: hide the duplicate picker row (combo + Apply + label) — the Cortex
+        # dropdown above is the ONE switch. Widgets stay alive for programmatic use.
+        inventory_label.setVisible(False)
+        self._model_inventory_combo.setVisible(False)
+        self._apply_model_body_btn.setVisible(False)
+        root.addLayout(inventory_row)
+
+        self._model_inventory_detail = QLabel("Scanning installed model bodies...")
+        self._model_inventory_detail.setVisible(False)  # r669: rides with the hidden duplicate row
+        self._model_inventory_detail.setWordWrap(True)
+        self._model_inventory_detail.setStyleSheet(
+            "color: rgb(125, 136, 170); font-size: 10px; font-family: Menlo; "
+            "background: rgb(12, 12, 22); border: 1px solid rgb(35, 35, 58); "
+            "border-radius: 6px; padding: 6px 8px;"
+        )
+        root.addWidget(self._model_inventory_detail)
+
+        self._runtime_nuggets = QLabel(
+            " · ".join(inference_runtime_nuggets()[:3])
+        )
+        self._runtime_nuggets.setWordWrap(True)
+        self._runtime_nuggets.setStyleSheet(
+            "color: rgb(90, 104, 135); font-size: 10px; font-family: Menlo;"
+        )
+        root.addWidget(self._runtime_nuggets)
+        self._populate_model_inventory(active_cortex)
 
         self._cortex_auth_timer = QTimer(self)
         self._cortex_auth_timer.setInterval(5000)
@@ -2427,6 +2543,127 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addStretch()
         return page
 
+    def _persist_primary_cortex_selection(self, tag: str, *, source: str) -> dict[str, Any]:
+        """Persist the one Settings cortex selector through the receipt-backed switch spine."""
+        selected = str(tag or "").strip()
+        if not selected:
+            return {"ok": False, "reason": "empty_cortex_tag"}
+        try:
+            installed = list(self._installed_cortexes or [])
+        except Exception:
+            installed = []
+        if selected not in installed:
+            installed.append(selected)
+        try:
+            from System.swarm_primary_cortex_switcher import set_primary_cortex
+
+            receipt = set_primary_cortex(
+                selected,
+                installed=installed,
+                source=source,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "selected_model": selected,
+            }
+        try:
+            set_app_ollama_model("owner_vision_body", selected)
+        except Exception as exc:
+            receipt["owner_vision_body_error"] = f"{type(exc).__name__}: {exc}"
+        return {"ok": True, **receipt}
+
+    def _populate_model_inventory(self, active_cortex: str | None = None) -> None:
+        if not hasattr(self, "_model_inventory_combo"):
+            return
+        active_cortex = str(active_cortex or get_default_ollama_model() or "")
+        try:
+            rows = list_inference_model_inventory()
+        except Exception as exc:
+            rows = []
+            if hasattr(self, "_model_inventory_detail"):
+                self._model_inventory_detail.setText(f"Inventory scan failed: {type(exc).__name__}")
+
+        self._model_inventory_rows = rows
+        combo = self._model_inventory_combo
+        combo.blockSignals(True)
+        combo.clear()
+        selected_idx = 0
+        for idx, row in enumerate(rows):
+            label = format_inventory_label(row)
+            combo.addItem(label, userData=row)
+            value = str(row.get("selectable_value") or "")
+            if value and value == active_cortex:
+                selected_idx = idx
+        if rows:
+            combo.setCurrentIndex(selected_idx)
+        else:
+            combo.addItem("No local model bodies found", userData={})
+            combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        self._on_model_inventory_changed(combo.currentIndex())
+
+    def _on_model_inventory_changed(self, idx: int) -> None:
+        if not hasattr(self, "_model_inventory_combo"):
+            return
+        try:
+            row = self._model_inventory_combo.itemData(idx) or {}
+        except Exception:
+            row = {}
+        if hasattr(self, "_model_inventory_detail"):
+            self._model_inventory_detail.setText(inventory_detail_text(row))
+        if hasattr(self, "_apply_model_body_btn"):
+            self._apply_model_body_btn.setEnabled(bool(row.get("selectable") and row.get("selectable_value")))
+
+    def _apply_selected_model_body(self) -> None:
+        if not hasattr(self, "_model_inventory_combo"):
+            return
+        try:
+            row = self._model_inventory_combo.currentData() or {}
+        except Exception:
+            row = {}
+        value = str(row.get("selectable_value") or "").strip()
+        if not (row.get("selectable") and value):
+            if hasattr(self, "_model_inventory_detail"):
+                self._model_inventory_detail.setText(
+                    inventory_detail_text(row)
+                    + "\nThis row is visible for testing context, but it is not registered as a live SIFTA cortex yet."
+                )
+            return
+        receipt = self._persist_primary_cortex_selection(
+            value,
+            source="system_settings_hidden_model_inventory_apply",
+        )
+        if not receipt.get("ok"):
+            if hasattr(self, "_model_inventory_detail"):
+                self._model_inventory_detail.setText(
+                    inventory_detail_text(row) + f"\nApply failed: {receipt.get('reason', 'unknown')}"
+                )
+            return
+        if hasattr(self, "_brain_diagram"):
+            try:
+                self._brain_diagram.update_cortex_label(value)
+            except Exception:
+                pass
+        if hasattr(self, "inference_default_card"):
+            try:
+                self.inference_default_card.set_metric(value, "active cortex")
+            except Exception:
+                pass
+        if hasattr(self, "_cortex_combo") and hasattr(self, "_installed_cortexes"):
+            try:
+                if value in self._installed_cortexes:
+                    idx = self._installed_cortexes.index(value)
+                    self._cortex_combo.blockSignals(True)
+                    self._cortex_combo.setCurrentIndex(idx)
+                    self._cortex_combo.blockSignals(False)
+            except Exception:
+                pass
+        if hasattr(self, "_model_inventory_detail"):
+            self._model_inventory_detail.setText(inventory_detail_text(row) + "\nApplied as Alice default cortex.")
+        self._refresh_cortex_auth_indicator()
+
     def _reset_brain_to_default(self) -> None:
         """Restore the canonical 8B m5 cortex (architect 2026-05-15 promotion).
 
@@ -2436,9 +2673,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
         aligning") on introspective turns.
         """
         canonical = DEFAULT_OLLAMA_MODEL
-        set_default_ollama_model(canonical)
-        set_app_ollama_model("talk_to_alice", canonical)
-        set_app_ollama_model("owner_vision_body", canonical)
+        self._persist_primary_cortex_selection(
+            canonical,
+            source="system_settings_reset_brain_to_default",
+        )
         set_app_ollama_model("corvid_apprentice", CANONICAL_OLLAMA_FALLBACK)
         if hasattr(self, "_brain_diagram"):
             self._brain_diagram.update_cortex_label(canonical)
@@ -2468,20 +2706,29 @@ class SystemSettingsWidget(SiftaBaseWidget):
             return
         if not tag:
             return
-        try:
-            set_default_ollama_model(str(tag))
-            set_app_ollama_model("talk_to_alice", str(tag))
-            set_app_ollama_model("owner_vision_body", str(tag))
-        except Exception:
+        tag = str(tag)
+        receipt = self._persist_primary_cortex_selection(
+            tag,
+            source="system_settings_inference_cortex_picker",
+        )
+        if not receipt.get("ok"):
+            if hasattr(self, "inference_default_card"):
+                try:
+                    self.inference_default_card.set_metric(
+                        str(resolve_ollama_model(app_context="talk_to_alice", use_stigmergic=False)),
+                        f"switch failed: {receipt.get('reason', 'unknown')}",
+                    )
+                except Exception:
+                    pass
             return
         if hasattr(self, "_brain_diagram"):
             try:
-                self._brain_diagram.update_cortex_label(str(tag))
+                self._brain_diagram.update_cortex_label(tag)
             except Exception:
                 pass
         if hasattr(self, "inference_default_card"):
             try:
-                self.inference_default_card.set_metric(str(tag), "active cortex")
+                self.inference_default_card.set_metric(tag, "active cortex")
             except Exception:
                 pass
         self._refresh_cortex_auth_indicator()
@@ -2760,19 +3007,57 @@ class SystemSettingsWidget(SiftaBaseWidget):
             print(f"[hermes_arm_provider] persist failed: {exc}", file=_sys_r33.stderr)
 
     def _cycle_cortex(self) -> None:
-        """Rotate the active cortex through every installed Alice cortex.
+        """Rescan Ollama for fresh pulls, then rotate through every installed cortex.
 
-        Architect 2026-05-15: *"button that switches the daily cortex,
-        loops through all cortexes."* On each click, move to the next
-        model in `_installed_cortexes` and wrap to the start after the
-        last one. The picker change handler does the persistence.
+        Architect 2026-05-15: *"button that switches the daily cortex, loops
+        through all cortexes."* 2026-06-05: *"is not here, takes me forever to
+        restart"* — a freshly `ollama pull`-ed model was missing from the picker
+        because the list was built once at page load. So before rotating, rescan
+        Ollama and APPEND any newly-installed cortex tags to the picker (kept
+        index-aligned with `_installed_cortexes`), so a fresh pull shows up with
+        no restart. The picker change handler does the persistence.
         """
         if not hasattr(self, "_cortex_combo"):
             return
-        if not hasattr(self, "_installed_cortexes") or not self._installed_cortexes:
+        if not hasattr(self, "_installed_cortexes") or self._installed_cortexes is None:
+            self._installed_cortexes = []
+
+        # ── Rescan: pick up models pulled after the page was built ──
+        try:
+            fresh = list_available_cortexes_with_canonical_fallback()
+        except Exception:
+            fresh = list(self._installed_cortexes)
+        known = set(self._installed_cortexes)
+        new_tags = [t for t in fresh if t and t not in known]
+        if new_tags:
+            weights: dict = {}
+            try:
+                import urllib.request as _ur
+                with _ur.urlopen("http://127.0.0.1:11434/api/tags", timeout=1.5) as _r:
+                    for m in json.loads(_r.read()).get("models", []):
+                        weights[m["name"]] = m.get("size", 0)
+            except Exception:
+                pass
+            for tag in new_tags:
+                self._installed_cortexes.append(tag)  # keep list ↔ combo index aligned
+                if str(tag).lower().startswith("mlx-vlm:"):
+                    if "gemma-4-12b-it-8bit-mlx" in str(tag).lower():
+                        suffix = "MLX local Gemma 4 12B original/censored test · 8-bit safetensors"
+                    else:
+                        suffix = "MLX local VLM · safetensors"
+                elif _looks_remote_model_name(tag):
+                    suffix = "☁ cloud"
+                else:
+                    try:
+                        suffix = _format_ollama_weight_label(tag, weights) or "newly pulled"
+                    except Exception:
+                        suffix = "newly pulled"
+                self._cortex_combo.addItem(f"{tag}  ·  {suffix}", userData=tag)
+
+        if not self._installed_cortexes:
             return
         current_idx = self._cortex_combo.currentIndex()
-        next_idx = (current_idx + 1) % len(self._installed_cortexes)
+        next_idx = (current_idx + 1) % self._cortex_combo.count()
         # setCurrentIndex fires currentIndexChanged → _on_cortex_picker_changed
         self._cortex_combo.setCurrentIndex(next_idx)
         self._refresh_cortex_auth_indicator()
@@ -2973,6 +3258,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             snap["default_ollama_model"],
             "Daily cortex: Talk, owner vision, and OS helpers",
         )
+        self._populate_model_inventory(str(snap["default_ollama_model"]))
         self._refresh_cortex_auth_indicator()
 
         # Privacy

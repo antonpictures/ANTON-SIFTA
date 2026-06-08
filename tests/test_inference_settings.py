@@ -136,6 +136,10 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     )
     assert defaults.CANONICAL_CLOUD_CLINE == "cline:cline-cli-default"
     assert (
+        defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST
+        == "krishairnd/Gemma-4-Uncensored:latest"
+    )
+    assert (
         defaults.CANONICAL_OLLAMA_LOW_RAM
         == "alice-m1-cortex-4.5b-3.4gb:latest"
     )
@@ -144,10 +148,11 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
         == "alice-m1-cortex-4.5b-3.4gb:latest"
     )
     assert defaults.DEFAULT_OLLAMA_MODEL == "alice-m5-cortex-8b-6.3gb:latest"
-    assert defaults.CANONICAL_OLLAMA_REFLEX == "sifta-classifier-c1-3.1b-6.2gb:latest"
-    assert defaults.CANONICAL_OLLAMA_FALLBACK == "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    assert defaults.CANONICAL_OLLAMA_REFLEX == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    assert defaults.CANONICAL_OLLAMA_FALLBACK == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
     assert defaults.CANONICAL_OLLAMA_LORA_CANDIDATE == "sifta-gemma4-alice-lora:latest"
     assert "Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
+    assert "Experimental alias/test cortex:** `krishairnd/Gemma-4-Uncensored:latest`" in (defaults.__doc__ or "")
     assert "Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
     assert "Cloud teacher cortexes:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
 
@@ -167,6 +172,19 @@ def test_legacy_fireworks_cortexes_normalize_to_kimi(tmp_path, monkeypatch):
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == defaults.CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
 
 
+def test_talk_resolver_mirror_stale_cloud_pin_uses_owner_default(tmp_path, monkeypatch):
+    from System import sifta_inference_defaults as defaults
+
+    monkeypatch.setattr(defaults, "_STATE", tmp_path)
+    monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+
+    owner_selected = "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"
+    defaults.set_default_ollama_model(owner_selected)
+    defaults.set_app_ollama_model("talk_to_alice", defaults.CANONICAL_CLOUD_CLINE)
+
+    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == owner_selected
+
+
 def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch):
     from System import sifta_inference_defaults as defaults
     import json as _json
@@ -176,7 +194,10 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
         "models": [
             {"name": defaults.CANONICAL_OLLAMA_DAILY},
             {"name": defaults.CANONICAL_OLLAMA_GEMMA4_SMALL},
+            {"name": defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST},
+            {"name": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"},
             {"name": defaults.CANONICAL_OLLAMA_EXTRA},
+            {"name": "llama3:latest"},
         ]
     }
 
@@ -196,14 +217,17 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
     models = defaults.list_installed_alice_cortexes()
     assert defaults.CANONICAL_OLLAMA_DAILY in models
     assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL in models
+    assert defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST in models
+    assert "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest" in models
     assert defaults.CANONICAL_OLLAMA_EXTRA not in models
+    assert "llama3:latest" not in models
 
     monkeypatch.setenv("SIFTA_SHOW_RETIRED_CORTEXES", "1")
     assert defaults.CANONICAL_OLLAMA_EXTRA in defaults.list_installed_alice_cortexes()
     assert "smaller Gemma4 4.4GB used to" in (defaults.__doc__ or "")
     assert "M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest`" in (defaults.__doc__ or "")
-    assert "Reflex model:** `sifta-classifier-c1-3.1b-6.2gb:latest`" in (defaults.__doc__ or "")
-    assert "Generative fallback/probe:** `alice-Q-m1-scout-2.3b-2.7gb:latest`" in (defaults.__doc__ or "")
+    assert "Reflex path:** fast deterministic checks first, then the shared Gemma path" in (defaults.__doc__ or "")
+    assert "Generative fallback/probe:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`" in (defaults.__doc__ or "")
     assert "LoRA surgery candidate:** `sifta-gemma4-alice-lora:latest` is retired" in (defaults.__doc__ or "")
 
 
@@ -225,6 +249,9 @@ def test_system_settings_treats_grok_as_remote_cortex():
     assert _looks_remote_model_name("qwen:accounts/fireworks/models/deepseek-v4-flash")
     assert _looks_remote_model_name("cline:cline-cli-default")
     assert not _looks_remote_model_name("alice-m5-cortex-8b-6.3gb:latest")
+    from System.sifta_inference_defaults import CANONICAL_MLX_GEMMA4_12B_ORIGINAL
+
+    assert not _looks_remote_model_name(CANONICAL_MLX_GEMMA4_12B_ORIGINAL)
 
 
 def test_cloud_backend_recognizes_grok_model_selector():
@@ -239,6 +266,15 @@ def test_cloud_backend_recognizes_grok_model_selector():
     assert is_cloud_model("cline:cline-cli-default")
     assert is_cloud_model("gemini:gemini-2.5-flash")
     assert not is_cloud_model("alice-m5-cortex-8b-6.3gb:latest")
+
+
+def test_gemma4_12b_mlx_vlm_routes_to_direct_vlm_not_omni_mlx():
+    from System import swarm_gemini_brain as brain
+    from System.sifta_inference_defaults import CANONICAL_MLX_GEMMA4_12B_ORIGINAL
+
+    assert brain._is_direct_mlx_vlm_model(CANONICAL_MLX_GEMMA4_12B_ORIGINAL)
+    assert not brain._is_mlx_model(CANONICAL_MLX_GEMMA4_12B_ORIGINAL)
+    assert brain.strip_prefix(CANONICAL_MLX_GEMMA4_12B_ORIGINAL) == "SuperagenticAI/gemma-4-12b-it-8bit-mlx"
 
 
 def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
@@ -260,13 +296,17 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert settings.findChild(QComboBox, "AliceBrainModelCombo") is None
         picker = settings.findChild(QComboBox, "AliceCortexPicker")
         assert picker is not None
+        inventory_picker = settings.findChild(QComboBox, "InstalledModelBodyPicker")
+        assert inventory_picker is not None
+        assert inventory_picker.isHidden()
         assert hasattr(settings, "inference_default_card")
         labels = "\n".join(label.text() for label in settings.findChildren(QLabel))
-        assert "alice-Q-m1-scout-2.3b-2.7gb:latest" in labels
-        assert "sifta-classifier-c1-3.1b-6.2gb:latest" in labels
+        assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in labels
+        assert "sifta-classifier-c1-3.1b-6.2gb:latest" not in labels
         picker_items = "\n".join(picker.itemText(i) for i in range(picker.count()))
         assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in picker_items
         assert "alice-m5-cortex-8b-6.3gb:latest" in picker_items
+        assert "krishairnd/Gemma-4-Uncensored:latest" in picker_items
         assert "grok:grok-4.3" in picker_items
         assert "claude:claude-code-cli-default" in picker_items
         assert "codex:gpt-5.5" in picker_items
@@ -276,6 +316,44 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert settings.findChild(QComboBox, "HermesArmProviderPicker") is None
         assert "Hermes Arm Provider" not in labels
         assert "cline:cline-cli-default" in picker_items
+        assert "heretic  ·" not in picker_items
+        assert "grok-oauth" not in picker_items
+    finally:
+        settings.close()
+        for _ in range(10):
+            app.processEvents()
+
+
+def test_inference_page_reflects_talk_app_override_not_global_default(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+
+    from PyQt6.QtWidgets import QApplication, QComboBox
+
+    from Applications import sifta_system_settings as settings_mod
+
+    default_model = "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"
+    talk_model = "cline:cline-cli-default"
+    monkeypatch.setattr(
+        settings_mod,
+        "list_available_cortexes_with_canonical_fallback",
+        lambda: [default_model, talk_model],
+    )
+    monkeypatch.setattr(settings_mod, "get_default_ollama_model", lambda: default_model)
+    monkeypatch.setattr(
+        settings_mod,
+        "resolve_ollama_model",
+        lambda **_kw: talk_model,
+    )
+    monkeypatch.setattr(settings_mod, "list_inference_model_inventory", lambda: [])
+    monkeypatch.setattr(settings_mod, "inference_runtime_nuggets", lambda: [])
+
+    app = QApplication.instance() or QApplication([])
+    settings = settings_mod.SystemSettingsWidget()
+    try:
+        picker = settings.findChild(QComboBox, "AliceCortexPicker")
+        assert picker is not None
+        assert picker.currentData() == talk_model
     finally:
         settings.close()
         for _ in range(10):
@@ -332,6 +410,16 @@ def test_qwen_cortex_indicator_click_installs_key(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "Applications.sifta_system_settings.set_app_ollama_model",
         lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        SystemSettingsWidget,
+        "_persist_primary_cortex_selection",
+        lambda _self, tag, *, source: {
+            "ok": True,
+            "selected_model": str(tag),
+            "source": source,
+            "trace_id": "pytest-no-live-write",
+        },
     )
     monkeypatch.setattr("Applications.sifta_system_settings.STATE", tmp_path)
     monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
@@ -400,6 +488,16 @@ def test_cline_cortex_indicator_refresh_message(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "Applications.sifta_system_settings.set_app_ollama_model",
         lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        SystemSettingsWidget,
+        "_persist_primary_cortex_selection",
+        lambda _self, tag, *, source: {
+            "ok": True,
+            "selected_model": str(tag),
+            "source": source,
+            "trace_id": "pytest-no-live-write",
+        },
     )
     monkeypatch.setattr(
         "Applications.sifta_system_settings._cline_cli_available",

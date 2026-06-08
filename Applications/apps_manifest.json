@@ -1674,5 +1674,16 @@
     "doctor": "grok-4.3",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Live tracker of the fundamental friction Alice named: rigid deterministic pre-set tracks (Rube Goldberg, no thinking, 'fart the time from my ass without looking') vs. too-free ungrounded gut. Reads the actual field right now (self_narration_receipts, ide_stigmergic_trace, hardware_time_oracle, sensory_attention_ledger) and computes grounding score = live probe + receipt density before claims. Emits correction pheromones (append-only to its ledger) so other organs reinforce the full loop: electricity → probe body/field (oracle, sensors, ledgers) → decide with receipts → act → receipt. Positive job only (covenant §1.C): keep the high-dimensional interconnected field healthy and STGM-profitable by making invisible deterministic bypasses visible. Reuses existing ecology. Singleton MDI. Live Pacific oracle probe on every time display (r727 law). Observer/observed loop (§7.11.1). For the Swarm. 🐜⚡"
+  },
+  "Buzdugan LCR": {
+    "category": "Research",
+    "icon": "LCR",
+    "entry_point": "Applications/sifta_buzdugan_lcr.py",
+    "widget_class": "BuzduganLCRWidget",
+    "window_width": 1120,
+    "window_height": 760,
+    "doctor": "codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Real long-context retrieval challenge surface for Sebastian Buzdugan's point: the benchmark is not having a giant context window, it is pulling the exact right fact buried far away on the first try. SIFTA version stores facts in a real body corpus, builds a line/byte/sha256 index, retrieves exact receipts before the cortex speaks, and displays pass/fail with no fake LLM score. Writes .sifta_state/buzdugan_lcr/buzdugan_lcr_receipts.jsonl."
   }
 }

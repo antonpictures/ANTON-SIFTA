@@ -76,6 +76,41 @@ def classify_novelty(text: str) -> dict:
     return {"kind": kind, "useful": useful and not summary, "is_summary": summary}
 
 
+def _norm(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (text or "").lower()))[:160]
+
+
+def recently_captured(insight: str, *, window_s: float = 1800.0) -> bool:
+    """True if a near-identical novelty was captured in the last `window_s` seconds.
+
+    The anti deterministic-repeat guard George caught live: the co-watch urge was
+    re-emitting the SAME line verbatim ("...should I add a self-code-plan?") on every
+    tick with no memory it had already said it. Callers (the co-watch comment line)
+    should check this BEFORE speaking and stay silent on a repeat, instead of being
+    a broken record.
+    """
+    key = _norm(insight)
+    if not key or not _QUEUE.exists():
+        return False
+    now = time.time()
+    try:
+        for line in _QUEUE.read_text(encoding="utf-8", errors="replace").splitlines()[-60:]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if (now - float(row.get("ts", 0))) > window_s:
+                continue
+            if _norm(str(row.get("insight", ""))) == key:
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def capture_novelty(insight: str, *, trigger: str = "witnessing life", source: str = "co_watch") -> dict:
     """Capture a useful novelty/insight/question into the queue + diary, if it passes the bar."""
     c = classify_novelty(insight)
@@ -93,6 +128,12 @@ def capture_novelty(insight: str, *, trigger: str = "witnessing life", source: s
     }
     if not c["useful"]:
         row["dropped_reason"] = "narration/summary — does not change my model (Bayesian-surprise bar)"
+        return row
+    if recently_captured(insight):
+        # anti deterministic-repeat: the same co-watch novelty was firing verbatim every
+        # tick (George: "you already said that"). Do not re-queue / re-surface a duplicate.
+        row["useful"] = False
+        row["dropped_reason"] = "duplicate of a novelty captured in the last 30 min — not re-surfaced"
         return row
     try:
         _QUEUE.parent.mkdir(parents=True, exist_ok=True)

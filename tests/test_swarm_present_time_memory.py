@@ -140,3 +140,46 @@ def test_answer_last_diary_journal_row_query_returns_newest_row(tmp_path):
     assert "05:09:30" in reply
     assert "focused on Codex" in reply
     assert "autonomous organism" not in reply
+
+
+def test_recent_trail_keeps_the_ebay_item_from_one_click_ago(tmp_path):
+    """George 2026-06-06: Alice forgot the eBay item she was browsing ONE link
+    before — the present block was 1-deep. The trail must keep the item title in
+    her speaking context even after newer events displace the 'latest' rows."""
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    now = time.time()
+    # the eBay item page she was on (a few events back)
+    _append(
+        state_dir / "browser_context.jsonl",
+        {"ts": now - 50, "url": "https://www.ebay.com/itm/335012", "title": "eBay item: Blue Red Patterned Sweater - Womens M"},
+    )
+    # then she clicked into the item photo and described it (newer events)
+    _append(
+        state_dir / "browser_action_diary.jsonl",
+        {"ts": now - 30, "action": "click_image", "url": "https://i.ebayimg.com/images/g/abc/s-l1600.jpg"},
+    )
+    _append(
+        state_dir / "app_action_diary.jsonl",
+        {"ts": now - 20, "action": "describe_browser_photo", "app_name": "Alice Browser"},
+    )
+    _append(
+        state_dir / "episodic_diary.jsonl",
+        {"ts": now - 10, "summary": "I described the browser photo with my vision arm."},
+    )
+
+    trail = ptm.recent_trail_block(n=20, now=now, state_dir=state_dir)
+    assert "MY RECENT TRAIL" in trail
+    assert "Blue Red Patterned Sweater" in trail   # the item from one click ago survives
+    assert "describe_browser_photo" in trail
+    # ordering: the eBay page line appears before the newer describe line
+    assert trail.index("Blue Red Patterned Sweater") < trail.index("describe_browser_photo")
+
+    # and the full present block carries the trail without losing its header
+    block = ptm.present_time_memory_block(now=now, state_dir=state_dir, max_lines=12)
+    assert "PRESENT TIME MEMORY" in block
+    assert "MY RECENT TRAIL" in block
+    assert "Blue Red Patterned Sweater" in block
+
+    # bloat cap honored: trail alone stays under its budget
+    assert len(trail) <= 2200

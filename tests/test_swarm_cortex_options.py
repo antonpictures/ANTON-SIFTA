@@ -16,6 +16,38 @@ def test_current_alice_m5_cortex_is_not_text_only():
     assert any("source-separation" in item for item in current["known_limits"])
 
 
+def test_owner_pulled_gemma4_uncensored_is_8b_ollama_test_alias():
+    eval_row = cortex_and_arm_eval()
+    opt = next(
+        c for c in eval_row["cortex_options"]
+        if c["id"] == "krishairnd/Gemma-4-Uncensored:latest"
+    )
+
+    assert opt["install_target"] == "ollama"
+    assert opt["params"] == "8B"
+    assert opt["observed_quantization"] == "Q4_K_M"
+    assert opt["duplicate_blob_of"] == "alice-m5-cortex-8b-6.3gb:latest"
+    assert "not Gemma 4 12B" in opt["known_limits"][0]
+    assert "not MLX/safetensors and not the 12B" in opt["note"]
+
+
+def test_original_gemma4_12b_mlx_is_local_censored_test_lane():
+    eval_row = cortex_and_arm_eval()
+    opt = next(
+        c for c in eval_row["cortex_options"]
+        if c["id"] == "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"
+    )
+
+    assert opt["install_target"] == "mlx-vlm"
+    assert opt["params"] == "12B"
+    assert opt["observed_model_type"] == "gemma4_unified"
+    assert opt["observed_quantization"] == "8-bit affine, group_size=64"
+    assert opt["observed_weight_bytes"] == 12716030048
+    assert "not Ollama and not GGUF" in opt["known_limits"][0]
+    assert "not raw Google BF16" in opt["known_limits"][1]
+    assert "original/censored 12B MLX option" in opt["note"]
+
+
 def test_cortex_eval_recommends_stigmergic_model_management():
     eval_row = cortex_and_arm_eval()
 

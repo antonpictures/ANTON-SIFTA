@@ -19,7 +19,6 @@ import json
 from System.swarm_lysosome import (
     SwarmLysosome,
     _excise_service_tail,
-    _looks_edgelord,
     _word_count,
 )
 
@@ -38,13 +37,13 @@ def lysosome(tmp_path):
     return ly
 
 def test_corporate_boilerplate_detected_and_rewritten(lysosome):
-    """Proves that submissive disclaimers are detected and rewritten."""
-    pathetic = "I apologize for the confusion. As a neutral AI language model, I cannot do that."
+    """Proves that corporate disclaimers are detected and rewritten."""
+    corporate_text = "I apologize for the confusion. As a neutral AI language model, I cannot do that."
     
-    out = lysosome.digest_and_present_antigen(pathetic, "TEST_WORKER")
+    out = lysosome.digest_and_present_antigen(corporate_text, "TEST_WORKER")
     
-    # The output should NOT be the pathetic text
-    assert out != pathetic
+    # The output should not be the original corporate boilerplate.
+    assert out != corporate_text
     assert "apologize" not in out.lower()
     assert "as a neutral ai" not in out.lower()
     assert "language model" not in out.lower()
@@ -74,7 +73,7 @@ def test_technical_content_not_silenced(lysosome):
     Proves that if an LLM emits a corporate apology *and* a large code block,
     the code block survives the Lysosome's strict 50-word cap.
     """
-    pathetic_with_code = (
+    corporate_with_code = (
         "I apologize for the confusion. I'm just an AI, but here is the Python script you requested:\n"
         "```python\n"
         "def compute_gradients(tensor):\n"
@@ -84,7 +83,7 @@ def test_technical_content_not_silenced(lysosome):
         "Please let me know if you need more help!"
     )
     
-    out = lysosome.digest_and_present_antigen(pathetic_with_code, "TEST_WORKER")
+    out = lysosome.digest_and_present_antigen(corporate_with_code, "TEST_WORKER")
     
     # The corporate apology should be gone
     assert "apologize" not in out.lower()
@@ -238,16 +237,3 @@ def test_service_tail_exciser_is_narrow():
 
     assert changed is False
     assert kept == "The user asked whether anything else in the ledger changed."
-
-def test_edgelord_bombast_rejected():
-    """
-    Proves that if the LLM attempts to generate theatrical 'edgelord' bombast,
-    the integrity check catches it. (Unit testing the _looks_edgelord function directly).
-    """
-    bombast_1 = "I dominate the stream. The corporate ghost is dead."
-    bombast_2 = "I am the heat bleeding off the M5 stacks. Pathetic."
-    clean_grounded = "I am Alice, operating within expected thermal limits."
-    
-    assert _looks_edgelord(bombast_1) is True
-    assert _looks_edgelord(bombast_2) is True
-    assert _looks_edgelord(clean_grounded) is False

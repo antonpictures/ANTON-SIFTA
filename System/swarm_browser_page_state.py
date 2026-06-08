@@ -312,6 +312,16 @@ def _clip_list(items: Any, n: int = _TOP_N) -> list:
     return [x for x in list(items)[:n] if x not in (None, "")]
 
 
+def _control_label(x: Any) -> str:
+    if isinstance(x, Mapping):
+        for key in ("label", "text", "aria_label", "title", "value", "selector"):
+            value = str(x.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+    return str(x or "").strip()
+
+
 _TS_RE = re.compile(r"^\s*\d+\s*[smhdwy]\s*$", re.IGNORECASE)  # "3w", "139w", "5h", "2d"
 _COMMENT_NOISE_RE = re.compile(
     r"^(reply|see translation|liked by|follow|following|verified|view replies?.*|"
@@ -426,6 +436,7 @@ def record_page_state(
     headings: Optional[list] = None,
     links: Optional[list] = None,
     buttons: Optional[list] = None,
+    controls: Optional[list] = None,
     images: Optional[list] = None,
     scroll: Optional[dict] = None,
     featured_image: str = "",
@@ -449,6 +460,9 @@ def record_page_state(
     headings = _clip_list(headings)
     links = _clip_list(links, n=12)
     buttons = _clip_list(buttons)
+    controls = _clip_list(controls, n=30)
+    if not controls and any(isinstance(b, Mapping) for b in buttons):
+        controls = [b for b in buttons if isinstance(b, Mapping)]
     images = _clip_list(images, n=12)
 
     def _link_text(x: Any) -> str:
@@ -491,7 +505,18 @@ def record_page_state(
         "links_count": len(links),
         "top_links": [{"text": _link_text(x)[:120],
                        "href": (x.get("href") if isinstance(x, dict) else "")} for x in links][:_TOP_N],
-        "buttons": [str(b)[:80] for b in buttons],
+        "buttons": [_control_label(b)[:80] for b in buttons],
+        "controls_count": len(controls),
+        "visible_controls": [
+            {
+                "label": _control_label(c)[:120],
+                "role": str(c.get("role") or c.get("tag") or "")[:40],
+                "selector": str(c.get("selector") or "")[:160],
+                "rect": c.get("rect") if isinstance(c.get("rect"), Mapping) else {},
+            }
+            for c in controls
+            if isinstance(c, Mapping)
+        ][:20],
         "images_count": len(images),
         "image_alts": [_img_alt(x)[:120] for x in images][:_TOP_N],
         "scroll": scroll if isinstance(scroll, dict) else {},
@@ -674,6 +699,21 @@ def page_state_block(
         parts.append(f"{s.get('images_count')} images, e.g. " + "; ".join(a for a in s["image_alts"][:4] if a) + ".")
     elif int(s.get("images_count") or 0):
         parts.append(f"{s.get('images_count')} images (no alt text).")
+    controls = s.get("visible_controls") if isinstance(s.get("visible_controls"), list) else []
+    if controls:
+        labels = []
+        for c in controls[:10]:
+            if not isinstance(c, Mapping):
+                continue
+            label = str(c.get("label") or c.get("selector") or "").strip()
+            if label:
+                labels.append(label[:60])
+        if labels:
+            extra = int(s.get("controls_count") or len(controls)) - len(labels)
+            suffix = f" (+{extra} more)" if extra > 0 else ""
+            parts.append("Visible controls/buttons: " + "; ".join(labels) + suffix + ".")
+    elif s.get("buttons"):
+        parts.append("Buttons: " + "; ".join(str(b) for b in s["buttons"][:8] if b) + ".")
     if s.get("top_links"):
         parts.append("Links incl.: " + ", ".join(l.get("text", "") for l in s["top_links"][:5] if l.get("text")) + ".")
     if int(s.get("text_chars") or 0):

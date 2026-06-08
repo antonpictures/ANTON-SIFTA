@@ -538,6 +538,34 @@ def test_owner_literal_write_tool_call_is_not_directly_executed():
     )
 
 
+def test_compact_tool_contract_exposes_app_open_without_full_catalog():
+    mod = _load_widget_module()
+
+    block = mod._compact_tool_contract_for_alice_prompt(
+        user_text="Alice please open, Bonsai app."
+    )
+
+    assert "RECEIPTED TOOL HANDS" in block
+    assert "[TOOL_CALL: app_open | app=Bonsai" in block
+    assert "app_open" in block
+    assert "capability_field_status" in block
+    assert "YOUR CAPABILITIES — UNIFIED LIVING FIELD" not in block
+    assert len(block) < 1600
+
+
+def test_current_system_prompt_includes_compact_tool_contract():
+    mod = _load_widget_module()
+
+    prompt = mod._current_system_prompt(
+        user_active=True,
+        user_text="Alice please open, Bonsai app.",
+    )
+
+    assert "RECEIPTED TOOL HANDS" in prompt
+    assert "[TOOL_CALL: app_open | app=Bonsai" in prompt
+    assert "router writes the receipt" in prompt
+
+
 def test_system_prompt_grounded_alive_answer_policy():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_text="Alice, are you alive?")

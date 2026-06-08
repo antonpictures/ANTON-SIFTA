@@ -17,8 +17,7 @@ def test_primary_cortex_options_only_installed_models_are_selectable():
     assert active["installed"] is True
     assert active["active"] is True
 
-    fallback = [o for o in options if o["model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"][0]
-    assert fallback["installed"] is True
+    assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in {o["model"] for o in options}
     assert "sifta-classifier-c1-3.1b-6.2gb:latest" not in {o["model"] for o in options}
 
 
@@ -84,7 +83,9 @@ def test_set_primary_cortex_persists_app_override_and_receipt(tmp_path, monkeypa
     )
 
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    assert defaults.get_default_ollama_model() == "alice-Q-m1-scout-2.3b-2.7gb:latest"
     assert receipt["selected_model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    assert receipt["default_model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"
     rows = [
         json.loads(line)
         for line in (tmp_path / "primary_cortex_switches.jsonl").read_text().splitlines()

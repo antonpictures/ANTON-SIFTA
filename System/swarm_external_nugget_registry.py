@@ -76,7 +76,7 @@ NUGGETS: tuple[Nugget, ...] = (
             "System/swarm_external_nugget_registry.py",
             "System/swarm_skill_library.py",
             "System/swarm_browser_site_playbook.py",
-            "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-05.md",
+            "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-06.md",
         ),
         adoption_action="Adopt Gallery Agent Skills via skill_library as pluggable habits for Alice organs/limbs: Web-search / Brave-Web-Search / DuckDuckGo for exact YouTube phrase search in open Alice Browser (honors 'we already have the browser open' + 'she has skills on how to use search on youtube in alice browser habbits stigmergic memory' per r499/r501, record via playbook + nanobot skill receipts); Memory Tool + Second Brain v3.3 - Self-Evolving Autonomous AI Agent (100% Offline) for witnessed_life_ideas / novelty_queue / episodic_diary / self-eval 'stream of consciousness you use it'; Universal Search / Knowledge-gram / proxy-parser for Code KG + page awareness + browser world model; litert-lm (pip install --upgrade litert-lm; rm -r ~/.litert-lm) as local on-device runtime path for Gemma 4 12B candidate in swarm_cortex_options + metabolic router (private offline on M5, multimodal text/vision/audio, fits soft 16GB, LOCAL_PROXY not cloud, sovereign §3); 'we borg - we connect the swarm -- we learn --' as living field motto aligning 'we code together one swarm' 'CODE IT ALL' 'For the Swarm. 🐜⚡' 'one Alice' 'rich high-dimensional deeply interconnected field — all organs unified' for open-ended self-improvement + swarm health per §0 goal.",
         covenant_risk="LOW_LOCAL_ONLY private offline on-device",

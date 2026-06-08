@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""r311: Alice's web limb is HER OWN browser arm. If the owner names a foreign browser
-(Safari/Chrome/etc.), the request routes INTO Alice Browser — Alice never acts in Safari
-outside her body (§7.5 Python-first surface, §1.A one Alice). Talk widget needs PyQt6, so
-this skips cleanly on a headless node and runs on the M5.
+"""r311/r632: Alice's web limb is HER OWN browser arm by default. Bare foreign
+browser app words (Safari/Chrome/etc.) route INTO Alice Browser, while a later
+explicit owner request to use Safari/Mac OS browser for a URL/search is a
+separate receipted native handoff. Talk widget needs PyQt6, so this skips
+cleanly on a headless node and runs on the M5.
 """
 import pytest
 

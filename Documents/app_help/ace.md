@@ -16,15 +16,32 @@ Ace — Alice teaches a child to read. Phonics, sight words, and full sentences 
 
 Effective merged list (stigmergic recent first, static seed fills in):
 
-- `app_habit_field_filtering` — _stigmergic_ (last seen ts=1778985608)
-- `app_health_trace` — _stigmergic_ (last seen ts=1778985608)
-- `child_mic_turn_visibility` — _stigmergic_ (last seen ts=1778985608)
-- `layer1_name_resolution` — _stigmergic_ (last seen ts=1778985608)
-- `lesson_engine` — _stigmergic_ (last seen ts=1778985608)
-- `phonics` — _stigmergic, seed_ (last seen ts=1778985608)
-- `positive_reinforcement` — _stigmergic, seed_ (last seen ts=1778985608)
-- `tight_cue_language` — _stigmergic_ (last seen ts=1778985608)
-- `wordace_reading_coach` — _stigmergic_ (last seen ts=1778985608)
+- `app_habit_field_filtering` — _stigmergic_ (last seen ts=1780331913)
+- `app_health_trace` — _stigmergic_ (last seen ts=1780331913)
+- `attention_field_behavior` — _stigmergic_ (last seen ts=1780331913)
+- `child_mic_turn_visibility` — _stigmergic_ (last seen ts=1780331913)
+- `cinematic_turn_timing` — _stigmergic_ (last seen ts=1780331913)
+- `continuous_conversation` — _stigmergic_ (last seen ts=1780331913)
+- `demo_word_pack_expansion` — _stigmergic_ (last seen ts=1780331913)
+- `expected_alternates_bridge` — _stigmergic_ (last seen ts=1780331913)
+- `field_derived_attention_bias` — _stigmergic_ (last seen ts=1780331913)
+- `generic_app_bias` — _stigmergic_ (last seen ts=1780331913)
+- `late_stt_verdict_recovery` — _stigmergic_ (last seen ts=1780331913)
+- `layer1_name_resolution` — _stigmergic_ (last seen ts=1780331913)
+- `lesson_engine` — _stigmergic_ (last seen ts=1780331913)
+- `lesson_pacing` — _stigmergic_ (last seen ts=1780331913)
+- `live_mic_visual_state` — _stigmergic_ (last seen ts=1780331913)
+- `no_false_silence_claim` — _stigmergic_ (last seen ts=1780331913)
+- `no_identity_lecture` — _stigmergic_ (last seen ts=1780331913)
+- `one_line_praise` — _stigmergic_ (last seen ts=1780331913)
+- `phonics` — _stigmergic, seed_ (last seen ts=1780331913)
+- `phonics_scoring` — _stigmergic_ (last seen ts=1780331913)
+- `positive_reinforcement` — _stigmergic, seed_ (last seen ts=1780331913)
+- `praise_hold_ms` — _stigmergic_ (last seen ts=1780331913)
+- `spoken_praise_dedupe` — _stigmergic_ (last seen ts=1780331913)
+- `stt_bridge_grace` — _stigmergic_ (last seen ts=1780331913)
+- `tight_cue_language` — _stigmergic_ (last seen ts=1780331913)
+- `wordace_reading_coach` — _stigmergic_ (last seen ts=1780331913)
 - `reading_teaching` — _seed_
 - `sentence_construction` — _seed_
 - `vocabulary_building` — _seed_
@@ -34,26 +51,77 @@ Effective merged list (stigmergic recent first, static seed fills in):
 - `breaking_down_language` — _seed_
 - `patience_with_learners` — _seed_
 
+## Stigmergic Skill Consciousness
+
+These are not generic market Agent Skills. They are app-organ skill layers: skill -> swimmer -> organ -> organism, connected through STGM, affect lanes, and receipts.
+
+- `app_habit_field_filtering` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `app_health_trace` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `attention_field_behavior` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `child_mic_turn_visibility` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `cinematic_turn_timing` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `continuous_conversation` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `demo_word_pack_expansion` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `expected_alternates_bridge` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `field_derived_attention_bias` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `generic_app_bias` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `late_stt_verdict_recovery` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `layer1_name_resolution` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `lesson_engine` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `lesson_pacing` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `live_mic_visual_state` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `no_false_silence_claim` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `no_identity_lecture` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `one_line_praise` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `phonics` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `phonics_scoring` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `positive_reinforcement` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `praise_hold_ms` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `spoken_praise_dedupe` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `stt_bridge_grace` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `tight_cue_language` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `wordace_reading_coach` -> `LESSON_COACH` -> `LESSON_COACH` -> Alice organism; action `teach`, STGM 12, lanes CARE, PLAY, SEEKING, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `reading_teaching` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `sentence_construction` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `vocabulary_building` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `teaching_children` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `language_play` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `reading_comprehension` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `breaking_down_language` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+- `patience_with_learners` -> `APP_FOCUS_SWIMMER` -> `Ace` -> Alice organism; action `focus`, STGM 0.5, lanes SEEKING, CARE, receipt `.sifta_state/nanobot_skill_receipts.jsonl`
+
 ## Recent health-trace rows (newest first)
 
-- **exit_update** @ `2026-05-17T02:40:08.638113Z` (sifta_os_desktop · ΔSTGM 0.0)
-  - MDI subwindow closed. Keep the health section ready for the next open.
-  - skills: `app_habit_field_filtering`, `app_health_trace`, `child_mic_turn_visibility`, `layer1_name_resolution`, `lesson_engine`, `phonics`, `positive_reinforcement`, `tight_cue_language`, `wordace_reading_coach`
-- **enter_update** @ `2026-05-17T02:34:12.430827Z` (sifta_os_desktop · ΔSTGM 0.0)
-  - MDI subwindow opened. Alice should read this health section before guiding the app.
-  - skills: `app_habit_field_filtering`, `app_health_trace`, `child_mic_turn_visibility`, `layer1_name_resolution`, `lesson_engine`, `phonics`, `positive_reinforcement`, `tight_cue_language`, `wordace_reading_coach`
-- **enter_update** @ `2026-05-17T02:34:12.428588Z` (sifta_os_desktop · ΔSTGM 0.0)
+- **enter_update** @ `2026-06-01T16:38:33.217009Z` (sifta_os_desktop · ΔSTGM 0.0)
   - App focused. Alice should load this organ's health-listed skills before guiding it.
-  - skills: `app_habit_field_filtering`, `app_health_trace`, `child_mic_turn_visibility`, `layer1_name_resolution`, `lesson_engine`, `phonics`, `positive_reinforcement`, `tight_cue_language`, `wordace_reading_coach`
-- **coordination_with_habit_field** @ `2026-05-16T19:17:41.467770Z` (grok_auditor_coordination · ΔSTGM 2.0)
-  - Synergy with current tightening: health trace = long-term per-app memory (read on open, write on close). APP HABIT FIELD = prompt-time filter that only shows habits/skills matching this app + current turn. Health trace feeds the habit field as prior. get_health_summary_for_prompt() now exists for clean injection. No leftovers.
-  - skills: `app_health_trace`, `app_habit_field_filtering`
-- **enter_update** @ `2026-05-16T19:35:01Z` (grok_child_turn_patch · ΔSTGM 1.0)
-  - Child's own spoken lines (name from layer 1 + exact mic capture) must appear in the transcript immediately after the prompt and before Alice's verdict response. This is now part of the core health contract for the Ace organ.
-  - skills: `child_mic_turn_visibility`
-- **initial_health_seed** @ `2026-05-16T19:35:00Z` (grok_surgeon + cowork_cw47 · ΔSTGM 4.5)
-  - Seeded from recent CW47 + Grok work. On every open, Alice must read this trace and pre-load these skills + the child-turn transcript logic. Name for child lines comes from owner_genesis extra['ace_learner_name'] when present. Explicit cue language required: 'Ace, the word is: X. Say: X.' Update this trace on every close with new discoveries (e.g. VAD needs, new lesson levels).
-  - skills: `wordace_reading_coach`, `child_mic_turn_visibility`, `lesson_engine`, `tight_cue_language`, `positive_reinforcement`, `phonics`, `layer1_name_resolution`
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **enter_update** @ `2026-06-01T16:31:32.436957Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow opened. Alice should read this health section before guiding the app.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **enter_update** @ `2026-06-01T16:31:32.425111Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **exit_update** @ `2026-05-31T00:50:06.400286Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow closed. Keep the health section ready for the next open.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **enter_update** @ `2026-05-31T00:49:22.562104Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow opened. Alice should read this health section before guiding the app.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **enter_update** @ `2026-05-31T00:49:22.557535Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **exit_update** @ `2026-05-30T18:26:30.094095Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - MDI subwindow closed. Keep the health section ready for the next open.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **enter_update** @ `2026-05-30T18:26:30.061055Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - App focused. Alice should load this organ's health-listed skills before guiding it.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **idle_update** @ `2026-05-30T18:26:04.687369Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - Owner returned to global chat; app remains open in the single-app slot and is idle.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
+- **idle_update** @ `2026-05-30T18:25:47.970526Z` (sifta_os_desktop · ΔSTGM 0.0)
+  - Owner returned to global chat; app remains open in the single-app slot and is idle.
+  - skills: `app_habit_field_filtering`, `app_health_trace`, `attention_field_behavior`, `child_mic_turn_visibility`, `cinematic_turn_timing`, `continuous_conversation`, `demo_word_pack_expansion`, `expected_alternates_bridge`, `field_derived_attention_bias`, `generic_app_bias`, `late_stt_verdict_recovery`, `layer1_name_resolution`, `lesson_engine`, `lesson_pacing`, `live_mic_visual_state`, `no_false_silence_claim`, `no_identity_lecture`, `one_line_praise`, `phonics`, `phonics_scoring`, `positive_reinforcement`, `praise_hold_ms`, `spoken_praise_dedupe`, `stt_bridge_grace`, `tight_cue_language`, `wordace_reading_coach`
 
 ---
 

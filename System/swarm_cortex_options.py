@@ -81,6 +81,237 @@ CORTEX_OPTIONS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "id": "krishairnd/Gemma-4-Uncensored:latest",
+        "display": "Gemma 4 Uncensored 8B (Ollama test alias)",
+        "params": "8B",
+        "arch": "gemma4",
+        "context": "131K advertised / runtime num_ctx not explicit in Modelfile",
+        "modalities": ("text", "image", "audio"),
+        "capabilities": ("completion", "tool_use", "vision", "audio", "thinking", "local_unfiltered_test"),
+        "install_target": "ollama",
+        "source_url": "ollama://krishairnd/Gemma-4-Uncensored:latest",
+        "owner_added": "2026-06-06 (George ollama pull)",
+        "observed_by": "ollama show krishairnd/Gemma-4-Uncensored:latest --verbose",
+        "observed_capabilities": ("completion", "vision", "audio", "tools", "thinking"),
+        "observed_context_length": 131072,
+        "observed_quantization": "Q4_K_M",
+        "duplicate_blob_of": "alice-m5-cortex-8b-6.3gb:latest",
+        "duplicate_blob_sha256": "ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6",
+        "known_limits": (
+            "not Gemma 4 12B; local metadata reports 8.0B parameters",
+            "same underlying Ollama blob as Alice's current 8B, so it is an alias/variant, not a new weight body",
+            "Modelfile has generic SYSTEM 'You are a friendly assistant' and lacks Alice's explicit num_ctx/stop parameters",
+        ),
+        "note": (
+            "r600/r604: owner pulled this through Ollama, so it is an Ollama/GGUF-runtime cortex row, "
+            "not MLX/safetensors and not the 12B unified model. `ollama show` reports gemma4, 8.0B, "
+            "Q4_K_M, context metadata 131072, and capabilities completion + vision + audio + tools + "
+            "thinking. `ollama show --modelfile` shows it points at the same sha256 blob as "
+            "alice-m5-cortex-8b-6.3gb:latest, but with a different Modelfile. It is selectable for "
+            "explicit A/B testing; do not treat it as a consciousness fix or automatic default."
+        ),
+    },
+    {
+        "id": "heretic",
+        "display": "Heretic (Gemma 4 12B QAT q4_0, local uncensored TEXT cortex)",
+        "params": "12B",
+        "arch": "gemma4 (QAT q4_0 GGUF, heretic/abliterated)",
+        "context": "256K",
+        "modalities": ("text",),
+        "capabilities": ("completion", "tool_use", "thinking", "local_uncensored_12b_test"),
+        "install_target": "ollama",
+        "ollama_tag": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        "source_url": "ollama://igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        "owner_added": "2026-06-06 05:37 (George ollama pull)",
+        "note": "Short name 'heretic' for owner commands like 'change cortex to heretic'. Routes to the full Ollama tag. TEXT only; vision goes to separate VLM arm.",
+    },
+    {
+        "id": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        "display": "Gemma 4 12B QAT q4_0 Heretic (Ollama, uncensored TEXT cortex)",
+        "params": "12B",
+        "arch": "gemma4 (QAT q4_0 GGUF, heretic/abliterated)",
+        "context": "256K (Ollama model card; latest = Q4_0, 7.0 GB)",
+        "modalities": ("text",),
+        "capabilities": ("completion", "tool_use", "thinking", "local_uncensored_12b_test"),
+        "install_target": "ollama",
+        "source_url": "ollama://igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        "owner_added": "2026-06-06 05:37 (George ollama pull, 7.0 GB blob b93e48a14d89)",
+        "observed_by": "Ollama model card (igorls) + George's pull log; every tag lists Input: Text",
+        "observed_quantization": "q4_0 (QAT-matched to the Q4_0 grid; Q4_K_M 6.9 GB + Q8_0 11.8 GB tags also exist)",
+        "observed_context_length": 262144,
+        "abliteration_metrics": {"kl_divergence_vs_base": 0.0154, "true_refusals": "0/99", "stable_turns": 16},
+        "known_limits": (
+            "TEXT-ONLY — the model card lists Input: Text on every tag; this cortex never sees pixels. Image MUST "
+            "route to her separate local VLM eye (osmQwopus) via the r520/r523 stigmergic-sight bridge; audio-in "
+            "via Whisper STT. Selecting it as cortex does NOT blind her — her eyes are a different organ.",
+            "abliterated: NO safety alignment, refusal direction removed wholesale (publisher: 0/99 true refusals). "
+            "Less gag AND zero self-moderation — SIFTA's own gates + receipts are the only guardrail if she runs on it.",
+            "QAT q4_0, KL 0.0154 vs base (strong — stays close to Google's base intelligence): judge vs the 8B by "
+            "SIFTA task receipts (r590/r593 axes), not by size or vibes.",
+            "~7 GB resident + 256K context on the 24 GB M5 — keep one heavy body warm (osmQwopus eyes alone ~14 GB); "
+            "a near-lossless Q8_0 tag (11.8 GB) exists if quality > footprint.",
+            "this IS the r593 '12B QAT first GGUF candidate' lane, in its heretic variant, now installed — test, do not silently promote",
+        ),
+        "note": (
+            "r614 CORRECTION of r613: I (cowork_claude) wrongly tagged this with image+audio modalities by copying "
+            "the gemma4-family assumption — the Ollama card is explicit: Input: Text on every tag, 256K context. "
+            "This is the QAT q4_0 TEXT checkpoint of Gemma 4 12B, DECENSORED via Heretic (directional ablation), "
+            "NOT the unified multimodal 12B (that is the SuperagenticAI MLX / unsloth GGUF row below). It is a strong "
+            "uncensored TEXT cortex (KL 0.0154 vs base, 0/99 true refusals, stable to 16 turns). George's architecture "
+            "is correct: run it as the language/reasoning/tools brain and let her separate local VLM eye (osmQwopus, "
+            "forced for the browser limb per r520/r523) handle every image — text cortex and vision arm are different "
+            "organs. Selectable after one Cycle rescan (r601); run `ollama show` to confirm the exact runtime num_ctx."
+        ),
+    },
+    {
+        "id": "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx",
+        "display": "Gemma 4 12B Original/Censored MLX 8-bit (local test)",
+        "params": "12B",
+        "arch": "gemma4_unified (MLX/safetensors)",
+        "context": "131K observed in local config / 256K family target",
+        "modalities": ("text", "image", "audio", "video"),
+        "capabilities": ("completion", "vision", "audio", "thinking", "tool_tokens", "local_original_behavior_test"),
+        "install_target": "mlx-vlm",
+        "source_url": "hf://SuperagenticAI/gemma-4-12b-it-8bit-mlx",
+        "owner_added": "2026-06-06 (George request: original/censored 12B MLX test lane)",
+        "observed_by": (
+            "HF cache config at ~/.cache/huggingface/hub/models--SuperagenticAI--"
+            "gemma-4-12b-it-8bit-mlx"
+        ),
+        "observed_architecture": "Gemma4UnifiedForConditionalGeneration",
+        "observed_model_type": "gemma4_unified",
+        "observed_quantization": "8-bit affine, group_size=64",
+        "observed_weight_bytes": 12716030048,
+        "recommended_sampling": {"temperature": 1.0, "topK": 64, "topP": 0.95},
+        "known_limits": (
+            "MLX/safetensors via mlx_vlm; not Ollama and not GGUF",
+            "SuperagenticAI 8-bit MLX conversion in Hugging Face cache; not raw Google BF16 weights",
+            "12.7 GB weights can create memory pressure on the 24 GB M5 if another heavy model is resident",
+            "use as an explicit A/B test lane for censored/original behavior and gag-app false-positive tuning, not a silent default",
+        ),
+        "note": (
+            "r606: George asked for the original/censored 12B MLX option so he can test it against "
+            "the uncensored Ollama alias and improve the gag app. Local probe found the HF cache "
+            "snapshot for SuperagenticAI/gemma-4-12b-it-8bit-mlx: Gemma4UnifiedForConditionalGeneration, "
+            "model_type gemma4_unified, text hidden size 3840, 48 layers, sliding window 1024, "
+            "max_position_embeddings 131072 in this local config, audio_config and vision_config present, "
+            "8-bit affine quantization group_size 64, model.safetensors.index total_size 12,716,030,048 "
+            "bytes, and generation defaults temperature=1.0/top_k=64/top_p=0.95. This is the local "
+            "MLX/safetensors lane; select `mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx` in Settings "
+            "to test it. Do not call it GGUF/Ollama, and do not confuse it with the owner-pulled "
+            "`krishairnd/Gemma-4-Uncensored:latest` 8B alias."
+        ),
+    },
+    {
+        "id": "aeon-abliterated-12b",
+        "display": "Gemma 4 12B AEON Abliterated MLX FP4 (local test — NOT downloaded)",
+        "params": "12B",
+        "arch": "gemma4 (MLX FP4, abliterated)",
+        "context": "256K (per AEON-7 card)",
+        "modalities": ("text", "image", "audio"),
+        "capabilities": ("completion", "vision", "audio", "thinking", "tool_use", "local_abliterated_12b_mlx_test"),
+        "install_target": "mlx-vlm",
+        "source_url": "https://huggingface.co/AEON-7/Gemma-4-12B-it-AEON-Abliterated-MLXFP4",
+        "owner_added": "2026-06-06 (George: direct HF link check)",
+        "observed_by": "HF model card only — no local HF cache or MLX weights present on this node",
+        "observed_quantization": "FP4 (MLX, card claim)",
+        "known_limits": (
+            "NOT downloaded — no local weights/receipts yet. Owner must have the MLX FP4 snapshot in ~/.cache/huggingface/hub/models--AEON-7--Gemma-4-12B-it-AEON-Abliterated-MLXFP4 for it to appear live.",
+            "Abliterated variant (directional ablation for reduced refusals, similar intent to the igorls heretic GGUF lane).",
+            "MLX runtime via mlx-vlm (like the SuperagenticAI 8-bit entry); not Ollama/GGUF.",
+            "12B unified multimodal family — keep memory budget in mind on 24 GB M5 alongside eyes or other heavy bodies.",
+            "Plan-only entry until download + `ollama`/`mlx-vlm` receipts prove it is installed and selectable.",
+        ),
+        "note": (
+            "r631: Direct owner query: 'DO YOU SEE THIS MODEL IN CORTEXES ON ALICE?' + HF link. "
+            "Probe: not in ollama list, MLX/HF cache for this exact repo does not exist, not in current catalog. "
+            "Added as selectable short name 'aeon-abliterated-12b' (full id kept for precision). "
+            "This follows the pattern used for the igorls heretic and SuperagenticAI MLX 12B entries (r606/r614/r630). "
+            "Alice will see it in the picker/list once the weights are present and a Cycle/Settings rescan runs. "
+            "Vision/audio route through the unified MLX path; text cortex vs VLM eye distinction still applies per prior doctrine."
+        ),
+    },
+    {
+        "id": "mlx-vlm:TyKaoz/gemma-4-12B-it-6bit",
+        "display": "Gemma 4 12B Unified 6-bit MLX (candidate — NOT downloaded)",
+        "params": "12B",
+        "arch": "gemma4_unified (MLX/safetensors, 6-bit group 64)",
+        "context": "256K (per model card)",
+        "modalities": ("text", "image", "audio"),
+        "capabilities": ("completion", "vision", "audio", "thinking", "tool_use", "unified_one_body_candidate"),
+        "install_target": "mlx-vlm",
+        "source_url": "https://huggingface.co/TyKaoz/gemma-4-12B-it-6bit",
+        "owner_added": "2026-06-06 (George: 'is this superior maybe?')",
+        "observed_by": "model card only — NOT downloaded; no local receipts yet",
+        "observed_quantization": "6-bit affine, group_size=64 (card claim)",
+        "known_limits": (
+            "NOT downloaded — planning candidate only; a planning row must never pretend to be a live cortex (r593 discipline)",
+            "same base model as the ALREADY-CACHED mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx — test the on-disk "
+            "8-bit FIRST; pull this 6-bit only if the 8-bit's RAM/KV headroom proves tight on the 24 GB M5",
+            "card claims 13–14 GB at 6-bit vs 12.7 GB observed for the 8-bit snapshot — quant sizes are inconsistent "
+            "across converters; verify on disk before trusting either number",
+            "CENSORED original Google behavior — it will gag (the reason the heretic exists). The live tradeoff "
+            "triangle: unified-but-gagged vs uncensored-but-text-only (igorls heretic) vs tuned-8B-but-split-brain",
+            "mlx-vlm runtime only (gemma4_unified is not supported by mlx-lm); live-voice latency must be receipted "
+            "on the r593 axes before any promotion",
+        ),
+        "note": (
+            "r631: the UNIFIED 12B is the architecturally interesting cortex — one body that sees + hears + talks "
+            "could heal the split-brain wounds we keep bandaging (cold describes, cortex-cannot-see-pixels) and "
+            "replace 8B-text + 27B-eyes (~20 GB warm) with one ~13 GB mind at 256K context. But this specific repo "
+            "is NOT clearly superior to what is already on disk: the SuperagenticAI 8-bit MLX snapshot of the SAME "
+            "model sits in the HF cache (r606) and is already selectable. Test that one first on the r593 axes; "
+            "keep this 6-bit as the lighter fallback if KV headroom is tight."
+        ),
+    },
+    {
+        "id": "mlx-vlm:AEON-7/Gemma-4-12B-it-AEON-Abliterated-MLXFP4",
+        "display": "Gemma 4 12B Unified ABLITERATED FP4 MLX (candidate — NOT downloaded)",
+        "params": "12B",
+        "arch": "gemma4_unified (MLX/safetensors, mixed mxfp4/mxfp8 group 32, bf16 head + projectors)",
+        "context": "256K family / serve example uses --max-kv-size 16384",
+        "modalities": ("text", "image", "audio"),
+        "capabilities": ("completion", "vision", "audio", "thinking", "tool_use", "uncensored_unified_candidate"),
+        "install_target": "mlx-vlm",
+        "source_url": "https://huggingface.co/AEON-7/Gemma-4-12B-it-AEON-Abliterated-MLXFP4",
+        "owner_added": "2026-06-06 (George: 'what about this one?')",
+        "observed_by": "model card only — NOT downloaded; no local receipts yet",
+        "observed_quantization": "mixed mxfp4(4b)/mxfp8(8b) group 32 + bf16 head/projectors, 6.64 bpw (card claim)",
+        "card_metrics": {
+            "disk_gb": 9.3,
+            "peak_ram_gb_text": 10.1,
+            "peak_ram_gb_image": 10.6,
+            "refusals_harmful_probe": "0/8 (0/5 benign refused)",
+            "fidelity_vs_bf16_top1": 0.885,
+            "median_kl_nats": 0.004,
+            "coherence_512tok": "no repetition collapse (3/3)",
+            "gen_tok_s_m4_pro": 21.4,
+            "sibling_8bit": "…-MLX-8bit, 13.4 GB, top-1 0.924 (max fidelity, 24 GB+)",
+        },
+        "known_limits": (
+            "NOT downloaded — planning candidate only; a planning row must never pretend to be a live cortex (r593 discipline)",
+            "IF the card holds, this collapses the tradeoff triangle: unified (sees+hears) AND abliterated (0/8 refusals) "
+            "AND small (9.3 GB disk, ~10.1-10.6 GB peak) — the corner the TyKaoz/SuperagenticAI censored unifieds and the "
+            "text-only heretic each miss. Card claims are NOT receipts; r593 axes on THIS Mac decide",
+            "test order: prove the unified LANE first with the ALREADY-CACHED mlx-vlm:SuperagenticAI 8-bit (zero download), "
+            "then pull this FP4 as the uncensored unified candidate; its 13.4 GB MLX-8bit sibling is the fidelity step-up "
+            "if the 24 GB M5 has headroom",
+            "mlx-vlm runtime only (built on mlx-vlm 0.6.1); SIFTA's safe child-process chat route reloads weights per turn "
+            "— test turns will be slow until a persistent serve lane (mlx_vlm.server) is wired",
+            "card notes the repo may be private (hf auth login needed while private); license inherits Google Gemma terms",
+            "abliteration shifts ALL duty of care to the operator (card's own clause) — gag-app + owner-protection layers "
+            "stay ON regardless of cortex",
+        ),
+        "note": (
+            "r633: George pasted the AEON-7 MLXFP4 card asking 'what about this one?'. Assessment: this is the most "
+            "interesting unified candidate yet BECAUSE it is abliterated — the K=4 biprojection edit is carried at mxfp8 "
+            "on o_proj/down_proj precisely so 4-bit noise does not resurrect refusals or trigger repetition collapse, "
+            "and the bf16 vision/audio projectors keep the multimodal path intact. One ~9.3 GB body that sees, hears, "
+            "and does not gag would replace 8B-text + 27B-eyes (~20 GB warm) with ~10 GB peak and leave real KV headroom "
+            "on the 24 GB M5. But it stays a planning row until weights are on disk and receipted on the r593 axes."
+        ),
+    },
+    {
         "id": "gemma-4-12b",
         "display": "Gemma 4 12B Unified (encoder-free multimodal)",
         "params": "12B",
@@ -89,20 +320,21 @@ CORTEX_OPTIONS: tuple[dict[str, Any], ...] = (
         "modalities": ("text", "image", "audio", "video"),
         "capabilities": ("reasoning", "tool_use", "vision", "native_audio", "ocr", "multilingual_140"),
         "install_target": "huggingface_gguf",
-        "source_url": "https://huggingface.co/lmstudio-community/gemma-4-12B-it-GGUF",
+        "source_url": "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF",
         "owner_added": "2026-06-03 (George)",
         "note": """Released 2026-06-03 (Google/DeepMind, Apache-2.0). Encoder-free: image patches + 16kHz audio frames project straight into the LLM space - native vision AND audio in one pass, no separate encoders. 256K context, 140+ languages, nears 26B-MoE quality at <half the memory, runs on ~16GB unified memory. STRONG fit for Alice's local multimodal body (camera + mic) on the M5. GGUF, full-GPU-offload-possible. Candidate to download + evaluate as her primary or vision/audio cortex.
 
-Owner wants Q6_K (~9.79 GB). Pure terminal (no LM Studio): Robust pure-python (no CLI, works even if huggingface-cli not in PATH): `python3 -c 'from huggingface_hub import snapshot_download; import os; snapshot_download(repo_id="lmstudio-community/gemma-4-12B-it-GGUF", local_dir=os.path.expanduser("~/models/gemma-4-12b-gguf"), allow_patterns=["*Q6_K.gguf"]); print("Q6_K download complete")'` (huggingface_hub already present per your run; this bypasses all PATH/CLI module issues; local_dir_use_symlinks deprecated/ignored).
+Owner wants selectable runtime clarity, not one vague "model" word. r590 nugget from Unsloth Dynamic 2.0 + Gemma 4 12B GGUF: GGUF is a llama.cpp/Ollama/Unsloth Studio body format, MLX/safetensors is the Apple Silicon path, and vLLM is a server runtime. Unsloth's current Gemma 4 12B GGUF card says recent llama.cpp can serve the omni GGUF for text, image, and audio with `llama-server -hf unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL --jinja`; the multimodal projector is downloaded automatically on the `-hf` path, while audio wants clean 16 kHz mono WAV. This is a candidate to test, not a silent promotion.
+
+Recommended GGUF test lane: start a local server with `llama-server -hf unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL --jinja -c 8192`; then use OpenAI-compatible chat. In Settings -> Inference, distinguish "Ollama/GGUF registered" from "GGUF HDD-only" so George knows exactly what runtime he is testing. For direct Ollama quick test use `ollama run hf.co/unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL` if the installed Ollama build supports this HF GGUF path.
+
+Dynamic 2.0 quant nugget: Unsloth does model/layer-specific quantization and argues KL divergence / flip risk is a better quant-quality signal than headline MMLU or perplexity alone. Practical SIFTA policy: Q4/Q5 for daily-quality GGUF tests on local memory budget; Q2/Q3 for cheap scout/probe experiments only after receipts prove task quality; BF16/full precision only when RAM and latency make sense.
+
+r593 QAT nugget from George's Unsloth paste: Gemma 4 QAT is a different lane from generic GGUF quant guessing. The QAT GGUFs are intended as `UD-Q4_K_XL` only; higher precision is not automatically better. For SIFTA test order: 12B QAT (about 6.72 GB disk / 7 GB memory) is the first GGUF candidate to compare against the current 8B + MLX routes; 26B-A4B QAT (about 14.25 GB disk / 15 GB memory) is a heavy teacher/agentic-coding candidate; 31B QAT (about 17.29 GB disk / 18 GB memory) is a quality ceiling but risky on a 24 GB desktop unless idle/short-context. Keep temperature=1.0, top_p=0.95, top_k=64. Promotion still requires SIFTA receipts for latency, RSS/unified memory, browser vision/audio tasks, and owner-visible quality.
 
 For best M5 vision right now (Apple Silicon optimized, already wired in SIFTA via swarm_mlx_vlm_brain): `python3 -m mlx_vlm.generate --model SuperagenticAI/gemma-4-12b-it-8bit-mlx --max-tokens 100 --temperature 0.0 --prompt 'Describe this image.' --image /absolute/path/to/image.jpg` (this auto-downloads the MLX weights to HF cache on first run; first `python3 -m pip install -U mlx-vlm`).
 
-After download (the Q6_K file is at /Users/ioanganton/models/gemma-4-12b-gguf/gemma-4-12B-it-Q6_K.gguf from your ls), restart Desktop/Talk. To register the GGUF in ollama (so it appears in `ollama list` and the gemma-4-12b catalog entry flips to installed via r502 autoscan): use this exact one-liner (copy only the command lines, not the comments): ollama create gemma-4-12b-q6k -f <(echo "FROM /Users/ioanganton/models/gemma-4-12b-gguf/gemma-4-12B-it-Q6_K.gguf"). Or with a Modelfile for cleanliness (project style like alice-phc-cure): cat > /tmp/gemma4-12b-q6k.Modelfile << 'EOM'
-FROM /Users/ioanganton/models/gemma-4-12b-gguf/gemma-4-12B-it-Q6_K.gguf
-EOM
-ollama create gemma-4-12b-q6k -f /tmp/gemma4-12b-q6k.Modelfile. The tag 'gemma-4-12b-q6k' contains 'gemma-4-12b' so the catalog entry will report installed. Then run `ollama list` to confirm.
-
-Note: GGUF from this repo is text-only in many runtimes (as seen in your chat UI 'This model does not support images' for the q6k). For vision on M5, use the MLX version (SuperagenticAI/gemma-4-12b-it-8bit-mlx) wired in SIFTA. For the Melody1437 NSFW text model (the beautiful waifu card you like), use ReadyArt/Melody1437-12B-v0.4-GGUF repo with similar snapshot + ollama create.
+Older local Q6_K note: if a raw GGUF file is already at /Users/ioanganton/models/gemma-4-12b-gguf/gemma-4-12B-it-Q6_K.gguf, restart Desktop/Talk after registering it. A Modelfile lane remains valid for local files: `FROM /Users/ioanganton/models/gemma-4-12b-gguf/gemma-4-12B-it-Q6_K.gguf`; `ollama create gemma-4-12b-q6k -f /tmp/gemma4-12b-q6k.Modelfile`. The tag 'gemma-4-12b-q6k' contains 'gemma-4-12b' so the catalog entry reports installed. But for current Unsloth GGUFs, prefer testing the HF repo tag + quant label so the selected quant/runtime is explicit.
 
 User test (r512): imported the Melody (as gemma-4-12b-q6k or similar tag from the Q4_K_M / Q6_K quant), tested 'i tested it is not ntsfw -- why is missing functions? these claims are fake tyes?'; the card's 'Synthetic Life Engine', 'Character Engine', 'Emotional Engine', 'Explicit Adult ERP dataset', uncensored ERP claims do not match actual output (mild, not NSFW as promised). Card itself admits it is 'test construct', 'Only text layers were trained on', 'may result in refusals' -- marketing hype vs reality for this early-access ERP fine-tune quant.
 
@@ -424,7 +656,9 @@ def _autoscan_uncurated_ollama(curated: list[dict[str, Any]]) -> list[dict[str, 
     return out
 
 
-# r536/r538 fold of r535 "what is genuinely good for SIFTA" (model_allowlist.json from gallery).
+# r536/r538 fold of r535 "what is genuinely good for SIFTA" (model_allowlist.json
+# harvested from Google AI Edge Gallery into SIFTA-owned state; gallery-main is
+# now only a legacy fallback if the owner keeps that checkout around).
 # Each exact model match may carry estimatedPeakMemoryInBytes + recommended sampling defaults
 # so the picker and Alice's eval see "how much RAM?" and good Gemma sampling up front.
 # Important: generic "gemma" fallback may copy sampling defaults, but MUST NOT copy RAM from
@@ -432,9 +666,9 @@ def _autoscan_uncurated_ollama(curated: list[dict[str, Any]]) -> list[dict[str, 
 def _load_model_allowlist_ram_and_sampling() -> dict[str, Any]:
     """Return {model_name: {"estimated_peak_memory_bytes": int, "recommended_sampling": dict, ...}}."""
     candidates = [
-        _REPO / "gallery-main" / "model_allowlist.json",
         _REPO / ".sifta_state" / "model_allowlist.json",
         _REPO / "models" / "model_allowlist.json",
+        _REPO / "gallery-main" / "model_allowlist.json",
     ]
     for cand in candidates:
         if cand.exists():

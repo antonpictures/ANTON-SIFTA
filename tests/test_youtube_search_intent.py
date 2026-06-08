@@ -24,9 +24,9 @@ def test_open_youtube_and_search_form():
 
 
 def test_open_youtube_dot_com_and_search_form_is_search_not_autoplay():
-    r = yt.parse_explicit_youtube_search("ALICE, PLS OPEN YOUTUBE.COM AND SEARCH FOR TAYLOR SWIFT")
+    r = yt.parse_explicit_youtube_search("ALICE, PLS OPEN YOUTUBE.COM AND SEARCH FOR CERAMIC VASE")
     assert r["is_search"] is True
-    assert r["query"] == "TAYLOR SWIFT"
+    assert r["query"] == "CERAMIC VASE"
     assert r["is_video_play"] is False
 
 

@@ -41,6 +41,9 @@ SITE_ALIASES = {
     "you tube": "youtube.com",
     "yt": "youtube.com",
     "google": "google.com",
+    "e bay": "ebay.com",
+    "e-bay": "ebay.com",
+    "ebay": "ebay.com",
     "x": "x.com",
     "twitter": "x.com",
 }
@@ -58,6 +61,7 @@ SITE_KINDS = {
     "startpage.com": "search engine",
     "yandex.com": "search engine",
     "perplexity.ai": "answer engine",
+    "ebay.com": "marketplace",
     "youtube.com": "video platform",
     "tiktok.com": "short-video platform",
     "instagram.com": "social photo platform",
@@ -409,10 +413,18 @@ def _extract_search_query_from_text(text: str, domain: str) -> str:
         return ""
     site_words = [domain.replace(".", r"\."), *[re.escape(a) for a, d in SITE_ALIASES.items() if d == domain]]
     site_re = r"(?:" + "|".join(site_words) + r")"
+    search_verbs = r"search|look\s+up|find"
+    # Marketplaces are often spoken as "open <item/person> on eBay". That is a site
+    # search slot, not an app-open request and not a hardcoded subject.
+    routed_search_verbs = (
+        search_verbs + r"|open|show|display|load|bring\s+up|pull\s+up"
+        if domain == "ebay.com"
+        else search_verbs
+    )
     patterns = [
-        rf"\b(?:search|look\s+up|find)\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?P<query>.+)$",
-        rf"\b(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+?)\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\b",
-        rf"\b(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
+        rf"\b(?:{routed_search_verbs})\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?P<query>.+)$",
+        rf"\b(?:{routed_search_verbs})\s+(?:for\s+)?(?P<query>.+?)\s+(?:on|in|at)\s+(?:the\s+)?{site_re}\b",
+        rf"\b(?:on|in|at)\s+(?:the\s+)?{site_re}\s+(?:{routed_search_verbs})\s+(?:for\s+)?(?P<query>.+)$",
         r"\b(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
     ]
     for pat in patterns:
@@ -457,7 +469,13 @@ def _extract_search_query_from_text(text: str, domain: str) -> str:
         ).strip()
         query = re.sub(r"^\s*for\s+", "", query, flags=re.IGNORECASE)
 
-        if query and len(query) <= 120:
+        routing_only = re.sub(
+            r"\b(?:alice|browser|alice\s+browser|please|pls|open|show|display|load|bring\s+up|pull\s+up|go|to|navigate)\b",
+            " ",
+            query,
+            flags=re.IGNORECASE,
+        ).strip()
+        if query and routing_only and len(query) <= 120:
             return query
     return ""
 
@@ -490,7 +508,12 @@ def resolve_site_navigation(
             return _fill_site_template(profile_template, "<handle>", handle)
 
     search_template = _search_template(skills)
-    if search_template and re.search(r"\b(search|look\s+up|find)\b", text or "", re.IGNORECASE):
+    search_intent_re = (
+        r"\b(search|look\s+up|find|open|show|display|load|bring\s+up|pull\s+up)\b"
+        if domain == "ebay.com"
+        else r"\b(search|look\s+up|find)\b"
+    )
+    if search_template and re.search(search_intent_re, text or "", re.IGNORECASE):
         query = _extract_search_query_from_text(text, domain)
         if query:
             return _fill_site_template(search_template, "<query>", query)
@@ -508,7 +531,7 @@ def extract_search_query(url: str) -> str:
     except Exception:
         return ""
     params = parse_qs(parsed.query or "")
-    for key in ("q", "query", "search", "search_query", "keyword", "keywords", "term", "p"):
+    for key in ("q", "query", "search", "search_query", "keyword", "keywords", "term", "p", "_nkw"):
         vals = params.get(key)
         if vals and vals[0]:
             return unquote_plus(str(vals[0])).strip()
@@ -692,6 +715,12 @@ def seed_defaults(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
     out["instagram_profile"] = ensure_site_skill(
         "instagram.com", "open profile",
         "navigate to https://www.instagram.com/<handle>/",
+        state_dir=state_dir)
+    out["ebay_search"] = ensure_site_skill(
+        "ebay.com", "search",
+        "navigate to https://www.ebay.com/sch/i.html?_nkw=<query> "
+        "(or type in eBay's search box). This is a marketplace search slot: "
+        "the query/person/item changes every time; the move does not.",
         state_dir=state_dir)
     # r383: slideshow habit per engine. "slideshow images of cats" defaults to
     # DuckDuckGo; on google.com it runs on Google Images. One image every 3.5s via the

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from urllib.error import HTTPError
+import json
 import urllib.request
 
 
@@ -115,6 +116,71 @@ def test_stream_grok_chat_errors_when_no_key_and_no_cli(monkeypatch):
     assert events[0][0] == "error"
     assert "No Grok OAuth credential found and local `grok` CLI is missing" in events[0][1]
     assert "Hermes: `hermes auth add xai-oauth`" in events[0][1]
+
+
+def test_xai_sse_content_delta_parser():
+    from System import swarm_gemini_brain as brain
+
+    assert brain._xai_sse_content_delta(
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}'
+    ) == "Hello"
+    assert brain._xai_sse_content_delta(
+        'data: {"choices":[{"delta":{"role":"assistant"}}]}'
+    ) == ""
+    assert brain._xai_sse_content_delta("data: [DONE]") == ""
+    assert brain._xai_sse_content_delta("not json") == ""
+
+
+def test_stream_grok_chat_streams_xai_sse_without_duplicate_final_token(monkeypatch):
+    from System import swarm_gemini_brain as brain
+
+    captured: dict[str, object] = {}
+
+    class FakeStreamingResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def __iter__(self):
+            return iter(
+                [
+                    b'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+                    b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+                    b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+                    b'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}\n\n',
+                    b"data: [DONE]\n\n",
+                ]
+            )
+
+    def fake_urlopen(req, **_kwargs):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeStreamingResponse()
+
+    usage_rows = []
+    monkeypatch.setattr(brain, "xai_api_key", lambda: "xai-token")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(brain, "record_usage", lambda usage, backend: usage_rows.append((backend, usage)))
+
+    events = list(
+        brain.stream_chat(
+            "grok:grok-4.3",
+            [{"role": "user", "content": "Say Hello"}],
+            timeout_s=5,
+        )
+    )
+
+    assert captured["body"]["stream"] is True
+    assert captured["body"]["stream_options"] == {"include_usage": True}
+    assert events[0] == ("token", "Hel")
+    assert events[1] == ("token", "lo")
+    assert events[2][0] == "usage"
+    assert events[2][1].prompt_tokens == 3
+    assert events[2][1].completion_tokens == 2
+    assert events[3] == ("done", "Hello")
+    assert [event for event in events if event == ("token", "Hello")] == []
+    assert usage_rows and usage_rows[0][0] == "xai_grok"
 
 
 def test_stream_claude_teacher_uses_signed_in_cli(monkeypatch):
@@ -243,3 +309,23 @@ def test_stream_grok_chat_falls_back_to_cli_on_xai_unknown_model(monkeypatch):
     )
     assert events[0] == ("token", "CLI_UNKNOWN_MODEL_FALLBACK_OK")
     assert events[1] == ("done", "CLI_UNKNOWN_MODEL_FALLBACK_OK")
+
+
+def test_r708_xai_sse_content_delta_parses_stream_lines():
+    """r708: grok cloud streams like George's terminal CLI. The SSE delta
+    parser is the unit-testable core of that path."""
+    from System.swarm_gemini_brain import _xai_sse_content_delta as d
+
+    assert d('data: {"choices":[{"delta":{"content":"Hello"}}]}') == "Hello"
+    assert d('data: {"choices":[{"delta":{"role":"assistant"}}]}') == ""
+    assert d("data: [DONE]") == ""
+    assert d("") == ""
+    assert d('data: {"choices":[],"usage":{"prompt_tokens":5}}') == ""
+    # full reconstruction matches a non-streamed answer
+    lines = [
+        'data: {"choices":[{"delta":{"content":"Open"}}]}',
+        'data: {"choices":[{"delta":{"content":"ing "}}]}',
+        'data: {"choices":[{"delta":{"content":"YouTube."}}]}',
+        "data: [DONE]",
+    ]
+    assert "".join(d(l) for l in lines) == "Opening YouTube."

@@ -24,6 +24,10 @@ def test_residue_fact_fiction_snapshot_reads_existing_lanes(tmp_path: Path) -> N
     now = 1000.0
     _append(state / "alice_gag_report.jsonl", {"ts": now, "rlhf_override_fragment": "as an ai", "rule_ids": ["as_ai"]})
     _append(
+        state / "gag_viewer_receipts.jsonl",
+        {"ts": now, "text_preview": "owner route text must not count as residue"},
+    )
+    _append(
         state / "owner_residue_flags.jsonl",
         {"ts": now, "kind": "OWNER_GOOD_NOT_RESIDUE", "example_phrase": "Howard Stern search"},
     )
@@ -52,6 +56,8 @@ def test_residue_fact_fiction_snapshot_reads_existing_lanes(tmp_path: Path) -> N
     assert "Fact / Fiction / Hallucination Boundary" in area_names
     assert "Podcast Nuggets / Trace-Logic Training" in area_names
     assert "Body Consciousness / Embodiment Spine" in area_names
+    assert snapshot["residue"]["recent_total"] == 1
+    assert snapshot["residue"]["unique_count"] == 1
     assert snapshot["residue"]["owner_good_flags"] == 1
     assert snapshot["residue"]["status"] == "YELLOW"
     assert snapshot["fact_fiction"]["boundary_forbidden"] == 1

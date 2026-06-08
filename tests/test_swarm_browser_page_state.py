@@ -28,6 +28,39 @@ def test_record_and_read_structured_state(tmp_path):
     assert ps.has_readable_content(s) is True
 
 
+def test_visible_controls_are_recorded_and_surfaced(tmp_path):
+    ps.record_page_state(
+        "https://www.ebay.com/itm/example",
+        title="Example listing | eBay",
+        text="Example listing",
+        buttons=["Expand image", "Add to cart"],
+        controls=[
+            {
+                "label": "Expand image",
+                "role": "button",
+                "selector": 'button[aria-label="Expand image"]',
+                "rect": {"x": 1200, "y": 280, "w": 48, "h": 48},
+            },
+            {
+                "label": "Add to cart",
+                "role": "button",
+                "selector": 'button[aria-label="Add to cart"]',
+                "rect": {"x": 1400, "y": 650, "w": 180, "h": 44},
+            },
+        ],
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    s = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    assert s["controls_count"] == 2
+    assert s["visible_controls"][0]["label"] == "Expand image"
+    block = ps.page_state_block(now=1001.0, state_dir=tmp_path)
+    assert "Visible controls/buttons" in block
+    assert "Expand image" in block
+    assert "Add to cart" in block
+
+
 def test_empty_when_no_receipt(tmp_path):
     assert ps.latest_page_state(state_dir=tmp_path) == {}
     block = ps.page_state_block(state_dir=tmp_path)

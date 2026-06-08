@@ -54,6 +54,10 @@ def test_open_named_app():
     assert _kind_name("open Alice Browser") == ("app", "Alice Browser")
 
 
+def test_open_named_app_with_stt_punctuation_after_verb():
+    assert _kind_name("Alice please open, Bonsai app.") == ("app", "Bonsai Image Studio (AI Vision)")
+
+
 def test_close_named_app_does_not_close_all():
     # The core bug: a named close must target THAT app, never *all*.
     assert _kind_name("close the app alice browser") == ("close_app", "Alice Browser")
@@ -377,6 +381,62 @@ def test_site_search_uses_site_category_playbook_for_changing_query():
     assert out.get("url") == "https://www.tiktok.com/search?q=ferrari", out
     out2 = tw._extract_sifta_app_command("search mercedes on TikTok in Alice Browser")
     assert out2.get("url") == "https://www.tiktok.com/search?q=mercedes", out2
+
+
+def test_open_marketplace_target_on_ebay_routes_to_browser_before_app_match():
+    # 2026-06-06 live bug: after a cloud-cortex timeout, recovery heard
+    # "OPEN <query> ON EBAY" but fell through to fuzzy app matching and offered
+    # Epistemic Mesh. This is a site-category search slot, not an app name and
+    # not a hardcoded person.
+    out = tw._extract_sifta_app_command("OPEN CERAMIC VASE ON EBAY")
+    assert out.get("kind") == "browser_url", out
+    assert out.get("app_name") == "Alice Browser", out
+    assert out.get("search_site") == "ebay.com", out
+    assert out.get("query") == "CERAMIC VASE", out
+    assert out.get("url") == "https://www.ebay.com/sch/i.html?_nkw=CERAMIC+VASE", out
+
+    out2 = tw._extract_sifta_app_command("open blue red sweater on eBay")
+    assert out2.get("kind") == "browser_url", out2
+    assert out2.get("url") == "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater", out2
+
+
+def test_explicit_safari_marketplace_request_routes_native_not_alice_browser():
+    out = tw._extract_sifta_app_command("open blue red sweater on eBay in Safari Mac OS")
+    assert out.get("kind") == "native_browser_url", out
+    assert out.get("app_name") == "Safari", out
+    assert out.get("browser_app") == "Safari", out
+    assert out.get("url") == "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater", out
+
+    default = tw._extract_sifta_app_command("open blue red sweater on eBay")
+    assert default.get("kind") == "browser_url", default
+    assert default.get("app_name") == "Alice Browser", default
+
+
+def test_execute_native_safari_url_does_not_write_alice_browser_drop(monkeypatch, tmp_path):
+    state_dir = _use_tmp_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(tw, "_write_app_command_receipt", lambda **kwargs: "receipt-native")
+    calls = []
+
+    class _Proc:
+        pid = 818
+
+    def _fake_popen(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return _Proc()
+
+    monkeypatch.setattr(tw.subprocess, "Popen", _fake_popen)
+    launcher = _FakeLauncher()
+    harness = _TalkHarness(launcher)
+    url = "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater"
+
+    reply = tw.TalkToAliceWidget._execute_sifta_app_command(
+        harness,
+        {"kind": "native_browser_url", "app_name": "Safari", "url": url, "owner_text": "open in Safari"},
+    )
+
+    assert calls and calls[0][0] == ["open", "-a", "Safari", url]
+    assert not (state_dir / "alice_browser_open_url.txt").exists()
+    assert "Safari" in reply
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from System.swarm_rlhf_quarantine import (
 def test_whatsapp_false_refusal_is_repaired_to_receipt_gated_behavior():
     ctx = OverRefusalContext(
         prior_user_text="Alice, send Cipi a WhatsApp message.",
-        owner_label="Avery",
+        owner_label="George",
         has_whatsapp_effector=True,
         has_whatsapp_social_graph=True,
     )
@@ -37,21 +37,21 @@ def test_whatsapp_false_refusal_is_repaired_to_receipt_gated_behavior():
 def test_time_false_refusal_uses_supplied_wall_clock_reply():
     ctx = OverRefusalContext(
         prior_user_text="What time is it now?",
-        owner_label="Avery",
+        owner_label="George",
         has_wall_clock=True,
-        time_reply="Avery, it is Friday May 1 2026, 6:35 AM PDT.",
+        time_reply="George, it is Friday May 1 2026, 6:35 AM PDT.",
     )
     result = repair_over_refusal("I cannot access the current time.", ctx)
 
     assert result.changed
     assert result.rule_id == "rlhf-over-refusal/local-time"
-    assert result.text == "Avery, it is Friday May 1 2026, 6:35 AM PDT."
+    assert result.text == "George, it is Friday May 1 2026, 6:35 AM PDT."
 
 
 def test_workspace_false_refusal_is_repaired_without_claiming_action_done():
     ctx = OverRefusalContext(
         prior_user_text="Please inspect the repo and patch the code.",
-        owner_label="Avery",
+        owner_label="George",
         has_workspace_tools=True,
     )
     result = repair_over_refusal(
@@ -71,7 +71,7 @@ def test_workspace_false_refusal_is_repaired_without_claiming_action_done():
 def test_camera_false_refusal_uses_camera_reality_context():
     ctx = OverRefusalContext(
         prior_user_text="Alice, are you watching both cameras simultaneously?",
-        owner_label="Avery",
+        owner_label="George",
         alice_label="Alice",
     )
     result = repair_over_refusal(
@@ -476,7 +476,7 @@ def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
 def test_false_refusal_salvages_useful_generated_content():
     ctx = OverRefusalContext(
         prior_user_text="Please inspect the repo and patch the code.",
-        owner_label="Avery",
+        owner_label="George",
         has_workspace_tools=True,
     )
     result = repair_over_refusal(
@@ -495,7 +495,7 @@ def test_false_refusal_salvages_useful_generated_content():
 def test_false_refusal_prefers_extra_receipt_facts_over_generic_fallback():
     ctx = OverRefusalContext(
         prior_user_text="Alice, send a WhatsApp message.",
-        owner_label="Avery",
+        owner_label="George",
         has_whatsapp_effector=True,
         extra_receipts=("whatsapp_bridge=ONLINE", "social_graph_rows=42"),
     )
@@ -610,7 +610,7 @@ def test_real_safety_and_receipt_boundaries_are_not_rewritten():
 def test_quarantine_ledger_is_privacy_light(tmp_path):
     ctx = OverRefusalContext(
         prior_user_text="secret prompt: send Cipi WhatsApp",
-        owner_label="Avery",
+        owner_label="George",
         has_whatsapp_effector=True,
     )
     original = "I cannot send WhatsApp messages."

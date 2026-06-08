@@ -41,6 +41,9 @@ def test_seed_defaults_gives_tiktok_playbook(tmp_path):
     youtube = pb.playbook_block("youtube.com", state_dir=tmp_path)
     assert "https://www.youtube.com/results?search_query=<query>" in youtube
     assert "watch video" in youtube
+    ebay = pb.playbook_block("ebay.com", state_dir=tmp_path)
+    assert "CATEGORY: marketplace" in ebay
+    assert "https://www.ebay.com/sch/i.html?_nkw=<query>" in ebay
 
 
 def test_seed_defaults_is_idempotent(tmp_path):
@@ -87,6 +90,7 @@ def test_extracts_search_query_from_common_urls():
     assert pb.extract_search_query("https://www.tiktok.com/search?q=barbellina") == "barbellina"
     assert pb.extract_search_query("https://www.google.com/search?q=mercedes+amg") == "mercedes amg"
     assert pb.extract_search_query("https://www.youtube.com/results?search_query=ai+campaigns") == "ai campaigns"
+    assert pb.extract_search_query("https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater") == "blue red sweater"
 
 
 def test_record_search_from_url(tmp_path):
@@ -118,6 +122,18 @@ def test_resolve_site_navigation_fills_mutable_search_query(tmp_path):
         pb.resolve_site_navigation("find yoga on google", state_dir=tmp_path)
         == "https://www.google.com/search?q=yoga"
     )
+
+
+def test_resolve_ebay_marketplace_open_as_site_search_not_subject_hardcode(tmp_path):
+    assert (
+        pb.resolve_site_navigation("open Ceramic Vase on eBay", state_dir=tmp_path)
+        == "https://www.ebay.com/sch/i.html?_nkw=Jane+Doe"
+    )
+    assert (
+        pb.resolve_site_navigation("open blue red sweater on eBay", state_dir=tmp_path)
+        == "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater"
+    )
+    assert pb.resolve_site_navigation("open Alice Browser on eBay", state_dir=tmp_path) == ""
 
 
 def test_resolve_site_navigation_does_not_turn_place_phrase_into_profile(tmp_path):

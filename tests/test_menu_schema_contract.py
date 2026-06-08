@@ -83,6 +83,40 @@ def test_alice_browser_file_has_close_window_action():
     assert "Close Window" in src
 
 
+def test_alice_browser_create_window_adopts_requested_page_as_tab():
+    """target=_blank / Open in New Tab must become an Alice Browser tab.
+
+    The old wound replaced ``self._view`` with the popup page, which destroyed
+    the active tab instead of creating a second tab.
+    """
+    src = _load_alice_browser_class_via_ast()
+    block = src.split("def _adopt_new_browser_page", 1)[1].split("def _handle_new_window_from_page", 1)[0]
+
+    assert "view.setPage(new_page)" in block
+    assert "self._wire_tab_view(view, new_page)" in block
+    assert "self._tabs.addTab(view, \"New Tab\")" in block
+    assert block.index("view.setPage(new_page)") < block.index("self._tabs.addTab(view, \"New Tab\")")
+    # A fallback can still rescue a broken no-tabs state, but the normal path
+    # must not install the requested page into the current active view.
+    assert block.index("self._tabs.addTab(view, \"New Tab\")") < block.rindex("self._view.setPage(new_page)")
+
+
+def test_alice_browser_new_tab_shortcut_is_declared():
+    src = _load_alice_browser_class_via_ast()
+    assert "QKeySequence.StandardKey.AddTab" in src or 'QKeySequence("Ctrl+T")' in src
+
+
+def test_alice_browser_url_drop_supports_new_tab_flag():
+    src = _load_alice_browser_class_via_ast()
+    init_block = src.split("def __init__", 1)[1].split("def _setup_ui", 1)[0]
+    drop_block = src.split("def _check_drop_file", 1)[1].split("def _adopt_new_browser_page", 1)[0]
+
+    assert "alice_browser_open_url_new_tab.flag" in init_block
+    assert "self.new_tab(url)" in drop_block
+    assert "self._navigate(url)" in drop_block
+    assert drop_block.index("self.new_tab(url)") < drop_block.index("self._navigate(url)")
+
+
 # ── Schema callable shape (introspection of a dummy widget) ──────
 
 class _FakeHost:

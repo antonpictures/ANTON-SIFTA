@@ -9,9 +9,9 @@ repeatable ... I need an app where I can monitor these words exactly, see with m
 eyes, read all that was gagged, so I want to see if nothing good got gagged by
 mistake."
 
-This app does exactly that. It reads EVERY residue / gag ledger on disk, DEDUPES
-by the gagged phrase (because the same residue repeats hundreds of times), and
-shows the unique set in one readable, searchable table:
+This app does exactly that. It reads LLM-output residue / gag ledgers on disk,
+DEDUPES by the gagged phrase (because the same residue repeats hundreds of
+times), and shows the unique set in one readable, searchable table:
 
     count | gagged phrase | rule that caught it | source | last seen
 
@@ -24,7 +24,10 @@ It also lists the lysosome's hardcoded filter dictionary (the actual "corporate
 words" it screens for) so the owner sees the rules themselves, not just the catches.
 
 Read-only over the residue ledgers. The only write is the owner's explicit
-"Mark as GOOD" flag (append-only, owner-confirmed). No code, no model, no network.
+"Reject wrong gag" flag (append-only, owner-confirmed). No code, no model, no network.
+How to reject a wrong gag: click the row that was caught by mistake, then press
+"Reject wrong gag (owner-approved)". That writes the human confirmation to
+owner_residue_flags.jsonl so Alice can treat the phrase as owner-approved data.
 Usage: embedded in SIFTA OS desktop, or run standalone for a quick read.
 
 For the Swarm. 🐜⚡
@@ -41,19 +44,22 @@ from collections import Counter
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
-# ── Residue ledgers the lysosome / RLHF immune system writes to ─────────────
+# ── LLM-output residue ledgers the lysosome / RLHF immune system writes to ──
 # (filename, human source label). Loaded defensively; missing files are skipped.
+# r695: owner route-audit receipts and owner correction flags are not review
+# residue. The monitor's table is for corporate words coming from the LLM side.
 _RESIDUE_LEDGERS = [
     ("rlhf_cutoffs.jsonl", "RLHF cutoff"),
     ("alice_gag_report.jsonl", "Gag report"),
     ("constraint_residues.jsonl", "Constraint residue"),
     ("residue_excretion_quality.jsonl", "Excretion quality"),
-    ("gag_viewer_receipts.jsonl", "Gag viewer"),
     ("rlhf_over_refusal_quarantine.jsonl", "Over-refusal quarantine"),
     ("rlhf_self_cure_patterns.jsonl", "Self-cure pattern"),
-    ("stigmergic_nuggets.jsonl", "Lysosome nugget"),
-    ("gemma4_surgery_residues.jsonl", "Surgery residue"),
-    ("owner_residue_flags.jsonl", "Owner flag"),
+    # r700: stigmergic_nuggets.jsonl removed — those are lysosome rewrite
+    # receipts, not the actual gagged LLM phrase list George asked to audit.
+    # r699: gemma4_surgery_residues.jsonl removed — those are cortex-surgery
+    # TRAINING samples (endurance turns labeled good/bad), never gag catches.
+    # They confused the owner's read of this table; they keep their own ledger.
 ]
 
 _OWNER_FLAG_LEDGER = _STATE / "owner_residue_flags.jsonl"
@@ -83,6 +89,10 @@ _RULE_FIELDS = (
     "verdict", "frequency", "truth_label",
 )
 
+_ACTUAL_GAG_SOURCES = {"Gag report", "RLHF cutoff", "Over-refusal quarantine", "Self-cure pattern"}
+_TRAINING_SOURCES = {"Surgery residue"}
+_LYSOSOME_SOURCES = {"Lysosome nugget"}
+
 
 def _first_field(row: dict, fields) -> str:
     for k in fields:
@@ -98,15 +108,98 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())[:200]
 
 
+def _classify_slot(slot: dict) -> tuple[str, str]:
+    """Explain what kind of residue row this is, not just what phrase repeated."""
+    sources = set(slot.get("sources") or ())
+    rules = {str(r).lower() for r in (slot.get("rules") or ())}
+    has_actual = bool(sources & _ACTUAL_GAG_SOURCES)
+    has_training = bool(sources & _TRAINING_SOURCES)
+    has_lysosome = bool(sources & _LYSOSOME_SOURCES)
+
+    if has_actual and has_training:
+        return (
+            "mixed actual+repair",
+            "Appears in both output-gag ledgers and repair/training residue; inspect before approving.",
+        )
+    if has_training:
+        if "healthy" in rules:
+            return (
+                "repair sample: healthy",
+                "Healthy endurance sample from surgery/training ledger; not a hidden answer.",
+            )
+        if "bad" in rules:
+            return (
+                "repair sample: bad",
+                "Bad/undesired surgery sample kept for repair training; not current owner speech.",
+            )
+        return (
+            "repair/training residue",
+            "Surgery repair ledger sample; review separately from live gag catches.",
+        )
+    if has_actual:
+        return (
+            "actual gag catch",
+            "Output residue was caught by an RLHF/lysosome rule; reject only if useful speech was suppressed.",
+        )
+    if has_lysosome:
+        return (
+            "lysosome rewrite nugget",
+            "Rewrite/intercept note from the lysosome; useful for why a pattern was digested.",
+        )
+    return (
+        "unclassified residue",
+        "Loaded from a residue ledger but the source/rule did not identify a clean lane.",
+    )
+
+
+def visible_residue_rows(
+    rows: list[dict],
+    *,
+    search_text: str = "",
+) -> list[dict]:
+    """Rows for the owner review table: LLM corporate-output catches only."""
+    t = (search_text or "").strip().lower()
+    visible = list(rows)
+    if not t:
+        return visible
+    return [
+        s for s in visible
+        if t in str(s.get("phrase") or "").lower()
+        or t in str(s.get("lane", "")).lower()
+        or t in str(s.get("why", "")).lower()
+        or any(t in str(r).lower() for r in s.get("rules", ()))
+        or any(t in str(src).lower() for src in s.get("sources", ()))
+    ]
+
+
 def load_residue(state_dir: Path = _STATE) -> dict:
     """Return {'unique': [...], 'total': int, 'by_source': Counter, 'files': int}.
 
-    Each unique entry: {phrase, count, rules:set, sources:set, last_ts, raw_sample}.
+    Each unique entry:
+    {phrase, count, rules:set, sources:set, last_ts, raw_sample, lane, why}.
     """
     agg: dict[str, dict] = {}
     total = 0
     by_source: Counter = Counter()
     files = 0
+    # r700: owner-rejected phrases leave the review queue. The table is a
+    # pending-review surface; a phrase George already ruled WRONG_GAG_REJECTED
+    # is resolved — history stays in the raw ledgers and his flag ledger.
+    owner_rejected: set[str] = set()
+    flag_path = Path(state_dir) / "owner_residue_flags.jsonl"
+    if flag_path.exists():
+        try:
+            for line in flag_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                try:
+                    frow = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(frow, dict) and frow.get("kind") == "OWNER_GOOD_NOT_RESIDUE":
+                    fp = _norm(str(frow.get("example_phrase") or ""))
+                    if fp:
+                        owner_rejected.add(fp)
+        except Exception:
+            pass
     for fname, label in _RESIDUE_LEDGERS:
         p = state_dir / fname
         if not p.exists():
@@ -128,6 +221,8 @@ def load_residue(state_dir: Path = _STATE) -> dict:
                 continue
             phrase = _first_field(row, _PHRASE_FIELDS)
             if not phrase:
+                continue
+            if _norm(phrase) in owner_rejected:
                 continue
             total += 1
             by_source[label] += 1
@@ -155,6 +250,8 @@ def load_residue(state_dir: Path = _STATE) -> dict:
             slot["sources"].add(label)
             if ts > slot["last_ts"]:
                 slot["last_ts"] = ts
+    for slot in agg.values():
+        slot["lane"], slot["why"] = _classify_slot(slot)
     unique = sorted(agg.values(), key=lambda d: -d["count"])
     return {"unique": unique, "total": total, "by_source": by_source, "files": files}
 
@@ -169,19 +266,21 @@ def load_filter_dictionary() -> list:
         return out
     for m in re.finditer(r"_([A-Z_]*(?:SIGNATURE|PHRASE|PATTERN)[A-Z_]*)\s*=\s*\((.*?)\)", src, re.S):
         group = m.group(1)
+        if group != "CORPORATE_SIGNATURES_OUT":
+            continue
         for ph in re.findall(r'"([^"]+)"', m.group(2)):
             out.append((ph, group))
     return out
 
 
 def append_owner_good_flag(phrase: str, owner: str = "George") -> bool:
-    """Owner says this gagged phrase is actually GOOD — append a §1.D correction."""
+    """Owner rejects a wrong gag — append a §1.D owner confirmation."""
     try:
         row = {
             "ts": time.time(),
             "kind": "OWNER_GOOD_NOT_RESIDUE",
             "owner": owner,
-            "verdict": "GOOD — owner-approved, do not gag",
+            "verdict": "WRONG_GAG_REJECTED — owner-approved, do not gag",
             "example_phrase": (phrase or "")[:400],
             "covenant": "§1.D owner correction pheromone; §6 truth",
             "truth_label": "OWNER_RESIDUE_FLAG_V1",
@@ -212,6 +311,7 @@ try:
     from PyQt6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
         QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView, QMessageBox,
+        QCheckBox,
         QAbstractItemView,
     )
     from PyQt6.QtCore import Qt
@@ -244,24 +344,38 @@ if _QT_OK:
 
             controls = QHBoxLayout()
             self._search = QLineEdit()
-            self._search.setPlaceholderText("🔍 search the gagged words… (e.g. 'midjourney', 'as an ai')")
+            self._search.setPlaceholderText("🔍 search corporate catches… (e.g. 'midjourney', 'as an ai')")
             self._search.textChanged.connect(self._apply_filter)
             controls.addWidget(self._search)
             reload_btn = QPushButton("↻ Reload")
             reload_btn.clicked.connect(self.reload)
             controls.addWidget(reload_btn)
-            good_btn = QPushButton("✓ Mark selected as GOOD (un-gag)")
+            good_btn = QPushButton("Reject wrong gag (owner-approved)")
             good_btn.clicked.connect(self._mark_good)
             controls.addWidget(good_btn)
             root.addLayout(controls)
+
+            self._help = QLabel(
+                "Reject a wrong gag: select the gagged phrase row, press "
+                "'Reject wrong gag (owner-approved)', then Alice writes your "
+                "human confirmation to owner_residue_flags.jsonl. History stays; "
+                "the correction pheromone tells future turns not to gag that phrase. "
+                "This table shows LLM corporate-output catches only."
+            )
+            self._help.setWordWrap(True)
+            self._help.setStyleSheet(
+                "color: #9fb6d8; background: #101724; border: 1px solid #28364d; "
+                "border-radius: 6px; padding: 6px 8px;"
+            )
+            root.addWidget(self._help)
 
             self._tabs = QTabWidget()
             root.addWidget(self._tabs, 1)
 
             # Tab 1 — gagged residue (deduped)
-            self._table = QTableWidget(0, 5)
+            self._table = QTableWidget(0, 6)
             self._table.setHorizontalHeaderLabels(
-                ["Times gagged", "Gagged phrase", "Rule(s) that caught it", "Source(s)", "Last seen"]
+                ["Times seen", "Gagged phrase", "Lane / why", "Rule(s) that caught it", "Source(s)", "Last seen"]
             )
             self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -289,6 +403,8 @@ if _QT_OK:
             health = load_unified_residue_health()
             self._unique = data["unique"]
             srcs = ", ".join(f"{k}:{v}" for k, v in data["by_source"].most_common())
+            lanes = Counter(str(s.get("lane") or "unclassified") for s in self._unique)
+            lane_line = ", ".join(f"{k}:{v}" for k, v in lanes.most_common())
             health_line = ""
             if health:
                 if snapshot_summary_text is not None:
@@ -296,16 +412,17 @@ if _QT_OK:
                 else:
                     health_line = str(health.get("summary") or "")
             self._summary.setText(
-                f"<b>{len(self._unique)} unique gagged phrases</b> from "
+                f"<b>{len(self._unique)} unique corporate-output phrases</b> from "
                 f"<b>{data['total']} total catches</b> across {data['files']} ledgers "
                 f"(repeat ratio {data['total']/max(1,len(self._unique)):.1f}×).<br>"
                 f"By source — {srcs}<br>"
+                f"By lane — {lane_line}<br>"
                 + (f"<b>Unified eval:</b> {health_line}<br>" if health_line else "")
                 +
                 f"<i>Scan for anything that is NOT corporate boilerplate — if something good was "
-                f"caught, select it and click ‘Mark as GOOD’ so Alice stops gagging it.</i>"
+                f"caught, select it and click 'Reject wrong gag' so Alice gets the owner confirmation.</i>"
             )
-            self._fill_table(self._unique)
+            self._apply_filter(self._search.text())
             self._fill_dictionary()
             self._fill_health(health)
 
@@ -323,10 +440,20 @@ if _QT_OK:
                 if slot["count"] == 1 and len(slot["phrase"]) > 40:
                     phrase_item.setForeground(QColor("#d08020"))
                 self._table.setItem(r, 1, phrase_item)
-                self._table.setItem(r, 2, QTableWidgetItem(", ".join(sorted(slot["rules"]))[:80]))
-                self._table.setItem(r, 3, QTableWidgetItem(", ".join(sorted(slot["sources"]))))
+                lane_text = f"{slot.get('lane', 'unclassified')}: {slot.get('why', '')}"
+                lane_item = QTableWidgetItem(lane_text[:180])
+                lane_item.setToolTip(lane_text)
+                if str(slot.get("lane", "")).startswith("actual"):
+                    lane_item.setForeground(QColor("#d85a30"))
+                elif "healthy" in str(slot.get("lane", "")):
+                    lane_item.setForeground(QColor("#1d9e75"))
+                elif "audit" in str(slot.get("lane", "")) or "owner" in str(slot.get("lane", "")):
+                    lane_item.setForeground(QColor("#9fb6d8"))
+                self._table.setItem(r, 2, lane_item)
+                self._table.setItem(r, 3, QTableWidgetItem(", ".join(sorted(slot["rules"]))[:80]))
+                self._table.setItem(r, 4, QTableWidgetItem(", ".join(sorted(slot["sources"]))))
                 when = time.strftime("%Y-%m-%d %H:%M", time.localtime(slot["last_ts"])) if slot["last_ts"] else "—"
-                self._table.setItem(r, 4, QTableWidgetItem(when))
+                self._table.setItem(r, 5, QTableWidgetItem(when))
             self._table.setSortingEnabled(True)
 
         def _fill_dictionary(self):
@@ -359,17 +486,17 @@ if _QT_OK:
                 self._health_table.setItem(r, 3, QTableWidgetItem(str(area.get("raw", ""))))
 
         def _apply_filter(self, text):
-            t = (text or "").strip().lower()
-            if not t:
-                self._fill_table(self._unique)
-                return
-            self._fill_table([s for s in self._unique if t in s["phrase"].lower()
-                              or any(t in r.lower() for r in s["rules"])])
+            self._fill_table(
+                visible_residue_rows(
+                    self._unique,
+                    search_text=text,
+                )
+            )
 
         def _mark_good(self):
             row = self._table.currentRow()
             if row < 0:
-                QMessageBox.information(self, "Select a row", "Pick a gagged phrase first.")
+                QMessageBox.information(self, "Select a row", "Pick a residue row first.")
                 return
             item = self._table.item(row, 1)
             if not item:
@@ -378,19 +505,19 @@ if _QT_OK:
             ok = append_owner_good_flag(phrase)
             if ok:
                 QMessageBox.information(
-                    self, "Marked GOOD",
-                    f"Logged as owner-approved (not residue):\n\n{phrase[:200]}\n\n"
+                    self, "Wrong gag rejected",
+                    f"Logged owner confirmation (not residue):\n\n{phrase[:200]}\n\n"
                     f"Future turns will treat this as a §1.D correction pheromone.",
                 )
             else:
-                QMessageBox.warning(self, "Could not write", "Failed to append owner flag.")
+                QMessageBox.warning(self, "Could not write", "Failed to append owner correction.")
 
 
 def main():  # standalone read
     import sys
     if not _QT_OK:
         data = load_residue()
-        print(f"{len(data['unique'])} unique / {data['total']} total residue catches "
+        print(f"{len(data['unique'])} unique / {data['total']} total residue/audit catches "
               f"across {data['files']} ledgers")
         health = load_unified_residue_health()
         if health:

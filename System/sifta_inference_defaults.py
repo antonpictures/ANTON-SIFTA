@@ -17,6 +17,16 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
   - **Small student cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`
     stays selectable as the low-cost local student for wake probes and fast
     dialogue tests.
+  - **Experimental alias/test cortex:** `krishairnd/Gemma-4-Uncensored:latest`
+    is an owner-pulled Ollama/GGUF-runtime Gemma4 8B Q4_K_M tag. It is not the
+    12B unified model and currently points at the same underlying Ollama blob as
+    `alice-m5-cortex-8b-6.3gb:latest`, so it is selectable for A/B testing but
+    not promoted as a distinct stronger body.
+  - **MLX 12B original/censored test cortex:** `mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx`
+    is a local Hugging Face-cache MLX/safetensors conversion of Gemma 4 12B IT
+    (Gemma4Unified, 8-bit affine, about 12.7 GB weights). It is selectable for
+    explicit tests against the uncensored/Ollama aliases and for gag-app tuning,
+    but it is not Ollama/GGUF and not the raw Google BF16 checkpoint.
   - **Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`
     is no longer a fallback candidate on the M5. The Architect removed it
     because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
@@ -111,6 +121,8 @@ CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
 CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
 CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
+CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST = "krishairnd/Gemma-4-Uncensored:latest"  # r604: owner-pulled alias/test cortex
+CANONICAL_MLX_GEMMA4_12B_ORIGINAL = "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"  # r606: local 12B MLX original/censored test lane
 CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DAILY
 CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # retired heavy tag; receipt/back-compat only
 CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else CANONICAL_OLLAMA_DAILY
@@ -510,6 +522,21 @@ def resolve_ollama_model(
             ):
                 # Stale failover detected; let the cloud short-circuit below win.
                 pass
+            elif (
+                not _default_is_cloud
+                and _per_app_is_cloud
+                and app_context == "talk_to_alice"
+                and per_app_val != default_val
+            ):
+                # r669 (George: "THE SELECTION DID NOT WORK ANYWAY, I'M STUCK WITH CLINE"):
+                # the MIRROR of the stale-failover rule above. Some switch lanes (chat
+                # cortex switch, failover) write only the OS default, so per_app can hold
+                # a stale CLOUD teacher (cline) while the owner's newest explicit pick is
+                # a LOCAL cortex in default_ollama_model. Disk showed exactly that:
+                # default=igorls heretic, per_app[talk_to_alice]=cline — and she stayed
+                # on cline. When the two stores disagree in THIS shape, the owner's
+                # default wins; fall through.
+                pass
             else:
                 return per_app_val
 
@@ -597,6 +624,20 @@ def list_installed_alice_cortexes(
         return []
     names: list[str] = []
     seen: set[str] = set()
+    # r615: surface ANY owner-pulled ollama tag that is curated in CORTEX_OPTIONS
+    # (e.g. igorls/gemma-4-12B-it-qat-...-heretic). George kept hitting "I pulled it,
+    # it's not in the picker" because this scan only allowlisted alice-*/the one
+    # krishairnd constant/sifta-gemma4-alice. Once a model has a curated eval entry it
+    # should appear automatically — no per-model code edit. Generic non-curated models
+    # (llama3, phi4...) still stay out. Lazy import breaks the cortex_options cycle.
+    curated_ids_lower: set[str] = set()
+    try:
+        from System.swarm_cortex_options import CORTEX_OPTIONS as _CO
+        curated_ids_lower = {
+            str(o.get("id", "")).strip().lower() for o in _CO if o.get("id")
+        }
+    except Exception:
+        curated_ids_lower = set()
     for entry in payload.get("models") or []:
         if not isinstance(entry, dict):
             continue
@@ -614,10 +655,15 @@ def list_installed_alice_cortexes(
             continue
         if is_retired_heavy and os.environ.get("SIFTA_SHOW_RETIRED_CORTEXES") != "1":
             continue
-        # Keep alice-* cortex tags and any sifta-* primary cortex tags
+        # Keep alice-* cortex tags, curated owner-pulled test cortexes, and any
+        # sifta-* primary cortex tags.
         # (LoRA candidates etc.). Skip generic non-alice models (llama3, phi4...)
         # because the picker is "which Alice voice do I want", not a model browser.
-        if not (low.startswith("alice-") or low.startswith("sifta-gemma4-alice")):
+        if not (
+            low.startswith("alice-")
+            or low.startswith("sifta-gemma4-alice")
+            or low in curated_ids_lower  # r615: any curated CORTEX_OPTIONS test cortex
+        ):
             continue
         if name not in seen:
             seen.add(name)
@@ -648,6 +694,8 @@ def list_installed_mlx_cortexes(timeout: float = 1.2) -> list[str]:
     # offline or has not been started with all local directories loaded.
     try:
         from System import swarm_mlx_vlm_brain
+        if hasattr(swarm_mlx_vlm_brain, "describe_models"):
+            models.extend(swarm_mlx_vlm_brain.describe_models() or [])
         models.extend(swarm_mlx_vlm_brain.available_models() or [])
     except Exception:
         pass
@@ -722,11 +770,13 @@ __all__ = [
     "CANONICAL_CLOUD_QWEN",
     "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
     "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",
+    "CANONICAL_MLX_GEMMA4_12B_ORIGINAL",
     "DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",
     "CANONICAL_OLLAMA_GEMMA4_SMALL",
+    "CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST",
     "CANONICAL_OLLAMA_LORA_CANDIDATE",
     "CANONICAL_OLLAMA_LOW_RAM",
     "CANONICAL_OLLAMA_LOW_RAM_SOURCE",

@@ -222,6 +222,23 @@ CANONICAL_ORGANS: tuple[OrganSpec, ...] = (
         aliases=("self_improvement", "weight", "candidate", "fine_tune"),
     ),
     OrganSpec(
+        "biology_self_learning_fuel",
+        "Biology Research Nuggets / Self-Learning Fuel",
+        "cognition",
+        ("System/swarm_bio_research_loop.py", "Applications/sifta_self_evaluation.py"),
+        (
+            "biology_research_nuggets.jsonl",
+            "biology_research_pull_queue.jsonl",
+            "bio_claims.jsonl",
+            "bio_experiments.jsonl",
+            "self_code_plans.jsonl",
+        ),
+        ("biology_paper_pull_targets", "self_code_plan_fuel", "cross_skill_integration", "fundamental_drift"),
+        ("biology", "self learning", "research nuggets", "cross skill", "sale banner", "fundamental drift", "open ended"),
+        write_action=True,
+        aliases=("bio_research_loop", "biology_nuggets", "self_learning_fuel", "open_ended_drift"),
+    ),
+    OrganSpec(
         "cortex_resource",
         "Cortex / Local Thinking Organ Resource Health",
         "cognition",

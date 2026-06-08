@@ -43,6 +43,8 @@ def test_both_constants_in__all__():
     assert "CANONICAL_CLOUD_QWEN" in defaults.__all__
     assert "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH" in defaults.__all__
     assert "CANONICAL_CLOUD_CLINE" in defaults.__all__
+    assert "CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST" in defaults.__all__
+    assert "CANONICAL_MLX_GEMMA4_12B_ORIGINAL" in defaults.__all__
 
 
 def test_round77_constants_still_present():
@@ -85,6 +87,37 @@ def test_picker_function_no_duplicates():
     assert cortexes.count(defaults.CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH) == 0
 
 
+def test_owner_pulled_uncensored_gemma4_can_be_curated_picker_row(monkeypatch):
+    monkeypatch.setattr(
+        defaults,
+        "list_installed_alice_cortexes",
+        lambda: [
+            defaults.CANONICAL_OLLAMA_DAILY,
+            defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST,
+        ],
+    )
+    monkeypatch.setattr(defaults, "list_installed_mlx_cortexes", lambda: [])
+
+    cortexes = defaults.list_available_cortexes_with_canonical_fallback()
+
+    assert defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST in cortexes
+    assert cortexes.count(defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST) == 1
+
+
+def test_original_gemma4_12b_mlx_can_be_curated_picker_row(monkeypatch):
+    monkeypatch.setattr(defaults, "list_installed_alice_cortexes", lambda: [defaults.CANONICAL_OLLAMA_DAILY])
+    monkeypatch.setattr(
+        defaults,
+        "list_installed_mlx_cortexes",
+        lambda: [defaults.CANONICAL_MLX_GEMMA4_12B_ORIGINAL],
+    )
+
+    cortexes = defaults.list_available_cortexes_with_canonical_fallback()
+
+    assert defaults.CANONICAL_MLX_GEMMA4_12B_ORIGINAL in cortexes
+    assert cortexes.count(defaults.CANONICAL_MLX_GEMMA4_12B_ORIGINAL) == 1
+
+
 # ─── Settings widget picker display formatting ────────────────────────────
 
 
@@ -103,6 +136,12 @@ def test_settings_picker_formats_cline_tag():
         r'Cline[\s\S]{0,80}?teacher[\s\S]{0,40}?☁ cloud',
     )
     assert pattern.search(src), "settings picker must format cline:* with Cline OAuth teacher + cloud label"
+
+
+def test_settings_picker_formats_mlx_gemma4_12b_tag():
+    src = (REPO / "Applications" / "sifta_system_settings.py").read_text(encoding="utf-8")
+    assert "MLX local Gemma 4 12B original/censored test" in src
+    assert "8-bit safetensors" in src
 
 
 def test_settings_picker_still_formats_round77_tags():

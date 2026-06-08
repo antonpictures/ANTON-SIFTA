@@ -11,8 +11,8 @@ This organ ports the proven pattern from the vendored CLI arm (Vendor/alice-cli/
 - Token estimation (JSON + serialize) + threshold (default ~65% like the screenshot "Auto-compact at 65%", with reserve).
 - prepare_turn: before cortex call, if over, find cut (preserve recent turns + tool pairs), summarize older (agentic via a strong summarizer or basic truncate), emit a "compaction_summary" message carrying:
   - the summary text (goal/state/highlights/next/files)
-  - metadata: tokens_before, active_targets (e.g. {"photo_target": "Maisie Williams", "visual_goal": "Google Images first photo", "app": "Alice Browser"}), file ops, generated_at.
-- The summary + recent turns + system stay under the model's num_ctx. Antecedents like "her" = Maisie survive in the compact receipt.
+  - metadata: tokens_before, active_targets (e.g. {"photo_target": "<person name>", "visual_goal": "Google Images first photo", "app": "Alice Browser"}), file ops, generated_at.
+- The summary + recent turns + system stay under the model's num_ctx. Antecedents like "her" = the named subject survive in the compact receipt.
 - Telemetry-like: writes to .sifta_state/cortex_compaction_ledger.jsonl (model, input_tokens, compacted_tokens, preserved_entities, why).
 - Hot working memory: explicit small block for unresolved active targets (person, goal, correction) that is re-injected even after model crash/retry/voice drop. Survives because it's in state + summary metadata.
 - Stigmergic: the summary is an append-only receipt the field can read; she can dream over the ledger.
@@ -149,7 +149,7 @@ def build_compaction_summary(older_msgs: List[Dict[str, Any]], previous_summary:
     """Concise continuation note (mirrors buildSummaryRequest in vendored)."""
     text = serialize_for_tokens(older_msgs)
     parts = [
-        "Summarize this Alice session for continuation. Be concise and factual.\n\n## Goal\nOne sentence: what is being built or fixed.\n\n## State\n- Done: completed steps\n- In Progress: current work\n- Blocked: blockers or open questions\n\n## Highlights\nKey facts or targets (e.g. person names like 'Maisie Williams', goals like 'show first Google Images photo', app='Alice Browser').\n\n## Next\nImmediate next steps.\n\n## Conversation\n" + (text or "(empty)"),
+        "Summarize this Alice session for continuation. Be concise and factual.\n\n## Goal\nOne sentence: what is being built or fixed.\n\n## State\n- Done: completed steps\n- In Progress: current work\n- Blocked: blockers or open questions\n\n## Highlights\nKey facts or targets (e.g. person names like '<a person>', goals like 'show first Google Images photo', app='Alice Browser').\n\n## Next\nImmediate next steps.\n\n## Conversation\n" + (text or "(empty)"),
     ]
     if previous_summary:
         parts.append("Previous summary:\n" + previous_summary)

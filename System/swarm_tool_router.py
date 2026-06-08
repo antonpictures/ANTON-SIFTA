@@ -120,6 +120,22 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    # r749 — George 2026-06-07: "an llm without tools is useless, for us."
+    # The brain gets a hand for the desktop: open a SIFTA app by name.
+    "app_open": ToolSpec(
+        name="app_open",
+        description=(
+            "Open a SIFTA OS app window by name. Example: "
+            "[TOOL_CALL: app_open | app=Bonsai | cost_justification=owner asked to open the app]. "
+            "Fuzzy name resolution against the apps manifest (app=Bonsai opens 'Bonsai Image Studio (AI Vision)'). "
+            "The live desktop surface performs the open and writes the app-command receipt; "
+            "never claim an app is open without this tool's receipt."
+        ),
+        required_params=("app",),
+        optional_params=(),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
     # ── Heavy read automation (Event 120) — OpenClaw-style *capabilities*,
     #    routed through the deterministic registry instead of free bash.
     "ollama_inventory": ToolSpec(
@@ -2114,8 +2130,69 @@ def _exec_skill_autoproposal_scan(params: Dict[str, str]) -> Dict[str, Any]:
         }
 
 
+# ── r749: app_open — the cortex's hand for the desktop ──────────────────────
+# The router is headless System code; the Qt desktop owns the windows. The live
+# surface (Talk widget) injects its opener here at boot. Without a surface the
+# tool fails HONESTLY (no phantom "it is open!").
+_APP_OPEN_SURFACE = None
+
+
+def register_app_open_surface(fn) -> None:
+    """GUI surface injects fn(app_name: str, owner_text: str) -> str (receipt line)."""
+    global _APP_OPEN_SURFACE
+    _APP_OPEN_SURFACE = fn
+
+
+def _resolve_manifest_app_name(raw: str) -> str:
+    """Fuzzy-resolve an owner/brain app word against apps_manifest.json keys."""
+    try:
+        manifest = json.loads((_REPO / "Applications" / "apps_manifest.json").read_text(encoding="utf-8"))
+        names = list(manifest.keys())
+    except Exception:
+        return raw
+    low = (raw or "").strip().lower()
+    if not low:
+        return raw
+    for n in names:
+        if n.lower() == low:
+            return n
+    for n in names:
+        if low in n.lower():
+            return n
+    toks = [t for t in low.replace(",", " ").split() if t not in ("app", "the", "please", "open")]
+    if toks:
+        for n in names:
+            if all(t in n.lower() for t in toks):
+                return n
+        for n in names:
+            if toks[0] in n.lower():
+                return n
+    return raw
+
+
+def _exec_app_open(params: Dict[str, str]) -> Dict[str, Any]:
+    """r749 — open a SIFTA app through the registered desktop surface."""
+    raw = str(params.get("app") or "").strip()
+    if not raw:
+        return {"ok": False, "error": "empty app name"}
+    resolved = _resolve_manifest_app_name(raw)
+    if _APP_OPEN_SURFACE is None:
+        return {
+            "ok": False,
+            "error": "NO_SURFACE: no desktop surface is running to open apps",
+            "requested": raw,
+            "resolved": resolved,
+        }
+    try:
+        receipt_line = _APP_OPEN_SURFACE(resolved, str(params.get("owner_text") or ""))
+        return {"ok": True, "requested": raw, "resolved": resolved, "surface_receipt": str(receipt_line)[:400]}
+    except Exception as e:
+        return {"ok": False, "error": f"surface open failed: {type(e).__name__}: {e}", "requested": raw, "resolved": resolved}
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
+    "app_open": _exec_app_open,
     "send_whatsapp": _exec_send_whatsapp,
     "get_social_context": _exec_get_social_context,
     "check_economy": _exec_check_economy,

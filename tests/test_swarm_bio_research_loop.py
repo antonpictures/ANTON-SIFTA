@@ -202,6 +202,58 @@ def test_register_bio_skill(tmp_path, monkeypatch):
     assert rows[0]["truth_label"] == "BIOSIFTA_RESEARCH_EVENT_105"
 
 
+def test_seed_biology_self_learning_targets_writes_r643_ledgers(tmp_path, monkeypatch):
+    import System.swarm_bio_research_loop as mod
+    monkeypatch.setattr(mod, "BIOLOGY_NUGGETS", tmp_path / "biology_research_nuggets.jsonl")
+    monkeypatch.setattr(mod, "BIOLOGY_PULL_QUEUE", tmp_path / "biology_research_pull_queue.jsonl")
+    monkeypatch.setattr(mod, "BIO_CLAIMS", tmp_path / "bio_claims.jsonl")
+    monkeypatch.setattr(mod, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
+
+    receipt = mod.seed_biology_self_learning_targets(state_dir=tmp_path)
+
+    assert receipt["truth_label"] == mod.BIOLOGY_SELF_LEARNING_TRUTH
+    assert receipt["domains"] == 3
+    assert receipt["nuggets_written"] >= 10
+    assert receipt["pull_targets_written"] == receipt["nuggets_written"]
+    assert receipt["claims_written"] == 3
+    nugget_rows = [
+        json.loads(line)
+        for line in (tmp_path / "biology_research_nuggets.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    domains = {row["domain_id"] for row in nugget_rows}
+    assert {"cross_skill_integration", "environmental_contextualization", "fundamental_drift"} <= domains
+    assert all(row["pull_status"] == "seeded_pending_browser_pull" for row in nugget_rows)
+    assert all(row["source_truth"] == "seed_target_not_freshly_pulled" for row in nugget_rows)
+    queue_rows = [
+        json.loads(line)
+        for line in (tmp_path / "biology_research_pull_queue.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(queue_rows) == len(nugget_rows)
+    assert all(row["query_url"].startswith("https://scholar.google.com/scholar?q=") for row in queue_rows)
+    assert (tmp_path / "self_code_plans.jsonl").exists()
+
+
+def test_seed_biology_self_learning_targets_is_idempotent(tmp_path, monkeypatch):
+    import System.swarm_bio_research_loop as mod
+    monkeypatch.setattr(mod, "BIOLOGY_NUGGETS", tmp_path / "biology_research_nuggets.jsonl")
+    monkeypatch.setattr(mod, "BIOLOGY_PULL_QUEUE", tmp_path / "biology_research_pull_queue.jsonl")
+    monkeypatch.setattr(mod, "BIO_CLAIMS", tmp_path / "bio_claims.jsonl")
+    monkeypatch.setattr(mod, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
+
+    first = mod.seed_biology_self_learning_targets(state_dir=tmp_path)
+    second = mod.seed_biology_self_learning_targets(state_dir=tmp_path)
+
+    assert first["nuggets_written"] > 0
+    assert second["nuggets_written"] == 0
+    assert second["pull_targets_written"] == 0
+    assert second["claims_written"] == 0
+    status = mod.biology_self_learning_status(state_dir=tmp_path)
+    assert status["nuggets"] == first["nuggets_written"]
+    line = mod.format_biology_self_learning_nuggets(state_dir=tmp_path)
+    assert "cross-skill integration" in line
+    assert "fundamental drift" in line
+
+
 # ── 8. experiment proposal can be created without appending ──────────────────
 
 def test_write_experiment_proposal_append_false(tmp_path, monkeypatch):

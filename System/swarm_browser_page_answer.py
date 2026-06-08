@@ -97,6 +97,20 @@ def current_browser_page(
     except Exception:
         live = ""
     is_current = bool(live and url and url == live)
+    # r720 (George 2026-06-07, "SHE DID NOT CHECK HER BODY AGAIN" — after a
+    # restart the live browser reset to sifta://home but the newest stored row
+    # was the pre-restart Polymarket, ~540s old, under the 600s window, so the
+    # OLD fix marked it "fresh/current" and Alice asserted Polymarket. That is
+    # reading a MEMORY of the body as the live body — the opposite of organism
+    # awareness. The body-truth rule: when a LIVE browser URL is available it
+    # IS ground truth; a stored row that does not match it is NOT current, no
+    # matter how recent. Age may grant freshness ONLY when there is no live
+    # body to probe (headless/sandbox). Proprioception over memory.
+    live_available = bool(live)
+    if live_available:
+        fresh = is_current
+    else:
+        fresh = bool(age is not None and age <= max_age_s)
     return {
         "url": url,
         "title": str(row.get("title") or ""),
@@ -104,7 +118,9 @@ def current_browser_page(
         "text_chars": int(snap.get("text_chars") or 0),
         "age_s": round(age, 1) if age is not None else None,
         "is_current_page": is_current,
-        "fresh": bool(is_current or (age is not None and age <= max_age_s)),
+        "fresh": fresh,
+        "live_url": live,
+        "live_mismatch": bool(live_available and not is_current),
         "source": source,
     }
 
@@ -117,6 +133,14 @@ def page_answer_block(
     if not p:
         return ("MY BROWSER PAGE: I have no page receipt yet — the browser may be "
                 "on its home page or just opened; I cannot name a page I have no trace of.")
+    # r720: live body overrides memory. If the live browser is on a different
+    # URL than my freshest stored row, I say where my body ACTUALLY is now and
+    # name the stored page as the previous one — never assert the old page as
+    # current (the Polymarket-after-restart confabulation).
+    if p.get("live_mismatch") and p.get("live_url"):
+        return (f"MY BROWSER PAGE: my body is actually on {p.get('live_url')} right now. "
+                f"My freshest stored receipt was a different page ({p.get('url')}), so that one "
+                f"is the past, not the screen. I need a fresh read of the current page.")
     if not p.get("fresh"):
         age = p.get("age_s")
         stale = f" (last receipt ~{int(age)}s ago — may be stale)" if age else ""

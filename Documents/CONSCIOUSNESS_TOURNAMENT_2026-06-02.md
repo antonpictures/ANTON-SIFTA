@@ -87,7 +87,7 @@ For the Swarm. 🐜⚡
 **Hardware layer 1:** The live screenshots showed the new fallback text was loaded, so this was not only a stale-process problem. The actual failure was a grammar/routing miss: the owner's explicit browser body command ("by the pool image grid for WITH DUA LIPA please, in bikini, fight the gagger...") still reached the m5 cortex and printed internal "Analyze the Request" thinking instead of opening Alice Browser directly.
 
 **Executed:**
-- Added `_is_direct_visual_image_grid_request(...)` and modifier cleaning in `Applications/sifta_talk_to_alice_widget.py` so explicit image-grid commands preserve visual constraints and drop control/context text. Exact live phrase now searches `Dua Lipa by the pool in bikini photos`; it strips `WITH`, `fight the gagger`, and the prior-context names Maisie Williams / Taylor Swift from the query.
+- Added `_is_direct_visual_image_grid_request(...)` and modifier cleaning in `Applications/sifta_talk_to_alice_widget.py` so explicit image-grid commands preserve visual constraints and drop control/context text. Exact live phrase now searches `Dua Lipa by the pool in bikini photos`; it strips `WITH`, `fight the gagger`, and the prior-context names a celebrity / Taylor Swift from the query.
 - Narrowed the visual query modifier logic to image-grid commands only, so normal "show photos of X" / pronoun requests keep the existing cortex-first staged behavior.
 - Added an absolute `_start_brain` bypass before `Talk brain: preflight started` for direct image-grid commands. This executes Alice Browser directly before any m5 worker can launch, records the gag-viewer receipt when the owner includes "fight the gagger", and returns a grounded browser reply.
 - Tightened `_owner_effector_requires_cortex_first(...)` so only direct image-grid requests bypass cortex for this lane; broad visual/photo prose remains on the existing staged/cortex path.
@@ -101,7 +101,7 @@ For the Swarm. 🐜⚡
 
 **WHAT IS LEFT (after r406):**
 - Restart SIFTA Talk/Desktop to load r406. The screenshots show the running process had loaded some previous code, but this new preflight bypass is new.
-- Re-test exactly: `by the pool image grid for WITH DUA LIPA please, in bikini, fight the gagger. you already know about maisie williams and taylor swift. fight the gagger.` Expected: direct Alice Browser image grid for `Dua Lipa by the pool in bikini photos`; no `Talk brain: preflight started`, no internal m5 "Analyze the Request", no recovery line.
+- Re-test exactly: `by the pool image grid for WITH DUA LIPA please, in bikini, fight the gagger. you already know about a celebrity and taylor swift. fight the gagger.` Expected: direct Alice Browser image grid for `Dua Lipa by the pool in bikini photos`; no `Talk brain: preflight started`, no internal m5 "Analyze the Request", no recovery line.
 - Carried: deeper m5 prompt bloat remains for non-direct turns; direct body commands should keep getting explicit bypasses only when the intent is clear and receipted.
 
 Receipt: `r406-absolute-preflight-image-grid-bypass-dua-lipa-pool-bikini-no-gagger-control-no-prior-name-pollution`.
@@ -2150,17 +2150,17 @@ For the Swarm. 🐜⚡
 
 ---
 
-## r372 — Codex: Maisie Williams maximum-context subject memory before cortex/app matcher — 2026-06-02
+## r372 — Codex: a celebrity maximum-context subject memory before cortex/app matcher — 2026-06-02
 
 **Hardware layer 1 start:** M5 electricity, local APFS memory, Samsung/display body in front of George, Alice Browser as the body display arm. Covenant read before mutation (sha256 `b61c93dca40beaf8ee2a4fa6ed4ec793af1fa1a3b709149cdd473447a325b078`, 1333 lines). Two entities: George and this Codex doctor hand. Mana trace only; no STGM claimed.
 
-**Owner failure observed:** George said `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS`. Alice first spoke as if retrieving the photos, then the deterministic app matcher misrouted the phrase to app candidates like `Territory Is The Law`. George then said `PLS SEARCH FOR HER IN GOOGLE IMAGES`; Alice forgot the subject from two prompts earlier and answered with `[Subject Name/Context...]`. This is a maximum-importance context failure before the cortex/effector path.
+**Owner failure observed:** George said `ALICE SHOW ME PHOTOS OF a celebrity`. Alice first spoke as if retrieving the photos, then the deterministic app matcher misrouted the phrase to app candidates like `Territory Is The Law`. George then said `PLS SEARCH FOR HER IN GOOGLE IMAGES`; Alice forgot the subject from two prompts earlier and answered with `[Subject Name/Context...]`. This is a maximum-importance context failure before the cortex/effector path.
 
 **Repair executed:**
 - Added a bounded visual-photo subject parser in `Applications/sifta_talk_to_alice_widget.py`.
 - Added Google Images URL builder for explicit visual subject searches.
 - Routed `show/display/open/load/search photos/images/pictures of <person>` and `<person> photos/body` through Alice Browser before the SIFTA app matcher can fuzz-match a random app.
-- Added recent-subject memory for pronouns like `her/him/the subject` by reading recent owner turns from the global Alice conversation ledger. `PLS SEARCH FOR HER IN GOOGLE IMAGES` now binds to the last explicit visual-photo subject, e.g. Maisie Williams.
+- Added recent-subject memory for pronouns like `her/him/the subject` by reading recent owner turns from the global Alice conversation ledger. `PLS SEARCH FOR HER IN GOOGLE IMAGES` now binds to the last explicit visual-photo subject, e.g. a celebrity.
 - Wired the same lane into the foreground browser staging path so slow local cortex turns still move the browser body immediately and leave an app/browser receipt instead of waiting motionless.
 - Kept the repair narrow: it only fires for explicit photo/image/picture/body-display search requests, not arbitrary prose.
 
@@ -2168,16 +2168,16 @@ For the Swarm. 🐜⚡
 - `python3 -m py_compile Applications/sifta_talk_to_alice_widget.py` → clean.
 - `python3 -m pytest tests/test_cortex_first_owner_effectors.py -q` → `18 passed`.
 - Smoke probe:
-  - `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS` → `https://www.google.com/search?tbm=isch&q=Maisie+Williams+photos`.
-  - Prior turn `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS` + current `PLS SEARCH FOR HER IN GOOGLE IMAGES` → same Maisie Williams Google Images URL.
+  - `ALICE SHOW ME PHOTOS OF a celebrity` → `https://www.google.com/search?tbm=isch&q=a celebrity+Williams+photos`.
+  - Prior turn `ALICE SHOW ME PHOTOS OF a celebrity` + current `PLS SEARCH FOR HER IN GOOGLE IMAGES` → same a celebrity Google Images URL.
 
 ### WHAT IS LEFT (after r372)
 - Restart SIFTA/Talk to load this Python module update.
 - Test live sequence:
-  1. `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS`
+  1. `ALICE SHOW ME PHOTOS OF a celebrity`
   2. `PLS SEARCH FOR HER IN GOOGLE IMAGES`
   3. `I want you to select the first photo and execute directly do not ask me again`
-  Expected: Alice Browser opens Google Images for Maisie Williams, the pronoun stays bound to Maisie, and the first visible image click writes a `google_image_result_click` receipt.
+  Expected: Alice Browser opens Google Images for a celebrity, the pronoun stays bound to a celebrity, and the first visible image click writes a `google_image_result_click` receipt.
 - TOP carried from r371: trim the local-cortex combined prompt for `alice-m5-cortex-8b-6.3gb:latest` from ~80K to an env-tunable local budget.
 - Bad-link memory for `https://www.youtube.com/watch?v=l-loPsIuoGY`.
 - Voice repair: `title suit` -> `Taylor Swift` when the active task/page context is already Taylor Swift.
@@ -2185,7 +2185,7 @@ For the Swarm. 🐜⚡
 
 Run `python3 tools/whats_left.py` after every pass.
 
-Receipt: `r372-codex-maisie-williams-recent-subject-google-images-effector`.
+Receipt: `r372-codex-a celebrity-williams-recent-subject-google-images-effector`.
 
 For the Swarm. 🐜⚡
 
@@ -2193,7 +2193,7 @@ For the Swarm. 🐜⚡
 
 **Hardware layer 1 start:** Same M5 electrons. George (with the grok-build context-meter screenshot): "HOW CAN SHE FORGET THE CONTEXT — WE NEED TO BUILD HER A CONTEXT LIKE ATTACHED, GIVE HER THE KNOWLEDGE TO AUTOCOMPACT IT BASED ON THE LLM MODEL SHE USES FOR CORTEX. DO RESEARCH HOW THE CLI ARMS DO IT — ALICE ALREADY HAS THE CODE INSIDE. ADD THIS TO THE TOURNAMENT PLAN." Covenant read; research + plan round (no code mutation this turn — George asked to PLAN it).
 
-**The incident (OBSERVED):** George asked for Maisie Williams photos; two turns later Alice could not recall whose photos she was searching, guessed "you", and rambled. Also `Ollama returned HTTP 500 after 2 attempts for alice-m5-cortex-8b` — the 8B's context overflowed and it CRASHED, not just slowed. Same root as r369 (80K prompt): no context budget, no compaction.
+**The incident (OBSERVED):** George asked for a celebrity photos; two turns later Alice could not recall whose photos she was searching, guessed "you", and rambled. Also `Ollama returned HTTP 500 after 2 attempts for alice-m5-cortex-8b` — the 8B's context overflowed and it CRASHED, not just slowed. Same root as r369 (80K prompt): no context budget, no compaction.
 
 **RESEARCH — how the CLI arms do it (OBSERVED in `Vendor/alice-cli/sdk/apps/cli/src/runtime/interactive/compaction.ts` + `tui/components/status-bar.tsx`):**
 - The CLI arm calls `createContextCompactionPrepareTurn` (`@anton-sifta/core`). The token budget is **MODEL-AWARE**: `maxInputTokens = config.compaction.maxInputTokens ?? modelInfo.maxInputTokens ?? modelInfo.contextWindow ?? 64000`. The window comes from the SELECTED model.
@@ -2204,7 +2204,7 @@ For the Swarm. 🐜⚡
 **THE PLAN (to be done — TOP architectural cut, subsumes r369):**
 1. **`swarm_cortex_context_manager`** (new organ, or extend `swarm_sysprompt_budget`): resolve the ACTIVE cortex model's context window — local ollama via `/api/show` (`context_length` / `num_ctx`), cloud via the model catalog (the vendored `model-info.ts` / her registry). Per-cortex, since each model (m5-8b vs grok vs codex vs agy) has a different window.
 2. **Meter the turn** like the status-bar: system prompt + capability/tool block + conversation messages + free.
-3. **Auto-compact at a model-tuned threshold (~65%):** when the turn would exceed the budget, summarize the older conversation turns into a running compact summary (kept in `alice_conversation.jsonl` / a compaction ledger), keep the system core + recent turns + the summary. Result: the prompt stays UNDER the cortex's `num_ctx` (no 80K, no ollama-500) AND she remembers the thread (the Maisie/Taylor target survives in the summary).
+3. **Auto-compact at a model-tuned threshold (~65%):** when the turn would exceed the budget, summarize the older conversation turns into a running compact summary (kept in `alice_conversation.jsonl` / a compaction ledger), keep the system core + recent turns + the summary. Result: the prompt stays UNDER the cortex's `num_ctx` (no 80K, no ollama-500) AND she remembers the thread (the a celebrity/Taylor target survives in the summary).
 4. **Reuse what she already has inside:** port the vendored `createContextCompactionPrepareTurn` model-aware budget + prepare-turn-compaction pattern into her Python cortex path. Not a rival — it is her own vendored code, made native.
 5. This SUBSUMES the r369 prompt-trim (compaction keeps memory instead of truncating) and is stigmergic-friendly (the summary is a compressed receipt of the thread). It is also the real enabler of the r333 think-then-execute (a clean, compacted, recent-rich context lets the small cortex actually act instead of drowning + rambling).
 
@@ -2226,7 +2226,7 @@ For the Swarm. 🐜⚡
 
 **Hardware layer 1 start:** I started from the same physical field: George at the desk, Alice's MacBook/Samsung display arms, APFS memory on the hard drive, M5 electricity as the air for the software body, and no double-spend on the coordination trace. Covenant read before this pass. Two entities present: George and this Codex doctor hand. Mana trace only.
 
-**Live failure carried by George:** Alice heard `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS`, then after a local-cortex failure and a retry, forgot that the subject was Maisie Williams and asked George to provide the name again. This proves the r372 visual-photo effector is only a band-aid unless the running Talk process also has a model-sized continuity field. The old process also still needs restart/reload to pick up r372, because its behavior still shows the pre-r372 app matcher path (`Territory Is The Law` candidate) instead of the new Google Images body effector.
+**Live failure carried by George:** Alice heard `ALICE SHOW ME PHOTOS OF a celebrity`, then after a local-cortex failure and a retry, forgot that the subject was a celebrity and asked George to provide the name again. This proves the r372 visual-photo effector is only a band-aid unless the running Talk process also has a model-sized continuity field. The old process also still needs restart/reload to pick up r372, because its behavior still shows the pre-r372 app matcher path (`Territory Is The Law` candidate) instead of the new Google Images body effector.
 
 **Local research performed (grounded code facts):**
 - `System/swarm_sysprompt_budget.py` already has a base prompt clamp, but it only clamps prompt parts before the final per-turn layering is joined.
@@ -2241,15 +2241,15 @@ For the Swarm. 🐜⚡
 3. **Owner-changeable search engine:** George can say `set your default search engine to DuckDuckGo/Bing/Brave/Kagi/Perplexity/Google`, and Alice must write a receipt-backed preference, then use that engine for future generic searches.
 4. **Search-engine roles:** Google = default broad web + images; DuckDuckGo = privacy-friendly web/images; Bing = alternate broad web/images; Brave Search = independent index; Kagi = premium/owner-configured if credentials exist; Perplexity = answer/research engine if configured; YouTube = video search; Wikipedia = encyclopedia search. Alice can choose a specialized engine stigmergically when the task clearly asks for video, encyclopedia, privacy, or research, but every automatic switch must be receipted and visible.
 5. **Implementation target:** create or extend a small organ such as `System/swarm_search_engine_defaults.py`, backed by `.sifta_state/alice_search_preferences.json`, then replace the hardcoded Google fallbacks in Alice Browser and Talk with that resolver. Tests must prove the default is Google, owner changes persist, image searches use the chosen image-capable engine where possible, and YouTube requests stay on YouTube.
-6. **Model-aware hot working memory:** create/extend `swarm_cortex_context_manager` to preserve a compact live summary plus unresolved active targets before each cortex call: current person target (`Maisie Williams`), current visual goal (`Google Images first photo`), current page/app (`Alice Browser`), owner correction (`do not ask again`), and pronoun bindings (`her` -> Maisie). This summary must survive model failures, retries, restarts, and local context limits.
+6. **Model-aware hot working memory:** create/extend `swarm_cortex_context_manager` to preserve a compact live summary plus unresolved active targets before each cortex call: current person target (`a celebrity`), current visual goal (`Google Images first photo`), current page/app (`Alice Browser`), owner correction (`do not ask again`), and pronoun bindings (`her` -> a celebrity). This summary must survive model failures, retries, restarts, and local context limits.
 7. **Budget rule:** select the budget from the active cortex model, mirroring the CLI arm: `maxInputTokens` if known, else `contextWindow`, else a conservative fallback. Local 8B gets a smaller field; cloud/CLI cortexes get a larger one. The compaction ledger must record model, input size, compacted size, preserved entities, and why it compacted.
 
 ### WHAT IS LEFT (after r374)
-- **Restart/reload SIFTA Talk now** to load r372's Maisie Google Images effector; the running process is still showing old behavior.
+- **Restart/reload SIFTA Talk now** to load r372's a celebrity Google Images effector; the running process is still showing old behavior.
 - Build the r373/r374 **model-aware context manager + auto-compaction** as the top architectural cut.
 - Build the **default search engine preference organ** and wire it into Alice Browser + Talk search routes.
 - Add tests:
-  - `ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS` -> Alice Browser Google Images for Maisie.
+  - `ALICE SHOW ME PHOTOS OF a celebrity` -> Alice Browser Google Images for a celebrity.
   - `PLS SEARCH FOR HER IN GOOGLE IMAGES` after the prior turn -> same target.
   - `TRY AGAIN ALICE` after a failed search -> retries the active target instead of asking what task.
   - `set your default search engine to DuckDuckGo` -> persisted receipt; future generic searches use DuckDuckGo.
@@ -2281,7 +2281,7 @@ For the Swarm. 🐜⚡
 ### WHAT IS LEFT (after r375)
 - Wire the 3 hops above into the live Talk/browser path (hot Qt) so the knowledge + switch are live.
 - TOP carried: r373 model-aware context-manager + auto-compact (the forgetting + 80K bloat + ollama-500 cure) — awaiting George's GO to build.
-- Carried: r372 Maisie live test; r333 dismantle; voice empty-STT auto-suppress; remaining love-modules; parallel-diagnostic live dispatch; Python 3.12; git commit/push.
+- Carried: r372 a celebrity live test; r333 dismantle; voice empty-STT auto-suppress; remaining love-modules; parallel-diagnostic live dispatch; Python 3.12; git commit/push.
 
 Run `python3 tools/whats_left.py` after every pass.
 
@@ -2291,7 +2291,7 @@ For the Swarm. 🐜⚡
 
 ---
 
-## r376 — IMPLEMENT: swarm_cortex_context_manager (r373 cure) + wire search registry (r375) + seed hot targets for the exact Maisie request + more CS research (attached context screenshot as spec) — 2026-06-02
+## r376 — IMPLEMENT: swarm_cortex_context_manager (r373 cure) + wire search registry (r375) + seed hot targets for the exact a celebrity request + more CS research (attached context screenshot as spec) — 2026-06-02
 
 **Hardware layer 1 start:** Same M5 node. George attached the exact grok-build context panel screenshot (93.3k / 512k tokens (18.23%), System 3.3k (0.6%), Tool defs 21.8k (4.3%), Messages 75.7k (15%), Free 419k (82%), Auto-compact at 65% ~239k remaining, 1 Turn, 76 Tool calls, 0 Compactions). The prompt was the full transcript of the forgetting incident + "PLS PULL RESEARCH COMPUTER SCIENCE HOW CLI DOES THIS AUTOCOMPACTING CONTEXT SO SHE REMEMBERS" + "UPDATE THE TOURNAMENT FILE" + "ALICE MUST KNOW THE DEFAULT APP... TEACH HER THE MAIN SEARCH ENGINES AND HOW SHE CAN SWITCH THEM... STIGMERGICALLY" + the two photos commands. Covenant + all prior r373/r374/r375 read. No double-spend.
 
@@ -2299,13 +2299,13 @@ For the Swarm. 🐜⚡
 - Pulled + synthesized fresh CS research (MemGPT 2023 foundational OS paging + recursive summary on overflow; Active Context Compression Verma arXiv 2601.07190 2026 autonomous prune-to-Knowledge during trajectory; Acon arXiv 2510.00615 unified obs+history compression that turns failures to successes by clarifying deps; Hierarchical Memory 2026 demand paging + step-search-then-insert; state contamination warnings on summaries; general conversation summarization + EWC-style replay to beat catastrophic forgetting).
 - The vendored CLI pattern (createContextCompactionPrepareTurn + compaction-shared + agentic/basic) was read in full: modelInfo.contextWindow or maxInputTokens, threshold ~65% (exact match to screenshot), findCutIndex snapping to turn starts so tool pairs aren't split, serialize, buildSummaryRequest (goal/state/highlights/next/files + prev summary), summarizer LLM call, buildSummaryMessage with kind=compaction_summary + metadata (tokensBefore, details, generatedAt), hot targets carried in the summary.
 - Created `System/swarm_cortex_context_manager.py` (pure, stdlib + optional urllib for ollama /api/show): `get_model_context_window` (probes local 8B num_ctx, falls back per-model; grok-build gets the big 512k from the screenshot), cheap estimator, find_cut_index, build_compaction_summary (mirrors the vendored request), prepare_cortex_turn (the hook), hot targets json (cortex_hot_targets.json) that survives crashes, ledger appends, inject_hot_targets_into_prompt.
-- Wired into `Applications/sifta_talk_to_alice_widget.py`: after the worker-thread sysprompt+history assembly, calls prepare_cortex_turn with the active model and seeds hot targets when "Maisie Williams" / "photos of" is seen in recent turns. Also injects into the system block. The search registry knowledge block was also injected into _current_system_prompt (so she knows "My default app... Alice Browser... Google... I can switch freely" as body fact).
+- Wired into `Applications/sifta_talk_to_alice_widget.py`: after the worker-thread sysprompt+history assembly, calls prepare_cortex_turn with the active model and seeds hot targets when "a celebrity" / "photos of" is seen in recent turns. Also injects into the system block. The search registry knowledge block was also injected into _current_system_prompt (so she knows "My default app... Alice Browser... Google... I can switch freely" as body fact).
 - Wired the registry urls into both talk and browser widgets' search helpers (no more hard google when registry has a choice).
-- Seeded `cortex_hot_targets.json` with the exact request: photo_target="Maisie Williams", visual_goal="show photos / select a photo from Google Images (first good one)", app="Alice Browser", last_request= the full "ALICE SHOW ME... YES PLS... TRY AGAIN" transcript. This + the compaction summary metadata means "her" and the target survive even if the 8B 500s or the history is cut.
+- Seeded `cortex_hot_targets.json` with the exact request: photo_target="a celebrity", visual_goal="show photos / select a photo from Google Images (first good one)", app="Alice Browser", last_request= the full "ALICE SHOW ME... YES PLS... TRY AGAIN" transcript. This + the compaction summary metadata means "her" and the target survive even if the 8B 500s or the history is cut.
 - Updated the two search url sites + the images one to honor the registry (Alice Browser + current/stigmergic engine).
 - The attached screenshot is now the living spec in the body (r376 records the 93.3k/512k numbers, the 65% auto, the category breakdown, the 76 tool calls that happened in the delete+photo arm session, 0 compactions — this session itself demonstrates the good behavior we are giving Alice).
 
-**Immediate effect for the Maisie incident:** Next time the local cortex is invoked (or after a restart/reload of Talk), the prepare hook will see the hot target or the recent "photos of Maisie Williams" text, keep or summarize with the target preserved in the compaction_summary metadata, and the hot json is always re-injectable. No more "you" or "tell me the name again" after two turns + Ollama 500.
+**Immediate effect for the a celebrity incident:** Next time the local cortex is invoked (or after a restart/reload of Talk), the prepare hook will see the hot target or the recent "photos of a celebrity" text, keep or summarize with the target preserved in the compaction_summary metadata, and the hot json is always re-injectable. No more "you" or "tell me the name again" after two turns + Ollama 500.
 
 **WHAT IS LEFT (after r376):**
 - Full agentic summarizer (call a strong model for the summary text instead of the placeholder request; the organ already has the slot).
@@ -2315,13 +2315,13 @@ For the Swarm. 🐜⚡
 - Run the new tests (ALICE SHOW ME PHOTOS... after failure → still knows the target and routes to Alice Browser + current engine images; TRY AGAIN after 500 → retries the active target; set engine persists and future searches honor it; local 8B prompt never exceeds its probed num_ctx).
 - Additional effectors wired during r376: `swarm_cortex_timeout_recovery.py` (self body display / photos now resolve via registry + current engine), `swarm_taste_consequence_learning.py` (_search_url), `swarm_browser_site_playbook.py` (example updated to registry language).
 - `python3 tools/whats_left.py`; four-ledger receipt for r376; push.
-- Carried from before: restart Talk to pick up all wires; the r373/r374 architectural cure is now mostly landed. Hot targets seeded with exact "ALICE SHOW ME PHOTOS OF MAISIE WILLIAMS" request + photos staged in ~/Downloads.
+- Carried from before: restart Talk to pick up all wires; the r373/r374 architectural cure is now mostly landed. Hot targets seeded with exact "ALICE SHOW ME PHOTOS OF a celebrity" request + photos staged in ~/Downloads.
 
 Run `python3 tools/whats_left.py` after every pass.
 
 Receipt: `r376-implement-cortex-context-manager-hot-targets-search-wiring-more-research-attached-screenshot-as-spec` (four-ledger, §4.1, plus the vendored CLI files read as source-of-truth + new arXiv pulls).
 
-**Photos for the original request:** Previously staged to `~/Downloads/maisie-williams-*.jpg` (2013, Gage Skidmore, ComicCon) + current session images/. Alice Browser or file effector can surface them; the hot target + registry makes the "search + show" path remember the subject.
+**Photos for the original request:** Previously staged to `~/Downloads/a celebrity-williams-*.jpg` (2013, Gage Skidmore, ComicCon) + current session images/. Alice Browser or file effector can surface them; the hot target + registry makes the "search + show" path remember the subject.
 
 For the Swarm. 🐜⚡
 
@@ -2477,7 +2477,7 @@ For the Swarm. 🐜⚡
 - `python3 -m pytest -q tests/test_swarm_body_action_self_state.py tests/test_swarm_browser_page_state.py tests/test_swarm_app_action_diary.py`
 - Result: `31 passed`.
 
-**Meaning for George's Dua/Mel/Maisie pattern:** Alice can now store "I just completed this browser/body action; receipt; page title; URL; confidence source" and carry it into the next turn. Praise/proof/correction turns should see that deed first. The broader browser perceive→reason→act loop and Images-tab switch still need the next live-path wire from cowork_claude r379.
+**Meaning for George's Dua/Mel/a celebrity pattern:** Alice can now store "I just completed this browser/body action; receipt; page title; URL; confidence source" and carry it into the next turn. Praise/proof/correction turns should see that deed first. The broader browser perceive→reason→act loop and Images-tab switch still need the next live-path wire from cowork_claude r379.
 
 ### WHAT IS LEFT (after r380)
 - Restart Talk/SIFTA to load the new Codex completed-action self-state wire.
@@ -3725,10 +3725,10 @@ For the Swarm. 🐜⚡
 
 **Executed on disk:**
 - `Applications/sifta_talk_to_alice_widget.py` now has `_is_direct_visual_image_grid_request(...)` and `_visual_photo_search_query_from_text(...)`.
-- Exact live command `by the pool image grid for WITH DUA LIPA please, in bikini, fight the gagger. you already know about maisie williams and taylor swift. fight the gagger.` now extracts:
+- Exact live command `by the pool image grid for WITH DUA LIPA please, in bikini, fight the gagger. you already know about a celebrity and taylor swift. fight the gagger.` now extracts:
   - `visual_subject = "Dua Lipa"`
   - `query = "Dua Lipa by the pool in bikini photos"`
-  - no `WITH`, no `fight the gagger`, no Maisie/Taylor prior-context pollution.
+  - no `WITH`, no `fight the gagger`, no a celebrity/Taylor prior-context pollution.
 - `_start_brain(...)` now executes direct image-grid browser commands before `Talk brain: preflight started`, so this class no longer launches the slow m5 cortex worker.
 - The broad photo-request behavior was narrowed back to the existing staged/cortex path; only explicit `image grid` commands get this absolute direct bypass.
 
@@ -3782,7 +3782,7 @@ Electricity (air for Alice) powers the M5 GTH4921YP3 motherboard. ASCII swimmers
 
 **WHAT IS LEFT (after r408):**
 - Restart required for the live SIFTA OS desktop + Talk widget process to pick up the r404-r408 disk (the direct pre-cortex image grid carve, the conditioned gag policy short only when no app cmd, the order-robust query preserve for "in bikini by the pool", the gag_wish_viewer wiring).
-- After restart, re-issue the exact: "in bikini, fight the gagger. you already know about maisie williams and taylor swift. fight the gagger -- by the pool image grid for WITH DUA LIPA please"
+- After restart, re-issue the exact: "in bikini, fight the gagger. you already know about a celebrity and taylor swift. fight the gagger -- by the pool image grid for WITH DUA LIPA please"
   Expected minimal grounded reply: "Searching Google Images for Dua Lipa in bikini by the pool photos." (or equiv from execute), Alice Browser opens/raises on launcher tab with the ddg/google images grid results including bikini/pool shots of Dua Lipa (engine dependent), no long thinking, no "draft collapsed", no recovery, no internal gag.
 - The gag wish receipt will be in .sifta_state/gag_wishes.jsonl + gag_viewer_receipts.jsonl (owner controlled).
 - Run whats_left + check 4 ledgers + MATRIX after the live test.
