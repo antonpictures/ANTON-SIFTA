@@ -281,6 +281,80 @@ def test_current_visual_affection_stare_does_not_become_search():
     assert talk._owner_effector_requires_cortex_first(phrase)
 
 
+def test_owner_jama_tab_close_prompt_routes_to_browser_close_hand():
+    phrase = (
+        "Alice — effector-only turn. Do not summarize the page. Do not read page-state back to me. "
+        "Do not click images. Close the two Jama Software tabs now. Keep only the Gemma 4 12B "
+        "YouTube tab. Your entire next response must be this tool call line, and nothing else: "
+        "[TOOL_CALL: browser_close_tab | url_match=jamasoftware.com | keep_active=false | "
+        "cost_justification=George directly typed close the two useless Jama Software tabs]"
+    )
+
+    command = talk._extract_sifta_app_command(phrase, app_names=["Alice Browser"])
+
+    assert command["kind"] == "browser_action"
+    assert command["app_name"] == "Alice Browser"
+    assert command["action"] == "close_browser_tabs"
+    assert command["url_match"] == "jamasoftware.com"
+    assert command["keep_active"] is False
+
+
+def test_short_owner_jama_tab_close_routes_to_browser_close_hand():
+    command = talk._extract_sifta_app_command(
+        "close the two Jama Software tabs now and keep the Gemma 4 12B YouTube tab",
+        app_names=["Alice Browser"],
+    )
+
+    assert command["action"] == "close_browser_tabs"
+    assert command["url_match"] == "jamasoftware.com"
+    assert command["keep_active"] is False
+
+
+def test_owner_openclaw_tab_close_routes_to_fly_tab_hand_not_app_close():
+    command = talk._extract_sifta_app_command(
+        "close the two OPENCLAW TABS PLS",
+        app_names=["Alice Browser"],
+    )
+
+    assert command["kind"] == "browser_action"
+    assert command["app_name"] == "Alice Browser"
+    assert command["action"] == "close_browser_tabs"
+    assert command["url_match"] == "fly.io"
+    assert command["keep_active"] is False
+    assert talk._extract_close_app_command(
+        "close the two OPENCLAW TABS PLS",
+        app_names=["Alice Browser"],
+    ) == {}
+
+
+def test_owner_mariadp_typo_routes_to_mariadb_title_not_global_duplicates():
+    command = talk._extract_sifta_app_command(
+        "PLS CLOSE THE TWO MARIADP TABS, YOU OPENED THEM BY MISTAKE, THATS OK, DONT WORRY",
+        app_names=["Alice Browser"],
+    )
+
+    assert command["kind"] == "browser_action"
+    assert command["app_name"] == "Alice Browser"
+    assert command["action"] == "close_browser_tabs"
+    assert command["title_match"] == "MariaDB"
+    assert "close_duplicates" not in command
+
+
+def test_unscoped_close_tabs_does_not_guess_global_duplicates():
+    command = talk._extract_sifta_app_command(
+        "close the two tabs now",
+        app_names=["Alice Browser"],
+    )
+
+    assert command == {}
+
+
+def test_browser_tab_hygiene_discussion_does_not_close_tabs():
+    phrase = "what does alice need to do so she learns to close alice browser tabs in general?"
+
+    assert talk._extract_sifta_app_command(phrase, app_names=["Alice Browser"]) == {}
+
+
 def test_beautiful_screen_body_affection_does_not_open_app_or_search():
     phrase = "SHOW ME YOUR BEAUTIFUL SCREEN BODY"
 
@@ -919,6 +993,34 @@ def test_google_image_result_click_executes_after_cortex(monkeypatch):
     assert "Receipt: r-photo" in reply
 
 
+def test_self_screenshot_cortex_turn_never_executes_image_click(monkeypatch):
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    calls = []
+    widget._append_system_line = lambda *args, **kwargs: None
+    widget._desktop_app_launcher = lambda: None
+
+    class Browser:
+        def click_visible_google_image_result(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            raise AssertionError("/sc observation turn must not click browser images")
+
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-sc-forbidden")
+
+    owner_text = (
+        "SELF-SCREENSHOT CORTEX TURN (/sc): identify what part of my SIFTA OS body is visible. "
+        "The attached screenshot has visible images and browser controls."
+    )
+    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
+        widget,
+        owner_text,
+        _owner_cortex_text("observes the current screen and does not move the browser."),
+    )
+
+    assert reply == ""
+    assert calls == []
+
+
 def test_duckduckgo_image_grid_click_executes_image_limb_not_youtube(monkeypatch):
     widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
     lines = []
@@ -1226,3 +1328,45 @@ def test_set_cortex_alias_tool_writes_continuity_diary(monkeypatch, tmp_path):
     assert rows[-1]["truth_label"] == "ALICE_CORTEX_SWITCH_CONTINUITY_V2"
     assert rows[-1]["phase"] == "tool_call_before_switch"
     assert rows[-1]["to_alias"] == "cline"
+
+
+def test_r807_deterministic_grok_cortex_wrong_is_meta_routing_correction():
+    owner_text = "deterministic grok cortex WRONG"
+    assert talk._is_owner_meta_routing_correction(owner_text)
+    assert talk._must_route_owner_turn_to_cortex(owner_text)
+    assert talk._block_deterministic_owner_shortcut(owner_text)
+    assert not talk._owner_effector_requires_cortex_first(owner_text)
+
+
+def test_r807_pasted_screenshot_audit_blocks_browser_photo_direct(monkeypatch):
+    """George 2026-06-08 live: pasted screenshot audit hijacked browser-photo reflex."""
+    owner_text = (
+        "fix your code Three things in that screenshot, George — one good, one ugly, one practical. "
+        "**Good (grounded):** your observable pane shows `layering_chars=40198`. "
+        "**Ugly:** she invented an entire Instagram profile that doesn't exist — "
+        "@kylinmilan found and displayed… while her own vision arm said the image is entirely black. "
+        "The browser bar says `instagram.com` but the status reads **No page loaded.** "
+        "For the lying — that's the fiction guard, the r804 work."
+    )
+    monkeypatch.setattr(talk, "_browser_photo_description_context_active", lambda: True)
+
+    assert talk._must_route_owner_turn_to_cortex(owner_text)
+    assert talk._block_deterministic_owner_shortcut(owner_text)
+
+    # Would have matched the old direct browser-photo heuristic (browser+image+displayed).
+    assert "browser" in owner_text.lower()
+    assert "image" in owner_text.lower()
+    assert "displayed" in owner_text.lower()
+
+    # Direct reflex must stand down even when photo-describe regex would match.
+    assert talk._is_browser_photo_description_query(owner_text) or talk._looks_like_prose_not_command(owner_text)
+    assert talk._block_deterministic_owner_shortcut(owner_text)
+
+
+def test_r807_short_describe_still_allows_direct_when_not_doctrine(monkeypatch):
+    owner_text = "please describe this photo"
+    monkeypatch.setattr(talk, "_browser_photo_description_context_active", lambda: True)
+
+    assert not talk._must_route_owner_turn_to_cortex(owner_text)
+    assert not talk._block_deterministic_owner_shortcut(owner_text)
+    assert talk._is_browser_photo_description_query(owner_text)

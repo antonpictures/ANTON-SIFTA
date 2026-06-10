@@ -78,3 +78,42 @@ def test_results_url_uses_exact_query():
     url = yt.youtube_results_url("Victoria Secret fashion show")
     assert url.startswith("https://www.youtube.com/results?search_query=")
     assert "Victoria" in url and "Secret" in url
+
+
+def test_post_cortex_bridge_extracts_ophelia_exact_title_from_plan():
+    owner_context = (
+        "do you think you can use your cortex alice to plan and then execute steps "
+        "search on youtube for the right video i asked and play it?"
+    )
+    brain_text = (
+        "Yes. Cortex plan: 1. Open YouTube. 2. Search exact title: "
+        "`Taylor Swift - The Fate of Ophelia (Official Music Video)`. "
+        "3. Select the official matching result. 4. Press play. "
+        "5. Verify the visible title before reporting."
+    )
+    bridge = yt.synthesize_post_cortex_youtube_bridge(owner_context, brain_text)
+    assert bridge["should_bridge"] is True
+    assert bridge["query"] == "Taylor Swift - The Fate of Ophelia (Official Music Video)"
+    assert bridge["url"] == yt.youtube_results_url("Taylor Swift - The Fate of Ophelia (Official Music Video)")
+
+
+def test_post_cortex_bridge_supports_retry_with_recent_youtube_context():
+    owner_context = (
+        "do you think you can use your cortex alice to plan and then execute steps "
+        "search on youtube for the right video i asked and play it?\n"
+        "Can you try again?"
+    )
+    brain_text = (
+        "The execute receipt says the command context was not recognized, so I need one clean command: "
+        "`Alice, search YouTube for Taylor Swift - The Fate of Ophelia (Official Music Video) "
+        "and play the official video.`"
+    )
+    bridge = yt.synthesize_post_cortex_youtube_bridge(owner_context, brain_text)
+    assert bridge["should_bridge"] is True
+    assert bridge["query"] == "Taylor Swift - The Fate of Ophelia (Official Music Video)"
+
+
+def test_post_cortex_bridge_does_not_fire_without_owner_youtube_intent():
+    brain_text = "Search exact title: `Taylor Swift - The Fate of Ophelia (Official Music Video)`."
+    bridge = yt.synthesize_post_cortex_youtube_bridge("Can you try again?", brain_text)
+    assert bridge["should_bridge"] is False

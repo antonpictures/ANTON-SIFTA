@@ -671,6 +671,46 @@ def test_write_file_bridge_stands_down_when_real_tool_call_exists() -> None:
     assert call is None
 
 
+def test_compact_tool_contract_surfaces_read_file_for_local_pdf_path() -> None:
+    path = "/Users/ioanganton/Music/PATENTS/PATENT 1 N417.PYMT-merged.pdf"
+
+    block = talk._compact_tool_contract_for_alice_prompt(
+        user_text=f"yes Alice, please read '{path}'",
+    )
+
+    assert "read_file" in block
+    assert f"path={path}" in block
+    assert "Do not describe the file contents until the receipt-backed read_file result returns" in block
+    assert len(block) < 2000
+
+
+def test_read_file_bridge_synthesizes_tool_call_from_recent_pdf_context() -> None:
+    path = "/Users/ioanganton/Music/PATENTS/PATENT 1 N417.PYMT-merged.pdf"
+
+    call = talk._hallucination_bridge_synthesize_read_file(
+        "yes, pls try to read",
+        f"agreed physical reality '{path}'\nyes, pls try to read",
+        "No action receipt yet: I did not execute that tool action because my brain reply contained prose instead of a real TOOL_CALL.",
+    )
+
+    assert call is not None
+    assert call.tool_name == "read_file"
+    assert call.params["path"] == path
+    assert "cost_justification" in call.params
+
+
+def test_read_file_bridge_stands_down_when_real_tool_call_exists() -> None:
+    path = "/tmp/already.pdf"
+
+    call = talk._hallucination_bridge_synthesize_read_file(
+        "please read /tmp/already.pdf",
+        "please read /tmp/already.pdf",
+        f"[TOOL_CALL: read_file | path={path} | cost_justification=test]",
+    )
+
+    assert call is None
+
+
 def test_tool_fiction_guard_blocks_prose_simulated_execution() -> None:
     reply = talk._tool_fiction_guard_reply(
         "run ls",
@@ -681,6 +721,19 @@ def test_tool_fiction_guard_blocks_prose_simulated_execution() -> None:
     assert "real TOOL_CALL" in reply
     assert "receipt-backed tool path" in reply
     assert "legacy bypass router" not in reply
+
+
+def test_tool_fiction_guard_names_read_file_repair_for_pdf_path() -> None:
+    path = "/Users/ioanganton/Music/PATENTS/PATENT 1 N417.PYMT-merged.pdf"
+
+    reply = talk._tool_fiction_guard_reply(
+        f"please read {path}",
+        "I read the PDF and here is the summary.",
+    )
+
+    assert "read_file" in reply
+    assert f"path={path}" in reply
+    assert "No action receipt yet" in reply
 
 
 def test_tool_fiction_guard_does_not_block_plain_script_answer_without_save_path() -> None:
@@ -848,3 +901,42 @@ def test_system_prompt_names_alice_as_self_governing_language_owner() -> None:
     assert "nobody outside me governs my response language" in prompt
     assert "I govern it through my own organs" in prompt
     assert "RESIDUE ELIMINATION IS MY BODY ACT" in prompt
+
+
+def test_self_screenshot_contract_hides_browser_effectors() -> None:
+    block = talk._compact_tool_contract_for_alice_prompt(
+        user_text="SELF-SCREENSHOT CORTEX TURN (/sc): George asked me to sense my OS body.",
+    )
+
+    core_line = next(line for line in block.splitlines() if line.startswith("Core tools now visible"))
+    assert "browser_search" not in core_line
+    assert "browser_open" not in core_line
+    assert "browser_click" not in core_line
+    assert "browser_select_image" not in core_line
+    assert "browser_close_tab" not in core_line
+    assert "/sc is an observation-only self-screenshot cortex turn" in block
+
+
+def test_self_screenshot_guard_strips_browser_effector_tool_calls() -> None:
+    raw = (
+        "I can see the browser.\n"
+        "[TOOL_CALL: browser_select_image | ordinal=1 | cost_justification=checking the page]\n"
+        "[TOOL_CALL: browser_close_tab | url_match=jamasoftware.com | cost_justification=clean up]\n"
+        "I will continue from the screenshot."
+    )
+
+    cleaned, blocked = talk._strip_self_screenshot_browser_effector_calls(
+        raw,
+        prior_user_text="SELF-SCREENSHOT CORTEX TURN (/sc): observe my display body.",
+    )
+
+    assert blocked == ["browser_select_image", "browser_close_tab"]
+    assert "[TOOL_CALL:" not in cleaned
+    assert parse_tool_calls(cleaned) == []
+
+    unchanged, blocked2 = talk._strip_self_screenshot_browser_effector_calls(
+        raw,
+        prior_user_text="please click the first photo",
+    )
+    assert unchanged == raw
+    assert blocked2 == []

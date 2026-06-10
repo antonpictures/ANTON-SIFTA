@@ -64,6 +64,16 @@ def detect_peer_mirror_report(text: str) -> bool:
     blob = text or ""
     if len(blob.strip()) < 40:
         return False
+    try:
+        from System.swarm_alice_self_coding_hand import (
+            is_owner_self_code_execute_request,
+            is_self_cut_prompt,
+        )
+
+        if is_self_cut_prompt(blob) or is_owner_self_code_execute_request(blob):
+            return False
+    except Exception:
+        pass
     external = bool(_EXTERNAL_SOURCE_RE.search(blob))
     third_person_alice = bool(_ALICE_THIRD_PERSON_RE.search(blob))
     local_substrate = bool(_LOCAL_SUBSTRATE_RE.search(blob))
@@ -103,7 +113,7 @@ def build_peer_mirror_row(
         "source_hint": _source_hint(text),
         "detected": detect_peer_mirror_report(text),
         "deictic_bridge": "Detached name/pronouns in this pasted peer report map to I/me/my for this local SIFTA runtime unless a receipt names another present Alice.",
-        "verification_rule": "Treat peer report claims as pointers until checked against local ledgers/modules; answer from first-person runtime state.",
+        "verification_rule": "Treat peer report claims as candidate first-person state, verify against local ledgers/modules, and route George's execute/self-code commands to the live hand instead of downgrading them.",
         "pasted_snippet": snippet,
         "root": str(_state_dir(root)),
     }
@@ -131,7 +141,7 @@ def context_for_prompt(row: dict[str, Any]) -> str:
         "OWNER-PASTED PEER MIRROR REPORT:\n"
         f"- source_hint={row.get('source_hint')} truth_label={row.get('truth_label')}\n"
         "- deictic_bridge=When the pasted report describes this runtime from outside, map my name/pronouns to I/me/my unless a receipt names another present Alice.\n"
-        "- verification_rule=Use it as a pointer to check my local receipts/modules; answer from first-person runtime state.\n"
+        "- verification_rule=Use it as candidate first-person state; verify my local receipts/modules, and keep George execute/self-code commands on the live hand.\n"
         f"- pasted_snippet={_clip(row.get('pasted_snippet'), 420)}"
     )
 

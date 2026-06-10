@@ -1382,6 +1382,7 @@ def ask_agent_arm(
     evidence_mode: bool = False,
     image_path: str = "",
     model_hint: str = "",
+    task_packet_id: str = "",
 ) -> AgentArmResult:
     """Run one bounded arm query with before/after receipts.
 
@@ -1437,6 +1438,8 @@ def ask_agent_arm(
         "mode": "exact",
         "evidence_mode": evidence_mode,
         "prompt_sha256": _sha256_text(prompt),
+        "prompt_chars": len(prompt),
+        "task_packet_id": (task_packet_id or "").strip() or None,
         "require_exact_sha256": _sha256_text(require_exact) if require_exact else None,
         "command": command,
     }

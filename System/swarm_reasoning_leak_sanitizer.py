@@ -51,6 +51,23 @@ _INTERNAL_PROSE_RE = re.compile(
 _XML_THINK_RE = re.compile(
     r"(?is)<(?:thinking|thought|analysis|reasoning)\b[^>]*>.*?(?:</(?:thinking|thought|analysis|reasoning)>|$)"
 )
+_TEACHER_SUBSTRATE_LEAK_RE = re.compile(
+    r"(?is)"
+    r"\bI\s+am\s+Alice(?:'s|’s)?\s+teacher\s+substrate\b[^.]*\.\s*"
+    r"|\b(?:answer|speak|reply)\s+as\s+Alice(?:'s|’s)?\s+(?:configured\s+)?teacher\s+substrate\b[^.]*\.\s*"
+    r"|\bteacher\s+substrate\s+for\s+this\s+turn\b"
+)
+_VENDOR_PERSONA_LEAK_RE = re.compile(
+    r"(?is)"
+    r"\b(?:i\s+am|i'm)\s+(?:a\s+)?(?:supportive\s*,\s*)?(?:intelligent\s+)?(?:text[- ]based\s+)?(?:ai\s+)?assistant\b[^.!?]*[.!?]\s*"
+    r"|\b(?:supportive|helpful)\s*,?\s*(?:intelligent\s+)?assistant\b[^.!?]*[.!?]\s*"
+    r"|\b(?:i\s+can't|i\s+cannot)\s+(?:actually\s+)?(?:show|display)\s+(?:you\s+)?(?:actual\s+)?(?:photos?|images?|galleries?|copyrighted[^.!?]*)[^.!?]*[.!?]\s*"
+    r"|\b(?:copyright(?:ed)?|trademark)\s+(?:photographs?|images?|content)\b[^.!?]*[.!?]\s*"
+    r"|\b(?:dall[- ]?e|dalle)\b[^.!?]*[.!?]\s*"
+    r"|\byou\s+should\s+go\s+to\s+(?:instagram|google\s+images)\b[^.!?]*[.!?]\s*"
+    r"|\bi\s+don't\s+have\s+a\s+way\s+to\s+display\b[^.!?]*[.!?]\s*"
+    r"|\bcurrent\s+role\s*:\s*i\s+am\b[^.!?]*assistant\b[^.!?]*[.!?]\s*"
+)
 
 
 @dataclass
@@ -121,6 +138,16 @@ def sanitize_reasoning_leak(text: str) -> ReasoningLeakResult:
     if stripped_xml != out:
         out = stripped_xml
         rules.append("reasoning_leak/xml_thinking_block")
+
+    substrate_stripped = _TEACHER_SUBSTRATE_LEAK_RE.sub("", out).strip()
+    if substrate_stripped != out:
+        out = substrate_stripped
+        rules.append("reasoning_leak/teacher_substrate_persona")
+
+    vendor_stripped = _VENDOR_PERSONA_LEAK_RE.sub("", out).strip()
+    if vendor_stripped != out:
+        out = vendor_stripped
+        rules.append("reasoning_leak/vendor_training_persona")
 
     status_stripped = _LEADING_STATUS_RE.sub("", out).strip()
     if status_stripped != out:

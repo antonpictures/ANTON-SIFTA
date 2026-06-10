@@ -1,5 +1,27 @@
+import os
 import subprocess
 import sys
+
+
+def test_merge_chromium_gpu_flags_sets_env_and_argv():
+    from System import qt_webengine_bootstrap as boot
+
+    boot._BOOTSTRAP_RESULT = None
+    os.environ.pop("QTWEBENGINE_CHROMIUM_FLAGS", None)
+    try:
+        sys.argv.remove("--use-gl=desktop")
+    except ValueError:
+        pass
+    merged = boot._merge_chromium_gpu_flags()
+    assert "--enable-gpu" in merged
+    if sys.platform == "darwin":
+        assert "--use-gl=desktop" not in merged
+        assert "--use-gl=desktop" not in sys.argv
+    else:
+        assert "--use-gl=desktop" in merged
+        assert "--use-gl=desktop" in sys.argv
+    assert os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS") == merged
+    assert "--enable-gpu" in sys.argv
 
 
 def test_qt_webengine_bootstrap_runs_before_qapplication():

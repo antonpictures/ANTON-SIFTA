@@ -154,7 +154,7 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert "Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
     assert "Experimental alias/test cortex:** `krishairnd/Gemma-4-Uncensored:latest`" in (defaults.__doc__ or "")
     assert "Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
-    assert "Cloud teacher cortexes:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
+    assert "Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
 
 
 def test_legacy_fireworks_cortexes_normalize_to_kimi(tmp_path, monkeypatch):

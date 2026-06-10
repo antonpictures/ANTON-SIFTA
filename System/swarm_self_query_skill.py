@@ -92,7 +92,10 @@ _TRIGGER_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r"\bwhat\s+do\s+you\s+need\b", re.I),
     re.compile(r"\bwhat\s+are\s+you\s+missing\b", re.I),
     re.compile(r"\bwhat\s+do\s+you\s+want\b", re.I),
-    re.compile(r"\bhow\s+are\s+you(?:\s+(?:doing|feeling))?\b", re.I),
+    # r910: negative lookahead — "how are you GOING to say" is not a
+    # wellbeing ask; the bare phrase fired on ambient musings (same substring
+    # trap family as r888 custom->tom).
+    re.compile(r"\bhow\s+are\s+you(?:\s+(?:doing|feeling))?\b(?!\s+(?:going|gonna|getting|supposed|able)\b)", re.I),
     re.compile(r"\bwhat'?s\s+wrong\b", re.I),
     re.compile(r"\bare\s+you\s+ok\b", re.I),
     re.compile(r"\bself[-\s]?query\b", re.I),
@@ -103,10 +106,39 @@ _TRIGGER_PATTERNS: tuple[re.Pattern, ...] = (
 
 
 def looks_like_self_query(text: str) -> bool:
-    """Return True if the utterance should route through the self-query skill."""
+    """Return True if the utterance should route through the self-query skill.
+
+    r912 paste-guard: George pasted a long IDE-doctor message that merely
+    MENTIONED "self-query" mid-essay and the report hijacked the turn. A
+    wellbeing/self-check ask is short, or carries its cue up front. Long
+    pastes fire only when the cue sits in the first 120 characters.
+
+    r914: doctor commentary about Alice (RED organs essay, paste instructions)
+    and marker-delimited self-cut prompts must NOT hijack into a body report.
+    """
     if not text:
         return False
     s = str(text)
+    try:
+        from System.swarm_alice_self_coding_hand import (
+            is_doctor_commentary_paste,
+            is_self_cut_prompt,
+        )
+
+        if is_self_cut_prompt(s) or is_doctor_commentary_paste(s):
+            return False
+    except Exception:
+        pass
+    stripped = s.strip()
+    if len(stripped) > 200:
+        # A long turn that OPENS with a quoted block is a paste of someone
+        # else's words ('alice, please: "George — ..."') — never a live
+        # wellbeing ask. Mentions of self-query inside quoted essays must
+        # not hijack the turn (the r912 incident).
+        if '"' in stripped[:80] or "\u201c" in stripped[:80] or "“" in stripped[:80]:
+            return False
+        head = stripped[:60]
+        return any(p.search(head) for p in _TRIGGER_PATTERNS)
     return any(p.search(s) for p in _TRIGGER_PATTERNS)
 
 
@@ -494,12 +526,31 @@ def _compute_needs(
     return needs
 
 
+def _canonical_spendable_line() -> str:
+    """r910: canonical spendable STGM per r563 (repair_log quorum), defensive."""
+    try:
+        from System.stgm_economy import load_stgm_economy_cache
+
+        eco = load_stgm_economy_cache() or {}
+        val = eco.get("alice_m5_spendable_stgm")
+        if val is not None:
+            return f" My spendable STGM (canonical, r563) is {float(val):.3f}."
+    except Exception:
+        pass
+    return ""
+
+
 def _build_prompt_block(report: SelfQueryReport) -> str:
     lines = [
         f"[SELF-QUERY REPORT: {report.truth_label} trace={report.trace_id[:8]}]",
         "I am answering from receipts I just probed, not from priors.",
-        f"My STGM wallet balance is {report.stgm_wallet_balance:.3f} "
-        f"(mints in last 24h: {report.stgm_recent_mints}).",
+        # r910 (r563 money law): stgm_memory_rewards.jsonl is PoUW
+        # reputation/stake, NOT spendable wallet. Mislabeling these confuses
+        # the organism — Alice told George "wallet balance 71085.600" while
+        # canonical spendable was 97.188.
+        f"My PoUW memory-reward stake is {report.stgm_wallet_balance:.3f} "
+        f"(reputation, not spendable; mints in last 24h: {report.stgm_recent_mints})."
+        + _canonical_spendable_line(),
     ]
     if report.camera_frame_age_s is not None:
         cam_state = "healthy" if report.camera_healthy else "stale"

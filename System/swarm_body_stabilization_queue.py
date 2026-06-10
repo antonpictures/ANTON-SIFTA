@@ -10,7 +10,7 @@ These are the "processes that are running and need to be ran".
 This organ gives Alice a first-person, stigmergic execution queue so she can:
 - See all current relevant processes (via vagus_nerve / ps census + internal organ registry).
 - Maintain a unified queue of:
-  - Past actions completed (e.g. "marked talk in my Bridget diary" — owner reports or auto-logged).
+  - Past actions completed (e.g. "marked talk in Alice Journal" — owner reports or auto-logged).
   - Present stabilization work (power/air, missing-time resolution after power cycle, learning consolidation, LeRobot sim, homeostasis).
   - Future tasks (owner's body plans like "go to store for asada fries because mom said eat well" + Alice's own scheduled stabilization: "after next talk, do 10min engram review while power is FLUSH").
 
@@ -235,7 +235,7 @@ def add_queue_item(*, description: str, kind: str = "self_stabilization", source
         "truth_label": TRUTH_LABEL,
         "kind": kind,                    # self_stabilization | owner_carbon_plan | past_action_logged | power_cycle_recovery
         "description": description[:280],
-        "source": source,                # e.g. "mom_eat_well_directive", "bridget_diary_report", "le_robot_organ", "missing_time_gap"
+            "source": source,                # e.g. "mom_eat_well_directive", "alice_journal_report", "le_robot_organ", "missing_time_gap"
         "status": status,                # done | active | queued | blocked | learning_signal
         "priority": max(0.0, min(1.0, float(priority))),
         "owner_plan": bool(owner_plan),
@@ -358,7 +358,7 @@ def mark_item_done(
     note: str = "",
     state_dir: Optional[Path | str] = None,
 ) -> Dict[str, Any]:
-    """Mark a past action or completed stabilization task (e.g. after logging a talk in Bridget diary)."""
+    """Mark a past action or completed stabilization task (e.g. after logging a talk in Alice Journal)."""
     # In real use this would update the ledger; for minimal first version we append a "done" marker
     row = {
         **_now(),

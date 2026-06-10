@@ -180,6 +180,18 @@ def test_repair_abstains_on_bare_ace_alone():
     assert result.get("confidence") == 0.0
 
 
+def test_repair_preserves_explicit_tool_contract_before_app_name_match():
+    organ = _import_repair()
+    result = organ.repair_voice_command(
+        "Alice — effector-only turn. Close the two Jama Software tabs now. "
+        "[TOOL_CALL: browser_close_tab | url_match=jamasoftware.com | keep_active=false]"
+    )
+    assert result.get("repaired") is None
+    assert result.get("confidence") == 0.0
+    receipt = result.get("receipt") or {}
+    assert receipt.get("method") == "abstain_tool_or_effector_contract"
+
+
 def test_repair_still_works_for_legit_open_ace():
     organ = _import_repair()
     # The repair organ looks for the closest manifest name. "open ace"

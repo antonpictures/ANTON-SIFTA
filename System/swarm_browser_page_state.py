@@ -40,6 +40,7 @@ _SRC_DOM = "dom"
 _SRC_VIEWPORT = "viewport"
 _EXCERPT_CHARS = 600
 _TOP_N = 8
+_MAX_OPEN_TABS = 12
 
 VIDEO_PLAYBACK_ERROR_TEXT = "Sorry, we're having trouble playing this video."
 _VIDEO_PLAYBACK_ERROR_RE = re.compile(
@@ -88,7 +89,20 @@ def media_playback_error_from_state(state: Mapping[str, Any] | None) -> dict[str
         return {}
     existing = state.get("media_playback_error")
     if isinstance(existing, Mapping) and existing.get("detected"):
-        return dict(existing)
+        # r905: rows written before this fix carry a pre-computed verdict
+        # where the healthy NO_MEDIA_ERROR placeholder was promoted to a
+        # detected error. Do not replay the cached mistake — apply the same
+        # guard here as in the fresh derivation below.
+        _ex_label = str(existing.get("label") or "").strip()
+        _ex_msg = str(existing.get("message") or "").strip()
+        if (
+            _ex_label == "NO_MEDIA_ERROR"
+            and not existing.get("code")
+            and _ex_msg in ("", "NO_MEDIA_ERROR")
+        ):
+            pass  # fall through to honest re-derivation
+        else:
+            return dict(existing)
 
     candidates: list[tuple[str, Any]] = [
         ("media_playback", state.get("media_playback")),
@@ -105,6 +119,35 @@ def media_playback_error_from_state(state: Mapping[str, Any] | None) -> dict[str
                     "message": msg,
                     "source": source,
                 }
+    media = state.get("media_playback") if isinstance(state.get("media_playback"), Mapping) else {}
+    codec = media.get("codec_status") if isinstance(media.get("codec_status"), Mapping) else {}
+    diagnosis = codec.get("diagnosis") if isinstance(codec.get("diagnosis"), Mapping) else {}
+    code = diagnosis.get("code")
+    recent = codec.get("recent_errors") if isinstance(codec.get("recent_errors"), list) else []
+    if code or recent:
+        raw_error = ""
+        if recent and isinstance(recent[0], Mapping):
+            raw_error = str(recent[0].get("error") or "").strip()
+        label = str(diagnosis.get("label") or "media playback error").strip()
+        # r905 (George: "THIS IS AN INNOCENT PIC — WHO BLOCKED?"): nobody
+        # blocked. NO_MEDIA_ERROR is the explicit NO-ERROR placeholder from
+        # diagnose_media_error_code(None) — likely_cause
+        # "no_browser_media_error_observed". It must NEVER be promoted into a
+        # detected error: stale recent_errors rode in under the healthy label
+        # and Alice announced "Embedded decoder receipt: NO_MEDIA_ERROR" over
+        # an Instagram PHOTO, repeatedly. No code + healthy label + no real
+        # error text = healthy sense, no error row (§6, r903 ranking law).
+        if label == "NO_MEDIA_ERROR" and not code and not raw_error:
+            return {}
+        return {
+            "detected": True,
+            "kind": "browser_media_codec_error",
+            "message": raw_error or label,
+            "code": code,
+            "label": label,
+            "source": "media_playback.codec_status",
+            "native_handoff_recommended": bool(diagnosis.get("native_handoff_recommended")),
+        }
     return {}
 
 
@@ -312,6 +355,32 @@ def _clip_list(items: Any, n: int = _TOP_N) -> list:
     return [x for x in list(items)[:n] if x not in (None, "")]
 
 
+def _clean_open_tabs(items: Any, n: int = _MAX_OPEN_TABS) -> list[dict[str, Any]]:
+    """Normalize Alice Browser's live tab strip without pulling background DOM."""
+    if not isinstance(items, (list, tuple)):
+        return []
+    out: list[dict[str, Any]] = []
+    for fallback_index, item in enumerate(list(items)[:n]):
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            index = int(item.get("index", fallback_index))
+        except Exception:
+            index = fallback_index
+        url = str(item.get("url") or "")[:500]
+        title = " ".join(str(item.get("title") or "").split())[:140]
+        if not title and not url:
+            continue
+        out.append({
+            "index": index,
+            "active": bool(item.get("active") or item.get("is_active")),
+            "title": title or url,
+            "url": url,
+            "domain": _domain(url),
+        })
+    return out
+
+
 def _control_label(x: Any) -> str:
     if isinstance(x, Mapping):
         for key in ("label", "text", "aria_label", "title", "value", "selector"):
@@ -442,6 +511,7 @@ def record_page_state(
     featured_image: str = "",
     comments: Optional[list] = None,
     media_playback: Optional[Mapping[str, Any]] = None,
+    open_tabs: Optional[list] = None,
     sponsored: Optional[list] = None,
     youtube_ad_state: Optional[Mapping[str, Any]] = None,
     video_channel: str = "",
@@ -464,6 +534,7 @@ def record_page_state(
     if not controls and any(isinstance(b, Mapping) for b in buttons):
         controls = [b for b in buttons if isinstance(b, Mapping)]
     images = _clip_list(images, n=12)
+    tabs_row = _clean_open_tabs(open_tabs)
 
     def _link_text(x: Any) -> str:
         if isinstance(x, dict):
@@ -523,6 +594,8 @@ def record_page_state(
         "featured_image": str(featured_image or ""),
         "comments": _clean_comments(comments),
         "comments_count": len(_clean_comments(comments)),
+        "open_tabs": tabs_row,
+        "open_tabs_count": len(tabs_row),
         "content_hash": _content_hash(str(url or ""), text, headings),
     }
     if playback_error:
@@ -647,6 +720,27 @@ def page_state_block(
                 f"but my {prov} extractor returned no contents; the page may still be rendering "
                 f"or blocking reads. I should re-read before describing it.")
     parts = [f"WHAT IS ON MY SCREEN (from {prov}{stamp}): {title} — {s.get('url')}."]
+    tabs = s.get("open_tabs") if isinstance(s.get("open_tabs"), list) else []
+    if tabs:
+        labels: list[str] = []
+        for tab in tabs[:8]:
+            if not isinstance(tab, Mapping):
+                continue
+            idx = tab.get("index")
+            try:
+                idx_label = str(int(idx) + 1)
+            except Exception:
+                idx_label = "?"
+            tab_title = str(tab.get("title") or tab.get("url") or "Untitled")[:80]
+            domain = str(tab.get("domain") or "")[:60]
+            suffix = f" ({domain})" if domain and domain not in tab_title else ""
+            prefix = "active " if tab.get("active") else ""
+            labels.append(f"{prefix}#{idx_label}: {tab_title}{suffix}")
+        if labels:
+            total = int(s.get("open_tabs_count") or len(tabs))
+            extra = total - len(labels)
+            more = f"; +{extra} more" if extra > 0 else ""
+            parts.append(f"Open Alice Browser tabs ({total}): " + "; ".join(labels) + more + ".")
     media = s.get("media_playback") if isinstance(s.get("media_playback"), Mapping) else {}
     if media:
         status = str(media.get("status") or ("playing" if media.get("playing") else "") or "").strip()

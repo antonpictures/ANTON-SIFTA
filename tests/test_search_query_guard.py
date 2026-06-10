@@ -24,6 +24,7 @@ for _n in _mod.body:
             "_SEARCH_ANAPHORA_RE",
             "_CONTEXTUAL_BROWSER_SEARCH_RE",
             "_OWNER_META_ROUTING_CORRECTION_RE",
+            "_SEARCH_AUDIT_OR_CORRECTION_RE",
         )
         for t in _n.targets
     ):
@@ -32,6 +33,7 @@ for _n in _mod.body:
         "_search_query_is_contextual_or_junk",
         "_is_contextual_browser_search_request",
         "_is_owner_meta_routing_correction",
+        "_is_search_audit_or_routing_correction",
         "_is_contextual_browser_search_effector_request",
     ):
         exec(ast.get_source_segment(_SRC, _n), _NS)

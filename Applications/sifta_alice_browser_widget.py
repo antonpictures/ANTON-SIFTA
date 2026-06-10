@@ -31,8 +31,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from PyQt6.QtCore import QEventLoop, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot, QFileSystemWatcher
-from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
+from PyQt6.QtCore import QEventLoop, QPointF, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot, QFileSystemWatcher
+from PyQt6.QtGui import QFont, QIcon, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -901,8 +901,56 @@ class AliceBrowserWidget(QMainWindow):
     # spawner (_make_sub) reads this flag and maximizes the MDI subwindow on open.
     OPEN_MAXIMIZED = True
 
+    # r773 — CRASH FIX (George's boot crash 2026-06-08 04:06, SIGABRT in
+    # QWebEngineProfile ctor). A persistent NAMED profile ("alice_browser") can only
+    # exist ONCE per process; constructing a SECOND one with the same storage name
+    # makes Qt qFatal → abort() → the WHOLE SIFTA OS dies, not just the browser.
+    # Two guards so a second open can NEVER reach a second profile construction:
+    #   1) __new__ singleton — a second AliceBrowserWidget() returns the live one.
+    #   2) _shared_profile class cache — even if a second widget is forced, it reuses
+    #      the one profile object instead of building a rival.
+    _live_instance: "Optional[AliceBrowserWidget]" = None
+    _initialized_instance_ids: set[int] = set()
+    _shared_profile = None  # the single persistent QWebEngineProfile, built once
+
+    def __new__(cls, *args, **kwargs):
+        existing = cls._live_instance
+        if existing is not None:
+            try:
+                _ = existing.isVisible()
+                try:
+                    existing.show(); existing.raise_(); existing.activateWindow()
+                except Exception:
+                    pass
+                return existing
+            except RuntimeError:
+                cls._live_instance = None
+        return super().__new__(cls)
+
+    @classmethod
+    def _get_shared_profile(cls, parent):
+        """One persistent 'alice_browser' profile for the whole process (r773).
+
+        Reusing it across any widget instance prevents the same-name second-profile
+        qFatal that aborted the OS. Parent is the QApplication so the profile
+        outlives any single window.
+        """
+        if cls._shared_profile is not None:
+            try:
+                _ = cls._shared_profile.storageName()
+                return cls._shared_profile
+            except RuntimeError:
+                cls._shared_profile = None
+        from PyQt6.QtWidgets import QApplication as _QApp
+        cls._shared_profile = QWebEngineProfile("alice_browser", _QApp.instance())
+        return cls._shared_profile
+
     def __init__(self):
+        if id(self) in type(self)._initialized_instance_ids:
+            return
         super().__init__()
+        type(self)._live_instance = self
+        type(self)._initialized_instance_ids.add(id(self))
         self.setWindowTitle("🌐 Alice Browser")
         self.resize(1100, 820)
         self._page_load_ts = time.time()
@@ -996,16 +1044,20 @@ class AliceBrowserWidget(QMainWindow):
             btn.clicked.connect(lambda _, u=url: self._navigate(u))
             tb.addWidget(btn)
 
-        self._native_media_btn = QPushButton("▶")
-        self._native_media_btn.setFixedSize(34, 34)
-        self._native_media_btn.setObjectName("bkBtn")
-        self._native_media_btn.setToolTip("Open current page in the native macOS playback/browser path")
-        self._native_media_btn.clicked.connect(self._open_current_in_native_player)
-        tb.addWidget(self._native_media_btn)
+        self._embedded_play_btn = QPushButton("🎬")
+        self._embedded_play_btn.setFixedSize(34, 34)
+        self._embedded_play_btn.setObjectName("bkBtn")
+        self._embedded_play_btn.setToolTip(
+            "Play current video in-place with Alice's native decode surface (inside SIFTA OS)"
+        )
+        self._embedded_play_btn.clicked.connect(self._open_current_in_embedded_player)
+        tb.addWidget(self._embedded_play_btn)
 
         # ── Web view ─────────────────────────────────────────────────────────
         if _HAS_WEBENGINE:
-            profile = QWebEngineProfile("alice_browser", self)
+            # r773: reuse the ONE shared persistent profile — never build a second
+            # "alice_browser" profile (that second construction is what qFatal'd the OS).
+            profile = type(self)._get_shared_profile(self)
             # r231 (cowork): REVERT of r228. George was signed into Google in this browser;
             # r228's UA bump (120 + "SIFTA-Alice/1.0"  ->  clean "Chrome/124") and the new
             # persistent storage path broke a previously-working sign-in — Google flags a UA
@@ -1053,11 +1105,17 @@ class AliceBrowserWidget(QMainWindow):
             self._view = view
             self._page = page
             self._tabs.addTab(view, "New Tab")
-            self.setCentralWidget(self._tabs)
+            self._embedded_player_panel = None
+            self._embedded_media_player = None
+            self._embedded_audio_output = None
+            self._setup_embedded_native_player_shell(self._tabs)
         else:
             self._view = None
             self._page = None
             self._tabs = None
+            self._embedded_player_panel = None
+            self._embedded_media_player = None
+            self._embedded_audio_output = None
             self.setCentralWidget(_NoWebEngineWidget())
 
         # ── Status bar ────────────────────────────────────────────────────────
@@ -1172,13 +1230,67 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
 
+    def _open_tabs_inventory(self, max_tabs: int = 12) -> list[dict]:
+        """Live Alice Browser tab strip: titles/URLs only, never background DOM guesses."""
+        tabs = getattr(self, "_tabs", None)
+        if tabs is None:
+            return []
+        try:
+            count = int(tabs.count())
+            active = int(tabs.currentIndex())
+        except Exception:
+            return []
+        out: list[dict] = []
+        for i in range(min(count, max_tabs)):
+            view = None
+            title = ""
+            url = ""
+            try:
+                view = tabs.widget(i)
+            except Exception:
+                view = None
+            try:
+                title = str(tabs.tabText(i) or "")
+            except Exception:
+                title = ""
+            if view is not None:
+                try:
+                    page_title = str(view.title() or "")
+                    if page_title:
+                        title = page_title
+                except Exception:
+                    pass
+                try:
+                    url = view.url().toString()
+                except Exception:
+                    url = ""
+            if title or url:
+                out.append({
+                    "index": i,
+                    "active": i == active,
+                    "title": title,
+                    "url": url,
+                })
+        return out
+
     def _on_tab_changed(self, index: int) -> None:
         """Keep self._view / self._page pointing at the ACTIVE tab so all existing code works."""
         try:
+            self._hide_embedded_player_overlay()
             w = self._tabs.widget(index)
             if w is not None:
                 self._view = w
                 self._page = w.page()
+                old_panel = getattr(self, "_embedded_player_panel", None)
+                try:
+                    if old_panel is not None:
+                        old_panel.deleteLater()
+                except Exception:
+                    pass
+                self._embedded_player_panel = None
+                self._embedded_media_player = None
+                self._embedded_audio_output = None
+                self._ensure_embedded_native_player_overlay()
                 try:
                     self._url_bar.setText(w.url().toString())
                 except Exception:
@@ -1206,6 +1318,113 @@ class AliceBrowserWidget(QMainWindow):
         if not _HAS_WEBENGINE or getattr(self, "_tabs", None) is None:
             return False
         return self._on_tab_close_requested(self._tabs.currentIndex())
+
+    @staticmethod
+    def _normalize_tab_url_key(url: str) -> str:
+        """Stable key for duplicate-tab detection (host + path, no query)."""
+        raw = str(url or "").strip().lower()
+        if not raw:
+            return ""
+        raw = re.sub(r"^https?://", "", raw)
+        host_path = raw.split("#", 1)[0]
+        host_path = host_path.split("?", 1)[0]
+        return host_path.rstrip("/")
+
+    def close_tabs_matching(
+        self,
+        *,
+        url_contains: str = "",
+        title_contains: str = "",
+        close_duplicates: bool = False,
+        keep_active: bool = True,
+        max_close: int = 8,
+    ) -> dict:
+        """Close Alice Browser tabs by live strip inventory (r842 tab hygiene).
+
+        Always leaves at least one tab in the strip. Returns a receipt-shaped dict
+        for alice_app_commands.jsonl — never claims a close without listing indices.
+        """
+        tabs = getattr(self, "_tabs", None)
+        if tabs is None or not _HAS_WEBENGINE:
+            return {"ok": False, "closed": [], "reason": "no_live_tab_strip"}
+        try:
+            count = int(tabs.count())
+            active = int(tabs.currentIndex())
+        except Exception:
+            return {"ok": False, "closed": [], "reason": "tab_strip_unreadable"}
+
+        inventory = self._open_tabs_inventory(max_tabs=max(12, count))
+        if not inventory:
+            return {"ok": False, "closed": [], "reason": "empty_tab_inventory"}
+
+        url_needle = str(url_contains or "").strip().lower()
+        title_needle = str(title_contains or "").strip().lower()
+        indices_to_close: list[int] = []
+
+        if close_duplicates:
+            groups: dict[str, list[int]] = {}
+            for row in inventory:
+                key = self._normalize_tab_url_key(str(row.get("url") or ""))
+                if not key:
+                    continue
+                groups.setdefault(key, []).append(int(row.get("index", 0)))
+            for _key, idxs in groups.items():
+                if len(idxs) < 2:
+                    continue
+                keep_idx = active if active in idxs else idxs[0]
+                for i in sorted(idxs, reverse=True):
+                    if i == keep_idx:
+                        continue
+                    if keep_active and i == active:
+                        continue
+                    indices_to_close.append(i)
+
+        for row in inventory:
+            idx = int(row.get("index", 0))
+            if idx in indices_to_close:
+                continue
+            url = str(row.get("url") or "").lower()
+            title = str(row.get("title") or "").lower()
+            if url_needle and url_needle not in url:
+                continue
+            if title_needle and title_needle not in title:
+                continue
+            if not url_needle and not title_needle and not close_duplicates:
+                continue
+            if keep_active and idx == active:
+                continue
+            indices_to_close.append(idx)
+
+        # Deduplicate, highest index first so removals do not skew later indices.
+        unique = sorted({int(i) for i in indices_to_close}, reverse=True)
+        closed: list[dict] = []
+        remaining = count
+        for idx in unique[: max(0, int(max_close))]:
+            if remaining <= 1:
+                break
+            row = next((r for r in inventory if int(r.get("index", -1)) == idx), {})
+            if self._on_tab_close_requested(idx):
+                closed.append({
+                    "index": idx,
+                    "title": str(row.get("title") or "")[:120],
+                    "url": str(row.get("url") or "")[:240],
+                })
+                remaining -= 1
+
+        refresh_fn = getattr(self, "refresh_current_page_state", None)
+        if callable(refresh_fn):
+            try:
+                refresh_fn()
+            except Exception:
+                pass
+
+        return {
+            "ok": bool(closed),
+            "closed": closed,
+            "closed_count": len(closed),
+            "remaining_tabs": max(1, remaining),
+            "reason": "" if closed else "no_matching_tabs_to_close",
+        }
 
     def _on_tab_close_requested(self, index: int) -> bool:
         try:
@@ -1396,11 +1615,16 @@ class AliceBrowserWidget(QMainWindow):
         return dict(getattr(self, "_last_ig_carousel", {}) or {})
 
     def _resolve_native_media_handoff_url(self, callback) -> None:
-        """Resolve active Instagram reel/post or signed MP4 before native handoff."""
+        """Resolve active reel/post or signed stream URL for embedded native playback."""
         fallback = (self._current_url or self._url_bar.text() or "").strip()
         media_status = self.get_current_media_playback_status()
         if not self._view:
-            callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
+            try:
+                from System.swarm_embedded_native_player import choose_embedded_stream_url
+
+                callback(choose_embedded_stream_url({}, fallback_url=fallback, media_status=media_status))
+            except Exception:
+                callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
             return
         js = r"""
         (function () {
@@ -1431,12 +1655,33 @@ class AliceBrowserWidget(QMainWindow):
                 info = _j.loads(res) if res else {}
             except Exception:
                 info = {}
-            callback(_choose_native_media_handoff_url(info, fallback_url=fallback, media_status=media_status))
+            try:
+                from System.swarm_embedded_native_player import choose_embedded_stream_url
+
+                callback(choose_embedded_stream_url(info, fallback_url=fallback, media_status=media_status))
+            except Exception:
+                callback(_choose_native_media_handoff_url(info, fallback_url=fallback, media_status=media_status))
 
         try:
             self._view.page().runJavaScript(js, _done)
         except Exception:
-            callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
+            try:
+                from System.swarm_embedded_native_player import choose_embedded_stream_url
+
+                callback(choose_embedded_stream_url({}, fallback_url=fallback, media_status=media_status))
+            except Exception:
+                callback(_choose_native_media_handoff_url({}, fallback_url=fallback, media_status=media_status))
+
+    def _schedule_auto_embedded_play(self) -> None:
+        """Once per page URL, auto-try embedded native decode after Chromium demuxer failure."""
+        url_key = (self._current_url or self._url_bar.text() or "").strip()
+        if not url_key:
+            return
+        last = getattr(self, "_auto_embedded_play_for_url", None)
+        if last == url_key:
+            return
+        self._auto_embedded_play_for_url = url_key
+        QTimer.singleShot(400, self._open_current_in_embedded_player)
 
     def _note_media_error_for_handoff(self, err: dict | None = None) -> None:
         """React when a video fails after loadFinished, not only during load."""
@@ -1460,14 +1705,15 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
         if media_status.get("native_handoff_available"):
-            self._native_media_btn.setStyleSheet("background:#ffcc00; color:black;")
-            self._native_media_btn.setToolTip(
-                "This embedded media stream failed in Alice Browser; open the active reel/post/video natively"
+            self._embedded_play_btn.setStyleSheet("background:#4ade80; color:black;")
+            self._embedded_play_btn.setToolTip(
+                "QtWebEngine could not decode this stream — press to play over the page video frame"
             )
             self._status.showMessage(
-                "⚠️ Embedded media failed on this stream/page. Press ▶ to open the active reel/media natively.",
+                "⚠️ Embedded Chromium demuxer failed. Press 🎬 to play in-place over the video frame.",
                 12000,
             )
+            self._schedule_auto_embedded_play()
 
     def _probe_media_codecs(self) -> None:
         """Record QtWebEngine's advertised codec strings as advisory evidence.
@@ -1525,6 +1771,7 @@ class AliceBrowserWidget(QMainWindow):
     def _navigate(self, url: str):
         if not _HAS_WEBENGINE or self._view is None:
             return
+        self._hide_embedded_player_overlay()
         # r212: any navigation changes the on-screen frame — invalidate the prior
         # frame's photo description so I never recite a photo from the page I left.
         try:
@@ -1598,21 +1845,212 @@ class AliceBrowserWidget(QMainWindow):
         if self._view:
             self._view.reload()
 
+    def _setup_embedded_native_player_shell(self, tabs_widget: QTabWidget) -> None:
+        """Keep the browser as the body; native decode overlays the page video."""
+        self.setCentralWidget(tabs_widget)
+        self._embedded_player_panel = None
+        self._embedded_media_player = None
+        self._embedded_audio_output = None
+        self._ensure_embedded_native_player_overlay()
+
+    def _ensure_embedded_native_player_overlay(self) -> bool:
+        """Create the in-place QMediaPlayer surface as a child of the active view."""
+        if self._embedded_player_panel is not None and self._embedded_media_player is not None:
+            return True
+        if self._view is None:
+            return False
+        try:
+            from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+            from PyQt6.QtMultimediaWidgets import QVideoWidget
+
+            video = QVideoWidget(self._view)
+            video.setObjectName("aliceEmbeddedNativePlayerOverlay")
+            video.setStyleSheet("background:#000000;")
+            video.setVisible(False)
+            video.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            player = QMediaPlayer(video)
+            audio = QAudioOutput(video)
+            player.setAudioOutput(audio)
+            player.setVideoOutput(video)
+            self._embedded_player_panel = video
+            self._embedded_media_player = player
+            self._embedded_audio_output = audio
+            return True
+        except Exception:
+            self._embedded_player_panel = None
+            self._embedded_media_player = None
+            self._embedded_audio_output = None
+            return False
+
+    def _hide_embedded_player_overlay(self) -> None:
+        panel = getattr(self, "_embedded_player_panel", None)
+        player = getattr(self, "_embedded_media_player", None)
+        try:
+            if player is not None:
+                player.stop()
+        except Exception:
+            pass
+        try:
+            if panel is not None:
+                panel.setVisible(False)
+        except Exception:
+            pass
+
+    def _fallback_embedded_player_geometry(self) -> tuple[int, int, int, int]:
+        if self._view is None:
+            return (0, 0, 1, 1)
+        view_w = max(1, int(self._view.width()))
+        view_h = max(1, int(self._view.height()))
+        height = max(240, min(view_h - 24, int(view_h * 0.86)))
+        width = max(160, min(int(height * 9 / 16), int(view_w * 0.45)))
+        x = max(0, int((view_w - width) / 2))
+        y = max(0, int((view_h - height) / 2))
+        return (x, y, width, height)
+
+    def _position_embedded_player_over_page_video(self, callback) -> None:
+        """Place native decode over the page's real video element before playing."""
+        panel = getattr(self, "_embedded_player_panel", None)
+        if self._view is None or panel is None:
+            callback()
+            return
+        js = r"""
+        (function () {
+            var videos = Array.prototype.slice.call(document.querySelectorAll("video"));
+            var chosen = videos.find(function (v) {
+                var r = v.getBoundingClientRect();
+                return r.width > 80 && r.height > 80 && !v.paused;
+            }) || videos.find(function (v) {
+                var r = v.getBoundingClientRect();
+                return r.width > 80 && r.height > 80;
+            }) || null;
+            if (!chosen) return "";
+            var r = chosen.getBoundingClientRect();
+            return JSON.stringify({
+                left: Math.max(0, Math.round(r.left)),
+                top: Math.max(0, Math.round(r.top)),
+                width: Math.max(1, Math.round(r.width)),
+                height: Math.max(1, Math.round(r.height))
+            });
+        })();
+        """
+
+        def _apply(res):
+            import json as _j
+
+            geom = None
+            try:
+                data = _j.loads(res) if res else {}
+                w = int(data.get("width") or 0)
+                h = int(data.get("height") or 0)
+                if w > 80 and h > 80:
+                    geom = (
+                        int(data.get("left") or 0),
+                        int(data.get("top") or 0),
+                        w,
+                        h,
+                    )
+            except Exception:
+                geom = None
+            if geom is None:
+                geom = self._fallback_embedded_player_geometry()
+            try:
+                panel.setGeometry(*geom)
+                # r800: position the native surface, but keep it hidden until
+                # the embedded player proves it has something to play. Showing
+                # here painted a black rectangle over TikTok before fetch/decode
+                # had any receipt.
+                panel.setVisible(False)
+            except Exception:
+                pass
+            callback()
+
+        try:
+            self._view.page().runJavaScript(js, _apply)
+        except Exception:
+            try:
+                panel.setGeometry(*self._fallback_embedded_player_geometry())
+                panel.setVisible(False)
+            except Exception:
+                pass
+            callback()
+
+    def _browser_user_agent(self) -> str:
+        try:
+            if getattr(self, "_profile", None) is not None:
+                return str(self._profile.httpUserAgent() or "")
+        except Exception:
+            pass
+        return (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36 SIFTA-Alice/1.0"
+        )
+
+    def _open_current_in_embedded_player(self) -> None:
+        self._resolve_native_media_handoff_url(self._play_embedded_media_url)
+
     def _open_current_in_native_player(self) -> None:
-        self._resolve_native_media_handoff_url(self._open_native_media_url)
+        """Legacy name — embedded limb only; no external Safari handoff."""
+        self._open_current_in_embedded_player()
+
+    def _play_embedded_media_url(self, url: str) -> None:
+        self._ensure_embedded_native_player_overlay()
+        panel = getattr(self, "_embedded_player_panel", None)
+        player = getattr(self, "_embedded_media_player", None)
+        if panel is None or player is None:
+            self._status.showMessage("Embedded native player limb unavailable on this node", 8000)
+            return
+        clean = (url or "").strip()
+        if not clean:
+            self._status.showMessage("No playable stream URL resolved for embedded decode", 8000)
+            return
+
+        def _play_after_position() -> None:
+            try:
+                from System.swarm_embedded_native_player import (
+                    extract_cookie_header_from_profile,
+                    play_url_in_embedded_panel,
+                )
+
+                page_url = self._current_url or self._url_bar.text() or ""
+                cookie_header = ""
+                profile = getattr(self, "_profile", None)
+                if profile is not None:
+                    cookie_header = extract_cookie_header_from_profile(profile, page_url or clean)
+
+                row = play_url_in_embedded_panel(
+                    panel,
+                    player,
+                    clean,
+                    page_url=page_url,
+                    user_agent=self._browser_user_agent(),
+                    cookie_header=cookie_header,
+                    state_dir=_STATE,
+                )
+                if row.get("ok"):
+                    try:
+                        panel.raise_()
+                        panel.setVisible(True)
+                    except Exception:
+                        pass
+                    self._status.showMessage(
+                        f"Playing inside Alice video frame ({row.get('strategy', 'embedded')})",
+                        8000,
+                    )
+                else:
+                    self._hide_embedded_player_overlay()
+                    self._status.showMessage(
+                        f"Embedded decode failed: {row.get('reason', 'unknown')}",
+                        10000,
+                    )
+            except Exception as exc:
+                self._hide_embedded_player_overlay()
+                self._status.showMessage(f"Embedded decode failed: {type(exc).__name__}", 8000)
+
+        self._position_embedded_player_over_page_video(_play_after_position)
 
     def _open_native_media_url(self, url: str) -> None:
-        url = (url or self._current_url or self._url_bar.text() or "").strip()
-        try:
-            from System.swarm_media_codec_bridge import open_url_in_native_player
-
-            row = open_url_in_native_player(url, source="alice_browser_toolbar")
-            if row.get("ok"):
-                self._status.showMessage("Opened current page in native playback path", 6000)
-            else:
-                self._status.showMessage(f"Native handoff unavailable: {row.get('reason')}", 8000)
-        except Exception as exc:
-            self._status.showMessage(f"Native handoff failed: {type(exc).__name__}", 8000)
+        self._play_embedded_media_url(url)
 
     def get_current_media_playback_status(self) -> dict:
         """Returns the most recent media error(s) the limb actually observed.
@@ -1802,6 +2240,7 @@ class AliceBrowserWidget(QMainWindow):
 
     @pyqtSlot()
     def _on_load_started(self):
+        self._hide_embedded_player_overlay()
         self._page_load_ts = time.time()
         self._current_visit_started_at = self._page_load_ts
         if hasattr(self, "_page") and self._page is not None:
@@ -1996,6 +2435,12 @@ class AliceBrowserWidget(QMainWindow):
             self._status.showMessage("Ready")
 
     def closeEvent(self, event):
+        # r773: release the singleton so a future open builds a fresh window —
+        # but DO NOT delete the shared profile (it stays alive on the QApplication
+        # for the process lifetime; re-creating the named profile is what crashed).
+        if type(self)._live_instance is self:
+            type(self)._live_instance = None
+        type(self)._initialized_instance_ids.discard(id(self))
         if hasattr(self, "_drop_timer"):
             self._drop_timer.stop()
         if hasattr(self, "_awareness_timer"):
@@ -2206,50 +2651,298 @@ class AliceBrowserWidget(QMainWindow):
             done=None,
         )
 
-    def skip_current_ad(self) -> dict:
-        """Owner-demand (r296): click YouTube's own VISIBLE Skip control right now on
-        the active tab, and write a §6 effector receipt for the click — no claim of a
-        skip without a receipt. Reuses the same skip selectors as the auto ad-controller
-        and only clicks a visible control (never fakes a skip). The effect receipt lands
-        from the JS callback via record_youtube_ad_action."""
-        if self._view is None:
-            return {"ok": False, "reason": "no_view", "requested": "skip"}
-        js = """
-        (function () {
-            function visible(el){ if(!el) return false; var r=el.getBoundingClientRect();
-                var s=window.getComputedStyle(el);
-                return r.width>0 && r.height>0 && s.visibility!=='hidden' && s.display!=='none'; }
-            var out = { action:'skip', ok:false, reason:'' };
-            try {
-                var skip = Array.prototype.slice.call(document.querySelectorAll(
-                    '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
-                )).find(visible);
-                if (skip) { skip.click(); out.ok = true; out.reason = 'clicked_visible_skip_control'; }
-                else { out.reason = 'no_visible_skip_control'; }
-            } catch (e) { out.reason = 'js_error:' + e; }
-            return out;
-        })();
+    def _youtube_skip_probe_js(self) -> str:
+        from System.swarm_youtube_ad_controller import SKIP_SELECTORS
+
+        selectors = json.dumps(SKIP_SELECTORS)
+        return f"""
+        (function () {{
+            function visible(el) {{
+                if (!el) return false;
+                var r = el.getBoundingClientRect();
+                var style = window.getComputedStyle(el);
+                return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+            }}
+            var skipButton = Array.prototype.slice.call(document.querySelectorAll({selectors}))
+                .find(visible);
+            var adEls = Array.prototype.slice.call(document.querySelectorAll(
+                '.ad-showing, .ytp-ad-player-overlay, .ytp-ad-module, .ytp-ad-text, .ytp-ad-preview-container, ' +
+                '.ytp-ad-simple-ad-badge, .ytp-ad-overlay-container'
+            )).filter(visible);
+            return {{
+                detected: !!(skipButton || adEls.length),
+                skip_available: !!skipButton,
+                platform: 'youtube',
+                is_current_page: true,
+                url: window.location.href,
+                was_muted_by_alice: !!window.__aliceAdMuted
+            }};
+        }})();
         """
 
-        def _record_effect(effect):
+    def _youtube_skip_click_js(self, *, perform_click: bool) -> str:
+        from System.swarm_youtube_ad_controller import SKIP_SELECTORS
+
+        selectors = json.dumps(SKIP_SELECTORS)
+        click_flag = "true" if perform_click else "false"
+        return f"""
+        (function () {{
+            function visible(el) {{
+                if (!el) return false;
+                var r = el.getBoundingClientRect();
+                var style = window.getComputedStyle(el);
+                return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+            }}
+            var out = {{ action: 'skip', ok: false, reason: '', method: 'js', rect: null }};
+            try {{
+                var skip = Array.prototype.slice.call(document.querySelectorAll({selectors})).find(visible);
+                if (!skip) {{
+                    out.reason = 'no_visible_skip_control';
+                    return out;
+                }}
+                var rect = skip.getBoundingClientRect();
+                out.rect = {{
+                    left: rect.left, top: rect.top, width: rect.width, height: rect.height
+                }};
+                if ({click_flag}) {{
+                    skip.click();
+                    out.ok = true;
+                    out.reason = 'clicked_visible_skip_control';
+                }} else {{
+                    out.ok = true;
+                    out.reason = 'skip_control_rect_only';
+                }}
+            }} catch (e) {{
+                out.reason = 'js_error:' + e;
+            }}
+            return out;
+        }})();
+        """
+
+    def _dispatch_qt_mouse_click(self, x: float, y: float) -> dict:
+        """Trusted Qt mouse press+release at viewport coordinates (r901)."""
+        if self._view is None:
+            return {"ok": False, "reason": "no_view", "method": "qt_mouse"}
+        try:
+            target = self._view.focusProxy() or self._view
+            pos = QPointF(float(x), float(y))
+            press = QMouseEvent(
+                QMouseEvent.Type.MouseButtonPress,
+                pos,
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            release = QMouseEvent(
+                QMouseEvent.Type.MouseButtonRelease,
+                pos,
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            app = QApplication.instance()
+            if app is None:
+                return {"ok": False, "reason": "no_qapplication", "method": "qt_mouse"}
+            app.sendEvent(target, press)
+            app.sendEvent(target, release)
+            return {
+                "ok": True,
+                "reason": "qt_mouse_click_dispatched",
+                "method": "qt_mouse",
+                "x": round(float(x), 1),
+                "y": round(float(y), 1),
+            }
+        except Exception as exc:
+            return {"ok": False, "reason": f"qt_mouse_failed:{exc}", "method": "qt_mouse"}
+
+    def _schedule_youtube_skip_verification(
+        self,
+        *,
+        ad_state: dict,
+        decision: dict,
+        initial_effect: dict,
+        method: str,
+        started_at: float,
+        rect: dict | None = None,
+        verification_pass: int = 1,
+        allow_qt_escalation: bool = True,
+    ) -> None:
+        from System.swarm_youtube_ad_controller import (
+            SKIP_EFFECT_VERIFY_DELAY_S,
+            ad_probe_indicates_cleared,
+            enrich_skip_effect,
+            record_youtube_ad_action,
+        )
+
+        delay_ms = int(SKIP_EFFECT_VERIFY_DELAY_S * 1000)
+
+        def _verify_after_delay():
+            if self._view is None:
+                return
+
+            def _on_probe(probe):
+                probe_state = probe if isinstance(probe, dict) else {}
+                cleared = ad_probe_indicates_cleared(probe_state)
+                elapsed_ms = max(0.0, (time.time() - started_at) * 1000.0)
+                try:
+                    from System.swarm_app_command_effect_verification import (
+                        complete_youtube_skip_verification,
+                    )
+
+                    complete_youtube_skip_verification(
+                        initial_effect=initial_effect,
+                        probe=probe_state,
+                        started_at=started_at,
+                        method=method,
+                        verification_pass=verification_pass,
+                        state_dir=_STATE,
+                        context={"ad_state": ad_state, "decision": decision},
+                    )
+                except Exception:
+                    pass
+                if cleared:
+                    effect = enrich_skip_effect(
+                        initial_effect,
+                        method=method,
+                        effect_verified=True,
+                        ad_cleared_ms=elapsed_ms,
+                        verification_pass=verification_pass,
+                    )
+                    try:
+                        record_youtube_ad_action(
+                            ad_state=ad_state,
+                            decision=decision,
+                            effect=effect,
+                            state_dir=_STATE,
+                        )
+                    except Exception:
+                        pass
+                    return
+
+                if (
+                    allow_qt_escalation
+                    and method == "js"
+                    and isinstance(rect, dict)
+                    and rect.get("width", 0) > 0
+                    and rect.get("height", 0) > 0
+                ):
+                    cx = float(rect.get("left", 0)) + float(rect.get("width", 0)) / 2.0
+                    cy = float(rect.get("top", 0)) + float(rect.get("height", 0)) / 2.0
+                    qt_effect = self._dispatch_qt_mouse_click(cx, cy)
+                    self._schedule_youtube_skip_verification(
+                        ad_state=ad_state,
+                        decision=decision,
+                        initial_effect=qt_effect,
+                        method="qt_mouse",
+                        started_at=time.time(),
+                        rect=rect,
+                        verification_pass=verification_pass + 1,
+                        allow_qt_escalation=False,
+                    )
+                    return
+
+                effect = enrich_skip_effect(
+                    initial_effect,
+                    method=method,
+                    effect_verified=False,
+                    ad_cleared_ms=elapsed_ms,
+                    verification_pass=verification_pass,
+                )
+                try:
+                    record_youtube_ad_action(
+                        ad_state=ad_state,
+                        decision=decision,
+                        effect=effect,
+                        state_dir=_STATE,
+                    )
+                except Exception:
+                    pass
+
             try:
-                from System.swarm_youtube_ad_controller import record_youtube_ad_action
+                self._view.page().runJavaScript(self._youtube_skip_probe_js(), _on_probe)
+            except Exception:
+                pass
+
+        QTimer.singleShot(delay_ms, _verify_after_delay)
+
+    def _execute_verified_youtube_skip(
+        self,
+        *,
+        ad_state: dict,
+        decision: dict,
+        source: str = "auto_controller",
+    ) -> None:
+        """Click skip, then verify the ad actually ended before claiming success (r901)."""
+        if self._view is None:
+            return
+        started_at = time.time()
+        ad_payload = dict(ad_state or {})
+        ad_payload.setdefault("platform", "youtube")
+        ad_payload.setdefault("url", self._current_url)
+        ad_payload.setdefault("is_current_page", True)
+        ad_payload["source"] = source
+        decision_payload = dict(decision or {"action": "skip", "reason": source})
+
+        def _on_click(effect):
+            payload = effect if isinstance(effect, dict) else {"raw": str(effect)}
+            rect = payload.get("rect") if isinstance(payload.get("rect"), dict) else None
+            if not payload.get("ok"):
+                try:
+                    from System.swarm_youtube_ad_controller import enrich_skip_effect, record_youtube_ad_action
+                    record_youtube_ad_action(
+                        ad_state=ad_payload,
+                        decision=decision_payload,
+                        effect=enrich_skip_effect(payload, method="js", effect_verified=False, verification_pass=0),
+                        state_dir=_STATE,
+                    )
+                except Exception:
+                    pass
+                return
+            self._schedule_youtube_skip_verification(
+                ad_state=ad_payload,
+                decision=decision_payload,
+                initial_effect=payload,
+                method=str(payload.get("method") or "js"),
+                started_at=started_at,
+                rect=rect,
+            )
+
+        try:
+            self._view.page().runJavaScript(self._youtube_skip_click_js(perform_click=True), _on_click)
+        except Exception as exc:
+            try:
+                from System.swarm_youtube_ad_controller import enrich_skip_effect, record_youtube_ad_action
                 record_youtube_ad_action(
-                    ad_state={"platform": "youtube", "url": self._current_url,
-                              "detected": True, "is_current_page": True,
-                              "source": "owner_demand_skip"},
-                    decision={"action": "skip", "reason": "owner_demand"},
-                    effect=effect if isinstance(effect, dict) else {"raw": str(effect)},
+                    ad_state=ad_payload,
+                    decision=decision_payload,
+                    effect=enrich_skip_effect(
+                        {"ok": False, "reason": f"runJavaScript_failed:{exc}", "action": "skip"},
+                        method="js",
+                        effect_verified=False,
+                        verification_pass=0,
+                    ),
                     state_dir=_STATE,
                 )
             except Exception:
                 pass
 
-        try:
-            self._view.page().runJavaScript(js, _record_effect)
-            return {"ok": True, "reason": "skip_requested_receipt_pending", "requested": "skip"}
-        except Exception as exc:
-            return {"ok": False, "reason": f"runJavaScript_failed:{exc}", "requested": "skip"}
+    def skip_current_ad(self) -> dict:
+        """Owner-demand (r296/r901): click YouTube's visible Skip control and verify
+        the ad actually ended before writing an honest §6 receipt."""
+        if self._view is None:
+            return {"ok": False, "reason": "no_view", "requested": "skip"}
+        self._execute_verified_youtube_skip(
+            ad_state={
+                "platform": "youtube",
+                "url": self._current_url,
+                "detected": True,
+                "is_current_page": True,
+                "source": "owner_demand_skip",
+            },
+            decision={"action": "skip", "reason": "owner_demand"},
+            source="owner_demand_skip",
+        )
+        return {"ok": True, "reason": "skip_requested_verification_pending", "requested": "skip"}
 
     def _apply_youtube_ad_controller(self, ad_state: dict, *, url: str) -> None:
         """Owner-controlled YouTube ad action from current-page receipts only.
@@ -2278,6 +2971,13 @@ class AliceBrowserWidget(QMainWindow):
             except Exception:
                 pass
             return
+        if action == "skip":
+            self._execute_verified_youtube_skip(
+                ad_state=ad_state,
+                decision=decision,
+                source="auto_ad_controller",
+            )
+            return
         action_js = json.dumps(action)
         js = f"""
         (function () {{
@@ -2290,18 +2990,7 @@ class AliceBrowserWidget(QMainWindow):
             var action = {action_js};
             var out = {{ action: action, ok: false, reason: '' }};
             try {{
-                if (action === 'skip') {{
-                    var skip = Array.prototype.slice.call(document.querySelectorAll(
-                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
-                    )).find(visible);
-                    if (skip) {{
-                        skip.click();
-                        out.ok = true;
-                        out.reason = 'clicked_visible_skip_control';
-                    }} else {{
-                        out.reason = 'skip_control_not_visible_at_effect_time';
-                    }}
-                }} else if (action === 'mute') {{
+                if (action === 'mute') {{
                     var videos = Array.prototype.slice.call(document.querySelectorAll('video'));
                     if (videos.length) {{
                         window.__aliceAdMuted = true;
@@ -2598,7 +3287,7 @@ class AliceBrowserWidget(QMainWindow):
                         return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
                     }
                     var skipButton = Array.prototype.slice.call(document.querySelectorAll(
-                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
+                        '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*="ytp-skip-ad"], button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
                     )).find(visible);
                     var muteButton = Array.prototype.slice.call(document.querySelectorAll(
                         '.ytp-mute-button, button[aria-label*="Mute" i], button[title*="Mute" i]'
@@ -2709,6 +3398,7 @@ class AliceBrowserWidget(QMainWindow):
                         featured_image=feat.get("src", ""),
                         comments=result.get("comments"),
                         media_playback=media_playback,
+                        open_tabs=self._open_tabs_inventory(),
                         sponsored=result.get("sponsored") or [],
                         youtube_ad_state=result.get("youtube_ad_state") or {},
                         video_channel=result.get("video_channel", ""),
@@ -2950,7 +3640,7 @@ class AliceBrowserWidget(QMainWindow):
                 seen[key] = 1;
                 out.push({label: lab, tag: el.tagName.toLowerCase()});
             }
-            return {ok: true, action: 'list_elements', count: out.length, elements: out, url: location.href};
+            return {ok: true, action: 'list_elements', count: out.length, elements: out, url: location.href, title: document.title || ''};
         })();
         """.replace("%MAX%", str(max(5, int(max_elements))))
         result = self._run_javascript_sync(js, wait_ms=1500)

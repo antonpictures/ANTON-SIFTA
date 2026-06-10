@@ -107,7 +107,11 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
         per_block_max=_env_int("SIFTA_SYSPROMPT_BLOCK_MAX", 6000),
         protected_prefixes=(
             "MY PHYSICAL IDENTITY",
+            "UNTRUTHFUL PHRASES",
+            "MY LANGUAGE SELF-GOVERNANCE",
             "ALICE_SELF_ADDRESSING",
+            "OWNER CAMERA / WATCHING-ME QUESTION",
+            "LOCAL SCREENSHOT / IMAGE PATH",
             "RUNTIME CONSTRAINTS",
             "WALL CLOCK GROUND TRUTH",
             "TIME ACCESS PROTOCOL",
@@ -118,6 +122,7 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
             "ALICE SELF ORGAN",
             "COMPOSITE IDENTITY",
             "STIGMERGIC SPEECH POTENTIAL",
+            "SIFTA APP SLOT",
             "ACE APP BRIEF",
             "CURRENT FOCUSED APP",
             "CO-WATCH RECEIPTS",
@@ -129,4 +134,46 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
     )
 
 
-__all__ = ["clamp_prompt_parts", "clamp_for_env"]
+def dedupe_prompt_text(text: str, *, min_len: int = 80) -> tuple[str, dict[str, Any]]:
+    """Collapse EXACT-duplicate paragraphs in an assembled system prompt (r794).
+
+    George 2026-06-08: the ~80k prompt is Alice's body / OS self-knowledge — she
+    MUST keep knowing it, so we may NOT trim it away. But ~40 context builders
+    restate the same body / organ / app / identity paragraphs across protected
+    blocks, and clamp_prompt_parts is forbidden from touching protected blocks.
+    Dedupe is the safe cut: it drops only a paragraph that is a character-for-
+    character repeat of one already kept (length >= ``min_len`` so short headers
+    and separators stay), preserving every UNIQUE fact. The whole prompt is one
+    system message, so a paragraph kept once is still seen by the cortex —
+    dropping its later exact copies loses nothing she knows.
+
+    Deterministic, side-effect free. Returns ``(deduped_text, report)``.
+    """
+    if not text:
+        return text, {
+            "orig_chars": 0, "final_chars": 0,
+            "removed_paragraphs": 0, "removed_chars": 0, "applied": False,
+        }
+    paragraphs = text.split("\n\n")
+    seen: set[str] = set()
+    kept: list[str] = []
+    removed = 0
+    for p in paragraphs:
+        key = p.strip()
+        if len(key) >= min_len and key in seen:
+            removed += 1
+            continue
+        if len(key) >= min_len:
+            seen.add(key)
+        kept.append(p)
+    out = "\n\n".join(kept)
+    return out, {
+        "orig_chars": len(text),
+        "final_chars": len(out),
+        "removed_paragraphs": removed,
+        "removed_chars": len(text) - len(out),
+        "applied": len(out) < len(text),
+    }
+
+
+__all__ = ["clamp_prompt_parts", "clamp_for_env", "dedupe_prompt_text"]

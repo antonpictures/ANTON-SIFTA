@@ -61,6 +61,39 @@ def test_visible_controls_are_recorded_and_surfaced(tmp_path):
     assert "Add to cart" in block
 
 
+def test_page_state_records_open_browser_tabs(tmp_path):
+    ps.record_page_state(
+        "https://www.instagram.com/",
+        title="Instagram",
+        text="Instagram feed",
+        open_tabs=[
+            {
+                "index": 0,
+                "active": False,
+                "title": "Maisie Williams signed photo | eBay",
+                "url": "https://www.ebay.com/itm/123",
+            },
+            {
+                "index": 1,
+                "active": True,
+                "title": "Instagram",
+                "url": "https://www.instagram.com/",
+            },
+        ],
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    assert state["open_tabs_count"] == 2
+    assert state["open_tabs"][0]["domain"] == "www.ebay.com"
+    assert state["open_tabs"][1]["active"] is True
+    block = ps.page_state_block(now=1001.0, state_dir=tmp_path)
+    assert "Open Alice Browser tabs (2)" in block
+    assert "Maisie Williams signed photo" in block
+    assert "active #2: Instagram" in block
+
+
 def test_empty_when_no_receipt(tmp_path):
     assert ps.latest_page_state(state_dir=tmp_path) == {}
     block = ps.page_state_block(state_dir=tmp_path)

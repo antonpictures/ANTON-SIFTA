@@ -91,6 +91,57 @@ class ToolSpec:
 
 # The canonical tool registry. Alice cannot invent tools.
 TOOL_REGISTRY: Dict[str, ToolSpec] = {
+    # r800 — browser hands. Expose the EXISTING Alice Browser effectors so the
+    # cortex can drive the browser freely via TOOL_CALL for ANY owner phrasing,
+    # instead of hardcoded deterministic phrase-bridges. Owner-directed browsing
+    # is not gated (George: "Alice using tools freely").
+    "browser_search": ToolSpec(
+        name="browser_search",
+        description="Open Alice Browser and search the web (or a named site like youtube/ebay/images) for a query.",
+        required_params=("query",),
+        optional_params=("site", "cost_justification"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "browser_open": ToolSpec(
+        name="browser_open",
+        description="Open a URL in Alice Browser.",
+        required_params=("url",),
+        optional_params=("cost_justification",),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "browser_click": ToolSpec(
+        name="browser_click",
+        description="Click a visible button/tab/link on the current page by its text label (e.g. News, Images).",
+        required_params=("label",),
+        optional_params=("cost_justification",),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "browser_select_image": ToolSpec(
+        name="browser_select_image",
+        description="Click an image or result tile on the current page, by query text or ordinal number.",
+        required_params=(),
+        optional_params=("query", "ordinal", "cost_justification"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "browser_close_tab": ToolSpec(
+        name="browser_close_tab",
+        description=(
+            "Close one or more Alice Browser tabs. Use url_match for tabs whose URL contains "
+            "a substring (e.g. jamasoftware.com), title_match for title substring, index for "
+            "one tab (0-based), or close_duplicates=1 to collapse duplicate URLs keeping one."
+        ),
+        required_params=(),
+        optional_params=(
+            "index", "url_match", "title_match", "close_duplicates", "keep_active",
+            "cost_justification",
+        ),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
     "send_whatsapp": ToolSpec(
         name="send_whatsapp",
         description="Send a WhatsApp message to a contact by name or JID",
@@ -1086,7 +1137,7 @@ def _exec_consumer_surface_status(params: Dict[str, str]) -> Dict[str, Any]:
 
 def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
     """Delegate one bounded live pass to a registered arm."""
-    prompt = str(params.get("prompt") or "").strip()
+    raw_prompt = str(params.get("prompt") or "").strip()
     arm = str(params.get("arm") or "hermes_agent").strip() or "hermes_agent"
     aliases = {
         "hermes": "hermes_agent",
@@ -1146,6 +1197,67 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
                 f"registered arms are {registered}."
             ),
         }
+
+    from System.swarm_swimmer_task_packet import (
+        build_task_packet_from_arm_dispatch,
+        detect_context_bolus,
+        render_swimmer_task_prompt,
+        require_assumption_receipt_before_expensive_action,
+        write_task_packet_ledger,
+    )
+
+    receipt_ids_raw = str(params.get("receipt_ids") or params.get("relevant_receipt_ids") or "").strip()
+    relevant_receipt_ids = tuple(
+        part.strip() for part in receipt_ids_raw.replace(";", ",").split(",") if part.strip()
+    )
+    assumption_ids_raw = str(params.get("assumption_receipt_ids") or "").strip()
+    assumption_receipt_ids = tuple(
+        part.strip() for part in assumption_ids_raw.replace(";", ",").split(",") if part.strip()
+    )
+
+    allowed, assumption_receipts, assumption_reason = require_assumption_receipt_before_expensive_action(
+        raw_prompt,
+        existing_assumption_ids=assumption_receipt_ids,
+        state_dir=_STATE,
+    )
+    if not allowed:
+        ids = ", ".join(r.assumption_id for r in assumption_receipts)
+        return {
+            "ok": False,
+            "status": "ASSUMPTION_RECEIPT_REQUIRED",
+            "alice_summary": (
+                "agent_arm_research blocked: ambiguous entity needs an assumption receipt "
+                f"before this expensive action. Created: {ids}. "
+                "Clarify which entity/jurisdiction, then retry with assumption_receipt_ids=..."
+            ),
+            "assumption_receipts": [r.to_dict() for r in assumption_receipts],
+            "reason": assumption_reason,
+        }
+
+    bolus = detect_context_bolus(raw_prompt)
+    if bolus.is_bolus and not relevant_receipt_ids:
+        return {
+            "ok": False,
+            "status": "CONTEXT_BOLUS_BLOCKED",
+            "alice_summary": (
+                f"agent_arm_research blocked: context-bolus anti-pattern ({bolus.reason}, "
+                f"{bolus.char_count} chars). Pass receipt_ids=rNNN or a focused section pointer "
+                "instead of pasting the whole field."
+            ),
+            "context_bolus": bolus.__dict__,
+        }
+
+    packet = build_task_packet_from_arm_dispatch(
+        arm_id=arm,
+        owner_task=raw_prompt,
+        relevant_receipt_ids=relevant_receipt_ids,
+        assumption_receipt_ids_consumed=assumption_receipt_ids,
+        organ=str(params.get("organ") or "agent_arms"),
+        job=str(params.get("job") or "tool_router_delegation"),
+    )
+    write_task_packet_ledger(packet, state_dir=_STATE, extra={"source": "agent_arm_research"})
+    prompt = render_swimmer_task_prompt(packet)
+
     try:
         from System.swarm_agent_arm_launcher import ask_agent_arm
 
@@ -1153,7 +1265,14 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
         # ("receipts are the evidence"). agent_arm_research now dispatches
         # LIVE; the arm writes the file itself instead of being captured by
         # the now-redundant swarm_arm_code_lander workaround.
-        result = ask_agent_arm(arm, prompt, timeout_s=timeout_s, evidence_mode=False)
+        result = ask_agent_arm(
+            arm,
+            prompt,
+            timeout_s=timeout_s,
+            evidence_mode=False,
+            state_dir=_STATE,
+            task_packet_id=packet.packet_id,
+        )
     except subprocess.TimeoutExpired as exc:
         # §2.C (2026-05-28) — Local Gemma fallback for heavy builder arms.
         # When a heavy arm (claude/codex/qwen/cline) hits its decision-layer cap,
@@ -2143,6 +2262,23 @@ def register_app_open_surface(fn) -> None:
     _APP_OPEN_SURFACE = fn
 
 
+_BROWSER_SURFACE = None
+
+
+def register_browser_surface(fn) -> None:
+    """GUI injects fn(intent: dict) -> str (receipt line). r800.
+
+    Gives the cortex FREE browser hands by exposing the EXISTING Alice Browser
+    effectors (search / open / click / select-image in the widget's
+    _execute_sifta_app_command) as router tools — the same surface pattern as
+    app_open (r749). The widget owns URL-building and the real effector + receipt;
+    the router only routes the intent. This is wiring, not a rival organ, so the
+    cortex can act on ANY owner phrasing instead of hardcoded phrase-bridges.
+    """
+    global _BROWSER_SURFACE
+    _BROWSER_SURFACE = fn
+
+
 def _resolve_manifest_app_name(raw: str) -> str:
     """Fuzzy-resolve an owner/brain app word against apps_manifest.json keys."""
     try:
@@ -2190,9 +2326,85 @@ def _exec_app_open(params: Dict[str, str]) -> Dict[str, Any]:
         return {"ok": False, "error": f"surface open failed: {type(e).__name__}: {e}", "requested": raw, "resolved": resolved}
 
 
+def _exec_browser_via_surface(intent: Dict[str, Any]) -> Dict[str, Any]:
+    """r800 — route a browser intent to the live Alice Browser surface.
+
+    The GUI registers register_browser_surface; that callback maps the intent to
+    the EXISTING _execute_sifta_app_command effector and returns its receipt line.
+    The router never builds URLs or touches Qt — it only routes. §6: the surface
+    writes the real browser receipt; we never claim success without it.
+    """
+    if _BROWSER_SURFACE is None:
+        return {"ok": False, "error": "NO_SURFACE: no live Alice Browser is running to drive"}
+    try:
+        receipt_line = _BROWSER_SURFACE(dict(intent))
+        return {"ok": True, "action": intent.get("action"), "surface_receipt": str(receipt_line)[:400]}
+    except Exception as e:
+        return {"ok": False, "error": f"browser surface failed: {type(e).__name__}: {e}", "action": intent.get("action")}
+
+
+def _exec_browser_search(params: Dict[str, str]) -> Dict[str, Any]:
+    q = str(params.get("query") or "").strip()
+    if not q:
+        return {"ok": False, "error": "empty query"}
+    return _exec_browser_via_surface({"action": "search", "query": q, "site": str(params.get("site") or "").strip()})
+
+
+def _exec_browser_open(params: Dict[str, str]) -> Dict[str, Any]:
+    url = str(params.get("url") or "").strip()
+    if not url:
+        return {"ok": False, "error": "empty url"}
+    return _exec_browser_via_surface({"action": "open", "url": url})
+
+
+def _exec_browser_click(params: Dict[str, str]) -> Dict[str, Any]:
+    label = str(params.get("label") or "").strip()
+    if not label:
+        return {"ok": False, "error": "empty label"}
+    return _exec_browser_via_surface({"action": "click", "label": label})
+
+
+def _exec_browser_select_image(params: Dict[str, str]) -> Dict[str, Any]:
+    return _exec_browser_via_surface({
+        "action": "select_image",
+        "query": str(params.get("query") or "").strip(),
+        "ordinal": params.get("ordinal"),
+    })
+
+
+def _truthy_param(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _exec_browser_close_tab(params: Dict[str, str]) -> Dict[str, Any]:
+    intent: Dict[str, Any] = {"action": "close_tab"}
+    if str(params.get("index") or "").strip() != "":
+        intent["index"] = params.get("index")
+    if str(params.get("url_match") or "").strip():
+        intent["url_match"] = str(params.get("url_match") or "").strip()
+    if str(params.get("title_match") or "").strip():
+        intent["title_match"] = str(params.get("title_match") or "").strip()
+    if _truthy_param(params.get("close_duplicates")):
+        intent["close_duplicates"] = True
+    if "keep_active" in params:
+        ka = str(params.get("keep_active") or "true").strip().lower()
+        intent["keep_active"] = ka not in {"0", "false", "no", "off"}
+    if not any(
+        k in intent
+        for k in ("index", "url_match", "title_match", "close_duplicates")
+    ):
+        return {"ok": False, "error": "need index, url_match, title_match, or close_duplicates=1"}
+    return _exec_browser_via_surface(intent)
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "app_open": _exec_app_open,
+    "browser_search": _exec_browser_search,
+    "browser_open": _exec_browser_open,
+    "browser_click": _exec_browser_click,
+    "browser_select_image": _exec_browser_select_image,
+    "browser_close_tab": _exec_browser_close_tab,
     "send_whatsapp": _exec_send_whatsapp,
     "get_social_context": _exec_get_social_context,
     "check_economy": _exec_check_economy,

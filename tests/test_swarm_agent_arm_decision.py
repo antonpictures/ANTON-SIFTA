@@ -54,7 +54,7 @@ def test_research_task_selects_hermes_without_owner_naming_it() -> None:
 
     assert decision is not None
     assert decision.arm_id == "hermes_agent"
-    assert "Live arm action pass" in decision.prompt
+    assert "SWIMMER TASK PACKET" in decision.prompt
     assert "Hermes" not in decision.prompt
 
 
@@ -71,7 +71,7 @@ def test_explicit_codex_code_task_can_select_codex() -> None:
 
     assert decision is not None
     assert decision.arm_id == "codex_agent"
-    assert decision.timeout_s == 150
+    assert decision.timeout_s == 300
 
 
 def test_explicit_hermes_builder_task_stays_on_hermes() -> None:
@@ -82,6 +82,7 @@ def test_explicit_hermes_builder_task_stays_on_hermes() -> None:
     assert decision is not None
     assert decision.arm_id == "hermes_agent"
     assert decision.reason == "owner explicitly named this registered agent arm"
+    assert "SWIMMER TASK PACKET" in decision.prompt
     assert "Alice-owned SIFTA app/build delegation" in decision.prompt
     assert "Write real files" in decision.prompt
     assert "honest failure receipt" in decision.prompt

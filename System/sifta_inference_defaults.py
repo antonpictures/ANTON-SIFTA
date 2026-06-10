@@ -31,9 +31,9 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     is no longer a fallback candidate on the M5. The Architect removed it
     because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
     Keep the constant for old receipts, but do not auto-route to it.
-  - **Cloud teacher cortexes:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline are selectable
-    as teacher substrates through the same signed-in CLI/OAuth surfaces used by
-    the arms. Kimi is the only owner-facing Fireworks cortex because it carries
+  - **Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline are selectable
+    through the same signed-in CLI/OAuth surfaces used by the arms. Kimi is the only
+    owner-facing Fireworks cortex because it carries
     the vision lane needed for Alice's browser-photo demo. Older Fireworks
     drafter/long-context tags remain compatibility constants, not picker rows.
   - **All installed alice-* cortexes** are user-selectable from the

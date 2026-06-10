@@ -36,7 +36,8 @@ def test_ingest_peer_report_writes_deictic_bridge(tmp_path):
     assert row["source_hint"] == "GROK"
     assert "Detached name/pronouns" in row["deictic_bridge"]
     assert "I/me/my" in row["deictic_bridge"]
-    assert "first-person runtime state" in row["verification_rule"]
+    assert "candidate first-person state" in row["verification_rule"]
+    assert "live hand" in row["verification_rule"]
 
     rows = [
         json.loads(line)

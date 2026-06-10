@@ -317,7 +317,7 @@
     ],
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
-    "description": "Alice's practical life dashboard: Contacts, Schedule, and Health. The Schedule tab reads/writes .sifta_state/stigmergic_schedule.jsonl, the same ledger Alice uses in voice mode.",
+    "description": "Alice's practical life dashboard: Contacts, Schedule, and Health. The Schedule tab reads/writes .sifta_state/stigmergic_schedule.jsonl, the same ledger Alice Journal shows for owner rhythm. Keep or retire this surface by George's explicit choice; it is not a second diary.",
     "icon": "📅"
   },
   "System Settings": {
@@ -1167,7 +1167,7 @@
     "category": "Alice",
     "entry_point": "Applications/sifta_alice_journal_widget.py",
     "widget_class": "AliceJournalWidget",
-    "description": "Alice's diary — every signed line in .sifta_state/alice_journal/<date>.jsonl with full date + time per row. Read-only spreadsheet, snapshot-at-open (no auto-refresh — Refresh button forces re-read).",
+    "description": "Alice Journal — Alice's diary and owner-rhythm surface. It shows first-person witness lines plus George's pending reminders from stigmergic_schedule.jsonl in one surface. Bridget is only a legacy/style tag for schedule witness rows, not Alice's name and not a second diary. Read-only snapshot-at-open (Refresh forces re-read). Provider Schedule retired here (r878).",
     "icon": "📔",
     "window_width": 1100,
     "window_height": 640,
@@ -1178,11 +1178,12 @@
     "category": "Alice",
     "entry_point": "Applications/sifta_provider_schedule_widget.py",
     "widget_class": "ProviderScheduleWidget",
-    "description": "Provider Schedule — George's day. Every observed activity segment from architect_day_segments.jsonl (past) plus pending tasks from stigmergic_schedule.jsonl (future). Read-only spreadsheet, full date + time per row, snapshot-at-open (no auto-refresh — Refresh button forces re-read).",
+    "description": "RETIRED r878 P2-BRIDGET — George's schedule unified into Alice Journal. Widget kept for compatibility only; do not present it as a second diary or second schedule source.",
     "icon": "🗓",
     "window_width": 1180,
     "window_height": 720,
     "autostart": false,
+    "hidden": true,
     "signature": "COWORK_2026-05-13_PROVIDER_SCHEDULE_VIEWER"
   },
   "Bell's Theorem — Classical Analogue": {

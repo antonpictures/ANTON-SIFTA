@@ -83,6 +83,12 @@ _ACE_APP_INTENT_RES: Tuple[re.Pattern, ...] = (
     re.compile(r"\bace\s+(?:reading|game|lesson)\b", re.IGNORECASE),
 )
 
+_TOOL_OR_EFFECTOR_CONTRACT_RE = re.compile(
+    r"\[TOOL_CALL:|```tool_call|\bbrowser_close_tab\b|\beffector-only\b|"
+    r"\b(?:close|shut|remove|kill)\b.{0,180}\b(?:tab|tabs)\b",
+    re.IGNORECASE,
+)
+
 
 def is_misheard_ace_vocative(text: str) -> bool:
     """True when ``text`` is the STT mis-hearing of "Alice" as "Ace".
@@ -160,6 +166,27 @@ def repair_voice_command(raw_text: str, intent: str = "open_app") -> Dict[str, A
     """
     original = raw_text
     norm = _normalize(raw_text)
+
+    # Preserve explicit tool/effector contracts. A long owner paste that starts
+    # with "Alice" must not be repaired to the app name "Alice" before the
+    # cortex/tool router can read the real command.
+    if _TOOL_OR_EFFECTOR_CONTRACT_RE.search(raw_text or ""):
+        receipt = {
+            "original": original,
+            "repaired": None,
+            "confidence": 0.0,
+            "method": "abstain_tool_or_effector_contract",
+            "note": "Explicit tool/effector contract preserved verbatim; no app-name repair.",
+        }
+        _append_receipt(receipt)
+        return {
+            "original": original,
+            "repaired": None,
+            "confidence": 0.0,
+            "candidates": [],
+            "confirmation_text": "",
+            "receipt": receipt,
+        }
 
     # ── Alice/Ace STT vocative abstain (cw47-0516-2347) ───────────────────
     # If the raw text is the canonical misheard-vocative "Ace ..." (no Ace

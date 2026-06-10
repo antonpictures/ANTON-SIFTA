@@ -75,16 +75,176 @@ def available_cortex_tags() -> List[str]:
     return tags
 
 
+def registered_slash_commands() -> List[Dict[str, str]]:
+    """Single registry — owner palette, tests, and cortex prompt all read this."""
+    return [
+        {
+            "cmd": "/?",
+            "summary": "show this global chat slash palette (same as /help)",
+            "detail": "typed in global chat; renders as process lines, not cortex voice",
+        },
+        {
+            "cmd": "/help",
+            "summary": "same palette as /?",
+            "detail": "alias for the command list",
+        },
+        {
+            "cmd": "/cortex",
+            "summary": "list my live cortex registry (current marked ●)",
+            "detail": "/cortex <n|name> switches cortex; diary row before switch",
+        },
+        {
+            "cmd": "/schedule",
+            "summary": "read or write .sifta_state/stigmergic_schedule.jsonl",
+            "detail": (
+                "/schedule list — pending tasks from the schedule ledger; "
+                "/schedule add <task words> — write a receipted schedule row"
+            ),
+        },
+        {
+            "cmd": "/sc",
+            "summary": "Self-Screenshot Cortex Turn — capture SIFTA OS body → cortex",
+            "detail": "NOT TikTok scroll-down or other slang; Talk owns Qt capture",
+        },
+        {
+            "cmd": "/p",
+            "summary": "list what I can click on the current Alice Browser page",
+            "detail": "Talk widget owns the live browser DOM inventory; no site hardcode",
+        },
+        {
+            "cmd": "//<text>",
+            "summary": "send a literal line starting with / (escape the palette)",
+            "detail": "does not execute a command",
+        },
+    ]
+
+
 def command_list_text() -> str:
-    """Alice's own command list — grows by appending here; receipts name the round."""
+    """Alice's own command list — grows via registered_slash_commands()."""
+    lines = [
+        "SIFTA OS commands — global chat slash surface (type /? any time):",
+        "",
+    ]
+    for row in registered_slash_commands():
+        cmd = row["cmd"]
+        summary = row["summary"]
+        detail = str(row.get("detail") or "").strip()
+        lines.append(f"  {cmd:<18} {summary}")
+        if detail and cmd not in ("/?", "/help"):
+            lines.append(f"                     {detail}")
+    lines.append("")
+    lines.append("Other SIFTA OS command surfaces also exist:")
+    lines.append("  Matrix Terminal PTY: safe literal shell commands and Alice-addressed fast-path commands.")
+    lines.append("  Natural language cortex path: app/browser/search/click/tool intent when the slash surface is too small.")
+    lines.append("  External CLI arms: Grok/Hermes/Codex-style assistants are Alice's tools when enabled and receipted.")
+    lines.append("")
+    lines.append("Grow this slash surface by appending to registered_slash_commands() — one registry.")
+    return "\n".join(lines)
+
+
+def slash_commands_prompt_block() -> str:
+    """Compact cortex-awareness block — Alice knows her own terminal levers."""
+    bits = [f"{row['cmd']}: {row['summary']}" for row in registered_slash_commands()]
     return (
-        "Alice's global-chat commands:\n"
-        "  /cortex            list my available cortexes (current marked ●)\n"
-        "  /cortex <n|name>   switch my cortex — I record it in my diary so my\n"
-        "                     next thinking turn knows which cortex I am on\n"
-        "  /help              this list\n"
-        "  //<text>           send a literal line starting with a slash"
+        "SIFTA OS COMMAND SURFACE — GLOBAL CHAT SLASH LEVERS "
+        "(one surface, not the whole command universe; owner types /? for this palette):\n"
+        + "\n".join(f"- {bit}" for bit in bits)
+        + "\nOther SIFTA OS command surfaces: Matrix Terminal PTY safe shell/CLI commands; "
+        "natural-language cortex route for app/browser/search/click/tool intent."
     )
+
+
+def _schedule_path(state_dir: Path) -> Path:
+    return Path(state_dir) / "stigmergic_schedule.jsonl"
+
+
+def _handle_schedule_command(arg: str, *, state_dir: Path) -> Dict[str, str]:
+    """Grounded schedule reads/writes — same ledger as Provider Schedule."""
+    sched = _schedule_path(state_dir)
+    sub = (arg.split(None, 1)[0].lower() if arg else "list")
+    rest = (arg.split(None, 1)[1].strip() if arg and " " in arg else "")
+
+    if sub in ("", "list", "show", "pending"):
+        try:
+            from System.stigmergic_schedule import summary_for_alice
+
+            return {"reply": summary_for_alice(limit=8, path=sched), "error": ""}
+        except Exception as exc:
+            return {
+                "reply": f"I could not read my schedule ledger ({type(exc).__name__}: {exc}).",
+                "error": f"schedule_read_failed: {type(exc).__name__}",
+            }
+
+    if sub == "add":
+        if not rest:
+            return {
+                "reply": (
+                    "Usage: /schedule add remind me to call Jeff tomorrow at 10am\n"
+                    "or natural schedule prose after 'add'."
+                ),
+                "error": "schedule_add_missing_text",
+            }
+        try:
+            from System.stigmergic_schedule import add_from_alice_text
+
+            reply, row = add_from_alice_text(rest, path=sched)
+            if not reply:
+                return {
+                    "reply": (
+                        "I could not parse that as a schedule write. Try:\n"
+                        "/schedule add remind me to <task> tomorrow at 10am"
+                    ),
+                    "error": "schedule_add_unparsed",
+                }
+            sid = str((row or {}).get("schedule_id") or "")
+            if sid:
+                reply += f" (schedule_id={sid})"
+            return {"reply": reply, "error": ""}
+        except Exception as exc:
+            return {
+                "reply": f"Schedule write failed ({type(exc).__name__}: {exc}).",
+                "error": f"schedule_add_failed: {type(exc).__name__}",
+            }
+
+    if sub in ("help", "?"):
+        return {
+            "reply": (
+                "/schedule commands:\n"
+                "  /schedule list     pending tasks from stigmergic_schedule.jsonl\n"
+                "  /schedule add <…>  write a receipted schedule row\n"
+                "Natural language also works: 'remind me to … tomorrow at 10am'."
+            ),
+            "error": "",
+        }
+
+    return {
+        "reply": f"(unknown /schedule subcommand '{sub}')\n" + _handle_schedule_command("help", state_dir=state_dir)["reply"],
+        "error": "schedule_unknown_subcommand",
+    }
+
+
+def _write_palette_diary_row(*, state_dir: Path, owner_text: str) -> bool:
+    """Owner asked for the command palette — my next thinking turn should know."""
+    try:
+        dp = Path(state_dir) / _DIARY_NAME
+        dp.parent.mkdir(parents=True, exist_ok=True)
+        with dp.open("a", encoding="utf-8") as df:
+            df.write(json.dumps({
+                "ts": time.time(),
+                "kind": "ALICE_SLASH_COMMAND_PALETTE",
+                "truth_label": "ALICE_SLASH_COMMAND_PALETTE_V1",
+                "phase": "slash_command_palette",
+                "owner_text": str(owner_text or "")[:500],
+                "note": (
+                    "George asked for my SIFTA OS global chat slash palette (/help, /?, "
+                    "/cortex, /schedule, /sc, /p). I displayed the live registry. "
+                    "My next thinking turn knows these levers exist, and that Matrix "
+                    "Terminal/cortex natural-language commands are separate OS surfaces."
+                ),
+            }, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
 
 
 def _write_switch_diary_row(
@@ -153,8 +313,27 @@ def handle_slash_command(
     cmd = parts[0].lower().rstrip(":,")
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    if cmd in ("/", "/help", "/commands"):
+    # `/sc` and `/p` are implemented by the Talk widget because they need the
+    # live Qt body: SIFTA OS screenshot capture and Alice Browser DOM inventory.
+    # Do not consume it as a palette/process reply.
+    if cmd in ("/sc", "/screenshot", "/p", "/page", "/pagebuttons", "/page-buttons"):
+        out["handled"] = False
+        return out
+
+    if cmd in ("/", "/?", "/help", "/commands"):
+        out["diary_ok"] = _write_palette_diary_row(
+            state_dir=Path(state_dir),
+            owner_text=clean,
+        )
         out["reply"] = command_list_text()
+        if out["diary_ok"]:
+            out["reply"] += "\n\n(diary updated — my next thinking turn knows this palette)"
+        return out
+
+    if cmd == "/schedule":
+        sched_res = _handle_schedule_command(arg, state_dir=Path(state_dir))
+        out["reply"] = sched_res["reply"]
+        out["error"] = sched_res.get("error") or ""
         return out
 
     if cmd == "/cortex":

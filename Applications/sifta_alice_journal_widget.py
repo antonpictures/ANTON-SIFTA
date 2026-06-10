@@ -14,7 +14,10 @@ Truth doctrine:
     invented rows.
   • Refresh every 5 s; the Refresh button forces an immediate reread.
 
-Sibling: sifta_owner_schedule_widget.py is the second app — owner schedule.
+George 2026-06-09 (r878 P2-BRIDGET): Provider Schedule is retired — George's
+rhythm and pending reminders live here in Alice Journal, not a second app.
+`source=bridget` is only a Bridget Jones-style schedule-witness tag, not
+Alice's name and not a second diary.
 """
 
 from __future__ import annotations
@@ -52,6 +55,7 @@ _JOURNAL_DIR = _STATE / "alice_journal"
 # This is the primary view the widget displays. The old sensor-stream
 # `alice_journal/<date>.jsonl` is still on disk as a secondary source.
 _WITNESS_LEDGER = _STATE / "alice_first_person_journal.jsonl"
+_SCHEDULE = _STATE / "stigmergic_schedule.jsonl"
 
 
 def _format_ts(ts: float) -> Tuple[str, str]:
@@ -112,6 +116,29 @@ def _read_journal_for_date(date_str: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _read_pending_schedule() -> List[Dict[str, Any]]:
+    """Open owner-rhythm rows — same ledger Talk uses; read-only here."""
+    rows: List[Dict[str, Any]] = []
+    if not _SCHEDULE.exists():
+        return rows
+    try:
+        for line in _SCHEDULE.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("done") or r.get("fired"):
+                continue
+            rows.append(r)
+    except OSError:
+        pass
+    rows.sort(key=lambda r: float(r.get("due_ts") or r.get("created") or 0))
+    return rows
+
+
 class AliceJournalWidget(SiftaBaseWidget):
     APP_NAME = "Alice Journal"
 
@@ -153,6 +180,34 @@ class AliceJournalWidget(SiftaBaseWidget):
             "color: rgb(110, 120, 145); font-size: 10px; font-family: Menlo;"
         )
         layout.addWidget(self._source_label)
+
+        # ── Pending rhythm (George's schedule unified into Alice Journal) ─
+        self._pending_label = QLabel("Pending reminders: 0")
+        self._pending_label.setStyleSheet(
+            "color: rgb(255, 210, 140); font-size: 11px; font-weight: bold;"
+        )
+        layout.addWidget(self._pending_label)
+
+        self._pending_table = QTableWidget(0, 4)
+        self._pending_table.setHorizontalHeaderLabels(
+            ("Due", "Task", "Source", "Status")
+        )
+        self._pending_table.verticalHeader().setVisible(False)
+        self._pending_table.setMaximumHeight(120)
+        self._pending_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._pending_table.setStyleSheet(
+            "QTableWidget { background: rgb(22, 18, 14); "
+            "color: rgb(255, 220, 170); gridline-color: rgb(60, 50, 40); "
+            "font-family: Menlo; font-size: 10px; } "
+            "QHeaderView::section { background: rgb(40, 32, 24); "
+            "color: rgb(255, 200, 120); padding: 3px; border: 1px solid rgb(60, 50, 40); }"
+        )
+        ph = self._pending_table.horizontalHeader()
+        ph.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        ph.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        ph.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        ph.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._pending_table)
 
         # ── Table ─────────────────────────────────────────────────────────
         self._table = QTableWidget(0, len(self._COLS))
@@ -212,6 +267,23 @@ class AliceJournalWidget(SiftaBaseWidget):
             self._date_combo.setCurrentText(cur)
         self._date_combo.blockSignals(False)
 
+        pending = _read_pending_schedule()
+        self._pending_label.setText(
+            f"Pending reminders (George's rhythm): {len(pending)} · "
+            f"source: stigmergic_schedule.jsonl"
+        )
+        self._pending_table.setRowCount(len(pending))
+        for i, pr in enumerate(pending):
+            due_ts = float(pr.get("due_ts") or pr.get("created") or 0)
+            _, due_clock = _format_ts(due_ts)
+            task = str(pr.get("text") or "—")
+            source = str(pr.get("source") or "—")
+            status = "due" if due_ts and due_ts <= datetime.now().timestamp() else "waiting"
+            self._set_cell(i, 0, due_clock, QColor(255, 200, 120), table=self._pending_table)
+            self._set_cell(i, 1, task, QColor(255, 220, 170), table=self._pending_table)
+            self._set_cell(i, 2, source, QColor(200, 180, 140), table=self._pending_table)
+            self._set_cell(i, 3, status, QColor(180, 255, 180) if status == "due" else QColor(180, 200, 220), table=self._pending_table)
+
         rows = _read_journal_for_date(cur)
         self._table.setRowCount(len(rows))
         self._source_label.setText(
@@ -232,11 +304,14 @@ class AliceJournalWidget(SiftaBaseWidget):
             "ide_doctor":     QColor(150, 200, 255),
             "face_event":     QColor(200, 220, 240),
             "app_focus":      QColor(170, 200, 230),
+            "bridget":        QColor(255, 200, 140),  # schedule witness tag — not Alice's name
         }
         for i, r in enumerate(rows):
             d_str = str(r.get("date") or "—")
             t_str = str(r.get("time") or "—")
             source = str(r.get("source") or "?")
+            if source == "bridget":
+                source = "schedule_witness"
             line = str(r.get("line") or "").strip()
             line_color = _SOURCE_COLOR.get(source, QColor(225, 230, 240))
             self._set_cell(i, 0, d_str, QColor(180, 200, 230))
@@ -249,11 +324,20 @@ class AliceJournalWidget(SiftaBaseWidget):
         # visible the moment the snapshot loads.
         self._table.scrollToBottom()
 
-    def _set_cell(self, row: int, col: int, text: str, color: QColor) -> None:
+    def _set_cell(
+        self,
+        row: int,
+        col: int,
+        text: str,
+        color: QColor,
+        *,
+        table: QTableWidget | None = None,
+    ) -> None:
+        target = table if table is not None else self._table
         item = QTableWidgetItem(text)
         item.setForeground(color)
         item.setToolTip(text)
-        self._table.setItem(row, col, item)
+        target.setItem(row, col, item)
 
 
 if __name__ == "__main__":

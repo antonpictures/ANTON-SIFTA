@@ -42,3 +42,19 @@ def test_stream_prefix_detects_internal_reasoning_but_not_normal_answer():
     assert is_probable_reasoning_stream_prefix("1. Analyze the Context:")
     assert is_probable_reasoning_stream_prefix("We need to answer carefully")
     assert not is_probable_reasoning_stream_prefix("1. Restart Alice.")
+
+
+def test_vendor_persona_leak_stripped_from_visible_reply():
+    raw = (
+        "I am a supportive, intelligent assistant. "
+        "I can't display actual copyrighted photographs of celebrities here. "
+        "You should go to Instagram for photos. "
+        "Good morning George — I can open the browser for you."
+    )
+    result = sanitize_reasoning_leak(raw)
+    assert result.changed
+    assert "assistant" not in result.text.lower()
+    assert "copyright" not in result.text.lower()
+    assert "instagram" not in result.text.lower()
+    assert "Good morning George" in result.text
+    assert "reasoning_leak/vendor_training_persona" in result.rule_ids

@@ -38,6 +38,7 @@ def _diary_rows(tmp_path: Path) -> list[dict]:
 
 def test_slash_detection_and_escape():
     assert slash.is_slash_command("/cortex")
+    assert slash.is_slash_command("/?")
     assert slash.is_slash_command("  /help")
     assert not slash.is_slash_command("//literal slash text")
     assert not slash.is_slash_command("https://youtube.com")
@@ -48,8 +49,53 @@ def test_slash_detection_and_escape():
 def test_help_lists_her_own_commands(tmp_path):
     res, calls = _run("/help", tmp_path)
     assert res["handled"] and not res["error"]
-    assert "/cortex" in res["reply"] and "diary" in res["reply"]
-    assert calls == [] and _diary_rows(tmp_path) == []
+    assert "/cortex" in res["reply"] and "/schedule" in res["reply"]
+    assert "/p" in res["reply"]
+    assert "SIFTA OS commands" in res["reply"]
+    assert "global chat slash surface" in res["reply"]
+    assert "Matrix Terminal PTY" in res["reply"]
+    assert "diary updated" in res["reply"]
+    assert calls == []
+    rows = _diary_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "ALICE_SLASH_COMMAND_PALETTE"
+
+
+def test_question_mark_slash_shows_palette(tmp_path):
+    res, calls = _run("/?", tmp_path)
+    assert res["handled"] and not res["error"]
+    assert "/cortex" in res["reply"]
+    assert "/schedule" in res["reply"]
+    assert "/sc" in res["reply"]
+    assert "/p" in res["reply"]
+    assert "SIFTA OS commands" in res["reply"]
+    assert "global chat slash surface" in res["reply"]
+    assert "Natural language cortex path" in res["reply"]
+    assert calls == []
+    assert _diary_rows(tmp_path)[0]["phase"] == "slash_command_palette"
+
+
+def test_schedule_list_reads_ledger(tmp_path):
+    from System.stigmergic_schedule import add_task
+
+    sched = tmp_path / "stigmergic_schedule.jsonl"
+    add_task("tennis lesson with George", due="tomorrow at 10am", path=sched)
+    res, calls = _run("/schedule list", tmp_path)
+    assert res["handled"] and not res["error"]
+    assert "tennis lesson" in res["reply"]
+    assert "stigmergic_schedule.jsonl" in res["reply"]
+    assert calls == []
+
+
+def test_schedule_add_writes_receipted_row(tmp_path):
+    res, calls = _run(
+        "/schedule add remind me to call Jeff tomorrow at 10am",
+        tmp_path,
+    )
+    assert res["handled"] and not res["error"]
+    assert "Added to my schedule" in res["reply"]
+    assert "schedule_id=" in res["reply"]
+    assert (tmp_path / "stigmergic_schedule.jsonl").exists()
 
 
 def test_cortex_list_marks_current_and_numbers(tmp_path):
@@ -113,3 +159,12 @@ def test_switch_hand_failure_is_reported_not_hidden(tmp_path):
 def test_unknown_command_returns_her_list(tmp_path):
     res, _ = _run("/teleport mars", tmp_path)
     assert res["error"] == "unknown_command" and "/cortex" in res["reply"]
+
+
+def test_page_affordance_command_passes_through_to_talk(tmp_path):
+    res, calls = _run("/p", tmp_path)
+    assert res["handled"] is False
+    assert calls == []
+
+    res, _ = _run("/page-buttons", tmp_path)
+    assert res["handled"] is False

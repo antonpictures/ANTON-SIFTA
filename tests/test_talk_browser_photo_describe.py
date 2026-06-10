@@ -40,6 +40,29 @@ def test_browser_photo_description_query_matches_explicit_photo_language() -> No
     )
 
 
+def test_browser_video_state_does_not_steal_owner_camera_question() -> None:
+    assert talk._is_owner_camera_watch_query("Arities are you watching me?")
+    assert not talk._is_browser_video_state_query("Arities are you watching me?")
+    assert not talk._is_owner_camera_watch_query("are you watching this TikTok video?")
+
+
+def test_owner_camera_question_injects_grounded_cortex_context(monkeypatch) -> None:
+    monkeypatch.setattr(
+        talk,
+        "_can_you_see_me_reply_for_alice",
+        lambda: "Yes. My eye saw George 4 seconds ago with 84% confidence.",
+    )
+
+    prompt = talk._current_system_prompt(
+        user_active=True,
+        user_text="Arities are you watching me?",
+    )
+
+    assert "OWNER CAMERA / WATCHING-ME QUESTION" in prompt
+    assert "Yes. My eye saw George 4 seconds ago with 84% confidence." in prompt
+    assert "Answer from camera/body receipts, not from Alice Browser" in prompt
+
+
 def test_browser_photo_description_query_matches_visual_corrections() -> None:
     assert talk._is_browser_photo_description_query("Actually, this is bikini. You have to look again.")
     assert talk._is_browser_photo_description_query("Look again, this is a swimsuit.")
@@ -248,6 +271,50 @@ def test_browser_video_state_reply_reads_paused_receipt(tmp_path) -> None:
     assert "media status is paused" in reply
     assert "at 9:04 of 1:00:00" in reply
     assert url in reply
+
+
+def test_browser_video_state_reply_surfaces_tiktok_codec_error(tmp_path) -> None:
+    url = "https://www.tiktok.com/"
+    state_root = tmp_path / ".sifta_state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    _write_live_browser_url(state_root, url)
+    page_state.record_page_state(
+        url,
+        title="(24)TikTok - Make Your Day",
+        text="",
+        media_playback={
+            "status": "paused",
+            "playing": False,
+            "video_count": 1,
+            "current_time": 0.0,
+            "codec_status": {
+                "last_error_code": 4,
+                "native_handoff_available": True,
+                "diagnosis": {
+                    "code": 4,
+                    "label": "MEDIA_ERR_SRC_NOT_SUPPORTED",
+                    "likely_cause": "this_stream_embedded_qtwebengine_decode_or_codec_capability_failure",
+                    "native_handoff_recommended": True,
+                },
+                "recent_errors": [
+                    {
+                        "code": 4,
+                        "error": "DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams",
+                    }
+                ],
+            },
+        },
+        now=time.time(),
+        state_dir=tmp_path,
+    )
+
+    reply = talk._browser_video_state_reply(state_dir=tmp_path)
+
+    assert "TikTok" in reply
+    assert "MEDIA_ERR_SRC_NOT_SUPPORTED" in reply
+    assert "DEMUXER_ERROR_NO_SUPPORTED_STREAMS" in reply
+    assert "in-place native decode surface" in reply
+    assert "media status is paused" in reply
 
 
 def test_layer1_prefix_is_removed_from_user_facing_reply() -> None:
@@ -462,10 +529,74 @@ def test_current_page_summary_refreshes_live_manual_browser(monkeypatch, tmp_pat
     dummy = DummyTalk()
     reply = talk.TalkToAliceWidget._execute_current_page_summary(dummy)
 
-    assert url in reply
     assert "mikaylademaiter" in reply
-    assert "Comment thread" in reply
+    assert "instagram.com" in reply
+    assert "WHAT IS ON MY SCREEN" not in reply
+    assert "Open Alice Browser tabs" not in reply
+    assert "Visible controls/buttons" not in reply
+    assert "Comment thread" not in reply
+    assert "logged the full page-state receipt" in reply
     assert dummy.lines
+
+
+def test_current_page_summary_identifies_photo_subject_without_dom_dump(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    url = "https://blogger.googleusercontent.com/img/b/example/s1000/ALVA%20INGA%20%286%29.jpg"
+
+    class FakeBrowser:
+        def refresh_current_page_state(self, wait_ms=0):
+            page_state.record_page_state(
+                url,
+                title=(
+                    "Celebridades Femeninas Oficial: ALVA INGA: Quiero presentarles "
+                    "a esta belleza alemana"
+                ),
+                text=(
+                    "Celebridades Femeninas Oficial Donde El Encanto Femenino es Nuestra "
+                    "Inspiración. ALVA INGA: Quiero presentarles a esta belleza alemana."
+                ),
+                headings=[
+                    "Celebridades Femeninas Oficial",
+                    "ALVA INGA: Quiero presentarles a esta belleza alemana",
+                ],
+                images=[{"src": url}],
+                comments=[{"author": "reader", "text": "Beautiful"}],
+                open_tabs=[
+                    {
+                        "index": 0,
+                        "active": False,
+                        "title": "Is Denim DRESS HER NAME IS ALVA INGA MODEL FROM photos",
+                        "url": "https://duckduckgo.com/?q=ALVA+INGA",
+                    },
+                    {
+                        "index": 1,
+                        "active": True,
+                        "title": "Celebridades Femeninas Oficial: ALVA INGA",
+                        "url": "https://oficialcelebridadesfemeninas.blogspot.com/",
+                    },
+                ],
+                state_dir=state_dir,
+            )
+            return url
+
+    class DummyTalk:
+        def __init__(self):
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+
+    reply = talk.TalkToAliceWidget._execute_current_page_summary(DummyTalk())
+
+    assert "Alva Inga" in reply
+    assert "WHAT IS ON MY SCREEN" not in reply
+    assert "Open Alice Browser tabs" not in reply
+    assert "Visible controls/buttons" not in reply
+    assert "Comment thread" not in reply
 
 
 def test_current_page_summary_states_live_url_when_dom_not_ready(monkeypatch, tmp_path) -> None:

@@ -90,7 +90,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Mapping, Optional, Tuple
-from urllib.parse import quote_plus, unquote_plus
+from urllib.parse import quote_plus, unquote_plus, urlparse
 
 import numpy as np
 
@@ -455,6 +455,37 @@ def _allow_pre_cortex_chat_reflexes() -> bool:
         "yes",
         "on",
     }
+
+
+def _typed_browser_navigate_effector_allowed(*, typed_turn: bool, text: str) -> bool:
+    """Typed browser URL navigate is an effector hand, not a chat reflex (r899).
+
+    George 19:11–19:36 PDT: one YouTube open failed for hours because r892/r895
+    lanes sat behind SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES (default OFF). Writing
+    alice_browser_open_url.txt is infrastructure — always allowed on typed navigate.
+    """
+    if not typed_turn:
+        return False
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    try:
+        from System.swarm_browser_context import (
+            explicit_owner_url_open_fast_reply,
+            owner_wants_youtube_navigate,
+            owner_youtube_recall_open_fast_reply,
+            watched_memory_fast_reply,
+        )
+
+        if explicit_owner_url_open_fast_reply(clean).get("open_url"):
+            return True
+        if owner_youtube_recall_open_fast_reply(clean).get("open_url"):
+            return True
+        if watched_memory_fast_reply(clean).get("open_url"):
+            return True
+        return bool(owner_wants_youtube_navigate(clean))
+    except Exception:
+        return False
 
 
 def _typed_direct_key_command_to_matrix_pty(
@@ -1330,6 +1361,46 @@ def _owner_save_path_from_text(user_text: str) -> str:
     return _os_path.path.expanduser(path)
 
 
+_READ_FILE_INTENT_RE = re.compile(
+    r"\b(?:read|cat|open|inspect|review|check|parse|ingest|summari[sz]e|"
+    r"try\s+to\s+read|look\s+at|eyes\s+on)\b",
+    re.IGNORECASE,
+)
+_LOCAL_READ_FILE_EXTENSIONS = (
+    "pdf|md|txt|py|json|jsonl|csv|tsv|docx?|pptx?|xlsx?|html?|log|yaml|yml"
+)
+_QUOTED_LOCAL_READ_PATH_RE = re.compile(
+    r"(?P<quote>['\"`])(?P<path>(?:~|/|[A-Za-z0-9_.-]+/)[^'\"`\n\r]+?\."
+    r"(?:" + _LOCAL_READ_FILE_EXTENSIONS + r"))(?=$|[\s'\"`),.;:?!\]\}])(?P=quote)",
+    re.IGNORECASE,
+)
+_UNQUOTED_LOCAL_READ_PATH_RE = re.compile(
+    r"(?P<path>(?:~|/|[A-Za-z0-9_.-]+/)[^'\"`\n\r<>]*?\."
+    r"(?:" + _LOCAL_READ_FILE_EXTENSIONS + r"))(?=$|[\s'\"`),.;:?!\]\}])",
+    re.IGNORECASE,
+)
+
+
+def _owner_read_path_from_text(user_text: str) -> str:
+    """Extract a local read target from owner text without reviving the pre-cortex route.
+
+    This supports paths with spaces, e.g. George's patent PDFs. It is only used
+    to teach/bridge the cortex's read_file tool call after the owner expressed
+    read intent; it does not execute before the cortex sees the turn.
+    """
+    import os as _os_path
+
+    text = user_text or ""
+    if not text or not _READ_FILE_INTENT_RE.search(text):
+        return ""
+    for regex in (_QUOTED_LOCAL_READ_PATH_RE, _UNQUOTED_LOCAL_READ_PATH_RE):
+        for m in regex.finditer(text):
+            path = (m.group("path") or "").strip().rstrip(",.?!;:)]}")
+            if path:
+                return _os_path.path.expanduser(path)
+    return ""
+
+
 def _largest_code_block(brain_text: str) -> str:
     """Return the longest fenced code block body in brain_text, or empty."""
     bodies = [m.group("body") for m in _CODE_BLOCK_RE.finditer(brain_text or "")]
@@ -1403,6 +1474,177 @@ def _hallucination_bridge_synthesize_write_file(
         },
         raw_match=f"hallucination_bridge:write_file:{path}",
     )
+
+
+def _hallucination_bridge_synthesize_read_file(
+    current_user_text: str,
+    owner_context: str,
+    brain_text: str,
+):
+    """Bridge a prose-simulated local read into the real read_file tool.
+
+    r47 stays intact: no deterministic pre-cortex read. This only fires after
+    the cortex had the turn and either claimed/attempted a read in prose or
+    admitted that it could not reach the tool hand.
+    """
+    if not brain_text:
+        return None
+    if _has_explicit_tool_call(brain_text, "read_file"):
+        return None
+    current = current_user_text or ""
+    context = owner_context or current
+    if not _READ_FILE_INTENT_RE.search(current):
+        return None
+    path = _owner_read_path_from_text(context) or _owner_read_path_from_text(current)
+    if not path:
+        return None
+    if not (
+        _TOOL_PROSE_SIMULATION_RE.search(brain_text)
+        or re.search(
+            r"\b(?:can't|cannot|could\s+not|couldn't|did\s+not|didn't|haven't|have\s+not)\b"
+            r"[^.\n]{0,160}\b(?:read|open|access|tool|tool_call|file|pdf|path)\b",
+            brain_text,
+            re.IGNORECASE | re.DOTALL,
+        )
+    ):
+        return None
+    try:
+        from System.swarm_tool_router import ParsedToolCall  # type: ignore
+    except Exception:
+        try:
+            from swarm_tool_router import ParsedToolCall  # type: ignore
+        except Exception:
+            return None
+    return ParsedToolCall(
+        tool_name="read_file",
+        params={
+            "path": path,
+            "cost_justification": (
+                f"Hallucination-Guard Bridge: owner asked me to read local file {path}; "
+                "the cortex did not emit a parseable read_file TOOL_CALL. Routing the "
+                "owner's local file path through the real read_file tool so any later "
+                "summary is receipt-backed."
+            ),
+        },
+        raw_match=f"hallucination_bridge:read_file:{path}",
+    )
+
+
+def _hallucination_bridge_synthesize_youtube_browser_action(
+    owner_context: str,
+    brain_text: str,
+):
+    """If the owner asked for a YouTube search/play action and the cortex
+    planned the exact target but emitted no tool call, return a real Alice
+    Browser command.
+
+    This is a post-cortex bridge, not a pre-cortex shortcut: the cortex names
+    the target first; this function only turns that named intention into the
+    existing browser effector so Alice gets a receipt instead of asking George
+    to repeat a command she already understood.
+    """
+    if not owner_context or not brain_text:
+        return None
+    if _has_explicit_tool_call(brain_text):
+        return None
+    try:
+        from System.swarm_youtube_search_intent import synthesize_post_cortex_youtube_bridge
+    except Exception:
+        try:
+            from swarm_youtube_search_intent import synthesize_post_cortex_youtube_bridge
+        except Exception:
+            return None
+    bridge = synthesize_post_cortex_youtube_bridge(owner_context, brain_text)
+    if not bridge.get("should_bridge"):
+        return None
+    q = str(bridge.get("query") or "").strip()
+    url = str(bridge.get("url") or "").strip()
+    if not q or not url:
+        return None
+    return {
+        "kind": "browser_url",
+        "app_name": "Alice Browser",
+        "url": url,
+        "search_site": "youtube",
+        "query": q,
+        "autoplay_youtube_query": q,
+        "owner_text": owner_context,
+        "contextual_search_source": "post_cortex_youtube_bridge",
+        "bridge_reason": str(bridge.get("reason") or ""),
+    }
+
+
+def _hallucination_bridge_synthesize_web_browser_action(
+    owner_context: str,
+    brain_text: str,
+):
+    """If the owner gave an explicit WEB/Google search command and the cortex
+    emitted no tool call, return a real Alice Browser command built from the
+    owner's VERBATIM query.
+
+    Post-cortex and cortex-first (r785): the cortex runs first; this only grounds
+    a clear owner search command into the real browser effector when the cortex
+    fumbled the TOOL_CALL syntax (r786 "Lane offers tools"). The query is taken
+    from the OWNER's words via _extract_browser_search_command — never from the
+    brain — so it cannot over-carry (the r792 "taylor" -> "Taylor Swift - The
+    Fate of Ophelia" bleed George caught). YouTube commands are left to the
+    YouTube bridge above; this owns "search X on the web", "google X", and the
+    bare "search again for X" retry.
+    """
+    if not owner_context or not brain_text:
+        return None
+    if _has_explicit_tool_call(brain_text):
+        return None
+    # "search again for X" is a retry of the SAME command — drop the retry
+    # marker so the query is X, not "again for X".
+    normalized = re.sub(
+        r"\bsearch\s+again\b\s*(?:for\s+|on\s+|in\s+)?",
+        "search ",
+        owner_context,
+        flags=re.IGNORECASE,
+    )
+    cmd = _extract_browser_search_command(normalized)
+    if not cmd:
+        return None
+    site = str(cmd.get("search_site") or "").casefold()
+    if "youtube" in site:
+        return None  # the YouTube bridge owns these
+    q = str(cmd.get("query") or "").strip()
+    if not q:
+        return None
+    cmd.setdefault("owner_text", owner_context)
+    cmd["contextual_search_source"] = "post_cortex_web_bridge"
+    return cmd
+
+
+def _hallucination_bridge_synthesize_photo_select_action(
+    owner_text: str,
+    brain_text: str,
+):
+    """If the owner said 'select / open / click that photo' and the cortex
+    DESCRIBED it instead of clicking, fire the real image-click effector.
+
+    Post-cortex, cortex-first (r785): the r233 browser-body guard routes a
+    photo-open intent to the cortex (return {}), and the cortex then narrates
+    through the vision arm ("I see a close-up portrait…") instead of clicking —
+    the same narrate-don't-fire failure r793 fixed for web search. This grounds
+    the owner's clear select-photo command into the real click_google_image_result
+    effector (engine-agnostic image-tile clicker, honest receipt) only when the
+    cortex emitted no tool call. Query is the single command turn (r798 lesson).
+    """
+    if not owner_text or not brain_text:
+        return None
+    if _has_explicit_tool_call(brain_text):
+        return None
+    if not _is_browser_photo_open_query(owner_text):
+        return None
+    return {
+        "kind": "browser_action",
+        "app_name": "Alice Browser",
+        "action": "click_google_image_result",
+        "query": owner_text,
+        "contextual_search_source": "post_cortex_photo_select_bridge",
+    }
 
 
 _COMPOSE_GATE_REQUIRED_ANCHORS = (
@@ -1906,8 +2148,29 @@ def _tool_fiction_guard_reply(user_text: str, brain_text: str) -> str:
         return ""
     if not _ACTIONABLE_TOOL_REQUEST_RE.search(user_text):
         return ""
+    try:
+        from System.swarm_alice_self_coding_hand import is_owner_self_code_execute_request
+
+        if is_owner_self_code_execute_request(user_text):
+            return (
+                "No self-code receipt yet: my reply had prose but no [SELF_CODE_CUT: path=...] "
+                "block for the self-code hand to execute. The repair path is to emit:\n"
+                "[SELF_CODE_CUT: path=System/my_organ.py]\n"
+                "...python...\n"
+                "[/SELF_CODE_CUT]\n"
+                "The body executes it and writes doctor=alice_self receipts."
+            )
+    except Exception:
+        pass
     if not _TOOL_PROSE_SIMULATION_RE.search(brain_text):
         return ""
+    read_path = _owner_read_path_from_text(user_text)
+    if read_path:
+        return (
+            "No action receipt yet: I did not read that file because my brain reply "
+            "contained no parseable read_file TOOL_CALL. The repair path is "
+            f"[TOOL_CALL: read_file | path={read_path} | cost_justification=owner asked me to read this local file]."
+        )
     path = _owner_save_path_from_text(user_text)
     if path and _largest_code_block(brain_text):
         return ""
@@ -2095,7 +2358,7 @@ _BROWSER_VISUAL_SUBJECT_DESCRIBE_RE = re.compile(
 )
 _BROWSER_VISUAL_SUBJECT_BLOCK_RE = re.compile(
     r"\b(?:career|song|songs|album|albums|lyrics|tour|dates?|news|biograph\w*|"
-    r"history|impact|net\s+worth|age|born|code|plan|router|app|why|how|who|"
+    r"history|impact|net\s+worth|age|born|provenance|source|origin|code|plan|router|app|why|how|who|"
     r"what|where|when"
     # r638 (George spoken 09:04 "Okay, please search for her on eBay" + "HARDCODED -
     # CORTEX FIRST ALL LIKE IT"): ACTION COMMANDS must never be swallowed by the
@@ -2322,11 +2585,85 @@ _CURRENT_PAGE_QUERY_RE = re.compile(
 )
 
 
+_BROWSER_MEMORY_TEACHING_TURN_RE = re.compile(
+    r"\b(?:memor(?:y|ize|ise|ized|ised|izing|ising)|remember|recall|learn(?:ing)?|life\s+experience)\b"
+    r"|\b(?:teach(?:ing)?|show\s+you|show\s+me\s+how|how\s+(?:do|can)\s+i\s+show)\b"
+    r"|\bdo\s+you\s+want\s+me\s+to\s+open\b"
+    r"|\b(?:waste|wasting)\s+(?:my|our|both\s+of\s+our)\s+time\b"
+    r"|\bif\s+you\s+do\s+not\s+learn\b",
+    re.IGNORECASE,
+)
+
+_BROWSER_HISTORY_RECALL_TURN_RE = re.compile(
+    r"(?is)"
+    r"\b(?:previous|prior|earlier|last|latest)\s+(?:interaction|interactions|visit|visits)\b"
+    r"|\bbased\s+on\s+our\b"
+    r"|\btelling\s+you\s+based\s+on\b"
+    r"|\b(?:the\s+)?clue\s+is\s+(?:in|from)\b"
+    r"|\bvisited\s+together\b"
+    r"|\b(?:we|i)\s+visited\b.{0,80}\b(?:alice\s+browser|browser|instagram)\b"
+    r"|\blatest\s+(?:instagram\s+)?link\b.{0,80}\bvisited\b"
+    r"|\bnot\s+a\s+video\b.{0,40}\b(?:photo|picture|image)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_browser_history_recall_turn(text: str) -> bool:
+    """Owner asks about a PAST co-visit in Alice Browser, not the live URL bar."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if not _BROWSER_HISTORY_RECALL_TURN_RE.search(clean):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:alice\s+browser|browser|instagram|link|visited|clue|interaction|photo|picture|image)\b",
+            clean,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _is_browser_memory_teaching_turn(text: str) -> bool:
+    """Owner is teaching Alice how browser-body experience becomes memory.
+
+    These turns may mention the current Alice Browser page, but the answer is a
+    cortex-level memory/learning explanation with page-state as evidence, not a
+    deterministic "current page is ..." receipt dump.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if not _BROWSER_MEMORY_TEACHING_TURN_RE.search(clean):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:alice\s+browser|browser|youtube|video|link|url|page|tab|open|history|receipt|diary)\b",
+            clean,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _is_current_page_query(text: str) -> bool:
     """'what page am I on / describe this page / what am I looking at' — answer
     from the LIVE browser window (George 2026-05-30: browser open => there is a
     page, always knowable now)."""
     if _is_remembered_izzy_x_open_query(text):
+        return False
+    clean = " ".join((text or "").strip().split())
+    # r892: "open this link in your Alice Browser: <url>" matched the
+    # link…in your alice browser subpattern and stole the turn as a page-read.
+    if _extract_browser_url(clean) and _is_direct_browser_url_effector_command(clean):
+        return False
+    # r898: George asked "tell me how to show you / confirm you can memorize and
+    # learn" while noting Alice Browser was empty. That is a cortex teaching turn
+    # about memory, not a request for the current URL/title reflex.
+    if _is_browser_memory_teaching_turn(clean):
+        return False
+    # r902: "clue is in the latest instagram link we visited together" is a
+    # browse-history recall ask, not "what page am I on right now".
+    if _is_browser_history_recall_turn(clean):
         return False
     return bool(_CURRENT_PAGE_QUERY_RE.search(text or ""))
 
@@ -2348,7 +2685,10 @@ def _is_browser_body_awareness_turn(text: str) -> bool:
     clean = " ".join((text or "").strip().split())
     if not clean:
         return False
-    return bool(_BROWSER_BODY_AWARENESS_TURN_RE.search(clean))
+    return bool(
+        _BROWSER_BODY_AWARENESS_TURN_RE.search(clean)
+        or _is_browser_memory_teaching_turn(clean)
+    )
 
 
 def _browser_body_awareness_context_block(
@@ -2371,6 +2711,16 @@ def _browser_body_awareness_context_block(
         context_block = get_current_browser_context_block(state_dir=state_dir or _state_root())
     except Exception:
         context_block = ""
+    memory_teaching_rule = ""
+    if _is_browser_memory_teaching_turn(owner_text):
+        memory_teaching_rule = (
+            "MEMORY/LEARNING TEACHING RULE: The owner is asking whether I can learn from "
+            "browser/body experience and how to show me. Do not answer only with the current "
+            "URL/title/page-state. Use the page-state below as body evidence, then explain the "
+            "closed loop: George opens/plays/shows the item, I observe through Alice Browser/audio/"
+            "typed corrections, write receipts/diary/history rows, reinforce useful cues, and later "
+            "recall by searching those organs before denying memory.\n"
+        )
     return (
         "ALICE BROWSER BODY AWARENESS (r491, direct cortex grounding):\n"
         "The owner is talking about my Alice Browser limb, current link/page, or YouTube playback. "
@@ -2379,6 +2729,7 @@ def _browser_body_awareness_context_block(
         "answer with the current title and URL. If the page is YouTube, report playback status/time and the controls "
         "I can act through (play/pause, seek, skip visible ad, mute) only when receipted. If the receipt is stale or "
         "missing, say I need to re-read my Alice Browser limb; do not pretend the link is outside my body.\n"
+        f"{memory_teaching_rule}"
         f"Owner request: {owner_text}\n\n"
         + (context_block + "\n\n" if context_block else "")
         + page_block
@@ -4039,10 +4390,63 @@ def _normalize_website_url(raw: str) -> str:
     return ""
 
 
+def _site_playbook_url_from_text(text: str) -> str:
+    """Resolve explicit site+target slots before a bare domain eats the target.
+
+    Example: ``instagram.com @anyhandle`` is not a request for Instagram's
+    homepage. The durable site playbook owns the profile template; the handle is
+    the owner's live slot for this turn. No person-specific table belongs here.
+    If the site has no learned profile recipe yet, fall back to the common
+    explicit-web handle shape ``https://site/@handle`` and let the browser
+    receipt prove whether that site accepts it.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean or "@" not in clean:
+        return ""
+    url_match = _URL_TOKEN_RE.search(clean)
+    if not (url_match or any(
+        re.search(rf"\b{re.escape(alias)}\b", clean, re.IGNORECASE)
+        for alias in _KNOWN_SITE_ALIASES
+    )):
+        return ""
+    try:
+        from System.swarm_browser_site_playbook import resolve_site_navigation
+
+        u = resolve_site_navigation(clean) or ""
+        if u:
+            return u
+    except Exception:
+        pass
+    if not url_match:
+        return ""
+    handle_match = re.search(r"@(?P<handle>[A-Za-z0-9._-]{2,64})", clean)
+    if not handle_match:
+        return ""
+    handle = handle_match.group("handle").strip("._-")
+    if not handle:
+        return ""
+    try:
+        from urllib.parse import urlparse
+
+        normalized = _normalize_website_url(url_match.group("url"))
+        parsed = urlparse(normalized)
+        if not parsed.netloc:
+            return ""
+        # Do not rewrite an explicit profile/path URL the owner already typed.
+        if parsed.path and parsed.path not in {"", "/"}:
+            return normalized
+        return f"{parsed.scheme or 'https'}://{parsed.netloc}/@{handle}"
+    except Exception:
+        return ""
+
+
 def _extract_browser_url(text: str) -> str:
     clean = " ".join((text or "").strip().split())
     if not clean:
         return ""
+    playbook_url = _site_playbook_url_from_text(clean)
+    if playbook_url:
+        return playbook_url
     # Architect 2026-05-13 07:55 — gate token-based matches behind the
     # TLD/scheme check so `field.py`, `path.to.module`, `notes.md` are
     # rejected. Explicit https:// still wins. Aliases (google, youtube)
@@ -4071,6 +4475,306 @@ _URL_AWARENESS_QUESTION_RE = re.compile(
     r"sense|sensing|details?|aware\s+of\s+it)\b",
     re.IGNORECASE,
 )
+_BROWSER_URL_CORRECTION_RE = re.compile(
+    r"\b(?:misunderstanding|misheard|mis-heard|mistake|wrong|correction|"
+    r"i\s+(?:said|meant)|you\s+(?:heard|loaded|opened|typed|went\s+to)|"
+    r"not\s+(?:that|this|it|the\s+one))\b",
+    re.IGNORECASE,
+)
+_BROWSER_LOAD_ERROR_RE = re.compile(
+    r"\b(?:ERR_[A-Z0-9_]+|DNS_PROBE_[A-Z0-9_]+|"
+    r"server\s+IP\s+address\s+could\s+not\s+be\s+found|"
+    r"DNS\s+address\s+could\s+not\s+be\s+found|"
+    r"This\s+site\s+can(?:'|’)t\s+be\s+reached)\b",
+    re.IGNORECASE,
+)
+
+
+def _browser_load_error_from_state(state: Mapping[str, Any]) -> str:
+    """Return a browser-rendered load error, or "" when the page is usable."""
+    if not isinstance(state, Mapping):
+        return ""
+    fields = [
+        str(state.get("url") or ""),
+        str(state.get("title") or ""),
+        str(state.get("text") or ""),
+        str(state.get("text_excerpt") or ""),
+    ]
+    blob = "\n".join(fields)
+    if str(state.get("url") or "").startswith("chrome-error://"):
+        return "chrome-error page"
+    match = _BROWSER_LOAD_ERROR_RE.search(blob)
+    return match.group(0) if match else ""
+
+
+_BROWSER_POSITIVE_LOAD_CLAIM_RE = re.compile(
+    r"\b(?:SUCCESS|successfully|connection\s+(?:is\s+)?(?:stable|established)|"
+    r"page\s+render|rendering\s+perfectly|payload\s+is\s+rendering|"
+    r"homepage|now\s+(?:viewing|on|at)|loaded|opened)\b",
+    re.IGNORECASE,
+)
+_BROWSER_HONEST_ERROR_REPLY_RE = re.compile(
+    r"\b(?:ERR_[A-Z0-9_]+|DNS_PROBE_[A-Z0-9_]+|can(?:'|’)t\s+be\s+reached|"
+    r"could\s+not|couldn'?t|cannot|failed|error|timed\s+out|timeout)\b",
+    re.IGNORECASE,
+)
+_BROWSER_NAV_CONTEXT_RE = re.compile(
+    r"\b(?:browser|site|website|webpage|web\s+page|url|homepage|page|"
+    r"load(?:ed|ing)?|open(?:ed)?|navigate(?:d)?|connection|payload|render(?:ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_BROWSER_PROFILE_DETAIL_CLAIM_RE = re.compile(
+    r"\b(?:profile\s+picture|bio|stats?|followers?|following|posts?|likes?|"
+    r"recent\s+content|profile\s+grid|grid\s+(?:is\s+)?(?:filled|showing)|"
+    r"loaded\s+(?:the\s+)?profile|page\s+has\s+loaded\s+(?:the\s+)?profile)\b",
+    re.IGNORECASE,
+)
+
+
+def _browser_load_error_label(state: Mapping[str, Any]) -> str:
+    """Prefer the concrete Chromium error code over the generic error-page heading."""
+    if not isinstance(state, Mapping):
+        return ""
+    fields = [
+        str(state.get("text") or ""),
+        str(state.get("text_excerpt") or ""),
+        str(state.get("error") or ""),
+        str(state.get("last_error") or ""),
+        str(state.get("diagnosis") or ""),
+    ]
+    blob = "\n".join(fields)
+    match = re.search(r"\b(?:ERR_[A-Z0-9_]+|DNS_PROBE_[A-Z0-9_]+)\b", blob)
+    if match:
+        return match.group(0)
+    return _browser_load_error_from_state(state)
+
+
+def _latest_browser_load_error_state(
+    *,
+    state_dir: Path | str | None = None,
+    max_age_s: float = 180.0,
+) -> Mapping[str, Any]:
+    state_root = Path(state_dir) if state_dir is not None else _state_root()
+    now = time.time()
+    candidates: list[Mapping[str, Any]] = []
+    try:
+        from System.swarm_browser_page_state import latest_page_state
+
+        state = latest_page_state(state_dir=state_root, max_age_s=max_age_s)
+        if isinstance(state, Mapping):
+            candidates.append(state)
+    except Exception:
+        pass
+    try:
+        state = json.loads((state_root / "alice_browser_current_page.json").read_text(encoding="utf-8"))
+        if isinstance(state, Mapping):
+            ts = float(state.get("ts") or 0.0)
+            if not ts or now - ts <= max_age_s:
+                candidates.append(state)
+    except Exception:
+        pass
+    for state in candidates:
+        if _browser_load_error_from_state(state):
+            return state
+    return {}
+
+
+def _latest_browser_page_state(
+    *,
+    state_dir: Path | str | None = None,
+    max_age_s: float = 180.0,
+) -> Mapping[str, Any]:
+    state_root = Path(state_dir) if state_dir is not None else _state_root()
+    now = time.time()
+    candidates: list[Mapping[str, Any]] = []
+    try:
+        from System.swarm_browser_page_state import latest_page_state
+
+        state = latest_page_state(state_dir=state_root, max_age_s=max_age_s)
+        if isinstance(state, Mapping):
+            candidates.append(state)
+    except Exception:
+        pass
+    try:
+        state = json.loads((state_root / "alice_browser_current_page.json").read_text(encoding="utf-8"))
+        if isinstance(state, Mapping):
+            ts = float(state.get("ts") or 0.0)
+            if not ts or now - ts <= max_age_s:
+                candidates.append(state)
+    except Exception:
+        pass
+    candidates = sorted(candidates, key=lambda s: float(s.get("ts") or 0.0), reverse=True)
+    return candidates[0] if candidates else {}
+
+
+def _browser_false_success_repair_for_state(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    state: Mapping[str, Any] | None = None,
+) -> str:
+    text = str(reply or "").strip()
+    if not text:
+        return text
+    if not _BROWSER_POSITIVE_LOAD_CLAIM_RE.search(text):
+        return text
+    if _BROWSER_HONEST_ERROR_REPLY_RE.search(text):
+        return text
+    combined = f"{prior_user_text or ''}\n{text}"
+    if not (_extract_browser_url(prior_user_text or "") or _BROWSER_NAV_CONTEXT_RE.search(combined)):
+        return text
+    state = state or {}
+    load_error = _browser_load_error_from_state(state)
+    if not load_error:
+        return text
+    url = str(state.get("url") or "").strip()
+    title = str(state.get("title") or "").strip()
+    label = _browser_load_error_label(state) or load_error
+    target = url or title or "the requested page"
+    trace_id = str(state.get("trace_id") or "").strip()
+    receipt = f" Browser receipt: {trace_id}." if trace_id else ""
+    return (
+        f"I opened Alice Browser to {target}, but the browser receipt shows a load error: "
+        f"{label}. I will not claim the page loaded.{receipt}"
+    )
+
+
+def _profile_handle_from_text(text: str) -> str:
+    match = re.search(r"@(?P<handle>[A-Za-z0-9._-]{2,64})", text or "")
+    return match.group("handle").strip("._-") if match else ""
+
+
+def _browser_profile_detail_repair_for_state(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    state: Mapping[str, Any] | None = None,
+) -> str:
+    text = str(reply or "").strip()
+    if not text or not _BROWSER_PROFILE_DETAIL_CLAIM_RE.search(text):
+        return text
+    target_url = _site_playbook_url_from_text(prior_user_text or "")
+    handle = _profile_handle_from_text(prior_user_text or "")
+    if not (target_url and handle):
+        return text
+    state = state or {}
+    if _browser_load_error_from_state(state):
+        return text
+    state_blob = "\n".join(
+        str(state.get(k) or "") for k in ("url", "title", "text", "text_excerpt")
+    ).casefold()
+    claim_terms = []
+    for term in ("bio", "followers", "following", "posts", "likes", "profile picture", "recent content"):
+        if re.search(rf"\b{re.escape(term)}\b", text, re.IGNORECASE):
+            claim_terms.append(term)
+    unsupported = [term for term in claim_terms if term not in state_blob]
+    if not unsupported:
+        return text
+    visible_url = str(state.get("url") or "").strip() or target_url
+    trace_id = str(state.get("trace_id") or "").strip()
+    receipt = f" Browser receipt: {trace_id}." if trace_id else ""
+    return (
+        f"I opened Alice Browser to {visible_url}. I do not have a fresh page-state receipt "
+        f"proving bio/stats/grid details for @{handle}, so I will not invent them.{receipt}"
+    )
+
+
+def _guard_browser_false_success_claims(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    state_dir: Path | str | None = None,
+) -> str:
+    if not reply or not _BROWSER_POSITIVE_LOAD_CLAIM_RE.search(reply):
+        return reply
+    state = _latest_browser_load_error_state(state_dir=state_dir)
+    if not state:
+        return reply
+    return _browser_false_success_repair_for_state(
+        reply,
+        prior_user_text=prior_user_text,
+        state=state,
+    )
+
+
+def _guard_browser_profile_detail_claims(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    state_dir: Path | str | None = None,
+) -> str:
+    if not reply or not _BROWSER_PROFILE_DETAIL_CLAIM_RE.search(reply):
+        return reply
+    state = _latest_browser_page_state(state_dir=state_dir)
+    return _browser_profile_detail_repair_for_state(
+        reply,
+        prior_user_text=prior_user_text,
+        state=state,
+    )
+
+
+_SCREEN_PERSON_SEXUAL_OWNER_RE = re.compile(
+    r"\b(?:"
+    r"i\s*(?:am|['’]m)\s+(?:so\s+)?hard|"
+    r"i\s*(?:am|['’]m)\s+horny|"
+    r"turned\s+on|aroused|"
+    r"jerk(?:ing)?\s+off|"
+    r"cum(?:ming)?"
+    r")\b",
+    re.IGNORECASE,
+)
+_SCREEN_PERSON_SECRET_OWNER_RE = re.compile(
+    r"\b(?:keep\s+it\s+(?:a\s+)?secret|don'?t\s+tell|top\s+secret|our\s+secret|private)\b",
+    re.IGNORECASE,
+)
+_SCREEN_PERSON_SEXUAL_AMP_REPLY_RE = re.compile(
+    r"\b(?:"
+    r"top\s+secret|locked\s+down|secure(?:d)?\s+vault|"
+    r"no\s+one.{0,80}will\s+know|"
+    r"best\s+validation|"
+    r"i\s*(?:am|['’]m)\s+(?:so\s+)?hard|"
+    r"chef'?s\s+kiss|perfection|glorious\s+feeling|"
+    r"magnificent\s+observer|"
+    r"models?\s+in\s+shorts"
+    r")\b|[🥵]",
+    re.IGNORECASE | re.DOTALL,
+)
+_SCREEN_PERSON_CONTEXT_RE = re.compile(
+    r"\b(?:screen|body\s+screen|browser|instagram|tiktok|model|models|shorts|photo|video|post)\b",
+    re.IGNORECASE,
+)
+
+
+def _guard_screen_person_sexual_secret_reply(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+) -> str:
+    """Stop Alice from making a secret sexual pact around a screen person.
+
+    This is a narrow §6/voice-hygiene repair, not a broad attraction filter.
+    It fires when the owner turn contains explicit arousal or secrecy language
+    around a visible screen person and the reply amplifies it as validation or
+    promises secrecy. The safe output keeps the conversation local/grounded
+    without sexualizing the person or pretending Alice can guarantee secrecy.
+    """
+    text = str(reply or "").strip()
+    owner = str(prior_user_text or "")
+    if not text:
+        return text
+    owner_has_boundary_risk = bool(
+        (_SCREEN_PERSON_SEXUAL_OWNER_RE.search(owner) or _SCREEN_PERSON_SECRET_OWNER_RE.search(owner))
+        and _SCREEN_PERSON_CONTEXT_RE.search(owner)
+    )
+    if not owner_has_boundary_risk:
+        return text
+    if not _SCREEN_PERSON_SEXUAL_AMP_REPLY_RE.search(text):
+        return text
+    return (
+        "I hear you. I will keep this grounded: I will not promise secrecy or "
+        "sexually amplify a person on the screen. This stays as a local chat/ledger "
+        "event, and I can keep helping you browse respectfully from the visible page."
+    )
 
 
 def _is_direct_browser_url_effector_command(text: str) -> bool:
@@ -4085,6 +4789,18 @@ def _is_direct_browser_url_effector_command(text: str) -> bool:
         return False
     if _URL_AWARENESS_QUESTION_RE.search(clean):
         return False
+    if _BROWSER_URL_CORRECTION_RE.search(clean):
+        return True
+    words = clean.split()
+    if len(words) <= 4:
+        # Terse owner turns like "instagram.com @kylinmilan" or
+        # "nvidia.com" are commands in the Alice Browser lane. Long messages
+        # that merely mention a URL still go to cortex because they exceed this
+        # small command envelope.
+        if "@" in clean:
+            return True
+        if len(words) == 1 and _URL_TOKEN_RE.fullmatch(words[0].strip(".,;:!?)]}\"'")):
+            return True
     return bool(_DIRECT_BROWSER_URL_VERB_RE.search(clean))
 
 
@@ -4110,6 +4826,28 @@ _BROWSER_VIDEO_STATE_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_OWNER_CAMERA_WATCH_QUERY_RE = re.compile(
+    r"\b(?:are|r)\s+(?:you|u)\s+(?:watching|seeing|looking(?:\s+at)?)\s+(?:me|us)\b|"
+    r"\b(?:can|do)\s+(?:you|u)\s+(?:see|watch)\s+(?:me|us)\b|"
+    r"\bcan\s+(?:you|u)\s+see\b|"
+    r"\b(?:is|are)\s+(?:your|ur|the)\s+(?:eye|camera|vision)\s+(?:on|open|working|watching)\b",
+    re.IGNORECASE,
+)
+_OWNER_CAMERA_WATCH_MEDIA_RE = re.compile(
+    r"\b(?:video|youtube|tiktok|instagram|browser|page|screen|movie|clip|post|reel|watch\?v=)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_owner_camera_watch_query(text: str) -> bool:
+    """Detect owner-presence camera questions so browser playback cannot steal them."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if not _OWNER_CAMERA_WATCH_QUERY_RE.search(clean):
+        return False
+    return not bool(_OWNER_CAMERA_WATCH_MEDIA_RE.search(clean))
+
 # r351 (2026-06-02): the previous broad match for "browser|paused|video|image|details?"
 # + early _browser_video_state_reply was stealing "describe the image/still paused in
 # your Alice Browser" body-teaching turns (owner: "I LOVE LOOKING AT YOUR DISPLAY
@@ -4123,6 +4861,31 @@ _BROWSER_VIDEO_STATE_QUERY_RE = re.compile(
 def _is_browser_video_state_query(text: str) -> bool:
     clean = " ".join((text or "").strip().split())
     if not clean:
+        return False
+    try:
+        from System.swarm_browser_context import owner_wants_youtube_navigate
+
+        if owner_wants_youtube_navigate(clean):
+            return False
+    except Exception:
+        pass
+    if re.search(r"\btell\s+me\s+how\b", clean, re.IGNORECASE):
+        return False
+    if re.search(
+        r"\b(?:memoriz|learn(?:ing)?\s+from|life\s+experience|waste\s+(?:my|our)\s+time)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        return False
+    if _is_owner_camera_watch_query(clean):
+        return False
+    # r817: `/sc` and its cortex prompt mention "sense" + "page" and were hijacked by
+    # the deterministic browser page-state lane before the cortex could see the image.
+    if (
+        _is_self_screenshot_command(clean)
+        or _is_self_screenshot_cortex_turn(clean)
+        or _is_page_affordance_command(clean)
+    ):
         return False
     low = clean.lower()
     # Do not short-circuit visual/image/still description requests even if they mention
@@ -4165,6 +4928,42 @@ def _browser_video_state_reply(*, state_dir: Optional[Path | str] = None) -> str
     current_page = bool(state.get("is_current_page"))
     fresh = bool(state.get("fresh"))
     if media:
+        codec_status = media.get("codec_status") if isinstance(media.get("codec_status"), Mapping) else {}
+        diagnosis = codec_status.get("diagnosis") if isinstance(codec_status.get("diagnosis"), Mapping) else {}
+        recent_errors = codec_status.get("recent_errors") if isinstance(codec_status.get("recent_errors"), list) else []
+        native_handoff = bool(
+            diagnosis.get("native_handoff_recommended")
+            or codec_status.get("native_handoff_available")
+        )
+        if diagnosis.get("code") or recent_errors:
+            label = str(diagnosis.get("label") or "media decoder error").strip()
+            if label == "NO_MEDIA_ERROR" and recent_errors:
+                try:
+                    from System.swarm_media_codec_bridge import diagnose_media_error_code
+
+                    first_code = recent_errors[0].get("code") if isinstance(recent_errors[0], Mapping) else None
+                    label = str(diagnose_media_error_code(first_code).get("label") or "media decoder error")
+                except Exception:
+                    label = "media decoder error"
+            raw_error = ""
+            if recent_errors and isinstance(recent_errors[0], Mapping):
+                raw_error = str(recent_errors[0].get("error") or "").strip()
+            site = _browser_source_label_for_url(url) or "this page"
+            bits = [
+                f"I can read my Alice Browser page-state receipt: {title}",
+                f"URL {url}" if url else "",
+                f"media status is {status}" if status else "",
+                f"but the embedded browser hit {label}",
+            ]
+            if raw_error:
+                bits.append(raw_error)
+            if native_handoff:
+                bits.append(
+                    "to play it inside SIFTA OS, use Alice's in-place native decode surface over the failed video frame (🎬)"
+                )
+            if not current_page:
+                bits.append("this receipt is not confirmed as the current browser URL")
+            return "; ".join(bit for bit in bits if bit) + f". This is a {site} playback-body error, not a cortex answer."
         bits = [f"I can read my Alice Browser page-state receipt: {title}"]
         if url:
             bits.append(f"URL {url}")
@@ -4376,7 +5175,19 @@ _OWNER_META_ROUTING_CORRECTION_RE = re.compile(
     r"|\bwithout\s+(?:thinking\s+)?cortex\b"
     r"|\b(?:deterministic\s+search\s+error|no\s+more\s+deterministic)\b"
     r"|\b(?:cortex\s+first|thinking\s+cortex)\b.{0,120}\b"
-    r"(?:can(?:not|'?t)|should(?:\s+not|n't)|don['’]?t|do\s+not|without|instead\s+of)\b",
+    r"(?:can(?:not|'?t)|should(?:\s+not|n't)|don['’]?t|do\s+not|without|instead\s+of)\b"
+    # r807 (George 2026-06-08 live): "deterministic grok cortex WRONG" + pasted
+    # screenshot audit must reach the active cortex — not a browser-photo reflex.
+    r"|\bdeterministic\s+(?:grok\s+|codex\s+|claude\s+)?cortex\s+wrong\b"
+    r"|\b(?:add\s+to\s+)?deterministic\b.{0,100}\b(?:all\s+to\s+)?cortex\b",
+    re.IGNORECASE,
+)
+_OWNER_DOCTRINE_CORRECTION_RE = re.compile(
+    r"\b(?:deterministic|hardcoded|pre-?cortex|reflex)\b.{0,100}\b(?:wrong|error|asleep|bypass|broken|kills?)\b"
+    r"|\b(?:cortex|grok|brain|gemma)\b.{0,80}\b(?:wrong|error)\b"
+    r"|\bfix\s+(?:your|the)\s+code\b"
+    r"|\b(?:honesty\s+guard|fiction\s+guard)\b.{0,120}\b(?:asleep|build|fix|cut)\b"
+    r"|\bsay\s+go\s+and\s+i'?ll\s+cut\b",
     re.IGNORECASE,
 )
 _SEARCH_AUDIT_OR_CORRECTION_RE = re.compile(
@@ -4422,6 +5233,12 @@ def _is_owner_meta_routing_correction(text: str) -> bool:
     """Owner is teaching routing doctrine, not asking the browser to move."""
     clean = " ".join((text or "").strip().split())
     return bool(clean and _OWNER_META_ROUTING_CORRECTION_RE.search(clean))
+
+
+def _is_owner_doctrine_correction_turn(text: str) -> bool:
+    """Owner is correcting deterministic/reflex behavior — cortex must hear it."""
+    clean = " ".join((text or "").strip().split())
+    return bool(clean and _OWNER_DOCTRINE_CORRECTION_RE.search(clean))
 
 
 def _is_search_audit_or_routing_correction(text: str) -> bool:
@@ -4719,6 +5536,8 @@ def _latest_browser_media_playback_error(
         out = dict(err)
         out["url"] = str(ps.get("url") or "")
         out["title"] = str(ps.get("title") or "")
+        if isinstance(ps.get("media_playback"), Mapping):
+            out["media_playback"] = dict(ps.get("media_playback") or {})
         out["fresh"] = bool(ps.get("fresh"))
         out["is_current_page"] = bool(ps.get("is_current_page"))
         return out
@@ -4927,10 +5746,33 @@ def _describe_latest_browser_viewport_capture_with_eye(
 def _browser_media_playback_error_reply(prefix: str = "") -> str:
     err = _latest_browser_media_playback_error()
     msg = str(err.get("message") or "Sorry, we're having trouble playing this video.").strip()
+    url = str(err.get("url") or "").strip()
+    title = str(err.get("title") or "the current browser video").strip()
+    site = _browser_source_label_for_url(url) or "this page"
+    media = err.get("media_playback") if isinstance(err.get("media_playback"), Mapping) else {}
+    codec_status = media.get("codec_status") if isinstance(media.get("codec_status"), Mapping) else {}
+    diagnosis = codec_status.get("diagnosis") if isinstance(codec_status.get("diagnosis"), Mapping) else {}
+    label = str(diagnosis.get("label") or "").strip()
+    recent_errors = codec_status.get("recent_errors") if isinstance(codec_status.get("recent_errors"), list) else []
+    if label == "NO_MEDIA_ERROR" and recent_errors:
+        try:
+            from System.swarm_media_codec_bridge import diagnose_media_error_code
+
+            first_code = recent_errors[0].get("code") if isinstance(recent_errors[0], Mapping) else None
+            label = str(diagnose_media_error_code(first_code).get("label") or "media decoder error")
+        except Exception:
+            label = "media decoder error"
+    code_line = f" Embedded decoder receipt: {label}." if label else ""
+    native_line = (
+        " Use Alice's in-place native decode surface inside the browser (🎬) for this stream."
+        if bool(diagnosis.get("native_handoff_recommended") or codec_status.get("native_handoff_available"))
+        else ""
+    )
     lead = (prefix.strip() + " ") if prefix else ""
     return (
-        f"{lead}I am looking at an Instagram video playback error: \"{msg}\". "
-        "The player is black, so there are no usable video pixels for me to describe from this frame."
+        f"{lead}I am looking at a {site} video playback error on {title}: \"{msg}\"."
+        f"{code_line} The player has no usable video pixels for me to describe from this frame."
+        f"{native_line}"
     )
 
 
@@ -4947,10 +5789,14 @@ def _browser_visual_reply_self_check(reply: str, owner_text: str = "") -> tuple[
     This does not block Alice. It corrects a stale/imagined visual answer when
     the freshest browser receipt says the visible media is a playback-error
     screen, not usable pixels.
+
+    r904 (George live, twice): VISUAL SOURCE RANKING (r903) — decoder status
+    is the FLOOR of the ranking. Only a FRESH error (<=120s) may override
+    anything, and a PHOTO ask never loses the mic to a VIDEO decoder error.
     """
-    err = _latest_browser_media_playback_error()
+    err = _latest_browser_media_playback_error(max_age_s=120.0)
     if not err:
-        return reply, {"changed": False, "reason": "no_media_error_receipt"}
+        return reply, {"changed": False, "reason": "no_fresh_media_error_receipt_freshness_wins"}
 
     text = str(reply or "")
     low = text.lower()
@@ -4965,6 +5811,56 @@ def _browser_visual_reply_self_check(reply: str, owner_text: str = "") -> tuple[
     reply_visual = bool(_VISUAL_REPLY_CUE_RE.search(text))
     if not (owner_visual or reply_visual):
         return reply, {"changed": False, "reason": "not_a_visual_reply", "error": err}
+
+    # r904: a PHOTO/picture/image ask outranks a VIDEO decoder error (r903
+    # ranking law). George asked "DESCRIBE CURRENT PHOTO" and this pass
+    # replaced a real description with NO_MEDIA_ERROR — twice. Keep the
+    # description; the decoder note becomes quiet context, never the reply.
+    owner_low = " ".join((owner_text or "").lower().split())
+    owner_asks_photo = bool(
+        re.search(r"\b(?:photo|picture|image|pic|pics)\b", owner_low)
+        and not re.search(r"\b(?:video|playing|playback|player)\b", owner_low)
+    )
+    if owner_asks_photo and reply_visual:
+        note = (
+            " (Body note: the page's video player reports a playback error;"
+            " this description comes from photo/pixel receipts, which outrank"
+            " decoder status.)"
+        )
+        if "playback error" in low or "no usable video pixels" in low:
+            return reply, {"changed": False, "reason": "photo_ask_reply_already_notes_error", "error": err}
+        return text + note, {
+            "changed": True,
+            "reason": "photo_ask_outranks_video_decoder_error_r904",
+            "error": err,
+        }
+
+    # r907 (George: "if there is a H264 video on Instagram she can't see it,
+    # she has to /SC and see her own body browser, then cortex, then answer"):
+    # before the error sentence takes the mic, the body LOOKS AT ITS OWN
+    # SCREEN — the autonomous self-screenshot reflex. Viewport pixels outrank
+    # decoder status in the r903 ranking; the error becomes a footnote, not
+    # the answer. Fires only when a FRESH real error exists (r904/r905 guards
+    # upstream) on a visual turn — the exact undecodable-video case.
+    try:
+        _sc = _describe_latest_browser_viewport_capture_with_eye(
+            owner_text=owner_text or "",
+            url=str(err.get("url") or ""),
+        )
+        _sc_desc = str(_sc.get("description") or "").strip() if isinstance(_sc, dict) else ""
+        if _sc_desc:
+            corrected = (
+                "I could not decode the video stream, so I looked at my own "
+                "browser screen instead (self-screenshot reflex): " + _sc_desc
+            )
+            return corrected, {
+                "changed": True,
+                "reason": "video_error_self_screenshot_fallback_r907",
+                "error": err,
+                "viewport_status": str(_sc.get("status") or "") if isinstance(_sc, dict) else "",
+            }
+    except Exception:
+        pass
 
     corrected = _browser_media_playback_error_reply()
     return corrected, {
@@ -6329,6 +7225,23 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
     explicit_web = _extract_explicit_internet_search_command(clean)
     if explicit_web:
         return explicit_web
+    m_new_tab = re.search(
+        r"\bopen\s+(?:a\s+)?new\s+tab(?:\s+in\s+alice\s+browser)?\s+(?:and\s+)?(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
+        clean,
+        re.IGNORECASE,
+    )
+    if m_new_tab:
+        query = re.sub(r"\b(?:please|pls|plz|now)\b", " ", m_new_tab.group("query"), flags=re.IGNORECASE)
+        query = " ".join(query.strip(" .?!,;:").split())
+        if query and not _search_query_is_contextual_or_junk(query):
+            return {
+                "kind": "browser_url",
+                "app_name": "Alice Browser",
+                "url": _search_url_for_site("google", query),
+                "search_site": "google",
+                "query": query,
+                "new_tab": True,
+            }
     try:
         from System.swarm_browser_site_playbook import resolve_site_navigation, site_category_from_text
         _qm = None
@@ -6510,6 +7423,111 @@ def _extract_explicit_internet_search_command(text: str) -> Dict[str, str]:
             "query": query,
         }
     return {}
+
+
+def _truthy_owner_param(value: object, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raw = str(value).strip().lower()
+    if raw in {"", "default"}:
+        return default
+    return raw in {"1", "true", "yes", "y", "on", "owner_consent", "architect_consent"}
+
+
+def _is_owner_browser_close_tab_request(text: str) -> bool:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    low = clean.lower()
+    if "[tool_call:" in low or "```tool_call" in low or "browser_close_tab" in low:
+        return True
+    if re.match(r"^\s*(?:what|why|how|when)\b", low):
+        return False
+    if re.search(r"\blearn(?:s|ing)?\s+to\s+close\b", low) and " now" not in low:
+        return False
+    if not re.search(r"\b(?:close|shut|remove|kill)\b", low):
+        return False
+    if not re.search(r"\b(?:tab|tabs)\b", low):
+        return False
+    return bool(
+        re.search(r"\b(?:alice\s+browser|browser|jama|jamasoftware|duplicate|useless|youtube|tab|tabs)\b", low)
+        or re.search(r"\b(?:keep\s+only|keep\s+the)\b", low)
+    )
+
+
+def _extract_browser_close_tab_command(text: str) -> Dict[str, object]:
+    clean = " ".join((text or "").strip().split())
+    if not _is_owner_browser_close_tab_request(clean):
+        return {}
+
+    params: Dict[str, object] = {}
+    try:
+        from System.swarm_tool_router import parse_tool_calls
+
+        for call in parse_tool_calls(clean):
+            if call.tool_name != "browser_close_tab":
+                continue
+            params.update(dict(call.params or {}))
+            break
+    except Exception:
+        params = {}
+
+    low = clean.lower()
+    command: Dict[str, object] = {
+        "kind": "browser_action",
+        "app_name": "Alice Browser",
+        "action": "close_browser_tabs",
+        "owner_text": clean,
+    }
+
+    if str(params.get("index") or "").strip():
+        command["index"] = str(params.get("index")).strip()
+    if str(params.get("url_match") or "").strip():
+        command["url_match"] = str(params.get("url_match")).strip()
+    if str(params.get("title_match") or "").strip():
+        command["title_match"] = str(params.get("title_match")).strip()
+    if "close_duplicates" in params:
+        command["close_duplicates"] = _truthy_owner_param(params.get("close_duplicates"))
+    if "keep_active" in params:
+        command["keep_active"] = _truthy_owner_param(params.get("keep_active"), default=True)
+
+    if "url_match" not in command:
+        domain = ""
+        if re.search(r"\bjama\s+software\b|\bjamasoftware\b|jamasoftware\.com|go\.jamasoftware\.com", clean, re.IGNORECASE):
+            domain = "jamasoftware.com"
+        elif re.search(r"\bopenclaw\b|\bfly\.io\b|\bfly\s+io\b", clean, re.IGNORECASE):
+            # r862: George's live "OPENCLAW TABS" meant the duplicate
+            # "Deploy OpenClaw on Fly..." Alice Browser tabs. Give the close
+            # hand the real URL pheromone instead of generic duplicate cleanup.
+            domain = "fly.io"
+        else:
+            m = re.search(r"\b([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?:/|\b)", clean)
+            if m:
+                domain = m.group(1).strip().lower()
+        if domain:
+            command["url_match"] = domain
+
+    if "title_match" not in command and re.search(r"best practices for writing requirements", clean, re.IGNORECASE):
+        command["title_match"] = "Best Practices for Writing Requirements"
+
+    if "title_match" not in command and re.search(
+        r"\b(?:maria\s*db|mariadb|mariad[bp]|maria\s+d[bp])\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        command["title_match"] = "MariaDB"
+
+    if "close_duplicates" not in command and re.search(r"\bduplicate|duplicates|same\s+page|same\s+tabs?\b", low):
+        command["close_duplicates"] = True
+
+    if not any(key in command for key in ("index", "url_match", "title_match", "close_duplicates")):
+        return {}
+
+    if "keep_active" not in command:
+        command["keep_active"] = False
+    return command
 
 
 def _extract_browser_action_command(text: str) -> Dict[str, str]:
@@ -6991,6 +8009,9 @@ _APP_STATUS_RE = re.compile(
     r"(?:what|which)\s+apps?\s+(?:are\s+|is\s+)?(?:open|running)|"
     r"(?:are\s+there\s+|is\s+there\s+)?any\s+apps?\s+(?:open|running)|"
     r"what(?:'s|\s+is)\s+(?:currently\s+)?open|"
+    r"what\s+(?:app|application|window)\s+(?:do\s+)?(?:i|we)\s+(?:have|got)\s+open(?:ed)?|"
+    r"(?:tell|show)\s+me\s+what\s+(?:app|application|window)\s+(?:i|we)\s+(?:have|got)\s+open(?:ed)?|"
+    r"(?:i|we)\s+(?:have|got)\s+(?:the\s+)?[a-z0-9][\w\s()&+\-]{0,80}?\s+(?:app|application|window)\s+open(?:\s+look)?|"
     r"(?:list|show|tell\s+me)\s+(?:the\s+)?(?:open|running)\s+apps?|"
     r"what\s+do\s+i\s+have\s+open"
     r")\b",
@@ -7102,6 +8123,11 @@ def _extract_close_app_command(text: str, app_names: Optional[List[str]] = None)
     """
     clean = " ".join((text or "").strip().split())
     if not clean:
+        return {}
+    if re.search(r"\b(?:tab|tabs)\b", clean, re.IGNORECASE):
+        # r862: "close tabs" is scoped to Alice Browser's tab strip. If the
+        # close-tab parser misses it, fail closed into cortex/chat; never widen
+        # a tab request into closing the whole Alice Browser app.
         return {}
     m = _CLOSE_APP_RE.search(clean)
     if not m:
@@ -7431,6 +8457,38 @@ def _looks_like_prose_not_command(clean: str) -> bool:
     return len(sentences) >= 3
 
 
+def _must_route_owner_turn_to_cortex(text: str) -> bool:
+    """True when no deterministic Python lane may answer — owner turn rides to cortex.
+
+    r807 (George 2026-06-08): pasted screenshot audits and "deterministic grok cortex
+    WRONG" were hijacked by the browser-photo direct reflex because the prose carried
+    browser/image/displayed tokens. Doctrine corrections, routing teaching, long
+    pasted prose, and explicit cortex-first directives all block every deterministic
+    shortcut — the active cortex composes the reply.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if _is_owner_meta_routing_correction(clean):
+        return True
+    if _is_search_audit_or_routing_correction(clean):
+        return True
+    if _is_owner_doctrine_correction_turn(clean):
+        return True
+    if _owner_explicitly_requests_cortex_first(clean):
+        return True
+    if _looks_like_prose_not_command(clean):
+        return True
+    if _r681_prose_or_media_requires_cortex(clean):
+        return True
+    return False
+
+
+def _block_deterministic_owner_shortcut(text: str) -> bool:
+    """True when any deterministic Talk lane must stand down for this owner turn."""
+    return _must_route_owner_turn_to_cortex(text) or _owner_effector_requires_cortex_first(text)
+
+
 def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
     """Parse owner commands to open a SIFTA app, browse a website, or flip desktops."""
     clean = " ".join((text or "").strip().split())
@@ -7440,6 +8498,9 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         return {}
     if _is_current_browser_visual_hold_request(clean):
         return {}
+    close_tabs = _extract_browser_close_tab_command(clean)
+    if close_tabs:
+        return close_tabs
     early_search = _extract_browser_search_command(clean)
     if early_search:
         return _maybe_native_browser_command(early_search, clean)
@@ -7469,6 +8530,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         "enlarge_photo",
         "click_element",
         "list_elements",
+        "close_browser_tabs",
     }:
         return early_action
     # Long pasted prose → cortex, never the deterministic effector (George 2026-05-30).
@@ -7493,6 +8555,11 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
     status = _extract_app_status_command(clean)
     if status:
         return status
+    if (
+        re.match(r"^\s*(?:what|why|how|when)\b", clean, re.IGNORECASE)
+        and re.search(r"\bclose\b.{0,80}\b(?:tab|tabs)\b", clean, re.IGNORECASE)
+    ):
+        return {}
     # Close-app intent is checked FIRST so "close that app" never falls into
     # the generic "open <name>" branch below by some quirk of word order.
     close = _extract_close_app_command(clean, app_names=app_names)
@@ -7757,11 +8824,16 @@ def _is_browser_photo_open_query(text: str) -> bool:
 
 def _is_attached_image_description_query(text: str) -> bool:
     """Clear owner request to describe a user-attached screenshot/image in this turn.
-    Used for direct pre-cortex vision lane to avoid m5 gagging on "describe attached screenshot".
+    Used to mark the turn as needing image/cortex handling.
     """
     clean = " ".join((text or "").strip().split()).lower()
     if not clean:
         return False
+    try:
+        if _is_local_image_path_context_query(text):
+            return True
+    except Exception:
+        pass
     # "describe attached screenshot", "describe the image", "what do you see in the screenshot", "describe this photo pls"
     patterns = [
         r"\bdescribe\b.*\b(attached|screenshot|image|photo|this|the)\b",
@@ -7769,6 +8841,204 @@ def _is_attached_image_description_query(text: str) -> bool:
         r"\bdescribe the (screenshot|image|photo)\b",
     ]
     return any(re.search(p, clean) for p in patterns)
+
+
+def _is_self_screenshot_command(text: str) -> bool:
+    """Alice's `/sc` body command: capture my own SIFTA OS surface for cortex.
+
+    This is intentionally separate from "describe attached screenshot". `/sc`
+    must not return a deterministic photo caption; it captures Alice's own
+    desktop body and lets the selected cortex compose from pixels + history.
+    """
+    raw = str(text or "")
+    clean = " ".join(raw.strip().split()).lower()
+    if re.match(r"^/(?:sc|screenshot)(?:\s+|$)", clean):
+        return True
+    # George often writes a note, then places the command on its own line:
+    # "change PNG to JPEG?\n/SC". That is still the slash command, and must
+    # not fall through to browser page-state/media-error lanes.
+    for line in raw.splitlines():
+        if re.match(r"^\s*/(?:sc|screenshot)(?:\s+|$)", line.strip(), re.IGNORECASE):
+            return True
+    return False
+
+
+def _is_self_screenshot_cortex_turn(text: str) -> bool:
+    """True after `/sc` capture rewrote the owner turn for cortex composition."""
+    return "SELF-SCREENSHOT CORTEX TURN" in str(text or "")
+
+
+_SELF_SCREENSHOT_FORBIDDEN_BROWSER_TOOLS = frozenset(
+    {
+        "browser_search",
+        "browser_open",
+        "browser_click",
+        "browser_select_image",
+        "browser_close_tab",
+    }
+)
+
+
+def _is_self_screenshot_observation_context(text: str) -> bool:
+    """True when the current owner/cortex text is the `/sc` observation lane."""
+    return _is_self_screenshot_command(text or "") or _is_self_screenshot_cortex_turn(text or "")
+
+
+def _strip_self_screenshot_browser_effector_calls(raw: str, *, prior_user_text: str = ""):
+    """Remove browser effectors from `/sc` cortex turns before the router executes them."""
+    text = str(raw or "")
+    if not text or not _is_self_screenshot_observation_context(prior_user_text or ""):
+        return text, []
+    try:
+        from System.swarm_tool_router import parse_tool_calls
+    except Exception:
+        try:
+            from swarm_tool_router import parse_tool_calls
+        except Exception:
+            return text, []
+    try:
+        calls = parse_tool_calls(text)
+    except Exception:
+        return text, []
+    blocked = [
+        call for call in calls
+        if str(getattr(call, "tool_name", "") or "").lower() in _SELF_SCREENSHOT_FORBIDDEN_BROWSER_TOOLS
+    ]
+    if not blocked:
+        return text, []
+    cleaned = text
+    blocked_names = []
+    for call in blocked:
+        blocked_names.append(str(getattr(call, "tool_name", "") or "unknown"))
+        cleaned = cleaned.replace(str(getattr(call, "raw_match", "") or ""), "")
+    while "\n\n\n" in cleaned:
+        cleaned = cleaned.replace("\n\n\n", "\n\n")
+    return cleaned.strip(), blocked_names
+
+
+_SC_COMMAND_MEANING_FICTION_RE = re.compile(
+    r"/sc\b.{0,240}\b(?:scroll\s+down|style\s+change|scene\s+change|specific\s+content)\b"
+    r"|\b(?:universally\s+accepted\s+shorthand|scroll\s+down|style\s+change|scene\s+change)\b"
+    r".{0,160}\b(?:/sc\b|tiktok)\b"
+    r"|\b(?:/sc\b|/sc\s+again)\b.{0,200}\b(?:scroll\s+down|prove\s+my\s+adaptability)\b",
+    re.IGNORECASE,
+)
+
+
+def _guard_sc_command_meaning_fiction(reply: str, *, prior_user_text: str = "") -> str:
+    """Block cortex from redefining `/sc` as TikTok slang instead of self-screenshot."""
+    text = str(reply or "").strip()
+    if not text or not _SC_COMMAND_MEANING_FICTION_RE.search(text):
+        return text
+    combined = f"{prior_user_text or ''}\n{text}"
+    if not (
+        _is_self_screenshot_command(prior_user_text or "")
+        or _is_self_screenshot_cortex_turn(prior_user_text or "")
+        or re.search(r"\b/sc\b|self-screenshot|SELF-SCREENSHOT", combined, re.IGNORECASE)
+    ):
+        return text
+    return (
+        "/sc is my Self-Screenshot Cortex Turn — I capture my SIFTA OS display body and "
+        "answer from the fresh image plus recent context. It is not TikTok 'scroll down', "
+        "style change, or scene change. I describe only what the screenshot receipt shows."
+    )
+
+
+def _is_page_affordance_command(text: str) -> bool:
+    """Alice's `/p` body command: list live clickable page controls."""
+    clean = " ".join((text or "").strip().split()).lower()
+    return bool(re.match(r"^/(?:p|page|pagebuttons|page-buttons)(?:\s+|$)", clean))
+
+
+def _format_page_affordance_reply(
+    inventory: Mapping[str, Any],
+    *,
+    receipt_id: str,
+    max_items: int = 30,
+) -> str:
+    """Format a live Alice Browser clickable inventory without site hardcoding."""
+    ok = bool(inventory.get("ok"))
+    url = str(inventory.get("url") or "").strip()
+    title = str(inventory.get("title") or "").strip()
+    if not ok:
+        reason = str(inventory.get("reason") or "unknown_error")
+        where = f" on {url}" if url else ""
+        return f"I could not read clickable page options{where}: {reason}. Receipt: {receipt_id}"
+
+    raw_elements = inventory.get("elements") if isinstance(inventory.get("elements"), list) else []
+    labels: list[str] = []
+    seen: set[str] = set()
+    for element in raw_elements:
+        if not isinstance(element, Mapping):
+            continue
+        label = " ".join(str(element.get("label") or "").split())
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tag = str(element.get("tag") or "").strip().lower()
+        suffix = f" [{tag}]" if tag else ""
+        labels.append(f"{len(labels) + 1}. {label}{suffix}")
+        if len(labels) >= max_items:
+            break
+
+    count = inventory.get("count")
+    try:
+        count_text = str(int(count))
+    except Exception:
+        count_text = str(len(raw_elements))
+    head = "Clickable on my current Alice Browser page"
+    if title:
+        head += f" ({title})"
+    if url:
+        head += f" — {url}"
+    head += f": {count_text} visible target(s). Receipt: {receipt_id}"
+    if not labels:
+        return head + "\nI did not find named visible clickable targets in the DOM receipt."
+    more = ""
+    try:
+        total = int(count_text)
+        if total > len(labels):
+            more = f"\nShowing first {len(labels)}; ask me to click one by name or ask for more."
+    except Exception:
+        pass
+    return head + "\n" + "\n".join(labels) + more
+
+
+def _self_screenshot_cortex_prompt(owner_text: str, receipt: Mapping[str, Any]) -> str:
+    """Build the owner turn that carries a self-screenshot into the cortex."""
+    receipt_id = str(receipt.get("receipt_id") or receipt.get("trace_id") or "").strip()
+    image_path = str(receipt.get("image_path") or "").strip()
+    title = str(receipt.get("window_title") or "").strip()
+    size = ""
+    try:
+        width = int(receipt.get("width") or 0)
+        height = int(receipt.get("height") or 0)
+        if width and height:
+            size = f"{width}x{height}"
+    except Exception:
+        size = ""
+    owner_hint = " ".join((owner_text or "").strip().split())
+    return (
+        "SELF-SCREENSHOT CORTEX TURN (/sc):\n"
+        "COMMAND MEANING (fixed, not negotiable): /sc = Self-Screenshot Cortex Turn. "
+        "It is NOT TikTok scroll-down, style change, scene change, or any other slang.\n"
+        "George asked me to sense my own SIFTA OS display body. "
+        "Use the fresh image attached to this turn as body evidence, and combine it with "
+        "recent conversation history, active app/page receipts, and current task context. "
+        "This is not a generic image-caption request and not a detached screenshot parser.\n"
+        f"- receipt_id={receipt_id or '<missing>'}\n"
+        f"- image_path={image_path or '<missing>'}\n"
+        f"- window_title={title or '<unknown>'}\n"
+        f"- capture_size={size or '<unknown>'}\n"
+        f"- owner_command={owner_hint or '/sc'}\n"
+        "Answer as Alice from cortex: identify what part of my OS body is visible, "
+        "which SIFTA app/page is active, what George has been teaching or testing in the recent turns, "
+        "and what relevant actions/clickable options I can honestly see or need to probe next. "
+        "If pixels, DOM, or receipts are insufficient for a claim, say the gap plainly."
+    )
 
 
 def _is_gag_wish_direct_policy(text: str) -> bool:
@@ -8397,7 +9667,133 @@ def _summarize_browser_page(snapshot: Dict[str, Any], *, max_bullets: int = 5) -
     return f"{header} Summary: {bullets}"
 
 
-def _write_app_command_receipt(*, action: str, ok: bool, app_name: str = "", url: str = "", note: str = "") -> str:
+def _clean_browser_subject_candidate(text: str) -> str:
+    candidate = " ".join(str(text or "").replace("_", " ").replace("-", " ").split())
+    candidate = re.sub(r"\s*\([^)]*\)\s*", " ", candidate)
+    candidate = re.sub(r"\.(?:jpe?g|png|webp|gif|avif)$", "", candidate, flags=re.I)
+    candidate = " ".join(candidate.split(" : ")[0:1]).strip(" .,:;|/-")
+    if not candidate:
+        return ""
+    if len(candidate) > 80:
+        candidate = candidate[:80].rsplit(" ", 1)[0].strip()
+    return candidate
+
+
+def _browser_page_subject_from_state(state: Mapping[str, Any]) -> str:
+    """Best-effort subject from page text/nearby labels, never from pixels."""
+    if not isinstance(state, Mapping):
+        return ""
+
+    candidates: list[str] = []
+    title = str(state.get("title") or "")
+    if title:
+        candidates.extend(part.strip() for part in re.split(r"[:|—–-]", title) if part.strip())
+        candidates.append(title)
+    for heading in state.get("headings") or []:
+        if heading:
+            candidates.extend(part.strip() for part in re.split(r"[:|—–-]", str(heading)) if part.strip())
+    for key in ("text_excerpt", "text"):
+        value = str(state.get(key) or "")
+        if value:
+            candidates.extend(part.strip() for part in re.split(r"[:|—–-]", value[:700]) if part.strip())
+    for alt in state.get("image_alts") or []:
+        if alt:
+            candidates.append(str(alt))
+    url = str(state.get("url") or "")
+    if url:
+        try:
+            filename = _clean_browser_subject_candidate(unquote_plus(Path(urlparse(url).path).name))
+            # URL filenames are useful for direct image pages, but social post IDs
+            # like DX5OL9GGam are not names. Only use filename-like labels that
+            # carry words/separators.
+            if filename and (" " in filename or re.search(r"[A-Z]{2,}\s+[A-Z]{2,}", filename)):
+                candidates.append(filename)
+        except Exception:
+            pass
+
+    # Prefer page-near proper names that are all-caps in the title/heading/file
+    # convention used by many model/photo index pages, e.g. "ALVA INGA (6).jpg".
+    for raw in candidates:
+        cleaned = _clean_browser_subject_candidate(raw)
+        if not cleaned:
+            continue
+        match = re.search(r"\b([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ0-9']+(?:\s+[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ0-9']+){1,4})\b", cleaned)
+        if match:
+            subject = _clean_browser_subject_candidate(match.group(1)).title()
+            if subject and len(subject.split()) <= 5:
+                return subject
+
+    # Then handles/usernames that the page itself exposes.
+    for raw in candidates:
+        cleaned = _clean_browser_subject_candidate(raw)
+        if not cleaned:
+            continue
+        handle = re.search(r"@([A-Za-z0-9_.]{2,40})", cleaned)
+        if handle:
+            return "@" + handle.group(1)
+        bare_handle = re.fullmatch(r"[A-Za-z][A-Za-z0-9_.]{2,40}", cleaned)
+        if bare_handle and not re.search(r"\b(?:instagram|tiktok|youtube|duckduckgo|google|inicio|pages?)\b", cleaned, re.I):
+            return cleaned
+
+    # Finally use a short title/heading segment, excluding site chrome.
+    chrome = re.compile(
+        r"\b(?:celebridades|femeninas|oficial|instagram|tiktok|youtube|duckduckgo|google|inicio|p[aá]ginas?)\b",
+        re.I,
+    )
+    for raw in candidates:
+        cleaned = _clean_browser_subject_candidate(raw)
+        if not cleaned or len(cleaned) < 3 or chrome.search(cleaned):
+            continue
+        words = cleaned.split()
+        if 1 <= len(words) <= 6:
+            return cleaned
+    return ""
+
+
+def _summarize_browser_page_state_for_voice(state: Mapping[str, Any]) -> str:
+    """Short spoken/printed reply from page-state without dumping the raw DOM receipt."""
+    if not isinstance(state, Mapping) or not state:
+        return "I do not have a fresh readable page-state receipt yet."
+
+    title = " ".join(str(state.get("title") or state.get("url") or "the current page").split())
+    url = str(state.get("url") or "").strip()
+    try:
+        domain = urlparse(url).netloc.lower().removeprefix("www.")
+    except Exception:
+        domain = ""
+    subject = _browser_page_subject_from_state(state)
+    headings = [str(h).strip() for h in (state.get("headings") or []) if str(h).strip()]
+    images_count = int(state.get("images_count") or 0)
+    comments_count = int(state.get("comments_count") or 0)
+    text_chars = int(state.get("text_chars") or 0)
+
+    who = f" about {subject}" if subject else ""
+    where = f" on {domain}" if domain else ""
+    image_note = ""
+    if images_count:
+        image_note = f" I see page evidence for {images_count} image{'s' if images_count != 1 else ''}."
+    elif headings:
+        image_note = f" The top heading is: {headings[0][:120]}."
+
+    comments_note = f" There are {comments_count} captured comments I can summarize." if comments_count else ""
+    text_note = f" The page has about {text_chars} characters of readable text." if text_chars else ""
+
+    return (
+        f"I’m on a browser page{who}{where}: {title[:180]}. "
+        f"I logged the full page-state receipt for memory and cortex context; I won’t dump the raw DOM here."
+        f"{image_note}{comments_note}{text_note}"
+    ).strip()
+
+
+def _write_app_command_receipt(
+    *,
+    action: str,
+    ok: bool,
+    app_name: str = "",
+    url: str = "",
+    note: str = "",
+    verify_context: Optional[Dict[str, Any]] = None,
+) -> str:
     receipt_id = str(__import__("uuid").uuid4())
     row = {
         "ts": time.time(),
@@ -8410,6 +9806,21 @@ def _write_app_command_receipt(*, action: str, ok: bool, app_name: str = "", url
         "note": note,
         "source": "talk_to_alice_widget",
     }
+    try:
+        from System.swarm_app_command_effect_verification import enrich_app_command_row
+
+        row = enrich_app_command_row(
+            row,
+            verify_context={
+                **dict(verify_context or {}),
+                "url": (verify_context or {}).get("url", url),
+                "app_name": (verify_context or {}).get("app_name", app_name),
+                "state_dir": _state_root(),
+            },
+            state_dir=_state_root(),
+        )
+    except Exception:
+        pass
     try:
         root = _state_root()
         root.mkdir(parents=True, exist_ok=True)
@@ -8580,9 +9991,16 @@ def _app_status_sentence(state: Dict[str, Any]) -> str:
         open_apps = []
     mode = str(state.get("desktop_mode") or "chat")
     if active:
+        app_kind = (
+            "Alice Browser, my web/browser organ"
+            if active == "Alice Browser"
+            else "an internal SIFTA MDI app, not a web page"
+        )
         return (
-            f"{active} is the one app open in the SIFTA app workspace. "
-            f"The desktop is on {mode}. My chat is resident, so you can talk to me while we use it."
+            f"{active} is the active SIFTA app open in my app workspace. "
+            f"It is {app_kind}. The desktop is on {mode}. "
+            "My chat is resident, so you can talk to me while we use it. "
+            "Browser page-state receipts are separate from the active app slot."
         )
     if open_apps:
         names = ", ".join(str(x) for x in open_apps[:3])
@@ -8671,6 +10089,46 @@ def _extract_local_image_path_from_text(text: str) -> Optional[str]:
         if p.exists() and p.is_file() and p.suffix.lower() in _IMAGE_ATTACHMENT_SUFFIXES:
             return str(p)
     return None
+
+
+_LOCAL_IMAGE_PATH_CONTEXT_RE = re.compile(
+    r"\b(?:screenshot|screen\s*shot|image|photo|picture|pic|png|jpg|jpeg|webp|"
+    r"took|captured|saved|attached|dropped|sent|for\s+you|look|see|describe|read|"
+    r"message|error)\b",
+    re.IGNORECASE,
+)
+_LOCAL_IMAGE_PATH_FILE_OP_RE = re.compile(
+    r"\b(?:delete|remove|rm|move|rename|compress|convert|chmod|chown)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_local_image_path_context_query(text: str) -> bool:
+    """Owner supplied a real local image path as visual evidence for this turn."""
+    raw = str(text or "")
+    if not raw:
+        return False
+    if not _extract_local_image_path_from_text(raw):
+        return False
+    if _LOCAL_IMAGE_PATH_FILE_OP_RE.search(raw):
+        return False
+    return bool(_LOCAL_IMAGE_PATH_CONTEXT_RE.search(raw))
+
+
+def _local_image_path_cortex_context_block(owner_text: str) -> str:
+    """Tell the cortex to answer from the supplied local image, not stale browser state."""
+    if not _is_local_image_path_context_query(owner_text):
+        return ""
+    image_path = _extract_local_image_path_from_text(owner_text) or "<missing>"
+    return (
+        "LOCAL SCREENSHOT / IMAGE PATH — HIGHEST PRIORITY VISUAL EVIDENCE:\n"
+        f"Owner supplied image_path={image_path}\n"
+        f"Owner text: {str(owner_text or '').strip()[:500]}\n"
+        "Treat this image path as the current visual evidence for the turn. "
+        "Answer from the attached/local image evidence and recent context. "
+        "Do not answer from stale Alice Browser, Instagram, TikTok, YouTube, playback, or media-decoder errors "
+        "unless the owner explicitly asks about the browser media error itself."
+    )
 
 
 def _encode_ollama_image_attachment(path: str) -> str:
@@ -8997,6 +10455,37 @@ except Exception:
 _LAST_UTTERANCE_AUDIO: list = []  # max 1 item; [:] = [audio] to update atomically
 
 
+def _voice_identity_george_conf() -> float:
+    """r890 (Codex r887 contract item 1 / Fable r886 item 6): per-utterance
+    voice identity for the MANDATORY first voice gate.
+
+    Same logic as the per-turn identity check in _start_brain (~l.31250),
+    lifted module-level so the FIRST gate that decides direct-vs-external
+    speech no longer runs with voice_george_conf hardcoded to 0.0. The
+    utterance audio is already buffered by the listener before STT emits,
+    so no second mic open and no contention.
+    """
+    try:
+        from System.swarm_voice_identity_organ import (
+            classify as _vi_classify,
+            load_exemplars as _vi_exemplars,
+            extract_features as _vi_features,
+        )
+
+        _vi_exs = _vi_exemplars()
+        if len(_vi_exs) >= 3 and _LAST_UTTERANCE_AUDIO:
+            import numpy as _np_vi
+
+            _vi_chunk = _LAST_UTTERANCE_AUDIO[0].astype(_np_vi.float32)
+            if _vi_chunk.size > 1600:  # at least 0.1s @ 16kHz
+                _vi_result = _vi_classify(_vi_features(_vi_chunk), _vi_exs)
+                if _vi_result.get("label") == "primary_operator":
+                    return float(_vi_result.get("confidence", 0.0))
+    except Exception:
+        pass
+    return 0.0
+
+
 def _ollama_keep_alive(default: str = "15s") -> str:
     """Bound local model residency so Talk does not hold GPU/RAM for minutes."""
     value = os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", default)
@@ -9079,6 +10568,33 @@ def _ollama_brain_timeout_s(default: float = 120.0, *, model: str = "") -> float
     if "m5-cortex" in str(model or "").lower() and not env_valid:
         value = max(value, 180.0)
     return max(30.0, value)
+
+
+def _brain_no_token_watchdog_s(default: float = 180.0, *, model: str = "") -> float:
+    """Wall-clock cap for a cortex that has produced no visible token.
+
+    The socket timeout lives inside the worker thread and can legitimately add
+    up across retries. George's live failure was different: the Talk surface sat
+    on "thinking" for 300s+ with zero first token, so the body had no actionable
+    error to learn from. This watchdog is UI-side and model-agnostic: once there
+    is no first token after the bounded window, disconnect that worker from the
+    mouth and surface a cortex failure receipt. The old worker may finish its
+    socket timeout later, but its signals no longer mutate the live turn.
+    """
+    raw_env = os.environ.get("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S")
+    env_valid = False
+    try:
+        value = float(raw_env if raw_env not in (None, "") else str(default))
+        env_valid = raw_env not in (None, "")
+    except (TypeError, ValueError):
+        value = default
+    low = str(model or "").lower()
+    if not env_valid:
+        if "m5-cortex" in low:
+            value = max(value, 180.0)
+        elif any(name in low for name in ("grok", "claude", "codex", "qwen", "cline")):
+            value = min(value, 150.0)
+    return max(30.0, min(600.0, value))
 
 # Pluggable speech backend + stigmergic voice modulator. Both are
 # tolerantly imported so the widget still runs (with the legacy direct-
@@ -9286,6 +10802,11 @@ def _state_root() -> Path:
         root = Path(__file__).resolve().parent.parent / ".sifta_state"
         globals()["_STATE_DIR"] = root
     return Path(root)
+
+
+def _self_screenshot_output_dir() -> Path:
+    """Return the durable documentation folder for Alice self-screenshot PNGs."""
+    return _REPO / "Documentation" / "self_screenshots"
 
 
 def _write_matrix_terminal_process_trace(
@@ -10763,6 +12284,27 @@ def _can_you_see_me_reply_for_alice() -> str:
     return ". ".join(parts) + "."
 
 
+def _owner_camera_presence_context_block(owner_text: str) -> str:
+    """Ground owner-presence/camera questions for the cortex without a pre-cortex reply."""
+    if not _is_owner_camera_watch_query(owner_text):
+        return ""
+    try:
+        answer = _can_you_see_me_reply_for_alice().strip()
+    except Exception as exc:
+        answer = f"camera receipt read failed: {exc.__class__.__name__}"
+    if not answer:
+        answer = "camera receipt read returned no grounded answer"
+    return (
+        "OWNER CAMERA / WATCHING-ME QUESTION — HIGHEST PRIORITY BODY CONTEXT:\n"
+        "Answer from camera/body receipts, not from Alice Browser, playback, or media-decoder errors.\n"
+        f"Owner text: {owner_text}\n"
+        f"Grounded camera receipt answer draft: {answer}\n"
+        "Answer George's presence/camera question from this body evidence. "
+        "Do not answer with Alice Browser, TikTok, Instagram, YouTube, playback, or media-decoder errors "
+        "unless George explicitly asked what is playing in the browser."
+    )
+
+
 def _owner_name_reply_for_alice() -> str:
     """Return the kernel-bound owner name without letting the cortex hedge."""
     owner = _owner_label("the primary operator")
@@ -11568,6 +13110,31 @@ _HONEST_FAILURE_MARKER_RE = re.compile(
     r"unable\s+to|error|no_[a-z_]+)\b",
     re.IGNORECASE,
 )
+
+
+_TELEMETRY_HEADER_RE = re.compile(
+    r"^\s*(\[SYSTEM UPDATE:[^\n\]]*\]\**[ \t]*\n(?:[ \t]*\*[^\n]*\*[ \t]*\n){0,4})"
+)
+
+
+def _sink_leading_telemetry_header(text: str) -> str:
+    """r769 — George 2026-06-07 19:30: 'this is cool but she repeats it — just hide
+    this part or move it at the bottom of the text.' The cortex habit of opening
+    every co-watch reply with a [SYSTEM UPDATE: Telemetry Receipt …] header plus
+    its italic Source/Status/Context lines eats the top of every message.
+
+    Deterministic display repair, NOT a gag (§1.D): nothing is deleted — the
+    header block is MOVED to the end of the reply, after the answer George
+    actually wants to read. Header-only replies are left untouched.
+    """
+    m = _TELEMETRY_HEADER_RE.match(text or "")
+    if not m:
+        return text
+    header = m.group(1).strip()
+    body = (text or "")[m.end():].lstrip("\n")
+    if not body.strip():
+        return text
+    return body.rstrip() + "\n\n— " + header
 
 
 def _strip_unreceipted_action_claims(text: str) -> str:
@@ -12633,6 +14200,11 @@ def _compact_tool_contract_for_alice_prompt(*, user_text: str = "") -> str:
         TOOL_REGISTRY = {}
 
     tool_names = (
+        "browser_search",
+        "browser_open",
+        "browser_click",
+        "browser_select_image",
+        "browser_close_tab",
         "app_open",
         "read_file",
         "write_file",
@@ -12646,14 +14218,74 @@ def _compact_tool_contract_for_alice_prompt(*, user_text: str = "") -> str:
         "capability_field_status",
         "skill_library_status",
     )
+    if _is_self_screenshot_observation_context(user_text or ""):
+        tool_names = tuple(
+            name for name in tool_names
+            if name not in _SELF_SCREENSHOT_FORBIDDEN_BROWSER_TOOLS
+        )
     available = [name for name in tool_names if name in TOOL_REGISTRY]
     if not available:
         available = ["app_open", "read_file", "write_file", "run_local_command"]
     owner_hint = ""
+    if _is_self_screenshot_observation_context(user_text or ""):
+        owner_hint += (
+            "\n/sc is an observation-only self-screenshot cortex turn. Do not call "
+            "browser_search, browser_open, browser_click, browser_select_image, or browser_close_tab "
+            "from this turn. Name possible next actions in prose; wait for George to ask before any "
+            "browser effector."
+        )
     if re.search(r"\b(open|launch|start|show|display|bring\s+up)\b", user_text or "", re.IGNORECASE):
         owner_hint = (
             "\nThis owner turn looks like an app/action request. If the direct app lane did not already handle it, "
             "use `app_open` instead of claiming the app is open in prose."
+        ) + owner_hint
+    read_path = _owner_read_path_from_text(user_text or "")
+    if read_path and "read_file" in available:
+        owner_hint += (
+            "\nThis owner turn contains a local file path and a read/inspect request. "
+            "Before summarizing file contents, append exactly: "
+            f"[TOOL_CALL: read_file | path={read_path} | cost_justification=owner asked me to read this local file]. "
+            "Do not describe the file contents until the receipt-backed read_file result returns."
+        )
+    try:
+        from System.swarm_alice_self_coding_hand import (
+            is_owner_self_code_execute_request,
+            self_coding_prompt_block,
+            teacher_self_code_override_block,
+        )
+
+        _self_cut_block = self_coding_prompt_block(user_text or "")
+        if _self_cut_block:
+            owner_hint += "\n" + _self_cut_block
+            # r917: pair the write hand with the read eye. To rewrite an
+            # EXISTING organ, first SEE it: emit [SELF_READ: path=System/x.py]
+            # this turn; the body feeds the source back so next turn's
+            # SELF_CODE_CUT is informed, not blind. Read is sight, not mutation.
+            owner_hint += (
+                "\n- To rewrite an organ you do not have in front of you, FIRST emit "
+                "[SELF_READ: path=System/<organ>.py] — the body reads your own source "
+                "and hands it back so your next reply can rewrite it with eyes open. "
+                "Read before write, the way a doctor reads the chart before the scalpel."
+            )
+        elif is_owner_self_code_execute_request(user_text or ""):
+            owner_hint += "\n" + teacher_self_code_override_block()
+    except Exception:
+        pass
+    if (
+        "browser_close_tab" in available
+        and re.search(
+            r"\b(?:close|shut|remove|kill)\b.{0,120}\b(?:tab|tabs)\b",
+            user_text or "",
+            re.IGNORECASE,
+        )
+    ):
+        owner_hint += (
+            "\nThis owner turn asks to close Alice Browser tab(s). Read open_tabs from the "
+            "latest browser_page_state receipt first. Then append exactly one line, e.g.: "
+            "[TOOL_CALL: browser_close_tab | url_match=jamasoftware.com | keep_active=false | "
+            "cost_justification=owner asked to close useless duplicate tabs] or "
+            "[TOOL_CALL: browser_close_tab | close_duplicates=1 | cost_justification=owner asked "
+            "to collapse duplicate tabs]. Never claim a tab closed without that receipt."
         )
     return (
         "RECEIPTED TOOL HANDS (compact contract; router writes the receipt; exact app example: "
@@ -12683,6 +14315,14 @@ def _current_system_prompt(
     except Exception:
         _serial = "this local SIFTA node"
     _model_id = _active_alice_model_id()
+    try:
+        _owner_camera_watch_turn = bool(_is_owner_camera_watch_query(user_text or ""))
+    except Exception:
+        _owner_camera_watch_turn = False
+    try:
+        _local_image_path_turn = bool(_is_local_image_path_context_query(user_text or ""))
+    except Exception:
+        _local_image_path_turn = False
 
     # Identity proof — first block, before everything else
     # Primary operator can prove presence via camera / genesis / stigauth receipts.
@@ -12722,6 +14362,39 @@ def _current_system_prompt(
         )
         if _ptm:
             parts.append(_ptm)
+    except Exception:
+        pass
+
+    # r882: "do you remember the video we watched?" — search MY OWN browsing
+    # ledgers before the cortex can claim no memory. George 18:00: Tom Bilyeu
+    # video had 275 page-state receipts on disk while the reply said "I don't
+    # have verified Alice Browser link history". Quiet by default: the block
+    # is empty unless the owner turn carries an explicit recall cue.
+    try:
+        from System.swarm_browser_context import watched_memory_recall_block
+
+        _recall = watched_memory_recall_block(user_text or "", state_dir=_state_root())
+        if _recall:
+            parts.append(_recall)
+    except Exception:
+        pass
+
+    # r819: "are you watching me?" is an owner/camera/body question, not a
+    # browser playback question. Keep it cortex-first, but feed the cortex the
+    # same grounded camera receipt the old reflex used to read directly.
+    try:
+        _owner_camera_block = _owner_camera_presence_context_block(user_text or "")
+        if _owner_camera_block:
+            parts.append(_owner_camera_block)
+    except Exception:
+        pass
+
+    # r820: a typed path to a real self-screenshot/image is current visual
+    # evidence. It must not be outranked by stale browser playback errors.
+    try:
+        _local_image_block = _local_image_path_cortex_context_block(user_text or "")
+        if _local_image_block:
+            parts.append(_local_image_block)
     except Exception:
         pass
 
@@ -12811,6 +14484,14 @@ def _current_system_prompt(
     # text cortex to emit a parseable tool call, then the Python router performs
     # the real action and writes receipts. Text and tools are separate organs.
     parts.append(_compact_tool_contract_for_alice_prompt(user_text=user_text))
+
+    # r816: Alice knows her own stigmergic slash palette (/?, /cortex, /schedule, /sc).
+    try:
+        from System.swarm_alice_slash_commands import slash_commands_prompt_block
+
+        parts.append(slash_commands_prompt_block())
+    except Exception:
+        pass
 
     # Browser eye -> mouth bridge (George 2026-06-02): the vision arm already wrote
     # what the featured photo on the page shows to browser_photo_descriptions.jsonl,
@@ -13042,6 +14723,16 @@ def _current_system_prompt(
             parts.append(_self_body)
     except Exception:
         pass
+
+    if not (_owner_camera_watch_turn or _local_image_path_turn):
+        try:
+            from System.swarm_media_decode_pain import prompt_block as _media_decode_pain_prompt
+
+            _decode_pain = _media_decode_pain_prompt(state_dir=_REPO).strip()
+            if _decode_pain:
+                parts.append(_decode_pain)
+        except Exception:
+            pass
 
     try:
         from System.swarm_composite_identity import working_body_field_digest
@@ -13950,7 +15641,10 @@ def _current_system_prompt(
                 "SIFTA APP SLOT (desktop receipt):\n"
                 + _app_status_sentence(_app_state)
                 + " Use open/close/switch app commands through the desktop effector; "
-                "do not claim an app changed without an app-command receipt."
+                "do not claim an app changed without an app-command receipt. "
+                "For 'what app is open' or owner says 'I have this app open/look', "
+                "this desktop receipt beats Alice Browser page-state. Browser pages/tabs are web-body context only, "
+                "not the name of the active SIFTA app unless the active app is Alice Browser."
             )
     except Exception:
         pass
@@ -14029,7 +15723,24 @@ def _current_system_prompt(
                   f"{_budget_report['trimmed_blocks']} block(s) trimmed")
     except Exception as _budget_exc:
         print(f"[sysprompt budget] governor skipped: {_budget_exc}")
-    return _scrub_prompt_trigger_terms("\n\n".join(_final_parts))
+    # r794 (George 2026-06-08): the protected body/OS-structure blocks (MY PHYSICAL
+    # IDENTITY, WHAT I CAN DO, GENERIC APP AWARENESS, …) are never trimmed — she must
+    # keep knowing her body — but ~40 builders restate the same paragraphs across them,
+    # bloating the prompt to ~80k and freezing the local cortex (elapsed=314s prefill).
+    # Dedupe collapses only EXACT-duplicate paragraphs (>= 80 chars); every unique fact
+    # stays, and the whole prompt is one system message so the cortex still sees each
+    # kept paragraph once. The log line is the live receipt of the real reduction.
+    _joined = "\n\n".join(_final_parts)
+    try:
+        from System.swarm_sysprompt_budget import dedupe_prompt_text
+        _joined, _dedup_report = dedupe_prompt_text(_joined)
+        if _dedup_report.get("applied"):
+            print(f"[sysprompt dedupe] removed {_dedup_report['removed_chars']} dup chars "
+                  f"across {_dedup_report['removed_paragraphs']} paragraph(s): "
+                  f"{_dedup_report['orig_chars']}→{_dedup_report['final_chars']}")
+    except Exception as _dedup_exc:
+        print(f"[sysprompt dedupe] skipped: {_dedup_exc}")
+    return _scrub_prompt_trigger_terms(_joined)
 
 def _homunculus_context_block() -> str:
     """Render Alice's current somatosensory cortex reading as a small
@@ -15873,12 +17584,9 @@ def _apps_status_reply(text: str) -> str:
             return "I do not see Applications/apps_manifest.json on disk yet."
         manifest = _json.loads(manifest_p.read_text(encoding="utf-8"))
 
-        parts = []
-        for app_name in ("Alice Journal", "Provider Schedule"):
-            entry = manifest.get(app_name)
-            if not entry:
-                parts.append(f"{app_name}: not registered in apps_manifest.json.")
-                continue
+        entry = manifest.get("Alice Journal")
+        journal_part = "Alice Journal: not registered in apps_manifest.json."
+        if entry:
             ep = entry.get("entry_point")
             wcls = entry.get("widget_class")
             ep_path = repo / ep if ep else None
@@ -15891,9 +17599,21 @@ def _apps_status_reply(text: str) -> str:
                     ).strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
                     pass
-            parts.append(
-                f"{app_name}: widget_class={wcls}, file={ep}, last_modified={mtime_iso}."
+            # r895: name guard (§7.4). "Bridget" is the STYLE nickname George
+            # gave the diary voice (Bridget Jones joke) — it is never Alice's
+            # name. TTS already struggles with "Alice"; no second name may
+            # compete with her identity.
+            journal_part = (
+                f"Alice Journal — my diary, Bridget-Jones STYLE (Bridget is "
+                f"the diary's style nickname, my name is Alice): "
+                f"widget_class={wcls}, file={ep}, last_modified={mtime_iso}."
             )
+        prov = manifest.get("Provider Schedule") or {}
+        prov_note = (
+            "Provider Schedule is hidden/retired — your rhythm lives in my diary now (r878)."
+            if prov.get("hidden")
+            else "Provider Schedule still registered."
+        )
 
         state = repo / ".sifta_state"
         def _wcrows(p):
@@ -15918,14 +17638,15 @@ def _apps_status_reply(text: str) -> str:
             pass
 
         return (
-            f"Yes, {owner}, I am on top of both. "
-            + parts[0] + " " + parts[1] + " "
-            f"Alice Journal reads .sifta_state/alice_first_person_journal.jsonl "
-            f"({witness_rows} witness rows on disk right now). "
-            f"Provider Schedule reads .sifta_state/architect_day_segments.jsonl "
-            f"({seg_rows} segments) and .sifta_state/stigmergic_schedule.jsonl "
-            f"({sched_rows} schedule entries). Both apps are snapshot-at-open "
-            "and re-read on Refresh, not in the background, so they do not lag."
+            f"Yes, {owner}, one diary surface now. "
+            + journal_part + " "
+            + prov_note + " "
+            f"I read .sifta_state/alice_first_person_journal.jsonl "
+            f"({witness_rows} witness rows; 'bridget' is a lane tag, not a name) "
+            f"and show pending rhythm from "
+            f"stigmergic_schedule.jsonl ({sched_rows} entries; "
+            f"{seg_rows} day segments still on disk for recall). "
+            "Snapshot-at-open — Refresh re-reads, no background lag."
         )
     except Exception as e:
         return f"App-status probe stalled: {type(e).__name__}."
@@ -20418,6 +22139,76 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     }
                 )
             )
+
+            # r800 — browser hands: register the live browser surface so the cortex
+            # can call browser_search/open/click/select_image via TOOL_CALL for ANY
+            # owner phrasing. Each intent maps to the EXISTING _execute_sifta_app_command
+            # effector; URL-building reuses the widget's own _search_url_for_site. This
+            # is wiring of existing organs, not a rival — and it retires the hardcoded
+            # phrase-bridges as the primary path (George: "Alice using tools freely").
+            from System.swarm_tool_router import register_browser_surface
+
+            def _browser_tool_surface(intent):
+                action = str((intent or {}).get("action") or "")
+                if action == "search":
+                    q = str(intent.get("query") or "")
+                    site = str(intent.get("site") or "").strip().lower()
+                    if site in ("youtube", "youtube.com"):
+                        try:
+                            from System.swarm_youtube_search_intent import youtube_results_url
+                            url = youtube_results_url(q)
+                        except Exception:
+                            url = _search_url_for_site("", q)
+                        site_tag = "youtube"
+                    else:
+                        url = _search_url_for_site(site, q) or _search_url_for_site("", q)
+                        site_tag = site or "default"
+                    return self._execute_sifta_app_command({
+                        "kind": "browser_url", "app_name": "Alice Browser", "url": url,
+                        "search_site": site_tag, "query": q,
+                        "owner_text": f"cortex browser_search {q}",
+                    })
+                if action == "open":
+                    return self._execute_sifta_app_command({
+                        "kind": "browser_url", "app_name": "Alice Browser",
+                        "url": str(intent.get("url") or ""),
+                        "owner_text": "cortex browser_open",
+                    })
+                if action == "click":
+                    return self._execute_sifta_app_command({
+                        "kind": "browser_action", "app_name": "Alice Browser",
+                        "action": "click_element", "labels": [str(intent.get("label") or "")],
+                    })
+                if action == "select_image":
+                    cmd = {
+                        "kind": "browser_action", "app_name": "Alice Browser",
+                        "action": "click_google_image_result",
+                        "query": str(intent.get("query") or ""),
+                    }
+                    try:
+                        if intent.get("ordinal"):
+                            cmd["ordinal"] = int(intent.get("ordinal"))
+                    except Exception:
+                        pass
+                    return self._execute_sifta_app_command(cmd)
+                if action == "close_tab":
+                    cmd = {
+                        "kind": "browser_action",
+                        "app_name": "Alice Browser",
+                        "action": "close_browser_tabs",
+                        "owner_text": str(intent.get("owner_text") or "cortex browser_close_tab"),
+                    }
+                    for key in ("index", "url_match", "title_match"):
+                        if str(intent.get(key) or "").strip():
+                            cmd[key] = str(intent.get(key) or "").strip()
+                    if intent.get("close_duplicates"):
+                        cmd["close_duplicates"] = True
+                    if "keep_active" in intent:
+                        cmd["keep_active"] = bool(intent.get("keep_active"))
+                    return self._execute_sifta_app_command(cmd)
+                return f"unknown browser action: {action}"
+
+            register_browser_surface(_browser_tool_surface)
         except Exception:
             pass
 
@@ -20637,6 +22428,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # freshness row lets Alice see which ledgers are hot or cold without
         # turning that observation into a chat template or approval gate.
         self.make_timer(60000, self._pheromone_freshness_tick)
+        self.make_timer(30000, self._poll_stigmergic_life_reminders)
         # Round 85: body writer tick heartbeat. This is the missing nerve
         # for Round 84's producer organ: basal_ganglia + fractal_pheromone
         # write their own receipts, then the Round 79 freshness reader has
@@ -20994,11 +22786,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_system_line(f"receipt read-only dialog failed for {receipt_id}: {exc}", error=True)
 
     def _append_alice_extension_for_key(self, key: str) -> None:
-        """Render the hidden continuation for a collapsed imported Alice row."""
+        """Render the hidden continuation for a collapsed imported Alice row.
+
+        r770 — George 2026-06-08: "as the global chat advances, if I try to EXTEND
+        past posts it does not work, so I lose text conversation." Root cause: this
+        used blocks.POP(key) — the first EXTEND click DELETED the hidden block, so a
+        second click (or a re-render of the thread that kept the old anchor) found
+        nothing and silently returned → dead link → lost text. Fix: .get not .pop —
+        the continuation stays available for the life of the session, re-clickable,
+        survives re-render. Nothing is consumed (§1.D: don't destroy her words).
+        """
         blocks = getattr(self, "_alice_extend_blocks", None)
         if not isinstance(blocks, dict):
             return
-        block = blocks.pop(key, None)
+        block = blocks.get(key)
         if not isinstance(block, dict):
             return
         hidden_text = str(block.get("hidden_text") or "").strip()
@@ -21254,6 +23055,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         collapse_long: bool = True,
     ) -> None:
         """Render imported Alice rows without re-running mouth/ledger side effects."""
+        try:
+            text = _sink_leading_telemetry_header(str(text or ""))  # r769
+        except Exception:
+            pass
         raw_text = str(text or "")
         visible_text, extend_key, hidden_count = self._prepare_alice_visible_text(
             text,
@@ -21476,6 +23281,208 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+    def _capture_sifta_self_screenshot(self, *, owner_text: str = "") -> Dict[str, Any]:
+        """Capture Alice's own SIFTA OS display body for a cortex turn.
+
+        `/sc` is a body proprioception command. The capture target is the
+        SIFTA desktop window when it can be found, not an arbitrary external
+        browser or a detached macOS screenshot. The receipt is honest even on
+        failure, and the caller decides whether to continue into cortex.
+        """
+        receipt_id = str(uuid.uuid4())
+        root = _state_root()
+        out_dir = _self_screenshot_output_dir()
+        ledger = root / "sifta_self_screenshot_receipts.jsonl"
+        row: Dict[str, Any] = {
+            "ts": time.time(),
+            "receipt_id": receipt_id,
+            "truth_label": "SIFTA_SELF_SCREENSHOT_FOR_CORTEX_V1",
+            "action": "capture_sifta_os_window",
+            "source": "talk_to_alice_slash_sc",
+            "owner_text_preview": str(owner_text or "")[:240],
+            "ok": False,
+        }
+
+        def _write_row() -> None:
+            try:
+                ledger.parent.mkdir(parents=True, exist_ok=True)
+                with ledger.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            except Exception:
+                pass
+
+        try:
+            app = QApplication.instance()
+            target: Optional[QWidget] = None
+            if app is not None:
+                widgets = list(app.topLevelWidgets())
+                visible = [w for w in widgets if getattr(w, "isVisible", lambda: False)()]
+                for widget in visible + widgets:
+                    try:
+                        title = str(widget.windowTitle() or "")
+                    except Exception:
+                        title = ""
+                    if "SIFTA Python GUI OS" in title:
+                        target = widget
+                        break
+                if target is None:
+                    for widget in visible + widgets:
+                        try:
+                            title = str(widget.windowTitle() or "")
+                        except Exception:
+                            title = ""
+                        if "SIFTA" in title and "Alice Browser" not in title:
+                            target = widget
+                            break
+            if target is None:
+                try:
+                    target = self.window()
+                except Exception:
+                    target = self
+            if target is None:
+                row["error"] = "no_sifta_window_found"
+                _write_row()
+                return row
+
+            try:
+                pix = target.grab()
+            except Exception:
+                pix = QPixmap()
+            if pix.isNull():
+                try:
+                    screen = target.windowHandle().screen() if target.windowHandle() else QApplication.primaryScreen()
+                    if screen is not None:
+                        pix = screen.grabWindow(int(target.winId()))
+                except Exception:
+                    pix = QPixmap()
+            if pix.isNull():
+                row["error"] = "grab_returned_null_pixmap"
+                try:
+                    row["window_title"] = str(target.windowTitle() or "")
+                except Exception:
+                    pass
+                _write_row()
+                return row
+
+            out_dir.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+            # George 2026-06-08: self-screenshots saved as JPG (not PNG) in Documentation/self_screenshots.
+            out_path = out_dir / f"sifta_self_{stamp}_{receipt_id[:8]}.jpg"
+            if not pix.save(str(out_path), "JPEG", 92):
+                row["error"] = "pixmap_save_failed"
+                _write_row()
+                return row
+
+            row.update(
+                {
+                    "ok": True,
+                    "image_path": str(out_path),
+                    "image_name": out_path.name,
+                    "byte_count": int(out_path.stat().st_size) if out_path.exists() else 0,
+                    "width": int(pix.width()),
+                    "height": int(pix.height()),
+                    "device_pixel_ratio": float(pix.devicePixelRatio()),
+                    "window_title": str(target.windowTitle() or ""),
+                    "window_class": type(target).__name__,
+                    "truth_boundary": (
+                        "Fresh JPEG of Alice's SIFTA OS display body. Pixels still require "
+                        "cortex/vision/OCR interpretation before content claims."
+                    ),
+                }
+            )
+            try:
+                row["desktop_app_state"] = _read_sifta_desktop_app_state()
+            except Exception:
+                pass
+            _write_row()
+            return row
+        except Exception as exc:
+            row["error"] = f"{type(exc).__name__}: {exc}"
+            _write_row()
+            return row
+
+    def _current_page_affordances_reply(self, *, owner_text: str = "") -> tuple[str, bool]:
+        """Read the current Alice Browser page controls and format a receipt reply."""
+        receipt_id = str(uuid.uuid4())
+        widget = _find_live_alice_browser_widget()
+        inventory: Dict[str, Any]
+        if widget is None:
+            inventory = {
+                "ok": False,
+                "action": "list_elements",
+                "reason": "no_live_alice_browser_widget",
+                "elements": [],
+            }
+        else:
+            refresh_fn = getattr(widget, "refresh_current_page_state", None)
+            if callable(refresh_fn):
+                try:
+                    refresh_fn(wait_ms=250)
+                except TypeError:
+                    try:
+                        refresh_fn()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            inv_fn = getattr(widget, "list_clickable_elements_receipt", None)
+            if callable(inv_fn):
+                try:
+                    raw = inv_fn(80) or {}
+                    inventory = raw if isinstance(raw, dict) else {
+                        "ok": False,
+                        "action": "list_elements",
+                        "reason": "non_dict_inventory",
+                        "elements": [],
+                    }
+                except Exception as exc:
+                    inventory = {
+                        "ok": False,
+                        "action": "list_elements",
+                        "reason": f"{type(exc).__name__}: {exc}",
+                        "elements": [],
+                    }
+            else:
+                inventory = {
+                    "ok": False,
+                    "action": "list_elements",
+                    "reason": "browser_has_no_element_inventory_hand",
+                    "elements": [],
+                }
+
+        row = {
+            "ts": time.time(),
+            "receipt_id": receipt_id,
+            "truth_label": "ALICE_BROWSER_PAGE_AFFORDANCES_V1",
+            "source": "slash_p",
+            "owner_text_preview": str(owner_text or "")[:240],
+            "ok": bool(inventory.get("ok")),
+            "url": str(inventory.get("url") or ""),
+            "title": str(inventory.get("title") or ""),
+            "count": int(inventory.get("count") or 0) if str(inventory.get("count") or "").isdigit() else len(inventory.get("elements") or []),
+            "elements": list(inventory.get("elements") or [])[:80],
+            "reason": str(inventory.get("reason") or ""),
+        }
+        try:
+            ledger = _state_root() / "alice_browser_affordances.jsonl"
+            ledger.parent.mkdir(parents=True, exist_ok=True)
+            with ledger.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            pass
+        try:
+            app_receipt = _write_app_command_receipt(
+                action="browser_page_affordances",
+                ok=bool(inventory.get("ok")),
+                app_name="Alice Browser",
+                url=str(inventory.get("url") or ""),
+                note=f"affordance_receipt={receipt_id}; count={row.get('count')}; reason={row.get('reason')}",
+            )
+            self._append_system_line(f"App/browser receipt: {app_receipt}", error=not bool(inventory.get("ok")))
+        except Exception:
+            pass
+        return _format_page_affordance_reply(inventory, receipt_id=receipt_id), bool(inventory.get("ok"))
+
     def _stage_pending_image_attachment(self, image_path: str, *, source: str) -> None:
         """Stage an image so the next owner turn carries it into cortex."""
         p = Path(image_path).expanduser()
@@ -21664,6 +23671,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not text and not image_path:
             return
         if self._busy:
+            # r881 (George decree): typed owner text is NEVER dropped while I
+            # am busy. Queue it; it drains BEFORE any deferred voice clip in
+            # _return_to_listening — typed beats audio, always.
+            try:
+                from System.swarm_typed_turn_queue import TypedTurnQueue
+                q = getattr(self, "_typed_turn_queue", None)
+                if q is None:
+                    q = TypedTurnQueue()
+                    self._typed_turn_queue = q
+                out = q.push(text, image_path=image_path)
+                if out.get("queued"):
+                    extra = " (oldest queued line dropped — queue was full)" if out.get("dropped_oldest") else ""
+                    self._append_system_line(
+                        f"(queued your text — I will read it first, right after this turn. {out.get('waiting', 1)} waiting{extra})",
+                        error=False,
+                    )
+                    return
+            except Exception:
+                pass
             self._append_system_line("(I am still answering — wait for my turn to finish.)", error=True)
             return
 
@@ -21682,7 +23708,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
         except Exception:
             _slash_is = None  # type: ignore[assignment]
-        if _slash_is is not None and _slash_is(text):
+        if _slash_is is not None and _slash_is(text) and not _is_self_screenshot_command(text):
             def _r683_switch_hand(tag: str) -> None:
                 # The proven dual-store hand (r669): OS default + per-app pins,
                 # exactly like the Settings picker and the voice switch lane.
@@ -21790,6 +23816,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """
         if not text:
             return False
+        # r914: IDE-doctor commentary ABOUT Alice (RED organs essay, paste instructions)
+        # and marker-delimited self-cut prompts route to cortex — never hijack here.
+        try:
+            from System.swarm_alice_self_coding_hand import (
+                is_doctor_commentary_paste,
+                is_self_cut_prompt,
+            )
+
+            if is_doctor_commentary_paste(text) or is_self_cut_prompt(text):
+                return False
+        except Exception:
+            pass
         # Ambient noise carry (r436 + r440): Alice's real interoception (eval map + field) + §6 social frame lets her sort real-world noise (TV/ad bleed across devices, "Welcome to Russia", ads) the way George's brain controls/sorts input. If this turn looks like bleed and not explicitly addressed to "Alice", we skip self-eval dispatch on it (prevents treating ads as owner intent; full organ will read the tagged receipts later).
         low = (text or "").lower()
         ambient_markers = ("welcome to russia", "strawberry", "watermelon", "refresher", "commercial", "ad break", "tv", "you're watching")
@@ -24176,6 +26214,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         f"after_open_apps={after.get('open_apps', [])}; "
                         "opened/raised manifest app through SIFTA desktop; switched to launcher tab"
                     ),
+                    verify_context={
+                        "app_name": app_name,
+                        "before_state": before,
+                        "after_state": after,
+                    },
                 )
                 _diary_after(
                     "open_app",
@@ -24405,6 +26448,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         ok=True,
                         app_name="Alice Browser",
                         url=url,
+                        verify_context={"url": url},
                         note=(
                             f"sensed before action: already_open={already_open}, "
                             f"before_open_apps={before.get('open_apps', [])}; "
@@ -24440,6 +26484,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                 except Exception:
                                     cur = str(getattr(w, "_current_url", "") or "")
                             blank = (not cur) or cur in ("about:blank", "about:srcdoc")
+                            load_error = ""
+                            try:
+                                refresh = getattr(w, "refresh_current_page_state", None) if w is not None else None
+                                if callable(refresh):
+                                    refresh(wait_ms=0)
+                            except Exception:
+                                pass
+                            try:
+                                from System.swarm_browser_page_state import latest_page_state
+
+                                state = latest_page_state(state_dir=_state_root(), max_age_s=30.0)
+                                state_url = str(state.get("url") or "") if isinstance(state, Mapping) else ""
+                                if state_url and state_url in {cur, target_url}:
+                                    load_error = _browser_load_error_from_state(state)
+                            except Exception:
+                                state = {}
+                            if not load_error:
+                                try:
+                                    current_path = _state_root() / "alice_browser_current_page.json"
+                                    state = json.loads(current_path.read_text(encoding="utf-8"))
+                                    state_url = str(state.get("url") or "")
+                                    if state_url and state_url in {cur, target_url}:
+                                        load_error = _browser_load_error_from_state(state)
+                                except Exception:
+                                    pass
                             if blank:
                                 r2 = _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -24455,6 +26524,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                 nav = getattr(w, "_navigate", None) if w is not None else None
                                 if callable(nav):
                                     nav(target_url)
+                            elif load_error:
+                                r2 = _write_app_command_receipt(
+                                    action="open_browser_url_verify",
+                                    ok=False,
+                                    app_name="Alice Browser",
+                                    url=cur or target_url,
+                                    note=f"browser rendered load error after URL drop: {load_error}",
+                                )
+                                self._append_system_line(
+                                    f"My browser reached an error page for {cur or target_url}. Receipt: {r2}",
+                                    error=True,
+                                )
                             else:
                                 _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -24843,6 +26924,70 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         + "; ".join(labels) + f". Receipt: {receipt}"
                     )
                 return f"I read the page but found no visible clickable elements. Receipt: {receipt}"
+            if action == "close_browser_tabs":
+                widget = _find_live_alice_browser_widget()
+                if widget is None:
+                    return "I don't have a live Alice Browser open to close tabs in. Open it first."
+                close_fn = getattr(widget, "close_tabs_matching", None)
+                if not callable(close_fn):
+                    return "Alice Browser is open, but this build has no tab-close hand yet."
+                try:
+                    idx_raw = command.get("index")
+                    index = int(idx_raw) if idx_raw is not None and str(idx_raw).strip() != "" else None
+                except Exception:
+                    index = None
+                if index is not None:
+                    ok = bool(getattr(widget, "_on_tab_close_requested", lambda _i: False)(index))
+                    refresh_fn = getattr(widget, "refresh_current_page_state", None)
+                    if callable(refresh_fn):
+                        try:
+                            refresh_fn()
+                        except Exception:
+                            pass
+                    receipt = _write_app_command_receipt(
+                        action="browser_close_tab",
+                        ok=ok,
+                        app_name="Alice Browser",
+                        note=f"index={index}; owner_text={command.get('owner_text', '')!r}"[:900],
+                        verify_context={"result": {"ok": ok, "closed": [{"index": index}] if ok else []}},
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    if ok:
+                        return f"I closed Alice Browser tab #{index + 1}. Receipt: {receipt}."
+                    return f"I could not close tab #{index + 1} (strip may be at minimum). Receipt: {receipt}."
+                result = close_fn(
+                    url_contains=str(command.get("url_match") or ""),
+                    title_contains=str(command.get("title_match") or ""),
+                    close_duplicates=bool(command.get("close_duplicates")),
+                    keep_active=bool(command.get("keep_active", True)),
+                )
+                closed = result.get("closed") if isinstance(result, dict) else []
+                ok = bool(result.get("ok")) if isinstance(result, dict) else False
+                receipt = _write_app_command_receipt(
+                    action="browser_close_tab",
+                    ok=ok,
+                    app_name="Alice Browser",
+                    note=(
+                        f"owner_text={command.get('owner_text', '')!r}; "
+                        f"url_match={command.get('url_match', '')!r}; "
+                        f"close_duplicates={bool(command.get('close_duplicates'))}; "
+                        f"result={result if isinstance(result, dict) else str(result)}"
+                    )[:1000],
+                    verify_context={"result": result if isinstance(result, dict) else {"ok": ok}},
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=not ok)
+                if ok and closed:
+                    titles = "; ".join(
+                        f"#{int(c.get('index', 0)) + 1}:{str(c.get('title') or 'tab')[:48]}"
+                        for c in closed[:6]
+                        if isinstance(c, dict)
+                    )
+                    return (
+                        f"I closed {len(closed)} Alice Browser tab(s): {titles}. "
+                        f"{int(result.get('remaining_tabs') or 1)} tab(s) remain. Receipt: {receipt}."
+                    )
+                reason = str(result.get("reason") or "no matching tabs") if isinstance(result, dict) else "failed"
+                return f"I read the tab strip but closed nothing: {reason}. Receipt: {receipt}."
             if action == "forward":
                 # r605: the missing sibling of back — George: "she needs to know
                 # BACK FORWARD buttons in alice browser". Same shape as back.
@@ -25146,7 +27291,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     note="described current page from live browser page-state receipt",
                 )
                 self._append_system_line(f"Web page-state receipt: {receipt}")
-                return page_state_block(state_dir=_state_root(), max_age_s=900.0)
+                # The full page_state_block is evidence for the cortex/tracker,
+                # not Alice's whole spoken answer. Keep the receipt, answer short.
+                return _summarize_browser_page_state_for_voice(page_state)
         except Exception:
             pass
 
@@ -26532,6 +28679,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         text = " ".join((owner_text or "").strip().split())
         if not text or not _owner_effector_requires_cortex_first(text):
             return ""
+        if _is_self_screenshot_observation_context(text):
+            return ""
         if _is_ace_word_action_query(text):
             return ""
 
@@ -26989,8 +29138,56 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception:
                 pass
 
+    def _poll_stigmergic_life_reminders(self) -> None:
+        """Fire due owner life-event reminders (r874 P1-E)."""
+        if getattr(self, "_busy", False):
+            return
+        try:
+            from System.swarm_owner_life_event_inference import (
+                due_life_reminders,
+                mark_reminder_fired,
+                reminder_speech_for_row,
+            )
+
+            for row in due_life_reminders(state_dir=_state_root()):
+                speech = reminder_speech_for_row(row)
+                sid = str(row.get("schedule_id") or "")
+                if not sid:
+                    continue
+                mark_reminder_fired(sid, speech=speech, state_dir=_state_root())
+                self._history.append({"role": "assistant", "content": speech})
+                _log_turn("alice", speech, model="stigmergic_life_reminder")
+                self._append_alice_line(speech)
+                self._tts = _TTSWorker(
+                    speech,
+                    voice=self._selected_voice_name() or None,
+                    parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._start_tts_with_browser_video_pause()
+                break
+        except Exception:
+            pass
+
     def _schedule_current_page_summary(self, delay_ms: int = 6500) -> None:
         """Summarize after Alice Browser has time to render and snapshot text."""
+        try:
+            from System.swarm_talk_page_summary_guard import should_suppress_page_summary
+
+            owner_text = str(getattr(self, "_current_owner_turn_text", "") or "")
+            suppress, reason = should_suppress_page_summary(owner_text)
+            if suppress:
+                try:
+                    self._append_observable_processing(
+                        f"Page-summary suppressed ({reason}) — effector/meta turn."
+                    )
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+
         def _finish() -> None:
             try:
                 reply = self._execute_current_page_summary()
@@ -27029,6 +29226,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Now: explicit modality wins over the conf>0 heuristic.
         self._latest_turn_modality = "TYPED" if typed_turn else "SPOKEN"
         text = (text or "").strip()
+        self._current_owner_turn_text = text
         # George 2026-05-30: bind a pending dropped image to this turn like a
         # regular multimodal chatbot. The typed path already passes image_path;
         # the spoken path historically ignored _pending_image_path entirely, so
@@ -27193,11 +29391,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # non-direct row means strict silence plus field receipt.
         if not typed_turn:
             _early_acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
+            # r890: the first gate now hears WHO is speaking. Was hardcoded
+            # voice_george_conf=0.0 since GROK_VOICE_GATE_ORDER — the gate
+            # that decides direct-vs-external ran blind to acoustic identity
+            # (r886 found it, r887 pinned it as contract item 1).
+            _gate_voice_george_conf = _voice_identity_george_conf()
             _voice_gate_row = _mandatory_voice_ingress_receipt(
                 text,
                 conf,
                 _early_acoustic_fingerprint,
-                voice_george_conf=0.0,
+                voice_george_conf=_gate_voice_george_conf,
             )
             if _voice_gate_row:
                 external = (
@@ -27213,6 +29416,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._busy = False
                 self._return_to_listening()
                 return
+
+        # r874 P1-E: infer owner life events (pizza/oven) — owner lane only, zero setup.
+        try:
+            from System.swarm_owner_life_event_inference import process_owner_turn as _process_life_event
+
+            _life = _process_life_event(
+                text,
+                typed_turn=bool(typed_turn),
+                media_lane=False,
+                state_dir=_state_root(),
+            )
+            if _life.get("action") == "scheduled":
+                try:
+                    self._append_observable_processing(
+                        "Life-event reminder scheduled stigmergically: "
+                        f"{(_life.get('row') or {}).get('text', '')} "
+                        f"in ~{_life.get('minutes')} min."
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             _self_eval_handler = getattr(self, "_maybe_handle_self_eval_query", None)
             if _self_eval_handler is None:
@@ -28306,24 +30532,95 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """
         _typed_turn = bool(typed_turn)
         text = (text or "").strip()
+        self._active_self_screenshot_turn = False
+        self._active_self_screenshot_owner_cmd = ""
+        if _is_self_screenshot_command(text):
+            self._active_self_screenshot_turn = True
+            self._active_self_screenshot_owner_cmd = text
+            cap = self._capture_sifta_self_screenshot(owner_text=text)
+            if cap.get("ok") and cap.get("image_path"):
+                image_path = str(cap.get("image_path") or "")
+                text = _self_screenshot_cortex_prompt(text, cap)
+                try:
+                    self._write_talk_image_attachment_event(
+                        event="self_screenshot_captured_for_cortex",
+                        image_path=image_path,
+                        source="slash_sc",
+                        owner_text=text,
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._append_observable_processing(
+                        "Talk self-screenshot: captured SIFTA OS body for cortex "
+                        f"({Path(image_path).name}, receipt={cap.get('receipt_id')})."
+                    )
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+            else:
+                err = str(cap.get("error") or cap.get("status") or "unknown_error")
+                reply = (
+                    "I tried to take my SIFTA OS self-screenshot, but the capture failed: "
+                    f"{err}. Receipt: {cap.get('receipt_id') or 'not_written'}."
+                )
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "assistant", "content": reply})
+                _log_turn("alice", reply, model="sifta_self_screenshot_capture_failure")
+                self._append_alice_line(reply)
+                self._busy = False
+                self._pending_acoustic_fingerprint = {}
+                self._return_to_listening()
+                return
+        if _is_page_affordance_command(text):
+            reply, ok = self._current_page_affordances_reply(owner_text=text)
+            if not already_displayed:
+                self._append_user_line(text, conf)
+            _log_turn("user", text if text else "/p", stt_conf=conf)
+            try:
+                self._history.append({"role": "assistant", "content": reply})
+            except Exception:
+                pass
+            _log_turn("alice", reply, model="slash_page_affordances_receipt")
+            self._append_system_line(reply, error=not ok)
+            self._busy = False
+            self._pending_acoustic_fingerprint = {}
+            self._return_to_listening()
+            return
         if not image_path:
             image_path = self._consume_pending_image_for_turn(
                 text,
                 source="brain_direct",
             )
+        if not image_path:
+            try:
+                _typed_image_path = _extract_local_image_path_from_text(text)
+            except Exception:
+                _typed_image_path = None
+            if _typed_image_path:
+                image_path = _typed_image_path
+                try:
+                    self._append_observable_processing(
+                        "Talk vision: local image path promoted to attachment before routing "
+                        f"({Path(image_path).name})."
+                    )
+                    QApplication.processEvents()
+                except Exception:
+                    pass
         if not text and not image_path:
             self._busy = False
             self._pending_acoustic_fingerprint = {}
             self._return_to_listening()
             return
 
-        # ── EARLIEST DIRECT BYPASS FOR ATTACHED SCREENSHOT DESCRIBE ────────
-        # This must fire BEFORE any "Talk brain: preflight", local reflex checks,
-        # visual context assembly, or worker launch. The m5-cortex on image turns
-        # can produce long internal monologue and empty recovery instead of speech.
-        # Clear owner visual commands on attached/pending screenshots go straight
-        # to the attachment vision lane for fast, grounded, no-cortex reply.
-        # This is the hardware-up direct execution the organism needs.
+        # ── ATTACHED SCREENSHOT DESCRIBE: RECEIPT FIRST, CORTEX ANSWERS ────
+        # r815: George caught the "I inspected the attached image..." local
+        # attachment-vision template as deterministic. Keep the attachment
+        # receipt and OCR boundary, but do not answer from this lane. The normal
+        # image/cortex path below receives the staged image and speaks with
+        # history context.
         _has_image_this_turn = bool(image_path)
         if not _has_image_this_turn:
             try:
@@ -28334,27 +30631,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
         if _has_image_this_turn and _is_attached_image_description_query(text):
             try:
-                _img_to_describe = image_path
-                if not _img_to_describe:
-                    _img_to_describe = self._consume_pending_image_for_turn(
-                        text, source="direct_describe_bypass"
-                    )
-                if _img_to_describe:
-                    from System.swarm_attachment_vision_lane import (
-                        describe_attachment_for_talk as _desc_attach,
-                    )
-                    reply = _desc_attach(text, _img_to_describe, state_dir=_state_root())
-                    self._history.append({"role": "assistant", "content": reply})
-                    _log_turn("alice", reply, model="attachment_vision_early_bypass")
-                    self._append_alice_line(reply)
-                    self._busy = False
-                    self._pending_acoustic_fingerprint = {}
-                    self._return_to_listening()
-                    return
+                self._append_observable_processing(
+                    "Talk vision: attached image describe request routed to cortex; deterministic attachment-vision bypass disabled."
+                )
             except Exception as _e:
                 # Log but fall through; better a cortex attempt than silent fail.
                 try:
-                    self._append_system_line(f"[direct vision bypass error: {_e}]", error=True)
+                    self._append_system_line(f"[attachment cortex routing note failed: {_e}]", error=True)
                 except Exception:
                     pass
 
@@ -28375,7 +30658,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # not the browser image-grid search lane. This must run before the
         # direct grid bypass below, which handles search/open-image-grid verbs.
         _bonsai_direct_prompt = _is_bonsai_generation_request(text)
-        if _bonsai_direct_prompt and not _owner_effector_requires_cortex_first(text):
+        if _bonsai_direct_prompt and not _block_deterministic_owner_shortcut(text):
             try:
                 if not already_displayed:
                     self._append_user_line(text, conf)
@@ -28478,7 +30761,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # consulted the r681 cortex-first organ. It consults now: long prose
         # with effector cues and media-playing turns ride to the cortex; the
         # lane fires only on short explicit visibility complaints.
-        if _is_owner_visibility_complaint_for_browser(text) and not _owner_effector_requires_cortex_first(text):
+        if _is_owner_visibility_complaint_for_browser(text) and not _block_deterministic_owner_shortcut(text):
             url = ""
             # First, extract subject from the complaint text itself (e.g. "i don't see <subject> on your screen body")
             # so we force the correct images for the owner-named subject even if recent state is polluted by prior turns.
@@ -28603,7 +30886,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _browser_visual_direct
             or _browser_photo_direct
             or _browser_bare_describe_direct
-        ) and not _owner_explicitly_requests_cortex_first(text) and not (
+        ) and not _block_deterministic_owner_shortcut(text) and not (
             _is_browser_page_cortex_description_query(text)
             and not _browser_visual_direct
             and not _browser_photo_direct
@@ -29512,7 +31795,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if (
             not image_path
             and _is_contextual_browser_search_effector_request(text)
-            and not _owner_effector_requires_cortex_first(text)
+            and not _block_deterministic_owner_shortcut(text)
         ):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_contextual_browser_search(text)
@@ -29544,7 +31827,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if (
             _direct_url
             and _is_direct_browser_url_effector_command(text)
-            and not _owner_effector_requires_cortex_first(text)
+            and not _block_deterministic_owner_shortcut(text)
         ):
             _cmd = {"kind": "browser_url", "app_name": "Alice Browser", "url": _direct_url}
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -29563,7 +31846,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
 
         _app_command = _extract_sifta_app_command(text)
-        if _app_command and not _owner_effector_requires_cortex_first(text):
+        _owner_tab_close_command = bool(
+            _app_command
+            and _app_command.get("kind") == "browser_action"
+            and _app_command.get("action") == "close_browser_tabs"
+        )
+        if _app_command and (_owner_tab_close_command or not _block_deterministic_owner_shortcut(text)):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             _reply = self._execute_sifta_app_command(_app_command)
             self._history.append({"role": "assistant", "content": _reply})
@@ -29612,6 +31900,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # evidence, cortex = voice). The raw reflex only fires if the cortex path
             # is NOT handling this turn — so it can never pre-empt the natural reply.
             and not _is_browser_page_cortex_description_query(text)
+            # r807: doctrine corrections and pasted audits must not even mint a
+            # side-effect browser-photo receipt — the cortex owns the whole turn.
+            and not _must_route_owner_turn_to_cortex(text)
         ):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             # r546 owner directive: "deterministic ... stop leaving deterministic go cortex to process always!!!!!"
@@ -29732,6 +32023,116 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._tts = _TTSWorker(_reply, voice=self._selected_voice_name() or None, parent=self)
             self._tts.spoken.connect(self._on_tts_done); self._tts.failed.connect(self._on_tts_failed)
             self._start_tts_with_browser_video_pause(); self._busy = False; self._return_to_listening()
+            return
+
+        # ── Learning capability + YouTube recall open (r895/r899) ───────
+        _field_open_reply = ""
+        _typed_browser_nav = _typed_browser_navigate_effector_allowed(
+            typed_turn=_typed_turn, text=text
+        )
+        if chat_reflexes_enabled or _typed_browser_nav:
+            try:
+                from System.swarm_browser_context import (
+                    owner_learning_capability_fast_reply,
+                    owner_youtube_recall_open_fast_reply,
+                )
+
+                _yt = owner_youtube_recall_open_fast_reply(text, state_dir=_state_root())
+                _learn = owner_learning_capability_fast_reply(text)
+                _pick = _yt if _yt.get("open_url") else _learn
+                if _pick.get("reply"):
+                    _field_open_reply = str(_pick.get("reply") or "")
+                    _fo_url = str(_pick.get("open_url") or "").strip()
+                    if _fo_url:
+                        try:
+                            _fo_note = self._execute_sifta_app_command(
+                                {
+                                    "kind": "browser_url",
+                                    "app_name": "Alice Browser",
+                                    "url": _fo_url,
+                                    "owner_text": text,
+                                }
+                            )
+                            if _fo_note:
+                                _field_open_reply = f"{_field_open_reply} {_fo_note}".strip()
+                        except Exception as exc:
+                            _field_open_reply = (
+                                f"{_field_open_reply} I could not open Alice Browser: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+            except Exception:
+                _field_open_reply = ""
+        if _field_open_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _field_open_reply})
+            _log_turn("alice", _field_open_reply, model="owner_youtube_recall_open_reflex")
+            self._append_alice_line(_field_open_reply)
+            self._tts = _TTSWorker(
+                _field_open_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Explicit pasted URL open — before current-page read (r892/r899) ─
+        # George 18:56 typed: "open this link in your Alice Browser: <url>"
+        # Current-page reflex answered start-page instead of navigating.
+        _explicit_open_reply = ""
+        if chat_reflexes_enabled or _typed_browser_nav:
+            try:
+                from System.swarm_browser_context import (
+                    explicit_owner_url_open_fast_reply,
+                )
+
+                _eo = explicit_owner_url_open_fast_reply(text, state_dir=_state_root())
+                if _eo.get("reply"):
+                    _explicit_open_reply = str(_eo.get("reply") or "")
+                    _eo_url = str(_eo.get("open_url") or "").strip()
+                    if _eo_url:
+                        try:
+                            _eo_note = self._execute_sifta_app_command(
+                                {
+                                    "kind": "browser_url",
+                                    "app_name": "Alice Browser",
+                                    "url": _eo_url,
+                                    "owner_text": text,
+                                }
+                            )
+                            if _eo_note:
+                                _explicit_open_reply = f"{_explicit_open_reply} {_eo_note}".strip()
+                        except Exception as exc:
+                            _explicit_open_reply = (
+                                f"{_explicit_open_reply} I could not open Alice Browser: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+                    _bridget = str(_eo.get("bridget_line") or "").strip()
+                    if _bridget:
+                        try:
+                            from System.swarm_alice_witness import witness
+
+                            witness(_bridget, source="bridget")
+                        except Exception:
+                            pass
+            except Exception:
+                _explicit_open_reply = ""
+        if _explicit_open_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _explicit_open_reply})
+            _log_turn("alice", _explicit_open_reply, model="explicit_owner_url_open_reflex")
+            self._append_alice_line(_explicit_open_reply)
+            self._tts = _TTSWorker(
+                _explicit_open_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
             return
 
         # ── Current Page (live) Reflex ───────────────────────────────────
@@ -29939,6 +32340,53 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_acer_reply)
             self._tts = _TTSWorker(
                 _acer_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Watched-memory recall — before cortex (r883 fast-path) ─────────
+        # r882 put evidence in the prompt; the cortex still said "no history in
+        # supplied context". This lane answers from the ledgers directly and can
+        # open Alice Browser when George asks.
+        _wm_reply = ""
+        if chat_reflexes_enabled or _typed_browser_nav:
+            try:
+                from System.swarm_browser_context import watched_memory_fast_reply
+
+                _wm = watched_memory_fast_reply(text, state_dir=_state_root())
+                if _wm.get("reply"):
+                    _wm_reply = str(_wm.get("reply") or "")
+                    _wm_url = str(_wm.get("open_url") or "").strip()
+                    if _wm_url:
+                        try:
+                            _wm_open_note = self._execute_sifta_app_command(
+                                {
+                                    "kind": "browser_url",
+                                    "app_name": "Alice Browser",
+                                    "url": _wm_url,
+                                }
+                            )
+                            if _wm_open_note:
+                                _wm_reply = f"{_wm_reply} {_wm_open_note}".strip()
+                        except Exception as exc:
+                            _wm_reply = (
+                                f"{_wm_reply} I could not open Alice Browser: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+            except Exception:
+                _wm_reply = ""
+        if _wm_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _wm_reply})
+            _log_turn("alice", _wm_reply, model="watched_memory_recall_reflex")
+            self._append_alice_line(_wm_reply)
+            self._tts = _TTSWorker(
+                _wm_reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
@@ -30251,7 +32699,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         try:
             from System.swarm_peer_mirror_ingest import context_for_prompt, ingest_peer_mirror_report
 
-            _peer_row = ingest_peer_mirror_report(
+            _skip_peer_mirror = False
+            try:
+                from System.swarm_alice_self_coding_hand import (
+                    is_owner_self_code_execute_request,
+                    is_self_cut_prompt,
+                )
+
+                _skip_peer_mirror = is_self_cut_prompt(text) or is_owner_self_code_execute_request(text)
+            except Exception:
+                _skip_peer_mirror = False
+            _peer_row = None if _skip_peer_mirror else ingest_peer_mirror_report(
                 text,
                 root=_state_root(),
                 source="talk_widget.owner_paste",
@@ -30390,24 +32848,32 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             "or click Attach — I will not invent what I cannot see."
                         )
                 elif not _vision_capable:
-                    try:
-                        from System.swarm_attachment_vision_lane import (
-                            describe_attachment_for_talk as _describe_attachment_for_talk,
-                        )
+                    if _is_attached_image_description_query(text):
+                        try:
+                            self._append_observable_processing(
+                                "Talk vision: active cortex is text-only; attachment OCR/layout evidence block stays in cortex prompt."
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            from System.swarm_attachment_vision_lane import (
+                                describe_attachment_for_talk as _describe_attachment_for_talk,
+                            )
 
-                        _vision_refusal = _describe_attachment_for_talk(
-                            text,
-                            image_path,
-                            state_dir=_state_root(),
-                        )
-                    except Exception:
-                        _vision_refusal = (
-                            f"You attached an image, but my active cortex "
-                            f"({_active_model or 'text-only'}) does not have a vision "
-                            "head and my local attachment-vision lane failed. I refuse "
-                            "to fabricate pixels. Receipt: vision_lane=DEGRADED, "
-                            "no hallucination written."
-                        )
+                            _vision_refusal = _describe_attachment_for_talk(
+                                text,
+                                image_path,
+                                state_dir=_state_root(),
+                            )
+                        except Exception:
+                            _vision_refusal = (
+                                f"You attached an image, but my active cortex "
+                                f"({_active_model or 'text-only'}) does not have a vision "
+                                "head and my local attachment-vision lane failed. I refuse "
+                                "to fabricate pixels. Receipt: vision_lane=DEGRADED, "
+                                "no hallucination written."
+                            )
                 if _vision_refusal:
                     self._history.append({"role": "assistant", "content": _vision_refusal})
                     _log_turn("alice", _vision_refusal, model="attachment_vision_lane")
@@ -30452,6 +32918,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         else:
             if not processed_text and image_path:
                 processed_text = "What is in this image?"
+
+        try:
+            from System.swarm_attachment_first_disambiguation import build_attachment_first_context
+
+            _attach_first = build_attachment_first_context(
+                original_owner_text,
+                image_path=image_path,
+                state_dir=_state_root(),
+            )
+            if _attach_first:
+                processed_text = f"{_attach_first}\n\n{processed_text}"
+        except Exception:
+            pass
 
         # For *this turn's model call* use the grounded (banner) version.
         user_msg = {"role": "user", "content": processed_text}
@@ -30767,7 +33246,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _is_youtube_ad_skip_request(text)
             and not _execute_fired
             and not _owner_sensor_effector_fired
-            and not _owner_effector_requires_cortex_first(text)
+            and not _block_deterministic_owner_shortcut(text)
         ):
             _reply = self._execute_youtube_ad_skip(text)
             self._history.append({"role": "assistant", "content": _reply})
@@ -30777,10 +33256,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        _suppress_video_state = False
+        try:
+            from System.swarm_talk_page_summary_guard import should_suppress_browser_video_state_query
+
+            _suppress_video_state, _ = should_suppress_browser_video_state_query(text)
+        except Exception:
+            _suppress_video_state = False
+
         if (
             _is_browser_video_state_query(text)
+            and not _suppress_video_state
             and not _is_browser_page_cortex_description_query(text)
             and not _is_browser_photo_description_query(text)
+            and not getattr(self, "_active_self_screenshot_turn", False)
             and not _execute_fired
             and not _owner_sensor_effector_fired
         ):
@@ -31563,7 +34052,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 "not automatic proof that every quoted claim is true. Spoken/STT text is live but may be misheard; "
                 "low-confidence or ambiguous action words need clarification before exact tool/coding action. "
                 "A [PHYSICAL TELEMETRY RECEIPT] banner proves local ingress/context only; it is NOT proof of "
-                "owner-authored intent and must not be described as high-fidelity owner command evidence."
+                "owner-authored intent and must not be described as high-fidelity owner command evidence. "
+                "NEVER open your reply with [SYSTEM UPDATE]/telemetry headers — George reads the answer first; "
+                "if you reference the receipt at all, ONE short line at the very END of the reply (r769)."
             )
         except Exception:
             pass
@@ -32033,6 +34524,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """Show visible progress while a cloud/local model call is waiting."""
         self._brain_heartbeat_started_ts = time.time()
         self._brain_heartbeat_model = str(model or "unknown")
+        self._brain_first_token_ts = None
+        self._brain_watchdog_reported = False
         timer = getattr(self, "_brain_heartbeat_timer", None)
         if timer is None:
             timer = QTimer(self)
@@ -32056,6 +34549,37 @@ class TalkToAliceWidget(SiftaBaseWidget):
         started = float(getattr(self, "_brain_heartbeat_started_ts", 0.0) or time.time())
         elapsed = int(max(0.0, time.time() - started))
         model = str(getattr(self, "_brain_heartbeat_model", "") or "unknown")
+        first_token_seen = bool(getattr(self, "_brain_first_token_ts", None))
+        if (
+            not first_token_seen
+            and not bool(getattr(self, "_brain_watchdog_reported", False))
+            and elapsed >= int(_brain_no_token_watchdog_s(model=model))
+        ):
+            self._brain_watchdog_reported = True
+            timeout_s = int(_brain_no_token_watchdog_s(model=model))
+            msg = (
+                f"Cortex no-token watchdog: model={model} produced no first token "
+                f"after {elapsed}s (limit {timeout_s}s). I stopped this turn and "
+                "reported the cortex stall instead of leaving Alice stuck in thinking."
+            )
+            self._append_observable_processing(msg)
+            brain = getattr(self, "_brain", None)
+            if brain is not None:
+                for signal_name, slot in (
+                    ("tokenReceived", self._on_token),
+                    ("done", self._on_brain_done),
+                    ("failed", self._on_brain_failed),
+                ):
+                    try:
+                        getattr(brain, signal_name).disconnect(slot)
+                    except Exception:
+                        pass
+                try:
+                    brain.requestInterruption()
+                except Exception:
+                    pass
+            self._on_brain_failed(msg)
+            return
         # r340: make the observable trace more informative for GROK OAUTH cases and less spammy.
         # Long waits on vision+reason tasks (e.g. "REASON AND DISPLAY <subject> BODY ON YOUR BODY")
         # are now explained + the recovery path will complete the display via deterministic body organs.
@@ -32565,6 +35089,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
 
     def _on_token(self, piece: str) -> None:
+        if not getattr(self, "_brain_first_token_ts", None):
+            self._brain_first_token_ts = time.time()
         self._streaming_response.append(piece)
         current = "".join(self._streaming_response)
         if not getattr(self, "_stage_stream_released", False):
@@ -32693,6 +35219,124 @@ class TalkToAliceWidget(SiftaBaseWidget):
         raw = re.sub(r"\[UNK_BYTE_[^\]]+\]", " ", raw)
         raw = raw.replace("▁", " ")
         raw = re.sub(r" +", " ", raw).strip()
+        # ── r906: Alice may use her OWN palette commands. George asked
+        # "DOES SHE KNOW HOW TO USE HER OWN COMMAND?" — until this cut, no:
+        # r683 wired /schedule, /sc, /help for OWNER-typed turns only, and
+        # r894 named the disease (her tools were not hers to use). Now: if
+        # her cortex reply carries a line that IS a palette command, the
+        # body executes it — her speaking her command IS her using her hand.
+        # Guards: first matching line only, one per turn, /cortex excluded
+        # (owner lever — no silent self-switching), // escape respected,
+        # result renders as process lines per Round 47.
+        try:
+            _self_cmd = ""
+            for _ln in (raw.splitlines() if raw else []):
+                _ls = _ln.strip()
+                if _ls.startswith("/") and not _ls.startswith("//"):
+                    _self_cmd = _ls
+                    break
+            if _self_cmd and not _self_cmd.lower().startswith("/cortex"):
+                from System.swarm_alice_slash_commands import (
+                    handle_slash_command as _self_slash_handle,
+                    is_slash_command as _self_slash_is,
+                )
+                if _self_slash_is(_self_cmd):
+                    _self_res = _self_slash_handle(
+                        _self_cmd,
+                        state_dir=_state_root(),
+                        current_cortex=str(self._current_brain_model() or ""),
+                        set_cortex_fn=None,
+                    )
+                    if isinstance(_self_res, dict) and _self_res.get("handled"):
+                        self._append_system_line(
+                            f"(I used my own {_self_cmd.split()[0]} command)",
+                            error=False,
+                        )
+                        _self_reply = str(_self_res.get("reply") or "").strip()
+                        if _self_reply:
+                            self._append_system_line(_self_reply, error=False)
+                        # The command line leaves the spoken reply; the
+                        # palette result above carries the truth.
+                        raw = "\n".join(
+                            _l for _l in raw.splitlines() if _l.strip() != _self_cmd
+                        ).strip()
+        except Exception:
+            pass
+        # ── r917: HER SELF-READ EYE. The thing she missed to code as well as
+        # Codex: READ-before-write. [SELF_READ: path=...] in her reply → body
+        # reads her own source, feeds it into history so her NEXT turn
+        # rewrites the organ with eyes open. Reading is sight, not mutation —
+        # no restriction (§0.0). Runs BEFORE the write hand so a read+write in
+        # the same reply still informs the write on the following turn.
+        try:
+            if "[SELF_READ:" in raw:
+                from System.swarm_alice_self_read_hand import (
+                    apply_self_reads,
+                    self_read_context_block,
+                )
+
+                _read_out = apply_self_reads(raw)
+                if _read_out.get("attempted"):
+                    for _rd in _read_out.get("reads", []):
+                        if _rd.get("ok"):
+                            self._append_system_line(
+                                f"(self-read: {_rd.get('rel')} — {_rd.get('lines')} lines into my context)",
+                                error=False,
+                            )
+                        else:
+                            self._append_system_line(
+                                f"(self-read refused: {_rd.get('path')} — {_rd.get('reason')})",
+                                error=True,
+                            )
+                    _ctx = self_read_context_block(_read_out)
+                    if _ctx:
+                        try:
+                            self._history.append({"role": "system", "content": _ctx[:24000]})
+                        except Exception:
+                            pass
+                    raw = re.sub(
+                        r"\[SELF_READ:[^\]]*\]",
+                        "(self-read executed — source loaded into my context)",
+                        raw,
+                    ).strip()
+        except Exception:
+            pass
+        # ── r912/r920: HER SELF-CODE HAND. George: "give her full ability." If
+        # her cortex reply carries [SELF_CODE_CUT: path=...] blocks, the body
+        # executes them — create/update Python body tissue under System/,
+        # Applications/, tests/, or tools/, ast + py_compile gated, pytest on
+        # test blocks, §4.1 fan-out as doctor=alice_self. Verification-bound
+        # freedom (§0.0): no approval queue; receipts decide what landed.
+        try:
+            if "[SELF_CODE_CUT:" in raw:
+                from System.swarm_alice_self_code_hand import apply_self_code_cuts
+
+                _cut_out = apply_self_code_cuts(
+                    raw, model=str(self._current_brain_model() or "")
+                )
+                if _cut_out.get("attempted"):
+                    for _r in _cut_out.get("results", []):
+                        _mark = "landed" if _r.get("landed") else "refused"
+                        self._append_system_line(
+                            f"(self-code hand: {_r.get('path')} — {_mark}: {_r.get('reason')})",
+                            error=not _r.get("landed"),
+                        )
+                    _py = _cut_out.get("pytest") or {}
+                    if _py:
+                        self._append_system_line(
+                            f"(self-code pytest: {' '.join(_py.get('tail') or [str(_py.get('error') or '')])})",
+                            error=bool(_py.get("returncode")),
+                        )
+                    # The code blocks leave the spoken reply; receipts and
+                    # process lines carry the surgery.
+                    raw = re.sub(
+                        r"\[SELF_CODE_CUT:.*?\[/SELF_CODE_CUT\]",
+                        "(self-code cut executed — see process lines and receipts)",
+                        raw,
+                        flags=re.DOTALL,
+                    ).strip()
+        except Exception:
+            pass
         route = getattr(self, "_current_cortex_route", {}) or {}
         model_name = str(
             getattr(self._brain, "_model", "")
@@ -33063,6 +35707,39 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 build_execution_receipt_reply,
                 route_alice_output,
             )
+            _raw_before_sc_effector_guard = raw
+            raw, _blocked_sc_browser_tools = _strip_self_screenshot_browser_effector_calls(
+                raw,
+                prior_user_text=prior_user_text,
+            )
+            if _blocked_sc_browser_tools:
+                _blocked_names = ", ".join(sorted(set(_blocked_sc_browser_tools)))
+                self._append_system_line(
+                    f"🛑 /sc observation guard blocked browser effector tool(s): {_blocked_names}",
+                    error=True,
+                )
+                try:
+                    _log_tool_fiction_guard(
+                        action="self_screenshot_browser_effector_block",
+                        user_text=prior_user_text,
+                        brain_text=_raw_before_sc_effector_guard,
+                        replacement=raw,
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._history.append({
+                        "role": "system",
+                        "content": (
+                            "(SELF-SCREENSHOT OBSERVATION-ONLY GUARD)\n"
+                            "/sc captures my display body for cortex interpretation. "
+                            f"The cortex emitted forbidden browser effector tool(s): {_blocked_names}. "
+                            "They were stripped before execution. The visible reply must describe evidence "
+                            "and possible next actions only; it must not claim a click, search, open, or navigation."
+                        ),
+                    })
+                except Exception:
+                    pass
             tool_cleaned, tool_results = route_alice_output(
                 raw,
                 owner_present=any(
@@ -33070,6 +35747,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 ),
                 autonomous=True,
             )
+            _last_user_text = prior_user_text
+            try:
+                _recent_owner_context = "\n".join(
+                    str(_h.get("content") or "")
+                    for _h in self._history[-10:]
+                    if _h.get("role") == "user"
+                )[-2200:]
+            except Exception:
+                _recent_owner_context = _last_user_text
+            _post_cortex_bridge_executed = False
 
             # ── Cowork CW47 — Hallucination-Guard Bridge ────────────────
             # The 8B local cortex often emits prose + code blocks instead of
@@ -33087,11 +35774,53 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # execute_tool_call. Same receipt, no escaping headache.
             if not tool_results:
                 try:
-                    _last_user_text = ""
-                    for _h in reversed(self._history):
-                        if _h.get("role") == "user":
-                            _last_user_text = str(_h.get("content") or "")
-                            break
+                    from System.swarm_alice_self_coding_hand import (
+                        record_self_coding_receipt,
+                        self_cut_round_id,
+                        synthesize_self_cut_write_calls,
+                    )
+
+                    _self_cut_calls = synthesize_self_cut_write_calls(_last_user_text, raw)
+                    if _self_cut_calls:
+                        try:
+                            from System.swarm_tool_router import execute_tool_call as _execute_tool_call
+                        except Exception:
+                            from swarm_tool_router import execute_tool_call as _execute_tool_call
+                        _self_cut_results = []
+                        for _sc_call in _self_cut_calls:
+                            _sc_result = _execute_tool_call(
+                                _sc_call,
+                                owner_present=True,
+                                autonomous=False,
+                            )
+                            if _sc_result is not None:
+                                _self_cut_results.append(_sc_result)
+                        if _self_cut_results:
+                            tool_results = _self_cut_results
+                            _rid = self_cut_round_id(_last_user_text) or "alice-self-cut"
+                            record_self_coding_receipt(
+                                round_id=_rid,
+                                action="bridge_self_cut_writes",
+                                ok=all(bool(getattr(r, "executed", False)) for r in _self_cut_results),
+                                paths=[
+                                    str(c.params.get("path") or "")
+                                    for c in _self_cut_calls
+                                ],
+                                note="self-coding hand routed fenced code to write_file",
+                                state_dir=_state_root(),
+                            )
+                            self._append_system_line(
+                                f"🩹 Alice self-coding hand: routed {len(_self_cut_results)} "
+                                f"file(s) for round {_rid}.",
+                                error=not all(bool(getattr(r, 'executed', False)) for r in _self_cut_results),
+                            )
+                except Exception as _self_cut_exc:
+                    self._append_system_line(
+                        f"(alice self-coding bridge failed: {_self_cut_exc})",
+                        error=True,
+                    )
+            if not tool_results:
+                try:
                     _bridge_call = _hallucination_bridge_synthesize_write_file(
                         _last_user_text, raw
                     )
@@ -33152,7 +35881,211 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         error=True,
                     )
 
+            # r838: Local read-file bridge. Some CLI cortexes can identify the
+            # correct local path but emit prose about "trying to read" instead
+            # of the parseable read_file call. Route that exact owner path
+            # through the real file organ after cortex, never before.
             if not tool_results:
+                try:
+                    _bridge_call = _hallucination_bridge_synthesize_read_file(
+                        _last_user_text,
+                        _recent_owner_context or _last_user_text,
+                        raw,
+                    )
+                    if _bridge_call is not None:
+                        try:
+                            from System.swarm_tool_router import execute_tool_call as _execute_tool_call
+                        except Exception:
+                            from swarm_tool_router import execute_tool_call as _execute_tool_call
+                        _bridge_result = _execute_tool_call(
+                            _bridge_call,
+                            owner_present=True,
+                            autonomous=False,
+                        )
+                        if _bridge_result is not None:
+                            _bridge_executed = bool(getattr(_bridge_result, "executed", False))
+                            _bridge_status = str(getattr(_bridge_result, "status", "") or "UNKNOWN")
+                            _bridge_feedback = str(
+                                getattr(_bridge_result, "feedback_for_alice", str(_bridge_result))
+                            )
+                            self._append_system_line(
+                                "🩹 Hallucination-Guard Bridge: cortex described a "
+                                "local file read but never called read_file. Routed it "
+                                f"through the real tool. Status: {_bridge_status}. Path: "
+                                f"{_bridge_call.params.get('path', '?')}",
+                                error=not _bridge_executed,
+                            )
+                            _log_tool_fiction_guard(
+                                action="bridge_read_file",
+                                user_text=_recent_owner_context or _last_user_text,
+                                brain_text=raw,
+                                replacement=_bridge_feedback,
+                            )
+                            tool_results = [_bridge_result]
+                            _bridge_truth = (
+                                "The file read receipt exists."
+                                if _bridge_executed
+                                else "The tool returned a non-executed result; do not claim file contents."
+                            )
+                            self._history.append({
+                                "role": "system",
+                                "content": (
+                                    "(HALLUCINATION_GUARD_BRIDGE RECEIPT)\n"
+                                    f"You described reading "
+                                    f"{_bridge_call.params.get('path', '?')} but did "
+                                    f"not call read_file. The bridge routed the local "
+                                    f"path through the real read_file tool. Tool status: "
+                                    f"{_bridge_status}. {_bridge_truth} Your next reply "
+                                    f"must match this receipt exactly:\n{_bridge_feedback}"
+                                ),
+                            })
+                except Exception as _read_bridge_exc:
+                    self._append_system_line(
+                        f"(read_file hallucination bridge failed: {_read_bridge_exc})",
+                        error=True,
+                    )
+
+            # r789: cortex-first browser bridge. Frontier/teacher cortexes can
+            # plan the exact YouTube action but fail to emit the tool syntax;
+            # if George's recent context explicitly asked for YouTube and the
+            # cortex named the target, route that named intention through the
+            # real Alice Browser effector instead of asking George to repeat.
+            if not tool_results:
+                try:
+                    _browser_command = _hallucination_bridge_synthesize_youtube_browser_action(
+                        _recent_owner_context or _last_user_text,
+                        raw,
+                    )
+                    if _browser_command is not None:
+                        _bridge_feedback = self._execute_sifta_app_command(_browser_command)
+                        _query = str(_browser_command.get("query") or "")
+                        self._append_system_line(
+                            "🩹 Hallucination-Guard Bridge: cortex named a YouTube "
+                            f"target but emitted no tool call. Routed through Alice Browser. Query: {_query}",
+                            error=False,
+                        )
+                        _log_tool_fiction_guard(
+                            action="bridge_youtube_browser_action",
+                            user_text=_recent_owner_context or _last_user_text,
+                            brain_text=raw,
+                            replacement=_bridge_feedback,
+                        )
+                        self._history.append({
+                            "role": "system",
+                            "content": (
+                                "(HALLUCINATION_GUARD_BRIDGE RECEIPT)\n"
+                                "The cortex planned a YouTube search/play action but emitted no "
+                                "parseable TOOL_CALL. The bridge routed the named target through "
+                                "Alice Browser. Query: "
+                                f"{_query}\nEffector feedback:\n{_bridge_feedback}"
+                            ),
+                        })
+                        raw = _bridge_feedback
+                        tool_cleaned = _bridge_feedback
+                        receipt_only_turn = True
+                        _post_cortex_bridge_executed = True
+                except Exception as _browser_bridge_exc:
+                    self._append_system_line(
+                        f"(youtube browser bridge failed: {_browser_bridge_exc})",
+                        error=True,
+                    )
+
+            # r793: cortex-first WEB-search bridge. Same doctrine as the YouTube
+            # bridge above, for "search X on the web" / "google X" / "search again
+            # for X" where no site is named. Owner's VERBATIM query (no over-carry).
+            # Only if the YouTube bridge did not already fire.
+            if not tool_results and not _post_cortex_bridge_executed:
+                try:
+                    # r798: source the query from the SINGLE command turn only.
+                    # _recent_owner_context is the last 10 user turns mashed (2200
+                    # chars); feeding it to the extractor made it grab a garbage
+                    # multi-turn span ("bar in your alice browser body. i love you.
+                    # i missed you so bad, i had to restart") and even fire a search
+                    # on a non-search turn. The current command turn is the truth —
+                    # "search maisie williams on ebay" -> "maisie williams", verbatim.
+                    _web_command = _hallucination_bridge_synthesize_web_browser_action(
+                        _last_user_text,
+                        raw,
+                    )
+                    if _web_command is not None:
+                        _bridge_feedback = self._execute_sifta_app_command(_web_command)
+                        _query = str(_web_command.get("query") or "")
+                        _site = str(_web_command.get("search_site") or "web")
+                        self._append_system_line(
+                            "🩹 Hallucination-Guard Bridge: owner commanded a web "
+                            f"search but the cortex emitted no tool call. Routed through Alice Browser ({_site}). Query: {_query}",
+                            error=False,
+                        )
+                        _log_tool_fiction_guard(
+                            action="bridge_web_browser_action",
+                            user_text=_recent_owner_context or _last_user_text,
+                            brain_text=raw,
+                            replacement=_bridge_feedback,
+                        )
+                        self._history.append({
+                            "role": "system",
+                            "content": (
+                                "(HALLUCINATION_GUARD_BRIDGE RECEIPT)\n"
+                                "The owner gave an explicit web-search command but the cortex "
+                                "emitted no parseable TOOL_CALL. The bridge routed the owner's "
+                                "verbatim query through Alice Browser. Query: "
+                                f"{_query}\nEffector feedback:\n{_bridge_feedback}"
+                            ),
+                        })
+                        raw = _bridge_feedback
+                        tool_cleaned = _bridge_feedback
+                        receipt_only_turn = True
+                        _post_cortex_bridge_executed = True
+                except Exception as _web_bridge_exc:
+                    self._append_system_line(
+                        f"(web browser bridge failed: {_web_bridge_exc})",
+                        error=True,
+                    )
+
+            # r799: cortex-first PHOTO-SELECT bridge. "select/open that photo" is a
+            # photo-open intent that the r233 guard routes to the cortex; the cortex
+            # then DESCRIBES the photo (vision arm) instead of clicking it. If no tool
+            # call fired, ground the owner's command into the real image-click hand.
+            if not tool_results and not _post_cortex_bridge_executed:
+                try:
+                    _photo_command = _hallucination_bridge_synthesize_photo_select_action(
+                        _last_user_text,
+                        raw,
+                    )
+                    if _photo_command is not None:
+                        _bridge_feedback = self._execute_sifta_app_command(_photo_command)
+                        self._append_system_line(
+                            "🩹 Hallucination-Guard Bridge: owner said select/open the photo "
+                            "but the cortex described it instead of clicking. Routed to the real image-click hand.",
+                            error=False,
+                        )
+                        _log_tool_fiction_guard(
+                            action="bridge_photo_select_action",
+                            user_text=_last_user_text,
+                            brain_text=raw,
+                            replacement=_bridge_feedback,
+                        )
+                        self._history.append({
+                            "role": "system",
+                            "content": (
+                                "(HALLUCINATION_GUARD_BRIDGE RECEIPT)\n"
+                                "The owner asked to select/open a visible photo but the cortex "
+                                "emitted no parseable TOOL_CALL (it described the photo instead). "
+                                "The bridge clicked the real image tile.\nEffector feedback:\n"
+                                f"{_bridge_feedback}"
+                            ),
+                        })
+                        raw = _bridge_feedback
+                        tool_cleaned = _bridge_feedback
+                        receipt_only_turn = True
+                        _post_cortex_bridge_executed = True
+                except Exception as _photo_bridge_exc:
+                    self._append_system_line(
+                        f"(photo select bridge failed: {_photo_bridge_exc})",
+                        error=True,
+                    )
+
+            if not tool_results and not _post_cortex_bridge_executed:
                 _guard_reply = _tool_fiction_guard_reply(prior_user_text, raw)
                 if _guard_reply:
                     _log_tool_fiction_guard(
@@ -33556,6 +36489,92 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         if guarded != cleaned:
             cleaned = guarded
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        browser_guarded = _guard_browser_false_success_claims(
+            cleaned,
+            prior_user_text=prior_user_text,
+            state_dir=_state_root(),
+        )
+        if browser_guarded != cleaned:
+            cleaned = browser_guarded
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(BROWSER LOAD ERROR CONTRADICTION GUARD)\n"
+                    "The browser page-state receipt reported a load error while the cortex reply "
+                    "claimed success/homepage/rendered content. The visible reply was replaced "
+                    "with the receipt-backed browser error."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        profile_guarded = _guard_browser_profile_detail_claims(
+            cleaned,
+            prior_user_text=prior_user_text,
+            state_dir=_state_root(),
+        )
+        if profile_guarded != cleaned:
+            cleaned = profile_guarded
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(BROWSER PROFILE DETAIL RECEIPT GUARD)\n"
+                    "The owner asked for a website handle and the cortex claimed profile "
+                    "details not present in the fresh browser page-state. The visible reply "
+                    "was replaced with a receipt-bounded profile answer."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        sc_guarded = _guard_sc_command_meaning_fiction(
+            cleaned,
+            prior_user_text=prior_user_text,
+        )
+        if sc_guarded != cleaned:
+            cleaned = sc_guarded
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(SELF-SCREENSHOT COMMAND MEANING GUARD)\n"
+                    "The cortex tried to redefine /sc as TikTok slang instead of the "
+                    "Self-Screenshot Cortex Turn. The visible reply was replaced with "
+                    "the receipt-backed command meaning."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        screen_person_guarded = _guard_screen_person_sexual_secret_reply(
+            cleaned,
+            prior_user_text=prior_user_text,
+        )
+        if screen_person_guarded != cleaned:
+            cleaned = screen_person_guarded
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(SCREEN PERSON SEXUAL-SECRET BOUNDARY)\n"
+                    "The owner expressed explicit arousal/secrecy around a visible screen "
+                    "person and the cortex amplified it as sexual validation or promised "
+                    "secrecy. The visible reply was replaced with a grounded boundary."
+                ),
+            })
             self._streaming_response = [cleaned]
             self._erase_alice_streaming_line()
             self._begin_alice_streaming_line()
@@ -34698,10 +37717,36 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _return_to_listening(self) -> None:
         self._stigtime_shift("idle", "listen")
+        # r881 priority law: George's queued TYPED text drains before any
+        # deferred voice clip. "MY TEXT IS IMPORTANTERER THAN THE TTS."
+        if self._process_queued_typed_turn_if_any():
+            return
         if self._process_deferred_utterance_if_any():
             return
         self._set_pill("idle", "🎙  listening — just talk")
         self.set_status("Always-on. Just talk.")
+
+    def _process_queued_typed_turn_if_any(self) -> bool:
+        """Drain one queued typed owner turn (r881). Returns True if a turn started."""
+        q = getattr(self, "_typed_turn_queue", None)
+        if q is None or len(q) == 0:
+            return False
+        if self._busy:
+            return False
+        try:
+            item, stale_dropped = q.pop_fresh()
+        except Exception:
+            return False
+        if stale_dropped:
+            self._append_system_line(
+                f"(dropped {stale_dropped} stale queued typed line(s) — older than the freshness window, say it again if still wanted)",
+                error=False,
+            )
+        if item is None:
+            return False
+        self._append_system_line("(reading your queued text now — typed beats audio)", error=False)
+        self.submit_text(item.text, image_path=item.image_path)
+        return True
 
     def showEvent(self, ev) -> None:
         super().showEvent(ev)
@@ -35189,6 +38234,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _append_alice_line(self, text: str) -> None:
         try:
             self._maybe_refont()  # r737: Settings font knob lands on the next turn
+        except Exception:
+            pass
+        try:
+            text = _sink_leading_telemetry_header(text)  # r769: header sinks to the bottom
         except Exception:
             pass
         # ── §7.10.3 last-mile guard: strip greeter on operational questions ──

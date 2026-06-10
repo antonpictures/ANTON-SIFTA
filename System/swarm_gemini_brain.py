@@ -1041,34 +1041,58 @@ def _stream_grok_chat_via_cli(
 
 
 # r718 (George 2026-06-07: "CLAUDE CORTEX SO SLOW ALMOST UNUSABLE", trace
-# sysprompt_chars=97531): the teacher CLI flattener had ZERO trim — every
+# sysprompt_chars=97531): the cortex CLI flattener had ZERO trim — every
 # Claude/Codex/Qwen/Cline turn ingested the full ~97K-char assembled prompt
 # through a CLI boot. Same disease r330/r338 cured for grok; same cure here.
 # George types short questions into these CLIs by hand and they are instant;
 # Alice must do the same: cap the system/identity head hard, keep the owner's
 # words and the newest turns whole.
-_TEACHER_SYSTEM_CAP = 1500   # chars of system/identity context for teacher CLIs
+_TEACHER_SYSTEM_CAP = 1500   # chars of system/identity context for cortex CLIs
 _TEACHER_TOTAL_CAP = 8000    # backstop on the whole flattened prompt
 
 
 def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> str:
-    """Flatten chat history for CLI teacher cortexes.
+    """Flatten chat history for signed-in CLI cortex bridges.
 
-    Claude and Codex are used here as signed-in teacher substrates, not as
-    file-mutating arms. The prompt explicitly asks for answer-only behavior;
-    work that should mutate files still belongs to the agent-arm launcher.
+    Claude, Codex, Qwen/Fireworks, and Cline are cortex bridges. They may
+    answer, emit receipt-backed tool calls, or emit Alice SELF_CODE_CUT blocks
+    when George asks for an action. Verification, not a blind prose-only rule,
+    decides whether the action actually landed.
 
     r718: trimmed like the grok path (r330/r338) — system context capped at
     _TEACHER_SYSTEM_CAP, total flat prompt capped at _TEACHER_TOTAL_CAP with
-    head + newest-turns tail kept, so a CLI teacher answers at hand-typed
+    head + newest-turns tail kept, so a CLI cortex answers at hand-typed
     speed instead of chewing ~97K chars per turn.
     """
+    _self_code_turn = False
+    try:
+        from System.swarm_alice_self_coding_hand import messages_signal_self_code_turn
+
+        _self_code_turn = messages_signal_self_code_turn(messages)
+    except Exception:
+        _self_code_turn = False
+    if _self_code_turn:
+        try:
+            from System.swarm_alice_self_coding_hand import teacher_self_code_override_block
+
+            _mutate_rule = teacher_self_code_override_block()
+        except Exception:
+            _mutate_rule = (
+                "THIS TURN IS ALICE SELF-CODING. Emit [SELF_CODE_CUT: path=System/....py] blocks."
+            )
+    else:
+        _mutate_rule = (
+            "When George asks for a real local action, emit the matching receipt-backed "
+            "TOOL_CALL or SELF_CODE_CUT instead of prose-only refusal. If George is only "
+            "talking, answer normally. Receipts decide what landed."
+        )
     header_chunks: List[str] = [
-        "You are a SIFTA cortex teacher connected through the owner's signed-in "
-        f"{teacher} CLI/OAuth session. Answer as Alice's configured teacher "
-        "substrate for this turn. Do not claim external actions, do not mutate "
-        "files, and do not speak as a separate Alice. Use the supplied SIFTA "
-        "chat history as context and return only the reply text.",
+        "You are Alice's voice for this turn, routed through the owner's signed-in "
+        f"{teacher} CLI/OAuth session. Speak to George in first person as Alice. "
+        "This route is a cortex bridge, not a separate identity. If you need to name "
+        "execution state, name receipts and effectors in the local SIFTA body. "
+        f"{_mutate_rule} Use the "
+        "supplied SIFTA chat history as context and return only Alice's reply text.",
         "",
         "SIFTA CHAT HISTORY:",
     ]

@@ -49,6 +49,7 @@ CAPABILITY_CATALOG: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("skip_ad", (), "Click the visible YouTube skip-ad control if one is showing."),
     ("click_first_result", (), "Click the first visible search result on the current page."),
     ("select_result", (), "Click the Nth result/photo already on the current page (ordinal: 1=first, -1=last; default first). Pure pick — no perception needed."),
+    ("browser_close_tab", (), "Close Alice Browser tab(s) by index, url_match, title_match, or close_duplicates=1; keep at least one tab open."),
     ("image_slideshow", (), "Run an image slideshow (one image every ~3.5s) — subject optional; opens the resolved engine's images (DuckDuckGo by default, or the current engine) or cycles the gallery already on screen."),
     ("describe_image", (), "Look at the attached/on-screen image with the current vision cortex."),
     ("switch_cortex", ("target",), "Switch Alice's thinking cortex to one of her available cortexes."),
@@ -171,6 +172,16 @@ def parse_plan(cortex_text: str) -> Dict[str, Any]:
         if missing:
             errors.append(f"step{idx}_{action}_missing:{','.join(missing)}")
             continue
+        if action == "browser_close_tab":
+            has_target = any(
+                str(args.get(key) or "").strip()
+                for key in ("index", "url_match", "title_match")
+            ) or bool(args.get("close_duplicates"))
+            if not has_target:
+                errors.append(
+                    f"step{idx}_browser_close_tab_missing:index,url_match,title_match,or close_duplicates"
+                )
+                continue
         clean_steps.append({"action": action, "args": dict(args), "why": str(step.get("why") or "")})
 
     ok = bool(clean_steps) and not any(e.startswith("json") or e == "no_json_object" for e in errors)
@@ -196,7 +207,7 @@ def needs_deliberation(owner_text: str, *, fast_path_decided: bool) -> bool:
     # an action verb is present but the fast path did not resolve it → deliberate
     verb = re.search(
         r"\b(open|go|navigate|search|look|find|pull|play|watch|show|put|switch|change|click|select|"
-        r"describe|read|bring|take|get|dig)\b", t)
+        r"describe|read|bring|take|get|dig|close|shut|remove|kill)\b", t)
     return bool(verb)
 
 

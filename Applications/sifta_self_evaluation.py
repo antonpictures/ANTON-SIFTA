@@ -510,6 +510,59 @@ def load_self_eval() -> dict:
         })
     except Exception:
         pass
+    # r797+: TASK 1 proprietary H.264/AAC codec limbs — wired through the same self-eval
+    # path as other body lanes (not HTML garnish only). Food=data, air=electricity;
+    # probe disk + ledgers before claiming green.
+    codec_env = _STATE / "qt_webengine_proprietary_codecs.env"
+    codec_ledger = _STATE / "media_codec_bridge.jsonl"
+    if codec_env.exists() or codec_ledger.exists():
+        try:
+            from System.swarm_media_codec_bridge import proprietary_codec_limb_eval
+
+            codec_eval = proprietary_codec_limb_eval(state_dir=_STATE)
+            counts = codec_eval.get("counts", {}) if isinstance(codec_eval.get("counts"), dict) else {}
+            red_n = int(counts.get("RED") or 0)
+            yellow_n = int(counts.get("YELLOW") or 0)
+            if red_n:
+                cluster_status, cluster_score = "RED", 0.22
+            elif yellow_n:
+                cluster_status, cluster_score = "YELLOW", 0.58
+            else:
+                cluster_status, cluster_score = "GREEN", 0.9
+            organs.append({
+                "name": "TASK 1 Media Codec Bridge / Proprietary QtWebEngine H.264+AAC (Alice Browser limbs)",
+                "status": cluster_status,
+                "score": cluster_score,
+                "age": "live",
+                "module": "System/swarm_media_codec_bridge.py + scripts/launch_sifta_codec_qt.sh + media_codec_bridge.jsonl",
+                "red": cluster_status == "RED",
+                "yellow": cluster_status == "YELLOW",
+                "raw": (
+                    f"proprietary_codec_limb_eval: {counts.get('GREEN', 0)} green / "
+                    f"{counts.get('YELLOW', 0)} yellow / {counts.get('RED', 0)} red; "
+                    f"prefix={codec_eval.get('install_prefix', '')}; "
+                    f"{codec_eval.get('claim_boundary', '')}"
+                ),
+            })
+            for lane in codec_eval.get("lanes", []):
+                if not isinstance(lane, dict):
+                    continue
+                light = str(lane.get("light") or "YELLOW").upper()
+                organs.append({
+                    "name": f"Codec limb — {lane.get('name', 'unknown')}",
+                    "status": light,
+                    "score": 0.88 if light == "GREEN" else 0.58 if light == "YELLOW" else 0.22,
+                    "age": "live",
+                    "module": "swarm_media_codec_bridge.proprietary_codec_limb_eval",
+                    "red": bool(lane.get("red")),
+                    "yellow": bool(lane.get("yellow")),
+                    "raw": (
+                        f"{lane.get('evidence', '')} | swimmer: {lane.get('swimmer_action', '')} | "
+                        f"truth={lane.get('truth_label', 'OBSERVED')}"
+                    ),
+                })
+        except Exception:
+            pass
     for o in organs:
         o.setdefault("yellow", str(o.get("status", "")).upper().startswith("YELLOW"))
     red = [o for o in organs if o["red"]]

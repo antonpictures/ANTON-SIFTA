@@ -9,6 +9,8 @@ Bills STGM.
 
 import hashlib
 import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 import difflib
@@ -47,13 +49,36 @@ def _is_denied(path: str) -> bool:
             return True
     return False
 
+def _read_pdf_text(path: str):
+    pdftotext = shutil.which("pdftotext")
+    if not pdftotext:
+        return None, "pdftotext_not_available"
+    try:
+        proc = subprocess.run(
+            [pdftotext, "-layout", "-enc", "UTF-8", path, "-"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as e:
+        return None, str(e)[:200]
+    if proc.returncode != 0:
+        return None, (proc.stderr or proc.stdout or f"pdftotext exit {proc.returncode}")[:200]
+    return proc.stdout, ""
+
 def read_file(path: str):
     if _is_denied(path):
         receipt = {"type": "FILE_REFUSED", "path": path, "reason": "denied_path"}
         _append_receipt(receipt)
         return receipt
     try:
-        content = Path(path).read_text()
+        if Path(path).suffix.lower() == ".pdf":
+            content, error = _read_pdf_text(path)
+            if content is None:
+                raise RuntimeError(error or "pdf_text_extract_failed")
+        else:
+            content = Path(path).read_text()
         receipt = {"type": "FILE_READ", "path": path, "size_bytes": len(content), "content_preview": content[:500]}
         _append_receipt(receipt)
         return {"content": content, "receipt_hash": receipt["hash"]}

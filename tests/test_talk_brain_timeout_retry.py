@@ -121,6 +121,40 @@ def test_ollama_stream_timeout_failure_is_not_reported_as_crash(monkeypatch):
     assert "Brain crashed" not in failed[0]
 
 
+def test_no_token_watchdog_bounds_local_cortex_wait(monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+
+    assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 180.0
+    assert talk._brain_no_token_watchdog_s(model="alice-m5-cortex-8b-6.3gb:latest") == 180.0
+
+
+def test_no_token_watchdog_covers_cloud_and_agent_cortexes(monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+
+    for model in (
+        "grok:grok-4.3",
+        "claude:claude-code-cli-default",
+        "codex:gpt-5.5",
+        "qwen:accounts/fireworks/models/kimi-k2p6",
+        "cline:cline-cli-default",
+    ):
+        assert talk._brain_no_token_watchdog_s(model=model) == 150.0
+
+
+def test_no_token_watchdog_env_override_is_clamped(monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    monkeypatch.setenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", "9")
+    assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 30.0
+
+    monkeypatch.setenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", "9000")
+    assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 600.0
+
+
 def test_ollama_failover_uses_next_model_when_primary_empty(monkeypatch):
     from Applications import sifta_talk_to_alice_widget as talk
 

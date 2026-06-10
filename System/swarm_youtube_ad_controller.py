@@ -16,6 +16,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER = "youtube_ad_controller.jsonl"
 TRUTH_LABEL = "YOUTUBE_AD_CONTROLLER_V1"
+SKIP_EFFECT_VERIFY_DELAY_S = 1.5
+SKIP_SELECTORS = (
+    ".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, "
+    'button[class*="ytp-skip-ad"], button[class*="ytp-ad-skip"], [aria-label*="Skip" i]'
+)
 
 # Future scaffold only. Network cancellation is higher ToS/playback risk and
 # must be owner-enabled explicitly; the default lane is detect + visible skip/mute.
@@ -79,6 +84,55 @@ def decide_youtube_ad_action(ad_state: Mapping[str, Any] | None) -> dict[str, An
     }
 
 
+def ad_probe_indicates_cleared(probe_state: Mapping[str, Any] | None) -> bool:
+    """True when a post-click probe shows the YouTube ad overlay is gone."""
+    state = dict(probe_state or {})
+    return not bool(state.get("detected"))
+
+
+def enrich_skip_effect(
+    effect: Mapping[str, Any] | None,
+    *,
+    method: str,
+    effect_verified: bool | None = None,
+    ad_cleared_ms: float | None = None,
+    verification_pass: int | None = None,
+) -> dict[str, Any]:
+    """Attach honest §6 verification fields to a skip attempt receipt."""
+    from System.swarm_effect_verified_action import enrich_effect
+
+    row = enrich_effect(
+        effect,
+        method=method,
+        effect_verified=effect_verified,
+        effect_cleared_ms=ad_cleared_ms,
+        verification_pass=verification_pass,
+        organ="youtube_ad_controller",
+        action="skip",
+    )
+    if ad_cleared_ms is not None:
+        row["ad_cleared_ms"] = row.get("effect_cleared_ms")
+    return row
+
+
+def is_phantom_skip_receipt(row: Mapping[str, Any] | None) -> bool:
+    """A skip row that claims click success without effect verification."""
+    from System.swarm_effect_verified_action import is_phantom_effect_receipt
+
+    if not isinstance(row, Mapping):
+        return False
+    effect = row.get("effect")
+    if not isinstance(effect, Mapping):
+        return False
+    decision = row.get("decision")
+    action = ""
+    if isinstance(decision, Mapping):
+        action = str(decision.get("action") or "")
+    if action != "skip" and str(effect.get("action") or "") != "skip":
+        return False
+    return is_phantom_effect_receipt(row)
+
+
 def record_youtube_ad_action(
     *,
     ad_state: Mapping[str, Any] | None,
@@ -109,6 +163,11 @@ __all__ = [
     "TRUTH_LABEL",
     "LEDGER",
     "REQUEST_BLOCKING_DEFAULT_ENABLED",
+    "SKIP_EFFECT_VERIFY_DELAY_S",
+    "SKIP_SELECTORS",
+    "ad_probe_indicates_cleared",
     "decide_youtube_ad_action",
+    "enrich_skip_effect",
+    "is_phantom_skip_receipt",
     "record_youtube_ad_action",
 ]

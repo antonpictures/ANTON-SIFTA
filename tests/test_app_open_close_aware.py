@@ -78,6 +78,22 @@ def test_awareness_status_query():
     assert _kind_name("what apps are open") == ("app_status", "")
     assert _kind_name("which apps are running") == ("app_status", "")
     assert _kind_name("what's open right now") == ("app_status", "")
+    assert _kind_name("right now i have the bonsai app open look") == ("app_status", "")
+    assert _kind_name("At least I will be able to tell me what app I have opened right now.") == ("app_status", "")
+
+
+def test_app_status_sentence_separates_app_slot_from_browser_page():
+    reply = tw._app_status_sentence(
+        {
+            "desktop_mode": "launcher",
+            "active_app": "Bonsai Image Studio (AI Vision)",
+            "open_apps": ["Bonsai Image Studio (AI Vision)"],
+        }
+    )
+
+    assert "Bonsai Image Studio (AI Vision) is the active SIFTA app" in reply
+    assert "not a web page" in reply
+    assert "Browser page-state receipts are separate" in reply
 
 
 def test_conversation_and_negation_do_not_misfire():

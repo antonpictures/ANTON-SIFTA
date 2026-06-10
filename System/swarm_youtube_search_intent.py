@@ -143,6 +143,94 @@ def youtube_results_url(query: str) -> str:
     return "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus((query or "").strip())
 
 
+_POST_CORTEX_YOUTUBE_ACTION_RE = re.compile(
+    r"\b(?:search|find|look\s+for|open|play|watch|load|execute|try\s+again)\b",
+    re.IGNORECASE,
+)
+
+_POST_CORTEX_EXACT_TITLE_RE = re.compile(
+    r"\bSearch\s+exact\s+title:\s*`([^`]{4,220})`",
+    re.IGNORECASE,
+)
+
+_POST_CORTEX_WANTED_TARGET_RE = re.compile(
+    r"\b(?:wanted|desired)\s+target\s+was\s*`([^`]{4,220})`",
+    re.IGNORECASE,
+)
+
+_POST_CORTEX_SUGGESTED_COMMAND_RE = re.compile(
+    r"`?\s*Alice,\s*search\s+YouTube\s+for\s+(.{4,220}?)\s+and\s+play"
+    r"(?:\s+the\s+official\s+video)?\.?\s*`?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _clean_post_cortex_query(query: str) -> str:
+    q = " ".join((query or "").strip().split())
+    q = q.strip(" `\"'\t\r\n,.;")
+    q = re.sub(
+        r"\s+and\s+play(?:\s+the\s+official\s+video)?\.?$",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    ).strip(" `\"'\t\r\n,.;")
+    return q[:160]
+
+
+def _post_cortex_youtube_query_from_brain(brain_text: str) -> str:
+    text = brain_text or ""
+    for pattern in (
+        _POST_CORTEX_EXACT_TITLE_RE,
+        _POST_CORTEX_WANTED_TARGET_RE,
+        _POST_CORTEX_SUGGESTED_COMMAND_RE,
+    ):
+        m = pattern.search(text)
+        if m:
+            q = _clean_post_cortex_query(m.group(1))
+            if q and not is_bogus_search_query(q):
+                return q
+
+    for q in re.findall(r"`([^`]{4,220})`", text):
+        q = _clean_post_cortex_query(q)
+        if not q or is_bogus_search_query(q):
+            continue
+        lowered = q.casefold()
+        if (
+            "official music video" in lowered
+            or "official video" in lowered
+            or "music video" in lowered
+            or "youtube" in lowered
+        ):
+            return q
+    return ""
+
+
+def synthesize_post_cortex_youtube_bridge(owner_context: str, brain_text: str) -> Dict[str, object]:
+    """Return a grounded YouTube browser action when the cortex planned one but
+    emitted no tool call.
+
+    This is deliberately post-cortex and narrow. The owner context must already
+    name YouTube and an action/retry, and the cortex text must name a concrete
+    target. The caller still owns the real Alice Browser effector and receipt.
+    """
+    owner = _YOUTUBE_STT_ALIASES.sub("youtube", owner_context or "")
+    if "youtube" not in owner.casefold():
+        return {"should_bridge": False, "query": "", "url": "", "reason": "owner_context_not_youtube"}
+    if not _POST_CORTEX_YOUTUBE_ACTION_RE.search(owner):
+        return {"should_bridge": False, "query": "", "url": "", "reason": "owner_context_no_action"}
+    query = _post_cortex_youtube_query_from_brain(brain_text or "")
+    if not query:
+        return {"should_bridge": False, "query": "", "url": "", "reason": "brain_named_no_concrete_target"}
+    if is_bogus_search_query(query):
+        return {"should_bridge": False, "query": "", "url": "", "reason": "bogus_query"}
+    return {
+        "should_bridge": True,
+        "query": query,
+        "url": youtube_results_url(query),
+        "reason": "post_cortex_named_youtube_target_no_tool_call",
+    }
+
+
 # r356 (George 2026-06-02): the local cortex sometimes emits a JSON/format token instead of
 # the owner's subject — "instead of searching for the requested subject you searched 'json'". A search effector
 # must NEVER fire on a structural/format token: that is the cortex's output plumbing leaking into
@@ -174,4 +262,9 @@ def is_bogus_search_query(query: str) -> bool:
     return False
 
 
-__all__ = ["parse_explicit_youtube_search", "youtube_results_url", "is_bogus_search_query"]
+__all__ = [
+    "parse_explicit_youtube_search",
+    "youtube_results_url",
+    "is_bogus_search_query",
+    "synthesize_post_cortex_youtube_bridge",
+]

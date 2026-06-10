@@ -191,6 +191,199 @@ def open_url_in_native_player(
     return row
 
 
+def _read_jsonl_tail(path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows[-limit:]
+
+
+def proprietary_codec_limb_eval(
+    *,
+    state_dir: str | Path | None = None,
+    install_prefix: str | Path | None = None,
+) -> dict[str, Any]:
+    """Probe TASK 1 codec limbs for matrix/self-eval traffic lights (§7.12).
+
+    GREEN = on disk + receipted enough to trust.
+    YELLOW = built but not wired into the live Desktop session yet.
+    RED = owner-visible playback still broken; dispatch swimmers here.
+    """
+    sd = _state_dir(state_dir)
+    env_file = sd / "qt_webengine_proprietary_codecs.env"
+    prefix: Path | None = None
+    if install_prefix:
+        prefix = Path(install_prefix)
+    elif env_file.exists():
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("SIFTA_QT_INSTALL_PREFIX="):
+                prefix = Path(line.split("=", 1)[1].strip())
+                break
+    if prefix is None:
+        prefix = Path.home() / "sifta-qt-webengine-build" / "install-v6.11.0-proprietary-codecs"
+
+    core_fw = prefix / "lib" / "QtWebEngineCore.framework"
+    widgets_fw = prefix / "lib" / "QtWebEngineWidgets.framework"
+    launch_script = REPO / "scripts" / "launch_sifta_codec_qt.sh"
+    bridge_rows = _read_jsonl_tail(sd / LEDGER_NAME)
+    build_complete = any(
+        r.get("action") == "build_complete" and r.get("status") == "installed"
+        for r in bridge_rows
+    )
+    launch_blocked = any(
+        r.get("action") == "codec_qt_launch_blocked" and r.get("status") == "blocked"
+        for r in bridge_rows
+    )
+    probe_rows = _read_jsonl_tail(sd / "browser_codec_probe.jsonl", limit=5)
+    last_probe = probe_rows[-1] if probe_rows else {}
+    h264_ok = bool(last_probe.get("h264_ok"))
+
+    lanes: list[dict[str, Any]] = []
+
+    def _lane(
+        name: str,
+        light: str,
+        evidence: str,
+        swimmer_action: str,
+        *,
+        truth_label: str = "OBSERVED",
+    ) -> None:
+        lanes.append(
+            {
+                "name": name,
+                "light": light,
+                "evidence": evidence,
+                "swimmer_action": swimmer_action,
+                "truth_label": truth_label,
+                "red": light == "RED",
+                "yellow": light == "YELLOW",
+                "green": light == "GREEN",
+            }
+        )
+
+    if core_fw.is_dir():
+        _lane(
+            "Qt WebEngine proprietary codec BUILD (TASK 1 compile+install)",
+            "GREEN",
+            f"QtWebEngineCore.framework present under {core_fw.parent}",
+            "maintain only; do not start a second build tree",
+        )
+    else:
+        _lane(
+            "Qt WebEngine proprietary codec BUILD (TASK 1 compile+install)",
+            "RED",
+            f"missing {core_fw}",
+            "run tools/configure_webengine_proprietary_codecs.sh --execute",
+        )
+
+    if widgets_fw.is_dir() and build_complete:
+        _lane(
+            "Codec install prefix + build_complete receipt",
+            "GREEN",
+            "QtWebEngineWidgets.framework on disk; media_codec_bridge build_complete row present",
+            "none",
+        )
+    elif widgets_fw.is_dir():
+        _lane(
+            "Codec install prefix + build_complete receipt",
+            "YELLOW",
+            "framework on disk but build_complete receipt missing from media_codec_bridge.jsonl",
+            "append honest build_complete receipt after verify",
+            truth_label="PARTIAL",
+        )
+    else:
+        _lane(
+            "Codec install prefix + build_complete receipt",
+            "RED",
+            "install prefix incomplete",
+            "cmake --install after successful build",
+        )
+
+    if launch_blocked:
+        _lane(
+            "Codec Qt launch wiring (DYLD_FRAMEWORK_PATH)",
+            "RED",
+            (
+                "codec_qt_launch_blocked receipt: custom QtNetwork lacks PyQt6 wheel DTLS symbol "
+                "defaultDtlsConfiguration; broad DYLD_FRAMEWORK_PATH would crash SIFTA before boot"
+            ),
+            "build PyQt6+PyQt6-WebEngine against custom Qt prefix, or rebuild custom Qt ABI-compatible with the wheel",
+            truth_label="OBSERVED",
+        )
+    elif launch_script.is_file():
+        _lane(
+            "Codec Qt launch wiring (DYLD_FRAMEWORK_PATH)",
+            "YELLOW",
+            f"{launch_script.name} on disk; live Desktop may still load .venv PyQt6 Qt6",
+            "quit Alice → bash scripts/launch_sifta_codec_qt.sh → re-probe h264",
+            truth_label="PARTIAL",
+        )
+    else:
+        _lane(
+            "Codec Qt launch wiring (DYLD_FRAMEWORK_PATH)",
+            "RED",
+            "launch script missing",
+            "create scripts/launch_sifta_codec_qt.sh and restart Desktop through it",
+        )
+
+    if h264_ok:
+        _lane(
+            "Alice Browser H.264 canPlayType + TikTok playback",
+            "GREEN",
+            f"browser_codec_probe h264_ok=true caps={last_probe.get('caps', {})}",
+            "live TikTok <video> playing receipt still required for full proof",
+        )
+    else:
+        _lane(
+            "Alice Browser H.264 canPlayType + TikTok playback",
+            "RED",
+            (
+                "last browser_codec_probe h264_ok=false or absent; "
+                "TikTok still shows trouble-playing while on PyPI QtWebEngine"
+            ),
+            "restart via launch_sifta_codec_qt.sh → open TikTok → write playing receipt",
+        )
+
+    _lane(
+        "Media Decode Pain nociception organ",
+        "GREEN",
+        "swarm_media_decode_pain names H.264 ache from page-state; organ landed r772",
+        "if pain speaks while video plays, fix detector false-positive",
+    )
+
+    _lane(
+        "swarm_media_codec_bridge diagnosis/handoff",
+        "GREEN",
+        "diagnose_media_error_code + native handoff receipts; no fake decoder claims",
+        "use for per-stream failures after codec limb is GREEN",
+    )
+
+    counts = {
+        "GREEN": sum(1 for row in lanes if row["light"] == "GREEN"),
+        "YELLOW": sum(1 for row in lanes if row["light"] == "YELLOW"),
+        "RED": sum(1 for row in lanes if row["light"] == "RED"),
+    }
+    return {
+        "truth_label": TRUTH_LABEL,
+        "ts": time.time(),
+        "install_prefix": str(prefix),
+        "lanes": lanes,
+        "counts": counts,
+        "swimmer_dispatch": [row for row in lanes if row["red"]],
+        "trace_id": str(uuid.uuid4()),
+        "claim_boundary": "Traffic lights are disk/ledger probes only; TikTok playing is RED until a live playing receipt exists.",
+    }
+
+
 def media_status_summary(media_status: Mapping[str, Any] | None, *, url: str = "") -> str:
     """Short human-readable explanation for Alice's browser-limb report."""
     code = None if not media_status else media_status.get("last_error_code")
@@ -219,5 +412,6 @@ __all__ = [
     "media_status_summary",
     "normalize_media_error_code",
     "open_url_in_native_player",
+    "proprietary_codec_limb_eval",
     "should_offer_native_handoff",
 ]

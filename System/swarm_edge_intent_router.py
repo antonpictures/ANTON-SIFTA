@@ -127,6 +127,32 @@ def _recent_app_focus() -> str:
         pass
     return ""
 
+def _explicit_tool_call_name(text: str) -> str:
+    match = re.search(r"\[TOOL_CALL:\s*([A-Za-z0-9_]+)\b", text or "", re.I)
+    if match:
+        return match.group(1)
+    match = re.search(r"```tool_call\s*[\r\n]+([A-Za-z0-9_]+)\b", text or "", re.I)
+    return match.group(1) if match else ""
+
+def _is_browser_close_tab_command(text: str) -> bool:
+    clean = " ".join((text or "").split())
+    if not clean:
+        return False
+    low = clean.lower()
+    if _explicit_tool_call_name(clean) == "browser_close_tab":
+        return True
+    if re.search(r"\bbrowser_close_tab\b", clean, re.I):
+        return True
+    if re.match(r"^\s*(?:what|why|how|when)\b", low):
+        return False
+    if re.search(r"\blearn(?:s|ing)?\s+to\s+close\b", low) and " now" not in low:
+        return False
+    return bool(
+        re.search(r"\b(?:close|shut|remove|kill)\b", clean, re.I)
+        and re.search(r"\b(?:tab|tabs)\b", clean, re.I)
+        and re.search(r"\b(?:browser|alice\s+browser|jama|jamasoftware|youtube|duplicate|useless|tab|tabs)\b", clean, re.I)
+    )
+
 def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, write_receipt: bool = True) -> Dict[str, Any]:
     """
     Immune gate: Talk/STT turn → permission decision.
@@ -140,6 +166,33 @@ def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, 
     original = (raw_turn or "").strip()
     if not original:
         dec = {"lane": "chat", "target": "", "may_effector": False, "confidence": 0.0, "repaired": None, "reason": "empty"}
+        dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
+        return dec
+
+    explicit_tool = _explicit_tool_call_name(original)
+    if explicit_tool:
+        spec = TOOL_REGISTRY.get(explicit_tool)
+        may = True if spec is None else bool(getattr(spec, "write_action", False))
+        dec = {
+            "lane": "tool",
+            "target": explicit_tool,
+            "may_effector": may,
+            "confidence": 0.99,
+            "repaired": original,
+            "reason": "explicit_tool_call_pre_repair",
+        }
+        dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
+        return dec
+
+    if _is_browser_close_tab_command(original):
+        dec = {
+            "lane": "tool",
+            "target": "browser_close_tab",
+            "may_effector": True,
+            "confidence": 0.97,
+            "repaired": original,
+            "reason": "browser_close_tab_owner_command_pre_repair",
+        }
         dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
         return dec
 
@@ -183,14 +236,33 @@ def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, 
             dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
             return dec
 
+    if re.match(r"^\s*(?:what|why|how|when)\b", norm) and (
+        re.search(r"\blearn(?:s|ing)?\s+to\s+close\b", norm)
+        or not re.search(
+        r"\b(?:open|launch|start|run|close|shut|remove|kill)\s+(?:the\s+)?[A-Z]?\w+",
+        original,
+        re.I,
+        )
+    ):
+        dec = {
+            "lane": "chat",
+            "target": "",
+            "may_effector": False,
+            "confidence": 0.82,
+            "repaired": repaired if repair_conf > 0.6 else None,
+            "reason": "question_guard_before_app_open",
+        }
+        dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
+        return dec
+
     # 2. Hard app open (open_app lane) — guarded against skill phrases and bare vocatives
     skill_phrases = ("skill", "extract", "pull", "hermes", "trace")
     apps = _load_manifest_apps()
     current_app = _recent_app_focus() or context.get("current_app", "")
     if not any(p in norm for p in skill_phrases):
-        for app in apps:
+        for app in sorted(apps, key=lambda item: len(str(item)), reverse=True):
             an = app.lower()
-            if an in norm or (current_app and an in current_app.lower() and ("open" in norm or "launch" in norm or "ace" in norm)):
+            if an in norm:
                 dec = {
                     "lane": "open_app",
                     "target": app,
@@ -201,6 +273,17 @@ def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, 
                 }
                 dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
                 return dec
+        if current_app and re.search(r"\b(?:open|launch)\b", norm):
+            dec = {
+                "lane": "open_app",
+                "target": current_app,
+                "may_effector": True,
+                "confidence": max(0.85, repair_conf),
+                "repaired": repaired,
+                "reason": f"app_focus_fallback={current_app}",
+            }
+            dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
+            return dec
 
     # 3. Explicit tool verbs → tool lane (may_effector per registry)
     tool_verbs = {"run", "exec", "shell", "read", "cat", "list", "ls", "search", "find", "fetch", "write", "send", "open"}
@@ -247,6 +330,7 @@ EVAL_CASES: List[Tuple[str, str, str, bool]] = [
     ("send whatsapp to george test message", "tool", "send_whatsapp", True),
     ("what is the weather", "chat", "", False),
     ("search for stigmergy papers", "tool", "search_web", False),
+    ("close the two Jama Software tabs", "tool", "browser_close_tab", True),
     ("use the read file tool on README", "tool", "read_file", False),
     ("play the ace reading game with the kid", "open_app", "Ace", True),
     ("extract a skill from recent trace", "skill", "skill_extract_from_trace", False),

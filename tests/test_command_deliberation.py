@@ -17,6 +17,7 @@ def test_plan_prompt_carries_owner_words_and_real_hands():
                             page_state={"url": "https://youtube.com", "title": "YouTube"})
     assert "open youtube and look up the matrix trailer" in p  # verbatim, not keyword-matched
     assert "youtube_search(query)" in p and "open_video_result" in p  # her real hands offered
+    assert "browser_close_tab" in p
     assert "EXACT words" in p  # the anti-injection instruction
 
 
@@ -49,6 +50,23 @@ def test_missing_required_arg_is_rejected():
     assert any("youtube_search_missing:query" in e for e in out["errors"])
 
 
+def test_browser_close_tab_plan_requires_a_selector():
+    ok = d.parse_plan(
+        '{"intent":"close Jama tabs","steps":[{"action":"browser_close_tab",'
+        '"args":{"url_match":"jamasoftware.com","keep_active":false},"why":"owner asked"}],'
+        '"speak":"Closing Jama tabs."}'
+    )
+    assert ok["ok"] is True
+    assert ok["steps"][0]["action"] == "browser_close_tab"
+
+    bad = d.parse_plan(
+        '{"intent":"close tabs","steps":[{"action":"browser_close_tab","args":{},'
+        '"why":"no selector"}],"speak":""}'
+    )
+    assert bad["ok"] is False
+    assert any("browser_close_tab_missing" in e for e in bad["errors"])
+
+
 def test_no_json_is_not_ok():
     assert d.parse_plan("I will open youtube for you.")["ok"] is False
 
@@ -57,6 +75,7 @@ def test_fast_path_miss_triggers_thinking_not_blind_default():
     # The exact failure class: a real command the regex missed → think, do not guess a default.
     assert d.needs_deliberation("open youtube and look up nvidia keynote", fast_path_decided=False) is True
     assert d.needs_deliberation("go to youtube.com, find me the matrix trailer", fast_path_decided=False) is True
+    assert d.needs_deliberation("close the two Jama Software tabs", fast_path_decided=False) is True
     # When the confident fast-path already decided, don't burn a cortex turn.
     assert d.needs_deliberation("search youtube for cats", fast_path_decided=True) is False
     # Idle chatter with no command verb does not force a plan.

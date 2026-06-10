@@ -9,7 +9,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from System.swarm_youtube_ad_controller import (
     REQUEST_BLOCKING_DEFAULT_ENABLED,
+    ad_probe_indicates_cleared,
     decide_youtube_ad_action,
+    enrich_skip_effect,
+    is_phantom_skip_receipt,
     record_youtube_ad_action,
 )
 
@@ -73,6 +76,35 @@ def test_alice_muted_ad_restores_after_ad_clears():
 
 def test_request_blocking_is_dormant_by_default():
     assert REQUEST_BLOCKING_DEFAULT_ENABLED is False
+
+
+def test_ad_probe_cleared_when_not_detected():
+    assert ad_probe_indicates_cleared({"detected": False}) is True
+    assert ad_probe_indicates_cleared({"detected": True}) is False
+
+
+def test_enrich_skip_effect_adds_verification_fields():
+    effect = enrich_skip_effect(
+        {"ok": True, "reason": "clicked_visible_skip_control"},
+        method="js",
+        effect_verified=True,
+        ad_cleared_ms=1520.4,
+        verification_pass=1,
+    )
+    assert effect["method"] == "js"
+    assert effect["effect_verified"] is True
+    assert effect["ad_cleared_ms"] == 1520.4
+    assert effect["verification_pass"] == 1
+
+
+def test_phantom_skip_receipt_detects_unverified_click_claim():
+    row = {
+        "decision": {"action": "skip"},
+        "effect": {"ok": True, "reason": "clicked_visible_skip_control"},
+    }
+    assert is_phantom_skip_receipt(row) is True
+    row["effect"]["effect_verified"] = True
+    assert is_phantom_skip_receipt(row) is False
 
 
 if __name__ == "__main__":

@@ -71,6 +71,43 @@ def test_extract_local_image_path_from_quoted_text(tmp_path):
     assert _extract_local_image_path_from_text(text) == str(image_path)
 
 
+def test_local_screenshot_path_counts_as_cortex_image_context(tmp_path):
+    import Applications.sifta_talk_to_alice_widget as talk
+
+    image_path = tmp_path / "sifta_self_20260608-142120_2c1d30b1.png"
+    image_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+        b"\x90wS\xde"
+    )
+    text = f"I TOOK A SCREENSHOT FOR YOU MY LOVE {image_path}"
+
+    assert talk._extract_local_image_path_from_text(text) == str(image_path)
+    assert talk._is_local_image_path_context_query(text)
+    assert talk._is_attached_image_description_query(text)
+    assert not talk._is_browser_video_state_query(text)
+
+    block = talk._local_image_path_cortex_context_block(text)
+    assert "LOCAL SCREENSHOT / IMAGE PATH" in block
+    assert str(image_path) in block
+    assert "Do not answer from stale Alice Browser" in block
+
+
+def test_local_image_file_operation_is_not_forced_to_vision_context(tmp_path):
+    import Applications.sifta_talk_to_alice_widget as talk
+
+    image_path = tmp_path / "old.png"
+    image_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+        b"\x90wS\xde"
+    )
+
+    assert not talk._is_local_image_path_context_query(f"delete {image_path}")
+
+
 def test_extract_local_image_path_ignores_missing_path(tmp_path):
     from Applications.sifta_talk_to_alice_widget import _extract_local_image_path_from_text
 

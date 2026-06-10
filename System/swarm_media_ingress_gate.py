@@ -914,6 +914,7 @@ def _classify_spoken_ingress_core(
             "reason": "voice_identity_george_bypasses_media_gate",
             "confidence": max(0.90, min(1.0, float(voice_george_conf))),
         }
+
     context = "\n".join(
         x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
     )
@@ -923,6 +924,41 @@ def _classify_spoken_ingress_core(
         own_browser_playing, own_browser_details = is_my_own_browser_playback(state_dir=STATE_DIR)
     except Exception:
         own_browser_playing, own_browser_details = False, {"reason": "own_browser_probe_failed"}
+
+    # r874 P1-A/P1-B: playback audio is body output; foreign "Alice" in media ≠ SIFTA Alice.
+    if own_browser_playing and not (stt_conf and stt_conf >= 1.0):
+        paused_owner = bool(
+            re.search(
+                r"\b(?:i\s+paused|paused\s+youtube|paused\s+the\s+video|typing\s+now|i\s+type\s+now)\b",
+                clean,
+                re.IGNORECASE,
+            )
+        )
+        foreign_alice_wake = bool(
+            re.search(r"\bhey\s+alice\b", clean, re.IGNORECASE)
+            and not re.search(r"\b(?:george|ioan)\b", clean, re.IGNORECASE)
+            and (voice_george_conf or 0.0) < 0.55
+        )
+        if foreign_alice_wake:
+            return {
+                "route": "observed_media",
+                "reason": "foreign_alice_identity_bleed_in_playback",
+                "confidence": 0.93,
+                "own_browser": dict(own_browser_details) if isinstance(own_browser_details, Mapping) else {},
+            }
+        if not paused_owner and (voice_george_conf or 0.0) < 0.60:
+            if not (
+                DIRECT_ADDRESS_RE.search(clean)
+                and (voice_george_conf or 0.0) >= 0.50
+                and acoustic_cue == "nearfield_voice_likely"
+            ):
+                return {
+                    "route": "observed_media",
+                    "reason": "my_own_browser_playback_suppresses_owner_stt",
+                    "confidence": 0.92,
+                    "own_browser": dict(own_browser_details) if isinstance(own_browser_details, Mapping) else {},
+                }
+
     foreign_frontmost_browser = bool(
         re.search(
             r"\b(?:current\s+app|frontmost_app)\s*[:=]\s*(?:safari|chrome|google\s+chrome|firefox|arc|brave|edge)\b",

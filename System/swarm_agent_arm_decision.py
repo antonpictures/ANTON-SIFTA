@@ -256,9 +256,15 @@ def agent_arm_decision_for_turn(
         state_dir=state_dir,
         owner_intent_explicit=explicit_arm is not None,
     )
+    from System.swarm_swimmer_task_packet import (
+        build_task_packet_from_arm_dispatch,
+        render_swimmer_task_prompt,
+        write_task_packet_ledger,
+    )
+
     if explicit_arm and code_match and arm_id == explicit_arm:
-        prompt = (
-            "Alice-owned SIFTA app/build delegation. Do not speak as Alice. "
+        owner_task = (
+            "Alice-owned SIFTA app/build delegation. "
             "Write real files in /Users/ioanganton/Music/ANTON_SIFTA if the task asks for code; "
             "do not only describe. After writing, run relevant compile/runtime/tests and print "
             "files written, compile result, runtime/test output, errors, and receipt. "
@@ -266,13 +272,24 @@ def agent_arm_decision_for_turn(
             + bounded
             + registry_context
         )
+        job = "sifta_build_delegation"
     else:
-        prompt = (
-            "Live arm action pass. Do not speak as Alice. Do useful work if the "
-            "task asks for it, then report the receipt, risks, and next step: "
+        owner_task = (
+            "Live arm action pass. Do useful work if the task asks for it, "
+            "then report the receipt, risks, and next step: "
             + bounded
             + registry_context
         )
+        job = "bounded_research_pass"
+
+    packet = build_task_packet_from_arm_dispatch(
+        arm_id=arm_id,
+        owner_task=owner_task,
+        job=job,
+        organ="agent_arms",
+    )
+    write_task_packet_ledger(packet, state_dir=state_dir, extra={"source": "agent_arm_decision"})
+    prompt = render_swimmer_task_prompt(packet)
     # Round 100 (2026-05-28): bumped from 150s to 300s for the heavy builder
     # arms (claude/codex/qwen/cline) after Alice's verified complaint that
     # codex+claude were timing out at 150s — receipts f8469daa, 2c636406,

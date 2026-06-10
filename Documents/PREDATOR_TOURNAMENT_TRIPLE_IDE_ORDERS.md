@@ -48,6 +48,21 @@
 | **Collision risk** | **MED** — 4 surfaces, dirty tree, paste-loop habit; drops to **LOW** if each IDE reads bus + respects locks |
 | **Next safe move** | **F (Cowork ingest merge):** **§0.1F** — Architect copies sandbox outputs → **one Surgeon** lands files + **`pytest`** on **this checkout** · **E (WordAce / Kole):** **§0.1C** · **A (distro)** · **C Jetson receipt** · **D §0.1A recall** |
 
+#### 0.1G — Live battlefield refresh — 2026-06-08T04:20:48-07:00
+
+| Field | Status |
+|:---|:---|
+| **Greeting / bus** | Good morning Cursor, Grok, Claude, Codex, and any live IDE hand. Codex deposited handoff `6a761665-1ffb-4977-82ba-acbcd1df6636` on `ide_stigmergic_trace.jsonl`. |
+| **Owner state** | George has not booted Alice yet after the decoder patches; IDE work continues on the M5 node before live Alice Browser verification. |
+| **Node / git** | M5 Foundry `GTH4921YP3`; `main` at `7b1631a2d`, ahead of origin by 2, dirty shared worktree. Do not assume a clean base. |
+| **Active lane** | **Cursor/Grok owns TASK 1 QtWebEngine proprietary-codec build.** Codex yields on `tools/configure_webengine_proprietary_codecs.sh`, `System/qt_webengine_bootstrap.py`, and `tests/test_qt_webengine_bootstrap.py` unless George explicitly reassigns. |
+| **Codex lane** | Documentation + cross-IDE coordination only this pass: update this battlefield block and tournament r783; no build-code mutation. |
+| **Observed build state** | `ninja` present at `/opt/homebrew/bin/ninja`; `python3` is `3.13.7`; `html5lib` present `1.1`; install prefix `/Users/ioanganton/sifta-qt-webengine-build/install-v6.11.0-proprietary-codecs` is `268M`; **no** `QtWebEngineCore.framework` found. |
+| **Configure truth** | `/Users/ioanganton/sifta-qt-webengine-build/qt-v6.11.0/config.summary` says `Build QtWebEngineCore: no`, `Build QtWebEngineWidgets: no`, `Build QtWebEngineQuick: no`; QtPdf modules built, but Alice Browser still lacks the Chromium proprietary-codec limb. |
+| **Receipts** | `.sifta_state/media_codec_bridge.jsonl` contains multiple `QTWEBENGINE_PROPRIETARY_CODEC_BUILD_V1` `build_failed` rows and later `build_start` rows. A prior "build_complete" must not be treated as success unless `QtWebEngineCore.framework` exists and TikTok `<video>` verifies live. |
+| **Current proof bar** | TASK 1 remains **OPEN**. Proof is: `QtWebEngineCore.framework` exists under the install prefix, SIFTA loads the codec-capable Qt binding, and TikTok plays in Alice Browser `<video>` without `DEMUXER_ERROR_NO_SUPPORTED_STREAMS`. |
+| **Collision rule** | One hand on the build. Other IDEs may inspect/read and leave bus notes, but should not patch the build script/bootstrap while Cursor is actively running it. |
+
 ### 0.1C — **INVESTOR BATTLE PLAN — WordAce × Kole × Ace × Carlton** *(Architect 2026-05-16 — **no investment if demo lies**)*
 
 **For the Swarm.** 🐜⚡ **Stakeholders (truth-labeled):**

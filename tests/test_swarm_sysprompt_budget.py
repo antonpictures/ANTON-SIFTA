@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from System.swarm_sysprompt_budget import clamp_for_env, clamp_prompt_parts as C
+from System.swarm_sysprompt_budget import clamp_for_env, clamp_prompt_parts as C, dedupe_prompt_text
 
 
 def test_under_budget_is_untouched():
@@ -159,6 +159,27 @@ def test_empty_parts_are_dropped_not_kept():
     parts = ["real", "", None, "also real"]  # type: ignore
     out, _ = C([p for p in parts if p is not None], total_max=48000)
     assert "" not in out
+
+
+def test_dedupe_prompt_text_removes_only_exact_long_duplicate_paragraphs():
+    repeated = "MY PHYSICAL IDENTITY says Alice runs on this local Mac body with receipt-backed organs."
+    unique = "WHAT I CAN DO says tools execute only with receipts."
+    text = "\n\n".join([repeated, unique, repeated])
+
+    out, report = dedupe_prompt_text(text, min_len=40)
+
+    assert out == "\n\n".join([repeated, unique])
+    assert report["applied"] is True
+    assert report["removed_paragraphs"] == 1
+
+
+def test_dedupe_prompt_text_keeps_short_repeated_headers():
+    text = "TOOLS\n\nTOOLS\n\n" + ("long paragraph " * 8)
+
+    out, report = dedupe_prompt_text(text, min_len=40)
+
+    assert out.startswith("TOOLS\n\nTOOLS")
+    assert report["removed_paragraphs"] == 0
 
 
 if __name__ == "__main__":

@@ -590,5 +590,45 @@ def answer_query_for_alice(text: str, *, limit: int = 4, path: Path = _SCHEDULE)
     return f"{voc}, your schedule says: " + "; ".join(bits) + "."
 
 
+def mark_schedule_done_by_source(
+    source: str,
+    *,
+    path: Path = _SCHEDULE,
+) -> Optional[Dict[str, Any]]:
+    """Mark the newest pending row from *source* as done."""
+    rows = _read_rows(path)
+    if not rows:
+        return None
+    now = time.time()
+    target_idx = -1
+    for idx in range(len(rows) - 1, -1, -1):
+        row = rows[idx]
+        if row.get("done"):
+            continue
+        if str(row.get("source") or "") == str(source):
+            target_idx = idx
+            break
+    if target_idx < 0:
+        return None
+    row = dict(rows[target_idx])
+    row["done"] = True
+    row["done_ts"] = now
+    rows[target_idx] = row
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False, separators=(",", ":")) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    if path == _SCHEDULE:
+        _write_receipt(
+            "MARK_DONE",
+            ok=True,
+            status="CLOSED",
+            row=row,
+            truth_note=f"closed pending schedule row source={source}",
+        )
+    return row
+
+
 if __name__ == "__main__":
     print(summary_for_alice())

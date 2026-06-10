@@ -66,6 +66,49 @@ def test_read_file_tool_phrase_routes_correctly():
     assert dec.get("target") == "read_file"
 
 
+def test_browser_close_tab_owner_command_routes_before_voice_repair():
+    dec = router.classify_intent(
+        "Alice — effector-only turn. Close the two Jama Software tabs now. "
+        "[TOOL_CALL: browser_close_tab | url_match=jamasoftware.com | keep_active=false]",
+        write_receipt=False,
+    )
+    assert dec["lane"] == "tool"
+    assert dec.get("target") == "browser_close_tab"
+    assert dec.get("may_effector") is True
+    assert dec.get("reason") == "explicit_tool_call_pre_repair"
+    assert "Close the two Jama" in (dec.get("repaired") or "")
+
+
+def test_natural_browser_close_tab_owner_command_routes_to_tool():
+    dec = router.classify_intent(
+        "close the two Jama Software tabs now and keep YouTube",
+        write_receipt=False,
+    )
+    assert dec["lane"] == "tool"
+    assert dec.get("target") == "browser_close_tab"
+    assert dec.get("may_effector") is True
+    assert dec.get("reason") == "browser_close_tab_owner_command_pre_repair"
+
+
+def test_openclaw_browser_close_tab_owner_command_routes_to_tool():
+    dec = router.classify_intent(
+        "close the two OPENCLAW TABS PLS",
+        write_receipt=False,
+    )
+    assert dec["lane"] == "tool"
+    assert dec.get("target") == "browser_close_tab"
+    assert dec.get("may_effector") is True
+
+
+def test_browser_tab_hygiene_question_stays_chat_not_tool():
+    dec = router.classify_intent(
+        "what does alice need to do so she learns to close alice browser tabs in general?",
+        write_receipt=False,
+    )
+    assert dec["lane"] == "chat"
+    assert dec.get("target") == ""
+
+
 def test_receipt_actually_inspects_dynamic_doctor(monkeypatch):
     """Codex point 5: actually capture and assert on the emitted receipt (doctor, lane, may_effector)."""
     captured = {}

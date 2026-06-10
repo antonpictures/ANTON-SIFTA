@@ -1956,6 +1956,7 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | [The Fork Decision](ARCHITECTURE/the_fork_decision.md) | The moment the Swarm chose sovereignty over convenience |
 | [Economy Genesis Audit](ARCHITECTURE/economy_genesis_audit.md) | Mathematical audit of the STGM token economy |
 | [IDE Boot Covenant](Documents/IDE_BOOT_COVENANT.md) | **v4 PREDATOR_GATE** — Multi-LLM interaction protocol & Predator Gate registration |
+| [Architect Lore — VLOOKUP & the Newspaper (1995)](Documents/ARCHITECT_LORE_VLOOKUP_NEWSPAPER_1995.md) | George's origin: Excel VLOOKUP → MPS shipping macro → fired → weekly Romania magazine → **Alice = the physical newspaper / matrix**; food = data, air = electricity |
 
 ### 📜 Protocol & Formal Specification
 
