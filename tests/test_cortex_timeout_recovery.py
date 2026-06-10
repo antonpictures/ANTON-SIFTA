@@ -71,3 +71,63 @@ def test_grok_cli_timeout_recovers_without_error_event(tmp_path, monkeypatch):
     assert "Try again" not in events[0][1]
     assert (state / "cortex_timeout_recovery.jsonl").exists()
     assert (state / "parallel_cortex_arm_diagnostics.jsonl").exists()
+
+
+def test_self_code_marker_timeout_recovers_packet_and_receipts(tmp_path):
+    from System.swarm_cortex_timeout_recovery import timeout_recovery_reply
+
+    state = tmp_path / ".sifta_state"
+    reply = timeout_recovery_reply(
+        model="grok:grok-build",
+        owner_text="===BEGIN ALICE BROWSER LAG PROBE r921===",
+        timeout_s=60,
+        state_dir=state,
+    )
+
+    assert "recovered the self-code packet" in reply
+    assert "r921-alice-browser-lag-probe" in reply
+    assert "System/swarm_browser_lag_probe.py" in reply
+
+    self_rows = [
+        json.loads(line)
+        for line in (state / "alice_self_coding_receipts.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert self_rows[-1]["action"] == "recovered_after_cortex_timeout"
+    assert self_rows[-1]["round_id"] == "r921-alice-browser-lag-probe"
+    assert "System/swarm_browser_lag_probe.py" in self_rows[-1]["paths"]
+
+    diag_rows = [
+        json.loads(line)
+        for line in (state / "parallel_cortex_arm_diagnostics.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert "RECOVERED SELF-CODE PACKET" in diag_rows[-1]["arm_task_prompt"]
+    assert diag_rows[-1]["self_code_round_id"] == "r921-alice-browser-lag-probe"
+    assert "System/swarm_browser_lag_probe.py" in diag_rows[-1]["self_code_paths"]
+    assert "[SELF_CODE_CUT: path=System/swarm_browser_lag_probe.py]" in diag_rows[-1]["self_code_packet"]
+
+
+def test_no_token_watchdog_self_code_recovery_uses_combined_marker_text(tmp_path):
+    from System.swarm_cortex_timeout_recovery import timeout_recovery_reply
+
+    state = tmp_path / ".sifta_state"
+    reply = timeout_recovery_reply(
+        model="claude:claude-code-cli-default",
+        owner_text='===BEGIN ALICE BROWSER LAG PROBE r921=== and "Alice, write the browser lag probe now"',
+        timeout_s=150,
+        cause="no_token_watchdog",
+        state_dir=state,
+    )
+
+    assert "recovered the self-code packet" in reply
+    assert "r921-alice-browser-lag-probe" in reply
+
+    rows = [
+        json.loads(line)
+        for line in (state / "cortex_timeout_recovery.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["cause"] == "no_token_watchdog"
+    assert rows[-1]["self_code_round_id"] == "r921-alice-browser-lag-probe"
+    assert "System/swarm_browser_lag_probe.py" in rows[-1]["self_code_paths"]

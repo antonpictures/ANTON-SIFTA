@@ -2140,6 +2140,15 @@ def _log_tool_fiction_guard(
         pass
 
 
+# r930: signatures of HER OWN honest recovery/body reports (built by
+# swarm_cortex_timeout_recovery.py, not by the cortex). These are receipts in
+# prose form — the fiction guard must never overwrite them.
+_HONEST_BODY_RECOVERY_RE = re.compile(
+    r"(?:\bcortex timed out after \d+s\b|\brecovery receipt [0-9a-f-]{8,}\b)",
+    re.IGNORECASE,
+)
+
+
 def _tool_fiction_guard_reply(user_text: str, brain_text: str) -> str:
     """Return a corrective reply when the brain simulates a tool without a tool call."""
     if not user_text or not brain_text:
@@ -2147,6 +2156,13 @@ def _tool_fiction_guard_reply(user_text: str, brain_text: str) -> str:
     if _has_explicit_tool_call(brain_text):
         return ""
     if not _ACTIONABLE_TOOL_REQUEST_RE.search(user_text):
+        return ""
+    # r930 (George 2026-06-10, r929 packet turn): a timeout-recovery report is
+    # body TRUTH, not tool fiction. The guard replaced "My grok-build cortex
+    # timed out after 60s ... recovery receipt c2b154e1" with the canned
+    # self-code line, hiding the real blocker from George. Honest body reports
+    # pass through untouched.
+    if _HONEST_BODY_RECOVERY_RE.search(brain_text):
         return ""
     try:
         from System.swarm_alice_self_coding_hand import is_owner_self_code_execute_request
@@ -34557,10 +34573,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         ):
             self._brain_watchdog_reported = True
             timeout_s = int(_brain_no_token_watchdog_s(model=model))
+            owner_text = str(getattr(self, "_current_owner_turn_text", "") or "")
+            recovery_reply = ""
+            try:
+                from System.swarm_cortex_timeout_recovery import timeout_recovery_reply
+
+                recovery_reply = timeout_recovery_reply(
+                    model=model,
+                    owner_text=owner_text,
+                    timeout_s=timeout_s,
+                    cause="no_token_watchdog",
+                )
+            except Exception as exc:
+                recovery_reply = ""
+                self._append_observable_processing(
+                    f"Cortex no-token recovery organ failed: {type(exc).__name__}: {exc}"
+                )
             msg = (
                 f"Cortex no-token watchdog: model={model} produced no first token "
-                f"after {elapsed}s (limit {timeout_s}s). I stopped this turn and "
-                "reported the cortex stall instead of leaving Alice stuck in thinking."
+                f"after {elapsed}s (limit {timeout_s}s). I stopped this stalled cortex "
+                "instead of leaving Alice stuck in thinking."
             )
             self._append_observable_processing(msg)
             brain = getattr(self, "_brain", None)
@@ -34578,7 +34610,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     brain.requestInterruption()
                 except Exception:
                     pass
-            self._on_brain_failed(msg)
+            if recovery_reply:
+                self._on_brain_done(recovery_reply)
+            else:
+                self._on_brain_failed(msg)
             return
         # r340: make the observable trace more informative for GROK OAUTH cases and less spammy.
         # Long waits on vision+reason tasks (e.g. "REASON AND DISPLAY <subject> BODY ON YOUR BODY")

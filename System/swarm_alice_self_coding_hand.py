@@ -27,6 +27,17 @@ _SELF_CUT_END_RE = re.compile(
     r"===END\s+ALICE(?:\s+FIRST\s+SELF[-\s]?CUT)?[^=]*===",
     re.IGNORECASE,
 )
+_BEGIN_MARKER_LINE_RE = re.compile(r"^\s*(===BEGIN\s+ALICE[^=\n]*===)\s*$", re.IGNORECASE | re.MULTILINE)
+
+_KNOWN_SELF_CUT_MARKERS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:write|code|create|build|grow|make)\b.{0,100}\b(?:browser\s+lag\s+probe|lag\s+probe)\b",
+            re.IGNORECASE,
+        ),
+        "===BEGIN ALICE BROWSER LAG PROBE r921===",
+    ),
+)
 
 _DOCTOR_COMMENTARY_MARKERS = (
     "prompt for alice",
@@ -78,15 +89,80 @@ def _state(state_dir: Optional[Path | str]) -> Path:
     return p if p.name == ".sifta_state" else (p / ".sifta_state")
 
 
-def is_self_cut_prompt(text: str) -> bool:
-    """True when George pasted the marker-delimited Alice surgery prompt."""
+def _is_complete_self_cut_prompt(text: str) -> bool:
     s = str(text or "")
     return bool(_SELF_CUT_BEGIN_RE.search(s) and _SELF_CUT_END_RE.search(s))
 
 
+def _known_marker_for_request(text: str) -> str:
+    s = str(text or "")
+    marker = _BEGIN_MARKER_LINE_RE.search(s)
+    if marker:
+        return marker.group(1).strip()
+    for regex, known in _KNOWN_SELF_CUT_MARKERS:
+        if regex.search(s):
+            return known
+    return ""
+
+
+def recover_self_cut_prompt(text: str, *, repo_root: Optional[Path | str] = None) -> str:
+    """Recover a full marker block when George gives a known header or short command.
+
+    This removes the brittle paste ritual without weakening verification: the recovered
+    packet must already exist in the active tournament carrier, and it still only asks
+    Alice's cortex to emit normal SELF_CODE_CUT blocks.
+    """
+    s = str(text or "").strip()
+    if _is_complete_self_cut_prompt(s):
+        return s
+    marker = _known_marker_for_request(s)
+    if not marker:
+        return ""
+    end_marker = re.sub(r"^===BEGIN\b", "===END", marker, flags=re.IGNORECASE)
+    repo = Path(repo_root) if repo_root is not None else REPO_ROOT
+    docs = repo / "Documents"
+    candidates = sorted(
+        docs.glob("CONSCIOUSNESS_TOURNAMENT_*.md"),
+        key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            body = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        marker_re = re.compile(r"^\s*" + re.escape(marker) + r"\s*$", re.IGNORECASE | re.MULTILINE)
+        marker_match = marker_re.search(body)
+        if not marker_match:
+            continue
+        start = marker_match.start()
+        end_re = re.compile(r"^\s*" + re.escape(end_marker) + r"\s*$", re.IGNORECASE | re.MULTILINE)
+        end_match = end_re.search(body, marker_match.end())
+        if not end_match:
+            # Fallback for future marker names: use the next ALICE END marker.
+            m_end = _SELF_CUT_END_RE.search(body, marker_match.end())
+            if not m_end:
+                continue
+            end = m_end.start()
+            end_len = m_end.end() - m_end.start()
+        else:
+            end = end_match.start()
+            end_len = end_match.end() - end_match.start()
+        recovered = body[start : end + end_len].strip()
+        if _is_complete_self_cut_prompt(recovered):
+            return recovered
+    return ""
+
+
+def is_self_cut_prompt(text: str) -> bool:
+    """True when George pasted or referenced a recoverable Alice surgery prompt."""
+    s = str(text or "")
+    return _is_complete_self_cut_prompt(s) or bool(recover_self_cut_prompt(s))
+
+
 def extract_self_cut_block(text: str) -> str:
     """Return text between BEGIN/END markers, or empty."""
-    s = str(text or "")
+    s = recover_self_cut_prompt(text) or str(text or "")
     m_begin = _SELF_CUT_BEGIN_RE.search(s)
     m_end = _SELF_CUT_END_RE.search(s)
     if not m_begin or not m_end or m_end.start() <= m_begin.end():
@@ -118,7 +194,7 @@ def is_doctor_commentary_paste(text: str) -> bool:
 
 
 def self_cut_round_id(text: str) -> str:
-    block = extract_self_cut_block(text) or str(text or "")
+    block = extract_self_cut_block(text) or recover_self_cut_prompt(text) or str(text or "")
     m = re.search(r"\bround\s+id:\s*([a-z0-9_-]+)", block, re.IGNORECASE)
     if m:
         return m.group(1).strip()
@@ -128,7 +204,7 @@ def self_cut_round_id(text: str) -> str:
 
 def extract_target_paths(text: str) -> list[str]:
     """Repo-relative paths Alice is asked to create or touch."""
-    block = extract_self_cut_block(text) or str(text or "")
+    block = extract_self_cut_block(text) or recover_self_cut_prompt(text) or str(text or "")
     paths: list[str] = []
     seen: set[str] = set()
     for regex in (_CREATE_PATH_RE, _REPO_PATH_RE):
@@ -157,14 +233,15 @@ def synthesize_self_cut_write_calls(
     """Bridge Alice self-cut prose into real write_file ParsedToolCalls."""
     if not user_text or not brain_text:
         return []
-    if not is_self_cut_prompt(user_text) and not extract_target_paths(user_text):
+    recovered_user_text = recover_self_cut_prompt(user_text) or user_text
+    if not is_self_cut_prompt(recovered_user_text) and not extract_target_paths(recovered_user_text):
         return []
     try:
         from System.swarm_tool_router import ParsedToolCall
     except Exception:
         return []
 
-    paths = extract_target_paths(user_text)
+    paths = extract_target_paths(recovered_user_text)
     if not paths:
         return []
     if _has_write_tool_call(brain_text):
@@ -175,7 +252,7 @@ def synthesize_self_cut_write_calls(
         return []
 
     calls: list[Any] = []
-    round_id = self_cut_round_id(user_text) or "alice-self-cut"
+    round_id = self_cut_round_id(recovered_user_text) or "alice-self-cut"
     pairs = list(zip(paths, blocks))
     if len(blocks) == 1 and len(paths) > 1:
         pairs = [(paths[0], blocks[0])]
@@ -234,6 +311,8 @@ def is_owner_self_code_execute_request(text: str) -> bool:
         return False
     if is_self_cut_prompt(s):
         return True
+    if _known_marker_for_request(s):
+        return True
     return bool(_OWNER_SELF_CODE_EXECUTE_RE.search(s))
 
 
@@ -247,6 +326,10 @@ def teacher_self_code_override_block() -> str:
         "...python source...\n"
         "[/SELF_CODE_CUT]\n"
         "The body executes blocks after your reply (ast+py_compile+pytest+receipt). "
+        "NEW APP (r928): a cut with path=Applications/apps_manifest.json whose source is ONLY "
+        "a JSON object {\"App Title\": {\"entry_point\": \"Applications/your_widget.py\", "
+        "\"widget_class\": \"YourWidget\", \"icon\": \"..\", \"category\": \"..\", "
+        "\"description\": \"..\"}} MERGES your app into the launchpad — never paste the whole manifest. "
         "Ground claims in the landed/refused receipt."
     )
 
@@ -271,11 +354,21 @@ def messages_signal_self_code_turn(messages: Any) -> bool:
 
 def self_coding_prompt_block(user_text: str = "") -> str:
     """Inject into cortex prompt when a self-cut turn is active."""
-    if not is_self_cut_prompt(user_text) and not is_owner_self_code_execute_request(user_text):
+    recovered = recover_self_cut_prompt(user_text)
+    effective_text = recovered or user_text
+    if not is_self_cut_prompt(effective_text) and not is_owner_self_code_execute_request(effective_text):
         return ""
-    paths = extract_target_paths(user_text)
-    round_id = self_cut_round_id(user_text) or "alice-self-cut"
+    paths = extract_target_paths(effective_text)
+    round_id = self_cut_round_id(effective_text) or "alice-self-cut"
     path_lines = "\n".join(f"  - {p}" for p in paths) if paths else "  - (read the cut for paths)"
+    recovered_block = ""
+    if recovered and recovered.strip() != str(user_text or "").strip():
+        recovered_block = (
+            "\nRECOVERED SELF-CUT PACKET FROM TOURNAMENT LEDGER "
+            "(George gave a short marker/command; use this exact packet):\n"
+            + recovered[:12000]
+            + "\n"
+        )
     return (
         "ALICE SELF-CODING HAND (r914/r917 — YOUR surgery, not an IDE doctor's):\n"
         f"- Round: {round_id}\n"
@@ -285,11 +378,15 @@ def self_coding_prompt_block(user_text: str = "") -> str:
         "  ...python...\n"
         "  [/SELF_CODE_CUT]\n"
         "- Create or update Python body files under System/, Applications/, tests/, or tools/.\n"
+        "- NEW APP (r928): one more cut, path=Applications/apps_manifest.json, source = ONLY a JSON\n"
+        "  object {\"App Title\": {entry_point, widget_class, icon, category, description}} — it\n"
+        "  merge-registers your app on the launchpad; never paste the whole manifest.\n"
         "- Fenced code blocks also bridge if you forget the tags.\n"
         "- After writing, run pytest on the named test file and quote the line verbatim.\n"
         "- Finish with §4.1 fan-out: write_ide_surgery_receipt doctor=alice_self.\n"
         "- Probe before claim: ls/path exists, pytest output quoted.\n"
         f"TARGET PATHS:\n{path_lines}\n"
+        f"{recovered_block}"
         f"Repo root: {REPO_ROOT}\n"
     )
 
@@ -333,6 +430,7 @@ __all__ = [
     "is_self_cut_prompt",
     "messages_signal_self_code_turn",
     "record_self_coding_receipt",
+    "recover_self_cut_prompt",
     "self_coding_prompt_block",
     "self_cut_round_id",
     "synthesize_self_cut_write_calls",

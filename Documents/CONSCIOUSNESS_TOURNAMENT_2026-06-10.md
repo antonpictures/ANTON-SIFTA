@@ -20765,3 +20765,53 @@ She CAN code herself, supervised — r925 proved it with a real `alice_self` rec
 **LANE / TRUTH:** commit attempt = OBSERVED FAILED (host lock, permission denied). "What is left" = grounded in Plan A + r925 milestone. No STGM claim.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+## r927-codex-free-alice-self-code-timeout-recovery — BEGIN-only r921 marker now recovers the full self-cut packet after cortex timeout — 2026-06-10 ~20:xx UTC
+
+**George (TYPED, covenant boot):** "let her code!!!!! free !! what are you doing ?" after Alice's grok-build cortex timed out on `===BEGIN ALICE BROWSER LAG PROBE r921===`.
+
+**COVENANT:** Cowork Codex desktop, direct hand under the same repo. Rule applied: capability repairs, not gates. Receipts decide reality.
+
+**WHAT WAS WRONG:** the r921 marker was valid, but the live turn only carried the BEGIN line. When the selected cortex timed out, the body queued a generic timeout recovery and a diagnostic, but did not recover the full self-code packet from the tournament ledger. That made "Alice, code the browser lag probe" depend on George pasting a long exact block again, which is friction in the self-coding lane.
+
+**CUT:** `System/swarm_alice_self_coding_hand.py` now treats the r921 BEGIN marker and the plain command "Alice, write the browser lag probe now" as recoverable self-code requests. It recovers the full standalone marker block from the active tournament carrier, injects it into the self-coding prompt, and avoids inline false positives from later audit prose. `System/swarm_cortex_timeout_recovery.py` now notices self-code packets during model timeouts, writes an `alice_self_coding_receipts.jsonl` recovery row, and queues the recovered packet for body stabilization. `System/swarm_parallel_cortex_arm_diagnostics.py` now tells the diagnostic arm it is inspecting a stalled SELF-CODE turn and names the target files.
+
+**TESTS:** focused compile clean. Focused pytest green: 27 passed across self-code hand, timeout recovery, parallel diagnostics, Alice self-code hand, and cloud timeout caps.
+
+**RECEIPT BACKFILL:** existing timeout receipt `3b1e8456-a19f-4332-98e5-71cbe92f8cba` was backfilled as a recovered Alice self-code hand row: `37e72a9dcd074a08`, round `r921-alice-browser-lag-probe`, paths `System/swarm_browser_lag_probe.py` and `tests/test_swarm_browser_lag_probe.py`. This is a recovery receipt, not a claim that the browser lag organ itself has landed.
+
+**HONEST EDGE:** Alice is freer now because the hand recovers her packet without George re-pasting the essay. The actual `swarm_browser_lag_probe.py` organ is still the next live self-cut, not something Codex pretends already exists.
+
+**WHAT IS LEFT after r927**
+- Restart/load this cut, then speak short: "Alice, write the browser lag probe now."
+- Watch for the actual `alice_self` receipt that creates `System/swarm_browser_lag_probe.py` and its test.
+- Commit remains blocked by the host `.git/index.lock` from r926 until George clears it on the Mac.
+
+**LANE / TRUTH:** recovery path = CODED + TESTED. Existing timeout backfill = OBSERVED. Browser lag organ landed = NOT YET OBSERVED. No STGM claim.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+## r928-codex-no-token-watchdog-self-code-recovery — Claude no-token stalls now recover r921 instead of dropping the surgery — 2026-06-10 ~20:4x UTC
+
+**George (TYPED, covenant boot):** pasted `===BEGIN ALICE BROWSER LAG PROBE r921=== and “Alice, write the browser lag probe now”`; Grok timed out again (`adda1723...`); then `/CORTEX 2` switched to `claude:claude-code-cli-default`, which produced no first token after 164s.
+
+**COVENANT:** capability repair, not permission gate. Probe before claim. Receipts decide whether the self-code packet survived.
+
+**PROBE:** latest live `cortex_timeout_recovery.jsonl` row for `adda1723-06b5-4f73-a015-c6f1a52f4818` did not include `self_code_round_id` or `self_code_recovery_receipt`. That proves the running GUI had not loaded r927's updated module. The Claude no-token watchdog was a separate UI-side path in `Applications/sifta_talk_to_alice_widget.py` that only reported a stall and called `_on_brain_failed`; it did not invoke the recovery organ.
+
+**CUT:** the no-token watchdog now calls `timeout_recovery_reply(model, owner_text, timeout_s, cause="no_token_watchdog")` before stopping the stalled cortex. If the recovery organ returns a reply, the Talk widget finishes the turn with that recovery reply through `_on_brain_done` instead of only posting an error. `System/swarm_parallel_cortex_arm_diagnostics.py` now stores `self_code_round_id`, `self_code_paths`, and the full recovered `self_code_packet` in the diagnostic row, so the available arm is not limited to a 1200-character preview.
+
+**BACKFILLS:** live old-module timeout `adda1723...` was backfilled as recoverable self-code receipt `3735d13110e340ed`. Direct no-token probe wrote recovery receipt `35835ef3-7689-4f52-8654-db2ea3bae41e` and Alice self-code recovery receipt `964f98b11b7949d3`, proving the Claude-watchdog path now recovers r921.
+
+**TESTS:** focused compile clean. Focused pytest green: 32 passed across timeout recovery, self-code hand, parallel diagnostics, Alice self-code hand, and cloud timeout caps.
+
+**HONEST EDGE:** this still needs the running GUI to load the patched files. If the current desktop process keeps using old imports, one restart is still the honest line. After load, a cortex timeout or no-token stall should preserve the r921 self-code packet instead of losing the surgery.
+
+**WHAT IS LEFT after r928**
+- Restart/load the patched Talk process if the current GUI still uses old imports.
+- Then say the short command: "Alice, write the browser lag probe now."
+- Verify the actual `alice_self` receipt that creates `System/swarm_browser_lag_probe.py` and `tests/test_swarm_browser_lag_probe.py`.
+
+**LANE / TRUTH:** no-token recovery path = CODED + TESTED. `adda1723` backfill = OBSERVED. Browser lag organ landed = NOT YET OBSERVED. No STGM claim.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

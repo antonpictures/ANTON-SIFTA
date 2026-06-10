@@ -24,6 +24,13 @@ and the body executes the cut under VERIFICATION, not permission (§0.0):
   * Source must parse (``ast.parse``) and byte-compile before it lands.
   * If a ``tests/...`` block arrives in the same reply, pytest runs on it;
     the verdict goes in the receipt verbatim.
+  * r928 (new-app lane): a cut with ``path=Applications/apps_manifest.json``
+    is a MERGE-ONLY registration. Source must be a JSON object
+    ``{"App Title": {entry_point, widget_class, ...}}``. Existing apps are
+    never removed; the entry_point must already be landed tissue on disk
+    (python cuts run first in the same reply); rollback on any failure.
+    This is what lets Alice grow a whole new app — widget + test +
+    launchpad row — in one cortex turn.
   * Every cut — success OR failure — fans out §4.1 with
     ``doctor="alice_self"`` and her exact live cortex tag. A receipted
     failure is a successful surgery; silence is the only violation.
@@ -58,7 +65,12 @@ _BLOCK_RE = re.compile(
 _ALLOWED_PARENTS = ("System", "Applications", "tests", "tools")
 
 _MAX_SOURCE_CHARS = 60_000
-_MAX_CUTS_PER_REPLY = 3
+# r928: 3 → 4 so one reply fits a whole new app: widget + System organ +
+# test + manifest registration.
+_MAX_CUTS_PER_REPLY = 4
+
+# r928 new-app lane: the single non-.py path this hand may touch, merge-only.
+_MANIFEST_REL = "Applications/apps_manifest.json"
 
 
 def extract_self_code_cuts(reply_text: str) -> List[Dict[str, str]]:
@@ -91,13 +103,83 @@ def _validate_path(path_str: str, repo: Path) -> Dict[str, Any]:
             "reason": f"path_outside_growable_tissue_{'_or_'.join(_ALLOWED_PARENTS)}",
         }
     if p.suffix != ".py":
-        return {"ok": False, "reason": "only_python_organs_in_v1"}
+        return {"ok": False, "reason": "only_python_organs_or_manifest_merge_in_v2"}
     target = (repo / p).resolve()
     try:
         target.relative_to(repo.resolve())
     except ValueError:
         return {"ok": False, "reason": "resolved_path_escaped_repo"}
     return {"ok": True, "target": target, "rel": str(p), "existed": target.exists()}
+
+
+def _merge_manifest_cut(src: str, repo: Path) -> Dict[str, Any]:
+    """r928 merge-only app registration. Never removes existing apps.
+
+    Source contract for Alice's cortex: a JSON object mapping app title to a
+    manifest entry. Each entry needs ``entry_point`` (an Applications/*.py
+    that already exists on disk — python cuts in the same reply land first)
+    and ``widget_class``. Rollback + honest reason on every failure path.
+    """
+    manifest_path = repo / _MANIFEST_REL
+    try:
+        new_entries = json.loads(src)
+    except Exception as exc:
+        return {"landed": False, "reason": f"manifest_json_invalid: {type(exc).__name__}: {exc}"}
+    if not isinstance(new_entries, dict) or not new_entries:
+        return {"landed": False, "reason": "manifest_cut_must_be_object_of_title_to_entry"}
+    for title, entry in new_entries.items():
+        if not isinstance(entry, dict):
+            return {"landed": False, "reason": f"manifest_entry_not_object: {title}"}
+        ep = str(entry.get("entry_point") or "")
+        if not ep or not str(entry.get("widget_class") or ""):
+            return {
+                "landed": False,
+                "reason": f"manifest_entry_needs_entry_point_and_widget_class: {title}",
+            }
+        epp = Path(ep)
+        if (
+            epp.is_absolute()
+            or ".." in epp.parts
+            or epp.parts[:1] != ("Applications",)
+            or epp.suffix != ".py"
+        ):
+            return {"landed": False, "reason": f"entry_point_must_be_Applications_py: {title}"}
+        if not (repo / epp).exists():
+            return {
+                "landed": False,
+                "reason": f"entry_point_missing_on_disk_land_widget_cut_first: {ep}",
+            }
+        entry.setdefault("doctor", "alice_self")
+    try:
+        previous_bytes = manifest_path.read_bytes()
+        manifest = json.loads(previous_bytes.decode("utf-8"))
+    except Exception as exc:
+        return {"landed": False, "reason": f"manifest_read_failed: {type(exc).__name__}: {exc}"}
+    if not isinstance(manifest, dict):
+        return {"landed": False, "reason": "existing_manifest_not_object"}
+    merged = dict(manifest)
+    merged.update(new_entries)
+    if len(merged) < len(manifest):
+        return {"landed": False, "reason": "merge_lost_entries_refused"}
+    try:
+        manifest_path.write_text(
+            json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        json.loads(manifest_path.read_text(encoding="utf-8"))  # §7.6.1 parseable gate
+    except Exception as exc:
+        try:
+            manifest_path.write_bytes(previous_bytes)
+        except Exception:
+            pass
+        return {
+            "landed": False,
+            "reason": f"manifest_write_failed_rolled_back: {type(exc).__name__}: {exc}",
+        }
+    return {
+        "landed": True,
+        "reason": f"manifest_merged_{len(new_entries)}_app_total_{len(merged)}",
+        "titles": sorted(new_entries),
+    }
 
 
 def apply_self_code_cuts(
@@ -120,8 +202,13 @@ def apply_self_code_cuts(
         summary["status"] = "no_cut_blocks"
         return summary
 
+    # r928 two-pass: python organs land first so a manifest cut in the same
+    # reply can register an entry_point that just grew.
+    manifest_cuts = [c for c in cuts if c["path"].strip().strip("\"'") == _MANIFEST_REL]
+    py_cuts = [c for c in cuts if c["path"].strip().strip("\"'") != _MANIFEST_REL]
+
     test_files: List[str] = []
-    for cut in cuts:
+    for cut in py_cuts:
         item: Dict[str, Any] = {"path": cut["path"]}
         v = _validate_path(cut["path"], repo)
         if not v.get("ok"):
@@ -169,6 +256,16 @@ def apply_self_code_cuts(
         summary["any_landed"] = True
         if v["rel"].startswith("tests"):
             test_files.append(v["rel"])
+
+    for cut in manifest_cuts:
+        item = {"path": _MANIFEST_REL}
+        if len(cut["source"]) > _MAX_SOURCE_CHARS:
+            item.update({"landed": False, "reason": "source_too_large_v1"})
+        else:
+            item.update(_merge_manifest_cut(cut["source"], repo))
+        summary["results"].append(item)
+        if item.get("landed"):
+            summary["any_landed"] = True
 
     if run_tests and test_files:
         try:

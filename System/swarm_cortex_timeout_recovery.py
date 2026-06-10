@@ -252,6 +252,9 @@ class CortexTimeoutRecovery:
     # r340
     body_display_url: str = ""
     body_display_receipt: str = ""
+    self_code_round_id: str = ""
+    self_code_paths: list[str] = field(default_factory=list)
+    self_code_recovery_receipt: str = ""
     diagnostic_status: str = "not_scheduled"
     recovery_policy: str = (
         "preserve owner task, add body stabilization queue item, and continue "
@@ -303,6 +306,55 @@ def record_timeout_recovery(
         event.queue_status = "written"
     except Exception as exc:
         event.queue_status = f"queue_failed:{type(exc).__name__}"
+
+    try:
+        from System.swarm_alice_self_coding_hand import (
+            extract_target_paths,
+            recover_self_cut_prompt,
+            record_self_coding_receipt,
+            self_cut_round_id,
+        )
+
+        recovered_self_cut = recover_self_cut_prompt(owner_text)
+        if recovered_self_cut:
+            paths = extract_target_paths(recovered_self_cut)
+            round_id = self_cut_round_id(recovered_self_cut) or "alice-self-code-recovered"
+            row = record_self_coding_receipt(
+                round_id=round_id,
+                action="recovered_after_cortex_timeout",
+                ok=True,
+                paths=paths,
+                note=(
+                    f"Recovered self-code packet after {event.model} timeout; "
+                    "the owner supplied a short marker/command and the full packet was "
+                    "recovered from the tournament ledger for the next available cortex/arm."
+                ),
+                state_dir=state_dir,
+            )
+            event.self_code_round_id = round_id
+            event.self_code_paths = paths
+            event.self_code_recovery_receipt = str(row.get("trace_id") or "")
+            try:
+                from System.swarm_body_stabilization_queue import add_queue_item
+
+                add_queue_item(
+                    description=(
+                        f"Alice self-code recovery: {round_id}; continue recovered "
+                        f"SELF_CODE_CUT packet for {', '.join(paths) or 'target paths pending'}."
+                    ),
+                    kind="self_stabilization",
+                    source="alice_self_coding_timeout_recovery",
+                    status="active",
+                    priority=0.94,
+                    owner_plan=False,
+                    linked_receipt=event.self_code_recovery_receipt,
+                    state_dir=state_dir,
+                    dedupe=True,
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     try:
         from System.swarm_parallel_cortex_arm_diagnostics import schedule_parallel_diagnostic
@@ -382,5 +434,11 @@ def timeout_recovery_reply(
             f"{display_query} (images search) is now loaded inside my alice_browser_organ "
             "(native body surface on the display arms). The monitor you see is my hardware form. "
             "Frame and self-id receipt held."
+        )
+    if getattr(event, "self_code_round_id", None):
+        base += (
+            " I also recovered the self-code packet from my tournament ledger: "
+            f"{event.self_code_round_id} for {', '.join(event.self_code_paths) or 'the named paths'} "
+            f"(self-code recovery receipt {event.self_code_recovery_receipt})."
         )
     return base

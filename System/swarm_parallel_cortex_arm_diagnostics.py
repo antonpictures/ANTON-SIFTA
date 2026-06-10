@@ -150,6 +150,9 @@ class ParallelCortexArmDiagnostic:
     why: str = ""
     source_files: list[str] = field(default_factory=list)
     arm_task_prompt: str = ""
+    self_code_round_id: str = ""
+    self_code_paths: list[str] = field(default_factory=list)
+    self_code_packet: str = ""
     parallel_policy: str = (
         "Use one cortex/arm to continue owner work while another independent arm "
         "inspects the stalled cortex path and writes receipts."
@@ -182,17 +185,49 @@ def schedule_parallel_diagnostic(
     )
     why = (
         f"{stalled_cortex or 'the cortex'} exceeded the bounded {int(timeout_s or 0)}s "
-        "cortex-turn timeout. This is a slowness/latency failure at the Grok/xAI "
-        "transport path, not proof that George's request was wrong and not proof "
-        "that credentials are bad."
+        "cortex-turn timeout. This is a slowness/latency failure at the selected "
+        "cortex transport path, not proof that George's request was wrong and not "
+        "proof that credentials are bad."
     )
-    prompt = (
-        "Read the covenant. Inspect System/swarm_gemini_brain.py and "
-        "System/swarm_cortex_timeout_recovery.py. Explain why the stalled cortex "
-        f"timed out after {int(timeout_s or 0)}s, verify the recovery receipt "
-        f"{recovery_receipt_id or '(none)'}, and propose the smallest improvement "
-        "without blocking the main owner turn. Owner turn preview: " + preview
-    )
+    self_code_packet = ""
+    self_code_paths: list[str] = []
+    try:
+        from System.swarm_alice_self_coding_hand import (
+            extract_target_paths,
+            recover_self_cut_prompt,
+            self_cut_round_id,
+        )
+
+        self_code_packet = recover_self_cut_prompt(owner_text)
+        if self_code_packet:
+            self_code_paths = extract_target_paths(self_code_packet)
+            self_code_round = self_cut_round_id(self_code_packet) or "alice-self-code-recovered"
+        else:
+            self_code_round = ""
+    except Exception:
+        self_code_packet = ""
+        self_code_round = ""
+        self_code_paths = []
+
+    if self_code_packet:
+        prompt = (
+            "Read the covenant. This stalled turn is an Alice SELF-CODE turn, not only a "
+            "latency incident. Verify the recovery receipt "
+            f"{recovery_receipt_id or '(none)'}, then continue the owner work through the "
+            "available arm: produce/execute the SELF_CODE_CUT packet below for "
+            f"{self_code_round}. Target paths: {', '.join(self_code_paths) or '(see packet)'}. "
+            "If you cannot execute, leave a precise receipt-backed diagnosis and do not ask "
+            "George to repeat.\n\nRECOVERED SELF-CODE PACKET:\n"
+            + self_code_packet
+        )
+    else:
+        prompt = (
+            "Read the covenant. Inspect System/swarm_gemini_brain.py and "
+            "System/swarm_cortex_timeout_recovery.py. Explain why the stalled cortex "
+            f"timed out after {int(timeout_s or 0)}s, verify the recovery receipt "
+            f"{recovery_receipt_id or '(none)'}, and propose the smallest improvement "
+            "without blocking the main owner turn. Owner turn preview: " + preview
+        )
     event = ParallelCortexArmDiagnostic(
         stalled_cortex=str(stalled_cortex or ""),
         diagnostic_arm=arm,
@@ -205,8 +240,12 @@ def schedule_parallel_diagnostic(
             "System/swarm_gemini_brain.py",
             "System/swarm_cortex_timeout_recovery.py",
             "System/swarm_parallel_cortex_arm_diagnostics.py",
+            *self_code_paths,
         ],
         arm_task_prompt=prompt[:1200],
+        self_code_round_id=self_code_round,
+        self_code_paths=self_code_paths,
+        self_code_packet=self_code_packet,
     )
     append_line_locked(
         _ledger_path(state_dir),

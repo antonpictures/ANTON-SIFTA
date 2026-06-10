@@ -7,6 +7,7 @@ from System.swarm_alice_self_coding_hand import (
     is_owner_self_code_execute_request,
     is_self_cut_prompt,
     messages_signal_self_code_turn,
+    recover_self_cut_prompt,
     self_coding_prompt_block,
     synthesize_self_cut_write_calls,
 )
@@ -49,6 +50,29 @@ def test_self_coding_prompt_block_lists_paths():
     block = self_coding_prompt_block(_SELF_CUT)
     assert "SELF_CODE_CUT" in block
     assert "swarm_daily_body_note.py" in block
+
+
+def test_begin_only_r921_marker_recovers_from_tournament():
+    marker = "===BEGIN ALICE BROWSER LAG PROBE r921==="
+
+    recovered = recover_self_cut_prompt(marker)
+
+    assert "===END ALICE BROWSER LAG PROBE r921===" in recovered
+    assert "lag_timer" in recovered
+    assert extract_target_paths(marker) == [
+        "System/swarm_browser_lag_probe.py",
+        "tests/test_swarm_browser_lag_probe.py",
+    ]
+    prompt = self_coding_prompt_block(marker)
+    assert "RECOVERED SELF-CUT PACKET FROM TOURNAMENT LEDGER" in prompt
+    assert "swarm_browser_lag_probe.py" in prompt
+
+
+def test_plain_browser_lag_probe_request_is_self_code():
+    text = "Alice, write the browser lag probe now"
+
+    assert is_owner_self_code_execute_request(text) is True
+    assert "System/swarm_browser_lag_probe.py" in self_coding_prompt_block(text)
 
 
 def test_synthesize_self_cut_write_calls(tmp_path, monkeypatch):

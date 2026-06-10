@@ -95,3 +95,99 @@ def test_no_blocks_is_quiet():
     out = apply_self_code_cuts("just a normal reply about pizza", write_receipt=False)
     assert out["status"] == "no_cut_blocks"
     assert out["attempted"] == 0
+
+
+# ── r928 — new-app lane: merge-only manifest registration ──────────────────
+
+WIDGET_CUT = '''[SELF_CODE_CUT: path=Applications/sifta_r928_demo_widget.py]
+"""Demo widget grown by Alice's own hand (r928 test)."""
+
+class R928DemoWidget:
+    pass
+[/SELF_CODE_CUT]'''
+
+
+def _repo_with_manifest(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "Applications").mkdir()
+    (repo / "Applications/apps_manifest.json").write_text(
+        json.dumps(
+            {
+                "Existing App": {
+                    "entry_point": "Applications/existing.py",
+                    "widget_class": "ExistingWidget",
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _manifest_cut(entry_point="Applications/sifta_r928_demo_widget.py"):
+    entry = {
+        "R928 Demo": {
+            "entry_point": entry_point,
+            "widget_class": "R928DemoWidget",
+            "icon": "🐜",
+            "category": "Demo",
+            "description": "r928 self-grown app",
+        }
+    }
+    return (
+        "[SELF_CODE_CUT: path=Applications/apps_manifest.json]\n"
+        + json.dumps(entry)
+        + "\n[/SELF_CODE_CUT]"
+    )
+
+
+def test_new_app_widget_plus_manifest_lands_in_one_reply(tmp_path):
+    repo = _repo_with_manifest(tmp_path)
+    out = apply_self_code_cuts(
+        WIDGET_CUT + "\n" + _manifest_cut(), repo_root=repo, write_receipt=False
+    )
+    assert out["any_landed"] is True
+    landed = {r["path"]: r for r in out["results"]}
+    assert landed["Applications/sifta_r928_demo_widget.py"]["landed"] is True
+    assert landed["Applications/apps_manifest.json"]["landed"] is True
+    manifest = json.loads(
+        (repo / "Applications/apps_manifest.json").read_text(encoding="utf-8")
+    )
+    assert "Existing App" in manifest, "merge must never drop existing apps"
+    assert manifest["R928 Demo"]["widget_class"] == "R928DemoWidget"
+    assert manifest["R928 Demo"]["doctor"] == "alice_self"
+
+
+def test_manifest_cut_refused_when_entry_point_missing(tmp_path):
+    repo = _repo_with_manifest(tmp_path)
+    out = apply_self_code_cuts(
+        _manifest_cut("Applications/never_landed.py"), repo_root=repo, write_receipt=False
+    )
+    assert out["any_landed"] is False
+    assert "entry_point_missing_on_disk" in out["results"][0]["reason"]
+    manifest = json.loads(
+        (repo / "Applications/apps_manifest.json").read_text(encoding="utf-8")
+    )
+    assert list(manifest) == ["Existing App"]
+
+
+def test_manifest_cut_refuses_bad_json_and_non_object(tmp_path):
+    repo = _repo_with_manifest(tmp_path)
+    for src in ("not json at all", '["a", "list"]', "{}"):
+        cut = (
+            "[SELF_CODE_CUT: path=Applications/apps_manifest.json]\n"
+            + src
+            + "\n[/SELF_CODE_CUT]"
+        )
+        out = apply_self_code_cuts(cut, repo_root=repo, write_receipt=False)
+        assert out["any_landed"] is False, src
+
+
+def test_other_json_paths_still_refused(tmp_path):
+    repo = _repo_with_manifest(tmp_path)
+    cut = '[SELF_CODE_CUT: path=System/evil.json]\n{"x": 1}\n[/SELF_CODE_CUT]'
+    out = apply_self_code_cuts(cut, repo_root=repo, write_receipt=False)
+    assert out["any_landed"] is False
+    assert "only_python_organs_or_manifest_merge_in_v2" in out["results"][0]["reason"]
