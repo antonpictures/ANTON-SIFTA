@@ -3086,3 +3086,49 @@ Clock: `2026-06-13 ~21:50 UTC` (~14:50 PDT). §4.1: `r1087-cowork-assign-compose
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1088 Grok — all four lanes: E49/E50 tab + IK baseline + E51 prep + outreach [r1088-grok-all-four-lanes-robotics-proof]
+
+**Doctor:** `cursor_grok_cli` (grok-4.3-cli) — on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Trace:** George GO: "YES ALL - WE CODE TOGETHER" on r1086 four-lane menu.
+**Clock:** `2026-06-13 ~22:10 UTC` (~15:10 PDT, boot-probe sourced).
+
+### DECIDE
+
+Land all four optional lanes in one smallest-live-cut pass: widget UX for E49/E50, nearest-neighbor IK baseline (no solver superiority), E51 physical hardware-prep safety chain spec, and Figuera/Jongerius outreach proof block.
+
+### EXECUTE
+
+- **Lane 1 — E49/E50 tab UX:** `Applications/sifta_stigmerobotics_widget.py` — new **E49/E50 Robot Data** tab with fixture benchmark runner + truth-label legend + E51 chain viewer.
+- **Lane 2 — IK baseline:** `System/stigmerobotics_ik_baseline.py` + `tests/test_stigmero_ik_baseline.py` — nearest-neighbor pose baseline vs dataset joint labels; sample `EffectorRequest` receipt per robot; `FORBIDDEN` beats-solver guard in proof dict.
+- **Lane 3 — E51 hardware-prep:** `System/stigmerobotics_e51_hardware_prep.py` + fixtures + `tests/test_stigmero_e51_hardware_prep.py` — registration → clearance → virtual sensor → human-review intent chain for `abb_irb2400_physical` / `nao_arkoma_physical`; metal motion **HYPOTHESIS**.
+- **Lane 4 — Outreach:** `Documents/MARKETING_ROBOTICS_PROOF_FIGUERA_JONGERIUS_2026-06-13.md` — OPERATIONAL probe paths + outreach lines for Juan Figuera (Sello/APOA) and Otto Jongerius (Agent Receipts/Obsigna).
+
+### TESTS
+
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e49_irb2400_ik.py tests/test_stigmero_e50_arkoma_ik.py tests/test_stigmero_ik_baseline.py tests/test_stigmero_e51_hardware_prep.py tests/test_stigmero_effector_bridge.py tests/test_stigmero_body_connection_proof.py` — **47 passed in 6.69s**.
+
+### TRUTH LABELS
+
+| Claim | Label |
+|:---|:---|
+| E49/E50 CSV ingest + virtual effector round-trip | **OPERATIONAL** |
+| Nearest-neighbor baseline joint-error metrics | **OBSERVED** (fixture slice) |
+| E51 hardware-prep chain spec in pytest | **OPERATIONAL** (spec); physical motion **HYPOTHESIS** |
+| SIFTA beats IK solver / baseline | **FORBIDDEN** |
+
+### RECEIPT
+
+**Files touched:** `System/stigmerobotics_ik_baseline.py`, `System/stigmerobotics_e51_hardware_prep.py`, `Applications/sifta_stigmerobotics_widget.py`, `tests/test_stigmero_ik_baseline.py`, `tests/test_stigmero_e51_hardware_prep.py`, `tests/fixtures/stigmero_e51_hardware_prep_*.jsonl`, `Documents/MARKETING_ROBOTICS_PROOF_FIGUERA_JONGERIUS_2026-06-13.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Four-ledger receipt: `r1088-grok-all-four-lanes-robotics-proof` (all four ledgers `ok`).
+
+**WHAT IS LEFT after r1088:**
+
+- **George** — post X thread (`MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`); send Figuera/Jongerius outreach using the new proof block.
+- **George / Doctors** — optional full-dataset IK soak (r1087 Lane A) if aggregate reports beyond fixture slices are wanted.
+- **George** — physical NAO/ABB motion stays **HYPOTHESIS** until E51 chain closes on real hardware with owner GO.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

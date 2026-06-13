@@ -114,6 +114,20 @@ except Exception:
     build_body_connection_proof = None  # type: ignore[assignment]
     _BodyConnectionProof = None
 
+try:
+    from System.stigmerobotics_ik_baseline import build_combined_robot_data_report
+except Exception:
+    build_combined_robot_data_report = None
+
+try:
+    from System.stigmerobotics_e51_hardware_prep import (
+        CHAIN_STEPS as _E51_CHAIN_STEPS,
+        list_physical_bodies as _list_physical_bodies,
+    )
+except Exception:
+    _E51_CHAIN_STEPS = ()
+    _list_physical_bodies = None
+
 
 _GLOBAL_STYLE = """
 QWidget {
@@ -289,6 +303,8 @@ _ACTIVE_TESTS = (
     "tests/test_stigmero_e48_wetlab_integration.py",
     "tests/test_stigmero_e49_irb2400_ik.py",
     "tests/test_stigmero_e50_arkoma_ik.py",
+    "tests/test_stigmero_ik_baseline.py",
+    "tests/test_stigmero_e51_hardware_prep.py",
     "tests/test_ledger_invariants.py",
     "tests/test_stigmero_body_connection_proof.py",
 )
@@ -399,6 +415,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self._build_biohybrid_tab()
         self._build_wet_dry_tab()
         self._build_edge_species_tab()
+        self._build_robot_data_tab()
         self._build_body_proof_tab()
         self._build_audit_tab()
         self._build_docs_tab()
@@ -812,6 +829,104 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.fast_layer_log.appendPlainText(f"[{time.strftime('%H:%M:%S')}] Emitted fast layer trace for left_shoulder_pitch")
         except Exception as e:
             self.fast_layer_log.appendPlainText(f"Emit failed: {e}")
+
+    def _build_robot_data_tab(self) -> None:
+        page = QWidget()
+        root = QVBoxLayout(page)
+
+        header = QLabel("Robot Data — E49 IRB2400 + E50 ARKOMA")
+        header.setObjectName("header")
+        root.addWidget(header)
+
+        legend = QLabel(
+            "Truth labels: ingest <b>OPERATIONAL</b> · baseline metrics <b>OBSERVED</b> · "
+            "physical motion <b>HYPOTHESIS</b> · beats-solver <b>FORBIDDEN</b>"
+        )
+        legend.setWordWrap(True)
+        root.addWidget(legend)
+
+        self.robot_data_table = QTableWidget(0, 6)
+        self.robot_data_table.setHorizontalHeaderLabels(
+            ("Robot", "Dataset", "Rows", "Ingest", "Baseline mean (rad)", "Truth")
+        )
+        self.robot_data_table.horizontalHeader().setStretchLastSection(True)
+        self.robot_data_table.setAlternatingRowColors(True)
+        root.addWidget(self.robot_data_table, 1)
+
+        btn_row = QHBoxLayout()
+        run_btn = QPushButton("Run E49/E50 Fixture Benchmarks")
+        run_btn.clicked.connect(self._run_robot_data_benchmarks)
+        btn_row.addWidget(run_btn)
+        e51_btn = QPushButton("Show E51 Hardware-Prep Chain")
+        e51_btn.clicked.connect(self._show_e51_hardware_prep_chain)
+        btn_row.addWidget(e51_btn)
+        btn_row.addStretch()
+        root.addLayout(btn_row)
+
+        self.robot_data_log = QPlainTextEdit()
+        self.robot_data_log.setReadOnly(True)
+        self.robot_data_log.setMaximumHeight(280)
+        self.robot_data_log.setPlainText(
+            "Press 'Run E49/E50 Fixture Benchmarks' for ingest + nearest-neighbor baseline metrics."
+        )
+        root.addWidget(self.robot_data_log)
+        self.tabs.addTab(page, "E49/E50 Robot Data")
+
+    def _run_robot_data_benchmarks(self) -> None:
+        if build_combined_robot_data_report is None:
+            self.robot_data_log.setPlainText("System.stigmerobotics_ik_baseline could not be imported.")
+            return
+        try:
+            report = build_combined_robot_data_report()
+        except Exception as exc:
+            self.robot_data_log.setPlainText(
+                f"Robot data benchmark failed: {type(exc).__name__}: {exc}"
+            )
+            return
+
+        rows = [
+            (
+                "ABB IRB 2400",
+                "Kaggle IRB2400",
+                str(report["e49_irb2400"]["ingest"].get("row_count", "?")),
+                "PASS" if report["e49_irb2400"]["ok"] else "FAIL",
+                f"{report['e49_irb2400']['baseline_stats']['mean_rad']:.6f}",
+                "OPERATIONAL / OBSERVED",
+            ),
+            (
+                "NAO ARKOMA",
+                "Mendeley brg4dz8nbb.1",
+                str(report["e50_arkoma"]["ingest"].get("row_count", "?")),
+                "PASS" if report["e50_arkoma"]["ok"] else "FAIL",
+                f"{report['e50_arkoma']['baseline_stats']['mean_rad']:.6f}",
+                "OPERATIONAL / OBSERVED",
+            ),
+        ]
+        self.robot_data_table.setRowCount(len(rows))
+        for r, values in enumerate(rows):
+            for c, cell in enumerate(values):
+                item = QTableWidgetItem(cell)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.robot_data_table.setItem(r, c, item)
+        self.robot_data_table.resizeColumnsToContents()
+        self.robot_data_log.setPlainText(json.dumps(report, indent=2, ensure_ascii=False))
+
+    def _show_e51_hardware_prep_chain(self) -> None:
+        if _list_physical_bodies is None:
+            self.robot_data_log.setPlainText("System.stigmerobotics_e51_hardware_prep could not be imported.")
+            return
+        bodies = _list_physical_bodies()
+        lines = [
+            "E51 hardware-prep safety chain (HYPOTHESIS until physical GO):",
+            "",
+            *list(_E51_CHAIN_STEPS),
+            "",
+            f"Physical body IDs: {', '.join(bodies)}",
+            "Virtual dry-run bodies: abb_irb2400_virtual, nao_arkoma_virtual",
+            "",
+            "Truth: chain spec OPERATIONAL in pytest; metal motion HYPOTHESIS.",
+        ]
+        self.robot_data_log.setPlainText("\n".join(lines))
 
     def _build_body_proof_tab(self) -> None:
         page = QWidget()

@@ -1614,3 +1614,9 @@ above.
   `r1087-cowork-assign-composer-soak-e51-baseline-81382663` (Lane A full-dataset IK soak, Lane B E51 IK
   baseline under Predator Gate, with the no-"beats-solver" truth guard). Lane: Assign/coordination;
   `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-13 ~22:10 UTC (~15:10 PDT, boot-probe sourced)` — `cursor_grok_cli` (grok-4.3-cli)
+  read the canonical covenant on `GTH4921YP3`, landed all four r1086 lanes in one pass:
+  E49/E50 Robot Data tab UX, nearest-neighbor IK baseline (`stigmerobotics_ik_baseline.py`),
+  E51 hardware-prep safety chain (`stigmerobotics_e51_hardware_prep.py`), and Figuera/Jongerius
+  outreach proof block. Verified **47 passed** (E49+E50+baseline+E51+effector+body). Appended tournament
+  `r1088-grok-all-four-lanes-robotics-proof`. Lane: Stigmerobotics; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
