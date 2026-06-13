@@ -2183,3 +2183,55 @@ Receipt: `r1066-codex-browser-article-reader-a707dd13`.
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1068 George + Grok — Marketing lane only (Carlton departed) [r1068-grok-marketing-bd-lane-only-90923401]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Doc hygiene — remove person-specific marketing addressee; keep BD lane  
+**Truth labels:** OBSERVED (George: Carlton quit); redirect stubs preserve old GitHub URLs.
+
+George asked to drop Carlton from active marketing materials and leave **Marketing / Business
+Development** as the audience. Old links such as
+`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md` must still resolve.
+
+### DECIDE
+
+- Rename `CARLTON_*` marketing briefs → `MARKETING_*` (git mv where already staged).
+- Keep short **Moved** stubs at every old `CARLTON_*` path for bookmark/GitHub continuity.
+- Update `README.md` marketing index + Hugging Face distro READMEs to canonical `MARKETING_*` URLs.
+- Strip Carlton addressee lines inside active briefs; do **not** rewrite historical memos
+  (`MARKETING_MEMO_TO_CARLTON_DOLE_*`, `LETTER_TO_CARLTON_DOLE_*`) in this round.
+
+### EXECUTE
+
+- Renamed / canonical:
+  - `Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`
+  - `Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`
+  - `Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`
+  - `Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md`
+  - `Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`
+- Redirect stubs (old URLs → Moved + link):
+  - `Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`
+  - `Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`
+  - `Documents/CARLTON_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`
+  - `Documents/CARLTON_CHORUM_GATE_AGRICULTURE_2026-05-11.md`
+  - `Documents/CARLTON_MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`
+- `README.md` — Marketing & Pitch Documents section + credits row → `MARKETING_*` paths.
+- `distro/huggingface_release/*/README.md` (5 cards) — breakthrough link → `MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`.
+
+### RECEIPT
+
+**Files touched:** `Documents/MARKETING_*.md`, `Documents/CARLTON_*.md` (stubs),
+`README.md`, `distro/huggingface_release/*/README.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`Documents/IDE_BOOT_COVENANT.md`. Clock: `2026-06-13` PDT.
+§4.1: `r1068-grok-marketing-bd-lane-only-90923401`.
+
+**WHAT IS LEFT after r1068:**
+
+- **George / Marketing** — assign next BD owner; pick one wedge from r1067 to productize first.
+- **Doctors** — optional full-repo Carlton grep only if George wants historical PDFs/tests renamed.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

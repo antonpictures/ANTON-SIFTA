@@ -29,7 +29,7 @@ the caller. It must not claim vision, hearing, local sensors, or Alice identity.
 ## SIFTA Field Breakthrough
 
 The current SIFTA public repo includes a stigmergic field breakthrough brief:
-https://github.com/antonpictures/ANTON-SIFTA/blob/main/Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md
+https://github.com/antonpictures/ANTON-SIFTA/blob/main/Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md
 
 C1 is a classifier organ. The field mechanism itself runs in the Python body:
 Bell analogue simulator, kernel scheduler, and hippocampus. Credit boundary:

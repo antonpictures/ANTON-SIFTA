@@ -1503,3 +1503,8 @@ above.
   `r1066-codex-browser-article-reader-a707dd13`: Alice Browser article-readable text sidecars,
   article/main DOM extraction, Talk yes/no article-readability, article summary, and explicit full-read
   local speech path. Lane: Bugfix/UX; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 16:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  renamed active `CARLTON_*` marketing briefs to `MARKETING_*`, left redirect stubs at old paths,
+  updated README + Hugging Face distro links, stripped person-specific addressee lines from active
+  briefs, appended tournament `r1068-grok-marketing-bd-lane-only-90923401`. Lane: Doc hygiene;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.

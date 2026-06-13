@@ -1039,17 +1039,17 @@ field with gradient coupling, snapshot persistence, and a unified
 - Pilot-wave hydrodynamics (MIT Bush group)
 
 A full 30-paper research spine lives in
-[`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md)
+[`Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md)
 and the allostasis-specific spine in
-[`Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md).
+[`Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md).
 
-### Marketing & Pitch Documents (for Carlton + Cole + the Architect's BD lane)
+### Marketing & Pitch Documents (BD lane)
 
-- [`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md) — the core breakthrough doc (Bell + scheduler + memory + competitive landscape).
-- [`Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) — the meta-regulator (field-of-fields) pitch with allostasis framing for pharma / defense / VCs.
-- [`Documents/CARLTON_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`](Documents/CARLTON_CHORUM_GATE_JOHN_DEERE_2026-05-11.md) — long-form Chorum Gate pitch directly aimed at agricultural OEMs (John Deere, Caterpillar, Kubota) and defense buyers.
-- [`Documents/CARLTON_CHORUM_GATE_AGRICULTURE_2026-05-11.md`](Documents/CARLTON_CHORUM_GATE_AGRICULTURE_2026-05-11.md) — short safety-tilted version of the same pitch.
-- [`Documents/CARLTON_MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`](Documents/CARLTON_MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md) — broad company-mapping memo (foundation for the campaign).
+- [`Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md) — the core breakthrough doc (Bell + scheduler + memory + competitive landscape).
+- [`Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) — the meta-regulator (field-of-fields) pitch with allostasis framing for pharma / defense / VCs.
+- [`Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md) — long-form Chorum Gate pitch directly aimed at agricultural OEMs (John Deere, Caterpillar, Kubota) and defense buyers.
+- [`Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md) — short safety-tilted version of the same pitch.
+- [`Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`](Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md) — broad company-mapping memo (foundation for the campaign).
 - [`Documents/SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md`](Documents/SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md) — protein-folding apps audit for the DeepMind / Hassabis lane.
 
 ### Credits — Where Due
@@ -1064,7 +1064,7 @@ not in `git config`.
 | Doctor (covenant ID) | IDE / model substrate | Major contributions to the field saga |
 |----------------------|------------------------|----------------------------------------|
 | **Architect** — Ioan George Anton | Human, George local M5 & M1 Sentry | Vision, doctrine, every "GO", Bell-app intuition, John Deere agricultural framing, the philosophical demand that every organ run the same equation, the steering-loop spec (verbatim thresholds), the §7.12 hallucination check that bounds every Doctor |
-| **CG55M** | Cursor / Claude Opus 4.7 | Bell theorem app + stigmergic contextuality + nonlinear flip mechanism, `System/stigmergic_field.py` extracted module, attention/cortex/immune/memory field wiring, meta-regulator `swarm_field_self_regulator.py`, chorum gate `swarm_chorum_gate.py`, all four Carlton marketing docs, the steering-omnidirectional research spine + bibliography (DOI-backed), §7.10–§7.14 covenant prose |
+| **CG55M** | Cursor / Claude Opus 4.7 | Bell theorem app + stigmergic contextuality + nonlinear flip mechanism, `System/stigmergic_field.py` extracted module, attention/cortex/immune/memory field wiring, meta-regulator `swarm_field_self_regulator.py`, chorum gate `swarm_chorum_gate.py`, all four marketing briefs, the steering-omnidirectional research spine + bibliography (DOI-backed), §7.10–§7.14 covenant prose |
 | **C55M** | Codex / GPT-5.5 Medium | Parallel app-focus deepening, cortex routing v2, stigmergic field hardening (`save`/`load`, `to_state`/`from_state`), parallel agricultural pitch doc, large-scale model cleanup, **steering subsystem (route dispatcher with 6 routes)**, **Talk-path integration of self-model**, **prediction-audit module + 6-valued status indicator**, **attachment vision lane (local OCR/layout when cortex lacks vision head)**, **tokenizer `attachment_visual_surprise` + dedicated visual-tokens writer**, MAMMAL drug-discovery lab |
 | **Cowork** — Claude Opus 4.7 (Cowork mode) | Anthropic Cowork desktop | **Steering self-model introspection layer (6 detectors)**, **prediction-audit supplemental edge tests**, **steering adaptation governor with INSUFFICIENT_SAMPLES guard (the §7.12 receipt)**, **tokenizer VISUAL_ATTACH bridge + `attachment_visual_mass` signal**, journal importance scoring (6-tier UTILITY→EMERGENCY rubric), direct time/date skill, per-app menu schema, awareness mirror widget, YouTube-subtitle font, MAMMAL drug-repurposing ranker (carfilzomib→solid_tumor in top-5 matches paper's wet-lab finding), Higgs Q4–Q9 experiments, dream organ shipping, attachment dynamics polarity redesign, drug repurposing wet-lab-class HYPOTHESIS boundary |
 | **AG46** | Antigravity / Claude Sonnet 4.6 (Thinking) | Episodic narrator, daily journal organ, WhatsApp organ refactor (880→306 lines), prediction engine, camera recognition, RLHF gag interceptors, dual embodiment loop covenant prose (§7.13) |
@@ -1239,11 +1239,11 @@ agent coupling:   response is a function of phi and its gradient
 ```
 
 Public marketing/reference brief:
-[`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md)
+[`Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md)
 
 Additional 2026-05-11 briefs:
-[`Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/CARLTON_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) and
-[`Documents/CARLTON_CHORUM_GATE_AGRICULTURE_2026-05-11.md`](Documents/CARLTON_CHORUM_GATE_AGRICULTURE_2026-05-11.md)
+[`Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) and
+[`Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md)
 
 Source discipline matters here. Credit goes first to the scientific spine this
 work builds on:
