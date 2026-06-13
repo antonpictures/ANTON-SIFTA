@@ -1046,6 +1046,7 @@ and the allostasis-specific spine in
 ### Marketing & Pitch Documents (BD lane)
 
 - [`Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md`](Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md) — **mega catalog: 23 unique SIFTA products only** (no commodity overlap; truth labels + proof paths).
+- [`Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`](Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md) — CSET Dec 2025 China embodied-AI report vs SIFTA: same philosophy, different engineering; not mossing (r1077).
 - [`Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md) — the core breakthrough doc (Bell + scheduler + memory + competitive landscape).
 - [`Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) — the meta-regulator (field-of-fields) pitch with allostasis framing for pharma / defense / VCs.
 - [`Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md) — long-form Chorum Gate pitch directly aimed at agricultural OEMs (John Deere, Caterpillar, Kubota) and defense buyers.
