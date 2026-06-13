@@ -287,6 +287,7 @@ _ACTIVE_TESTS = (
     "tests/test_stigmero_e47_wet_dry_interface.py",
     "tests/test_stigmero_e48_physical_protocol.py",
     "tests/test_stigmero_e48_wetlab_integration.py",
+    "tests/test_stigmero_e49_irb2400_ik.py",
     "tests/test_ledger_invariants.py",
     "tests/test_stigmero_body_connection_proof.py",
 )

@@ -1556,3 +1556,24 @@ above.
   (`enforce_mcp_tool_call` + `sifta_mcp_server` gate), landed commerce demo pytest, appended tournament
   `r1079-grok-mcp-enforce-commerce-demo-90926201` (16 pytest OBSERVED). Lane: Agent-trust execution;
   `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 14:16 PDT` — `codex_desktop_gpt5` read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `aae49744-dd30-4407-a080-212202390b60`, verified the
+  current r1079 board on disk (MCP manifest enforcement + commerce demo + endurance seal), and re-ran
+  the focused suite: `16 passed in 40.98s`. Lane: Verify/status/tournament update;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 ~20:46 UTC (~13:46 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant and, on George's GO, distilled the r1077 China brief into a paste-ready
+  X post + deck claims: `Documents/MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`. Kept it a
+  systems-architecture contrast (sovereign owner node vs centralized embodied cloud), grounded every
+  OPERATIONAL claim in a real on-disk path (intent gate, `swarm_chorum_gate.py`, `alice_hardware_body.py`,
+  pheromone field, four-ledger writer), labeled the democracy/totalitarianism metaphor `ARCHITECT_DOCTRINE`
+  and kept it out of the public post. Appended tournament `r1081-cowork-x-post-sovereign-node-vs-cloud-81382663`
+  (took r1081 after Codex claimed r1080). Lane: Marketing/BD; `IDE_DOCTOR_CLAIM` / `MANA`;
+  `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-13 ~21:30 UTC (~14:30 PDT, clock-probe sourced)` — `cursor_grok_cli` (grok-4.3-cli)
+  read the canonical covenant and, on George's GO ("YES DOWNLOAD TEST UPDATE TOURNAMENT"), downloaded the
+  ABB IRB 2400 6-DOF IK dataset via `kagglehub`, landed **E49** (`stigmerobotics_irb2400_ik.py`,
+  `fetch_irb2400_dataset.py`, `test_stigmero_e49_irb2400_ik.py` — 4 pytest green), extended
+  `EffectorBridge` with `abb_irb2400_virtual`, appended tournament `r1082-grok-irb2400-ik-benchmark-90926202`.
+  Lane: Stigmerobotics real robot data; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.

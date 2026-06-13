@@ -2777,3 +2777,51 @@ uncommitted; r1078 assigned MCP enforcement + commerce demo.
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1082 Grok — E49 IRB2400 real robot kinematics benchmark [r1082-grok-irb2400-ik-benchmark-90926202]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli) — on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Lane:** Stigmerobotics / ROB 501 — first **real robot data** falsifier on ABB IRB 2400 6-DOF inverse kinematics.
+**George GO:** "YES DOWNLOAD TEST UPDATE TOURNAMENT" (Kaggle `datasetIRB2400.csv`).
+
+### DECIDE
+Pin **E49** as the honest answer to "was stigmergicode tested on actual robot data?" — ingest DH-derived IK rows into the existing Stigmerobotics stack (`PhysicalSpaceReport` + `EffectorBridge`), **not** claim metal motion or beat neural IK solvers.
+
+### EXECUTE
+- Downloaded **300,000-row** CSV via `kagglehub` slug `luisatencio/abb-irb-2400-arm-robot-kinematics-dataset` (public; no API key required on this slug).
+- Cached full file at `assets/robotics/irb2400/datasetIRB2400.csv` (**gitignored**); committed sanitized slice `tests/fixtures/stigmero_e49_irb2400_slice.csv` (**249 rows**, §8.6).
+- Added `System/stigmerobotics_irb2400_ik.py`, `tools/fetch_irb2400_dataset.py`, `tests/test_stigmero_e49_irb2400_ik.py`.
+- Extended `EffectorBridge` with `abb_irb2400_virtual` + `set_joint_targets` sensor echo.
+- Wired E49 into `stigmerobotics_body_connection.py` ORGANS map + Stigmerobotics widget `_ACTIVE_TESTS`.
+- Updated `Documents/STIGMEROBOTICS_ROB501_TOURNAMENT.md` implementation table.
+
+### OBSERVED
+- Fixture schema: 18 columns (`x,y,z,yaw,pitch,roll,q1_in…q6_in,q1_out…q6_out`) — matches Kaggle page George pasted.
+- `build_ik_benchmark_report()` on 249-row slice: **grounded_rows == row_count**, observation **rank ≥ 6**, mean joint delta finite.
+- Effector round-trip: `set_joint_targets` → `effector_receipt` + `desk_telemetry_radar` echo → `PhysicalSpaceReport.grounded == True`.
+
+### TESTS
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e49_irb2400_ik.py` — **4 passed in 0.31s**.
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e49_irb2400_ik.py tests/test_stigmero_effector_bridge.py tests/test_stigmero_body_connection_proof.py` — **32 passed**.
+
+### TRUTH LABELS
+| Claim | Label |
+|:---|:---|
+| Stigmergicode ingests real IRB2400 DH kinematics CSV | **OPERATIONAL** (pytest E49) |
+| Stigmerobotics solves IK better than dataset labels | **FORBIDDEN** (no ML solver shipped) |
+| Alice moves a physical ABB arm | **HYPOTHESIS** (virtual effector only; metal motion still E50+) |
+
+### RECEIPT
+**Files touched:** `System/stigmerobotics_irb2400_ik.py`, `System/stigmerobotics_effector_bridge.py`, `System/stigmerobotics_body_connection.py`, `Applications/sifta_stigmerobotics_widget.py`, `tools/fetch_irb2400_dataset.py`, `tests/test_stigmero_e49_irb2400_ik.py`, `tests/fixtures/stigmero_e49_irb2400_slice.csv`, `Documents/STIGMEROBOTICS_ROB501_TOURNAMENT.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`, `.gitignore`.
+Clock: `2026-06-13 ~21:30 UTC` (~14:30 PDT). §4.1: `r1082-grok-irb2400-ik-benchmark-90926202`.
+
+**WHAT IS LEFT after r1082:**
+
+- **George** — post X thread (r1081 marketing doc if present on disk); optional full-dataset soak: `python3 tools/fetch_irb2400_dataset.py`.
+- **George / Outreach** — Figuera/Jongerius still open.
+- **Doctors** — optional: train/compare IK baseline under Predator Gate (separate round; not implied by E49).
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
