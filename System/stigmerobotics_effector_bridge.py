@@ -51,6 +51,7 @@ def execute_request_stub(request: EffectorRequest, now_ts: float) -> tuple[dict[
         "virtual_physics_limb",
         "textgen_limb",
         "abb_irb2400_virtual",
+        "nao_arkoma_virtual",
     )
     receipt_trace_id = str(uuid.uuid4())
     
@@ -108,21 +109,26 @@ def execute_request_stub(request: EffectorRequest, now_ts: float) -> tuple[dict[
             "truth_label": "OBSERVED",
             "homeworld_serial": request.homeworld_serial
         }
-    elif request.target_body_id == "abb_irb2400_virtual" and request.action_type == "set_joint_targets":
-        joints = list(request.payload.get("joints_rad", []))
+    elif request.action_type == "set_joint_targets" and request.target_body_id in (
+        "abb_irb2400_virtual",
+        "nao_arkoma_virtual",
+    ):
+        pose_mm = list(request.payload.get("pose_mm", []))
         sensor_echo = {
             "ts": now_ts + 0.05,
             "kind": "desk_telemetry_radar",
             "body_id": request.target_body_id,
             "payload": {
-                "robot_model": request.payload.get("robot_model", "ABB_IRB2400"),
-                "joints_rad": joints,
-                "pose_mm": list(request.payload.get("pose_mm", [])),
+                "robot_model": request.payload.get("robot_model", request.target_body_id),
+                "arm": request.payload.get("arm"),
+                "joints_rad": list(request.payload.get("joints_rad", [])),
+                "pose_mm": pose_mm,
                 "orientation_rad": list(request.payload.get("orientation_rad", [])),
+                "rotation_vec_deg": list(request.payload.get("rotation_vec_deg", [])),
             },
-            "pose_x": float(request.payload.get("pose_mm", [0.0, 0.0, 0.0])[0]) * 0.001,
-            "pose_y": float(request.payload.get("pose_mm", [0.0, 0.0, 0.0])[1]) * 0.001,
-            "pose_z": float(request.payload.get("pose_mm", [0.0, 0.0, 0.0])[2]) * 0.001,
+            "pose_x": float(pose_mm[0] if len(pose_mm) > 0 else 0.0) * 0.001,
+            "pose_y": float(pose_mm[1] if len(pose_mm) > 1 else 0.0) * 0.001,
+            "pose_z": float(pose_mm[2] if len(pose_mm) > 2 else 0.0) * 0.001,
             "confidence": 1.0,
             "truth_label": "OBSERVED",
             "homeworld_serial": request.homeworld_serial,

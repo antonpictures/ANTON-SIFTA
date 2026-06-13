@@ -39,6 +39,7 @@ ORGANS: dict[str, dict[str, str]] = {
     "E47": {"name": "Biohybrid Boundary", "module": "System/stigmerobotics_biohybrid_boundary.py", "test": "tests/test_stigmero_e47_biohybrid_boundary.py"},
     "E48": {"name": "Wet/Dry Boundary", "module": "System/stigmerobotics_wet_dry_interface.py", "test": "tests/test_stigmero_e48_physical_protocol.py"},
     "E49": {"name": "IRB2400 IK Benchmark", "module": "System/stigmerobotics_irb2400_ik.py", "test": "tests/test_stigmero_e49_irb2400_ik.py"},
+    "E50": {"name": "ARKOMA NAO IK Benchmark", "module": "System/stigmerobotics_arkoma_ik.py", "test": "tests/test_stigmero_e50_arkoma_ik.py"},
 }
 
 
