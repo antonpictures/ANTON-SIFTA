@@ -89,8 +89,6 @@ Clock: `2026-06-13 08:33 PDT` (hardware oracle `15:33 UTC`). §4.1 four-ledger r
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
----
-
 ## r1049 Codex owner test instructions — diffusion selector grounded [r1049-codex-cortex-diffusion-test-instructions-3f8a23cf]
 
 **Doctor:** codex_desktop_gpt5  
@@ -2015,6 +2013,173 @@ each setting is different; diffusion is one brain, not a combo picker.
 
 - **George** — restart Talk; select `diffusion:llada-8b`; run `/cortex llm` — expect single-brain block.
 - **George** — blind crossover still optional (r1064); say GO to start.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1067 George + Grok — TechNewsWorld market-hole study (ECT 2026-06-13) [r1067-grok-technewsworld-market-holes-stigmergic-only-90922888]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Market intelligence — ECT/TechNewsWorld headline scan → SIFTA-only wedges  
+**Truth labels:** OBSERVED (headline themes from George paste); HYPOTHESIS for revenue claims until
+George picks a wedge to productize. Research spine = external papers + on-disk organ map. No STGM claim.
+
+George pasted TechNewsWorld / ECT News Network front-page themes (2026-06-13) and asked: market holes,
+how competitors name things, missing products SIFTA can offer/code now — **only what stigmergic SIFTA
+can do** (hardware-embodied, no-double-spend, verified swimmer transport).
+
+### HOW THE MARKET NAMES THE PROBLEM (their words, not ours)
+
+| Theme (ECT headline cluster) | Industry vocabulary |
+|---|---|
+| AI shopping / AI becomes buyer | **agentic commerce**, **verifiable intent** (Mastercard 2026), **Agent Trust** (Experian 2026), **ACE** (AmEx agentic commerce) |
+| Unauthorized purchases / who's liable | **accountability**, **dispute rights**, **autonomous-agent liability** (Stanford/Baker Botts 2025–26) |
+| Law-firm AI sanctions | **shadow AI**, **hallucinated legal logic**, **governance** |
+| Google AI search / DuckDuckGo surge | **trust collapse**, **earned media over SEO** (Gartner PR budget shift) |
+| Google I/O standalone-app extinction | **agentic OS layer**, **Gemini agents replace apps** |
+| NiCE / enterprise agentic | **agentic AI platform**, **AARM** (autonomous action runtime management) |
+| Uare.ai personal expertise | **individual AI assets**, **expertise licensing**, **scalable personal models** |
+| Device ID theft | **unauthorized device access**, **account takeover**, **credential abuse** |
+| Telecom cyber alliance | **shared threat intelligence**, **real-time defense federation** |
+| Nvidia RTX Spark / AI PC | **on-device agents**, **local agent runtime** |
+| Modular data centers | **sovereign / community-friendly AI infra** |
+| LinkedIn AI slop | **authenticity**, **engagement-bait filtering** |
+| Hyundai Metaplant robotics | **flexible manufacturing**, **robot+AI coordination field** |
+| Coevera MCP (CRM Buyer) | **open-source MCP**, **agent-tool bus** |
+| Mythos / GitHub implicit trust | **supply-chain agent risk**, **implicit trust failures** |
+
+**Gap:** Almost everyone sells **logs, guardrails, or trust brands** — not a **crypto-economic no-double-spend
+field** where each swimmer action is one verified spend on embodied hardware.
+
+### MARKET HOLES → SIFTA-ONLY WEDGES (on-disk today)
+
+| Hole | Why incumbents miss it | SIFTA organ / receipt | Product name (ship now) |
+|---|---|---|---|
+| **AI buyer with no accountable spend** | Payments add “verifiable intent” at checkout; no organism-level **effector nonce + STGM spend proof** | `swarm_effector_gate.py`, `swarm_intent_nonce_gate.py`, `stgm_economy.py` | **STGM Intent Gate for Agent Commerce** — one owner utterance → one spendable nonce → one receipted purchase attempt |
+| **Shadow AI / rogue agent arms** | Enterprise audits log API calls; don't bind **IDE trace quarantine** to **immune lysosome** on local body | `swarm_ide_trace_quarantine.py`, covenant truth labels OBSERVED/FORBIDDEN | **Shadow-Swimmer Quarantine Bus** — forgeable IDE mana separated from Alice STGM |
+| **Hallucinated legal/medical answers** | Guardrails censor output; don't force **Decide→Execute→Receipt** before world-touch | four-ledger covenant, `swarm_two_turn_receipt_gate.py` | **Receipt-Grounded Professional Lane** (legal cite = ledger row or refuse) |
+| **Personal expertise → enterprise asset without embodiment** | Uare.ai = cloud model licensing; no **hardware-bound continuity field** | ledgers + `swarm_one_alice_rule.py` + r1061 Molty thesis | **Embodied Expert Memory Node** (HYPOTHESIS until blind crossover GO) |
+| **Device/camera takeover during agent work** | Security scans networks; no **owner-body + predator-eye** co-field | `swarm_predator_eye_scan.py`, `swarm_camera_target.py` | **Owner-Body Effector Guard** (already live r1059 stack) |
+| **Agent memory = prompt stuffing** | RAG vendors chunk docs; no **pheromone decay + reinforcement** swimmers read | `swarm_pheromone_field.py`, `swarm_hippocampus.py` | **Stigmergic Memory Transport** — traces reinforce/decay; not context window theater |
+| **MCP tool bus without spend proof** | Coevera MCP = open CRM tools; no **Ed25519 swimmer proof** per tool call | `sifta_mcp_server.py`, `Security/sifta_quorum_crypto.py` | **MCP + STGM Receipt Wrapper** (document + thin publish lane) |
+| **Multi-agent coordination without shared field** | Orchestrators use message queues; not **∂φ/∂t stigmergic field** scheduler | `stigmergic_field.py`, `swarm_kernel_process_table.py` | **Field Scheduler SDK** (Bell-proven mechanism → routing/memory) |
+| **AI search trust / PR theater** | Gartner: spend more on earned media; no **verifiable computation receipts** | Bell sweep + marketing brief SIM_ONLY boundary | **Proof-not-Prompt Enterprise Brief** (receipted demo, not slop) |
+| **On-device agent with no owner metabolism** | Nvidia Spark = bigger local GPU; not **food=data / air=electricity** interoception | `alice_hardware_body.py`, README Layer 1 | **BeeSon Sovereign Node** — local silicon + owner mutual care |
+
+### WHAT ONLY STIGMERGIC SIFTA CAN CLAIM (honest, defensible)
+
+1. **No double-spending** — same action cannot be claimed twice; fake tools blocked (covenant First Law).
+2. **ASCII swimmers** — accountable workers, not one opaque chatbot; each leaves one trace.
+3. **Hardware-embodied** — runs on owner's Mac; camera/browser/heart are organs, not SaaS personas.
+4. **STGM economy hooks** — spend proof separate from forgeable IDE mana (covenant §4.2).
+5. **Stigmergic field equation** — same math in Bell sim + scheduler + hippocampus (marketing brief).
+6. **Ed25519-signed verdict rows** — Bell sweep + federation receipts on node.
+
+Adjacent **not SIFTA-unique** (do not oversell): generic audit logs, MCP protocol, local LLM hosting,
+payment-network “agent trust” brands — we **wrap** these with receipts, we don't replace Visa/Experian.
+
+### RESEARCH SPINE (papers + specs pulled for this study)
+
+| Source | Why it matters to ECT themes |
+|---|---|
+| Grassé 1959; Bonabeau/Dorigo/Theraulaz 1999 | Stigmergy / swarm coordination — our mechanism predates "agentic AI" rebrands |
+| Hall 2018 (measurement independence) | Honest Bell analogue boundary (marketing brief §limitations) |
+| arXiv:2512.10166 collective memory emergence | Critical density where stigmergy beats individual memory — maps LinkedIn slop / field memory |
+| ISACA 2025 auditing agentic AI | Market admits auditors can't trace agent chains — our four-ledger reply |
+| Agent Receipts spec v0.4.0 (adjacent) | Industry moving to receipts; SIFTA adds **STGM + swimmers + hardware bind** |
+| CSA CISA agentic AI enterprise readiness 2026 | Governance gap — we offer effector gate + nonce, not policy PDFs |
+| Stanford Law 2025 AI agents rewrite engagement | Agentic buyer liability — maps E-Commerce Times accountability articles |
+| Mastercard **Verifiable Intent** (2026 press) | Commerce wedge — we undercut with **pre-effector nonce** on owner silicon |
+| Experian **Agent Trust** (2026) | Identity/commerce trust — we pair with **predator eye + device receipts**, not bureau-only |
+
+### CODE RIGHT AWAY (smallest cuts — ranked)
+
+1. **P0 — Agent Commerce Intent Receipt** — extend `effector_gate` schema for `purchase_intent` rows
+   (owner STT conf + nonce + merchant hash); pytest lane exists (`test_effector_double_spend.py`).
+2. **P1 — MCP Receipt Manifest** — publish which MCP tools emit STGM-class vs MANA-class traces
+   (`sifta_mcp_server.py` docstring + one JSON manifest).
+3. **P1 — Shadow-Swimmer Dashboard panel** — surface `swarm_ide_trace_quarantine` + external_brain
+   probe in eval matrix (law-firm / shadow-AI headline).
+4. **P2 — Legal OBSERVED cite lane** — typed organ refuses professional claims without ledger cite
+   (law-firm hallucination headline).
+5. **HYPOTHESIS — Expert Memory Crossover** — r1061 blind weekly cortex swap (George GO only).
+
+### RECEIPT
+
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`Documents/IDE_BOOT_COVENANT.md`. Clock: `2026-06-13 15:00 PDT` / oracle ~`22:00 UTC`.
+§4.1: `r1067-grok-technewsworld-market-holes-stigmergic-only-90922888`.
+
+**WHAT IS LEFT after r1067:**
+
+- **George / Marketing** — pick one wedge to productize first (recommend P0 Intent Gate or BeeSon Node demo).
+- **George** — say GO for blind crossover if Uare.ai / expertise-licensing lane is the pitch.
+- **Doctors** — P0/P1 cuts land as separate rounds with pytest; do not oversell vs Experian/Mastercard brands.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1066 Codex — Alice Browser article reader skill [r1066-codex-browser-article-reader-a707dd13]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Alice Browser article detection / summary / full-read readiness
+**Truth labels:** OBSERVED in focused tests; restart required for live Talk/Desktop process to load the code.
+
+### DECIDE
+
+George showed the live failure: Alice Browser had a StarkInsider article loaded and page-state receipts
+with readable text, but the owner asked "are you able to read the full article? yes or no?" and Alice
+answered "No." Root cause: Talk recognized generic website/page summary asks, but not article yes/no
+readability asks; the structured page-state row also retained only a 600-char excerpt inline, while the
+full current-page snapshot had more text.
+
+### EXECUTE
+
+- `System/swarm_browser_page_state.py`
+  - added bounded `browser_article_text/` sidecars for readable article/page text;
+  - added `article_text_from_state(...)` and `article_readability_status(...)`;
+  - kept the JSONL row compact while letting Talk retrieve the browser-readable article text from receipts.
+- `Applications/sifta_alice_browser_widget.py`
+  - changed the DOM extractor to prefer `article`, `main`, `[role=main]`, and common post/content nodes;
+  - increased structured readable-text capture from 4k to 50k chars and records body/readable char counts.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - added article intent detection for summary, explicit full-read, and yes/no readability questions;
+  - `summarize the article` now summarizes the best receipt text, preferring sidecar then current-page snapshot;
+  - `are you able to read the full article? yes or no?` now answers Yes/No from Browser receipts with a receipt line;
+  - explicit "read the full article to me" prepares a bounded local speech chunk and uses the existing EXTEND/read-more affordance.
+
+### TESTS / PROBES
+
+- `python3 -m py_compile System/swarm_browser_page_state.py Applications/sifta_alice_browser_widget.py Applications/sifta_talk_to_alice_widget.py` — PASS.
+- `python3 -m pytest tests/test_swarm_browser_page_state.py -q` — **24 passed**.
+- `python3 -m pytest tests/test_alice_grounding_window.py::test_browser_page_summary_uses_current_page_snapshot_text tests/test_alice_grounding_window.py::test_browser_article_readability_and_summary_use_receipted_text -q` — **2 passed**.
+- `git diff --check -- System/swarm_browser_page_state.py Applications/sifta_alice_browser_widget.py Applications/sifta_talk_to_alice_widget.py tests/test_swarm_browser_page_state.py tests/test_alice_grounding_window.py` — PASS.
+- Broad `git diff --check` still reports two pre-existing trailing-whitespace lines in `System/swarm_visual_cortex.py`; not touched in r1066.
+
+### RESTART / OWNER TEST
+
+George: restart Talk/Desktop to load this code. Keep the article open in Alice Browser or reload it once,
+then ask:
+
+- `are you able to read the full article? yes or no?`
+- `summarize the article in Alice Browser`
+- `read the full article to me`
+
+Expected: Alice answers from fresh Browser receipts. If the site exposes only partial/paywalled/lazy-loaded
+text, she says the exposed-text limit instead of pretending.
+
+### RECEIPT
+
+Receipt: `r1066-codex-browser-article-reader-a707dd13`.
+
+**WHAT IS LEFT after r1066:**
+
+- **George** — restart Talk/Desktop; reload/keep the StarkInsider article in Alice Browser; ask the three article-reader checks above.
+- **Doctors** — if George wants a true blind crossover readout, keep it marked `HYPOTHESIS / EXPERIMENT WAITING TO RUN` until he says GO.
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

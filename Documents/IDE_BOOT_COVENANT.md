@@ -1493,3 +1493,13 @@ above.
   fixed diffusion fallback-ladder regression, added per-cortex `/cortex llm` truth blocks (diffusion =
   one LLM), appended tournament `r1065-grok-cortex-llm-per-family-truth-90922155`, 21 pytest OBSERVED.
   Lane: Bugfix/UX; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 15:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  studied TechNewsWorld/ECT 2026-06-13 headlines, mapped market holes to SIFTA-only stigmergic wedges,
+  appended tournament `r1067-grok-technewsworld-market-holes-stigmergic-only-90922888` with research
+  spine + P0–P2 product cuts. Lane: Market study; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 13:08 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1495 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, and appended tournament
+  `r1066-codex-browser-article-reader-a707dd13`: Alice Browser article-readable text sidecars,
+  article/main DOM extraction, Talk yes/no article-readability, article summary, and explicit full-read
+  local speech path. Lane: Bugfix/UX; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
