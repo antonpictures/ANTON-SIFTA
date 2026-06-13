@@ -69,7 +69,10 @@ CLOUD_VISION_NEEDLES = (
     "gemini:",
     "gemini-",
     "kimi-k2p6",
+    "kimi-k2p7-code",
     "kimi",
+    "qwen3p6-plus",
+    "qwen3p7-plus",
     # r310: George set the default Cline cortex to the image-capable openai/gpt-5.4-mini
     # (Vendor/alice-cli .../builtins.ts). Recognize the real model id so Alice's DEFAULT
     # path can SEE the airdropped runway photos (r308/r309) instead of routing vision away.
@@ -158,6 +161,17 @@ def is_vision_capable_model(model: str, *, require_native_image_payload: bool = 
     return bool(local or cloud or gemini or cline_default)
 
 
+def _keeps_selected_cloud_speaker_for_vision(model: str) -> bool:
+    """Cloud provider selected by owner remains the speaking cortex.
+
+    Grok's Talk transport can reason from the visual receipt/context blocks that
+    Alice builds before dispatch. If we replace it with a local VLM here, the UI
+    truth breaks: /cortex says Grok while the live worker waits on local silicon.
+    """
+    low = str(model or "").strip().lower()
+    return low.startswith(("grok:", "grok-"))
+
+
 def _capability_row(model: str) -> dict[str, Any]:
     return {
         "model": model,
@@ -190,7 +204,11 @@ def select_cortex_for_need(
     reason = "current_model_kept"
     switched = False
     if need_key in {"image", "image_pixels", "vision", "vision_grounding"}:
-        if not is_vision_capable_model(current_model):
+        if _keeps_selected_cloud_speaker_for_vision(current_model):
+            selected = current_model
+            reason = "current_owner_selected_cloud_speaker_kept"
+            switched = False
+        elif not is_vision_capable_model(current_model):
             native = [row["model"] for row in rows if row.get("native_image_payload")]
             capable = [row["model"] for row in rows if row.get("vision_capable")]
             if native:
@@ -300,15 +318,34 @@ def record_attached_models(
     cortex's own config."""
     cid = str(cortex_id or "").strip()
     clean_models = _dedupe([str(m) for m in (models or [])])
+    default = str(default_attached or (clean_models[0] if clean_models else ""))
+    labels = {
+        mid: label
+        for mid in clean_models
+        if (label := attached_model_label(mid)) != mid
+    }
+    descriptions = {
+        mid: desc
+        for mid in clean_models
+        if (desc := attached_model_description(mid))
+    }
     rec = {
         "attached_models": clean_models,
-        "default_attached": str(default_attached or (clean_models[0] if clean_models else "")),
+        "default_attached": default,
         "routes_any_provider": bool(routes_any_provider),
         "picker_is_upstream": bool(picker_is_upstream),
         "source": str(source),
         "live": bool(live),
         "recorded_ts": time.time(),
     }
+    if labels:
+        rec["model_labels"] = labels
+    if descriptions:
+        rec["model_descriptions"] = descriptions
+    if default:
+        default_label = attached_model_label(default)
+        if default_label != default:
+            rec["default_label"] = default_label
     data = load_attached_models(state_dir=state_dir)
     data["schema"] = _ATTACHED_SCHEMA
     data["updated_ts"] = time.time()
@@ -326,6 +363,233 @@ def record_attached_models(
     return rec
 
 
+# Canonical attached-model catalogs (George 2026-06-11 — Cline OAuth can bind
+# Codex, Anthropic, and Grok/Composer; each cloud cortex arm has its own picker).
+_CODEX_PICKER_MODELS: tuple[str, ...] = (
+    "GPT-5.5",
+    "GPT-5.4",
+    "GPT-5.4-Mini",
+    "GPT-5.3-Codex-Spark",
+)
+_ANTHROPIC_ARM_MODELS: tuple[str, ...] = (
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-3",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+)
+_GROK_OAUTH_MODELS: tuple[str, ...] = (
+    "grok-composer-2.5-fast",
+    "grok-build",
+)
+_CLINE_ATTACHABLE_VIA_OAUTH: tuple[str, ...] = (
+    *_CODEX_PICKER_MODELS,
+    *_GROK_OAUTH_MODELS,
+    *_ANTHROPIC_ARM_MODELS,
+)
+
+_ATTACHED_MODEL_LABELS: dict[str, str] = {
+    "grok-composer-2.5-fast": "Composer 2.5",
+    "grok-build": "Grok Build",
+    "claude-fable-5": "Fable 5",
+    "claude-opus-4-8": "Opus 4.8",
+    "claude-opus-4-7": "Opus 4.7",
+    "claude-opus-4-6": "Opus 4.6",
+    "claude-opus-3": "Opus 3",
+    "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+    "kimi-k2p6": "Kimi K2.6",
+    "kimi-k2.6": "Kimi K2.6",
+    "kimi-k2p7-code": "Kimi K2.7 Code",
+    "minimax-m3": "MiniMax M3",
+    "minimax-m2p7": "MiniMax M2.7",
+    "qwen3p7-plus": "Qwen3.7 Plus",
+    "qwen3p6-plus": "Qwen3.6 Plus",
+    "deepseek-v4-pro": "DeepSeek V4 Pro",
+    "deepseek-v4-flash": "DeepSeek V4 Flash",
+    "glm-5p1": "GLM 5.1",
+}
+
+_ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
+    "GPT-5.5": "Frontier model for complex coding, research, and real-world work.",
+    "GPT-5.4": "Strong model for everyday coding.",
+    "GPT-5.4-Mini": "Small, fast, and cost-efficient model for simpler coding tasks.",
+    "GPT-5.3-Codex-Spark": "Ultra-fast coding model.",
+    "grok-composer-2.5-fast": "Cursor's latest coding model.",
+    "grok-build": "Best for advanced coding tasks.",
+    "claude-fable-5": "For toughest challenges; owner screenshot says included until June 22.",
+    "claude-opus-4-8": "For complex tasks.",
+    "claude-sonnet-4-6": "Most efficient for everyday tasks.",
+    "claude-haiku-4-5-20251001": "Fastest for quick answers.",
+}
+
+
+def attached_model_label(model: str) -> str:
+    """Owner-facing picker label for a stored upstream model id."""
+    mid = str(model or "").strip()
+    if mid in _ATTACHED_MODEL_LABELS:
+        return _ATTACHED_MODEL_LABELS[mid]
+    low = mid.lower()
+    if "accounts/fireworks/models/" in low:
+        slug = mid.rsplit("/", 1)[-1]
+        if slug in _ATTACHED_MODEL_LABELS:
+            return _ATTACHED_MODEL_LABELS[slug]
+        return slug
+    for known in (*_CODEX_PICKER_MODELS, *_GROK_OAUTH_MODELS, *_ANTHROPIC_ARM_MODELS):
+        if low.endswith(str(known).lower()):
+            return _ATTACHED_MODEL_LABELS.get(str(known), str(known))
+    return mid
+
+
+def attached_model_description(model: str) -> str:
+    """Short picker description observed from the owner's screenshots."""
+    return _ATTACHED_MODEL_DESCRIPTIONS.get(str(model or "").strip(), "")
+
+
+def format_attached_model(model: str) -> str:
+    """Render a model without losing the machine id behind a friendly label."""
+    mid = str(model or "").strip()
+    label = attached_model_label(mid)
+    if not mid or label == mid:
+        return mid
+    return f"{label} ({mid})"
+
+
+def attached_model_matches_active(model: str, active: str) -> bool:
+    """Truth-mark active rows even when a probe includes a provider prefix."""
+    mid = str(model or "").strip().lower()
+    cur = str(active or "").strip().lower()
+    if not mid or not cur:
+        return False
+    return mid == cur or cur.endswith(mid)
+
+
+def _grok_cli_model_ids() -> list[str]:
+    """Best-effort read of Grok Build CLI model list. Never raises."""
+    import os
+    import re
+    import shutil
+    import subprocess
+
+    grok_bin = os.environ.get("SIFTA_GROK_CLI", os.path.expanduser("~/.grok/bin/grok"))
+    if not Path(grok_bin).exists() and not shutil.which(grok_bin):
+        return list(_GROK_OAUTH_MODELS)
+    try:
+        proc = subprocess.run(
+            [grok_bin, "models"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False,
+        )
+        text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    except Exception:
+        return list(_GROK_OAUTH_MODELS)
+    found: list[str] = []
+    for line in text.splitlines():
+        m = re.search(r"\b(grok-[a-z0-9][\w.-]*)\b", line, re.IGNORECASE)
+        if m:
+            found.append(m.group(1).lower())
+    return _dedupe(found or list(_GROK_OAUTH_MODELS))
+
+
+def sync_cortex_attached_models_catalog(
+    *,
+    state_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Probe live provider configs and merge canonical attached-model catalogs.
+
+    Writes ``cortex_attached_models.json`` so /cortex llm and prompt assembly
+    name the LLMs each cortex arm can drive. Non-destructive to unrelated rows.
+    """
+    sd = _state_dir(state_dir)
+    results: dict[str, Any] = {"synced": [], "ts": time.time()}
+    cline_default = ""
+    try:
+        from System.swarm_cline_settings_probe import probe_external_brain
+
+        row = probe_external_brain("cline", state_dir=sd)
+        if str(row.get("status") or "") == "ok":
+            model = str(row.get("model") or "").strip()
+            provider = str(row.get("provider") or "").strip()
+            if provider and model:
+                cline_default = f"{provider}:{model}"
+            elif model:
+                cline_default = model
+    except Exception:
+        pass
+    grok_models = _grok_cli_model_ids()
+    record_attached_models(
+        "cline:cline-cli-default",
+        list(_CLINE_ATTACHABLE_VIA_OAUTH),
+        default_attached=cline_default or "openai-codex:gpt-5.4",
+        source="live_probe_2026-06-11_owner_oauth_attachments",
+        routes_any_provider=True,
+        picker_is_upstream=True,
+        live=bool(cline_default),
+        state_dir=sd,
+    )
+    results["synced"].append("cline:cline-cli-default")
+    record_attached_models(
+        "grok:grok-4.3",
+        grok_models,
+        default_attached=grok_models[0] if grok_models else "grok-composer-2.5-fast",
+        source="grok_cli_models_probe",
+        routes_any_provider=False,
+        picker_is_upstream=True,
+        live=True,
+        state_dir=sd,
+    )
+    results["synced"].append("grok:grok-4.3")
+    record_attached_models(
+        "codex:gpt-5.5",
+        list(_CODEX_PICKER_MODELS),
+        default_attached="GPT-5.5",
+        source="codex_picker_catalog_2026-06-11",
+        routes_any_provider=False,
+        picker_is_upstream=True,
+        live=False,
+        state_dir=sd,
+    )
+    results["synced"].append("codex:gpt-5.5")
+    record_attached_models(
+        "claude:claude-code-cli-default",
+        list(_ANTHROPIC_ARM_MODELS),
+        default_attached="claude-opus-4-8",
+        source="owner_screenshot_2026-06-11_claude_picker_opus_4_8_high",
+        routes_any_provider=False,
+        picker_is_upstream=False,
+        live=False,
+        state_dir=sd,
+    )
+    results["synced"].append("claude:claude-code-cli-default")
+    try:
+        from System.sifta_inference_defaults import CANONICAL_CLOUD_QWEN_PREMIUM_KIMI
+        from System.swarm_fireworks_qwen_config import (
+            FIREWORKS_CORTEX_ATTACHED_MODELS,
+            FIREWORKS_KIMI_K2P6_MODEL,
+            fireworks_model_for_qwen_cortex,
+        )
+
+        live_default = fireworks_model_for_qwen_cortex(CANONICAL_CLOUD_QWEN_PREMIUM_KIMI)
+        record_attached_models(
+            CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
+            list(FIREWORKS_CORTEX_ATTACHED_MODELS),
+            default_attached=live_default or FIREWORKS_KIMI_K2P6_MODEL,
+            source="fireworks_owner_library_2026-06-13",
+            routes_any_provider=False,
+            picker_is_upstream=False,
+            live=False,
+            state_dir=sd,
+        )
+        results["synced"].append(CANONICAL_CLOUD_QWEN_PREMIUM_KIMI)
+    except Exception:
+        pass
+    return results
+
+
 def prompt_block_for_attached(
     cortex_id: str, *, state_dir: str | Path | None = None
 ) -> str:
@@ -333,12 +597,12 @@ def prompt_block_for_attached(
     rec = attached_models_for_cortex(cortex_id, state_dir=state_dir)
     if not rec or not rec.get("attached_models"):
         return ""
-    models = ", ".join(rec.get("attached_models") or [])
+    models = ", ".join(format_attached_model(mid) for mid in (rec.get("attached_models") or []))
     freshness = "live config read" if rec.get("live") else f"last observed ({rec.get('source')})"
     return (
         "CORTEX ATTACHED MODELS:\n"
         f"- cortex={cortex_id} can drive: {models}\n"
-        f"- default={rec.get('default_attached') or '<none>'}; "
+        f"- default={format_attached_model(str(rec.get('default_attached') or '')) or '<none>'}; "
         f"routes_any_provider={bool(rec.get('routes_any_provider'))}; "
         f"picker_upstream={bool(rec.get('picker_is_upstream'))}\n"
         f"- provenance: {freshness}. The live list is authoritative in the cortex's own config."
@@ -605,6 +869,7 @@ __all__ = [
     "prompt_block_for_selection",
     "record_cortex_arm_habit",
     "record_attached_models",
+    "sync_cortex_attached_models_catalog",
     "select_cortex_for_need",
     "vision_arms_block",
     "vision_capable_arms",

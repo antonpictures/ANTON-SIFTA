@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Fireworks/Qwen Code configuration helpers.
+"""Fireworks / Kimi (legacy "Qwen" namespace) Code configuration helpers.
+
+Owner current setup (this round, thinking with Cline): the path previously labeled
+"just Qwen" is now using Kimi models via the Fireworks API (kimi-k2p6 etc.).
+The "qwen:" prefix / child env remains for compatibility with the qwen Code CLI
+arm (it expects OpenAI-compatible / OPENAI_API_KEY). See also
+sifta_inference_defaults.py CANONICAL_CLOUD_QWEN* and the MiMo addition.
 
 The Fireworks API key is a local node secret, not repo DNA.  Code paths that
-launch Qwen read it from environment first, then from
+launch the arm read it from environment first, then from
 ``.sifta_state/secrets/fireworks_api_key``.  The key is injected into the child
 environment, never into the command arguments that agent-arm receipts record.
 """
@@ -30,7 +36,30 @@ FIREWORKS_CHAT_COMPLETIONS_URL = f"{FIREWORKS_BASE_URL}/chat/completions"
 # tag for serious surgery turns; long-context work can opt into v4-flash later.
 FIREWORKS_GPT_OSS_20B_MODEL = "accounts/fireworks/models/gpt-oss-20b"
 FIREWORKS_KIMI_K2P6_MODEL = "accounts/fireworks/models/kimi-k2p6"
+FIREWORKS_KIMI_K2P7_CODE_MODEL = "accounts/fireworks/models/kimi-k2p7-code"
 FIREWORKS_DEEPSEEK_V4_FLASH_MODEL = "accounts/fireworks/models/deepseek-v4-flash"
+FIREWORKS_DEEPSEEK_V4_PRO_MODEL = "accounts/fireworks/models/deepseek-v4-pro"
+FIREWORKS_MINIMAX_M3_MODEL = "accounts/fireworks/models/minimax-m3"
+FIREWORKS_MINIMAX_M2P7_MODEL = "accounts/fireworks/models/minimax-m2p7"
+FIREWORKS_QWEN3P7_PLUS_MODEL = "accounts/fireworks/models/qwen3p7-plus"
+FIREWORKS_QWEN3P6_PLUS_MODEL = "accounts/fireworks/models/qwen3p6-plus"
+FIREWORKS_GLM_5P1_MODEL = "accounts/fireworks/models/glm-5p1"
+
+# Owner Fireworks library (2026-06-13): selectable under qwen:/cortex llm without
+# forking the legacy qwen: namespace. Full API paths are stored; labels live in
+# swarm_cortex_capabilities.attached_model_label.
+FIREWORKS_CORTEX_ATTACHED_MODELS: tuple[str, ...] = (
+    FIREWORKS_KIMI_K2P7_CODE_MODEL,
+    FIREWORKS_KIMI_K2P6_MODEL,
+    FIREWORKS_MINIMAX_M3_MODEL,
+    FIREWORKS_QWEN3P7_PLUS_MODEL,
+    FIREWORKS_DEEPSEEK_V4_PRO_MODEL,
+    FIREWORKS_MINIMAX_M2P7_MODEL,
+    FIREWORKS_QWEN3P6_PLUS_MODEL,
+    FIREWORKS_GLM_5P1_MODEL,
+)
+
+FIREWORKS_MODEL_PIN_ENV = "SIFTA_FIREWORKS_MODEL"
 
 # The single source of truth used by the qwen arm command builder and the
 # settings.json installer. Change this constant to re-target the default.
@@ -39,6 +68,49 @@ FIREWORKS_DEFAULT_MODEL = FIREWORKS_GPT_OSS_20B_MODEL
 # Keep the K2P6 alias for back-compat with any caller that imported it
 # directly; new code should reference FIREWORKS_DEFAULT_MODEL.
 FIREWORKS_SECRET_RELATIVE = Path("secrets") / "fireworks_api_key"
+
+
+def fireworks_model_slug(model: str) -> str:
+    """Return the short Fireworks slug (``kimi-k2p7-code``) from a path or slug."""
+    s = str(model or "").strip()
+    if not s:
+        return ""
+    if "accounts/fireworks/models/" in s:
+        return s.rsplit("/", 1)[-1]
+    return s
+
+
+def normalize_fireworks_model_path(model: str) -> str:
+    """Normalize owner input to a full Fireworks ``accounts/fireworks/models/…`` path."""
+    s = str(model or "").strip()
+    if not s:
+        return ""
+    if s.startswith("accounts/fireworks/models/"):
+        return s
+    slug = fireworks_model_slug(s)
+    return f"accounts/fireworks/models/{slug}" if slug else ""
+
+
+def is_qwen_fireworks_cortex(tag: str) -> bool:
+    low = str(tag or "").strip().lower()
+    return low.startswith("qwen:") and "fireworks" in low
+
+
+def fireworks_model_for_qwen_cortex(
+    tag: str,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the Fireworks model path for a qwen cortex tag + optional pin."""
+    env_map = env if env is not None else os.environ
+    pin = normalize_fireworks_model_path(str(env_map.get(FIREWORKS_MODEL_PIN_ENV) or ""))
+    if pin:
+        return pin
+    bare = str(tag or "").strip()
+    if bare.lower().startswith("qwen:"):
+        bare = bare.split(":", 1)[1].strip()
+    normalized = normalize_fireworks_model_path(bare)
+    return normalized or FIREWORKS_KIMI_K2P6_MODEL
 
 
 def fireworks_secret_path(state_dir: str | Path | None = None) -> Path:
@@ -117,10 +189,16 @@ def qwen_fireworks_command(
     prompt: str,
     *,
     model: str = FIREWORKS_DEFAULT_MODEL,
+    cortex_tag: str = "",
     read_only: bool = False,
     timeout_s: int | None = None,
 ) -> list[str]:
     """Build the Qwen Code command for Fireworks without embedding secrets."""
+    resolved_model = (
+        fireworks_model_for_qwen_cortex(cortex_tag)
+        if cortex_tag
+        else normalize_fireworks_model_path(model) or FIREWORKS_DEFAULT_MODEL
+    )
     command = [
         "qwen",
         "--bare",
@@ -129,7 +207,7 @@ def qwen_fireworks_command(
         "--openai-base-url",
         FIREWORKS_BASE_URL,
         "--model",
-        model,
+        resolved_model,
         "--approval-mode",
         "yolo",
     ]

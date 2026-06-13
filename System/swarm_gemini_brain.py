@@ -166,6 +166,34 @@ _QWEN_DEFAULT_MENU = (
 )
 _CLINE_DEFAULT_MENU = ("cline:cline-cli-default",)
 _ANTIGRAVITY_DEFAULT_MENU = ("antigravity:auto",)  # r352: Google Antigravity `agy` (auto-selects Gemini 3.x / Claude 4.6, tools+vision)
+# r984 (George 2026-06-11): "then we add mimo to the cortex list with list of
+# llm's" — MiMo is a terminal-native coding CLI that connects to any
+# mainstream LLM provider API, same family as cline. TRUTH GATE: the entry
+# appears only when the binary is actually installed on this node (live
+# registry, not memory — a menu row for absent tissue would be a lie).
+_MIMO_DEFAULT_MENU = ("mimo:mimo-cli-default",)
+
+
+def _mimo_cli_installed() -> bool:
+    # r985 gate-bug fix (owned by cowork_claude): r984 checked PATH only, but
+    # Dr Cursor OBSERVED the real install at ~/.mimocode/bin/mimo — a dir the
+    # desktop process PATH does not carry. Truth gate now checks PATH plus the
+    # known install homes, same spirit as the TCC resolved-path lesson (§7.9).
+    try:
+        if shutil.which("mimo") or shutil.which("mimocode") or shutil.which("mimo-cli"):
+            return True
+        home = os.path.expanduser("~")
+        for cand in (
+            os.path.join(home, ".mimocode", "bin", "mimo"),
+            os.path.join(home, ".mimo", "bin", "mimo"),
+            "/usr/local/bin/mimo",
+            "/opt/homebrew/bin/mimo",
+        ):
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return True
+        return False
+    except Exception:
+        return False
 
 # Round 70 (2026-05-27): keep the SIFTA cortex resolver key stable while
 # translating to the concrete model id accepted by the logged-in local
@@ -174,6 +202,86 @@ _ANTIGRAVITY_DEFAULT_MENU = ("antigravity:auto",)  # r352: Google Antigravity `a
 _GROK_CLI_MODEL_ALIASES: Dict[str, str] = {
     "grok-4.3": "grok-build",
 }
+_GROK_BUILD_MODEL = "grok-build"
+_GROK_FAST_MODEL = "grok-composer-2.5-fast"
+_GROK_CLI_HEALTH_LEDGER_NAME = "grok_cli_model_health.jsonl"
+
+
+def _active_state_dir() -> Path:
+    env = os.environ.get("SIFTA_STATE_DIR", "").strip()
+    if env:
+        p = Path(env).expanduser()
+        return p if p.name == ".sifta_state" else (p / ".sifta_state")
+    return _STATE
+
+
+def _grok_cli_health_ledger(state_dir: Path | str | None = None) -> Path:
+    if state_dir is not None:
+        p = Path(state_dir).expanduser()
+        sd = p if p.name == ".sifta_state" else (p / ".sifta_state")
+    else:
+        sd = _active_state_dir()
+    return sd / _GROK_CLI_HEALTH_LEDGER_NAME
+
+
+def _append_grok_cli_health(
+    *,
+    model: str,
+    status: str,
+    action: str,
+    timeout_s: int | None = None,
+    latency_ms: int | None = None,
+    reason: str = "",
+    state_dir: Path | str | None = None,
+) -> Dict[str, Any]:
+    row: Dict[str, Any] = {
+        "ts": time.time(),
+        "truth_label": "GROK_CLI_MODEL_HEALTH_V1",
+        "model": str(model or ""),
+        "status": status,
+        "action": action,
+        "timeout_s": timeout_s,
+        "latency_ms": latency_ms,
+        "reason": reason,
+    }
+    if action == "demote_to_fast":
+        row["active_pin"] = _GROK_FAST_MODEL
+        os.environ["SIFTA_GROK_CLI_MODEL"] = _GROK_FAST_MODEL
+    try:
+        path = _grok_cli_health_ledger(state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return row
+
+
+def _latest_grok_cli_health(state_dir: Path | str | None = None) -> Dict[str, Any]:
+    path = _grok_cli_health_ledger(state_dir)
+    if not path.exists():
+        return {}
+    try:
+        lines = [ln for ln in path.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+        for line in reversed(lines[-50:]):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(row, dict):
+                return row
+    except Exception:
+        return {}
+    return {}
+
+
+def grok_build_is_demoted(state_dir: Path | str | None = None) -> bool:
+    latest = _latest_grok_cli_health(state_dir)
+    if not latest:
+        return False
+    if str(latest.get("model") or "").strip() != _GROK_BUILD_MODEL:
+        return False
+    return str(latest.get("action") or "") == "demote_to_fast"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -197,6 +305,8 @@ def is_gemini_model(name: str) -> bool:
         or n.startswith("qwen-")
         or n.startswith("cline:")
         or n.startswith("cline-")
+        or n.startswith("mimo:")          # r984: mimo lane (menu truth-gated on binary; full
+        or n.startswith("mimo-")          # dispatch routing is the next cut when installed)
         or n.startswith("antigravity:")   # r352: Google Antigravity `agy` as a talking cortex
         or n.startswith("antigravity-")
         # cowork 2026-06-02: local MLX cortexes (mlx-omni-server on the M5) ride the same
@@ -204,6 +314,8 @@ def is_gemini_model(name: str) -> bool:
         # The mlx branch in stream_chat returns before any token-ledger/cost code.
         or n.startswith("mlx:")
         or n.startswith("mlx-")
+        or n.startswith("diffusion:")
+        or n.startswith("usd:")
     )
 
 
@@ -242,6 +354,13 @@ def _is_cline_model(name: str) -> bool:
     return n.startswith("cline:") or n.startswith("cline-")
 
 
+def _is_mimo_model(name: str) -> bool:
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("mimo:") or n.startswith("mimo-")
+
+
 def _is_antigravity_model(name: str) -> bool:
     # r352 (George 2026-06-02): Google Antigravity CLI `agy` as Alice's 7th cortex.
     if not name:
@@ -267,6 +386,14 @@ def _is_direct_mlx_vlm_model(name: str) -> bool:
     return n.startswith("mlx-vlm:")
 
 
+def _is_diffusion_model(name: str) -> bool:
+    # CUR-F1: local GGUF diffusion cortex via llama-diffusion-cli (USD decode family).
+    if not name:
+        return False
+    n = str(name).strip().lower()
+    return n.startswith("diffusion:") or n.startswith("usd:")
+
+
 def is_cloud_model(name: str) -> bool:
     """Provider-agnostic alias used by newer callers."""
     return is_gemini_model(name)
@@ -287,6 +414,8 @@ def strip_prefix(name: str) -> str:
         n = n.split(":", 1)[1]
     elif n.lower().startswith("cline:"):
         n = n.split(":", 1)[1]
+    elif n.lower().startswith("mimo:"):
+        n = n.split(":", 1)[1]
     elif n.lower().startswith("antigravity:"):
         n = n.split(":", 1)[1]
     elif n.lower().startswith("mlx-vlm:"):
@@ -299,7 +428,13 @@ def strip_prefix(name: str) -> str:
 def grok_cli_model_for(name: str) -> str:
     """Return the concrete model id to pass to the local `grok` CLI."""
     bare = strip_prefix(name)
-    return _GROK_CLI_MODEL_ALIASES.get(bare.lower(), bare)
+    live_pin = os.environ.get("SIFTA_GROK_CLI_MODEL", "").strip()
+    if live_pin and (str(name or "").strip().lower().startswith(("grok:", "grok-")) or bare.lower() in _GROK_CLI_MODEL_ALIASES):
+        return live_pin
+    target = _GROK_CLI_MODEL_ALIASES.get(bare.lower(), bare)
+    if target == _GROK_BUILD_MODEL and grok_build_is_demoted():
+        return _GROK_FAST_MODEL
+    return target
 
 
 def display_label(name: str) -> str:
@@ -308,6 +443,8 @@ def display_label(name: str) -> str:
     # the family from the original name before re-labeling, else it collapses to gemini.
     if str(name).strip().lower().startswith(("antigravity:", "antigravity-")):
         return f"antigravity:{strip_prefix(name)}"
+    if str(name).strip().lower().startswith(("mimo:", "mimo-")):
+        return f"mimo:{strip_prefix(name)}"
     bare = strip_prefix(name)
     if bare.lower().startswith("grok-"):
         return f"grok:{bare}"
@@ -391,6 +528,8 @@ def available_gemini_models() -> List[str]:
     out.extend(_CODEX_DEFAULT_MENU)
     out.extend(_QWEN_DEFAULT_MENU)
     out.extend(_CLINE_DEFAULT_MENU)
+    if _mimo_cli_installed():  # r984: mimo lane, truth-gated on the binary
+        out.extend(_MIMO_DEFAULT_MENU)
     out.extend(_ANTIGRAVITY_DEFAULT_MENU)  # r352: agy selectable as a talking cortex
     deduped: List[str] = []
     seen: set[str] = set()
@@ -961,6 +1100,13 @@ def _stream_grok_chat_via_cli(
     try:
         proc = _run_once(cmd)
     except subprocess.TimeoutExpired:
+        _append_grok_cli_health(
+            model=used_model,
+            status="timeout",
+            action="demote_to_fast" if used_model == _GROK_BUILD_MODEL else "timeout",
+            timeout_s=timeout_s,
+            reason="grok_cli_timeout",
+        )
         try:
             from System.swarm_cortex_timeout_recovery import owner_text_from_messages, timeout_recovery_reply
 
@@ -1019,12 +1165,30 @@ def _stream_grok_chat_via_cli(
         yield ("error", "Grok CLI returned empty output.")
         return
 
+    latency_ms = int((time.time() - t0) * 1000)
+    if used_model == _GROK_BUILD_MODEL:
+        _append_grok_cli_health(
+            model=used_model,
+            status="ok",
+            action="build_ok",
+            latency_ms=latency_ms,
+            reason="turn_completed",
+        )
+    else:
+        _append_grok_cli_health(
+            model=used_model,
+            status="ok",
+            action="ok",
+            latency_ms=latency_ms,
+            reason="turn_completed",
+        )
+
     usage = Usage(
         model=used_model,
         prompt_tokens=0,
         completion_tokens=0,
         total_tokens=0,
-        latency_ms=int((time.time() - t0) * 1000),
+        latency_ms=latency_ms,
         request_tag=tag,
         raw={
             "transport": "grok_cli_single",
@@ -1296,6 +1460,7 @@ def _stream_qwen_chat_via_cli(
         cmd = qwen_fireworks_command(
             prompt,
             model=bare if bare else FIREWORKS_DEFAULT_MODEL,
+            cortex_tag=model,
             read_only=True,
             timeout_s=timeout_s,
         )
@@ -1556,6 +1721,18 @@ def stream_chat(
             timeout_s = None if _raw in {"0", "none", "off", ""} else int(float(_raw))
         except Exception:
             timeout_s = 1800
+    if _is_diffusion_model(model):
+        # CUR-F1: GGUF diffusion decode via llama-diffusion-cli (LLaDA today;
+        # DiffusionGemma honest-not-installed until arch merges upstream).
+        from System import swarm_diffusion_cortex
+        yield from swarm_diffusion_cortex.stream_chat(
+            model,
+            messages,
+            temperature=temperature,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
     if _is_direct_mlx_vlm_model(model):
         # Direct local MLX VLM cortex (HF cache / safetensors) via the safe
         # child-process route. This is distinct from the mlx-omni-server
@@ -1631,6 +1808,14 @@ def stream_chat(
             messages=messages,
             request_tag=request_tag,
             timeout_s=timeout_s,
+        )
+        return
+    if _is_mimo_model(model):
+        yield (
+            "error",
+            "MiMo cortex is visible on this node, but its dispatch transport is not wired yet. "
+            "Use /cortex llm while selected on MiMo to probe its upstream picker, or select "
+            "Cline/local cortex until the MiMo transport cut lands.",
         )
         return
 

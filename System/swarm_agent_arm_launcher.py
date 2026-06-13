@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -503,6 +504,41 @@ def hermes_covenant_inline_prefix() -> str:
     )
 
 
+_BODY_CODE_PATH_RE = re.compile(r"\b((?:System|Applications|tests|tools)/[A-Za-z0-9_./-]+\.py)\b")
+
+
+def _body_code_atlas_prefix(prompt: str, *, state_dir: Path | None = None) -> str:
+    """r988 (r983 step two): hand a coding arm the anatomy of the organs its
+    task names, BEFORE it cuts. Same body-code card Alice's own self-code hand
+    reads — atlas row, ledgers, tests, prior repair memories. The arm boots
+    cold; this is its eyes on the tissue it is about to touch. Empty string
+    when the task names no SIFTA source path. Never raises, never blocks.
+    """
+    try:
+        paths = list(dict.fromkeys(_BODY_CODE_PATH_RE.findall(prompt or "")))[:6]
+        if not paths:
+            return ""
+        from System.swarm_code_knowledge_graph import compose_body_code_card
+
+        repo = Path(__file__).resolve().parents[1]
+        sd = Path(state_dir) if state_dir is not None else repo / ".sifta_state"
+        card = compose_body_code_card(
+            paths, state_dir=sd, repo_root=repo, turn_tag="agent_arm_launcher", write_receipt=True
+        )
+        text = card.get("card") if isinstance(card, dict) else ""
+        if not text:
+            return ""
+        return (
+            "BODY-CODE ATLAS FOR YOUR TASK (read before you cut — this is the real "
+            "anatomy of the organs you were asked to touch, from Alice's own code "
+            "graph + ledgers; positions/line numbers may have moved, match by name):\n"
+            + text
+            + "\n\n"
+        )
+    except Exception:
+        return ""
+
+
 def _build_command(
     arm: AgentArmSpec,
     prompt: str,
@@ -528,7 +564,7 @@ def _build_command(
         # "go read this path" instruction — see hermes_covenant_inline_prefix.
         prompt = hermes_covenant_inline_prefix() + (prompt or "")
     elif arm.arm_id in {"grok_agent", "claude_agent", "codex_agent", "qwen_agent", "cline_agent", "antigravity_agent"}:
-        prompt = _COVENANT_BOOT_PREFIX + (prompt or "")
+        prompt = _COVENANT_BOOT_PREFIX + _body_code_atlas_prefix(prompt, state_dir=state_dir) + (prompt or "")
     if arm.arm_id == "corvid_scout":
         return [arm.command[0], "--task", "evidence", "--query", prompt]
     if arm.arm_id == "grok_agent":
@@ -566,7 +602,19 @@ def _build_command(
         # never write the files — a build that "ran" yet left nothing on disk. This is
         # the owner's sovereign choice for HIS node; the build verifier + git diff are
         # the audit trail of exactly what Claude wrote.
-        return [
+        # r943 (George 2026-06-11: "I would love, even only once, for Fable 5
+        # inside Alice as cortex"): the arm never pinned a model, so the CLI
+        # default decided her claude cortex (ledger evidence: opus-4-7 in May,
+        # opus-4-8 traces since — never fable). Honor model_hint, then the
+        # SIFTA_CLAUDE_ARM_MODEL env var. Empty/default marker = CLI default,
+        # exactly the old behavior.
+        import os as _os
+        _claude_model = str(
+            model_hint or _os.environ.get("SIFTA_CLAUDE_ARM_MODEL", "")
+        ).strip()
+        if _claude_model.lower().startswith("claude:"):
+            _claude_model = _claude_model.split(":", 1)[1].strip()
+        _cmd = [
             arm.command[0],
             "-p",
             "--dangerously-skip-permissions",
@@ -576,8 +624,11 @@ def _build_command(
             "stream-json",
             "--include-partial-messages",
             "--verbose",
-            prompt,
         ]
+        if _claude_model and _claude_model != "claude-code-cli-default":
+            _cmd += ["--model", _claude_model]
+        _cmd.append(prompt)
+        return _cmd
     if arm.arm_id == "qwen_agent":
         # Round 88 — Qwen Code over Fireworks must be explicit. The CLI does not
         # reliably apply ~/.qwen/settings.json to direct headless calls unless auth,
@@ -594,7 +645,13 @@ def _build_command(
         try:
             from System.swarm_fireworks_qwen_config import qwen_fireworks_command
 
-            return qwen_fireworks_command(prompt, read_only=False)
+            from System.swarm_fireworks_qwen_config import fireworks_model_for_qwen_cortex
+
+            return qwen_fireworks_command(
+                prompt,
+                model=fireworks_model_for_qwen_cortex(""),
+                read_only=False,
+            )
         except Exception:
             return [
                 arm.command[0],
