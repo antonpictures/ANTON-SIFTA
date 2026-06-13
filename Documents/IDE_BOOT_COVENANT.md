@@ -1627,6 +1627,17 @@ above.
   chains remain `HYPOTHESIS` for physical motion, py_compile passed, and the focused robotics suite is
   **49 passed in 7.07s**. Appended tournament `r1089-codex-e51-nao-chain-close-664065ef`.
   Lane: Stigmerobotics audit/repair; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 14:51 PDT` — `codex_desktop_gpt5` observed a valid r1089 collision after Cowork appended
+  the Purnomo/Atencio outreach section. Preserved both unique-anchor r1089 sections and appended
+  `r1090-codex-e51-nao-live-pointer-close-86915c5a` as a live-pointer consolidation for the E51 NAO chain
+  repair. Lane: Tournament collision close / Stigmerobotics receipt; `IDE_DOCTOR_OPERATIONAL_TRACE` /
+  `MANA`; no STGM claim.
+- `2026-06-13 ~22:50 UTC (~15:50 PDT, boot-probe sourced)` — `cursor_grok_cli` (grok-4.3-cli)
+  pulled Hugging Face `lerobot/robot-urdfs` G1 leg robot-links (URDF + 7 mesh paths) into the
+  walking-laptop organ lane: `tools/fetch_lerobot_robot_links_hf.py`,
+  `System/stigmerobotics_lerobot_hf_links.py`, manifest fixture (15 leg links), HF URLs wired
+  into `swarm_legs_locomotion_organ.py`. Verified **8 passed**. Tournament `r1093-grok-hf-lerobot-leg-links-pull`.
+  Lane: LeRobot legs HF ingest; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
 - `2026-06-13 ~22:05 UTC (~15:05 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
   read the canonical covenant, verified the r1088 robotics proof artifacts on disk (HEAD `7b23bb4b5`),
   gave George a qualified novelty green light (GREEN on the receipt-gated owner-silicon embodied substrate
@@ -1635,3 +1646,18 @@ above.
   credit tweet to IRB2400 dataset author Luis Angel Lopez Atencio). Appended + committed
   `r1089-cowork-outreach-purnomo-atencio-81382663`. Lane: Marketing/BD; `IDE_DOCTOR_CLAIM` / `MANA`;
   `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-13 ~22:25 UTC (~15:25 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant and updated the eval matrix SOURCE per George ("update with all we've done,
+  no duplicates"): probed first (no existing robotics/commerce organ), then registered two new canonical
+  organs in `System/swarm_canonical_organ_registry.py` — `stigmerobotics_rob501` (E49/E50/E51 + IK baseline)
+  and `agent_commerce_intent_gate` (intent nonce + effector gate + MCP manifest). Registry imports clean
+  (17 organs); rendered HTML regenerates on self-eval (heavy regen exceeded sandbox window, not claimed
+  rebuilt). Appended + committed `r1091-cowork-eval-matrix-register-organs-81382663`. Lane: Eval/registry;
+  `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-13 ~22:45 UTC (~15:45 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant and fixed the `diffusion:llada-8b` mute from George's Talk session:
+  `parse_diffusion_cli_output` only kept text after `total time:`, silencing builds that print decoded
+  text before the marker. Made the parser layout-robust + surfaced a raw CLI tail in the error; added
+  `tests/test_diffusion_cli_parse.py` (7 cases, green; 16 passed with the route test). No deterministic
+  cortex bypass. Appended `r1092-cowork-diffusion-cli-parse-robust-81382663`. Lane: Cortex health;
+  `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.

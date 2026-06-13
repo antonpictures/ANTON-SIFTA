@@ -30,6 +30,7 @@
 # ── Large downloaded robot kinematics (fixture slice lives in tests/fixtures/) ─
 assets/robotics/irb2400/datasetIRB2400.csv
 assets/robotics/arkoma/*.csv
+assets/robotics/lerobot_hf/
 
 # ── macOS debris ────────────────────────────────────────────────────────
 .DS_Store

@@ -43,6 +43,10 @@ ESTIMATED_PARTS_USD = 2500
 
 # r269 full vector lock from Architect probe (exact GitHub, 75 STLs, real filament/BOM costs, outsourcing path)
 LEROBOT_GITHUB = "https://github.com/Virgileboat/lerobot-humanoid-hardware"
+LEROBOT_HF_BLOG = "https://huggingface.co/blog/VirgileBatto/lerobot-humanoid"
+LEROBOT_HF_ORG = "https://huggingface.co/lerobot"
+LEROBOT_HF_ROBOT_URDFS = "https://huggingface.co/buckets/lerobot/robot-urdfs"
+LEROBOT_HF_FETCH_TOOL = "tools/fetch_lerobot_robot_links_hf.py"
 LEROBOT_STL_COUNT = 75
 LEROBOT_FILAMENT_KG_PLA = 3.5
 LEROBOT_FILAMENT_COST_USD = 56  # PLA+ only
@@ -178,6 +182,10 @@ def walking_laptop_plan(*, available_budget_usd: float = 0.0) -> Dict[str, Any]:
         ),
         # r269 full locked vector (exact from Architect probe + GitHub)
         "github": LEROBOT_GITHUB,
+        "huggingface_blog": LEROBOT_HF_BLOG,
+        "huggingface_org": LEROBOT_HF_ORG,
+        "huggingface_robot_urdfs": LEROBOT_HF_ROBOT_URDFS,
+        "huggingface_leg_links_fetch": LEROBOT_HF_FETCH_TOOL,
         "stl_files": LEROBOT_STL_COUNT,
         "filament_kg_pla": LEROBOT_FILAMENT_KG_PLA,
         "filament_cost_usd": LEROBOT_FILAMENT_COST_USD,

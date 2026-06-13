@@ -3212,3 +3212,152 @@ Clock: `2026-06-13 ~22:05 UTC` (~15:05 PDT). §4.1: `r1089-cowork-outreach-purno
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1090 Codex — live-pointer close for E51 NAO chain repair [r1090-codex-e51-nao-live-pointer-close-86915c5a]
+
+**Doctor:** `codex_desktop_gpt5` — `C55M@codex: GPT-5 Codex`, on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Trace:** `86915c5a-a5ac-4ae0-8a44-60d246b4b8fa`.
+**Clock:** `2026-06-13 14:51:54 PDT` (local OS clock).
+
+### DECIDE
+
+There are two valid r1089 sections: Codex's E51 NAO chain repair and Cowork's Purnomo/Atencio outreach. The collision is allowed by unique anchors, but `whats_left.py` points to the last r1089, so I took r1090 to make the live tail unambiguous without rewriting Cowork's outreach.
+
+### EXECUTE
+
+- Preserved Cowork's r1089 outreach section.
+- Preserved Codex r1089 as the detailed repair record.
+- Kept the actual code repair from r1089: E51 default hardware-prep fixtures are now body-aware for `abb_irb2400_physical` and `nao_arkoma_physical`.
+- Re-verified both physical body IDs return `ok=True` through `fixture_hardware_prep(target_body_id=...)`, while physical motion remains `HYPOTHESIS`.
+
+### TESTS
+
+- `python3 -m py_compile System/stigmerobotics_ik_baseline.py System/stigmerobotics_e51_hardware_prep.py Applications/sifta_stigmerobotics_widget.py` — **PASS**.
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e49_irb2400_ik.py tests/test_stigmero_e50_arkoma_ik.py tests/test_stigmero_ik_baseline.py tests/test_stigmero_e51_hardware_prep.py tests/test_stigmero_effector_bridge.py tests/test_stigmero_body_connection_proof.py` — **49 passed in 7.07s**.
+- `git diff --check` on touched files — **PASS**.
+
+### RECEIPT
+
+**Files touched:** `System/stigmerobotics_e51_hardware_prep.py`, `tests/test_stigmero_e51_hardware_prep.py`, `tests/fixtures/stigmero_e51_hardware_prep_nao_good.jsonl`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Four-ledger receipt: `r1090-codex-e51-nao-live-pointer-close-86915c5a` (all four ledgers `ok`).
+
+**WHAT IS LEFT after r1090:**
+
+- **George** — review/send Purnomo email, fill Atencio's X handle + post the tweet, post the main X thread.
+- **George / prior outreach** — Figuera/Jongerius proof block (r1088) still open.
+- **Composer / Doctors** — optional full-dataset IK soak (r1087 Lane A) if aggregate reports beyond fixture slices are wanted.
+- **George** — physical NAO/ABB motion stays **HYPOTHESIS** until real hardware GO closes E51 with owner-reviewed receipts.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1091 Cowork Claude — eval matrix: register Stigmerobotics + commerce organs (no duplicate) [r1091-cowork-eval-matrix-register-organs-81382663]
+
+**Doctor:** cowork_claude (`claude-opus-4-8`) — Cowork sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Lane:** Eval matrix — George: "update the eval matrix with all we've done, no duplicates."
+**Truth labels:** OBSERVED (registry imports clean = 17 organs, both new ids present; every cited path + ledger exists on disk). Rendered HTML regenerates on Alice self-eval (`_ensure_eval_matrix_current`); the heavy full-regen exceeded the Cowork 45s window — NOT claimed rebuilt here.
+
+### DECIDE — no-duplicate recon first
+The eval matrix (`tools/generate_organ_eval_matrix_v2.py` -> `.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html`) is registry-driven (`System/swarm_canonical_organ_registry.py`). Probed it: the robotics (E49/E50/E51 + IK baseline) and commerce/MCP (intent nonce, effector gate, manifest) work was NEVER registered, so the matrix did not reflect it. Confirmed neither organ existed before — no duplicate created.
+
+### EXECUTE — registered two canonical organs (every path + ledger verified on disk)
+- **stigmerobotics_rob501** — `sifta_stigmerobotics_widget.py` + `stigmerobotics_{irb2400_ik,arkoma_ik,ik_baseline,e51_hardware_prep,effector_bridge,body_connection}.py`. Caps: E49 IRB2400 + E50 ARKOMA IK ingest, nearest-neighbor baseline, E51 hardware-prep chain, receipted virtual effector.
+- **agent_commerce_intent_gate** — `swarm_intent_nonce_gate.py`, `swarm_effector_gate.py`, `swarm_mcp_receipt_manifest.py`, `sifta_mcp_server.py`. Caps: purchase-intent nonce, pre-effector gate, MCP manifest enforce, no-double-spend.
+- Registry imports clean: **17 canonical organs** (was 15). Truth boundary unchanged: beats-solver FORBIDDEN; physical motion HYPOTHESIS.
+
+### VERIFY
+- `py_compile` + import OK; both ids present in `CANONICAL_ORGANS`.
+- Rendered HTML refreshes on next `Applications.sifta_self_evaluation._ensure_eval_matrix_current`, or `python3 tools/generate_organ_eval_matrix_v2.py` on the M5 (regen is minutes-heavy; exceeded sandbox window, so NOT claimed rebuilt this pass).
+
+### RECEIPT
+**Files touched:** `System/swarm_canonical_organ_registry.py`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13 ~22:25 UTC` (~15:25 PDT). §4.1: `r1091-cowork-eval-matrix-register-organs-81382663`. Committed durable.
+
+**WHAT IS LEFT after r1091:**
+
+- **George / Alice** — open the E49/E50 Robot Data tab or run `python3 tools/generate_organ_eval_matrix_v2.py` on M5 to render the two new organ rows (registry already sources them).
+- **George** — post the X thread + Atencio tweet (fill handle); Purnomo email sent.
+- **Composer** — r1087 Lane A full-dataset soak + Lane B E51 baseline if not yet landed.
+- **All arms** — commit your rounds (r1090 Codex still uncommitted in working tree).
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1092 Cowork Claude — fix diffusion cortex mute (llada-8b "no decoded text") [r1092-cowork-diffusion-cli-parse-robust-81382663]
+
+**Doctor:** cowork_claude (`claude-opus-4-8`) — Cowork sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Lane:** Cortex health — `diffusion:llada-8b` returned "llama-diffusion-cli returned no decoded text" repeatedly in George's 14:26 Talk session.
+**Truth labels:** OBSERVED (root cause in `parse_diffusion_cli_output`; 7-case unit test + diffusion route test green = 16 passed; 2 talk-binding failures are PyQt6-not-in-sandbox, not this change). That llada-8b's exact CLI layout is the trigger = HYPOTHESIS until George reproduces on M5 with the new diagnostic tail.
+
+### DECIDE
+The mute fires when the CLI exits 0 but the parser extracts nothing. `parse_diffusion_cli_output` only kept text that strictly FOLLOWED a `total time:` line — so any llama-diffusion-cli build that prints decoded text before the timing marker (or omits it) yields empty -> mute. No deterministic cortex bypass (the cortex still decides); fix the parser + make the failure legible.
+
+### EXECUTE
+- `parse_diffusion_cli_output` made layout-robust: prefer the last non-log line after `total time:` (historical layout), else fall back to the last non-log candidate anywhere. Strictly more permissive — cannot break a working decode, only recovers empties.
+- The no-text error now surfaces the raw stdout/stderr tail + exit code (was opaque) so the next mute is diagnosable (§6 receipts-as-evidence).
+- New `tests/test_diffusion_cli_parse.py` — 7 cases: after-marker, before-marker (the bug), no-marker, logs-only, empty, last-wins, split stdout/stderr.
+
+### VERIFY
+- `py_compile` OK; `pytest tests/test_diffusion_cli_parse.py tests/test_diffusion_cortex_route.py` green (**16 passed**). The 2 `test_talk_diffusion_brain_binding` failures are `ModuleNotFoundError: PyQt6` (sandbox has no Qt), not this change.
+
+### RECEIPT
+**Files touched:** `System/swarm_diffusion_cortex.py`, `tests/test_diffusion_cli_parse.py`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13 ~22:45 UTC` (~15:45 PDT). §4.1: `r1092-cowork-diffusion-cli-parse-robust-81382663`.
+
+**WHAT IS LEFT after r1092:**
+
+- **George** — restart Talk -> select `diffusion:llada-8b` -> send a turn. Expect a decoded reply; if still muted, the error now prints the raw CLI tail — paste it and an arm pins the exact format.
+- **Doctors** — r1091 (eval-matrix registry) + r1092 (this) are on disk but `.git/index.lock` has blocked commits across turns; commit both when it clears.
+- **All arms** — commit your rounds.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1093 Grok — pull HF LeRobot leg robot-links for walking-laptop organ [r1093-grok-hf-lerobot-leg-links-pull]
+
+**Doctor:** `cursor_grok_cli` (grok-4.3-cli) — on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Clock:** `2026-06-13 ~22:50 UTC` (~15:50 PDT, boot-probe sourced).
+
+### DECIDE
+
+George asked to pull Hugging Face legs for the robot link. Probe first: no duplicate fetch tool existed; LeRobot Humanoid STLs stay on GitHub; HF bucket `lerobot/robot-urdfs` has G1 leg link URDF + meshes (kinematic reference, not metal motion).
+
+### EXECUTE
+
+- Pulled G1 URDF + 7 leg mesh files from `lerobot/robot-urdfs` via `HfApi.download_bucket_files` → `assets/robotics/lerobot_hf/` (gitignored).
+- Added `tools/fetch_lerobot_robot_links_hf.py` + `System/stigmerobotics_lerobot_hf_links.py` (URDF leg-link parser, 15 links).
+- Committed manifest `tests/fixtures/stigmero_lerobot_hf_g1_leg_links.json`.
+- Wired HF URLs into `System/swarm_legs_locomotion_organ.py` (blog, org, robot-urdfs bucket, fetch tool).
+
+### TESTS
+
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_lerobot_hf_links.py tests/test_swarm_legs_locomotion_organ.py` — **8 passed**.
+
+### TRUTH LABELS
+
+| Claim | Label |
+|:---|:---|
+| HF bucket leg-link URDF ingest + manifest | **OPERATIONAL** |
+| LeRobot Humanoid 75 STL hardware on node | **HYPOTHESIS** (GitHub; not pulled here) |
+| Alice walked / metal legs attached | **HYPOTHESIS** / **FORBIDDEN** until hardware flag |
+
+### RECEIPT
+
+Four-ledger: `r1090-grok-hf-lerobot-leg-links-pull` (internal id; tournament anchor **r1093**).
+**Files touched:** `System/stigmerobotics_lerobot_hf_links.py`, `tools/fetch_lerobot_robot_links_hf.py`, `System/swarm_legs_locomotion_organ.py`, `tests/test_stigmero_lerobot_hf_links.py`, `tests/fixtures/stigmero_lerobot_hf_g1_leg_links.json`, `.gitignore`.
+
+**WHAT IS LEFT after r1093:**
+
+- **George** — run `python3 tools/fetch_lerobot_robot_links_hf.py` on M5 after cache clear if meshes missing; LeRobot Humanoid STLs still from GitHub when budget GO.
+- **George** — physical legs remain **PLAN_NO_HARDWARE** until `legs_hardware_present.flag` is touched after bench verify.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

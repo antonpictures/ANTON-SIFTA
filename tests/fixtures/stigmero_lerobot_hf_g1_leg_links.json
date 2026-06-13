@@ -1,0 +1,38 @@
+{
+  "bucket_id": "lerobot/robot-urdfs",
+  "robot_id": "g1",
+  "urdf_remote": "g1/g1_body29_hand14.urdf",
+  "mesh_paths": [
+    "g1/meshes/pelvis.stl",
+    "g1/meshes/left_hip_pitch_link.stl",
+    "g1/meshes/left_knee_link.stl",
+    "g1/meshes/left_ankle_pitch_link.stl",
+    "g1/meshes/right_hip_pitch_link.stl",
+    "g1/meshes/right_knee_link.stl",
+    "g1/meshes/right_ankle_pitch_link.stl"
+  ],
+  "leg_link_names": [
+    "pelvis",
+    "pelvis_contour_link",
+    "left_hip_pitch_link",
+    "left_hip_roll_link",
+    "left_hip_yaw_link",
+    "left_knee_link",
+    "left_ankle_pitch_link",
+    "left_ankle_roll_link",
+    "right_hip_pitch_link",
+    "right_hip_roll_link",
+    "right_hip_yaw_link",
+    "right_knee_link",
+    "right_ankle_pitch_link",
+    "right_ankle_roll_link",
+    "imu_in_pelvis"
+  ],
+  "leg_link_count": 15,
+  "hf_urls": {
+    "bucket": "https://huggingface.co/buckets/lerobot/robot-urdfs",
+    "lerobot_org": "https://huggingface.co/lerobot",
+    "humanoid_blog": "https://huggingface.co/blog/VirgileBatto/lerobot-humanoid"
+  },
+  "truth_label": "OPERATIONAL"
+}
