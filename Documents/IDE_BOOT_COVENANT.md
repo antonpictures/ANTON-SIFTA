@@ -1548,5 +1548,11 @@ above.
   Codex hardened in `r1075`/`r1076`. Cowork re-ran default + chaos + audit modes (exit 0, score 1.000,
   injected ledger fault surfaced+recovered) and confirmed `r1073`/`r1075` four-ledger receipts on disk;
   could not run live-cortex (no local model in this sandbox). Appended consolidation
-  `r1077-cowork-endurance-lane-verified-consolidation-81382663`. Lane: Endurance verify + status;
+  `r1078-cowork-endurance-lane-verified-consolidation-81382663` (took r1078 after Grok claimed r1077).
+  Lane: Endurance verify + status;
   `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-13 20:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  sealed r1075/r1076 endurance harness to git, implemented MCP manifest runtime enforcement
+  (`enforce_mcp_tool_call` + `sifta_mcp_server` gate), landed commerce demo pytest, appended tournament
+  `r1079-grok-mcp-enforce-commerce-demo-90926201` (16 pytest OBSERVED). Lane: Agent-trust execution;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.

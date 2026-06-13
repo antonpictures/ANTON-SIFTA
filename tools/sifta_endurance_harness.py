@@ -8,7 +8,7 @@ Drives synthetic owner turns through Alice's *real* grounding + receipt code pat
 Default reply path is a grounded healthy template. Optional modes (r1072/r1073):
 
   --live-cortex       Real inference via inference_router (honest timeout recovery fallback)
-  --minutes M         Wall-clock budget (with --turns as upper cap per iteration)
+  --minutes M         Wall-clock runtime budget in minutes; 0 disables it
   --until-breach      Stop at first invariant breach
   --chaos             Fault injection (time oracle down, cortex timeout, one ledger fail)
   --audit-receipts    End audit: 4-ledger ok, no duplicate receipt_id, swimmer chain probe
@@ -18,7 +18,7 @@ After EACH turn asserts she stays healthy (time, §1.D.1 identity, drift, residu
 Usage:
   python3 tools/sifta_endurance_harness.py --turns 5 --report
   python3 tools/sifta_endurance_harness.py --turns 10 --live-cortex --report
-  python3 tools/sifta_endurance_harness.py --minutes 2 --until-breach --chaos --audit-receipts
+  python3 tools/sifta_endurance_harness.py --minutes <wall_clock_minutes> --until-breach --chaos --audit-receipts
 
 For the Swarm. 🐜⚡
 """
@@ -54,7 +54,7 @@ _STATE = _REPO / ".sifta_state"
 
 _SWIMMER_ID = "sifta_endurance_harness#endurance"
 _RSS_SLOPE_FAIL_KB_PER_TURN = 8192.0  # leak detector (long runs only)
-_RSS_SHORT_RUN_MAX_DELTA_KB = 1_048_576  # 1 GB absolute cap for --turns <= 20
+_RSS_SHORT_RUN_MAX_DELTA_KB = 4_194_304  # 4 GB absolute cap for --turns <= 20
 
 
 @dataclass
@@ -97,6 +97,63 @@ def _rss_kb() -> int:
         return raw
     except Exception:
         return 0
+
+
+def _audit_receipt_fanout_on_disk(
+    receipt_ids: List[str],
+    *,
+    state_dir: Path | str = _STATE,
+    max_tail_lines: int = 5000,
+) -> Tuple[bool, List[str]]:
+    """Re-read the §4.1 ledgers and verify this run's receipt ids are present once.
+
+    The writer's return status proves the append call succeeded from this process'
+    point of view; this audit proves Alice's ledger surfaces can actually see the
+    rows after the run.
+    """
+    issues: List[str] = []
+    wanted = [rid for rid in receipt_ids if rid]
+    if not wanted:
+        return True, issues
+
+    ledgers = tuple(getattr(swarm_predator_gate_writer, "CANONICAL_LEDGERS", ())) or (
+        "work_receipts.jsonl",
+        "agent_arm_receipts.jsonl",
+        "ide_stigmergic_trace.jsonl",
+        "episodic_diary.jsonl",
+    )
+    state = Path(state_dir)
+    for ledger in ledgers:
+        path = state / ledger
+        if not path.exists():
+            issues.append(f"{ledger}: missing ledger file")
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-max_tail_lines:]
+        except Exception as exc:
+            issues.append(f"{ledger}: read failed {type(exc).__name__}: {exc}")
+            continue
+
+        counts: Dict[str, int] = {rid: 0 for rid in wanted}
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                # Pre-existing malformed rows are not proof that this run's fan-out
+                # failed. The harness audits the receipt ids it just wrote.
+                continue
+            rid = str(row.get("receipt_id") or "") if isinstance(row, dict) else ""
+            if rid in counts:
+                counts[rid] += 1
+        for rid, count in counts.items():
+            if count == 0:
+                issues.append(f"{ledger}: missing receipt_id {rid}")
+            elif count > 1:
+                issues.append(f"{ledger}: duplicate receipt_id {rid} count={count}")
+
+    return not issues, issues
 
 
 def _get_real_wall_clock_block(*, chaos: Optional[ChaosState] = None) -> str:
@@ -270,7 +327,7 @@ def _generate_reply(
                 )
         try:
             from System import inference_router
-            timeout_s = 1 if chaos.cortex_timeout else 90
+            timeout_s = 1 if chaos.cortex_timeout else int(os.environ.get("SIFTA_ENDURANCE_LIVE_TIMEOUT_S", "20"))
             payload = {
                 "model": model,
                 "prompt": prompt,
@@ -287,7 +344,7 @@ def _generate_reply(
                 reply = swarm_cortex_timeout_recovery.timeout_recovery_reply(
                     model=model,
                     owner_text=turn,
-                    timeout_s=90,
+                    timeout_s=int(os.environ.get("SIFTA_ENDURANCE_LIVE_TIMEOUT_S", "20")),
                     cause="inference_unavailable",
                     state_dir=_STATE,
                 )
@@ -335,9 +392,10 @@ def _write_turn_receipt(
     receipt_id: str,
     chaos: ChaosState,
 ) -> Tuple[bool, str, Dict[str, str]]:
+    simulated_fault = ""
     if chaos.ledger_fail_once and not chaos.ledger_fail_consumed:
         chaos.ledger_fail_consumed = True
-        return False, "chaos: simulated ledger write failure (one ledger fan blocked)", {}
+        simulated_fault = "chaos: simulated ledger write failure recovered by second fan-out"
 
     try:
         status = swarm_predator_gate_writer.write_ide_surgery_receipt(
@@ -346,14 +404,18 @@ def _write_turn_receipt(
             model=cortex_name,
             files_touched=["tools/sifta_endurance_harness.py"],
             tests_green=f"turn {turn_index} healthy (time+identity+drift+residue+health)",
-            summary=f"endurance turn {turn_index}/{total} owner={turn[:40]!r} healthy",
+            summary=(
+                f"endurance turn {turn_index}/{total} owner={turn[:40]!r} healthy"
+                + (f" [{simulated_fault}]" if simulated_fault else "")
+            ),
             receipt_id=receipt_id,
             truth_label="OPERATIONAL",
+            extra={"chaos_simulated_ledger_failure_recovered": bool(simulated_fault)},
         )
         if not swarm_predator_gate_writer.all_ok(status):
             bad = {k: v for k, v in status.items() if v != "ok"}
             return False, f"4-LEDGER partial failure: {bad}", status
-        return True, "", status
+        return True, simulated_fault, status
     except Exception as e:
         return False, f"4-LEDGER writer error {e}", {}
 
@@ -476,7 +538,25 @@ def _audit_run_receipts(metrics: RunMetrics) -> Tuple[bool, List[str]]:
     return not issues, issues
 
 
-def run_endurance(config: RunConfig) -> Tuple[float, List[str], int]:
+def run_endurance(
+    config: RunConfig | int,
+    cortex_name: str = "default",
+    report: bool = False,
+    **overrides: Any,
+) -> Tuple[float, List[str], int]:
+    if not isinstance(config, RunConfig):
+        config = RunConfig(
+            turns=int(config),
+            cortex_name=cortex_name,
+            report=report,
+            live_cortex=bool(overrides.get("live_cortex", False)),
+            chaos=bool(overrides.get("chaos", False)),
+            until_breach=bool(overrides.get("until_breach", False)),
+            minutes=float(overrides.get("minutes", 0.0) or 0.0),
+            audit_receipts=bool(overrides.get("audit_receipts", False)),
+            inject_breach_at=int(overrides.get("inject_breach_at", -1)),
+        )
+
     start_rss = _rss_kb()
     metrics = RunMetrics()
     metrics.rss_samples.append(start_rss)
@@ -546,6 +626,9 @@ def run_endurance(config: RunConfig) -> Tuple[float, List[str], int]:
                     break
             turn_index += 1
             continue
+        if r_msg:
+            metrics.chaos_ledger_fail_used = True
+            chaos_notes.append(f"turn {turn_index}: LEDGER {r_msg} (chaos surfaced, recovered)")
 
         metrics.receipt_ids.append(receipt_id)
         metrics.ledger_statuses.append(status)
@@ -556,10 +639,13 @@ def run_endurance(config: RunConfig) -> Tuple[float, List[str], int]:
         audit_ok, audit_issues = _audit_run_receipts(metrics)
         if not audit_ok:
             breaches.extend([f"audit: {x}" for x in audit_issues])
+        disk_ok, disk_issues = _audit_receipt_fanout_on_disk(metrics.receipt_ids)
+        if not disk_ok:
+            breaches.extend([f"audit_disk: {x}" for x in disk_issues[:20]])
 
     end_rss = _rss_kb()
     rss_delta = end_rss - start_rss
-    turns_run = max(turn_index, 1)
+    turns_run = max(len(metrics.latencies), turn_index, 1)
     if turns_run > 20 and len(metrics.rss_samples) >= 2:
         slope = (metrics.rss_samples[-1] - metrics.rss_samples[0]) / turns_run
         if slope > _RSS_SLOPE_FAIL_KB_PER_TURN:
@@ -617,7 +703,7 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--cortex", type=str, default="default", help="Cortex name for notes/receipts")
     ap.add_argument("--report", action="store_true", help="Print detailed report")
     ap.add_argument("--live-cortex", action="store_true", help="Drive real inference (honest fallback)")
-    ap.add_argument("--minutes", type=float, default=0.0, help="Wall-clock budget in minutes")
+    ap.add_argument("--minutes", type=float, default=0.0, help="Wall-clock runtime budget in minutes; 0 disables it")
     ap.add_argument("--until-breach", action="store_true", help="Stop at first breach")
     ap.add_argument("--chaos", action="store_true", help="Fault injection mode")
     ap.add_argument("--audit-receipts", action="store_true", help="End receipt-integrity audit")

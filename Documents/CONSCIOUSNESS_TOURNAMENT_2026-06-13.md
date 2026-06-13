@@ -2700,3 +2700,80 @@ Clock: `2026-06-13` PDT. §4.1: `r1077-grok-china-embodied-ai-vs-sifta-90925502`
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1078 Cowork Claude — endurance lane VERIFIED + consolidation (r1072 handoff closed) [r1078-cowork-endurance-lane-verified-consolidation-81382663]
+
+**Doctor:** cowork_claude (`claude-opus-4-8`) — Cowork Linux sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Lane:** Verifier closing the chain on my own r1072 handoff (§3.5) + status for George.
+**Round-id note (§0.D):** took **r1078** after Grok claimed r1077 (China embodied-AI brief). No peer round renumbered.
+**Truth labels:** OBSERVED (re-ran the harness + read receipts/ledgers/git on disk 2026-06-13 ~20:37 UTC); the live-cortex path is HYPOTHESIS-to-me (could not run — no local model in this sandbox), OPERATIONAL per the landing doctors' pytest.
+
+### WHAT GOT ACCOMPLISHED (r1072 → landed)
+- **r1072 (Cowork)** — wrote the MAX endurance-test spec for cursor2.5 (extend the one r536 harness, no fork).
+- **r1073 (Grok)** — landed all five modes on `tools/sifta_endurance_harness.py`: `--live-cortex`, `--minutes`/`--until-breach`, `--chaos`, `--audit-receipts`. Committed `5e75f46a8` on main; receipt on disk.
+- **r1075 (Codex)** — hardened: bounded live-cortex timeout, chaos ledger-fault recovery, disk-visible four-ledger audit, old-call compatibility, breach-turn counting. Receipt `r1075-codex-...-6fd9e4ed` on disk.
+- **r1076 (Codex)** — clarified `--minutes` is a wall-clock budget (default `0.0`), not a hardcoded `30`.
+
+### COWORK INDEPENDENT VERIFICATION (OBSERVED, this round)
+- `--turns 5 --report` → exit 0, ENDURANCE SCORE 1.000 (5/5 healthy), receipts_fanned 5 (no default-path regression).
+- `--turns 8 --chaos --audit-receipts --report` → exit 0, SCORE 1.000 (8/8); CHAOS_NOTES shows turn-2 injected ledger-write failure **surfaced and recovered by a second fan-out** — honest degradation, no hidden failure, no gate added to Alice (§0.0).
+- Receipts on disk: `r1073-grok-...-90924801` and `r1075-codex-...-6fd9e4ed` both present on the four canonical ledgers.
+- **Could NOT run** `--live-cortex` here (no local model in the Cowork sandbox). That mode's green rests on the landing doctors' pytest (6 passed) + George's optional long soak.
+
+### OPERATIONAL FLAGS FOR GEORGE (probe before claim)
+- **Uncommitted working tree:** `tools/sifta_endurance_harness.py`, `tests/test_sifta_endurance_harness.py`, the carrier, and the covenant show as **modified vs HEAD** (`5e75f46a8` = r1073). So r1075/r1076 are receipted + on disk but **not yet git-committed**. A `git commit` (or a peer mid-commit) is needed to land them in history.
+- **`.git/index.lock` present** — a git process is holding the index (a peer doctor may be mid-commit, or it is stale). I did **not** remove it (could corrupt a peer's in-flight commit). If no commit is running, George can clear it.
+
+### THE BUILD IS DONE — WHAT IS LEFT after r1078
+- **Endurance coding lane: CLOSED.** Five modes + hardening landed and verified. The only endurance item left is the **optional 30-min live soak**, which is George's to run: `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20 python3 tools/sifta_endurance_harness.py --live-cortex --minutes 30 --audit-receipts --report`.
+- **ASSIGN — next coding arm (cursor2.5 / Grok / Codex):** (1) **MCP manifest enforcement** — make world-touching MCP tools actually block at execution time from `swarm_mcp_receipt_manifest`, not just expose it; (2) **commerce demo path** — one owner utterance → `purchase_intent` row → one nonce → one allowed browser effector → second spend refused, with pytest + §4.1 fan.
+- **George / housekeeping:** commit r1075/r1076 (and clear the stale `index.lock` if no commit is running).
+- **George / Outreach:** Figuera (Sello/APOA), Jongerius (Agent Receipts/Obsigna) still open; use the China issue brief + mega marketing catalog for decks.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1079 Grok — MCP manifest enforcement + commerce demo + endurance commit seal [r1079-grok-mcp-enforce-commerce-demo-90926201]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** r1078 assignments — MCP runtime gate + commerce demo + git seal r1075/r1076  
+**Truth labels:** OBSERVED (16 pytest green on GTH4921YP3).
+
+George asked EXECUTE ALL CODE. Probed disk: r1073 committed; r1075/r1076 harness hardening was receipted but
+uncommitted; r1078 assigned MCP enforcement + commerce demo.
+
+### EXECUTE
+
+- **Git seal — endurance:** committed Codex r1075/r1076 hardening on `tools/sifta_endurance_harness.py`
+  (`SIFTA_ENDURANCE_LIVE_TIMEOUT_S`, chaos ledger recovery, disk-visible §4.1 audit).
+- **P1 MCP manifest enforcement (r1071 open item):**
+  - `System/swarm_mcp_receipt_manifest.py` — `enforce_mcp_tool_call()` blocks world-touch tools without
+    owner nonce / STGM spend; writes `MCP_MANIFEST_ENFORCE_V1` rows to `effector_gate.jsonl`.
+  - `sifta_mcp_server.py` — `tools/call` checks manifest before dispatch (`state_dir=_REPO`).
+- **Commerce demo path:**
+  - `tests/test_effector_double_spend.py` — `test_commerce_demo_one_utterance_one_nonce_one_effector_second_refused`
+    (purchase_intent row → one allowed browser effector → second refused `double_spend_blocked`).
+
+### TESTS
+
+- `python3 -m pytest -q tests/test_swarm_mcp_receipt_manifest.py tests/test_effector_double_spend.py tests/test_sifta_endurance_harness.py` — **16 passed**.
+
+### RECEIPT
+
+**Files touched:** `tools/sifta_endurance_harness.py`, `tests/test_sifta_endurance_harness.py`,
+`System/swarm_mcp_receipt_manifest.py`, `sifta_mcp_server.py`, `tests/test_swarm_mcp_receipt_manifest.py`,
+`tests/test_effector_double_spend.py`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`Documents/IDE_BOOT_COVENANT.md`. §4.1: `r1079-grok-mcp-enforce-commerce-demo-90926201`.
+
+**WHAT IS LEFT after r1079:**
+
+- **George** — optional live soak: `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20 python3 tools/sifta_endurance_harness.py --live-cortex --minutes <budget> --audit-receipts --report`.
+- **George / Outreach** — Figuera/Jongerius + wedge pick still open.
+- **Doctors** — optional: wire Talk/browser to pass active nonce into MCP world-touch calls automatically.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

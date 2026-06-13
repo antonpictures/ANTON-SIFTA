@@ -19,6 +19,7 @@ def _run_harness(extra_args: list[str], *, timeout: int = 180) -> subprocess.Com
     env["PYTHONPATH"] = str(REPO) + (
         ":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
+    env.setdefault("SIFTA_ENDURANCE_LIVE_TIMEOUT_S", "3")
     cmd = [sys.executable, str(HARNESS), *extra_args]
     return subprocess.run(
         cmd,

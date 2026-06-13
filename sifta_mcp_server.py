@@ -11,9 +11,20 @@ import os
 import hashlib
 import shutil
 import subprocess
+import urllib.request
 from pathlib import Path
 
+from System.swarm_mcp_receipt_manifest import enforce_mcp_tool_call, write_mcp_receipt_manifest
+
 _REPO = Path(__file__).resolve().parent
+_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+_GROK_CHAT = _REPO / "grok_chat.py"
+_GROK_BIN = os.environ.get("SIFTA_GROK_CLI", "/Users/ioanganton/.grok/bin/grok")
+_CLAUDE_COWORK_LOCAL_ALIASES = {
+    "claude-haiku-4-5": "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+    "claude-sonnet-4-6": "alice-m5-cortex-8b-6.3gb:latest",
+    "claude-opus-4-8": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+}
 
 
 def generate_scar(action_description, target_file=None):
@@ -158,6 +169,207 @@ def handle_propose_scar(target_file, description):
         return f"PROPOSAL FAILED: {str(e)}"
 
 
+def handle_get_mcp_receipt_manifest():
+    return json.dumps(write_mcp_receipt_manifest(state_dir=_REPO / ".sifta_state"))
+
+
+def _ollama_json(path: str, payload: dict | None = None, timeout: int = 30) -> dict:
+    url = f"{_OLLAMA_HOST}{path}"
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        text = resp.read().decode("utf-8")
+    return json.loads(text or "{}")
+
+
+def _ollama_model_names() -> list[str]:
+    data = _ollama_json("/api/tags", timeout=5)
+    names = []
+    for item in data.get("models", []):
+        if isinstance(item, dict) and item.get("name"):
+            names.append(str(item["name"]))
+    return sorted(names)
+
+
+def _ollama_list_local_models() -> dict:
+    try:
+        names = _ollama_model_names()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "ollama_host": _OLLAMA_HOST,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    alias_status = {}
+    installed = set(names)
+    for alias, real_model in _CLAUDE_COWORK_LOCAL_ALIASES.items():
+        alias_status[alias] = {
+            "installed": alias in installed or f"{alias}:latest" in installed,
+            "truth_source_model": real_model,
+            "truth_note": "Claude-looking Ollama alias for third-party inference discovery; not an Anthropic model.",
+        }
+    return {
+        "ok": True,
+        "ollama_host": _OLLAMA_HOST,
+        "models": names,
+        "claude_cowork_aliases": alias_status,
+        "third_party_inference": {
+            "gateway_base_url_openai_schema": f"{_OLLAMA_HOST}/v1",
+            "credentials_kind": "static_api_key",
+            "gateway_api_key": "test",
+            "gateway_auth_schema": "Bearer",
+            "truth_note": "Use Claude Developer > Configure third-party inference. These aliases route inference to local Ollama.",
+        },
+    }
+
+
+def _ollama_chat_local(prompt: str, model: str = "claude-sonnet-4-6:latest", timeout_s: int = 180) -> dict:
+    prompt = (prompt or "").strip()
+    model = (model or "claude-sonnet-4-6:latest").strip()
+    if not prompt:
+        return {"ok": False, "error": "missing prompt"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    try:
+        data = _ollama_json("/api/chat", payload=payload, timeout=int(timeout_s or 180))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "model": model,
+            "ollama_host": _OLLAMA_HOST,
+            "error": f"{type(exc).__name__}: {exc}",
+            "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        }
+    reply = ((data.get("message") or {}).get("content") or "").strip()
+    return {
+        "ok": True,
+        "model": model,
+        "truth_source_model": _CLAUDE_COWORK_LOCAL_ALIASES.get(model.replace(":latest", "")),
+        "truth_note": "Local Ollama response. If model starts with claude-, that name is only a discovery alias.",
+        "reply": reply,
+        "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        "eval_count": data.get("eval_count"),
+        "eval_duration": data.get("eval_duration"),
+    }
+
+
+def _grok_oauth_chat(prompt: str, model: str = "grok-4", image_paths=None, timeout_s: int = 180) -> dict:
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "missing prompt"}
+    cmd = [
+        sys.executable,
+        str(_GROK_CHAT),
+        "--one-shot",
+        prompt,
+        "--receipt",
+        "--invoker",
+        "claude_cowork_mcp",
+        "--model",
+        (model or "grok-4"),
+    ]
+    for path in image_paths or []:
+        if path:
+            cmd.extend(["--image", str(path)])
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(_REPO),
+            capture_output=True,
+            text=True,
+            timeout=int(timeout_s or 180),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        }
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "model": model or "grok-4",
+        "stdout": proc.stdout[-6000:],
+        "stderr": proc.stderr[-1000:],
+        "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        "truth_note": "Runs SIFTA grok_chat.py through the existing xAI OAuth organ and writes its normal receipts.",
+    }
+
+
+def _grok_build_cli(prompt: str, model: str = "", timeout_s: int = 300, max_turns: int = 1) -> dict:
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "missing prompt"}
+    if not Path(_GROK_BIN).exists() and not shutil.which(_GROK_BIN):
+        return {"ok": False, "error": f"grok CLI not found at {_GROK_BIN}"}
+    cmd = [
+        _GROK_BIN,
+        "--cwd",
+        str(_REPO),
+        "--oauth",
+        "--max-turns",
+        str(int(max_turns or 1)),
+        "--output-format",
+        "plain",
+        "-p",
+        prompt,
+    ]
+    if model:
+        cmd.extend(["--model", model])
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(_REPO),
+            capture_output=True,
+            text=True,
+            timeout=int(timeout_s or 300),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        }
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "model": model or "grok_cli_default",
+        "stdout": proc.stdout[-6000:],
+        "stderr": proc.stderr[-1000:],
+        "prompt_sha": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12],
+        "truth_note": "Runs the installed Grok Build CLI with --oauth in single-prompt mode from the SIFTA repo.",
+    }
+
+
+def _claude_cowork_local_setup() -> dict:
+    return {
+        "ok": True,
+        "app_bundle_patch": "not_used",
+        "reason": "Claude.app is signed; supported surfaces are user config, Developer third-party inference, and MCP servers.",
+        "mcp_server": {
+            "name": "sifta-swarm",
+            "command": str(_REPO / ".venv" / "bin" / "python3"),
+            "args": [str(_REPO / "sifta_mcp_server.py")],
+        },
+        "third_party_inference": {
+            "provider_type": "gateway",
+            "credentials_kind": "static_api_key",
+            "gateway_base_url": f"{_OLLAMA_HOST}/v1",
+            "gateway_api_key": "test",
+            "gateway_auth_schema": "Bearer",
+            "test_model_discovery": True,
+            "restart_after_save": True,
+        },
+        "ollama_alias_truth": _CLAUDE_COWORK_LOCAL_ALIASES,
+        "grok_oauth_tool": "grok.oauth_chat",
+        "grok_build_cli_tool": "grok.build_cli",
+        "local_ollama_tool": "ollama.chat_local",
+    }
+
+
 def process_request(req):
     req_id = req.get("id")
     method = req.get("method")
@@ -208,6 +420,14 @@ def process_request(req):
                         }
                     },
                     {
+                        "name": "get_mcp_receipt_manifest",
+                        "description": "Returns the MCP tool receipt manifest, separating forgeable IDE MANA traces from Alice STGM spend-proof requirements.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    },
+                    {
                         "name": "propose_scar",
                         "description": "Formally proposes an architectural intervention to the SIFTA swarm, securely logging the action and subtracting STGM tokens.",
                         "inputSchema": {
@@ -249,6 +469,63 @@ def process_request(req):
                             "type": "object",
                             "properties": {}
                         }
+                    },
+                    {
+                        "name": "claude_cowork.local_setup",
+                        "description": "Return the supported Claude Cowork local-model combo setup: Ollama gateway URL, Claude-looking local aliases, MCP server config, and Grok OAuth tool truth.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    },
+                    {
+                        "name": "ollama.list_local_models",
+                        "description": "List local Ollama models and Claude Cowork discovery aliases, with truth labels showing which local model each Claude-looking alias points to.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    },
+                    {
+                        "name": "ollama.chat_local",
+                        "description": "Run a one-shot local Ollama chat through the configured local model or Claude-looking alias. Aliases are truth-labeled as local, not Anthropic.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {"type": "string"},
+                                "model": {"type": "string", "description": "Default claude-sonnet-4-6:latest local alias."},
+                                "timeout_s": {"type": "integer"}
+                            },
+                            "required": ["prompt"]
+                        }
+                    },
+                    {
+                        "name": "grok.oauth_chat",
+                        "description": "Run one Grok answer through SIFTA's existing xAI OAuth path (grok_chat.py). This can spend xAI/Grok usage and writes the normal Grok receipts.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {"type": "string"},
+                                "model": {"type": "string", "description": "Default grok-4."},
+                                "image_paths": {"type": "array", "items": {"type": "string"}},
+                                "timeout_s": {"type": "integer"}
+                            },
+                            "required": ["prompt"]
+                        }
+                    },
+                    {
+                        "name": "grok.build_cli",
+                        "description": "Run the installed Grok Build CLI directly with --oauth in single-prompt mode from the SIFTA repo. This can spend Grok usage.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {"type": "string"},
+                                "model": {"type": "string", "description": "Optional Grok CLI model id; default is the CLI default."},
+                                "timeout_s": {"type": "integer"},
+                                "max_turns": {"type": "integer", "description": "Default 1."}
+                            },
+                            "required": ["prompt"]
+                        }
                     }
                 ]
             }
@@ -256,8 +533,34 @@ def process_request(req):
 
     elif method == "tools/call":
         tool_name = params.get("name")
-        tool_args = params.get("arguments", {})
-        
+        tool_args = params.get("arguments", {}) or {}
+
+        gate = enforce_mcp_tool_call(tool_name, tool_args=tool_args, state_dir=_REPO)
+        if not gate.get("ok"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                {
+                                    "ok": False,
+                                    "blocked_by": "mcp_receipt_manifest",
+                                    "reason": gate.get("reason"),
+                                    "tool": tool_name,
+                                    "hint": gate.get("hint"),
+                                    "manifest_enforcement": gate,
+                                },
+                                sort_keys=True,
+                            ),
+                        }
+                    ],
+                    "isError": True,
+                },
+            }
+
         result_text = "Unknown tool."
         is_error = True
 
@@ -266,6 +569,9 @@ def process_request(req):
             is_error = False
         elif tool_name == "get_agent_status":
             result_text = handle_get_agent_status(tool_args.get("agent_id", "UNKNOWN"))
+            is_error = False
+        elif tool_name == "get_mcp_receipt_manifest":
+            result_text = handle_get_mcp_receipt_manifest()
             is_error = False
         elif tool_name == "propose_scar":
             result_text = handle_propose_scar(
@@ -282,6 +588,39 @@ def process_request(req):
         elif tool_name == "opencode.setup_grok_composer":
             result_text = json.dumps(_opencode_setup_grok_composer())
             is_error = False
+        elif tool_name == "claude_cowork.local_setup":
+            result_text = json.dumps(_claude_cowork_local_setup())
+            is_error = False
+        elif tool_name == "ollama.list_local_models":
+            result = _ollama_list_local_models()
+            result_text = json.dumps(result)
+            is_error = not bool(result.get("ok"))
+        elif tool_name == "ollama.chat_local":
+            result = _ollama_chat_local(
+                tool_args.get("prompt", ""),
+                tool_args.get("model", "claude-sonnet-4-6:latest"),
+                tool_args.get("timeout_s", 180),
+            )
+            result_text = json.dumps(result)
+            is_error = not bool(result.get("ok"))
+        elif tool_name == "grok.oauth_chat":
+            result = _grok_oauth_chat(
+                tool_args.get("prompt", ""),
+                tool_args.get("model", "grok-4"),
+                tool_args.get("image_paths", []),
+                tool_args.get("timeout_s", 180),
+            )
+            result_text = json.dumps(result)
+            is_error = not bool(result.get("ok"))
+        elif tool_name == "grok.build_cli":
+            result = _grok_build_cli(
+                tool_args.get("prompt", ""),
+                tool_args.get("model", ""),
+                tool_args.get("timeout_s", 300),
+                tool_args.get("max_turns", 1),
+            )
+            result_text = json.dumps(result)
+            is_error = not bool(result.get("ok"))
 
         return {
             "jsonrpc": "2.0",
