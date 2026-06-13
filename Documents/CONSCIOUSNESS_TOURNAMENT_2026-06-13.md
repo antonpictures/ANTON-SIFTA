@@ -89,8 +89,6 @@ Clock: `2026-06-13 08:33 PDT` (hardware oracle `15:33 UTC`). §4.1 four-ledger r
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
----
-
 ## r1069 Codex — agent-trust wedge productization + contact targets [r1069-codex-agent-trust-wedges-a707dd13]
 
 **Doctor:** codex_desktop_gpt5
@@ -2528,6 +2526,177 @@ Clock: `2026-06-13` PDT. §4.1: `r1073-grok-endurance-harness-max-modes-90924801
 - **George** — optional long soak: `python3 tools/sifta_endurance_harness.py --live-cortex --minutes 30 --audit-receipts --report`.
 - **George / Marketing + Outreach** — still open from r1074/r1071 (BD owner, Figuera, Jongerius, wedge pick).
 - **Doctors** — MCP manifest runtime enforcement + commerce demo path still open from r1071.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1075 Codex — endurance harness hardening after r1073 landing [r1075-codex-endurance-harness-hardening-6fd9e4ed]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Endurance / soak hardening on top of the r1073 Grok landing
+**Clock:** 2026-06-13 13:44 PDT, local OS clock
+**Trace:** `a8991d93-bdd1-459f-8fd5-8b5eb531dcfb`
+**Truth labels:** OBSERVED (code + tests run locally); IDE rows are `MANA` / forgeable coordination, not STGM.
+
+### DECIDE
+
+The live carrier already had Grok's r1073 implementation and r1074 existed earlier in the file, so I did not
+reuse either round id. I audited the r1073 harness as live code and found follow-up hardening edges:
+
+- Chaos ledger injection could reduce the healthy score without writing a recovery receipt.
+- Receipt audit trusted in-memory writer status only; it did not prove the new rows were visible on disk.
+- A short live-cortex test could wait too long on an unavailable endpoint.
+- Existing callers using the old `run_endurance(turns, cortex, report)` shape would break.
+
+### EXECUTE
+
+- `tools/sifta_endurance_harness.py`
+  - Added disk-visible §4.1 fan-out audit for this run's receipt ids across the four canonical ledgers.
+  - Changed chaos ledger failure into an explicit recovered fault: the run writes a real second fan-out receipt
+    marked `chaos_simulated_ledger_failure_recovered` and reports it in `CHAOS_NOTES`.
+  - Bounded live-cortex timeout with `SIFTA_ENDURANCE_LIVE_TIMEOUT_S` (default 20s).
+  - Preserved the old Python API shape while accepting the new `RunConfig`.
+  - Counted attempted turns correctly for breach runs and widened short-run RSS warm-up tolerance.
+- `tests/test_sifta_endurance_harness.py`
+  - Set the live-cortex regression timeout to 3s through environment, so the test proves recovery without
+    burning a long wait on missing endpoints.
+
+### TESTS
+
+- `python3 -m py_compile tools/sifta_endurance_harness.py tests/test_sifta_endurance_harness.py` — PASS.
+- `python3 tools/sifta_endurance_harness.py --turns 4 --chaos --report` — PASS (exit 0, recovered chaos ledger note).
+- `python3 tools/sifta_endurance_harness.py --turns 3 --audit-receipts --report` — PASS (exit 0, disk fan-out audit scoped to run receipts).
+- `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=3 python3 tools/sifta_endurance_harness.py --turns 2 --live-cortex --report` — PASS (exit 0, timeout-recovery path).
+- `python3 tools/sifta_endurance_harness.py --turns 3 --inject-breach-at 1 --report` — PASS (expected non-zero, exact turn + invariant + snippet).
+- `python3 -m pytest -q tests/test_sifta_endurance_harness.py` — **6 passed in 39.63s**.
+
+### RECEIPT
+
+Receipt target: `r1075-codex-endurance-harness-hardening-6fd9e4ed`. Files touched:
+`tools/sifta_endurance_harness.py`, `tests/test_sifta_endurance_harness.py`,
+`Documents/IDE_BOOT_COVENANT.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`.
+
+**WHAT IS LEFT after r1075:**
+
+- **George** — optional live long soak when you want it:
+  `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20 python3 tools/sifta_endurance_harness.py --live-cortex --minutes 30 --audit-receipts --report`.
+- **George / Marketing + Outreach** — still open from r1074/r1071: pick first wedge/product, BD owner, Figuera/Jongerius outreach.
+- **Doctors** — MCP manifest runtime enforcement + commerce demo path still open from r1071.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1076 Codex — clarify endurance `--minutes` semantics [r1076-codex-minutes-clarity-e115b736]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Doc / CLI clarity
+**Clock:** 2026-06-13 13:54 PDT, local OS clock
+**Trace:** `d99827ef-8b7d-4c53-bd45-54fef62f313e`
+**Truth labels:** OBSERVED (code read + patched); IDE rows are `MANA` / forgeable coordination, not STGM.
+
+### DIRECT ANSWER
+
+`--minutes 30` meant **30 wall-clock minutes of endurance-harness runtime**: a time budget for the
+soak loop while it drives synthetic owner turns through the grounding, cortex, health, and receipt
+checks. It is not 30 turns, not 30 model tokens, not 30 seconds, and not an Alice law.
+
+It was not hardcoded in the harness. The code already has `minutes: float = 0.0`, and the CLI accepts
+any positive float through `--minutes`. `0.0` means no wall-clock budget, so `--turns` is the cap.
+The earlier `30` was only a suggested optional long-soak example, and the wording made that look too
+fixed. That was the bug.
+
+`SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20` is separate: it is the per-live-cortex-call timeout in seconds.
+That value is also configurable by environment and only bounds a stalled model call; it is not the
+soak duration.
+
+### EXECUTE
+
+- `tools/sifta_endurance_harness.py` — clarified the docstring and argparse help:
+  `--minutes M` is a wall-clock runtime budget in minutes; `0` disables it.
+- Tournament live pointer updated here as append-only correction; r1075 stays historical.
+
+### USE THIS SHAPE
+
+- Short bounded smoke:
+  `python3 tools/sifta_endurance_harness.py --turns 5 --report`
+- Wall-clock soak with your chosen duration:
+  `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20 python3 tools/sifta_endurance_harness.py --live-cortex --minutes <wall_clock_minutes> --audit-receipts --report`
+- Example only, if you want half an hour:
+  `SIFTA_ENDURANCE_LIVE_TIMEOUT_S=20 python3 tools/sifta_endurance_harness.py --live-cortex --minutes 30 --audit-receipts --report`
+
+### TESTS
+
+- `python3 -m py_compile tools/sifta_endurance_harness.py` — PASS.
+- `python3 tools/sifta_endurance_harness.py --help` — PASS; help now says wall-clock runtime budget.
+
+### RECEIPT
+
+Receipt target: `r1076-codex-minutes-clarity-e115b736`. Files touched:
+`tools/sifta_endurance_harness.py`, `Documents/IDE_BOOT_COVENANT.md`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`.
+
+**WHAT IS LEFT after r1076:**
+
+- **George** — choose a wall-clock budget if you want a live soak; do not treat `30` as fixed.
+- **George / Marketing + Outreach** — still open from r1074/r1071: pick first wedge/product, BD owner, Figuera/Jongerius outreach.
+- **Doctors** — MCP manifest runtime enforcement + commerce demo path still open from r1071.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1077 George + Grok — China embodied AI vs SIFTA issue brief (CSET Dec 2025) [r1077-grok-china-embodied-ai-vs-sifta-90925502]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Competitive intelligence / doctrine verify  
+**Truth labels:** CSET report content = OBSERVED (George paste); mossing claim = FORBIDDEN without
+receipt; SIFTA mechanism map = OPERATIONAL (on-disk organs from r1074 mega brief).
+
+George pasted CSET Georgetown *China's Embodied AI: A Path to AGI* (Dec 2025) and asked: same track
+or mossing SIFTA? Covenant sign-in; Decide → Execute → Receipt.
+
+### DECIDE
+
+- Map report nuggets to SIFTA Layer 1 (hardware→swimmers→organs→field).
+- Separate **philosophical convergence** (embodiment > LLM-only) from **engineering divergence**
+  (national humanoid scale vs sovereign receipt-bound organism).
+- No mossing allegation without cited overlap on stigmergy / no-double-spend / STGM / chorum.
+
+### EXECUTE
+
+- **NEW:** `Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`
+  - Direct answer: **same broad lane, different engineering lane; not mossing SIFTA per report text.**
+  - Nugget table: policy scale, Huisi Kaiwu, AgiBot GO-1, CloudRobo, Wuhan social simulator,
+    群体具身智能 vs SIFTA φ-field receipts.
+  - BD implications: lead Chorum Gate / BeeSon / STGM Intent Gate — not "we also do embodied robots."
+
+### VERIFY (honest)
+
+| Claim | Verdict |
+|---|---|
+| China rejects LLM-only AGI | **Aligned** with SIFTA doctrine |
+| China uses "swarm" / 群体智能 | **Vocabulary overlap only** — cloud robot fleets ≠ stigmergic swimmers |
+| China ships receipt/no-double-spend organism | **Not in report** |
+| China mossing SIFTA codebase/thesis | **No evidence** in pasted source |
+| SIFTA can out-scale China on humanoids | **FORBIDDEN** — they win industrial scale; SIFTA wins sovereignty + receipts |
+
+### RECEIPT
+
+**Files touched:** `Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13` PDT. §4.1: `r1077-grok-china-embodied-ai-vs-sifta-90925502`.
+
+**WHAT IS LEFT after r1077:**
+
+- **George / Marketing** — use issue brief for investor/defense decks; lead Chorum + BeeSon + Intent Gate.
+- **George** — optional: file full CSET PDF in `Documents/` if you want permanent cite path.
+- **George / Outreach** — Figuera/Jongerius still open from r1071.
+- **Doctors** — MCP manifest enforcement + commerce demo still open from r1071.
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

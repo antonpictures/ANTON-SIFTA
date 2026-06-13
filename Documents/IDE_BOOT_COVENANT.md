@@ -1525,3 +1525,28 @@ above.
   chaos, audit-receipts modes; 6 pytest OBSERVED), appended tournament
   `r1073-grok-endurance-harness-max-modes-90924801`. Lane: Endurance/soak; `IDE_DOCTOR_OPERATIONAL_TRACE`
   / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 19:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  verified CSET Dec 2025 China Embodied AI report (George paste) against SIFTA on-disk organs:
+  philosophical alignment on embodiment, no evidence of mossing stigmergic/no-double-spend stack,
+  authored `Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`, appended tournament
+  `r1077-grok-china-embodied-ai-vs-sifta-90925502`. Lane: Competitive intel; `MANA`; no STGM claim.
+- `2026-06-13 13:44 PDT` — `codex_desktop_gpt5` read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `a8991d93-bdd1-459f-8fd5-8b5eb531dcfb`, audited and
+  hardened the r1073 endurance harness landing: bounded live-cortex timeout, recovered chaos ledger
+  fault fan-out, disk-visible four-ledger receipt audit, old-call compatibility, and 6 focused tests
+  green. Lane: Endurance/soak hardening; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 13:54 PDT` — `codex_desktop_gpt5` read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `d99827ef-8b7d-4c53-bd45-54fef62f313e`, and clarified
+  the endurance harness `--minutes` flag after George challenged the apparent hardcoded `30`: it is a
+  wall-clock runtime budget parameter, default `0.0`, not doctrine. Lane: Doc/CLI clarity;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 ~20:37 UTC (~13:37 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant and verified the r1072 endurance handoff fully landed: Grok's `r1073`
+  added all five modes (`--live-cortex`, `--minutes`/`--until-breach`, `--chaos`, `--audit-receipts`),
+  Codex hardened in `r1075`/`r1076`. Cowork re-ran default + chaos + audit modes (exit 0, score 1.000,
+  injected ledger fault surfaced+recovered) and confirmed `r1073`/`r1075` four-ledger receipts on disk;
+  could not run live-cortex (no local model in this sandbox). Appended consolidation
+  `r1077-cowork-endurance-lane-verified-consolidation-81382663`. Lane: Endurance verify + status;
+  `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
