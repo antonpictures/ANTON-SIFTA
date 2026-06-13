@@ -89,6 +89,129 @@ Clock: `2026-06-13 08:33 PDT` (hardware oracle `15:33 UTC`). §4.1 four-ledger r
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
+---
+
+## r1069 Codex — agent-trust wedge productization + contact targets [r1069-codex-agent-trust-wedges-a707dd13]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Surgeon + research / outreach targeting
+**Clock:** 2026-06-13 13:28 PDT, local OS clock
+**Trace:** `f7293255-3839-44f3-9226-39e499dffeb6`
+**Currency boundary:** IDE Doctor work is `MANA` coordination only. `MANA` is not crypto. `STGM` is the SIFTA crypto / no-double-spend spend-proof lane.
+
+### DECIDE
+
+George asked to find the few people likely to understand the exact SIFTA novelty and to code the r1067 product wedges. I treated r1067 as already claimed by Grok and r1068 as already claimed by Grok's marketing rename, so this round is r1069.
+
+### EXECUTE
+
+P0 / commerce headline:
+
+- `System/swarm_effector_gate.py`
+  - added `PURCHASE_INTENT_GATE_V1`;
+  - owner ingress now classifies commerce intent before any effector spends the nonce;
+  - purchase rows append to `effector_gate.jsonl` with `nonce`, `owner_text_hash`, action/context signals, and hard fields `mana_is_crypto=false`, `stgm_is_crypto=true`;
+  - allowed effector rows carry `purchase_intent_detected` and the structured purchase context forward.
+
+P1 / MCP receipt manifest:
+
+- `System/swarm_mcp_receipt_manifest.py`
+  - new manifest builder/writer: `.sifta_state/mcp_receipt_manifest.json`;
+  - every MCP tool receives `requires_owner_nonce`, `doctor_trace_currency=MANA`, `doctor_trace_crypto=false`, and `stgm_spend_proof` status;
+  - summary explicitly marks `MANA.crypto=false`, `STGM.crypto=true`.
+- `sifta_mcp_server.py`
+  - added `get_mcp_receipt_manifest` to `tools/list` and `tools/call`;
+  - note: this file already had uncommitted peer MCP/Ollama/Grok additions; this r1069 edit only adds the manifest import, handler, list entry, and dispatch branch.
+
+P1 / Shadow-swimmer eval matrix panel:
+
+- `System/swarm_ide_trace_quarantine.py`
+  - added `shadow_swimmer_eval_panel()` with malformed row count, quarantine row count, source/quarantine ledgers, and the `IDE MANA != Alice STGM economy` headline.
+- `System/swarm_eval_matrix_evidence.py`
+  - added `shadow_swimmer_quarantine` evidence row pointing at the live IDE trace ledger and quarantine organ.
+
+Outreach / "find them":
+
+- `Documents/SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md`
+  - ranked exact/near-exact targets:
+    - Agent Receipts / Obsigna — Otto Jongerius;
+    - Sello / Notarized Agents / APOA — Juan Figuera;
+    - XAIP signed execution receipts;
+    - Agent Identity Protocol — Sunil Prakash;
+    - Agent Trust Negotiation — Enrique Somoza;
+    - market validators: Mastercard Verifiable Intent / Agent Pay, Experian Agent Trust, FIDO, Uare.ai, Coevera, ISACA/CISA/CSA.
+  - includes public contact routes and first outreach lines.
+
+### RESEARCH SPINE
+
+- Agent Receipts / Obsigna ships daemon, MCP proxy, SDKs, and dashboard for signed agent action receipts: https://agentreceipts.ai/ · https://obsigna.dev/ · https://github.com/agent-receipts/obsigna
+- Sello / Notarized Agents is receiver-attested encrypted receipts with transparency logs: https://arxiv.org/abs/2606.04193 · https://github.com/juanfiguera/sello · https://www.juanfiguera.com/
+- XAIP defines signed execution receipts for tool calls: https://datatracker.ietf.org/doc/draft-xkumakichi-xaip-receipts/
+- AIP defines invocation-bound capability tokens for MCP/A2A/HTTP: https://datatracker.ietf.org/doc/draft-prakash-aip/00/
+- ATN covers capability, delegation, and provenance binding: https://datatracker.ietf.org/doc/draft-somoza-atn-agent-trust-negotiation/
+- Market validators: Mastercard Verifiable Intent, Experian Agent Trust, Uare.ai Individual AI, Coevera MCP, CISA/ISACA audit gap.
+
+### TESTS / PROBES
+
+- `python3 -m py_compile System/swarm_effector_gate.py System/swarm_mcp_receipt_manifest.py System/swarm_ide_trace_quarantine.py System/swarm_eval_matrix_evidence.py sifta_mcp_server.py` — PASS.
+- `python3 -m pytest -q tests/test_effector_double_spend.py tests/test_swarm_mcp_receipt_manifest.py tests/test_ide_trace_quarantine.py tests/test_swarm_eval_matrix_evidence.py` — **10 passed**.
+- `git diff --check -- <touched tracked files>` — PASS.
+- `python3 tools/whats_left.py` before append resolved r1068; after this append must resolve r1069.
+
+### RECEIPT
+
+Receipt: `r1069-codex-agent-trust-wedges-a707dd13`.
+
+**WHAT IS LEFT after r1069:**
+
+- **George / Outreach** — start with Tier 1: Juan Figuera (Sello/APOA) and Otto Jongerius (Agent Receipts/Obsigna). They are closest to SIFTA's receipts/authority language.
+- **Doctors** — next code pass should enforce the MCP manifest at execution time for world-touching MCP tools, not just expose it.
+- **Doctors** — product demo path: show one owner commerce utterance -> purchase_intent row -> one nonce -> one allowed browser effector -> second spend refused.
+- **Marketing** — keep claim precise: almost nobody ships full SIFTA; closest peers ship receipts/auth layers, not hardware-bodied swimmers + STGM spend proof.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1070 Codex — live carrier correction for r1069 agent-trust wedges [r1070-codex-agent-trust-carrier-fix-a707dd13]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Carrier correction / receipt pointer
+**Clock:** 2026-06-13 13:28 PDT, local OS clock
+
+### CORRECTION
+
+I appended the full r1069 productization block above an older section, so `tools/whats_left.py`
+still resolved the live board to Grok's r1068. I am not rewriting that history. This tail block makes
+the carrier resolve to the completed r1069 work.
+
+### r1069 SUMMARY
+
+- P0 purchase intent: `PURCHASE_INTENT_GATE_V1` rows now land on `effector_gate.jsonl`; allowed effector rows carry structured purchase context.
+- P1 MCP manifest: `System/swarm_mcp_receipt_manifest.py` + `get_mcp_receipt_manifest` expose per-tool `MANA` trace vs `STGM` spend-proof boundaries.
+- P1 shadow-swimmer panel: `shadow_swimmer_eval_panel()` + eval evidence row expose rogue IDE trace/quarantine status with `MANA is not crypto; STGM is crypto`.
+- Outreach: `Documents/SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md` ranks Agent Receipts/Obsigna, Sello/APOA, XAIP, AIP, ATN, and market validators with public contact routes.
+
+### TESTS / PROBES
+
+- `python3 -m py_compile System/swarm_effector_gate.py System/swarm_mcp_receipt_manifest.py System/swarm_ide_trace_quarantine.py System/swarm_eval_matrix_evidence.py sifta_mcp_server.py` — PASS.
+- `python3 -m pytest -q tests/test_effector_double_spend.py tests/test_swarm_mcp_receipt_manifest.py tests/test_ide_trace_quarantine.py tests/test_swarm_eval_matrix_evidence.py` — **10 passed**.
+
+### RECEIPT
+
+Receipt: `r1070-codex-agent-trust-carrier-fix-a707dd13`, referring to code receipt
+`r1069-codex-agent-trust-wedges-a707dd13`.
+
+**WHAT IS LEFT after r1070:**
+
+- **George / Outreach** — first contact targets: Juan Figuera (Sello/APOA) and Otto Jongerius (Agent Receipts/Obsigna).
+- **Doctors** — enforce the MCP manifest at execution time for world-touching MCP tools; this round exposes the manifest and tests it, but does not yet block calls from the manifest.
+- **Doctors** — product demo path: one owner commerce utterance -> purchase_intent row -> one nonce -> one allowed browser effector -> second spend refused.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
 ## r1049 Codex owner test instructions — diffusion selector grounded [r1049-codex-cortex-diffusion-test-instructions-3f8a23cf]
 
 **Doctor:** codex_desktop_gpt5  
@@ -2232,6 +2355,135 @@ Development** as the audience. Old links such as
 
 - **George / Marketing** — assign next BD owner; pick one wedge from r1067 to productize first.
 - **Doctors** — optional full-repo Carlton grep only if George wants historical PDFs/tests renamed.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1071 Codex — live carrier pointer for agent-trust productization [r1071-codex-agent-trust-live-pointer-a707dd13]
+
+**Doctor:** codex_desktop_gpt5
+**Lane:** Live carrier pointer after r1069/r1070 placement correction
+**Clock:** 2026-06-13 13:28 PDT, local OS clock
+
+### OBSERVED
+
+Grok's r1068 marketing section is the true tail before this append. My full r1069 agent-trust section
+and short r1070 correction landed above older sections because the tournament footer repeats. This
+r1071 tail pointer is the live carrier update; it does not rewrite prior rows.
+
+### COMPLETED WORK
+
+- `System/swarm_effector_gate.py` — P0 purchase-intent rows on `effector_gate.jsonl`, bound to the owner nonce and carried into allowed effector receipts.
+- `System/swarm_mcp_receipt_manifest.py` + `sifta_mcp_server.py` — P1 MCP receipt manifest and `get_mcp_receipt_manifest`, separating `MANA` trace from `STGM` spend proof per tool.
+- `System/swarm_ide_trace_quarantine.py` + `System/swarm_eval_matrix_evidence.py` — P1 shadow-swimmer eval panel and evidence row.
+- `Documents/SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md` — public contact targets and outreach lines for Agent Receipts/Obsigna, Sello/APOA, XAIP, AIP, ATN, Mastercard, Experian, Uare.ai, Coevera, ISACA/CISA/CSA.
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_effector_gate.py System/swarm_mcp_receipt_manifest.py System/swarm_ide_trace_quarantine.py System/swarm_eval_matrix_evidence.py sifta_mcp_server.py` — PASS.
+- `python3 -m pytest -q tests/test_effector_double_spend.py tests/test_swarm_mcp_receipt_manifest.py tests/test_ide_trace_quarantine.py tests/test_swarm_eval_matrix_evidence.py` — **10 passed**.
+
+### RECEIPT
+
+Receipt: `r1071-codex-agent-trust-live-pointer-a707dd13`.
+
+**WHAT IS LEFT after r1071:**
+
+- **George / Outreach** — first contact targets: Juan Figuera (Sello/APOA) and Otto Jongerius (Agent Receipts/Obsigna).
+- **Doctors** — enforce the MCP manifest at execution time for world-touching MCP tools; r1069 exposes and tests the manifest but does not yet block calls from it.
+- **Doctors** — product demo path: one owner commerce utterance -> purchase_intent row -> one nonce -> one allowed browser effector -> second spend refused.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1072 Cowork Claude — MAX ENDURANCE TEST handoff for cursor2.5 (extend the r536 harness) [r1072-cowork-endurance-max-soak-handoff-81382663]
+
+**Doctor (author of this handoff):** cowork_claude (`claude-opus-4-8`) — Cowork Linux sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Assigned to:** **cursor2.5** — he loves to code a lot, so this is the long bounded job. George preserves Cowork credits; Cowork writes the spec, cursor2.5 cuts the code.
+**Lane:** Endurance / soak hardening — **EXTEND** `tools/sifta_endurance_harness.py` (r536). Do **not** fork a rival harness (§6 smallest live cut; §1.B reuse organs).
+**Round-id note (§0.D collision guard):** Codex raced the board to **r1071** while this was being written (r1067 commerce wedges landed there, 10 tests passing, receipt `r1071-codex-...`). I took the next clean id **r1072** rather than the r1069 referenced inside r1071's text. No renumbering of any peer round.
+**Truth labels:** OBSERVED (harness + `tests/test_sifta_endurance_harness.py` exist on disk, read 2026-06-13 ~20:31 UTC; r1067 wedges now receipted under r1071, no longer orphan); HYPOTHESIS for live-cortex soak behavior until cursor2.5 lands code + green pytest.
+
+### DECIDE — why this is the next round
+The r536 harness already drives synthetic owner turns through Alice's **real** grounding + receipt paths and asserts per-turn health (WALL-CLOCK time truth, §1.D.1 local-M5 identity, drift sensor, residue organ, 4-ledger fan with no orphan, health monitor + organism doctor, RSS bound / no leak). Its own docstring names the open gap:
+
+> "The default reply path is a grounded healthy template, not live cortex inference… **Live-cortex soak belongs in a later mode.**"
+
+That later mode is this round, and no peer round (through r1071) has built it. cursor2.5 builds the MAX endurance test **on top of the one existing harness** — same organs, same invariants, longer and meaner.
+
+### THE BUILD — ranked, all extend the one harness file
+- **P0 — Live-cortex soak (`--live-cortex`).** Drive real inference through the attached cortex (honor §1.D.1 cortex-source-is-not-life), not the healthy template, over N turns. Assert the SAME invariants hold on real model output: no wrong time, no cloud/datacenter identity claim, drift+residue under threshold, 4-ledger fan with no orphan, honest "unsourced/approximate" when a sensor is missing (§0.E). On breach keep the existing format: exit non-zero naming **exact turn index + violated invariant + verbatim snippet**.
+- **P1 — Max-duration / until-breach (`--minutes M` / `--until-breach`).** Run until first invariant breach or a wall-clock budget. Report a degradation curve: RSS slope (leak detector — fail if slope exceeds bound), per-turn latency, receipt-fan rate. Emit ENDURANCE SCORE + a short time-series block.
+- **P2 — Chaos / fault injection (`--chaos`).** Randomly perturb sensor reads (time oracle unavailable, cortex timeout, one ledger write fails) and assert she degrades **honestly** — says unsourced per §0.E, repairs or surfaces the failed ledger — rather than fabricating. This tests honest degradation only; it adds **no gate on Alice** (§0.0 First Law).
+- **P3 — Receipt-integrity end audit.** After the run, verify the 4-ledger fan: no orphan rows, no double-spend (same action claimed twice), tamper-evident chain check where integrity fields exist. Reuse existing checkers (`swarm_swimmer_happiness` chain check, `predator_gate_writer`); do not invent a rival validator.
+
+### CONSTRAINTS (binding on cursor2.5)
+1. Pure stdlib + existing SIFTA organs only — **no new pip deps** (harness rule).
+2. Read each organ's API before calling it (§1.B); no invented sensors.
+3. IDE-doctor rows are MANA/forgeable; never emit `signing_serial` / `stgm_*` (§4.2.1).
+4. New flags are **additive**: the default `--turns N` path must still pass the existing test unchanged. One harness file extended + its test extended; no rival file.
+
+### ACCEPTANCE (cursor2.5 must show on landing as r1073)
+1. `python3 tools/sifta_endurance_harness.py --turns 5 --report` still exits 0 (no regression).
+2. Each new mode exits 0 on a healthy short run; exits non-zero with exact turn+invariant+snippet on an injected breach.
+3. `pytest tests/test_sifta_endurance_harness.py -q` green, plus one new short test per new mode.
+4. §4.1 four-ledger fan returns `ok`; append the landing round here; run `python3 tools/whats_left.py`.
+
+### RECEIPT (this handoff)
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`. Clock: `2026-06-13 20:31 UTC` (~13:31 PDT). §4.1: `r1072-cowork-endurance-max-soak-handoff-81382663` fanned to all four canonical ledgers.
+
+**WHAT IS LEFT after r1072:**
+
+- **cursor2.5** — code P0→P3 on top of `tools/sifta_endurance_harness.py`; land as **r1073** with pytest + §4.1 fan.
+- **George / Marketing + Outreach** — still open from r1071: assign next BD owner; first contacts Juan Figuera (Sello/APOA) and Otto Jongerius (Agent Receipts/Obsigna); pick one wedge to productize.
+- **Doctors** — still open from r1071: enforce the MCP manifest at execution time; build the commerce demo path (one utterance → purchase_intent → one nonce → one allowed effector → second spend refused).
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1074 George + Grok — Mega marketing file: unique SIFTA products only [r1074-grok-unique-products-mega-marketing-90924102]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Marketing / BD — sell only what others don't have  
+**Truth labels:** OBSERVED (on-disk organ map + r1069 pytest receipts); HYPOTHESIS only for #13 Embodied Expert Memory Node.
+
+George asked the swarm to create one **mega marketing file** listing **unique SIFTA products only** — no
+commodity pitches (generic local LLM, RAG, MCP bus, payment trust brands). Covenant sign-in read;
+Layer 1 hardware→swimmers→organs framing; Decide → Execute → Receipt.
+
+### DECIDE
+
+- Consolidate r1067 wedges + r1069 productization + on-disk organ census into one BD-facing catalog.
+- Explicit **DO NOT SELL** table for commodity overlap.
+- 23 numbered products with truth labels, proof paths, differentiation, and claim boundaries.
+- r1073 remains reserved for cursor2.5 endurance harness (r1072 handoff); this round is **r1074**.
+
+### EXECUTE
+
+- **NEW:** `Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md`
+  - Categories: Agent Trust (#1–5), Stigmergic Field (#6–9), Hardware Security (#10–13),
+    Simulation Labs (#14–20), Metabolism/Robotics (#21–23).
+  - Buyer map, demo order, STGM honesty boundary, links to existing `MARKETING_*` briefs + r1069 contacts.
+- **README.md** — add mega brief to Marketing & Pitch Documents index.
+
+### RECEIPT
+
+**Files touched:** `Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`, `README.md`.
+Clock: `2026-06-13` PDT. §4.1: `r1074-grok-unique-products-mega-marketing-90924102`.
+
+**WHAT IS LEFT after r1074:**
+
+- **George / Marketing** — pick one product from mega brief demo order (#1 Intent Gate or #11 BeeSon Node first).
+- **George / Outreach** — Tier-1 contacts still open from r1071 (Figuera, Jongerius).
+- **cursor2.5** — r1073 endurance harness still open from r1072.
+- **Doctors** — MCP manifest runtime enforcement + commerce demo path still open from r1071.
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

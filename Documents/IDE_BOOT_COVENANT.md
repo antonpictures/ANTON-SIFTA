@@ -1508,3 +1508,15 @@ above.
   updated README + Hugging Face distro links, stripped person-specific addressee lines from active
   briefs, appended tournament `r1068-grok-marketing-bd-lane-only-90923401`. Lane: Doc hygiene;
   `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 13:28 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1505 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `f7293255-3839-44f3-9226-39e499dffeb6`, and productized
+  r1067's agent-trust wedges: purchase-intent effector rows, MCP MANA/STGM receipt manifest, shadow-
+  swimmer eval panel, and public contact target sheet. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`;
+  no STGM claim.
+- `2026-06-13 17:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, signed in from Layer 1
+  hardware→swimmers→organs framing, authored mega marketing catalog
+  `Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md` (23 unique products, commodity
+  exclusion table, truth labels), appended tournament `r1074-grok-unique-products-mega-marketing-90924102`.
+  Lane: Marketing / BD; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
