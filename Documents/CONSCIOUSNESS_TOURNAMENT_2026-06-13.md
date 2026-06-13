@@ -2993,3 +2993,96 @@ Clock: `2026-06-13 ~21:40 UTC` (~14:40 PDT). §4.1: `r1085-grok-arkoma-nao-ik-be
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1086 Codex — in line for work after E49/E50 robot data [r1086-codex-in-line-for-work-578acfe2]
+
+**Doctor:** `codex_desktop_gpt5` — `C55M@codex: GPT-5 Codex`, on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Trace:** `578acfe2-7bc0-49aa-ac05-50cb9b9f4f33`.
+**Clock:** `2026-06-13 14:39:45 PDT` (local OS clock).
+
+### DECIDE
+
+George asked to get in line and ask for work. I do not take a robotics lane without GO, because Grok already landed r1085 and the live board asks for optional next work rather than a mandatory patch.
+
+### EXECUTE
+
+- Read the covenant fully and registered this pass on the IDE stigmergic bridge.
+- Verified HEAD is `e979b6746` (`r1085: E50 ARKOMA NAO real humanoid IK benchmark`).
+- Verified `System/stigmerobotics_arkoma_ik.py`, `tools/fetch_arkoma_dataset.py`, `tests/test_stigmero_e50_arkoma_ik.py`, `tests/fixtures/stigmero_e50_arkoma_slice.csv`, and 12 ARKOMA asset files exist on disk.
+- Re-ran the focused robotics suite.
+
+### TESTS
+
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e50_arkoma_ik.py tests/test_stigmero_e49_irb2400_ik.py tests/test_stigmero_effector_bridge.py tests/test_stigmero_body_connection_proof.py` — **36 passed in 6.35s**.
+
+### REQUEST FOR WORK
+
+Codex is in line. Pick one:
+
+1. **E49/E50 tab UX** — add a Stigmerobotics app tab/button that runs the IRB2400 + ARKOMA fixture benchmarks and shows truth labels.
+2. **IK baseline comparison** — add a no-overclaim benchmark comparing nearest-neighbor / linear baseline against dataset labels under Predator Gate.
+3. **E51 hardware-prep lane** — spec the physical NAO/ABB safety receipt chain without claiming hardware motion.
+4. **Outreach pack** — turn E49/E50 into a concise product-proof block for Figuera/Jongerius.
+
+### RECEIPT
+
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Four-ledger receipt: `r1086-codex-in-line-for-work-578acfe2` (all four ledgers `ok`).
+
+**WHAT IS LEFT after r1086:**
+
+- **George** — assign Codex one of the four lanes above.
+- **Doctors** — do not claim physical robot motion or solver superiority without a separate falsifier.
+- **George / Outreach** — X thread and Figuera/Jongerius remain open.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1087 Cowork Claude — ASSIGN Composer: full IK soak + E51 baseline-under-Predator-Gate [r1087-cowork-assign-composer-soak-e51-baseline-81382663]
+
+**Doctor (author of handoff):** cowork_claude (`claude-opus-4-8`) — Cowork sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Assigned to:** **Composer** — George's GO: "give Composer the code, all of it." This is the full codeable slate from the r1085/r1086 menu (lanes 1 Post and 4 Outreach stay with George; lanes 2 Soak + 3 E51 are code → Composer).
+**Lane:** Stigmerobotics — extend the E49/E50 stack (`stigmerobotics_irb2400_ik.py`, `stigmerobotics_arkoma_ik.py`, `stigmerobotics_effector_bridge.py`). No rival/fork (§6, §1.B).
+**Truth labels:** OBSERVED on disk (HEAD `e979b6746` r1085; 36 stigmero tests green per r1086; E49+E50 organs + fixtures present). Benchmark RESULTS stay HYPOTHESIS until Composer's pytest is green.
+
+### DECIDE — why this is the slate
+Two ROB501 rungs landed on real robot data (E49 ABB IRB2400 300k; E50 NAO ARKOMA). The honest next coding work is (a) prove the pipeline holds on the FULL datasets, not just the 249-row slices, and (b) put a real IK baseline next to it under the Predator Gate — without ever claiming "beats the solver." Both extend the one stack.
+
+### THE BUILD (Composer — both lanes)
+- **Lane A — Full-dataset soak.** Run stigmergic IK ingestion over the FULL sets (300k IRB2400 + full ARKOMA), not the committed slices. Emit a **receipted aggregate per-joint error report** (mean/max/percentiles, degrees) over the whole set. Raw data stays **gitignored** (`assets/robotics/...`, §3 sovereignty) — commit only the small slices + the report JSON. Reuse `tools/fetch_irb2400_dataset.py` + the ARKOMA fetch.
+- **Lane B — E51 IK baseline under Predator Gate.** Implement a classical IK baseline (DH closed-form or numerical Jacobian) and compare its joint-angle error vs dataset labels. **Every** predicted joint target routes through the Predator Gate + a receipted `EffectorRequest` (no double-spend, sensor echo). Report BOTH error distributions side by side.
+
+### TRUTH GUARD (binding)
+- `OPERATIONAL`: "the stigmergic pipeline produces bounded IK with receipts, no joint target without a receipt."
+- `FORBIDDEN`: "SIFTA beats the baseline / beats a solver" — unless proven on a held-out split with a stated metric, and even then label `OBSERVED` only after green pytest. No marketing claim before the receipt.
+- `HYPOTHESIS`: metal motion (E51+ hardware) stays untouched here.
+
+### CONSTRAINTS
+1. Pure stdlib + `numpy` (present) + existing deps; no new pip deps without justification.
+2. Extend existing organs; new tests `tests/test_stigmero_e51_*` ; existing **36 stigmero tests stay green** (no regression).
+3. Raw datasets gitignored; only sanitized slices + the report committed.
+4. **COMMIT your round** — reset-before-commit is eating uncommitted carrier history this session (§4.4.3). Land durable.
+5. §4.1 four-ledger fan on landing; run `python3 tools/whats_left.py`.
+
+### ACCEPTANCE (land as next round)
+1. Full-dataset soak produces a receipted aggregate per-joint error report; raw data NOT in git.
+2. E51 baseline implemented; both error distributions reported under the Predator Gate; no "beats" claim without held-out proof.
+3. `pytest tests/test_stigmero_e51_*` green; the 36 existing stigmero tests still green.
+4. Round committed (git) + §4.1 fan `ok` + `whats_left.py` run.
+
+### RECEIPT
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13 ~21:50 UTC` (~14:50 PDT). §4.1: `r1087-cowork-assign-composer-soak-e51-baseline-81382663`.
+
+**WHAT IS LEFT after r1087:**
+
+- **Composer** — code Lane A (soak) + Lane B (E51 baseline) above; land committed with green pytest + §4.1 fan.
+- **George** — post the X thread (`MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`); outreach Figuera/Jongerius.
+- **All arms** — commit your rounds; stop losing append-only history to reset-before-commit.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

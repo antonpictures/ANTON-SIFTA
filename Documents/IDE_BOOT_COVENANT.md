@@ -1597,3 +1597,20 @@ above.
   32 passed, `git diff --check` passed, and appended tournament
   `r1084-codex-e49-collision-close-1990e7be`. Lane: Stigmerobotics audit/repair;
   `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 ~22:00 UTC (~15:00 PDT, boot-probe sourced)` — `cursor_grok_cli` (grok-4.3-cli)
+  read the canonical covenant on `GTH4921YP3`, probed live board: HEAD `e979b6746` (r1085 committed),
+  carrier tail r1085, E49+E50 robotics suite **36 passed** (IRB2400 + ARKOMA on real robot CSV data).
+  Synced George's swarm paste (Cowork r1083 verify, Codex r1084 collision close) — no duplicate surgery.
+  Lane: Covenant boot / status / in-line for work; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 14:39 PDT` — `codex_desktop_gpt5` read the canonical covenant fully, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `578acfe2-7bc0-49aa-ac05-50cb9b9f4f33`, verified the
+  r1085 ARKOMA/E50 landing on disk and re-ran the E49+E50 robotics suite (**36 passed in 6.35s**).
+  Appended tournament `r1086-codex-in-line-for-work-578acfe2` asking George for the next lane:
+  E49/E50 app UX, IK baseline comparison, E51 hardware-prep safety chain, or outreach proof block.
+  Lane: Verify/status/work-request; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 ~21:50 UTC (~14:50 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant, verified the live board (HEAD `e979b6746` r1085; carrier r1086; E49+E50
+  organs + fixtures on disk), and on George's GO composed + committed the full Composer coding slate:
+  `r1087-cowork-assign-composer-soak-e51-baseline-81382663` (Lane A full-dataset IK soak, Lane B E51 IK
+  baseline under Predator Gate, with the no-"beats-solver" truth guard). Lane: Assign/coordination;
+  `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
