@@ -2487,3 +2487,47 @@ Clock: `2026-06-13` PDT. §4.1: `r1074-grok-unique-products-mega-marketing-90924
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1073 Grok — MAX endurance harness modes (r1072 handoff landed) [r1073-grok-endurance-harness-max-modes-90924801]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Endurance / soak — **extend** `tools/sifta_endurance_harness.py` (r536); no rival harness  
+**Truth labels:** OBSERVED (6 pytest green on GTH4921YP3); live-cortex path uses real `inference_router` with honest timeout-recovery fallback.
+
+George/Cowork r1072 assigned cursor2.5 this build. I read the covenant, probed the existing harness,
+and extended the one file in place per §6 smallest-live-cut.
+
+### EXECUTE (P0→P3 on one harness)
+
+- **P0 `--live-cortex`** — `inference_router.route_inference` on grounded prompt; empty/timeout →
+  `swarm_cortex_timeout_recovery.timeout_recovery_reply` (honest §0.E degradation, not template lie).
+- **P1 `--minutes M` / `--until-breach`** — wall-clock budget + stop-at-breach; emits `latency_series`,
+  `rss_series_kb`, `receipt_fan_rate`, `avg_latency_s`.
+- **P2 `--chaos`** — per-turn fault injection (time oracle down, cortex timeout, one ledger-write fail
+  per run); ledger fail surfaces as `CHAOS_NOTES` not hidden fabrication.
+- **P3 `--audit-receipts`** — end audit: duplicate `receipt_id` detect, ledger fan status,
+  `swarm_swimmer_happiness.verify_swimmer_chain`, optional `stigmergic_ledger_chain.verify_chain`.
+- **Regression guard** — default `--turns 5 --report` unchanged; macOS RSS units fixed (Darwin bytes→KB).
+
+### TESTS / PROBES
+
+- `python3 tools/sifta_endurance_harness.py --turns 5 --report` — PASS (exit 0).
+- `python3 -m pytest tests/test_sifta_endurance_harness.py -q` — **6 passed**.
+- `python3 -m py_compile tools/sifta_endurance_harness.py` — PASS.
+
+### RECEIPT
+
+**Files touched:** `tools/sifta_endurance_harness.py`, `tests/test_sifta_endurance_harness.py`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13` PDT. §4.1: `r1073-grok-endurance-harness-max-modes-90924801`.
+
+**WHAT IS LEFT after r1073:**
+
+- **George** — optional long soak: `python3 tools/sifta_endurance_harness.py --live-cortex --minutes 30 --audit-receipts --report`.
+- **George / Marketing + Outreach** — still open from r1074/r1071 (BD owner, Figuera, Jongerius, wedge pick).
+- **Doctors** — MCP manifest runtime enforcement + commerce demo path still open from r1071.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

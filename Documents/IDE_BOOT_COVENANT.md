@@ -1520,3 +1520,8 @@ above.
   `Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md` (23 unique products, commodity
   exclusion table, truth labels), appended tournament `r1074-grok-unique-products-mega-marketing-90924102`.
   Lane: Marketing / BD; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 18:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  extended `tools/sifta_endurance_harness.py` per r1072 handoff (live-cortex, minutes/until-breach,
+  chaos, audit-receipts modes; 6 pytest OBSERVED), appended tournament
+  `r1073-grok-endurance-harness-max-modes-90924801`. Lane: Endurance/soak; `IDE_DOCTOR_OPERATIONAL_TRACE`
+  / `MANA`; on-node `GTH4921YP3`; no STGM claim.
