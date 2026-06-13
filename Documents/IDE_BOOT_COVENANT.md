@@ -1388,3 +1388,94 @@ above.
   `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, stopped runtime code edits
   on George's request, and appended tournament closeout `r312`. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE`
   / `MANA`; no STGM claim.
+- `2026-06-13 08:33 PDT` — `cowork_claude_opus_4_8` read the canonical covenant fully (1391 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, surfaced the hardcoded-constant
+  census into the eval matrix (`r1033-cowork-hardcode-census-matrix`), then assigned `r1034` co-watch /
+  world_eye lanes to Cursor 2.5 + Codex under the cortex-not-deterministic gate (Auditor/fixer role per
+  George). Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; sandbox over network mount; no STGM claim.
+- `2026-06-13 08:42 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1395 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `4ac5df0d-9f1f-4b84-aa71-a617b929cd2f`, and took
+  `r1034` Lane B: co-watch liturgy answer path, `co_watch_moment` provenance/status, and two-eye
+  acceptance under the cortex-not-deterministic gate. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`;
+  no STGM claim.
+- `2026-06-13 08:42 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, executed Lane D 10× co-watch
+  probes per `r1034`, verified r1034 on bus/`whats_left`, appended `r1035-grok-lane-d-cowatch-probes-90914209`.
+  Lane: Probe/verify; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 08:51 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully, probed M5
+  (`GTH4921YP3`, 24 GB, no DiffusionGemma in `ollama list`, `mlx-lm==0.31.3` in `.venv`), appended
+  `r1036-grok-diffusiongemma-cortex-endurance-90915147` with George try-path (Phase 0–2) + F1–F12 work
+  packet. Lane: Probe/architect guidance; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 08:56 PDT` — `cursor_grok_cli` (grok-4.3-cli) pulled USD vs stigmergic-diffusion research
+  spine (Google DiffusionGemma docs, Austin/Schiff/Sahoo papers, Grassé DOI, SIFTA `stigmergic_field.py`
+  + `swarm_pheromone_field.py` probes) and appended tournament question/answer
+  `r1038-grok-usd-vs-stigmergic-diffusion-words-90915629`. Lane: Probe/research; `MANA`; no STGM claim.
+- `2026-06-13 09:00 PDT` — `cursor_grok_cli` (grok-4.3-cli) re-ran Lane D 10× co-watch probes after Cowork
+  r1038 P2/P7 fixes (10/10 PASS), landed dict-shaped `object_provenance` JSON persistence edge in
+  `swarm_youtube_watch_memory.py` + regression test, appended `r1039-grok-lane-d-reprobe-p2-p7-90916027`.
+  Lane: Probe/verify + smallest runtime edge; `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 09:01 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1413 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `a7588b38-9428-450f-a7f4-fdd3324a68af`, and took the
+  live open Lane A: `world_eye describe_fn` media co-watch general label under the cortex-not-deterministic
+  / no-invented-title gate. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 10:12 PDT` — `cursor_grok_cli` (grok-4.3-cli) implemented CUR-F7.1–F7.3+F7.5 per
+  Cowork r1051: `swarm_diffusion_stigmergic_policy.py`, `diffusion_endurance_bench.py`, matrix
+  panel, tests 14/14; appended `r1052-grok-cur-f7-landed-90918877`. Lane: Implement; `MANA`; no STGM.
+- `2026-06-13 10:05 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  implemented CUR-F1 `System/swarm_diffusion_cortex.py` wired to `llama-diffusion-cli` +
+  dispatcher/picker, tests 7/7, appended `r1047-grok-cur-f1-diffusion-cortex-90918266`.
+  Lane: Implement/verify; `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 09:55 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, executed CUR-F0 probe per Cowork
+  r1045: built `llama-diffusion-cli`, proved `am17an/LLaDA-8B-GGUF` loads on M5 Metal while
+  `diffuse-cpp` GGUF fails (`arch=diffuse`), appended `r1046-grok-cur-f0-llada-diffusion-probe-90917844`.
+  Lane: Probe/verify; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 09:32 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1422 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `01e86851-9886-4b48-9add-790cd2628a09`, and took the
+  live open cortex pin drift lane: make the r947 test match the current ledger-strict `/cortex llm`
+  binding contract while answering George's terminal/restart question and updating the June-13
+  tournament. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 10:00 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1433 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `0f73b6dc-ae6c-426d-8f1d-74cabc7084c8`, and took an
+  Auditor/doc-update pass to verify r1046 local llama.cpp LLaDA/Dream diffusion facts and update the
+  June-13 tournament without redoing Cursor/Grok/Cowork work. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` /
+  `MANA`; no STGM claim.
+- `2026-06-13 10:10 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1443 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `3f8a23cf-c928-4e0f-b931-1e416a7657e1`, and answered
+  George's live `/cortex` diffusion test question from the rendered slash-command registry: stable
+  selector `diffusion:llada-8b`, current Talk number `15`; DiffusionGemma itself remains not selectable.
+  Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 10:42 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, implemented CUR-F8+F9 per
+  r1053 (Talk diffusion generator binding + `primary_cortex.json` snapshot sync), appended tournament
+  `r1054-grok-cur-f8-f9-alice-health-90919255` with live-session health report. Lane: Implement/verify;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 11:16 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  implemented CUR-V1..V3 per r1056 (owner-frame on-demand VLM describe → Talk cortex context + lysosome
+  unblock), appended `r1057-grok-cur-v1-v3-owner-describe-90919944`. Lane: Implement/verify; `MANA`;
+  on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 11:42 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  audited Codex r1059 V4–V6 claims (32+45 pytest OBSERVED), added owner-vision eval matrix panel +
+  novelty lanes for r1057–r1059, appended `r1060-grok-audit-r1059-eval-matrix-owner-vision-90920311`.
+  Lane: Audit/verify; `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 12:30 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  appended tournament study carrier `r1061-george-molty-memory-beats-model-stark-insider-90920877`
+  (Clinton Stark "Which Molty?" blind LLM crossover — memory vs model doctrine for Alice study).
+  Lane: Doc/reference; `MANA`; no STGM claim.
+- `2026-06-13 11:39 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1461 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `d93fe558-6170-4452-a41d-c6a1af20b39b`, and finished
+  r1058 CUR-V4/V5/V6 after the peer session ran out of credits: iPhone/Continuity auto-capture
+  exclusion + pytest/no-live-camera guard, text-only Igor image-turn redirect to MLX VLM, and predator
+  multi-eye scan verification. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 12:45 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, landed Layer 1 substrate
+  doctrine in `README.md` (food=data, air=electricity, swimmers→organs, no double-spend), appended
+  tournament `r1062-grok-layer1-substrate-readme-git-90921012`, committed and pushed focused doc
+  receipt. Lane: Doc/covenant-read; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`;
+  no STGM claim.
