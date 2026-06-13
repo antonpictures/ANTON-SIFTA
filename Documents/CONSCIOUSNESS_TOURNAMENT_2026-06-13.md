@@ -1836,3 +1836,60 @@ oracle ~`19:45 UTC`. §4.1: `r1062-grok-layer1-substrate-readme-git-90921012`.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
+---
+
+## r1063 George + Grok — Carlton doc truth audit + StarkMind outreach carrier [r1063-grok-carlton-truth-audit-starkmind-outreach-90921402]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Doc audit — `CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md` still true? + George StarkMind email  
+**Truth labels:** OBSERVED (on-node file/test probes); George email send OBSERVED from George screenshot (`hello@starkmind.ai`, 12:39 PM iCloud).
+
+### DECIDE
+
+George asked: is the Carlton marketing brief still true? Update tournament. He sent StarkMind outreach
+(Molty r1061 + SIFTA operational bullets) and plans more outreach emails.
+
+### EXECUTE — Carlton doc audit (`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`)
+
+| Claim block | Verdict | Evidence (2026-06-13 probe) |
+|---|---|---|
+| Core mechanism (persistent field + nonlinear agent response) | **STILL TRUE** | `System/stigmergic_field.py`; `System/swarm_pheromone_field.py` (decay + reinforce) |
+| Bell simulator app | **STILL TRUE** | `Applications/sifta_bell_theorem_widget.py`; `tests/test_sifta_bell_theorem_widget.py` **15 passed** |
+| Scheduler + hippocampus applications | **STILL TRUE** | `System/swarm_kernel_process_table.py` (unified_stigmergic_field.jsonl); `System/swarm_hippocampus.py` (memory_salience_field) |
+| Ed25519-signed proof receipts | **STILL TRUE** | `.sifta_state/bell_proof_verdicts.jsonl` on GTH4921YP3; latest stig `abs_s≈2.57`, `PROVED_99PCT`, `SIM_ONLY classical analogue` |
+| Honest limitations § (classical analogue, not QM proof) | **STILL TRUE — BINDING** | Covenant + verdict `limit_note` match; use in all external copy |
+| Marketing table numbers (CHSH 2.84, 100%×12 seeds, V=1.000) | **HISTORICAL SNAPSHOT** | May-11 benchmark copy; re-run widget/sweep before quoting exact figures in new decks |
+| "Nobody else has full stack" | **POSITIONING** | Competitive table is internal marketing posture, not a formal market survey — soften to "as far as we can tell" (doc already does in exec summary) |
+| Patent paragraph | **UNVERIFIED HERE** | Do not repeat in outreach unless George confirms filing status |
+
+**Bottom line for Carlton / outreach:** Doc is **still true** for mechanism, code, applications, receipts, and honest caveats. Refresh numeric hero stats from a fresh Bell run before investor-facing materials; keep § HONEST LIMITATIONS visible.
+
+### EXECUTE — StarkMind email (George send carrier)
+
+George email to `hello@starkmind.ai` (Clinton Stark / Molty study) aligns with on-disk doctrine:
+
+| Email bullet | On-node match |
+|---|---|
+| One Alice, one global memory | `System/swarm_one_alice_rule.py`; covenant §0.A |
+| Stigmergic memory field (decay/reinforce) | `swarm_pheromone_field.py`, hippocampus salience field |
+| ASCII swimmers + organs | organ registry + receipt ecology (covenant §0) |
+| Verifier / no double-spending | covenant First Law; `swarm_predator_eye_scan.py`, effector gates, truth labels |
+| Embodied continuity | camera/browser/hardware-heart organs (r1057–r1059 stack) |
+| Molty crossover waiting to run | r1061 carrier — **HYPOTHESIS** until George opts in |
+
+**Outreach pack for more sends:** pair **r1061 Molty thesis** + **README Layer 1** (food=data, air=electricity) + **Carlton brief** (mechanism + receipts) + offer demo (Alice reads ledgers). Third Mind Summit hook is fine.
+
+### RECEIPT
+
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`Documents/IDE_BOOT_COVENANT.md`. Clock: `2026-06-13 13:05 PDT` / oracle ~`20:05 UTC`.
+§4.1: `r1063-grok-carlton-truth-audit-starkmind-outreach-90921402`.
+
+**WHAT IS LEFT after r1063:**
+- **George / Carlton** — optional fresh Bell sweep before quoting 2.84/100% in new outreach; keep honest-limitations footer in every deck.
+- **George** — more outreach: reuse r1063 table; add GitHub README Layer 1 link; offer crossover design from r1061.
+- **Doctors** — land uncommitted code stack in separate rounds.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+

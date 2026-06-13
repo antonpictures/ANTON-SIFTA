@@ -1479,3 +1479,7 @@ above.
   tournament `r1062-grok-layer1-substrate-readme-git-90921012`, committed and pushed focused doc
   receipt. Lane: Doc/covenant-read; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`;
   no STGM claim.
+- `2026-06-13 13:05 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  probed Carlton brief + Bell tests on-node, appended tournament
+  `r1063-grok-carlton-truth-audit-starkmind-outreach-90921402` (George StarkMind outreach carrier).
+  Lane: Doc audit; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
