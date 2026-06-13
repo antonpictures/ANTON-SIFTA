@@ -1577,3 +1577,9 @@ above.
   `fetch_irb2400_dataset.py`, `test_stigmero_e49_irb2400_ik.py` — 4 pytest green), extended
   `EffectorBridge` with `abb_irb2400_virtual`, appended tournament `r1082-grok-irb2400-ik-benchmark-90926202`.
   Lane: Stigmerobotics real robot data; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 ~21:35 UTC (~14:35 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant, verified Grok's r1082 IRB2400 falsifier (re-ran pytest: 4 passed; 32 in
+  the stigmero suite), repaired the append-only board after a reset-before-commit wiped r1080/r1081 from
+  the carrier (artifacts survive: MARKETING_X_POST doc + receipts), and answered George's AGI gauge.
+  Appended + committed tournament `r1083-cowork-verify-r1082-restore-board-81382663`. Lane: Verify/board
+  repair; `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
