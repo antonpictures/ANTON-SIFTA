@@ -69,6 +69,34 @@ def test_cortex_llm_bare_number_pins_fireworks_model(tmp_path, monkeypatch):
     assert fireworks_model_for_qwen_cortex(QWEN_KIMI) == FIREWORKS_KIMI_K2P7_CODE_MODEL
 
 
+def test_cortex_llm_diffusion_shows_single_brain(tmp_path):
+    res = handle_slash_command(
+        "/cortex llm",
+        state_dir=tmp_path,
+        current_cortex="diffusion:llada-8b",
+    )
+    reply = res["reply"]
+    assert "diffusion decode" in reply.lower()
+    assert "exactly one" in reply.lower()
+    assert "diffusion:llada-8b" in reply
+    assert "Claude arm" not in reply
+
+
+def test_cortex_llm_diffusion_refuses_submodel_pin(tmp_path):
+    handle_slash_command(
+        "/cortex llm",
+        state_dir=tmp_path,
+        current_cortex="diffusion:llada-8b",
+    )
+    pin = handle_slash_command(
+        "/cortex llm 1",
+        state_dir=tmp_path,
+        current_cortex="diffusion:llada-8b",
+    )
+    assert pin.get("error") == "direct_cortex_no_pin"
+    assert "only LLM" in pin.get("reply", "")
+
+
 def test_cortex_brain_label_shows_fireworks_pin(tmp_path, monkeypatch):
     from System.swarm_cline_settings_probe import cortex_brain_label
 

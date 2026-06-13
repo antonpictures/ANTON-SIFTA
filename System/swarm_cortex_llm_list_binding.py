@@ -27,6 +27,7 @@ NAMESPACE_CLAUDE = "claude_arm"
 NAMESPACE_CODEX = "codex_attached"
 NAMESPACE_MIMO = "mimo_attached"
 NAMESPACE_QWEN = "fireworks_attached"
+NAMESPACE_DIRECT = "direct_cortex"
 
 UPSTREAM_NAMESPACES = frozenset(
     {NAMESPACE_CLINE, NAMESPACE_CODEX, NAMESPACE_MIMO}
@@ -203,6 +204,7 @@ def namespace_title(namespace: str) -> str:
         NAMESPACE_CODEX: "Codex upstream list",
         NAMESPACE_MIMO: "MiMo upstream list",
         NAMESPACE_QWEN: "Fireworks attached list",
+        NAMESPACE_DIRECT: "Direct-weight cortex (tag = model)",
     }.get(namespace, namespace)
 
 

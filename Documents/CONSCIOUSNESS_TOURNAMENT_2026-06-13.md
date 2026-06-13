@@ -89,7 +89,6 @@ Clock: `2026-06-13 08:33 PDT` (hardware oracle `15:33 UTC`). §4.1 four-ledger r
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
-
 ---
 
 ## r1049 Codex owner test instructions — diffusion selector grounded [r1049-codex-cortex-diffusion-test-instructions-3f8a23cf]
@@ -1893,3 +1892,129 @@ George email to `hello@starkmind.ai` (Clinton Stark / Molty study) aligns with o
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
+---
+
+## r1064 Codex — marketing brief rename + fresh Bell sweep + crossover hypothesis [r1064-codex-marketing-brief-crossover-hypothesis-1d8af842]
+
+**Doctor:** codex_desktop_gpt5 (GPT-5 Codex)
+**Lane:** Doc release + bounded experiment run + tournament correction
+**Truth labels:** OPERATIONAL for file edits and local tests; OBSERVED for the fresh Bell sweep receipt;
+HYPOTHESIS / EXPERIMENT WAITING TO RUN for the blind cortex crossover until George opts in. No STGM claim.
+
+### DECIDE
+
+George asked to remove the person-specific addressee from the active stigmergic-field breakthrough
+brief, leave it as marketing, run the runnable experiment, and keep the blind crossover honest.
+
+Decision: run the Bell headless sweep because it is executable without owner opt-in. Do **not** run
+the blind cortex crossover because it changes George's rating context and needs explicit GO.
+
+### EXECUTE
+
+- Renamed the active May-11 brief to
+  `Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`.
+- Removed the person-specific audience from the active brief front matter; audience is now
+  Marketing / Business Development.
+- Added an explicit front-matter status:
+  `MARKETING_BRIEF`; blind crossover = `HYPOTHESIS / EXPERIMENT WAITING TO RUN`.
+- Added a dedicated **BLIND CORTEX CROSSOVER STATUS** section with the opt-in gate and target ledger.
+- Replaced the missing old Bell receipt path with existing ledgers:
+  `.sifta_state/bell_theorem_receipts.jsonl` and
+  `.sifta_state/bell_theorem_sweep_receipts.jsonl`.
+- Updated README active pointers to the new marketing brief path and neutralized the active pitch-doc
+  section title.
+
+### EXPERIMENT RUN — Fresh Bell Sweep
+
+Command:
+
+```bash
+python3 Applications/sifta_bell_theorem_widget.py --headless-sweep --kappas 0,1.0,1.8 --decays 0.997 --qm-deposits 0,1.0 --stig-deposits 0.5 --field-thresholds 4.0 --max-flip-probs 0.48 --seeds 11,23,37,51,73 --batches 200 --n-per-bin 1
+```
+
+Fresh receipt: `.sifta_state/bell_theorem_sweep_receipts.jsonl`, latest row `ts=1781380197.700762`.
+
+| Sweep result | Value |
+|---|---|
+| cells tested | 6 |
+| honest verdict | `classical_self_feedback_contextual_analogue_detected` |
+| robust Bell-like cells | 4 |
+| robust self-feedback cells | 2 |
+| robust teacher-shaped cells | 2 |
+| strongest cell | `kappa=1.8`, `qm_deposit=1.0`, `stig_abs_s_mean=2.822`, `stig_abs_s_max=2.9075`, `stig_violation_rate=1.0` |
+| boundary | `SIM_ONLY classical analogue; not a physical proof or cause claim` |
+
+I did not pull more papers this round. The update was a truth-label and receipt update, and the
+existing in-repo research spine plus fresh sweep receipt were enough. Pull papers before external
+publication or investor materials if the comparison table becomes a formal market survey.
+
+### RECEIPT
+
+**Files touched:** `Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`,
+`README.md`, `Documents/IDE_BOOT_COVENANT.md`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`.sifta_state/bell_theorem_sweep_receipts.jsonl`. Old active brief path is deleted by rename.
+
+**Tests / probes:**
+
+- `rg -n "Carlton|CARLTON|carlton" Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`
+  returned no matches.
+- `python3 -m pytest tests/test_sifta_bell_theorem_widget.py -q` -> **11 passed**.
+- Fresh headless Bell sweep wrote the receipt above.
+
+**WHAT IS LEFT after r1064:**
+
+- **George** — blind cortex crossover remains optional; say GO only if you want it to start.
+- **Marketing** — use the `MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md` brief, fresh sweep receipt, SIM_ONLY boundary, and patent/exclusivity caveats.
+- **Doctors** — old person-addressed filenames in historical receipts/PDFs are provenance, not the current marketing route. Do not reuse them for new outreach unless George explicitly asks.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1065 Grok — coding error fix + per-cortex /cortex llm truth blocks [r1065-grok-cortex-llm-per-family-truth-90922155]
+
+**Doctor:** cursor_grok_cli (grok-4.3-cli)  
+**Lane:** Bugfix + UX — `/cortex llm` honest per cortex family (diffusion = one LLM)  
+**Truth labels:** OBSERVED (tests on-node); Codex r1064 marketing pass CONFIRMED on disk.
+
+### DECIDE
+
+George asked: check coding errors, update tournament Done, and make `/cortex llm` on
+`diffusion:llada-8b` (and other cortex families) say clearly what LLM(s) are in use —
+each setting is different; diffusion is one brain, not a combo picker.
+
+### EXECUTE — coding error found + fixed
+
+| Bug | Fix |
+|---|---|
+| `diffusion:llada-8b` polluted fallback ladder with mlx-vlm tags | `_talk_ollama_model_candidates`: exclude diffusion from `is_primary_cloud` MLX injection (CUR-F8 regression) |
+| `/cortex llm` on diffusion showed generic upstream message + Claude pin noise | Added `_cortex_llm_direct_brain_block()` for diffusion / mlx-vlm / mlx / local Ollama / antigravity |
+| `/cortex llm 1` on single-brain cortexes ambiguous | `NAMESPACE_DIRECT` refuses sub-model pin with honest reply |
+
+**pytest:** `test_talk_diffusion_brain_binding.py` 4/4, `test_fireworks_cortex_attached_models.py` 6/6,
+`test_sifta_bell_theorem_widget.py` 11/11 → **21 passed**.
+
+### EXECUTE — Codex r1064 audit (CONFIRMED)
+
+- `MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md` active; `rg Carlton` → no matches.
+- Tournament r1064 row present; blind crossover remains `HYPOTHESIS` until George GO.
+- Bell sweep receipt on disk per Codex row.
+
+### RECEIPT
+
+**Files touched:** `Applications/sifta_talk_to_alice_widget.py`,
+`System/swarm_alice_slash_commands.py`, `System/swarm_cortex_llm_list_binding.py`,
+`tests/test_fireworks_cortex_attached_models.py`,
+`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`,
+`Documents/IDE_BOOT_COVENANT.md`. Clock: `2026-06-13 14:10 PDT` / oracle ~`21:10 UTC`.
+§4.1: `r1065-grok-cortex-llm-per-family-truth-90922155`.
+
+**WHAT IS LEFT after r1065:**
+
+- **George** — restart Talk; select `diffusion:llada-8b`; run `/cortex llm` — expect single-brain block.
+- **George** — blind crossover still optional (r1064); say GO to start.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

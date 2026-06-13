@@ -663,6 +663,81 @@ def _handle_fireworks_llm_pin(
     return out
 
 
+def _is_direct_weight_cortex(tag: str) -> bool:
+    """True when the cortex tag IS the model — no upstream sub-model picker."""
+    low = str(tag or "").strip().lower()
+    if not low:
+        return False
+    if low.startswith(("diffusion:", "usd:", "mlx-vlm:", "mlx:")):
+        return True
+    if low.startswith(("alice-", "sifta-", "igorls/", "krishairnd/")):
+        return True
+    if low.endswith(":latest") and "/" not in low.split(":", 1)[0]:
+        return True
+    return False
+
+
+def _cortex_llm_direct_brain_block(selected: str) -> List[str]:
+    """Per-cortex truth when one tag = one brain (George r1065 diffusion ask)."""
+    sel = str(selected or "").strip()
+    low = sel.lower()
+    if not sel:
+        return []
+    if low.startswith(("diffusion:", "usd:")):
+        bare = sel.split(":", 1)[-1]
+        lines = [
+            "Cortex family: local diffusion decode (denoising LM — not autoregressive).",
+            "LLMs in use: exactly one. The picker tag is the whole brain:",
+            f"  ●  1. {sel}",
+        ]
+        try:
+            from System.swarm_diffusion_cortex import is_cli_built, resolve_model_spec
+
+            _path, entry, err = resolve_model_spec(sel)
+            display = str(entry.get("display") or bare)
+            lines.append(f"  Runner: llama-diffusion-cli ({'built' if is_cli_built() else 'missing'})")
+            lines.append(f"  Catalog: {display}")
+            if _path:
+                lines.append(f"  GGUF on disk: {_path}")
+            elif err:
+                lines.append(f"  Install status: {err}")
+        except Exception as exc:
+            lines.append(f"  Probe: {type(exc).__name__}")
+        lines.append(
+            "  No sub-model list here — switch diffusion ids with /cortex <n>, not /cortex llm N."
+        )
+        return lines
+    if low.startswith("mlx-vlm:"):
+        return [
+            "Cortex family: local MLX vision-language model (VLM eye / unified multimodal).",
+            "LLMs in use: exactly one — the mlx-vlm tag is the weight bundle:",
+            f"  ●  1. {sel}",
+            "  No upstream picker — pick another mlx-vlm row with /cortex <n>.",
+        ]
+    if low.startswith("mlx:"):
+        return [
+            "Cortex family: local MLX cortex (mlx-omni-server).",
+            "LLMs in use: exactly one:",
+            f"  ●  1. {sel}",
+            "  No sub-model picker on this lane.",
+        ]
+    if _is_direct_weight_cortex(sel):
+        return [
+            "Cortex family: local Ollama weights (autoregressive GGUF on this node).",
+            "LLMs in use: exactly one — the Ollama tag IS the model:",
+            f"  ●  1. {sel}",
+            "  No upstream picker — /cortex <n> selects a different installed tag.",
+        ]
+    if low.startswith("antigravity:"):
+        return [
+            "Cortex family: Google Antigravity auto-router (`agy`).",
+            "Upstream model is chosen inside Antigravity (Gemini/Claude mix) — not a single fixed LLM id here.",
+            f"  Selected surface tag: {sel}",
+            "  Re-run /cortex llm after you change agy settings; I probe what I can see.",
+        ]
+    return []
+
+
 def _handle_grok_llm_pin(
     out: Dict[str, Any],
     arg: str,
@@ -887,6 +962,7 @@ def _handle_cortex_llm_mutation(
 
     from System.swarm_cortex_llm_list_binding import (
         NAMESPACE_CLAUDE,
+        NAMESPACE_DIRECT,
         NAMESPACE_GROK,
         NAMESPACE_QWEN,
         UPSTREAM_NAMESPACES,
@@ -1020,6 +1096,14 @@ def _handle_cortex_llm_mutation(
         state_dir=state_dir,
     )
 
+    if ns == NAMESPACE_DIRECT:
+        out["error"] = "direct_cortex_no_pin"
+        out["reply"] = (
+            f"This cortex already uses {model_id} as its only LLM — no sub-model pin. "
+            "Switch brains with /cortex <n> on the main picker list."
+        )
+        return out
+
     if ns in UPSTREAM_NAMESPACES:
         out["error"] = "upstream_picker_refused"
         row = binding.get("list_row") or {}
@@ -1110,6 +1194,7 @@ def _handle_cortex_llm(
         NAMESPACE_MIMO,
         NAMESPACE_CLAUDE,
         NAMESPACE_QWEN,
+        NAMESPACE_DIRECT,
     )
 
     selected = str(current_cortex or "").strip()
@@ -1294,6 +1379,20 @@ def _handle_cortex_llm(
         lines.append("  /cortex llm 1  → Kimi K2.7 Code (when list shows it at 1)")
         lines.append("  /cortex llm qwen 1  → namespaced bind")
         lines.append("  /cortex llm default → clear pin, use cortex tag model")
+    elif _is_direct_weight_cortex(selected) or selected_low.startswith("antigravity:"):
+        direct_lines = _cortex_llm_direct_brain_block(selected)
+        if direct_lines:
+            lines.extend(direct_lines)
+            if not primary_recorded:
+                _record_primary_llm_list(
+                    namespace=NAMESPACE_DIRECT,
+                    items=[selected],
+                    labels=[selected],
+                    selected_cortex=selected,
+                    owner_text=owner_text,
+                    state_dir=state_dir,
+                )
+                primary_recorded = True
     elif selected_low.startswith("claude"):
         lines.append("The selected Talk cortex is my Claude arm; the pin below steers this path.")
         if attached_models_for_cortex is not None and selected:
@@ -1314,16 +1413,20 @@ def _handle_cortex_llm(
                         lines.append(f"  {marker} {i:2d}. {format_attached_model(str(mid))}")
             except Exception:
                 pass
-    elif selected and not selected_low.startswith("qwen"):
+    elif selected:
         lines.append(
             "This selected provider picks its underlying model upstream or through its own command."
         )
-    # r989: George caught Claude-arm noise under grok:/cortex llm — that arm
-    # is NOT part of the Grok/Cline/Codex Talk cortex. Show it only when
-    # Claude is the selected Talk brain or nothing cloud-specific matched.
+    # r989/r1065: Claude-arm pin is noise on Grok/Cline/Codex and on direct-weight
+    # cortexes (diffusion, mlx-vlm, local Ollama) where the tag already IS the model.
     _show_claude_arm_pin = (
         selected_low.startswith("claude")
-        or not selected_low.startswith(("grok", "codex", "cline", "mimo", "qwen", "antigravity"))
+        or (
+            not selected_low.startswith(
+                ("grok", "codex", "cline", "mimo", "qwen", "antigravity", "diffusion", "usd", "mlx")
+            )
+            and not _is_direct_weight_cortex(selected)
+        )
     )
     if _show_claude_arm_pin:
         lines.append("")

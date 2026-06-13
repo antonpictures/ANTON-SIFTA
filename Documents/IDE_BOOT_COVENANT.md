@@ -1483,3 +1483,13 @@ above.
   probed Carlton brief + Bell tests on-node, appended tournament
   `r1063-grok-carlton-truth-audit-starkmind-outreach-90921402` (George StarkMind outreach carrier).
   Lane: Doc audit; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-13 12:47 PDT` — `codex_desktop_gpt5` read the canonical covenant fully (1485 lines) at
+  `/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md`, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `1d8af842-e0d8-4af7-9db7-5be104b129cc`, and took a
+  doc-release pass to remove the Carlton addressee from the active stigmergic-field marketing brief,
+  mark the blind crossover as `HYPOTHESIS / EXPERIMENT WAITING TO RUN`, and update the June-13
+  tournament. Lane: `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 14:10 PDT` — `cursor_grok_cli` (grok-4.3-cli) read the canonical covenant fully,
+  fixed diffusion fallback-ladder regression, added per-cortex `/cortex llm` truth blocks (diffusion =
+  one LLM), appended tournament `r1065-grok-cortex-llm-per-family-truth-90922155`, 21 pytest OBSERVED.
+  Lane: Bugfix/UX; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
