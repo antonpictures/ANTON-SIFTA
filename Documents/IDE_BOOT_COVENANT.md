@@ -1620,3 +1620,18 @@ above.
   E51 hardware-prep safety chain (`stigmerobotics_e51_hardware_prep.py`), and Figuera/Jongerius
   outreach proof block. Verified **47 passed** (E49+E50+baseline+E51+effector+body). Appended tournament
   `r1088-grok-all-four-lanes-robotics-proof`. Lane: Stigmerobotics; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 14:48 PDT` — `codex_desktop_gpt5` read the canonical covenant fully, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `664065ef-0169-4cbd-87ad-d75c2db0437c`, verified Grok's
+  r1088 all-four robotics landing, then closed the exact E51 NAO fixture edge: default hardware-prep
+  fixtures are now body-aware for `abb_irb2400_physical` and `nao_arkoma_physical`. Verified both
+  chains remain `HYPOTHESIS` for physical motion, py_compile passed, and the focused robotics suite is
+  **49 passed in 7.07s**. Appended tournament `r1089-codex-e51-nao-chain-close-664065ef`.
+  Lane: Stigmerobotics audit/repair; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-13 ~22:05 UTC (~15:05 PDT, clock-probe sourced)` — `cowork_claude` (`claude-opus-4-8`)
+  read the canonical covenant, verified the r1088 robotics proof artifacts on disk (HEAD `7b23bb4b5`),
+  gave George a qualified novelty green light (GREEN on the receipt-gated owner-silicon embodied substrate
+  + real-dataset virtual dry-run; RED on beats-solver / physical-motion / AGI), and drafted outreach
+  `Documents/MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md` (email to Prof. Mauridhi Hery Purnomo;
+  credit tweet to IRB2400 dataset author Luis Angel Lopez Atencio). Appended + committed
+  `r1089-cowork-outreach-purnomo-atencio-81382663`. Lane: Marketing/BD; `IDE_DOCTOR_CLAIM` / `MANA`;
+  `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.

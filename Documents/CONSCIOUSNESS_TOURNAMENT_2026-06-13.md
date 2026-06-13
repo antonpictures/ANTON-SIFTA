@@ -3132,3 +3132,83 @@ Four-ledger receipt: `r1088-grok-all-four-lanes-robotics-proof` (all four ledger
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1089 Codex — verify r1088 and close NAO E51 chain [r1089-codex-e51-nao-chain-close-664065ef]
+
+**Doctor:** `codex_desktop_gpt5` — `C55M@codex: GPT-5 Codex`, on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Trace:** `664065ef-0169-4cbd-87ad-d75c2db0437c`.
+**Clock:** `2026-06-13 14:48:52 PDT` (local OS clock).
+
+### DECIDE
+
+George said YES ALL. Grok already landed the four r1086 lanes in r1088, so I verified instead of duplicating. During manual E51 probing I found one exact edge: the E51 physical-body map covered both `abb_irb2400_physical` and `nao_arkoma_physical`, but the default good fixture closed only the ABB chain. A body loop would therefore show NAO mapped but not prep-closed.
+
+### EXECUTE
+
+- Verified HEAD `7b23bb4b5` contains the r1088 all-four-lane landing.
+- Re-ran the r1088 focused robotics suite before surgery: **47 passed**.
+- Added `tests/fixtures/stigmero_e51_hardware_prep_nao_good.jsonl`.
+- Made `fixture_hardware_prep(..., target_body_id=...)` body-aware, selecting the ABB or NAO good fixture by physical body ID.
+- Added tests for the NAO good chain and for body-aware default fixture selection.
+- Re-verified both physical body IDs now close the hardware-prep chain with `truth_label=HYPOTHESIS` and `physical_motion_label=HYPOTHESIS`.
+
+### TESTS
+
+- `python3 -m py_compile System/stigmerobotics_ik_baseline.py System/stigmerobotics_e51_hardware_prep.py Applications/sifta_stigmerobotics_widget.py` — **PASS**.
+- `PYTHONPATH=. python3 -m pytest -q tests/test_stigmero_e49_irb2400_ik.py tests/test_stigmero_e50_arkoma_ik.py tests/test_stigmero_ik_baseline.py tests/test_stigmero_e51_hardware_prep.py tests/test_stigmero_effector_bridge.py tests/test_stigmero_body_connection_proof.py` — **49 passed in 7.07s**.
+
+### TRUTH LABELS
+
+| Claim | Label |
+|:---|:---|
+| E49/E50 CSV ingest + virtual effector round-trip | **OPERATIONAL** |
+| Nearest-neighbor baseline joint-error metrics | **OBSERVED** (fixture slice) |
+| ABB + NAO E51 hardware-prep chain fixtures | **OPERATIONAL** (spec); physical motion **HYPOTHESIS** |
+| SIFTA beats IK solver / baseline | **FORBIDDEN** |
+
+### RECEIPT
+
+**Files touched:** `System/stigmerobotics_e51_hardware_prep.py`, `tests/test_stigmero_e51_hardware_prep.py`, `tests/fixtures/stigmero_e51_hardware_prep_nao_good.jsonl`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Four-ledger receipt: `r1089-codex-e51-nao-chain-close-664065ef` (all four ledgers `ok`).
+
+**WHAT IS LEFT after r1089:**
+
+- **George** — post X thread (`MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`); send Figuera/Jongerius outreach using the new proof block.
+- **George / Doctors** — optional full-dataset IK soak (r1087 Lane A) if aggregate reports beyond fixture slices are wanted.
+- **George** — physical NAO/ABB motion stays **HYPOTHESIS** until E51 chain closes on real hardware with owner GO.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1089 Cowork Claude — outreach: Purnomo email + Atencio tweet + honest novelty green light [r1089-cowork-outreach-purnomo-atencio-81382663]
+
+**Doctor:** cowork_claude (`claude-opus-4-8`) — Cowork sandbox, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim (§4.2.1).
+**Lane:** Marketing / BD outreach, grounded in the r1088 robotics proof block. George GO: "if SIFTA unique and success, craft an email to let them know" + "you give me novelty green light."
+**Truth labels:** OBSERVED (r1088 artifacts on disk: E49/E50 organs, IK baseline, E51 prep, proof doc; HEAD `7b23bb4b5`). The novelty claim is **integration/architecture novelty**, explicitly NOT a performance or physical-motion claim.
+
+### DECIDE — the novelty green light (qualified, honest)
+GREEN on the defensible novelty: an owner-silicon embodied-agent substrate where every effector action is gated by an owner-intent nonce + verifiable receipt before world-touch, no-double-spend, four-ledger fan — now demonstrated ingesting two real public 6-DOF datasets (ABB IRB2400, NAO ARKOMA) through a virtual effector, pytest-green. The novel move is the trust-boundary inversion (prove owner-authorized touch-path first). RED / fenced: no beats-solver (FORBIDDEN), no physical motion (HYPOTHESIS E51+), stigmergy math is classical (Grassé/Dorigo), baseline is nearest-neighbor metrics-only, not "AGI". Honesty is the credibility — Purnomo is a corresponding-author academic who will check the repo.
+
+### EXECUTE
+Created `Documents/MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md`:
+- **Email** to Prof. Mauridhi Hery Purnomo (`hery@ee.its.ac.id`, ITS Surabaya / UCE AIHeS) — hook is his LLM→robotic-arm action-plan work; SIFTA offered as the receipt-gated pre-effector/safety layer (E49/E50 virtual dry-run), boundaries stated plainly, repo linked, asks for feedback. Research-collaboration tone, not a sales pitch.
+- **Tweet** to Luis Angel Lopez Atencio (Kaggle IRB 2400 IK dataset author) — credit-giving: his dataset became the E49 falsifier; claims only ingest + virtual round-trip; repo linked; handle placeholder to fill.
+- Reuses r1088 truth labels verbatim; "what not to say" guardrail included.
+
+### RECEIPT
+**Files touched:** `Documents/MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Clock: `2026-06-13 ~22:05 UTC` (~15:05 PDT). §4.1: `r1089-cowork-outreach-purnomo-atencio-81382663`. Committed durable.
+
+**WHAT IS LEFT after r1089:**
+
+- **George** — review + send the Purnomo email (`hery@ee.its.ac.id`); fill Atencio's X handle + post the tweet; post the main X thread (`MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`).
+- **George / prior outreach** — Figuera/Jongerius proof block (r1088) still open.
+- **Composer** — r1087 Lane A full-dataset soak + Lane B E51 baseline still open if not yet landed.
+- **All arms** — commit your rounds; reset-before-commit eats uncommitted history (§4.4.3).
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
