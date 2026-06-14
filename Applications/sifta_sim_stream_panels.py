@@ -5,6 +5,16 @@ Used when a sim is CLI/stream-oriented (arena, headless logistics, warehouse).
 """
 from __future__ import annotations
 
+"""SIFTA Sim Stream Panels — stigmergic organ for Alice body."""
+
+"""SIFTA Sim Stream Panels — stigmergic organ for Alice body."""
+
+"""SIFTA Sim Stream Panels — stigmergic organ for Alice body."""
+
+"""SIFTA Sim Stream Panels — stigmergic organ for Alice body."""
+
+"""SIFTA Sim Stream Panels — stigmergic organ for Alice body."""
+
 import os
 import sys
 from pathlib import Path

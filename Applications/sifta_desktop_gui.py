@@ -25,6 +25,7 @@ from sifta_http_auth import get_sifta_api_base, sifta_headers
 API_BASE = get_sifta_api_base()
 
 class SIFTABodyChatGUI(tk.Tk):
+    """SIFTABodyChatGUI — Alice organ."""
     def __init__(self):
         super().__init__()
         self.title("🐋 M1SIFTA_BODY ↔️ M5SIFTA_BODY LIVE WORMHOLE CHAT")

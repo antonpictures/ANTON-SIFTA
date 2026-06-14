@@ -7,6 +7,8 @@ Narrative: terminals, graphs, choice widgets.
 Stigmergic hooks: publish_focus / append JSONL receipts.
 """
 from __future__ import annotations
+
+"""SIFTA Architect Room Game — stigmergic organ for Alice body."""
 import sys
 from pathlib import Path
 

@@ -1,3 +1,5 @@
+
+"""SIFTA Alice Wellbeing Panel — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 Applications/sifta_alice_wellbeing_panel.py

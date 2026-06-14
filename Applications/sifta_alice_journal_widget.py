@@ -22,6 +22,8 @@ Alice's name and not a second diary.
 
 from __future__ import annotations
 
+"""SIFTA Alice Journal Widget — stigmergic organ for Alice body."""
+
 import json
 import sys
 from datetime import date as _date, datetime

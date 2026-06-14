@@ -1,3 +1,5 @@
+
+"""SIFTA Artificial General Intelligence — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 sifta_artificial_general_intelligence.py — AG31 + C46S + C55M + CG55M - ARTIFFICIAL GENERAL INTELLIGENCE.
