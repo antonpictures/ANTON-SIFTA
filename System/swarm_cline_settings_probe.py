@@ -50,6 +50,8 @@ _LANE_CONFIG_PATHS: Dict[str, List[tuple]] = {
         (".cline-cli", "config.json"),
     ],
     "mimo": [
+        (".local", "share", "mimocode", "auth.json"),
+        (".local", "share", "mimocode", "config.json"),
         (".mimo", "data", "settings", "providers.json"),
         (".mimo", "settings", "providers.json"),
         (".mimo", "config.json"),
@@ -94,9 +96,29 @@ def _latest_session_config(home: Optional[Path] = None, lane: str = "cline") -> 
     runs also write ``~/.cline/data/sessions/<id>/<id>.json`` rows. We read
     only the small session metadata files, never the large ``*.messages.json``
     transcripts, and return the newest row that exposes a model/provider.
-    The mimo lane mirrors the same layout under ``~/.mimo``.
+    The mimo lane mirrors the same layout under ``~/.mimo`` and the
+    mimocode XDG store under ``~/.local/share/mimocode``.
     """
     h = Path(home or os.path.expanduser("~"))
+    if lane == "mimo":
+        mimo_sessions = h / ".local" / "share" / "mimocode" / "storage" / "session_diff"
+        if mimo_sessions.exists():
+            candidates: list[Path] = []
+            try:
+                candidates = sorted(
+                    mimo_sessions.glob("*.json"),
+                    key=lambda p: (p.stat().st_mtime if p.exists() else 0.0, str(p)),
+                    reverse=True,
+                )
+            except Exception:
+                candidates = []
+            for path in candidates:
+                data = _safe_read_json(path)
+                if data and (
+                    _extract_field(data, "model", "modelId", "selectedModel")
+                    or _extract_field(data, "provider", "providerName", "apiProvider", "providerId")
+                ):
+                    return path, data
     sessions = h / ("." + lane) / "data" / "sessions"
     if not sessions.exists():
         return None, None

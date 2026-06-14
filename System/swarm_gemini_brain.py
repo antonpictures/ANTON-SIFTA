@@ -1587,6 +1587,145 @@ def _stream_cline_chat_via_cli(
     yield ("done", text)
 
 
+def _mimo_cli_binary() -> Optional[str]:
+    for name in ("mimo", "mimocode", "mimo-cli"):
+        hit = shutil.which(name)
+        if hit:
+            return hit
+    home = os.path.expanduser("~")
+    for path in (
+        os.path.join(home, ".mimocode", "bin", "mimo"),
+        os.path.join(home, ".mimo", "bin", "mimo"),
+    ):
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def _parse_mimo_run_json_output(raw: str) -> str:
+    """Extract assistant text from `mimo run --format json` NDJSON."""
+    parts: list[str] = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            parts.append(line)
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("type") == "text":
+            part = row.get("part")
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+            continue
+        for key in ("text", "message", "content", "output"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+                break
+    return "\n".join(parts).strip()
+
+
+def _resolve_mimo_upstream_model() -> str:
+    """Optional provider/model override from the external-brain probe row."""
+    try:
+        from System.swarm_cline_settings_probe import latest_brain_row
+
+        row = latest_brain_row("mimo", state_dir=_STATE) or {}
+        provider = str(row.get("provider") or "").strip()
+        model = str(row.get("model") or "").strip()
+        if provider and model:
+            return f"{provider}/{model}"
+        if model and "/" in model:
+            return model
+    except Exception:
+        pass
+    return os.environ.get("SIFTA_MIMO_CLI_MODEL", "").strip()
+
+
+def _stream_mimo_chat_via_cli(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    cli = _mimo_cli_binary()
+    if not cli:
+        yield (
+            "error",
+            "MiMo CLI is not on PATH; install mimocode and sign in via `mimo providers` "
+            "before selecting this cortex.",
+        )
+        return
+
+    tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
+    bare = strip_prefix(model)
+    prompt = _to_teacher_cli_prompt(messages, teacher="MiMo")
+    cmd = [
+        cli,
+        "run",
+        "--format",
+        "json",
+        "--dir",
+        str(_REPO),
+        "--dangerously-skip-permissions",
+    ]
+    upstream = _resolve_mimo_upstream_model()
+    if upstream:
+        cmd.extend(["-m", upstream])
+    cmd.append(prompt)
+
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO),
+            timeout=timeout_s + 10,
+        )
+    except subprocess.TimeoutExpired:
+        yield ("error", f"MiMo CLI timed out after {timeout_s}s")
+        return
+    except Exception as exc:
+        yield ("error", f"MiMo CLI launch failed: {exc}")
+        return
+
+    raw = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0:
+        snippet = raw[:500]
+        if "credential" in snippet.lower() or "auth" in snippet.lower():
+            yield (
+                "error",
+                "MiMo CLI auth missing or expired — run `mimo providers` on this node "
+                f"(same OAuth lane as Cline). Detail: {snippet or 'no output'}",
+            )
+            return
+        yield ("error", f"MiMo CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        return
+    if not raw:
+        yield ("error", "MiMo CLI returned empty output.")
+        return
+
+    text = _parse_mimo_run_json_output(raw) or raw
+    usage = Usage(
+        model=bare,
+        latency_ms=int((time.time() - t0) * 1000),
+        request_tag=tag,
+        raw={"transport": "mimo_cli_run_json", "requested_model": bare, "upstream": upstream or None},
+    )
+    record_usage(usage, backend="mimo_cli")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
 def _agy_cli_binary() -> Optional[str]:
     return shutil.which("agy")
 
@@ -1811,11 +1950,11 @@ def stream_chat(
         )
         return
     if _is_mimo_model(model):
-        yield (
-            "error",
-            "MiMo cortex is visible on this node, but its dispatch transport is not wired yet. "
-            "Use /cortex llm while selected on MiMo to probe its upstream picker, or select "
-            "Cline/local cortex until the MiMo transport cut lands.",
+        yield from _stream_mimo_chat_via_cli(
+            model=model,
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s or 180,
         )
         return
 

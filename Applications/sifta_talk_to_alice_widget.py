@@ -11263,7 +11263,7 @@ def _cloud_brain_timeout_s(default: float = 900.0, *, model: str = "", user_text
     # binary hangs (auth prompt, TTY wait, dead session) the turn must fail
     # FAST into timeout-recovery, exactly the r329 doctrine that already
     # bounds grok. Owner override via SIFTA_TEACHER_CLI_TIMEOUT_S, clamped.
-    if any(p in model_s for p in ("claude:", "codex:", "qwen:", "cline:", "antigravity:")):
+    if any(p in model_s for p in ("claude:", "codex:", "qwen:", "cline:", "mimo:", "antigravity:")):
         try:
             value = float(os.environ.get("SIFTA_TEACHER_CLI_TIMEOUT_S", "120"))
         except (TypeError, ValueError):
@@ -28203,6 +28203,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             )
             if page_is_current and (has_readable_content(page_state) or page_url):
+                article_bundle = _browser_article_text_bundle(page_state)
+                article_summary = _summarize_browser_page(article_bundle) if article_bundle else ""
+                if article_summary:
+                    receipt = _write_app_command_receipt(
+                        action="summarize_browser_article",
+                        ok=True,
+                        app_name="Alice Browser",
+                        url=str(page_url or live_url or ""),
+                        note=(
+                            f"summarized {int(article_bundle.get('text_chars') or 0)} chars "
+                            f"from {article_bundle.get('source')}"
+                        ),
+                    )
+                    self._append_system_line(f"Web article-summary receipt: {receipt}")
+                    return article_summary
                 receipt = _write_app_command_receipt(
                     action="describe_browser_page",
                     ok=True,
@@ -28262,6 +28277,88 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         self._append_system_line(f"Web summary receipt: {receipt}")
         return summary
+
+    def _execute_browser_article_readability_answer(self) -> str:
+        live_url = _refresh_live_alice_browser_page(wait_ms=1400)
+        status: Dict[str, Any] = {}
+        try:
+            from System.swarm_browser_page_state import article_readability_status, latest_page_state
+
+            status = article_readability_status(state_dir=_state_root(), max_age_s=900.0)
+            page_state = latest_page_state(state_dir=_state_root(), max_age_s=900.0)
+        except Exception:
+            page_state = {}
+        bundle = _browser_article_text_bundle(page_state)
+        if bundle and (not live_url or str(bundle.get("url") or "") == live_url):
+            status = dict(status)
+            status["can_read"] = True
+            status["text_chars"] = max(int(status.get("text_chars") or 0), int(bundle.get("text_chars") or 0))
+            status["title"] = status.get("title") or bundle.get("title")
+            status["url"] = status.get("url") or bundle.get("url")
+            status["reason"] = status.get("reason") or str(bundle.get("source") or "browser_readable_text")
+
+        ok = bool(status.get("can_read"))
+        receipt = _write_app_command_receipt(
+            action="browser_article_readability_yesno",
+            ok=ok,
+            app_name="Alice Browser",
+            url=str(status.get("url") or live_url or ""),
+            note=f"{status.get('reason') or 'unknown'}; text_chars={int(status.get('text_chars') or 0)}",
+        )
+        self._append_system_line(f"Web article-readability receipt: {receipt}", error=not ok)
+        if ok:
+            title = " ".join(str(status.get("title") or "the current article").split())
+            chars = int(status.get("text_chars") or 0)
+            return (
+                f"Yes. I can read the browser-readable article text for {title[:160]}; "
+                f"I have about {chars} characters from Alice Browser. If the site hides text behind a paywall "
+                "or lazy-loads more after scroll, I will say that limit instead of pretending."
+            )
+        reason = str(status.get("reason") or "no readable article text").replace("_", " ")
+        return (
+            f"No. I do not have fresh browser-readable article text yet ({reason}). "
+            "Refresh or load the page in Alice Browser, then ask again."
+        )
+
+    def _execute_browser_article_full_read(self) -> str:
+        live_url = _refresh_live_alice_browser_page(wait_ms=1400)
+        try:
+            from System.swarm_browser_page_state import latest_page_state
+
+            page_state = latest_page_state(state_dir=_state_root(), max_age_s=900.0)
+        except Exception:
+            page_state = {}
+        bundle = _browser_article_text_bundle(page_state)
+        text = str(bundle.get("text") or "").strip()
+        if not text:
+            receipt = _write_app_command_receipt(
+                action="browser_article_full_read",
+                ok=False,
+                app_name="Alice Browser",
+                url=live_url,
+                note="no browser-readable article text available",
+            )
+            self._append_system_line(f"Web article-read receipt: {receipt}", error=True)
+            return "I do not have fresh browser-readable article text to read aloud yet."
+
+        title = " ".join(str(bundle.get("title") or "the current article").split())
+        url = str(bundle.get("url") or live_url or "")
+        max_chars = 25_000
+        clipped = len(text) > max_chars
+        spoken_text = text[:max_chars].rstrip()
+        receipt = _write_app_command_receipt(
+            action="browser_article_full_read",
+            ok=True,
+            app_name="Alice Browser",
+            url=url,
+            note=f"prepared {len(spoken_text)} of {len(text)} chars from {bundle.get('source')}",
+        )
+        self._append_system_line(f"Web article-read receipt: {receipt}")
+        suffix = (
+            "\n\n[Reading paused here because the browser text is longer than the safe local speech chunk; ask me to continue.]"
+            if clipped else ""
+        )
+        return f"Reading the browser-readable article text from {title[:180]}.\n\n{spoken_text}{suffix}"
 
     def _browser_page_cortex_context_block(self, owner_text: str, *, wait_ms: int = 1400) -> str:
         """Return browser page evidence for cortex composition, not direct display."""
@@ -33327,6 +33424,42 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_printed)   # the print (a little more, clean)
             self._tts = _TTSWorker(             # the mouth (one short human line)
                 _spoken, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Current Browser Article Readability ────────────────────────
+        # "Are you able to read the full article, yes or no?" must answer from
+        # current Browser receipts. The old path fell through to a naked cortex
+        # turn and sometimes said "No" even while the page snapshot had text.
+        if _is_browser_article_readability_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_browser_article_readability_answer()
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_article_readability")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        if _is_browser_article_full_read_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_browser_article_full_read()
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_article_full_read")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
