@@ -1,3 +1,5 @@
+
+"""SIFTA Fold Swarm Pouw Sim — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 SIFTA Proof-of-Useful-Work Simulation

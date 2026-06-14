@@ -83,6 +83,8 @@ SIFTA Non-Proliferation Public License applies.
 """
 from __future__ import annotations
 
+"""SIFTA Double Slit Stigmergic — stigmergic organ for Alice body."""
+
 import hashlib
 import json
 import math

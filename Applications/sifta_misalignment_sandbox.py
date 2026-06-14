@@ -11,6 +11,8 @@ Ledger: .sifta_state/misalignment_sandbox_receipts.jsonl
 """
 from __future__ import annotations
 
+"""SIFTA Misalignment Sandbox — stigmergic organ for Alice body."""
+
 import argparse
 import hashlib
 import json

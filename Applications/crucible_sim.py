@@ -1,3 +1,5 @@
+
+"""SIFTA Crucible Sim — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 SIFTA CRUCIBLE SIMULATOR — 10-Minute Swarm Defense Gauntlet

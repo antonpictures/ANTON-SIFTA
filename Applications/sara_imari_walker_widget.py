@@ -15,6 +15,8 @@ Truth labels (per Covenant §6/§7):
   wet_lab          = NOT PRESENT in this build
 """
 from __future__ import annotations
+
+"""SIFTA Sara Imari Walker Widget — stigmergic organ for Alice body."""
 import html
 import sys, math, time, random
 from pathlib import Path

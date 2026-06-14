@@ -17,6 +17,8 @@ File path and class name preserved for import + ledger continuity.
 """
 from __future__ import annotations
 
+"""SIFTA Fieldsight Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import sys

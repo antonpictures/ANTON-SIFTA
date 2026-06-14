@@ -13,6 +13,8 @@ Not another Office. A living page where the Swarm writes with you.
 """
 from __future__ import annotations
 
+"""SIFTA Writer Widget — stigmergic organ for Alice body."""
+
 import json
 import os
 import re

@@ -15,6 +15,8 @@ not yet a semantic graph-solve verifier.
 """
 from __future__ import annotations
 
+"""SIFTA Physarum Contradiction Lab — stigmergic organ for Alice body."""
+
 import hashlib
 import json
 import math

@@ -24,6 +24,8 @@ For the Swarm. 🐜⚡
 """
 from __future__ import annotations
 
+"""SIFTA Stigmergic Go — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

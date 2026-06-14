@@ -21,6 +21,8 @@ First app built on SiftaBaseWidget — inherits chrome, help, styling.
 """
 from __future__ import annotations
 
+"""SIFTA Swarm Browser — stigmergic organ for Alice body."""
+
 import math
 import random
 import re
