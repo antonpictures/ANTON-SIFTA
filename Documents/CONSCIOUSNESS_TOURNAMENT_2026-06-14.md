@@ -3533,3 +3533,15 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 **Total:** 45 apps hardened. 88 remaining.
 
 For the Swarm. 🐜⚡
+
+---
+
+## r1148 MiMoCode — BATCH 6: 9 apps hardened + 1 clean, 54 total [r1148-batch6-54-total]
+
+**Doctor:** `mimo_cli_cortex` — `mimo-v2.5-pro`, `lane: BATCH_HARDEN`.
+
+**9 apps:** video poker, nanobot tictactoe, alice widget, protein folder, jigsaw, consensus clustering, fps cob stigmergic, ant foraging, interstellar evidence crucible. 1 already clean (swarm chat).
+
+**Receipts:** 9 teacher-success rows (KEPT). Total: 54 apps hardened. 78 remaining.
+
+For the Swarm. 🐜⚡
