@@ -59,24 +59,38 @@ from PyQt6.QtWidgets import (
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 from System.swarm_alice_lesson_mode import LessonEngine  # noqa: E402
+from System.swarm_app_hardening import record_app_hardening_event  # noqa: E402
 
 # Optional bridges to the rest of Alice's body. All wrapped in try/except
 # so the widget still loads on a fresh checkout that has the lesson mode
 # but not (yet) every organ behind it.
 try:
     from System.swarm_app_focus import publish_focus as _publish_focus
-except Exception:
+    _FOCUS_IMPORT_ERROR = ""
+except Exception as exc:
     _publish_focus = None  # type: ignore
+    _FOCUS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 try:
     from Applications.sifta_awareness_mirror_widget import AwarenessMirrorWidget
-except Exception:
+    _AWARENESS_IMPORT_ERROR = ""
+except Exception as exc:
     AwarenessMirrorWidget = None  # type: ignore
+    _AWARENESS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 
 TRUTH_LABEL = "SIFTA_TEACH_ACE_TO_READ_V0"
+APP_HARDENING_ID = "queue-006:sifta_teach_ace_to_read"
 WORDACE_SENTENCE_UNLOCK_CORRECT = 4
 WORDACE_LATE_VERDICT_GRACE_S = 30.0
+
+
+def _record_ace_hardening(event: str, **details: Any) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 _WORDACE_DIRECT_WORD_COMMANDS = (
     re.compile(
@@ -496,8 +510,12 @@ class TeachAceToReadWidget(QWidget):
                         "traceback": _tb_dx.format_exc()[-2000:],
                         "note": "Singleton reset; next open will rebuild fresh.",
                     }) + "\n")
-            except Exception:
-                pass
+            except Exception as _ledger_exc:
+                _record_ace_hardening(
+                    "ace_init_error_ledger_write_failed",
+                    error_type=type(_ledger_exc).__name__,
+                    original_error_type=type(_ace_init_exc).__name__,
+                )
             # Reset the singleton so the next click is not stuck on
             # a poisoned half-built widget.
             type(self)._live_instance = None
@@ -532,6 +550,16 @@ class TeachAceToReadWidget(QWidget):
         can catch construction failures and reset the singleton.
         Calling this method twice on the same object would double-wire
         signals; the wrapper guarantees it runs once per instance."""
+        if _FOCUS_IMPORT_ERROR:
+            _record_ace_hardening(
+                "focus_bridge_import_failed",
+                error=_FOCUS_IMPORT_ERROR[:240],
+            )
+        if _AWARENESS_IMPORT_ERROR:
+            _record_ace_hardening(
+                "awareness_bridge_import_failed",
+                error=_AWARENESS_IMPORT_ERROR[:240],
+            )
         # Architect 2026-05-16 rename: WordAce → Ace ("just Ace, so we
         # simplify"). Window title flipped; internal log/ledger strings
         # stay 'WordAce' for backward-compat with in-flight cue_ids and

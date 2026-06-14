@@ -39,11 +39,14 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 import html as _html
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _EVAL = _STATE / "eval"
 _MATRIX_HTML = _EVAL / "ORGAN_EVAL_MATRIX_V2.html"
@@ -56,6 +59,18 @@ _MATRIX_REGEN_RECEIPTS = _STATE / "eval_matrix_regeneration_receipts.jsonl"
 # Statuses that read as RED in the field (degraded / failing receipts).
 _RED_MARKERS = ("DEGRADED", "RED", "CRITICAL", "BROKEN", "DOWN", "DEAD", "OFFLINE", "FAILED")
 _GREEN_MARKERS = ("HEALTHY", "GREEN", "OK", "PASS")
+
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-012:sifta_self_evaluation"
+
+
+def _record_self_eval_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 
 def _ensure_eval_matrix_current() -> dict:
@@ -83,17 +98,31 @@ def _ensure_eval_matrix_current() -> dict:
                 _MATRIX_REGEN_RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
                 with _MATRIX_REGEN_RECEIPTS.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-            except OSError:
-                pass
+            except OSError as exc:
+                _record_self_eval_hardening(
+                    "matrix_regeneration_receipt_write_failed",
+                    error_type=type(exc).__name__,
+                    path=str(_MATRIX_REGEN_RECEIPTS),
+                )
         return {"checked": True, "rebuilt": bool(refreshed.get("regenerated")), "reason": str(refreshed.get("reason") or "")}
     except Exception as exc:
+        _record_self_eval_hardening(
+            "matrix_regeneration_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
         return {"checked": True, "rebuilt": False, "reason": "rebuild_failed", "error": str(exc)[:200]}
 
 
 def _recent_jsonl_count(path: Path, window_s: float = 60 * 60 * 24, tail_n: int = 400) -> int:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-tail_n:]
-    except Exception:
+    except Exception as exc:
+        _record_self_eval_hardening(
+            "recent_jsonl_count_read_failed",
+            error_type=type(exc).__name__,
+            path=str(path),
+        )
         return 0
     cutoff = time.time() - window_s
     total = 0

@@ -14,6 +14,7 @@ Single-instance per §7.6.2.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,20 @@ from PyQt6.QtWidgets import (
 )
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-015:sifta_legs_humanoid_app"
+
+
+def _record_legs_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 
 def _organ():
@@ -120,6 +135,11 @@ class LegsHumanoidApp(QWidget):
         try:
             st = _organ().legs_status()
         except Exception as exc:  # never crash the desktop for a status read
+            _record_legs_hardening(
+                "legs_status_read_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
             self._banner.setText(f"Legs organ unavailable: {exc}")
             return
         present = bool(st.get("hardware_present"))
@@ -172,6 +192,11 @@ class LegsHumanoidApp(QWidget):
         try:
             res = _organ().simulate_locomotion(self._intent.currentText(), steps=int(self._steps.value()))
         except Exception as exc:
+            _record_legs_hardening(
+                "legs_simulation_failed",
+                error_type=type(exc).__name__,
+                intent=self._intent.currentText(),
+            )
             self._out.setPlainText(f"sim error: {exc}")
             return
         lines = [
@@ -194,6 +219,11 @@ class LegsHumanoidApp(QWidget):
         try:
             res = _organ().request_locomotion(self._intent.currentText(), reason="owner clicked real step")
         except Exception as exc:
+            _record_legs_hardening(
+                "legs_real_step_request_failed",
+                error_type=type(exc).__name__,
+                intent=self._intent.currentText(),
+            )
             self._out.setPlainText(f"real-step error: {exc}")
             return
         self._out.setPlainText(

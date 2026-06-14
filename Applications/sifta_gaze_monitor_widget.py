@@ -24,9 +24,22 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "sensory_attention_ledger.jsonl"
 _STATUS = _STATE / "sensory_attention_status.json"
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-009:sifta_gaze_monitor_widget"
+
+
+def _record_gaze_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 _BG = "#1a1a2e"
 _CARD = "#16213e"
@@ -142,10 +155,20 @@ class GazeMonitorWidget(QWidget):
                         self.time_architect += lease_s
                     elif role == "room_patrol_eye":
                         self.time_screen += lease_s
-                except Exception:
+                except Exception as e:
+                    _record_gaze_hardening(
+                        "gaze_history_row_parse_failed",
+                        error_type=type(e).__name__,
+                        line=line[:200],
+                    )
                     continue
             self._update_bars()
         except Exception as e:
+            _record_gaze_hardening(
+                "gaze_history_read_failed",
+                error_type=type(e).__name__,
+                path=str(_LEDGER),
+            )
             print(f"Error reading history: {e}")
 
     def update_gaze(self):
@@ -185,7 +208,11 @@ class GazeMonitorWidget(QWidget):
             self._update_bars()
             
         except Exception as e:
-            pass
+            _record_gaze_hardening(
+                "gaze_status_update_failed",
+                error_type=type(e).__name__,
+                path=str(_STATUS),
+            )
 
     def _update_bars(self):
         total = self.time_architect + self.time_screen

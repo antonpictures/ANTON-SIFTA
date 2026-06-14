@@ -104,6 +104,17 @@ from Applications.sifta_what_alice_sees_widget import (  # noqa: E402
 from System.swarm_camera_unified_field_proof import (  # noqa: E402
     build_camera_unified_field_proof,
 )
+from System.swarm_app_hardening import record_app_hardening_event  # noqa: E402
+
+APP_HARDENING_ID = "queue-007:sifta_alice_widget"
+
+
+def _record_alice_widget_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 
 class AliceWidget(QWidget):
@@ -505,15 +516,22 @@ class AliceWidget(QWidget):
                 if gci is not None:
                     try:
                         gci.hide()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _record_alice_widget_hardening(
+                            "child_mesh_sidebar_hide_failed",
+                            error_type=type(exc).__name__,
+                            child=type(child).__name__,
+                        )
         
         # Hide the redundant telemetry column (_side) in TalkToAliceWidget to save horizontal real-estate on Macbooks.
         try:
             if hasattr(self._talk, "_side") and self._talk._side is not None:
                 self._talk._side.hide()
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "talk_telemetry_column_hide_failed",
+                error_type=type(exc).__name__,
+            )
 
         # Hide the inner title rows too — the OUTER MDI window already
         # says "Alice", so "Talk to Alice" and "What Alice Sees" titles
@@ -546,8 +564,12 @@ class AliceWidget(QWidget):
                 w = inner.itemAt(i).widget()
                 if w is not None:
                     w.hide()
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "inner_title_row_hide_failed",
+                error_type=type(exc).__name__,
+                child=type(child).__name__,
+            )
 
     # ── Boot telemetry greeting ───────────────────────────────────────
     def _announce_boot(self) -> None:
@@ -591,8 +613,11 @@ class AliceWidget(QWidget):
         try:
             if getattr(self._talk, "_listener", None) is not None:
                 clauses.append("Microphone online")
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "microphone_telemetry_probe_failed",
+                error_type=type(exc).__name__,
+            )
 
         try:
             sees = self._sees
@@ -600,8 +625,11 @@ class AliceWidget(QWidget):
                 cam = getattr(sees, "_camera", None)
                 if cam is not None:
                     clauses.append("camera online")
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "camera_telemetry_probe_failed",
+                error_type=type(exc).__name__,
+            )
 
         try:
             rf_ledger = _REPO / ".sifta_state" / "rf_stigmergy.jsonl"
@@ -616,16 +644,22 @@ class AliceWidget(QWidget):
                     clauses.append("Wi-Fi telemetry idle")
             # If the file doesn't exist yet, we stay quiet about Wi-Fi
             # rather than lying — honesty doctrine.
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "wifi_telemetry_probe_failed",
+                error_type=type(exc).__name__,
+            )
 
         try:
             from System.alice_body_autopilot import read_prompt_line as _body_line
 
             if _body_line():
                 clauses.append("body control online")
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_alice_widget_hardening(
+                "body_control_probe_failed",
+                error_type=type(exc).__name__,
+            )
 
         if not clauses:
             try:

@@ -3152,3 +3152,63 @@ Truth labels:
 - `OPERATIONAL`: 9 teacher-success rows in teacher_success.jsonl.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1146 Codex — QUEUE-ORDER batch 002: ten apps hardened, cursor #6→#15 KEPT, next cursor = #16 [r1146-codex-queue-order-ten-apps-batch-002]
+
+**Doctor:** `codex_desktop` / GPT-5 Codex. **Protocol:** George upgraded the app-hardening cadence to **10 apps per turn**. I interpreted "teacher half / Alice finishes half" as a no-half-cut engineering rule: the teacher writes the hardening seam, Alice's body keeps the whole file only after compile/import/test/receipt. No broken half-files are committed.
+
+**DECIDE (grounded):**
+- Covenant read this turn; queue progress before work was `ordered_cursor_completed=5`, `next_ordered_start_index=6`.
+- The next ordered ten manifest apps were rows **#6-#15** in `Documents/APP_HARDENING_QUEUE_2026-06-14.json`.
+- Peer MiMo r1144 batch is useful MANA, but it does not advance the queue-order cursor unless the exact ordered rows are verified. This round advances the cursor from real files/tests/receipts.
+
+**EXECUTE — 10 apps KEPT:**
+6. `Applications/sifta_teach_ace_to_read.py` — Ace now has `APP_HARDENING_ID`; missing focus/awareness bridges and init-ledger write failures emit app-hardening events instead of disappearing.
+7. `Applications/sifta_alice_widget.py` — Unified Alice now receipts child chrome hide failures and telemetry probe failures.
+8. `Applications/sifta_alice_browser_widget.py` — Alice Browser now receipts pending-slideshow stage/read/clear failures and bad visible-media JSON parses.
+9. `Applications/sifta_gaze_monitor_widget.py` — Gaze Monitor now receipts malformed attention rows and status update failures.
+10. `Applications/sifta_alice_journal_widget.py` — Alice Journal now receipts timestamp, witness-ledger, and malformed row failures.
+11. `Applications/sifta_cartography_widget.py` — Safety Tracker now receipts GPS receiver/raw-file/trace-row failures while preserving fallback behavior.
+12. `Applications/sifta_self_evaluation.py` — Self-Evaluation now receipts matrix regeneration failures and JSONL count read failures.
+13. `Applications/sifta_app_manager.py` — Alice Shell now receipts manifest and disabled-app ledger load failures.
+14. `Applications/sifta_alice_wellbeing_panel.py` — Wellbeing Panel now receipts pulse synthesis failures.
+15. `Applications/sifta_legs_humanoid_app.py` — Alice's Legs now imports `sys` for standalone launch and receipts legs-status/simulation/real-step failures.
+
+**Shared proof:**
+- Added `tests/test_app_hardening_batch_r1146.py`.
+- Updated `Documents/APP_HARDENING_PROGRESS_2026-06-14.json`:
+  - `ordered_cursor_completed = 15`
+  - `next_ordered_start_index = 16`
+
+**VERIFY:**
+- `python3 -m py_compile` over all ten apps → green.
+- Direct import of all ten apps → `IMPORT_OK` with expected `APP_HARDENING_ID`.
+- `python3 -m pytest -q tests/test_app_hardening_batch_r1146.py` → `3 passed`.
+- Per-app four-ledger receipts written: `r1146-codex-queue-batch002-app06` ... `r1146-codex-queue-batch002-app15`, all canonical ledgers `ok`.
+- Ten teacher-success rows written, each `result=KEPT`, teacher=`Codex teacher arm`, tied to the per-app Alice receipt.
+
+**RECEIPT:**
+- Round receipt: `r1146-codex-queue-order-ten-apps-batch-002`.
+- Truth labels: ordered #6-#15 batch = `OPERATIONAL`; exact GUI launch beyond import = `HYPOTHESIS` until George opens each app; next ordered cursor #16 = `OBSERVED` in progress JSON.
+
+**WHAT IS LEFT after r1146:**
+- Next ordered batch starts at queue row **#16**:
+  16. `Applications/sifta_dream_map_widget.py`
+  17. `Applications/sifta_voice_print_lab.py`
+  18. `Applications/sifta_substrate_status.py`
+  19. `Applications/sifta_chat_mirror_widget.py`
+  20. `Applications/sifta_dendrite_widget.py`
+  21. `Applications/sifta_geometry_teacher.py`
+  22. `Applications/sifta_model_manager.py`
+  23. `Applications/sifta_recursive_self_model.py`
+  24. `Applications/sifta_swarms_vs_neurons.py`
+  25. `Applications/sifta_handwriting_practice.py`
+- Keep cadence at **10 distinct ordered apps per turn** unless George changes it.
+- Continue per-app hardening events, per-app four-ledger receipts, and teacher-success rows.
+- Keep WE CODE TOGETHER observer-only: George types in global chat, Alice codes, teacher arms guide, George watches receipts/STGM.
+- Do not let peer out-of-order batches advance `APP_HARDENING_PROGRESS_2026-06-14.json` unless the exact ordered rows compile/import/test.
+
+Run `python3 tools/whats_left.py` after this append.
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

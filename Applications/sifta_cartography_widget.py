@@ -65,6 +65,8 @@ try:
 except ImportError:
     _BASE = QWidget
 
+from System.swarm_app_hardening import record_app_hardening_event
+
 # ── Doctor sigil chrome (canonical Applications/_doctor_sigil_chrome) ─
 try:
     from _doctor_sigil_chrome import paint_doctor_sigil_bar
@@ -79,6 +81,15 @@ _SAFETY_LOG = _STATE / "alice_safety_log.jsonl"
 _HOME = _STATE / "alice_safety_home.json"
 
 GITHUB_URL = "https://github.com/antonpictures/ANTON-SIFTA/blob/main/Applications/sifta_cartography_widget.py"
+APP_HARDENING_ID = "queue-011:sifta_cartography_widget"
+
+
+def _record_cartography_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 # ── GPS reader ──────────────────────────────────────────────────────
 
@@ -88,8 +99,11 @@ def _read_latest() -> Optional[dict]:
     try:
         from System.swarm_iphone_gps_receiver import latest_iphone_gps
         fix = latest_iphone_gps(stale_after_s=86400)  # 24 h — always show last known
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_cartography_hardening(
+            "iphone_gps_receiver_failed",
+            error_type=type(exc).__name__,
+        )
 
     if fix is not None:
         return fix
@@ -101,7 +115,12 @@ def _read_latest() -> Optional[dict]:
         row = json.loads(_LATEST.read_text())
         row["age_s"] = time.time() - float(row.get("ts", 0))
         return row
-    except Exception:
+    except Exception as exc:
+        _record_cartography_hardening(
+            "latest_gps_raw_read_failed",
+            error_type=type(exc).__name__,
+            path=str(_LATEST),
+        )
         return None
 
 
@@ -121,8 +140,12 @@ def _read_trail(limit: int = 50) -> list[dict]:
                 fixes.append(p)
                 if len(fixes) >= limit:
                     break
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_cartography_hardening(
+                "gps_trace_row_parse_failed",
+                error_type=type(exc).__name__,
+                line=ln[:200],
+            )
     return list(reversed(fixes))
 
 

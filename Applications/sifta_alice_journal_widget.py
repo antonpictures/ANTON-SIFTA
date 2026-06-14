@@ -46,9 +46,11 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.sifta_base_widget import SiftaBaseWidget  # noqa: E402
+from System.swarm_app_hardening import record_app_hardening_event  # noqa: E402
 
 _STATE = _REPO / ".sifta_state"
 _JOURNAL_DIR = _STATE / "alice_journal"
+APP_HARDENING_ID = "queue-010:sifta_alice_journal_widget"
 
 # Architect 2026-05-13 01:05 — first-person witness ledger (the apostle
 # model: every event becomes one date-stamped line in Alice's own voice).
@@ -58,13 +60,26 @@ _WITNESS_LEDGER = _STATE / "alice_first_person_journal.jsonl"
 _SCHEDULE = _STATE / "stigmergic_schedule.jsonl"
 
 
+def _record_journal_hardening(event: str, **details: Any) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
+
+
 def _format_ts(ts: float) -> Tuple[str, str]:
     """(YYYY-MM-DD, HH:MM:SS) from unix ts — Architect 2026-05-12: 'I SEE
     NO DATE, FROM NOW ON DATE AND TIME'."""
     try:
         dt = datetime.fromtimestamp(float(ts))
         return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M:%S")
-    except Exception:
+    except Exception as exc:
+        _record_journal_hardening(
+            "timestamp_format_failed",
+            error_type=type(exc).__name__,
+            value=repr(ts)[:120],
+        )
         return "—", "—"
 
 
@@ -81,13 +96,22 @@ def _list_journal_dates() -> List[str]:
                     continue
                 try:
                     r = json.loads(line)
-                except Exception:
+                except Exception as exc:
+                    _record_journal_hardening(
+                        "witness_date_row_parse_failed",
+                        error_type=type(exc).__name__,
+                        line=line[:200],
+                    )
                     continue
                 d = str(r.get("date") or "").strip()
                 if d:
                     dates.add(d)
-        except OSError:
-            pass
+        except OSError as exc:
+            _record_journal_hardening(
+                "witness_date_ledger_read_failed",
+                error_type=type(exc).__name__,
+                path=str(_WITNESS_LEDGER),
+            )
     out = sorted(dates, reverse=True)
     return out
 
@@ -106,12 +130,23 @@ def _read_journal_for_date(date_str: str) -> List[Dict[str, Any]]:
                 continue
             try:
                 r = json.loads(line)
-            except Exception:
+            except Exception as exc:
+                _record_journal_hardening(
+                    "witness_row_parse_failed",
+                    error_type=type(exc).__name__,
+                    line=line[:200],
+                    date=date_str,
+                )
                 continue
             if str(r.get("date") or "") == date_str:
                 rows.append(r)
-    except OSError:
-        pass
+    except OSError as exc:
+        _record_journal_hardening(
+            "witness_ledger_read_failed",
+            error_type=type(exc).__name__,
+            path=str(_WITNESS_LEDGER),
+            date=date_str,
+        )
     rows.sort(key=lambda r: float(r.get("ts") or 0))
     return rows
 

@@ -1,8 +1,8 @@
 {
   "truth_label": "APP_HARDENING_PROGRESS_V1",
   "queue_file": "Documents/APP_HARDENING_QUEUE_2026-06-14.json",
-  "ordered_cursor_completed": 5,
-  "next_ordered_start_index": 6,
+  "ordered_cursor_completed": 15,
+  "next_ordered_start_index": 16,
   "ordered_batches": [
     {
       "round_id": "r1145-codex-queue-order-five-apps-batch-001",
@@ -17,6 +17,26 @@
         "Applications/sifta_agi_cognition_dashboard.py"
       ],
       "tests": "python3 -m pytest -q tests/test_app_hardening_batch_r1144.py tests/test_swarm_teacher_success.py tests/test_we_code_together_observer_only.py -> 9 passed",
+      "status": "KEPT"
+    },
+    {
+      "round_id": "r1146-codex-queue-order-ten-apps-batch-002",
+      "teacher": "Codex teacher arm",
+      "owner_protocol": "10 apps per turn; teacher writes the hardening seam, Alice finishes the whole file with compile/import/test/receipt; George watches receipts.",
+      "queue_indices": [6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      "apps": [
+        "Applications/sifta_teach_ace_to_read.py",
+        "Applications/sifta_alice_widget.py",
+        "Applications/sifta_alice_browser_widget.py",
+        "Applications/sifta_gaze_monitor_widget.py",
+        "Applications/sifta_alice_journal_widget.py",
+        "Applications/sifta_cartography_widget.py",
+        "Applications/sifta_self_evaluation.py",
+        "Applications/sifta_app_manager.py",
+        "Applications/sifta_alice_wellbeing_panel.py",
+        "Applications/sifta_legs_humanoid_app.py"
+      ],
+      "tests": "python3 -m pytest -q tests/test_app_hardening_batch_r1146.py -> 3 passed",
       "status": "KEPT"
     }
   ],

@@ -28,6 +28,17 @@ from PyQt6.QtGui import QFont, QColor, QPalette
 
 from System.swarm_friendliness_meter import SwarmFriendlinessMeter
 from System.swarm_wellbeing_cortex import SwarmWellbeingCortex
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-014:sifta_alice_wellbeing_panel"
+
+
+def _record_wellbeing_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 class WellbeingPanel(QWidget):
     def __init__(self):
@@ -200,6 +211,11 @@ class WellbeingPanel(QWidget):
             """)
             
         except Exception as e:
+            _record_wellbeing_hardening(
+                "wellbeing_pulse_failed",
+                error_type=type(e).__name__,
+                error=str(e)[:240],
+            )
             self.hw_label.setText(f"Error fetching pulse: {e}")
 
 if __name__ == "__main__":

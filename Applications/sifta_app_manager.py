@@ -25,15 +25,30 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QTextCursor
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_hardening import record_app_hardening_event
 
 MANIFEST_PATH = _REPO / "Applications" / "apps_manifest.json"
 DISABLED_PATH = _REPO / ".sifta_state" / "disabled_apps.json"
+APP_HARDENING_ID = "queue-013:sifta_app_manager"
+
+
+def _record_app_manager_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 
 def _load_manifest() -> Dict:
     try:
         return json.loads(MANIFEST_PATH.read_text())
-    except Exception:
+    except Exception as exc:
+        _record_app_manager_hardening(
+            "manifest_load_failed",
+            error_type=type(exc).__name__,
+            path=str(MANIFEST_PATH),
+        )
         return {}
 
 
@@ -44,7 +59,12 @@ def _save_manifest(data: Dict) -> None:
 def _load_disabled() -> Dict:
     try:
         return json.loads(DISABLED_PATH.read_text())
-    except Exception:
+    except Exception as exc:
+        _record_app_manager_hardening(
+            "disabled_apps_load_failed",
+            error_type=type(exc).__name__,
+            path=str(DISABLED_PATH),
+        )
         return {}
 
 

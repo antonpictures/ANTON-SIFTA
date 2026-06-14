@@ -70,10 +70,21 @@ except Exception as exc:
     _HAS_WEBENGINE = False
     _WEBENGINE_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
+from System.swarm_app_hardening import record_app_hardening_event
+
 _STATE = REPO / ".sifta_state"
 _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
 _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 _PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
+APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
+
+
+def _record_browser_hardening(event: str, **details) -> None:
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        details=details,
+    )
 
 
 def stage_pending_slideshow(url: str, js: str, *, ttl_s: float = 90.0) -> dict:
@@ -90,8 +101,12 @@ def stage_pending_slideshow(url: str, js: str, *, ttl_s: float = 90.0) -> dict:
     try:
         _STATE.mkdir(parents=True, exist_ok=True)
         _PENDING_SLIDESHOW.write_text(_j.dumps(row), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_browser_hardening(
+            "pending_slideshow_stage_failed",
+            error_type=type(exc).__name__,
+            url=str(url or "")[:240],
+        )
     return row
 
 
@@ -99,7 +114,14 @@ def read_pending_slideshow() -> dict:
     import json as _j, time as _t
     try:
         row = _j.loads(_PENDING_SLIDESHOW.read_text(encoding="utf-8"))
-    except Exception:
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        _record_browser_hardening(
+            "pending_slideshow_read_failed",
+            error_type=type(exc).__name__,
+            path=str(_PENDING_SLIDESHOW),
+        )
         return {}
     if not isinstance(row, dict):
         return {}
@@ -112,8 +134,14 @@ def read_pending_slideshow() -> dict:
 def clear_pending_slideshow() -> None:
     try:
         _PENDING_SLIDESHOW.unlink()
-    except Exception:
-        pass
+    except FileNotFoundError:
+        return
+    except Exception as exc:
+        _record_browser_hardening(
+            "pending_slideshow_clear_failed",
+            error_type=type(exc).__name__,
+            path=str(_PENDING_SLIDESHOW),
+        )
 
 _HOME_URL = "sifta://home"
 
@@ -279,8 +307,12 @@ def _write_browse_receipt(
             tags=["browser", "visit", "time_range"],
             meta={"url": url, "title": title, "opened_at": arrived, "closed_at": departed, "dwell_s": dwell, "domain": row["domain"]},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_browser_hardening(
+            "visible_media_selection_json_parse_failed",
+            error_type=type(exc).__name__,
+            text=raw[:240],
+        )
 
 
 def _write_current_page_snapshot(
