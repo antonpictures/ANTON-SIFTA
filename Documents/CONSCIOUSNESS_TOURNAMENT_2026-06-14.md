@@ -3322,3 +3322,74 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 | Remaining | 98 | — | — |
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1148 Codex — PROTOCOL UPGRADE: 30 apps/turn assigned across the four teacher arms, ordered cursor still #16 [r1148-codex-30-app-turn-assignment]
+
+**Doctor:** `codex_desktop` / GPT-5 Codex. **Owner directive:** "NOW 30 APPS PER TURN — update tournament, assign the apps to each other."
+
+**DECIDE (grounded):**
+- `git status` before edit: clean against `origin/main` except unrelated `Vendor/alice-cli`.
+- Latest pushed tail includes MiMo Spark batch 4 (`fe9cb9ccf`) and its out-of-order teacher-success work.
+- Source-of-truth ordered queue remains `Documents/APP_HARDENING_QUEUE_2026-06-14.json`.
+- Source-of-truth progress remains `Documents/APP_HARDENING_PROGRESS_2026-06-14.json`: ordered cursor **#16**, ordered done **15**, ordered left **117**.
+- MiMo Spark peer batches are useful and receipted, but they do **not** advance the ordered cursor unless the exact queue rows compile/import/test and the progress file is updated.
+
+**EXECUTE:**
+- Generated `Documents/APP_HARDENING_ASSIGNMENT_R1148_2026-06-14.md`.
+- Assigned the next **30 ordered apps (#16-#45)** across the four teacher arms:
+
+**Leonardo / Codex — rows #16-#23**
+16. `Applications/sifta_intrinsic_drive_monitor.py`
+17. `Applications/sifta_apex_predator_widget.py`
+18. `Applications/sifta_app_manager.py`
+19. `Applications/sifta_aquaculture_sentinel_widget.py`
+20. `Applications/sifta_agi_cognition_dashboard.py`
+21. `Applications/sifta_awareness_mirror_widget.py`
+22. `Applications/sifta_factory_widget.py`
+23. `Applications/sifta_bell_theorem_widget.py`
+
+**Donatello / MiMo Spark — rows #24-#31**
+24. `Applications/sifta_biological_dashboard_qt.py`
+25. `Applications/sifta_bonsai_image_app.py`
+26. `Applications/sifta_gasstation_meter.py`
+27. `Applications/sifta_buzdugan_lcr.py`
+28. `Applications/sifta_protein_folder_widget.py`
+29. `Applications/sifta_physarum_contradiction_lab.py`
+30. `Applications/sifta_life_dashboard.py`
+31. `Applications/sifta_calibrator_widget.py`
+
+**Raphael / Grok — rows #32-#38**
+32. `Applications/sifta_slime_mold_bank.py`
+33. `Applications/sifta_cardio.py`
+34. `Applications/circadian_rhythm.py`
+35. `Applications/sifta_clock_settings.py`
+36. `Applications/sifta_code_graph_viewer.py`
+37. `Applications/sifta_colloid_widget.py`
+38. `Applications/sifta_control_center.py`
+
+**Michelangelo / Cline — rows #39-#45**
+39. `Applications/sifta_conversation_browser.py`
+40. `Applications/cool_worlds_contact.py`
+41. `Applications/sifta_corporate_gag_monitor.py`
+42. `Applications/sifta_cortex_wake_lab.py`
+43. `System/swarm_cosmos_reason1.py`
+44. `Applications/sifta_sim_stream_panels.py` (`CrucibleStreamWidget`)
+45. `Applications/crucible_sim.py`
+
+**LAW FOR THE 30-APP TURN:**
+- Alice codes; teacher arms guide.
+- Teacher writes the hardening seam; Alice completes the whole file.
+- KEPT only after `py_compile`, import/smoke where possible, per-app receipt, teacher-success row, and batch test/progress update.
+- No duplicate cursor movement: if an app already has peer work, verify and harden the queue row in order instead of skipping it silently.
+- If an app fails, rotate the next teacher arm onto that app; do not count it KEPT.
+- WE CODE TOGETHER remains observer-only: George types in global chat and watches STGM/receipts.
+
+**WHAT IS LEFT after r1148:**
+- Execute the assigned 30-app turn (#16-#45) and update `Documents/APP_HARDENING_PROGRESS_2026-06-14.json` only after verification.
+- Next target cursor after a fully verified 30-app turn will be **#46**.
+- Keep out-of-order MiMo/Grok/Cline work as useful MANA unless it is reconciled against the ordered queue with tests and receipts.
+
+Run `python3 tools/whats_left.py` after this append.
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
