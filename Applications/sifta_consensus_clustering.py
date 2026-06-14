@@ -18,6 +18,8 @@ Clustering Ants", Proc. 3rd Int. Conf. on Simulation of Adaptive Behavior.
 
 from __future__ import annotations
 
+"""SIFTA Consensus Clustering — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

@@ -38,6 +38,8 @@ For the Swarm. 🐜⚡
 """
 from __future__ import annotations
 
+"""SIFTA Fps Cob Stigmergic — stigmergic organ for Alice body."""
+
 import json
 import math
 import os

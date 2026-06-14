@@ -9,6 +9,8 @@ trails. The path-length counters are observers, not planners.
 
 from __future__ import annotations
 
+"""SIFTA Ant Foraging — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

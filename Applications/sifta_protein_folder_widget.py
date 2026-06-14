@@ -11,6 +11,8 @@ inside the desktop as a QWidget, not escape into Safari/Chrome.
 
 from __future__ import annotations
 
+"""SIFTA Protein Folder Widget — stigmergic organ for Alice body."""
+
 import argparse
 import json
 import os

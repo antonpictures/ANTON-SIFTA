@@ -65,6 +65,8 @@ Env overrides (Architect-tunable, no hardcoding):
 """
 from __future__ import annotations
 
+"""SIFTA Alice Widget — stigmergic organ for Alice body."""
+
 import os
 import sys
 from pathlib import Path

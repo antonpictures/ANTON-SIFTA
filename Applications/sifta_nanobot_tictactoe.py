@@ -11,6 +11,8 @@ PyQt6 embedded widget inside SIFTA OS body (§7.5). Singleton (§7.6.2).
 
 from __future__ import annotations
 
+"""SIFTA Nanobot Tictactoe — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

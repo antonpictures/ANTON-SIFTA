@@ -10,6 +10,8 @@ ledger rows. It is a toy casino surface using local in-memory credits only.
 """
 from __future__ import annotations
 
+"""SIFTA Video Poker — stigmergic organ for Alice body."""
+
 import sys
 import math
 import random

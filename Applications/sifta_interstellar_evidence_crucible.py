@@ -8,6 +8,8 @@ decay math, and JPL Horizons fetches to System.swarm_3i_evidence_field.
 """
 from __future__ import annotations
 
+"""SIFTA Interstellar Evidence Crucible — stigmergic organ for Alice body."""
+
 import math
 import random
 import sys
