@@ -15,6 +15,8 @@ what the Architect is doing.
 """
 from __future__ import annotations
 
+"""SIFTA Sudoku Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

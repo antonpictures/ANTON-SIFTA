@@ -1,3 +1,5 @@
+
+"""SIFTA Quantum Epi Sim — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 SIFTA Research Simulators — Quantum Error Correction & Epidemiological Containment

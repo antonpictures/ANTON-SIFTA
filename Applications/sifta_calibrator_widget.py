@@ -29,6 +29,8 @@ Embeds inside SIFTA OS MDI via the standard widget pattern.
 """
 from __future__ import annotations
 
+"""SIFTA Calibrator Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import random

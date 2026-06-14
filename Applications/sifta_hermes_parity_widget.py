@@ -48,6 +48,8 @@ Doctor: CW47 (Cowork), signed in at trace_id
 """
 from __future__ import annotations
 
+"""SIFTA Hermes Parity Widget — stigmergic organ for Alice body."""
+
 import json
 import sys
 import time

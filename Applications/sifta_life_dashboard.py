@@ -1,3 +1,5 @@
+
+"""SIFTA Life Dashboard — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 Applications/sifta_life_dashboard.py

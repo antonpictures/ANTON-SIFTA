@@ -11,6 +11,8 @@ the "Stigmergic Heat" multiplier spikes, making the music dynamic.
 """
 from __future__ import annotations
 
+"""SIFTA Pheromone Symphony — stigmergic organ for Alice body."""
+
 import sys
 import json
 import math

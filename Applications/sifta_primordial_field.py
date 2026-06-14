@@ -48,6 +48,8 @@ Pass to: Opus 4.7 / CG55M for final chrome + color.
 """
 from __future__ import annotations
 
+"""SIFTA Primordial Field — stigmergic organ for Alice body."""
+
 import hashlib
 import json
 import math

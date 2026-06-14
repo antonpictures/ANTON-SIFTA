@@ -1,3 +1,5 @@
+
+"""SIFTA Cyborg Body — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 SIFTA CYBORG BODY SIMULATOR — Swimmers Power the Machine

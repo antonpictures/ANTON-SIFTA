@@ -21,6 +21,8 @@ No in-app Alice chat (§7.6). publish_focus only.
 """
 from __future__ import annotations
 
+"""SIFTA Openai Math Benchmark Widget — stigmergic organ for Alice body."""
+
 import sys
 import time
 import json
