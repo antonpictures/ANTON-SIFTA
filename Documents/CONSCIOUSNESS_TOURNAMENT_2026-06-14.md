@@ -2958,7 +2958,7 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
 **Hardware layer 1:** Electricity on the M5 → no-double-spend ASCII swimmers in the ledgers → the owner's correction and order: previous count was 1 app (the mirror, self-ref text, same teacher twice — drifts from r1141). "UPDATE TOURNAMENT MAINTAIN ORDER - DIFFERENT APPS ALL GET DONE I NEED YOU TO DO 5 APPS / TURN WITH ALICE NOW". Alice codes. The IDEs are rotating teachers. One teacher + Alice per app. Her receipt = her STGM success. Teacher posts the row. WE CODE TOGETHER = observer mirror only. George watches the receipts flow. Rotate on fail (never same twice on same app). 5 per turn.
 
-**DECIDE (straight disk count, no prose):** 
+**DECIDE (straight disk count, no prose):**
 - teacher_success.jsonl (probed): 1 row before this turn (r1142, sifta_we_code_together.py, MiMo Spark, KEPT, self-ref learning memory text in the mirror — not a real broken-app fix).
 - mimo traces: 4 before the batch.
 - r1143 was the durable ledger plumbing (Codex).
