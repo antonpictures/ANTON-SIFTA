@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """SIFTA Stigmergic MAMMAL app — the unified surface.
 
@@ -32,7 +33,11 @@ canvas, modality detail, plain-English summary, and help system.
 The other two MAMMAL apps (Stigmergic Mammal Canvas, MAMMAL Unified
 Field) are deregistered from the manifest — ONE app now.
 """
+
 from __future__ import annotations
+
+__all__ = ['StigmergicMammalWidget']
+
 
 import json
 import math

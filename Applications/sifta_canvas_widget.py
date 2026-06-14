@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 sifta_canvas_widget.py — Stigmergic Swarm Canvas
@@ -8,7 +9,9 @@ The cursor is a pheromone emitter. PigmentForagers swarm from the edges,
 carry wet pigment, and die on contact — staining the canvas with organic
 textured strokes. Colors blend stigmergically on collision.
 """
+
 from __future__ import annotations
+
 
 import sys
 from pathlib import Path

@@ -80,6 +80,7 @@ CELL_ICONS = {
 # ── Canvas ───────────────────────────────────────────────────────
 
 class FactoryCanvas(FigureCanvas):
+    """Factory widget canvas — renders factory simulation frames."""
     def __init__(self, parent: QWidget | None = None):
         self._fig = Figure(figsize=(16, 9), facecolor=BG, dpi=85)
         super().__init__(self._fig)

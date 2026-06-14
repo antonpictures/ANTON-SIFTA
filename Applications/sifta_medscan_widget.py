@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 sifta_medscan_widget.py — Stigmergic Medical Scanner
@@ -18,7 +19,9 @@ Four swimmer species:
 
 The pheromone overlay is the diagnostic output: hot = high confidence anomaly.
 """
+
 from __future__ import annotations
+
 
 import sys
 import time

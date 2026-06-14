@@ -126,6 +126,7 @@ def _build_pheromone(maze, dots):
 
 # ── Ghost AI ──────────────────────────────────────────────────────────────────
 class Ghost:
+    """Pac-Man ghost agent — stigmergic ghost behavior in the maze."""
     def __init__(self, idx: int, r: int, c: int):
         self.idx   = idx
         self.name, self.color = GHOST_DEFS[idx % len(GHOST_DEFS)]

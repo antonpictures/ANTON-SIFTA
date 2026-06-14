@@ -193,6 +193,7 @@ def _big(val: str, accent: str) -> QLabel:
 # ─── Main dashboard ───────────────────────────────────────────────────────────
 
 class AGICognitionDashboard(QWidget):
+    """AGI cognition dashboard — monitors Alice cognitive organ health."""
     APP_NAME = "AGI Cognition Dashboard"
 
     def __init__(self, parent=None):

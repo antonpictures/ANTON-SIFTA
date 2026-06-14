@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 sifta_nle_widget.py — SIFTA NLE embedded as a QWidget for iSwarm OS MDI
@@ -8,7 +9,9 @@ opens inside the Swarm OS desktop as an MDI subwindow.  Auto-loads
 demo data on open so the scientist sees real waveforms + swimmers
 immediately.
 """
+
 from __future__ import annotations
+
 
 import sys
 from pathlib import Path

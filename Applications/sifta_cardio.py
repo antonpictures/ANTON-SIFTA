@@ -19,6 +19,7 @@ REGISTRY_VERSION = "v1.0"
 
 # Strict Capability Enum - No None, No Ambiguity
 class Cap:
+    """Cardio capacity management — lease locking, sandbox contracts, physical execution."""
     DENY  = "DENY"
     ALLOW = "ALLOW"
     @staticmethod

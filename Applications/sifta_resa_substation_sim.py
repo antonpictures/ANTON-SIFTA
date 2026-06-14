@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Applications/sifta_resa_substation_sim.py
@@ -10,7 +11,9 @@ for the RESA POWER order (Unit Substation SS-SA). Lives under Simulations.
 
 Truth label: SIMULATION — presentation graphics, not PE-stamped drawings.
 """
+
 from __future__ import annotations
+
 
 import math
 import sys
