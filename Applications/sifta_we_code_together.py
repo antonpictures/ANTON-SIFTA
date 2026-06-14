@@ -274,7 +274,51 @@ def _live_teacher_activity() -> List[str]:
     """Dynamic view of teacher cortices active in the field right now."""
     lines = ["LIVE TEACHER ARMS (real traces from the field — watch them code together with Alice):"]
     try:
-        p = Path('.sifta_state/mimo_stigmergic_traces.jsonl')
+        from System.swarm_teacher_success import (
+            latest_teacher_selection,
+            teacher_learning_summary,
+            teacher_success_rows,
+        )
+
+        selection = latest_teacher_selection(state_dir=STATE)
+        if selection:
+            label = str(selection.get("model_label") or "unknown")
+            provider = str(selection.get("provider") or "unknown")
+            source = str(selection.get("source") or "unknown")
+            model_id = str(selection.get("model_id") or "")
+            model_note = f" model_id={model_id}" if model_id else " exact upstream id not claimed"
+            lines.append(f"  SELECTED TEACHER MODEL: {provider}:{label} ({source};{model_note})")
+        else:
+            lines.append("  SELECTED TEACHER MODEL: Spark requested by owner; selection receipt pending.")
+
+        summary = teacher_learning_summary(state_dir=STATE)
+        lines.append(
+            "  TEACHER-SUCCESS LEDGER: "
+            f"{summary.get('total', 0)} rows {summary.get('counts', {})}"
+        )
+        success_rows = teacher_success_rows(limit=6, state_dir=STATE)
+        if success_rows:
+            lines.append("")
+            lines.append("TEACHER-SUCCESS ROWS (Alice learned from a teacher):")
+            for row in success_rows:
+                result = str(row.get("result") or "?")
+                teacher = str(row.get("teacher") or "?")[:24]
+                app = str(row.get("app") or "?")[:42]
+                receipt = str(row.get("alice_receipt_id") or "?")[:44]
+                lesson = str(row.get("lesson") or "").replace("\n", " ")[:86]
+                lines.append(f"  {result:7s} {teacher:24s} {app}")
+                lines.append(f"          Alice receipt: {receipt}")
+                lines.append(f"          Lesson: {lesson}")
+        else:
+            lines.append("")
+            lines.append("TEACHER-SUCCESS ROWS: none yet — first kept Alice fix will appear here.")
+    except Exception as exc:
+        lines.append(f"  teacher_success ledger unavailable: {type(exc).__name__}: {exc}")
+
+    lines.append("")
+    lines.append("MIMO BORG TRACE ROWS:")
+    try:
+        p = STATE / "mimo_stigmergic_traces.jsonl"
         if p.exists():
             rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()][-5:]
             for r in rows:
@@ -282,6 +326,8 @@ def _live_teacher_activity() -> List[str]:
                 intent = str(r.get('intent', ''))[:55]
                 ok = "✓" if r.get('ok') else "✗"
                 lines.append(f"  MiMo Borg teacher {ok}: {intent} ({organ})")
+        else:
+            lines.append("  No MiMo Borg traces yet.")
     except Exception:
         pass
     lines.append("  (Other teachers — Codex, Grok, Cline — appear here via ide_stigmergic_trace when they guide Alice.)")
