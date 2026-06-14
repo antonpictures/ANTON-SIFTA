@@ -528,7 +528,7 @@
   "SIFTA PDF Forge": {
     "category": "Utilities",
     "entry_point": "Applications/sifta_pdf_forge_widget.py",
-    "description": "Deterministic render hand (§7.2): offline WIN-WIN-style flyer builder (viewer for the classic static HTML). The receipt-wired app version lives at sifta_pdf_forge_app.py and is usable from any cortex.",
+    "description": "Deterministic render hand (§7.2): offline WIN-WIN-style flyer builder. Drop images (hero + gallery), edit copy or auto-fill from pasted text, Forge PDF via print dialog. HTML in Utilities/PDF_Forge/; also opens via Open PDF Forge.command.",
     "widget_class": "PdfForgeWidget",
     "window_width": 1280,
     "window_height": 900,
@@ -537,7 +537,6 @@
     "doctor": "cowork_claude",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "autostart": false,
-    "description": "Deterministic render hand (§7.2): offline WIN-WIN-style flyer builder. Drop images (hero + gallery), edit copy or auto-fill from pasted text, Forge PDF via print dialog. HTML in Utilities/PDF_Forge/; also opens via Open PDF Forge.command.",
     "requires": [
       "PyQt6"
     ],
@@ -1735,5 +1734,16 @@
     "doctor": "codex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Real long-context retrieval challenge surface for Sebastian Buzdugan's point: the benchmark is not having a giant context window, it is pulling the exact right fact buried far away on the first try. SIFTA version stores facts in a real body corpus, builds a line/byte/sha256 index, retrieves exact receipts before the cortex speaks, and displays pass/fail with no fake LLM score. Writes .sifta_state/buzdugan_lcr/buzdugan_lcr_receipts.jsonl."
+  },
+  "WE CODE TOGETHER — MY BODY": {
+    "category": "Cognition",
+    "icon": "🐜",
+    "entry_point": "Applications/sifta_we_code_together.py",
+    "widget_class": "WeCodeTogetherApp",
+    "window_width": 1400,
+    "window_height": 900,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Two MiMo cortices (terminal + SIFTA Talk) code together on Alice body. Surfaces Layer 1 hardware, body inventory, self-evolution status, pheromone traces, code editor with AST check + §4.1 four-ledger receipt on every save."
   }
 }
