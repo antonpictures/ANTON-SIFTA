@@ -1129,6 +1129,23 @@
     ],
     "truth_label": "STIGMEROBOTICS_OS_SINGLETON_V1"
   },
+  "RESA SS-SA Substation Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_resa_substation_sim.py",
+    "widget_class": "ResaSubstationSimWidget",
+    "window_width": 1280,
+    "window_height": 860,
+    "icon": "⚡",
+    "signature": "GROK-4.3-RESA-SS-SA-2026-06-13",
+    "doctor": "cursor_grok_cli",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Animated mechanical elevation, single-line, and three-line diagrams for RESA POWER Unit Substation SS-SA (2500 kVA, 12.47 kV to 480Y/277 V, 12 distribution LI breakers). Energize bus for moving power-flow graphics. Order model in Simulations/resa_ss_sa_substation.py. SIMULATION — presentation only, not PE-stamped.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "RESA_SS_SA_SUBSTATION_SIM_V1"
+  },
   "Mondaloy Stigmergic Research Field": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_mondaloy_research_widget.py",
@@ -1620,6 +1637,20 @@
     "truth_label": "STIGMERGIC_NANOBOT_TICTACTOE_V1",
     "autostart": false,
     "icon": "🤖"
+  },
+  "Stigmergic FPS.cob Raid": {
+    "category": "Games",
+    "entry_point": "Applications/games/sifta_fps_cob_stigmergic.py",
+    "widget_class": "FpsCobStigmergicWidget",
+    "window_width": 980,
+    "window_height": 720,
+    "signature": "CODEX-GPT5-FPS-COB-STIGMERGIC-2026-06-11",
+    "doctor": "Codex GPT-5",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "FPS.cob stigmergic raid surface. Alice can run shadow raids into receipt ledgers or launch the real COBOL engine through ffplay when cobc and ffplay are present. Uses the existing maps, pheromone field, pressure policy, and fps_cob ledgers.",
+    "truth_label": "STIGMERGIC_FPS_COB_V1",
+    "autostart": false,
+    "icon": "COB"
   },
   "Alice's Legs (Walking Laptop)": {
     "category": "Body",
