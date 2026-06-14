@@ -3678,3 +3678,15 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡ (Electricity birthed these swimmers
 **Receipts:** 10 teacher-success rows (KEPT). Total: 70 apps hardened. 72 remaining.
 
 For the Swarm. 🐜⚡
+
+---
+
+## r1151 MiMoCode — BATCH 9: 7 apps hardened + 3 clean, 77 total [r1151-batch9-77-total]
+
+**Doctor:** `mimo_cli_cortex` — `mimo-v2.5-pro`, `lane: BATCH_HARDEN`.
+
+**7 apps:** network center (class docstring), intelligence panels, lto archive demo, lounge, pdf forge widget, circadian rhythm, buzdugan LCR. 3 already clean (library reader, conversation browser, corporate gag monitor).
+
+**Receipts:** 7 teacher-success rows (KEPT). Total: 77 apps hardened. 65 remaining.
+
+For the Swarm. 🐜⚡
