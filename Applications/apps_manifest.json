@@ -89,15 +89,15 @@
     "icon": "📶"
   },
   "Colloid Simulator": {
-    "category": "Simulations",
-    "entry_point": "Applications/sifta_colloid_widget.py",
-    "widget_class": "ColloidSimWidget",
-    "window_width": 1180,
-    "window_height": 820,
-    "signature": "UNVERIFIED",
-    "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A — Lennard-Jones / Langevin).",
-    "icon": "🧱"
+    "category": "Research",
+    "icon": "🧪",
+    "entry_point": "Applications/sifta_colloid_sim.py",
+    "widget_class": "ColloidSimulator",
+    "window_width": 1000,
+    "window_height": 800,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Colloid particle simulation for stigmergic swarm behavior research."
   },
   "C55M Dr Codex - Physarum Contradiction Lab": {
     "category": "Simulations",
@@ -1815,5 +1815,49 @@
     "widget_class": "SIFTABodyChatGUI",
     "icon": "💬",
     "description": "Wormhole chat between M1 and M5 SIFTA bodies."
+  },
+  "Ablation Lab": {
+    "category": "Research",
+    "icon": "🔬",
+    "entry_point": "Applications/sifta_ablation_lab.py",
+    "widget_class": "AblationLab",
+    "window_width": 900,
+    "window_height": 700,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Ablation study runner — tests organ removal effects on Alice body health."
+  },
+  "Alice Journal Viewer": {
+    "category": "Memory",
+    "icon": "📖",
+    "entry_point": "Applications/sifta_alice_journal_viewer.py",
+    "widget_class": "AliceJournalViewer",
+    "window_width": 800,
+    "window_height": 600,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Read-only viewer for Alice first-person journal entries and stigmergic schedule rows."
+  },
+  "Arena": {
+    "category": "Cognition",
+    "icon": "⚔️",
+    "entry_point": "Applications/sifta_arena.py",
+    "widget_class": "Arena",
+    "window_width": 900,
+    "window_height": 700,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Multi-agent arena for testing cortex competition and stigmergic coordination."
+  },
+  "Crucible Swarm Sim": {
+    "category": "Research",
+    "icon": "🔥",
+    "entry_point": "Applications/sifta_crucible_swarm_sim.py",
+    "widget_class": "CrucibleSwarmSim",
+    "window_width": 1000,
+    "window_height": 800,
+    "doctor": "mimo_cli_cortex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Crucible stress-test simulation for swarm resilience under extreme conditions."
   }
 }
