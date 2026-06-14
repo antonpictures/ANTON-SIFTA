@@ -1063,3 +1063,11 @@ class CalibratorWidget(QWidget):
         self.canvas._gesture_timer.stop()
         self._sync_timer.stop()
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = CalibratorWidget()
+    w.resize(900, 700)
+    w.show()
+    sys.exit(app.exec())

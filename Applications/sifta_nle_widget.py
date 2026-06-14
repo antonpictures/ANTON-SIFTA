@@ -357,3 +357,11 @@ class NLEWidget(QWidget):
         self.canvas.timer.stop()
         self.log_timer.stop()
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = NLEWidget()
+    w.resize(900, 700)
+    w.show()
+    sys.exit(app.exec())

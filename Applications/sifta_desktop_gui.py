@@ -3,6 +3,7 @@ Optional Tk viewer for the wormhole messenger API (M1SIFTA_BODY ↔ M5SIFTA_BODY
 This is not the SIFTA OS shell — run sifta_os_desktop.py for the main PyQt desktop.
 Launch standalone: python3 Applications/sifta_desktop_gui.py
 """
+import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import requests
@@ -12,6 +13,12 @@ import json
 import random
 import queue
 from datetime import datetime
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parent.parent
+_APPS = _REPO / "Applications"
+if str(_APPS) not in sys.path:
+    sys.path.insert(0, str(_APPS))
 
 from sifta_http_auth import get_sifta_api_base, sifta_headers
 

@@ -574,3 +574,11 @@ class FileTrailsPanel(QWidget):
                 p.drawText(int(nx + 10), int(ny + 4), name)
         except Exception:
             pass
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = AppFitnessPanel()
+    w.resize(900, 700)
+    w.show()
+    sys.exit(app.exec())

@@ -332,3 +332,11 @@ class LibraryReaderApp(QWidget):
             if nugget:
                 _append_nugget(nugget)
                 self._load()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = LibraryReaderApp()
+    w.resize(800, 600)
+    w.show()
+    sys.exit(app.exec())

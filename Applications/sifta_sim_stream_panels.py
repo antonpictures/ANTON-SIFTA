@@ -425,3 +425,23 @@ class UrbanStreamWidget(_StreamPanel):
             ],
             parent,
         )
+
+
+if __name__ == "__main__":
+    from PyQt6.QtWidgets import QMainWindow, QTabWidget, QApplication
+    class _DemoWindow(QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("Sim Stream Panels — SIFTA")
+            tabs = QTabWidget()
+            tabs.addTab(ArenaPanelWidget(), "Arena")
+            tabs.addTab(LogisticsStreamWidget(), "Logistics")
+            tabs.addTab(WarehouseStreamWidget(), "Warehouse")
+            tabs.addTab(CrucibleStreamWidget(), "Crucible")
+            tabs.addTab(UrbanStreamWidget(), "Urban")
+            self.setCentralWidget(tabs)
+    app = QApplication(sys.argv)
+    w = _DemoWindow()
+    w.resize(1000, 700)
+    w.show()
+    sys.exit(app.exec())

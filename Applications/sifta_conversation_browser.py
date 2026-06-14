@@ -223,3 +223,11 @@ class ConversationBrowserApp(QWidget):
             if show:
                 visible += 1
         self.count_lbl.setText(f"{visible} / {len(self._bubbles)} turns")
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = ConversationBrowserApp()
+    w.resize(900, 700)
+    w.show()
+    sys.exit(app.exec())

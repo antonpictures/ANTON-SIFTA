@@ -211,3 +211,11 @@ class LegsHumanoidApp(QWidget):
 
 
 __all__ = ["LegsHumanoidApp"]
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = LegsHumanoidApp()
+    w.resize(900, 700)
+    w.show()
+    sys.exit(app.exec())

@@ -49,3 +49,11 @@ class ArchitectRoomGame(QWidget):
         
     def _on_choice(self):
         publish_focus("The Architect Room", "User made a choice in the Architect Room", tab="Choice")
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = ArchitectRoomGame()
+    w.resize(800, 600)
+    w.show()
+    sys.exit(app.exec())

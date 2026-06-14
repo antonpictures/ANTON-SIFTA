@@ -273,3 +273,11 @@ __all__ = [
     "cartridges_needed",
     "compressed_tb",
 ]
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = LtoArchiveDemoWidget()
+    w.resize(800, 600)
+    w.show()
+    sys.exit(app.exec())

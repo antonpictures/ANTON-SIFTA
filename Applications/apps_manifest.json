@@ -1745,5 +1745,75 @@
     "doctor": "mimo_cli_cortex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Two MiMo cortices (terminal + SIFTA Talk) code together on Alice body. Surfaces Layer 1 hardware, body inventory, self-evolution status, pheromone traces, code editor with AST check + §4.1 four-ledger receipt on every save."
+  },
+  "Mammal Unified Field": {
+    "category": "Science",
+    "entry_point": "Applications/sifta_mammal_unified_field_widget.py",
+    "widget_class": "MammalUnifiedFieldApp",
+    "icon": "🧬",
+    "description": "Unified field visualization of SIFTA mammal body physics."
+  },
+  "Stigmergic Mammal Canvas": {
+    "category": "Science",
+    "entry_point": "Applications/sifta_stigmergic_mammal_canvas.py",
+    "widget_class": "StigmergicMammalCanvasApp",
+    "icon": "🦫",
+    "description": "Stigmergic mammal body canvas with matplotlib physics rendering."
+  },
+  "Talk to Alice": {
+    "category": "Communication",
+    "entry_point": "Applications/sifta_talk_to_alice_widget.py",
+    "widget_class": "TalkToAliceWidget",
+    "icon": "🎤",
+    "description": "Voice/text conversation with Alice via Ollama LLM on local M5."
+  },
+  "What Alice Sees": {
+    "category": "Perception",
+    "entry_point": "Applications/sifta_what_alice_sees_widget.py",
+    "widget_class": "VideoCanvas",
+    "icon": "👁",
+    "description": "Live camera feed showing what Alice sees through her eye."
+  },
+  "Swarm Intelligence Panels": {
+    "category": "Science",
+    "entry_point": "Applications/sifta_intelligence_panels.py",
+    "widget_class": "AppFitnessPanel",
+    "icon": "🧠",
+    "description": "Graphical panels showing swarm intelligence metrics and file trails."
+  },
+  "Matrix Terminal": {
+    "category": "System",
+    "entry_point": "Applications/sifta_matrix_terminal.py",
+    "widget_class": "MatrixTerminalApp",
+    "icon": "💻",
+    "description": "Matrix terminal for direct Alice body inspection and command."
+  },
+  "Apex Predator Background": {
+    "category": "System",
+    "entry_point": "Applications/sifta_predator_desktop_bg.py",
+    "widget_class": "PredatorDesktopBg",
+    "icon": "🦁",
+    "description": "Organ status panel and predator background visualization."
+  },
+  "YouTube Shazam": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_youtube_shazam.py",
+    "widget_class": "SiftaYoutubeShazam",
+    "icon": "🎵",
+    "description": "Identify and tag music from YouTube audio streams."
+  },
+  "Council GUI": {
+    "category": "Communication",
+    "entry_point": "Applications/council_gui.py",
+    "widget_class": "CouncilRobinhoodApp",
+    "icon": "🏛",
+    "description": "Council governance GUI for swarm decision-making."
+  },
+  "Body Chat GUI": {
+    "category": "Communication",
+    "entry_point": "Applications/sifta_desktop_gui.py",
+    "widget_class": "SIFTABodyChatGUI",
+    "icon": "💬",
+    "description": "Wormhole chat between M1 and M5 SIFTA bodies."
   }
 }

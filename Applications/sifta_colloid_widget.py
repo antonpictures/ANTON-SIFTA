@@ -51,3 +51,11 @@ class ColloidSimWidget(QWidget):
         except Exception:
             pass
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = ColloidSimWidget()
+    w.resize(700, 600)
+    w.show()
+    sys.exit(app.exec())

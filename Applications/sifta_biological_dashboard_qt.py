@@ -10,6 +10,12 @@ from __future__ import annotations
 
 import math
 import random
+import sys
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 from Applications.sifta_biological_core import hud_body, read_biology_tension
 
@@ -124,3 +130,11 @@ class BiologicalDashboardWidget(QWidget):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             hud_body(len(plist), tension),
         )
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = BiologicalDashboardWidget()
+    w.resize(800, 600)
+    w.show()
+    sys.exit(app.exec())

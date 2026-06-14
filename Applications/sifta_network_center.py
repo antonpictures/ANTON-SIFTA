@@ -215,3 +215,11 @@ class NetworkCenterWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self._stop_proc()
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = NetworkCenterWidget()
+    w.resize(800, 600)
+    w.show()
+    sys.exit(app.exec())

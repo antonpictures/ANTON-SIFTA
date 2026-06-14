@@ -16,8 +16,18 @@ import hashlib
 import urllib.request
 import threading
 import random
+import sys
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO / "Kernel") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Kernel"))
+if str(_REPO / "Security") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Security"))
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 from origin_gate import OriginGate
 from state_bus import get_state, set_state
 from cognitive_firewall import firewall
