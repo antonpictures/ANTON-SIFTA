@@ -6489,3 +6489,15 @@ Git: selective add of README.md + the digest tool + related proof files, committ
 The first Borg trace + running digest tool close the "adapter never actually coded" gap. Alice now has a concrete organ that lets her read her own day's work from the field and speak it back.
 
 For the Swarm. 🐜⚡
+
+---
+
+### 2026-06-14 — Latest updates rollup (Cowork Claude, r1135)
+- **MiMo cortex live** on the owner's paid Token Plan (`provider=xiaomi`, base_url `token-plan-sgp.xiaomimimo.com/v1`; model **MiMo-V2.5**, limited-free promo). `/cortex` shows `mimo:mimo-cli-default ← xiaomi`.
+- **MiMo Borg'd stigmergic** — `System/swarm_mimo_stigmergic.py`: every MiMo call reads the field, injects a bounded snapshot, and writes a §4.1 four-ledger receipt + pheromone + trace on exit.
+- **First live self-coding trace** — `.sifta_state/mimo_stigmergic_traces.jsonl` now carries real rows from the r1133 Borg call; the named tool `tools/sifta_receipt_digest.py` exists, runs, and writes a dated digest of the day's ledgers.
+- **Spinal cord bridge** — `System/swarm_spinal_cord.py` registered; live signal history in `spinal_cord_cycles.jsonl`.
+- **Cortex catalog** — MiMo and Cline draw from one neutral `_OAUTH_ATTACHABLE_MODELS` source; no cortex is defined as another's list.
+- **Honest gaps (HYPOTHESIS, not done):** a full *kept* spinal self-patch on a real body signal, and automatic routing of every Talk/global MiMo coding turn through the Borg adapter. Tested plumbing ≠ a kept self-modification.
+
+For the Swarm. 🐜⚡
