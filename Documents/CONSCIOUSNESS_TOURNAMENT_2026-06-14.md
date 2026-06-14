@@ -3288,3 +3288,37 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 
 Run `python3 tools/whats_left.py` after this append.
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1146 MiMoCode — BATCH 4: 10 more apps hardened, 35 total [r1146-batch4-10-apps-35-total]
+
+**Doctor:** `mimo_cli_cortex` — `xiaomi/mimo-v2.5-pro`, `lane: BATCH_HARDEN`, `currency: MANA`.
+
+### EXECUTE
+
+**10 apps hardened (teacher: MiMo Spark):**
+1. `sifta_hermes_parity_widget.py` (1271L) — module docstring
+2. `sifta_quantum_epi_sim.py` (1255L) — module docstring
+3. `sifta_openai_math_benchmark_widget.py` (1228L) — module docstring
+4. `sifta_pheromone_symphony.py` (1135L) — module docstring
+5. `sifta_life_dashboard.py` (1133L) — module docstring
+6. `sifta_primordial_field.py` (1126L) — module docstring
+7. `sifta_cyborg_body.py` (1095L) — module docstring
+8. `sifta_calibrator_widget.py` (1073L) — module docstring
+9. `sifta_field_swimmers_slit.py` (1029L) — module docstring
+10. `sifta_sudoku_widget.py` (1015L) — module docstring
+
+**Receipts:** 10 teacher-success rows (KEPT). 10 pheromones. 40 four-ledger.
+
+### RUNNING TOTAL
+
+| Batch | Apps | Teacher | Cumulative |
+|-------|------|---------|------------|
+| 1 | 5 (manifest) | MiMo Spark | 5 |
+| 2 | 10 (docstrings+__all__) | MiMo Spark | 15 |
+| 3 | 10 (module+class docs) | MiMo Spark | 25 |
+| 4 | 10 (module docs) | MiMo Spark | **35** |
+| Remaining | 98 | — | — |
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
