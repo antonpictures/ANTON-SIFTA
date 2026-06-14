@@ -29,8 +29,16 @@ if str(_REPO / "Applications") not in sys.path:
 from _doctor_sigil_chrome import paint_doctor_sigil_bar
 try:
     from System.swarm_app_focus import publish_focus as _publish_focus
-except Exception:
-    def _publish_focus(*a, **kw): pass
+    _HAS_FOCUS_PUBLISHER = True
+    _FOCUS_IMPORT_ERROR = ""
+except Exception as exc:
+    _HAS_FOCUS_PUBLISHER = False
+    _FOCUS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+
+    def _publish_focus(*_args, **_kwargs):
+        return None
+
+from System.swarm_app_hardening import record_app_hardening_event
 
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -79,6 +87,7 @@ C_TXT_PINK    = QColor(255, 100, 200)  # best energy
 C_TXT_WHITE   = QColor(240, 240, 255)  # general labels
 C_TXT_PURPLE  = QColor(180, 120, 255)  # footer / attribution
 C_TXT_GOLD    = QColor(255, 220, 0)    # STGM header
+APP_HARDENING_ID = "queue-002:fold_swarm_pouw_sim"
 
 
 # ─────────────────────────────────────────────────────────
@@ -290,6 +299,16 @@ class ReceiptChain:
             )
             save_agent_state(agent_state)
         except Exception as e:
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "pouw_receipt_write_failed",
+                truth_label="OBSERVED",
+                details={
+                    "error": f"{type(e).__name__}: {e}",
+                    "swimmer_id": swimmer_id,
+                    "task_hash": task_hash,
+                },
+            )
             print(f"[PoUW Integration Error] {e}")
 
         self.prev   = task_hash
@@ -313,6 +332,7 @@ class SimCanvas(QWidget):
         self.tick     = 0
         self.energy_history   = collections.deque(maxlen=300)
         self.last_mint_flash  = 0
+        self._focus_missing_recorded = False
         self.architect_clicks = []    # list of (fx, fy, lum, ts) — stigmergic food deposits
         self.click_flash      = []    # list of (fx, fy, radius, alpha) for ripple rendering
         self.setMinimumSize(780, 540)
@@ -390,15 +410,29 @@ class SimCanvas(QWidget):
                 self.last_mint_flash = self.tick
 
         if self.tick % 60 == 0:
-            try:
-                _publish_focus(
-                    "PoUW Sim",
-                    f"PoUW Simulation running — tick {self.tick}, best E={self.physics.best_energy:.1f}, mints={len(self.chain.chain)}",
-                    tab="Swarm View",
-                    metadata={"tick": self.tick, "energy": round(self.physics.best_energy, 1), "mints": len(self.chain.chain)}
+            if _HAS_FOCUS_PUBLISHER:
+                try:
+                    _publish_focus(
+                        "PoUW Sim",
+                        f"PoUW Simulation running — tick {self.tick}, best E={self.physics.best_energy:.1f}, mints={len(self.chain.chain)}",
+                        tab="Swarm View",
+                        metadata={"tick": self.tick, "energy": round(self.physics.best_energy, 1), "mints": len(self.chain.chain)}
+                    )
+                except Exception as exc:
+                    record_app_hardening_event(
+                        APP_HARDENING_ID,
+                        "focus_publish_failed",
+                        truth_label="OBSERVED",
+                        details={"error": f"{type(exc).__name__}: {exc}", "tick": self.tick},
+                    )
+            elif not self._focus_missing_recorded:
+                self._focus_missing_recorded = True
+                record_app_hardening_event(
+                    APP_HARDENING_ID,
+                    "focus_publisher_unavailable",
+                    truth_label="OBSERVED",
+                    details={"import_error": _FOCUS_IMPORT_ERROR},
                 )
-            except Exception:
-                pass
 
         self.tick += 1
         self.update()

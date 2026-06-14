@@ -84,6 +84,7 @@ from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton,
     QSlider, QVBoxLayout, QWidget, QComboBox,
 )
+from System.swarm_app_hardening import record_app_hardening_event
 
 # ── Doctor sigil bar (canonical Applications/_doctor_sigil_chrome) ────
 try:
@@ -173,6 +174,7 @@ PRESETS = {
     "Worms":    (0.078,  0.061),
 }
 DEFAULT_PRESET = "Coral"
+APP_HARDENING_ID = "queue-003:sifta_primordial_field"
 
 
 if _HAS_NUMBA:
@@ -458,6 +460,7 @@ class PrimordialCanvas(QWidget):
         self._fps_last = time.time()
         self._fps = 0.0
         self._tick_count = 0
+        self._last_sigil_error = ""
 
         # Click ripples — list of (cx_px, cy_px, age_seconds) for visual feedback
         self._ripples: List[List[float]] = []
@@ -643,8 +646,14 @@ class PrimordialCanvas(QWidget):
                     title="Primordial Field",
                     subtitle="Gray-Scott · Physarum · PoUW",
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                self._last_sigil_error = f"{type(exc).__name__}: {exc}"
+                record_app_hardening_event(
+                    APP_HARDENING_ID,
+                    "doctor_sigil_paint_failed",
+                    truth_label="OBSERVED",
+                    details={"error": self._last_sigil_error},
+                )
 
         # ── Welcome intro overlay (first ~3.5 s) ────────────────────
         self._draw_intro(p, w, h)

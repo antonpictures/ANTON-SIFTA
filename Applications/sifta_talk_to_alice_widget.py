@@ -910,7 +910,7 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                 f"for `tools` under Capabilities)."
             )
         try:
-            _cfg = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/hermes_cortex.json")
+            _cfg = _REPO / ".sifta_state" / "hermes_cortex.json"
             _cfg.parent.mkdir(parents=True, exist_ok=True)
             _cfg.write_text(
                 json.dumps(
@@ -1102,7 +1102,7 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
         # This is the boundary event (holography). The PTY capture later completes
         # the discrete receipt chain.
         try:
-            _state = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            _state = _REPO / ".sifta_state"
             _state.mkdir(parents=True, exist_ok=True)
             ledger = _state / "grok_delegation_requests.jsonl"
             entry = {
@@ -1270,7 +1270,7 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
                     # Write a strong, citable receipt for this PTY action so the next reasoning turn has loud swimmers
                     try:
                         from pathlib import Path as _P
-                        rec_path = _P("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/matrix_terminal_commands.jsonl")
+                        rec_path = _REPO / ".sifta_state" / "matrix_terminal_commands.jsonl"
                         rec_path.parent.mkdir(parents=True, exist_ok=True)
                         with rec_path.open("a", encoding="utf-8") as f:
                             f.write(json.dumps({
@@ -40322,7 +40322,7 @@ def _consume_pending_decision_turn_request() -> dict | None:
 
     """
     try:
-        sd = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+        sd = _REPO / ".sifta_state"
         ledger = sd / "owner_away_watch_window.jsonl"
         if not ledger.exists():
             return None

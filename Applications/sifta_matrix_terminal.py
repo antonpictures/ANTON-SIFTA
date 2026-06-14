@@ -21,6 +21,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 from PyQt6 import sip
 from PyQt6.QtCore import QSocketNotifier, Qt, QTimer, pyqtSignal
 
@@ -759,7 +763,7 @@ _PURE_GROK_LAUNCH_RE = re.compile(
     r"^\s*(?:alice|sifta)?\s*,?\s*(?:" + "|".join(_PURE_CLI_LAUNCH_VERBS) + r")\s+(?:the\s+)?(?:grok|alice-grok)\b",
     re.IGNORECASE,
 )
-_IDE_BOOT_COVENANT_PATH = "/Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md"
+_IDE_BOOT_COVENANT_PATH = str(_REPO / "Documents" / "IDE_BOOT_COVENANT.md")
 _SHELL_PROMPT_RE = re.compile(r"(?m)^\s*(?:[$#]|(?:SIFTA|user@host)\s*[>$])\s+(.+?)\s*$")
 _SLASH_CLI_RE = re.compile(r"^/[A-Za-z][\w-]*(?:\s+\S.*)?$")
 _ALICE_ADDRESS_RE = re.compile(r"^\s*(?:alice|sifta)\b[:,]?", re.IGNORECASE)
@@ -2958,7 +2962,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             # recent grok context from the PTY history or the dedicated ledger (the "attached" grok reply)
             grok_context = ""
             try:
-                grok_ledger = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/alice_grok_delegations.jsonl")
+                grok_ledger = _REPO / ".sifta_state" / "alice_grok_delegations.jsonl"
                 if grok_ledger.exists():
                     lines = grok_ledger.read_text(encoding="utf-8", errors="ignore").strip().splitlines()[-1:]
                     if lines:
@@ -2982,7 +2986,7 @@ class MatrixTerminalPane(QPlainTextEdit):
                 "for_the_swarm": "🐜⚡ physical pair (owner + Alice) in the room; no Grok entity present",
                 "covenant": "§6 Social Frame + effector truth; owner positive valence is real receipted signal, not hallucinated",
             }
-            state_dir = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            state_dir = _REPO / ".sifta_state"
             state_dir.mkdir(parents=True, exist_ok=True)
             (state_dir / "alice_bowel_learnings.jsonl").open("a", encoding="utf-8").write(json.dumps(receipt, ensure_ascii=False) + "\n")
 
@@ -3863,7 +3867,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         prompt_lines = {line.strip() for line in prompt.splitlines() if line.strip()}
         kept: list[str] = []
         skip_needles = (
-            "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/IDE_BOOT_COVENANT.md",
+            f"Read {_REPO}/Documents/IDE_BOOT_COVENANT.md",
             "Start from the hardware layer 1 kernel primordial electricity boundary",
             "Alice is asking Grok from inside the Alice global chat terminal",
             "Question for Grok:",
@@ -3872,7 +3876,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             "Do not assume you are inside Alice's organism",
             "Owner's original wording to Alice:",
             "Subject binding:",
-            "Read /Users/ioanganton/Music/ANTON_SIFTA/Documents/",
+            f"Read {_REPO}/Documents/",
             "IDE_BOOT_COVENANT.md",
             "[Pasted:",
             "Enter:send",
@@ -4151,7 +4155,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         bypass = bool(re.search(r"\bbypass\b.*(screen|selection|picker|resume|two)|direct.*(type|launch|no resume)|no resume|headless", ui, re.I))
         is_ask_grok = bool(re.search(r"\bask\s+grok\b|\btell\s+grok\b|\bsend\s+(?:to\s+)?grok\b", ui, re.I))
         if bypass or is_ask_grok or (pending_prompt and not _matrix_terminal_grok_open_only(ui)):
-            grok_bin = "/Users/ioanganton/.grok/bin/grok"
+            grok_bin = str(Path.home() / ".grok" / "bin" / "grok")
             prompt = (pending_prompt or user_input or "status").strip()
             # Prefer --continue -p for last session + single turn output to PTY (no menus).
             cmd = f"{grok_bin} --continue -p {shlex.quote(prompt[:2000])} --no-alt-screen"
@@ -4544,7 +4548,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             # that triggers the "I see Grok's main menu... Pressing Ctrl-S" vision loop.
             # Owner can then type inside; delegations use -p bypass.
             if _matrix_terminal_grok_open_only(user_input) or not (user_input or "").strip() or re.search(r"^(?:alice\s*,?\s*)?(?:start|open|launch|resume)\s+(?:the\s+)?grok\b", user_input or "", re.I):
-                grok_bin = "/Users/ioanganton/.grok/bin/grok"
+                grok_bin = str(Path.home() / ".grok" / "bin" / "grok")
                 cmd = f"{grok_bin} --continue --no-alt-screen"
                 self._append_plain("Alice > Opening Grok with --continue (auto-resume last session, no picker screens).\n")
                 self._append_matrix_command_receipt([cmd])
@@ -4603,7 +4607,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._active_cli_name = cli
             self._grok_cli_active = True
             # Use the clean no-TUI wrapper for direct; real TUI grok still available via "grok --continue"
-            full_launch = "python3 /Users/ioanganton/Music/ANTON_SIFTA/grok_chat.py"
+            full_launch = f"python3 {_REPO}/grok_chat.py"
             self._append_matrix_command_receipt([full_launch])
             QTimer.singleShot(300, lambda: self.write_command(full_launch))
             self._enter_alice_input_mode_for_tool("Grok")
@@ -5334,7 +5338,7 @@ def get_live_pty_status_for_alice() -> str:
         # Last receipt if available
         receipt_note = ""
         try:
-            receipt_path = Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/matrix_terminal_commands.jsonl")
+            receipt_path = _REPO / ".sifta_state" / "matrix_terminal_commands.jsonl"
             if receipt_path.exists():
                 last = receipt_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines()[-1]
                 if last:

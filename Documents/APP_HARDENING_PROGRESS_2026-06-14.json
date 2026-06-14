@@ -1,0 +1,29 @@
+{
+  "truth_label": "APP_HARDENING_PROGRESS_V1",
+  "queue_file": "Documents/APP_HARDENING_QUEUE_2026-06-14.json",
+  "ordered_cursor_completed": 5,
+  "next_ordered_start_index": 6,
+  "ordered_batches": [
+    {
+      "round_id": "r1145-codex-queue-order-five-apps-batch-001",
+      "teacher": "Codex teacher arm",
+      "owner_protocol": "Alice codes; IDEs teach; George watches receipts.",
+      "queue_indices": [1, 2, 3, 4, 5],
+      "apps": [
+        "Applications/sifta_artificial_general_intelligence.py",
+        "Applications/fold_swarm_pouw_sim.py",
+        "Applications/sifta_primordial_field.py",
+        "Applications/sifta_pacman_stigmergic.py",
+        "Applications/sifta_agi_cognition_dashboard.py"
+      ],
+      "tests": "python3 -m pytest -q tests/test_app_hardening_batch_r1144.py tests/test_swarm_teacher_success.py tests/test_we_code_together_observer_only.py -> 9 passed",
+      "status": "KEPT"
+    }
+  ],
+  "peer_batches_observed_not_used_for_ordered_cursor": [
+    {
+      "round_id": "r1144-grok-5-apps-alice-coded-under-spark",
+      "note": "Different five-app batch, useful but not the queue-order first five."
+    }
+  ]
+}

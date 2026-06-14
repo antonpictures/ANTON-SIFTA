@@ -95,7 +95,7 @@ from System.swarm_visual_acuity_budget import (
     build_visual_acuity_budget,
 )
 
-_REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
+_REPAIR_LEDGER = _REPO / "repair_log.jsonl"
 
 # ── Photon-derived stigmergic ledger ─────────────────────────────────────────
 _VISUAL_STIGMERGY_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
@@ -1310,7 +1310,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # These must exist before timers start or _refresh_cameras() selects
         # a camera. Qt can synchronously fire currentIndexChanged during first
         # selection, which calls _on_cam_changed() and reads this guard.
-        self._root = Path("/Users/ioanganton/Music/ANTON_SIFTA")
+        self._root = _REPO
         self._saccade_target_json_path = (
             self._root / ".sifta_state" / "active_saccade_target.json"
         )

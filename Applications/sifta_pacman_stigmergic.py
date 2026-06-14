@@ -37,9 +37,11 @@ from PyQt6.QtGui import (
     QLinearGradient, QRadialGradient, QKeyEvent, QFontMetrics,
 )
 from PyQt6.QtWidgets import QWidget, QApplication, QHBoxLayout, QVBoxLayout
+from System.swarm_app_hardening import record_app_hardening_event
 
 _REPO  = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
+APP_HARDENING_ID = "queue-004:sifta_pacman_stigmergic"
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 COLS, ROWS = 28, 22
@@ -197,6 +199,7 @@ class PacManGame(QWidget):
         self._ledger_timer.timeout.connect(self._refresh_organs)
         self._ledger_timer.start(2000)
         self._organ_truths: dict = {}
+        self._organ_parse_errors: set[str] = set()
         self._refresh_organs()
 
     def _reset(self):
@@ -255,8 +258,21 @@ class PacManGame(QWidget):
                     if lines:
                         r = json.loads(lines[-1])
                         self._organ_truths[name] = r.get("truth", "REAL")
-                except Exception:
+                except Exception as exc:
                     self._organ_truths[name] = "STUB"
+                    key = f"{name}:{fname}:{type(exc).__name__}"
+                    if key not in self._organ_parse_errors:
+                        self._organ_parse_errors.add(key)
+                        record_app_hardening_event(
+                            APP_HARDENING_ID,
+                            "organ_receipt_parse_failed",
+                            truth_label="OBSERVED",
+                            details={
+                                "organ": name,
+                                "ledger": fname,
+                                "error": f"{type(exc).__name__}: {exc}",
+                            },
+                        )
             else:
                 self._organ_truths[name] = "STUB"
 

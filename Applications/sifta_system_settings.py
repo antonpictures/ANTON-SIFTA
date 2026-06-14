@@ -1525,7 +1525,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             import math as _math
             import hashlib as _hash
 
-            REPO_STATE = _Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            REPO_STATE = _REPO / ".sifta_state"
             frames_dir = REPO_STATE / "iris_frames"
 
             # 1. Find latest iris frame (newest mtime).
@@ -1681,7 +1681,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         try:
             from pathlib import Path as _Pf
             import json as _jf
-            conv = _Pf("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/alice_conversation.jsonl")
+            conv = _REPO / ".sifta_state" / "alice_conversation.jsonl"
             if conv.exists():
                 sz = conv.stat().st_size
                 with conv.open("rb") as f:
@@ -1806,9 +1806,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             from pathlib import Path as _Path
             import json as _json
             import time as _time
-            out_path = _Path(
-                "/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/ai_name_alias.json"
-            )
+            out_path = _REPO / ".sifta_state" / "ai_name_alias.json"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             can_be_called = sorted(
                 {new_name} | ({weight} if weight else set())

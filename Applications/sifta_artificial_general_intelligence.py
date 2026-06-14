@@ -34,8 +34,14 @@ if str(_REPO / "Applications") not in sys.path:
 try:
     from System.proof_of_useful_work import issue_work_receipt
     from Kernel.body_state import load_agent_state, save_agent_state
-except ImportError:
-    pass
+    _HAS_POUW = True
+    _POUW_IMPORT_ERROR = ""
+except ImportError as exc:
+    issue_work_receipt = load_agent_state = save_agent_state = None
+    _HAS_POUW = False
+    _POUW_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+
+from System.swarm_app_hardening import record_app_hardening_event
 
 from _doctor_sigil_chrome import (
     paint_doctor_sigil_bar,
@@ -52,6 +58,7 @@ C_STGM      = QColor(0, 255, 160)
 C_HUD_CYAN  = QColor(0, 230, 255)
 C_HUD_GOLD  = QColor(255, 200, 50)
 C_HUD_MAG   = QColor(255, 50, 200)
+APP_HARDENING_ID = "queue-001:sifta_artificial_general_intelligence"
 
 class GrandUnifiedModel:
     def __init__(self):
@@ -177,6 +184,14 @@ class GrandUnifiedModel:
             self.mints.pop(0)
             
         # Ledger integration
+        if not _HAS_POUW:
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "pouw_integration_unavailable",
+                truth_label="OBSERVED",
+                details={"import_error": _POUW_IMPORT_ERROR, "state_hash": rh},
+            )
+            return
         try:
             agent_id = os.environ.get("SIFTA_NODE_AGENT", "ALICE")
             agent_state = load_agent_state(agent_id) or {"id": agent_id}
@@ -191,8 +206,13 @@ class GrandUnifiedModel:
                 output_hash=rh
             )
             save_agent_state(agent_state)
-        except Exception:
-            pass
+        except Exception as exc:
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "pouw_receipt_write_failed",
+                truth_label="OBSERVED",
+                details={"error": f"{type(exc).__name__}: {exc}", "state_hash": rh},
+            )
 
 class AGICanvas(QWidget):
     def __init__(self):
@@ -238,6 +258,12 @@ class AGICanvas(QWidget):
             self._draw_hud(p, W, H)
             self._draw_chrome(p, W, H)
         except Exception as e:
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "paint_guard_exception",
+                truth_label="OBSERVED",
+                details={"error": f"{type(e).__name__}: {e}"},
+            )
             print(f"[AGI Paint Guard] {e}")
         finally:
             p.end()

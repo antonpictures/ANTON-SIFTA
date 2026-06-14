@@ -42,8 +42,8 @@ INTENT_REGISTRY = {
             "agent_hash": "a1b2c3d4e5f6",
             "capabilities": {
                 "network": Cap.DENY,
-                "fs_read":  Cap.SCOPED("/Users/ioanganton/Downloads"),
-                "fs_write": Cap.SCOPED("/Users/ioanganton/Downloads/Sorted")
+                "fs_read":  Cap.SCOPED(str(Path.home() / "Downloads")),
+                "fs_write": Cap.SCOPED(str(Path.home() / "Downloads" / "Sorted"))
             },
             "execution_lease_seconds": 60
         },

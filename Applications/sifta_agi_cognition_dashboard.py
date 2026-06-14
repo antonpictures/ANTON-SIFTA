@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QScrollArea, QSizePolicy, QTextEdit,
     QVBoxLayout, QWidget,
 )
+from System.swarm_app_hardening import record_app_hardening_event
 
 # ─── Palette ──────────────────────────────────────────────────────────────────
 _BG      = "#060810"
@@ -78,6 +79,8 @@ QPushButton      {{ background:#141c2e; color:{_TEXT}; border:1px solid {_BORDER
                     border-radius:6px; padding:5px 12px; }}
 QPushButton:hover {{ border-color:{_NEUT}; }}
 """
+APP_HARDENING_ID = "queue-005:sifta_agi_cognition_dashboard"
+_JSONL_ERROR_KEYS: set[str] = set()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -94,10 +97,31 @@ def _tail_jsonl(path: Path, n: int = 20) -> List[Dict[str, Any]]:
             if line:
                 try:
                     rows.append(json.loads(line))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    key = f"{path}:{type(exc).__name__}:{line[:48]}"
+                    if key not in _JSONL_ERROR_KEYS:
+                        _JSONL_ERROR_KEYS.add(key)
+                        record_app_hardening_event(
+                            APP_HARDENING_ID,
+                            "jsonl_row_parse_failed",
+                            truth_label="OBSERVED",
+                            details={
+                                "path": str(path),
+                                "error": f"{type(exc).__name__}: {exc}",
+                                "line_preview": line[:160],
+                            },
+                        )
         return rows
-    except Exception:
+    except Exception as exc:
+        key = f"{path}:read:{type(exc).__name__}"
+        if key not in _JSONL_ERROR_KEYS:
+            _JSONL_ERROR_KEYS.add(key)
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "jsonl_file_read_failed",
+                truth_label="OBSERVED",
+                details={"path": str(path), "error": f"{type(exc).__name__}: {exc}"},
+            )
         return []
 
 
@@ -189,8 +213,14 @@ class AGICognitionDashboard(QWidget):
         try:
             from System.swarm_behavior_clock import behavior_clock
             behavior_clock().tick.connect(self._refresh_if_visible)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._behavior_clock_error = f"{type(exc).__name__}: {exc}"
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "behavior_clock_unavailable",
+                truth_label="OBSERVED",
+                details={"error": self._behavior_clock_error},
+            )
         QTimer.singleShot(200, self._refresh)
 
     def _refresh_if_visible(self, *_args) -> None:
@@ -198,15 +228,27 @@ class AGICognitionDashboard(QWidget):
         try:
             if self.isVisible():
                 self._refresh()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._last_refresh_error = f"{type(exc).__name__}: {exc}"
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "visible_refresh_failed",
+                truth_label="OBSERVED",
+                details={"error": self._last_refresh_error},
+            )
 
     def showEvent(self, event):
         """Force a refresh the moment the dashboard becomes visible."""
         try:
             QTimer.singleShot(0, self._refresh)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._last_show_refresh_error = f"{type(exc).__name__}: {exc}"
+            record_app_hardening_event(
+                APP_HARDENING_ID,
+                "show_refresh_schedule_failed",
+                truth_label="OBSERVED",
+                details={"error": self._last_show_refresh_error},
+            )
         super().showEvent(event)
 
     # ── Build ──────────────────────────────────────────────────────────────────
