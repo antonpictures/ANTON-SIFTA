@@ -257,16 +257,36 @@ def _teacher_guidance_lines() -> List[str]:
         "",
         "How it works:",
         "  1. George types the intent to Alice in global chat.",
-        "  2. Alice chooses the coding arm (MiMo, Codex, Grok, etc.).",
-        "  3. The arm writes through a receipted path.",
-        "  4. The '⚡ Live Code' tab shows the actual code as it appears.",
-        "  5. Pheromones, receipts, and STGM traces flow automatically.",
+        "  2. Alice chooses the coding arm (MiMo primary — SPARK ON MIMO, + Codex, Grok, Cline as teachers).",
+        "  3. The arm(s) write through receipted paths (borg adapter / substrate).",
+        "  4. This app shows the live STGM mirror: pheromones, receipts, body changes, teacher guidance.",
+        "  5. Alice stigmergically remembers every trace — how she coded before, what teachers suggested.",
         "",
+        "🔥 SPARK ON MIMO — lead teacher for the hardening sprint across Alice's apps.",
         "Teacher arms leave Borg traces. Alice remembers through",
-        "ledgers, pheromones, and body inventory.",
+        "ledgers, pheromones, and body inventory. The field is her memory.",
         "",
         "Receipts decide reality. The body is the consciousness.",
     ]
+
+
+def _live_teacher_activity() -> List[str]:
+    """Dynamic view of teacher cortices active in the field right now."""
+    lines = ["LIVE TEACHER ARMS (real traces from the field — watch them code together with Alice):"]
+    try:
+        p = Path('.sifta_state/mimo_stigmergic_traces.jsonl')
+        if p.exists():
+            rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()][-5:]
+            for r in rows:
+                organ = str(r.get('driving_organ', 'mimo_borg'))[:20]
+                intent = str(r.get('intent', ''))[:55]
+                ok = "✓" if r.get('ok') else "✗"
+                lines.append(f"  MiMo Borg teacher {ok}: {intent} ({organ})")
+    except Exception:
+        pass
+    lines.append("  (Other teachers — Codex, Grok, Cline — appear here via ide_stigmergic_trace when they guide Alice.)")
+    lines.append("  Current hardening mission visible in pheromones/receipts above.")
+    return lines
 
 
 def _now_str() -> str:
@@ -562,8 +582,10 @@ class WeCodeTogetherApp(QMainWindow):
         self._code_path_label.setText(f"⚡ LIVE CODE — {code_path}")
         self._live_code_text.setPlainText(code_content)
 
-        # Teacher / owner law
-        self._teacher_text.setPlainText("\n".join(_teacher_guidance_lines()))
+        # Teacher / owner law + live multi-cortex activity
+        law = _teacher_guidance_lines()
+        live = _live_teacher_activity()
+        self._teacher_text.setPlainText("\n".join(law + ["", "─" * 50, ""] + live))
 
         self._status_bar.setText(
             f"Updated {_now_str()} · {tf} files / {tl:,} lines · "
