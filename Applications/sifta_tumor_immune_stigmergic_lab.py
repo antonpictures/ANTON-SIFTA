@@ -41,6 +41,10 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 from System.jsonl_file_lock import append_line_locked
 from System.swarm_persistent_owner_history import state_dir
 

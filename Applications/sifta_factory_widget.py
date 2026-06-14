@@ -413,9 +413,14 @@ class FactoryWidget(SiftaBaseWidget):
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    w = FactoryWidget()
-    w.setWindowTitle("Bauwens Regenerative Factory — Stigmergic Manufacturing")
-    w.resize(1440, 900)
-    w.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        w = FactoryWidget()
+        w.setWindowTitle("Bauwens Regenerative Factory — Stigmergic Manufacturing")
+        w.resize(1440, 900)
+        w.show()
+        sys.exit(app.exec())
+    except Exception as _err:
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

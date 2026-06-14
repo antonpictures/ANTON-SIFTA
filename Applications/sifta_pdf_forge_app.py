@@ -50,7 +50,7 @@ except Exception:
 _PDF_RECEIPTS = _REPO / ".sifta_state" / "pdf_forge_receipts.jsonl"
 _PDF_RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
 
-def _write_pdf_receipt(pdf_path: Path, png_path: Path, assets: list[str], cortex: str, prompt: str) -> dict[str, str]:
+def _write_pdf_receipt(pdf_path: Path, png_path: Path, assets: list[str], cortex: str, prompt: str, truth_note: Optional[str] = None) -> dict[str, str]:
     rec = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "pdf": str(pdf_path),
@@ -62,6 +62,8 @@ def _write_pdf_receipt(pdf_path: Path, png_path: Path, assets: list[str], cortex
         "prompt": prompt,
         "receipt_kind": "PDF_FORGE_V1",
     }
+    if truth_note:
+        rec["truth_note"] = truth_note
     with open(_PDF_RECEIPTS, "a") as f:
         f.write(json.dumps(rec) + "\n")
     try:

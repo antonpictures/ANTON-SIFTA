@@ -300,13 +300,18 @@ class ResaSubstationSimWidget(SiftaBaseWidget):
 
 
 def main() -> None:
-    from PyQt6.QtWidgets import QApplication
+    try:
+        from PyQt6.QtWidgets import QApplication
 
-    app = QApplication.instance() or QApplication(sys.argv)
-    win = ResaSubstationSimWidget()
-    win.resize(1280, 860)
-    win.show()
-    sys.exit(app.exec())
+        app = QApplication.instance() or QApplication(sys.argv)
+        win = ResaSubstationSimWidget()
+        win.resize(1280, 860)
+        win.show()
+        sys.exit(app.exec())
+    except Exception as _err:
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

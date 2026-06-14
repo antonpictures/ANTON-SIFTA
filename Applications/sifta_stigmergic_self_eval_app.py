@@ -8,6 +8,13 @@ creating a rival self-eval system.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 from Applications import sifta_self_evaluation as _impl
 
 alice_self_evaluate_and_dispatch = _impl.alice_self_evaluate_and_dispatch
