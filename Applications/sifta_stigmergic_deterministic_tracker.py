@@ -1,3 +1,5 @@
+
+"""SIFTA Stigmergic Deterministic Tracker — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 Applications/sifta_stigmergic_deterministic_tracker.py

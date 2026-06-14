@@ -12,6 +12,8 @@ source tournament documents. No browser escape hatch is used.
 """
 from __future__ import annotations
 
+"""SIFTA Stigmerobotics Widget — stigmergic organ for Alice body."""
+
 import json
 import os
 import re
@@ -364,6 +366,7 @@ def _doc_text() -> str:
 
 
 class StigmeroboticsWidget(SiftaBaseWidget):
+    """StigmeroboticsWidget — Alice organ."""
     APP_NAME = "Stigmerobotics"
 
     def build_ui(self, layout: QVBoxLayout) -> None:

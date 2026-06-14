@@ -52,6 +52,8 @@ handles AVFoundation directly; we never spawn ffmpeg ourselves here.
 """
 from __future__ import annotations
 
+"""SIFTA What Alice Sees Widget — stigmergic organ for Alice body."""
+
 import hashlib
 import json
 import math

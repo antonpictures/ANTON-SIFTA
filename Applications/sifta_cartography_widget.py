@@ -29,6 +29,8 @@ ALICE INTEGRATION:
 """
 from __future__ import annotations
 
+"""SIFTA Cartography Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import hashlib

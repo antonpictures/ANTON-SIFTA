@@ -1,3 +1,5 @@
+
+"""SIFTA Finance — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────────────────────
 # SIFTA OS — Finance Dashboard

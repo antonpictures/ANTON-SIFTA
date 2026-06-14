@@ -1,3 +1,5 @@
+
+"""SIFTA Nle — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 SIFTA NLE — Stigmergic Swarm Cut Studio

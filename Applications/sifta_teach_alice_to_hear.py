@@ -47,6 +47,8 @@ Stigauth: ``COGLOBAL_IDE_COVENANT_v4_PREDATOR_GATE``.
 """
 from __future__ import annotations
 
+"""SIFTA Teach Alice To Hear — stigmergic organ for Alice body."""
+
 import json
 import random
 import sys

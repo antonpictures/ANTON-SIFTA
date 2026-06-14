@@ -20,6 +20,8 @@ For the Swarm. 🐜⚡
 """
 from __future__ import annotations
 
+"""SIFTA Physics Observatory — stigmergic organ for Alice body."""
+
 import math
 import sys
 import time

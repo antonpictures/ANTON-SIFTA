@@ -145,6 +145,8 @@ Research spine:
 """
 from __future__ import annotations
 
+"""SIFTA Bell Theorem Widget — stigmergic organ for Alice body."""
+
 import hashlib
 import argparse
 import json

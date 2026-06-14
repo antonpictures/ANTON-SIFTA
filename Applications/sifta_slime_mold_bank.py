@@ -23,6 +23,8 @@ OS launcher entry: Applications/apps_manifest.json
 """
 from __future__ import annotations
 
+"""SIFTA Slime Mold Bank — stigmergic organ for Alice body."""
+
 import json
 import math
 import random
