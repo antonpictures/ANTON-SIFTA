@@ -1661,3 +1661,53 @@ above.
   `tests/test_diffusion_cli_parse.py` (7 cases, green; 16 passed with the route test). No deterministic
   cortex bypass. Appended `r1092-cowork-diffusion-cli-parse-robust-81382663`. Lane: Cortex health;
   `IDE_DOCTOR_CLAIM` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-14 06:34 PDT` — `codex_desktop_gpt5` read the canonical covenant fully, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `3e409360-8539-4b9a-98d1-9fa2a873fa79`, and opened the
+  June-14 tournament carrier `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-14.md` from the June-13 r1094
+  tail. Preserved June 13 append-only with a close pointer and verified `tools/whats_left.py` should now
+  select the June-14 dated file. Lane: Tournament carrier rollover; `IDE_DOCTOR_OPERATIONAL_TRACE` /
+  `MANA`; no STGM claim.
+- `2026-06-14 10:10 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `81fd34d0-c900-4bed-9342-850201f98c5a`, and landed
+  `r1109-codex-mimo-feature-swimmers-obliteratus-memory`: MiMo surface features mapped to Alice-native
+  swimmer organs, `/Users/ioanganton/OBLITERATUS` summarized from disk as an observed abliteration /
+  mechanistic-interpretability toolkit, `Path` import repaired in the self-knowledge organ, and focused
+  tests passed. Lane: MiMo/self-knowledge; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 10:22 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `d47e166b-9466-4884-86e3-ab259d5a3c38`, and landed
+  `r1110-codex-mimo-native-models-in-llm-list`: added George's observed MiMo-native picker models
+  (`mimo-v2.5-pro`, Flash, Omni, Pro, V2.5, UltraSpeed, Auto) to the MiMo `/cortex llm` attached-model
+  list ahead of shared GPT/Grok/Claude models, with tests and direct slash-command render check.
+  Lane: MiMo cortex UI; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 10:38 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `1fc923f8-4637-4af1-befd-7d626f7b7288`, and landed
+  `r1113-codex-mimo-vision-speaker-kept`: George's screenshot proved MiMo was configured but a
+  physical-telemetry / image turn still routed the speaker to local Gemma; updated the cortex selector
+  so `mimo:mimo-cli-default` stays the speaking cortex while local VLMs only provide receipts/context.
+  Lane: MiMo cortex routing; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 10:46 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `f8af8ba7-78cc-4a4c-9cd9-c1a26c66f3da`, and landed
+  `r1116-codex-mimo-claims-to-swimmer-truth-matrix`: mapped MiMo website claims to Alice-native
+  swimmers and truth labels, explicitly preserving bounded stigmergic memory instead of an
+  "unlimited context" overclaim. Lane: MiMo/self-knowledge; `IDE_DOCTOR_OPERATIONAL_TRACE` /
+  `MANA`; no STGM claim.
+- `2026-06-14 10:48 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `e192622a-905a-4a17-bf03-56fba41844ff`, and landed
+  `r1117-codex-mimo-self-evolution-truth-boundary`: consolidated the two r1116 sections so the live
+  board carries both the MiMo self-evolution proof plan and the Alice-native swimmer truth matrix.
+  Lane: MiMo/self-knowledge; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 10:50 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `d20462d4-74f4-4cb3-8a85-92f058b65fc1`, and landed
+  `r1118-codex-stigmergic-memory-retrieval-policy`: added bounded receipt-aware ledger retrieval for
+  better stigmergic memory and exposed it in self-knowledge without claiming unlimited context.
+  Lane: Memory/self-knowledge; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 10:52 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `fab34f78-a677-4199-9849-d8e2d88a1cfb`, and landed
+  `r1119-codex-tail-pointer-stigmergic-memory-retrieval`: appended a live-tail pointer for the
+  bounded stigmergic memory retrieval policy after repeated carrier anchors placed r1118 earlier.
+  Lane: Memory/self-knowledge; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-14 11:02 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex`, registered trace `2e5a57b9-843b-4069-ab94-a77b1366ad72`, and landed
+  `r1121-codex-mimo-swimmers-spinal-truth`: verified the MiMo feature-to-swimmer mapping and spinal
+  cord bridge code, while keeping the live MiMo patch cycle truth-labeled as not yet proven.
+  Lane: MiMo/self-improvement; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.

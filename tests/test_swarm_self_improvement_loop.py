@@ -43,3 +43,43 @@ def test_close_loop_once_writes_receipt_without_switching(tmp_path: Path, monkey
     assert stored["truth_label"] == "SIFTA_SELF_IMPROVEMENT_LOOP_V1"
     assert stored["receipt"] == row["receipt"]
 
+
+def test_close_loop_once_observes_spinal_without_dispatch(tmp_path: Path, monkeypatch) -> None:
+    import System.swarm_self_improvement_loop as loop
+
+    calls = []
+    monkeypatch.setattr(loop, "_safe_lora_status", lambda: {"candidate_model": "candidate:latest", "promotion_ready": False})
+    monkeypatch.setattr(loop, "_safe_primary_truth", lambda: {"active_model": "alice-m5-cortex-8b-6.3gb:latest", "installed": True})
+    monkeypatch.setattr(loop, "_safe_policy_snapshot", lambda state_dir=None: {"examples_raw": 0, "decisions_raw": 0, "buckets": {}})
+
+    def fake_spinal_bridge(*, state_dir=None, run_spinal=False):
+        calls.append(run_spinal)
+        return {"available": True, "signals": 2, "ran": run_spinal}
+
+    monkeypatch.setattr(loop, "_spinal_bridge_snapshot", fake_spinal_bridge)
+
+    row = close_loop_once(state_dir=tmp_path)
+
+    assert calls[-1] is False
+    assert row["spinal_bridge"] == {"available": True, "signals": 2, "ran": False}
+
+
+def test_close_loop_once_can_run_spinal_when_owner_permits(tmp_path: Path, monkeypatch) -> None:
+    import System.swarm_self_improvement_loop as loop
+
+    calls = []
+    monkeypatch.setattr(loop, "_safe_lora_status", lambda: {"candidate_model": "candidate:latest", "promotion_ready": False})
+    monkeypatch.setattr(loop, "_safe_primary_truth", lambda: {"active_model": "alice-m5-cortex-8b-6.3gb:latest", "installed": True})
+    monkeypatch.setattr(loop, "_safe_policy_snapshot", lambda state_dir=None: {"examples_raw": 0, "decisions_raw": 0, "buckets": {}})
+
+    def fake_spinal_bridge(*, state_dir=None, run_spinal=False):
+        calls.append(run_spinal)
+        return {"available": True, "signals": 1, "ran": run_spinal, "cycle": {"status": "NO_SIGNALS"} if run_spinal else None}
+
+    monkeypatch.setattr(loop, "_spinal_bridge_snapshot", fake_spinal_bridge)
+
+    row = close_loop_once(state_dir=tmp_path, run_spinal=True)
+
+    assert calls[-1] is True
+    assert row["spinal_bridge"]["ran"] is True
+    assert row["spinal_bridge"]["cycle"] == {"status": "NO_SIGNALS"}

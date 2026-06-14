@@ -4,6 +4,8 @@ from pathlib import Path
 from System.swarm_body_multimodal_policy import (
     classify_body_multimodal_need,
     cowatch_novelty_line,
+    image_turn_vlm_redirect,
+    is_text_only_cortex,
     prompt_block_for_alice,
 )
 
@@ -64,3 +66,34 @@ def test_cowatch_model_video_logs_policy_receipt(tmp_path: Path, monkeypatch):
     assert "sensor receipts first" in line
     assert "Gemma 4 12B" in line
     assert (tmp_path / "body_multimodal_task_policy.jsonl").exists()
+
+
+def test_image_on_igor_text_only_redirects_to_vlm():
+    assert is_text_only_cortex("igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest")
+
+    row = image_turn_vlm_redirect(
+        "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        True,
+        available_vlms=["mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"],
+    )
+
+    assert row["redirect"] is True
+    assert row["to"] == "mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"
+    assert "text-only cortex" in row["reason"]
+
+
+def test_image_redirect_is_conservative_for_unknown_or_missing_vlm():
+    unknown = image_turn_vlm_redirect(
+        "some-new-vision-model",
+        True,
+        available_vlms=["mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"],
+    )
+    missing = image_turn_vlm_redirect(
+        "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        True,
+        available_vlms=[],
+    )
+
+    assert unknown["redirect"] is False
+    assert missing["redirect"] is False
+    assert "NO VLM available" in missing["reason"]

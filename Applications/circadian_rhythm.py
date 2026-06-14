@@ -40,9 +40,6 @@ E_SCHEDULES = {
     "SLEEPING": [30],
 }
 
-ACTIVE_MAX = 10 * 60
-AFK_MAX    = 45 * 60
-
 # ─────────────────────────────────────────────────────────────
 
 def get_serial():
@@ -98,10 +95,27 @@ def get_idle_seconds():
     except Exception:
         return 0
 
+def _relative_presence_horizons():
+    """Owner-life timing comes from Alice's owner heartbeat, not fixed minutes."""
+    try:
+        if _SYS not in sys.path:
+            sys.path.insert(0, _SYS)
+        from System.owner_heartbeat import owner_presence_horizons
+
+        return owner_presence_horizons()
+    except Exception:
+        return None
+
 def detect_state(idle_secs):
-    if idle_secs < ACTIVE_MAX:  return "ACTIVE"
-    elif idle_secs < AFK_MAX:   return "AFK"
-    else:                       return "SLEEPING"
+    horizons = _relative_presence_horizons()
+    if horizons:
+        if idle_secs < float(horizons.get("active_s") or 0.0):
+            return "ACTIVE"
+        if idle_secs < float(horizons.get("sleep_s") or 0.0):
+            return "AFK"
+        return "SLEEPING"
+    # If the relative owner clock is unavailable, refuse a false sleep claim.
+    return "ACTIVE" if idle_secs <= 0 else "AFK"
 
 def load_last_state(state_file):
     try:

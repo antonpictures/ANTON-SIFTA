@@ -196,6 +196,27 @@ def classify_intent(raw_turn: str, *, context: Optional[Dict[str, Any]] = None, 
         dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
         return dec
 
+    # r938 self-surgery guard (pre-repair): a turn carrying surgery strokes or a
+    # round-plan directive is for HER CORTEX, not an app. Root cause George hit
+    # 124 times: "Alice" is a manifest app, so "Alice — r936 ..." matched the
+    # manifest loop → open_app + may_effector=true → stale photo-click effector
+    # fired on every surgery prompt. Surgery turns route to the cortex.
+    if re.search(
+        r"\[SELF_READ\b|\[SELF_CODE_(?:CUT|EDIT)\b|\bwrite_plan\s*\(|\bSELF_QUERY\b"
+        r"|\br\d{3,4}-[a-z0-9][a-z0-9-]*\b|§4\.1",
+        original,
+    ):
+        dec = {
+            "lane": "chat",
+            "target": "",
+            "may_effector": False,
+            "confidence": 0.97,
+            "repaired": original,
+            "reason": "self_surgery_turn_to_cortex_r938",
+        }
+        dec["receipt_hash"] = _append_receipt({"kind": "EDGE_INTENT_DECISION", "decision": dec, "original": original}, write=write_receipt)
+        return dec
+
     # Early skill intent guard (prevents voice repair from mangling "extract a skill from trace" into Ace app — regression fix)
     _norm_early = original.lower()
     if re.search(r"\b(extract|pull)\s+(a\s+)?skill\b", _norm_early, re.I) or re.search(r"\bpull\s+.*hermes", _norm_early, re.I):

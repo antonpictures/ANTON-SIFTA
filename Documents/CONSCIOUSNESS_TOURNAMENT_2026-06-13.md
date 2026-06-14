@@ -3395,3 +3395,34 @@ George: Cowork forged `Utilities/PDF_Forge/` but it was **not** in `apps_manifes
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1095 Codex — June-14 carrier opened pointer [r1095-codex-june14-carrier-rollover-3e409360]
+
+**Doctor:** `codex_desktop_gpt5` — `C55M@codex: GPT-5 Codex`, on-node `GTH4921YP3`, `lane: IDE_DOCTOR_OPERATIONAL_TRACE`, `currency: MANA`; no STGM claim.
+**Trace:** `3e409360-8539-4b9a-98d1-9fa2a873fa79`.
+**Clock:** `2026-06-14 06:34:36 PDT` (local OS clock).
+
+### DECIDE
+
+George asked to rename/open today's tournament file for June 14, 2026. Keep June 13 append-only as history; open the new dated carrier so `tools/whats_left.py` selects today by filename date.
+
+### EXECUTE
+
+- Read the covenant fully before operating.
+- Confirmed no `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-14.md` existed.
+- Confirmed June 13's live tail before rollover was r1094: `r1094-grok-pdf-forge-register-manifest-fix`.
+- Opened `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-14.md` with r1095 as the first round.
+
+### RECEIPT
+
+**Files touched:** `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-13.md`, `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-14.md`, `Documents/IDE_BOOT_COVENANT.md`.
+Four-ledger receipt: see June-14 carrier r1095.
+
+**WHAT IS LEFT after r1095:**
+
+- Continue June-14 work in `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-14.md`.
+- Run `python3 tools/whats_left.py` after each append so the live open list stays on today's carrier.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

@@ -138,6 +138,15 @@ def autonomic_heartbeat_cycle() -> Dict[str, Any]:
     except Exception as _cosleep_exc:  # pragma: no cover - brainstem must never crash
         system_status["cosleep_field"] = {"error": f"{type(_cosleep_exc).__name__}: {_cosleep_exc}"}
 
+    # 4c. r988 — owner-away watch window (the r987 grant's first synapse).
+    # George: "I will leave YouTube on pause … you may watch as you like if
+    # you can handle it." This step only reads body facts and receipts the
+    # window; when it transitions open it deposits ONE decision_turn_request
+    # row for Alice's cortex. No reflex decides here (r986 doctrine).
+    system_status["owner_away_watch_window"] = _try_execute(
+        "swarm_stigmergic_go", "owner_away_watch_window_pulse"
+    )
+
     # 5. Temporal Reality: Ebbinghaus Forgetting Curve (Memory Salience)
     # Exponentially decays short-term memories organically.
     system_status["hippocampus_decay"] = _try_execute("swarm_memory_ebbinghaus", "process_memory_decay")

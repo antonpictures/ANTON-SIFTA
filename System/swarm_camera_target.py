@@ -102,6 +102,90 @@ _NAME_TO_INDEX = {
 }
 
 
+# ── owner-eye safety (CUR-V4, 2026-06-13) ───────────────────────────────────
+# George: "someone keeps accessing my iPhone camera — Cursor while coding."
+# Root cause: macOS Continuity Camera renumbers AVFoundation indices when the
+# iPhone is in range, so a bare index resolved against the frozen map above
+# opens the iPhone instead of the built-in. These pure helpers let every
+# capture path (a) prefer the built-in owner eye and refuse the iPhone /
+# Continuity unless George explicitly selects it, and (b) refuse any LIVE
+# camera open during tests / coding so an arm never wakes his phone. Runtime
+# Talk is unaffected — the guard only bites under pytest / SIFTA_NO_LIVE_CAMERA.
+import re as _re
+
+_IPHONE_CONTINUITY_RE = _re.compile(r"(iphone|ipad|continuity|desk\s*view)", _re.IGNORECASE)
+_BUILTIN_OWNER_RE = _re.compile(r"(macbook\s*pro\s*camera|facetime|built[\s-]*in)", _re.IGNORECASE)
+_OWNER_IPHONE_ALLOWED_WRITERS = {
+    "owner_camera_command",
+    "what_alice_sees_widget",
+    "sifta_what_alice_sees_widget",
+}
+
+
+def is_iphone_or_continuity(name: Optional[str]) -> bool:
+    """True for iPhone / iPad / Continuity / Desk View cameras. These must never
+    be auto-selected as the owner eye — Continuity index drift is what kept
+    opening George's phone. 'Desk View' is a Continuity feature, so excluded."""
+    if not name:
+        return False
+    return bool(_IPHONE_CONTINUITY_RE.search(str(name)))
+
+
+def is_builtin_owner_camera(name: Optional[str]) -> bool:
+    """True for the built-in MacBook / FaceTime camera — the default owner eye."""
+    if not name:
+        return False
+    return bool(_BUILTIN_OWNER_RE.search(str(name))) and not is_iphone_or_continuity(name)
+
+
+def live_camera_allowed() -> bool:
+    """False under pytest or SIFTA_NO_LIVE_CAMERA=1 so automated tests / coding
+    arms never open a live camera (never wake the owner's iPhone via Continuity).
+    Returns True in normal Talk runtime. Mirrors the PYTEST_CURRENT_TEST guard
+    pattern already used in swarm_prompt_contract.py."""
+    flag = os.environ.get("SIFTA_NO_LIVE_CAMERA", "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return False
+    return True
+
+
+def prefer_builtin_owner_eye(
+    device_names: "List[str] | Tuple[str, ...]",
+    *,
+    allow_iphone: bool = False,
+) -> Optional[str]:
+    """Pick the safest OWNER eye from live device names.
+
+    Built-in (MacBook/FaceTime) first; then any non-iPhone / non-Continuity
+    device; iPhone/Continuity cams only when ``allow_iphone=True`` (George
+    explicitly selected one). None if nothing safe is available.
+    """
+    names = [str(n) for n in (device_names or []) if str(n).strip()]
+    if not names:
+        return None
+    for n in names:
+        if is_builtin_owner_camera(n):
+            return n
+    for n in names:
+        if not is_iphone_or_continuity(n):
+            return n
+    return names[0] if allow_iphone else None
+
+
+def _target_allows_iphone_or_continuity(target: Dict[str, Any]) -> bool:
+    """Only owner-facing selectors may deliberately target Continuity/iPhone.
+
+    Legacy bare-index rows are normalized to names by this module, so the
+    writer is the difference between "George selected iPhone" and "an old
+    integer happened to map to iPhone after AVFoundation renumbered devices."
+    """
+    if not is_iphone_or_continuity(target.get("name")):
+        return False
+    return str(target.get("writer") or "") in _OWNER_IPHONE_ALLOWED_WRITERS
+
+
 def _norm_name(text: str) -> str:
     return " ".join(str(text).replace("’", "'").strip().lower().split())
 
@@ -381,6 +465,7 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
     if not rec:
         return -1
     live = _live_devices()
+    iphone_allowed = _target_allows_iphone_or_continuity(rec)
 
     # 1) unique_id against live devices (best-effort; never required)
     uid = rec.get("unique_id")
@@ -392,6 +477,10 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
     # 2) name against live devices
     nm = rec.get("name")
     if nm:
+        if is_iphone_or_continuity(nm) and not iphone_allowed:
+            if live:
+                return _preferred_live_index(live)
+            return -1
         idx = _index_for_name(nm, live)
         if idx >= 0:
             return idx
@@ -416,7 +505,13 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
     # 3) raw index as last resort — only meaningful when we still have no
     #    name/unique_id signal at all (legacy bare-index targets).
     if rec.get("index") is not None:
-        return int(rec["index"])
+        idx = int(rec["index"])
+        frozen_name = name_for_index(idx)
+        if frozen_name and is_iphone_or_continuity(frozen_name) and not iphone_allowed:
+            if live:
+                return _preferred_live_index(live)
+            return -1
+        return idx
     return -1
 
 
@@ -493,7 +588,12 @@ def _looks_like_hardware_camera_name(name: str) -> bool:
 
 
 def _preferred_live_index(devices: Optional[List[Tuple[str, str]]] = None) -> int:
-    """Pick the safest live fallback camera per §7.1: built-in first."""
+    """Pick the safest live fallback camera per §7.1: built-in first.
+
+    iPhone / Continuity / Desk View are never automatic fallbacks. They require
+    an explicit owner-facing selector; otherwise a hot-plug index drift can wake
+    George's phone while doctors are coding.
+    """
     live = devices if devices is not None else _live_devices()
     if not live:
         return -1
@@ -501,13 +601,13 @@ def _preferred_live_index(devices: Optional[List[Tuple[str, str]]] = None) -> in
     avoid = ("obs", "virtual", "desk view")
     for i, (_uid, desc) in enumerate(live):
         norm = _norm_name(desc)
-        if any(k in norm for k in built_in):
+        if any(k in norm for k in built_in) and not is_iphone_or_continuity(desc):
             return i
     for i, (_uid, desc) in enumerate(live):
         norm = _norm_name(desc)
-        if not any(k in norm for k in avoid):
+        if not any(k in norm for k in avoid) and not is_iphone_or_continuity(desc):
             return i
-    return 0
+    return -1
 
 
 # ── public identity helpers (stable-uniqueID surface for other organs) ───
@@ -652,6 +752,17 @@ def probe_camera_topology(
                             }, sort_keys=True) + "\n")
             except Exception:
                 pass
+        try:
+            from System.swarm_eye_registry import refresh_eye_registry
+
+            refresh_eye_registry(
+                state_dir=sd,
+                devices=snapshot.get("devices") if isinstance(snapshot.get("devices"), list) else [],
+                now=snapshot["ts"],
+                write_receipt=True,
+            )
+        except Exception:
+            pass
 
     return snapshot
 

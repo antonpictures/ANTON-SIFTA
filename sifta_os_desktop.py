@@ -3373,6 +3373,17 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             pass
 
+        # r1012: Alice's hardware heart rides the existing desktop heartbeat.
+        # The desktop tick uses unprivileged body sensors only; /heart can do
+        # slower privileged probes on demand without making the GUI pulse ask
+        # macOS for sudo-only telemetry every beat.
+        try:
+            from System.swarm_hardware_heart import pulse_hardware_heart
+
+            pulse_hardware_heart(privileged_probe=False, source="desktop_heartbeat")
+        except Exception as e:
+            print(f"[SiftaDesktop] hardware heart tick failed: {e}")
+
         # ── Autonomic Electricity Metabolism (ATP Synthase) ──
         try:
             from System.swarm_atp_synthase import mint_for_epoch

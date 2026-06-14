@@ -41,6 +41,9 @@ _SRC_VIEWPORT = "viewport"
 _EXCERPT_CHARS = 600
 _TOP_N = 8
 _MAX_OPEN_TABS = 12
+ARTICLE_TEXT_DIR = "browser_article_text"
+_ARTICLE_TEXT_MIN_CHARS = 400
+_ARTICLE_TEXT_MAX_CHARS = 120_000
 
 VIDEO_PLAYBACK_ERROR_TEXT = "Sorry, we're having trouble playing this video."
 _VIDEO_PLAYBACK_ERROR_RE = re.compile(
@@ -478,6 +481,128 @@ def _content_hash(url: str, text: str, headings: list) -> str:
     return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def _normalize_article_text(text: Any) -> str:
+    """Readable page/article body with UI extraction noise bounded but not summarized."""
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    raw = raw.replace("\x00", "")
+    lines = [" ".join(line.strip().split()) for line in raw.split("\n")]
+    out: list[str] = []
+    blank = False
+    for line in lines:
+        if not line:
+            if out and not blank:
+                out.append("")
+                blank = True
+            continue
+        out.append(line)
+        blank = False
+    return "\n".join(out).strip()
+
+
+def _write_article_text_sidecar(
+    *,
+    state_dir: Optional[Path | str],
+    url: str,
+    text: str,
+    content_hash: str,
+) -> dict[str, Any]:
+    """Persist browser-readable article/page text outside the compact JSONL row.
+
+    The page-state ledger stays small; Talk can still retrieve the full text
+    Alice actually read from her Browser limb when George asks for an article
+    summary or an explicit readout.
+    """
+    clean = _normalize_article_text(text)
+    if len(clean) < _ARTICLE_TEXT_MIN_CHARS:
+        return {}
+    clipped = clean[:_ARTICLE_TEXT_MAX_CHARS]
+    digest = hashlib.sha256((str(url or "") + "\0" + clipped).encode("utf-8", "replace")).hexdigest()
+    rel = Path(ARTICLE_TEXT_DIR) / f"{content_hash}-{digest[:16]}.txt"
+    base = _state(state_dir)
+    path = base / rel
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(clipped, encoding="utf-8")
+    except Exception:
+        return {}
+    return {
+        "article_text_path": str(rel),
+        "article_text_chars": len(clean),
+        "article_text_sha256": hashlib.sha256(clipped.encode("utf-8", "replace")).hexdigest(),
+        "article_text_clipped": len(clean) > len(clipped),
+    }
+
+
+def article_text_from_state(
+    state: Mapping[str, Any] | None,
+    *,
+    state_dir: Optional[Path | str] = None,
+    max_chars: Optional[int] = None,
+) -> str:
+    """Return the browser-readable article/page text for a page-state row.
+
+    Preference order: sidecar written by `record_page_state`, then legacy
+    inline fields, then the compact excerpt. No network fetch, no guessing.
+    """
+    if not isinstance(state, Mapping) or not state:
+        return ""
+    text = ""
+    rel = str(state.get("article_text_path") or "").strip()
+    if rel:
+        path = Path(rel)
+        if not path.is_absolute():
+            path = _state(state_dir) / path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            text = ""
+    if not text:
+        for key in ("article_text", "readable_text", "main_text", "text"):
+            value = str(state.get(key) or "").strip()
+            if value:
+                text = value
+                break
+    if not text:
+        text = str(state.get("text_excerpt") or "").strip()
+    text = _normalize_article_text(text)
+    if max_chars is not None and max_chars >= 0:
+        return text[:max_chars]
+    return text
+
+
+def article_readability_status(
+    *,
+    now: Optional[float] = None,
+    max_age_s: float = 900.0,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Truthful yes/no state for "can you read this article/page?"."""
+    state = latest_page_state(now=now, max_age_s=max_age_s, state_dir=state_dir)
+    if not state:
+        return {
+            "can_read": False,
+            "reason": "no_page_state_receipt",
+            "text_chars": 0,
+        }
+    text = article_text_from_state(state, state_dir=state_dir)
+    text_chars = max(int(state.get("article_text_chars") or 0), len(text), int(state.get("text_chars") or 0))
+    fresh = bool(state.get("fresh") or state.get("is_current_page"))
+    can_read = bool(fresh and text_chars >= _ARTICLE_TEXT_MIN_CHARS)
+    return {
+        "can_read": can_read,
+        "reason": "browser_readable_article_text" if can_read else (
+            "stale_page_state_receipt" if not fresh else "no_readable_article_text"
+        ),
+        "text_chars": text_chars,
+        "title": str(state.get("title") or ""),
+        "url": str(state.get("url") or ""),
+        "fresh": fresh,
+        "source": str(state.get("source") or ""),
+        "article_text_path": str(state.get("article_text_path") or ""),
+        "article_text_clipped": bool(state.get("article_text_clipped")),
+    }
+
+
 def _append(state_dir: Optional[Path | str], row: dict[str, Any]) -> None:
     path = _state(state_dir) / LEDGER
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -526,7 +651,7 @@ def record_page_state(
     receipt so the ledger stays small and the cortex block stays readable.
     """
     ts = float(now if now is not None else time.time())
-    text = str(text or "")
+    text = _normalize_article_text(text)
     headings = _clip_list(headings)
     links = _clip_list(links, n=12)
     buttons = _clip_list(buttons)
@@ -559,6 +684,14 @@ def record_page_state(
         media_playback=media_row,
         raw=youtube_ad_state if isinstance(youtube_ad_state, Mapping) else {},
         is_current_page=False,
+    )
+
+    content_hash = _content_hash(str(url or ""), text, headings)
+    article_meta = _write_article_text_sidecar(
+        state_dir=state_dir,
+        url=str(url or ""),
+        text=text,
+        content_hash=content_hash,
     )
 
     row = {
@@ -596,8 +729,9 @@ def record_page_state(
         "comments_count": len(_clean_comments(comments)),
         "open_tabs": tabs_row,
         "open_tabs_count": len(tabs_row),
-        "content_hash": _content_hash(str(url or ""), text, headings),
+        "content_hash": content_hash,
     }
+    row.update(article_meta)
     if playback_error:
         row["media_playback_error"] = playback_error
         row["has_media_playback_error"] = True
@@ -809,7 +943,18 @@ def page_state_block(
     elif s.get("buttons"):
         parts.append("Buttons: " + "; ".join(str(b) for b in s["buttons"][:8] if b) + ".")
     if s.get("top_links"):
-        parts.append("Links incl.: " + ", ".join(l.get("text", "") for l in s["top_links"][:5] if l.get("text")) + ".")
+        # r986: hrefs included — link NAMES without targets left me unable to
+        # act on "select Dean Radin" from my own screen; positions move, so I
+        # match what George names by text and act on the href, never on a
+        # remembered layout.
+        _ll = []
+        for l in s["top_links"][:8]:
+            txt = str(l.get("text") or "").strip()
+            href = str(l.get("href") or "").strip() if isinstance(l, dict) else ""
+            if txt:
+                _ll.append(f"\"{txt[:80]}\" → {href}" if href else txt)
+        if _ll:
+            parts.append("Links on this page (text → target): " + "; ".join(_ll) + ".")
     if int(s.get("text_chars") or 0):
         parts.append(f"~{s['text_chars']} chars of text; opening: \"{(s.get('text_excerpt') or '')[:160]}\"")
     ccount = int(s.get("comments_count") or 0)
@@ -839,6 +984,8 @@ __all__ = [
     "record_page_state",
     "latest_page_state",
     "has_readable_content",
+    "article_text_from_state",
+    "article_readability_status",
     "page_state_block",
     "media_playback_error_from_state",
     "build_youtube_ad_state",

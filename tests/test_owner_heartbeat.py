@@ -13,6 +13,8 @@ def _fresh_owner_heartbeat(tmp_path: Path, monkeypatch):
     hb._current_last_activity_ts = 0.0
     hb._current_last_activity_source = "test"
     hb._current_mode = "ACTIVE"
+    hb._current_return_gap_ema = 0.0
+    hb._current_return_gap_samples = 0
     return hb
 
 
@@ -42,3 +44,28 @@ def test_owner_heartbeat_messaging_poll_gate_defaults_off_when_active(tmp_path, 
     assert hb.should_poll_messaging(channel_focused=True) is True
     assert hb.should_poll_messaging(explicitly_enabled=True) is True
 
+
+def test_owner_heartbeat_uses_return_gap_horizons_not_static_45_minutes(tmp_path, monkeypatch):
+    hb = _fresh_owner_heartbeat(tmp_path, monkeypatch)
+    ledger = tmp_path / "owner_heartbeat.jsonl"
+    ledger.write_text(
+        "\n".join(
+            json.dumps({"seconds_since_previous": v})
+            for v in (10.0, 20.0, 30.0)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(hb, "_now", lambda: 1000.0)
+
+    horizons = hb.owner_presence_horizons(now=1000.0)
+
+    assert not hasattr(hb, "_SLEEP_TIMEOUT_S")
+    assert horizons["observed_return_gap_s"] == 20.0
+    assert horizons["active_s"] == 40.0
+    assert horizons["idle_s"] == 200.0
+    assert horizons["sleep_s"] == 600.0
+
+    hb._current_last_activity_ts = 1000.0 - 601.0
+    hb._current_mode = "ACTIVE"
+    assert hb.get_owner_mode() == "SLEEP"

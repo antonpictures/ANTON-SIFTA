@@ -165,9 +165,11 @@ def _load_help_text(app_name: str) -> str:
     return block.strip()
 
 
-# App-local Alice chat is opt-in only. Desktop Alice is the canonical chat
-# surface; apps that need collaboration should keep it in their own canvas.
+# App-local Alice chat and app-docked global chat mirrors are opt-in only.
+# Desktop Alice is the canonical chat surface; apps that need collaboration
+# should keep it in their own canvas or explicitly declare the mirror.
 _APP_LOCAL_CHAT_ALLOWLIST: set[str] = set()
+_STICKY_GLOBAL_CHAT_ALLOWLIST: set[str] = set()
 
 
 class _NoOpChatDisplay:
@@ -230,6 +232,7 @@ class SiftaBaseWidget(QWidget):
 
     APP_NAME: str = "SIFTA App"
     APP_LOCAL_CHAT_DISABLED: bool = False
+    STICKY_GLOBAL_CHAT_ENABLED: bool = False
 
     @classmethod
     def menu_schema(cls, host: "object | None" = None) -> dict | None:
@@ -285,8 +288,8 @@ class SiftaBaseWidget(QWidget):
 
         # ── Sticky one-global-chat mirror ────────────────────────
         # This is a visual mirror of the canonical desktop Alice ledger, not a
-        # second app-local chat worker. It lets the same conversation ride next
-        # to the active app without violating the one-chat covenant.
+        # second app-local chat worker. It is opt-in only: normal app limbs must
+        # keep their canvas clear because desktop Alice chat is already resident.
         self._sticky_global_chat = None
         self._sticky_global_chat_visible = self._should_enable_sticky_global_chat()
         if self._sticky_global_chat_visible:
@@ -412,8 +415,13 @@ class SiftaBaseWidget(QWidget):
             return False
         import os
 
-        value = os.environ.get("SIFTA_STICKY_GLOBAL_CHAT", "1").strip().lower()
-        return value not in {"0", "false", "no", "off"}
+        if bool(getattr(self, "STICKY_GLOBAL_CHAT_ENABLED", False)):
+            return True
+        if self.APP_NAME in _STICKY_GLOBAL_CHAT_ALLOWLIST:
+            return True
+
+        value = os.environ.get("SIFTA_STICKY_GLOBAL_CHAT", "").strip().lower()
+        return value in {"1", "true", "yes", "on"}
 
     @staticmethod
     def separator() -> QFrame:

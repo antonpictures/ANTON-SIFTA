@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ def test_self_query_trigger_matcher_is_narrow():
     assert looks_like_self_query("Alice, what do you need?")
     assert looks_like_self_query("please self-check")
     assert looks_like_self_query("are you ok")
+    assert looks_like_self_query("ARE U OK?")
     assert not looks_like_self_query("please open the browser")
 
 
@@ -54,6 +56,52 @@ def test_self_query_report_uses_owner_label_and_receipts(tmp_path, monkeypatch):
     assert "If Ace observes a problem" in report.prompt_block
     assert "If George observes a problem" not in report.prompt_block
     assert report.sha256
+
+
+def test_self_query_writes_organ_health_mesh_snapshot(tmp_path, monkeypatch):
+    from System import swarm_organ_directory
+    from System.swarm_self_query_skill import build_self_query_report
+
+    now = time.time()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    (state / "healthy.jsonl").write_text(json.dumps({"ts": now, "ok": True}) + "\n", encoding="utf-8")
+    silent = state / "silent.jsonl"
+    silent.write_text(json.dumps({"ts": now - 10_000_000, "ok": False}) + "\n", encoding="utf-8")
+    os.utime(silent, (now - 10_000_000, now - 10_000_000))
+
+    monkeypatch.setattr(
+        swarm_organ_directory,
+        "list_organs",
+        lambda: [
+            SimpleNamespace(
+                name="memory",
+                truth_label="MEMORY_TEST",
+                ledger_path=".sifta_state/healthy.jsonl",
+                probe_module="",
+                probe_callable="",
+            ),
+            SimpleNamespace(
+                name="relational_steering",
+                truth_label="RELATIONAL_TEST",
+                ledger_path=".sifta_state/silent.jsonl",
+                probe_module="",
+                probe_callable="",
+            ),
+        ],
+    )
+
+    report = build_self_query_report(root=tmp_path, owner_label="George", now=now)
+
+    assert "organ_health_mesh:" in report.organ_health_mesh_summary
+    assert "Organ Health Mesh snapshot:" in report.prompt_block
+    latest = state / "organ_health_mesh_latest.json"
+    ledger = state / "organ_health_mesh_receipts.jsonl"
+    assert latest.exists()
+    assert ledger.exists()
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["kind"] == "ORGAN_HEALTH_MESH_SELF_QUERY_SNAPSHOT"
+    assert "relational_steering" in row["distress_organs"]
 
 
 def test_self_query_receipt_writes_jsonl(tmp_path, monkeypatch):

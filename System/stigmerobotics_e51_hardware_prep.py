@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping
 
 _REPO = Path(__file__).resolve().parent.parent
 _FIXTURE_GOOD = _REPO / "tests" / "fixtures" / "stigmero_e51_hardware_prep_good.jsonl"
+_FIXTURE_GOOD_NAO = _REPO / "tests" / "fixtures" / "stigmero_e51_hardware_prep_nao_good.jsonl"
 _FIXTURE_MISSING = _REPO / "tests" / "fixtures" / "stigmero_e51_hardware_prep_missing.jsonl"
 
 ROBOT_REGISTRATION_KIND = "ROBOT_HARDWARE_REGISTRATION"
@@ -64,6 +65,11 @@ PHYSICAL_BODY_MAP: dict[str, dict[str, Any]] = {
         "dof": 5,
         "dataset": "10.17632/brg4dz8nbb.1",
     },
+}
+
+_FIXTURE_GOOD_BY_BODY = {
+    "abb_irb2400_physical": _FIXTURE_GOOD,
+    "nao_arkoma_physical": _FIXTURE_GOOD_NAO,
 }
 
 CHAIN_STEPS: tuple[str, ...] = (
@@ -215,7 +221,8 @@ def validate_hardware_prep_trace(
 
 
 def fixture_hardware_prep(path: Path | None = None, *, target_body_id: str) -> HardwarePrepReport:
-    return validate_hardware_prep_trace(load_jsonl(path or _FIXTURE_GOOD), target_body_id=target_body_id)
+    fixture = path or _FIXTURE_GOOD_BY_BODY.get(target_body_id, _FIXTURE_GOOD)
+    return validate_hardware_prep_trace(load_jsonl(fixture), target_body_id=target_body_id)
 
 
 def hardware_prep_ok(path: Path, *, target_body_id: str) -> bool:

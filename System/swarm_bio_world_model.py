@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple
 _REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_STATE = _REPO / ".sifta_state"
 _BIO_WORLD_LOG_NAME = "bio_world_model.jsonl"
+_PREDICTION_ERROR_NAME = "prediction_error.jsonl"
+_PREDICTION_STATE_NAME = "bio_world_model_predictor.json"
 
 LEDGER_TRUTH = "BIO_WORLD_MODEL_LEDGER_111"
 SUMMARY_TRUTH = "BIO_WORLD_OBSERVED_SUMMARY_111"
@@ -262,6 +264,77 @@ def get_bio_world_summary(*, state_dir: Optional[Path] = None) -> Dict[str, Any]
         "next_leap": "Crystallized skills → motor execution (Event ~101); keep receipts on every hop.",
         "research_plan_anchors": list(RESEARCH_PLAN_ANCHORS),
     }
+
+
+def _read_predictor_state(sd: Path) -> Dict[str, Any]:
+    path = sd / _PREDICTION_STATE_NAME
+    if not path.exists():
+        return {"ewma": {}, "alpha": 0.25}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {"ewma": {}, "alpha": 0.25}
+    except Exception:
+        return {"ewma": {}, "alpha": 0.25}
+
+
+def _write_predictor_state(sd: Path, state: Dict[str, Any]) -> None:
+    (sd / _PREDICTION_STATE_NAME).write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def collect_body_state_vector(*, state_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """x_t for predictive world model v0 (r1015 §B2)."""
+    sd = _state_dir(state_dir)
+    vec: Dict[str, Any] = {"ts": time.time()}
+    try:
+        from System.swarm_hardware_heart import latest_hardware_heart
+
+        heart = latest_hardware_heart(state_dir=sd) or {}
+        vec["battery_percent"] = heart.get("battery_percent")
+        vec["power_watts"] = heart.get("power_watts")
+        vec["metabolic_band"] = heart.get("metabolic_band")
+        vec["sensor_tier"] = heart.get("sensor_tier")
+    except Exception:
+        pass
+    vec["bio_summary_health"] = get_bio_world_summary(state_dir=sd).get("organism_health")
+    return vec
+
+
+def tick_prediction(*, state_dir: Optional[Path] = None, source: str = "heartbeat") -> Dict[str, Any]:
+    """EWMA predictor + prediction_error.jsonl teacher row."""
+    sd = _state_dir(state_dir)
+    x_t = collect_body_state_vector(state_dir=sd)
+    pred_state = _read_predictor_state(sd)
+    ewma = dict(pred_state.get("ewma") or {})
+    alpha = float(pred_state.get("alpha") or 0.25)
+    x_hat: Dict[str, Any] = {}
+    error_mag = 0.0
+    n = 0
+    for key, val in x_t.items():
+        if key == "ts" or val is None:
+            continue
+        try:
+            fval = float(val)
+        except (TypeError, ValueError):
+            continue
+        prev = float(ewma.get(key, fval))
+        x_hat[key] = prev
+        err = abs(fval - prev)
+        error_mag += err
+        n += 1
+        ewma[key] = alpha * fval + (1.0 - alpha) * prev
+    pred_state["ewma"] = ewma
+    _write_predictor_state(sd, pred_state)
+    row = {
+        "ts": time.time(),
+        "truth_label": "BIO_WORLD_PREDICTION_ERROR_V1",
+        "source": source,
+        "x_t": x_t,
+        "x_hat": x_hat,
+        "error_magnitude": round(error_mag / max(1, n), 6),
+        "formula_revision": FORMULA_REVISION,
+    }
+    _append_row(sd / _PREDICTION_ERROR_NAME, row)
+    return row
 
 
 if __name__ == "__main__":  # pragma: no cover

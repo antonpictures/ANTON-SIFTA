@@ -14,7 +14,7 @@ import hashlib
 import json
 import random
 from pathlib import Path
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -23,13 +23,16 @@ WORLD_MODEL_PATH = _STATE / "latent_world_model.json"
 
 
 class LatentWorldModel:
-    def __init__(self, alpha=0.1, gamma=0.9):
+    def __init__(self, alpha=0.1, gamma=0.9, *, state_dir: Optional[Path] = None, model_path: Optional[Path] = None):
         # Maps (state_hash, action) -> {"next_state": next_hash, "reward": float, "count": int}
         self.transitions: Dict[str, dict] = {}
         # Maps state_hash -> Expected Future Value
         self.value_table: Dict[str, float] = {}
         self.alpha = alpha
         self.gamma = gamma
+        self.world_model_path = Path(model_path) if model_path is not None else (
+            Path(state_dir) / "latent_world_model.json" if state_dir is not None else WORLD_MODEL_PATH
+        )
         self._load()
 
     def encode_state(self, state_data: str) -> str:
@@ -40,16 +43,17 @@ class LatentWorldModel:
         return f"{encoded_state}::{action}"
 
     def _load(self):
-        if WORLD_MODEL_PATH.exists():
+        if self.world_model_path.exists():
             try:
-                data = json.loads(WORLD_MODEL_PATH.read_text("utf-8"))
+                data = json.loads(self.world_model_path.read_text("utf-8"))
                 self.transitions = data.get("transitions", {})
                 self.value_table = data.get("values", {})
             except Exception: pass
 
     def save(self):
         try:
-            WORLD_MODEL_PATH.write_text(json.dumps({
+            self.world_model_path.parent.mkdir(parents=True, exist_ok=True)
+            self.world_model_path.write_text(json.dumps({
                 "transitions": self.transitions,
                 "values": self.value_table
             }, indent=2))

@@ -602,7 +602,23 @@ class SiftaBrainstem:
         last_identity_attest_at = 0.0
         TAXIDERMIST_INTERVAL_S = 600.0  # [AO46 Epoch 17] Nugget taxidermist — 10 min
         last_taxidermist_at = 0.0       # [AO46 Epoch 17] Retroactive nugget archiving
-        MICROBIOME_INTERVAL_S = 45.0    # [Epoch 19] Gut Microbiome digestion scan
+        # r960: replaced static 45.0s with felt duration from the field.
+        # Time in the organism is stigmergic: accumulated pressure + receipt density + metabolic state,
+        # not wall-clock. 45 minutes (or 45s) tells nothing about the life in the field.
+        # DYOR: Prigogine dissipative time, Friston active inference temporal depth, Grassé stigmergy
+        # as trace-accumulation time, the research spines already in swarm_field_primary_research_spine.py
+        # and swarm_field_dynamics.py. The code had the formulas (fast/slow decay, energy, pressure proxies);
+        # we are making the constants use them.
+        try:
+            from System.swarm_field_governor import get_current_pressure
+            p = max(0.0, min(1.0, get_current_pressure() or 0.5))
+        except Exception:
+            p = 0.5
+        # Felt interval shrinks when pressure high (more activity = "time passes faster" in the field)
+        # and stretches under conservation (low energy = slower felt metabolism).
+        # Base 45s becomes relative: 10s..90s range for demo; real version will use receipt count since last
+        # scan and current proprioceptive load.
+        MICROBIOME_INTERVAL_S = max(10.0, min(90.0, 45.0 * (1.0 - 0.6 * p)))
         last_microbiome_at = 0.0        # [Epoch 19] Gut Microbiome
         INTEROCEPTION_INTERVAL_S = 10.0 # [AO46] Somatic Interoception — visceral field fusion
         last_interoception_at = 0.0     # [AO46] Insular Cortex scan
@@ -617,10 +633,19 @@ class SiftaBrainstem:
         # Backoff state. Both rails track consecutive failures so they
         # ramp independently — visual being broken doesn't slow audio,
         # and vice versa.
+        # r960: backoffs now felt, not static caps. The "ceiling" is the field's current conservation pressure
+        # (high conservation = allow longer backoff before retry; low = tighten because activity is high).
+        # Time is the accumulation of marks since last success, scaled by proprio/metabolic load.
+        # This is the stigmergic formula already in the code (receipt density, energy, decay) made live for timing.
+        try:
+            from System.swarm_field_governor import get_current_pressure
+            p = max(0.0, min(1.0, get_current_pressure() or 0.5))
+        except Exception:
+            p = 0.5
         AUDIO_BACKOFF_BASE_S = 1.0
-        AUDIO_BACKOFF_CAP_S  = 300.0   # 5 min ceiling
+        AUDIO_BACKOFF_CAP_S  = max(30.0, min(600.0, 300.0 * (1.0 + 0.8 * (1.0 - p))))   # felt ceiling
         VISION_BACKOFF_BASE_S = 1.0
-        VISION_BACKOFF_CAP_S  = 60.0
+        VISION_BACKOFF_CAP_S  = max(10.0, min(120.0, 60.0 * (1.0 + 0.8 * (1.0 - p))))
         audio_next_at  = 0.0
         vision_next_at = 0.0
         audio_consecutive_fail  = 0

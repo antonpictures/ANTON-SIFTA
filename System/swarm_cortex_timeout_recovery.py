@@ -303,6 +303,16 @@ def record_timeout_recovery(
             state_dir=state_dir,
             dedupe=True,
         )
+        try:
+            from System.swarm_effector_gate import bind_recovery_context
+
+            bind_recovery_context(
+                source="cortex_timeout_recovery",
+                linked_receipt=event.trace_id,
+                state_dir=state_dir,
+            )
+        except Exception:
+            pass
         event.queue_status = "written"
     except Exception as exc:
         event.queue_status = f"queue_failed:{type(exc).__name__}"

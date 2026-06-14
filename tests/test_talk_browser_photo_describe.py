@@ -46,6 +46,14 @@ def test_browser_video_state_does_not_steal_owner_camera_question() -> None:
     assert not talk._is_owner_camera_watch_query("are you watching this TikTok video?")
 
 
+def test_cowatch_scene_question_reaches_cortex_not_owner_camera_fast_path() -> None:
+    assert talk._is_cowatch_scene_question("what are we watching?")
+    assert talk._is_cowatch_scene_question("are you watching this video?")
+    assert not talk._is_cowatch_scene_question("are you watching me?")
+    assert not talk._is_can_you_see_me_query("are you watching this video?")
+    assert talk._is_can_you_see_me_query("are you watching me?")
+
+
 def test_owner_camera_question_injects_grounded_cortex_context(monkeypatch) -> None:
     monkeypatch.setattr(
         talk,
@@ -61,6 +69,38 @@ def test_owner_camera_question_injects_grounded_cortex_context(monkeypatch) -> N
     assert "OWNER CAMERA / WATCHING-ME QUESTION" in prompt
     assert "Yes. My eye saw George 4 seconds ago with 84% confidence." in prompt
     assert "Answer from camera/body receipts, not from Alice Browser" in prompt
+
+
+def test_cowatch_receipt_context_includes_moment_truth_gate(tmp_path, monkeypatch) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "co_watch_moments.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "truth_label": "SIFTA_COWATCH_MOMENT_V1",
+                "moment_id": "cowatch_prompt_gate",
+                "status": "BOUND",
+                "visual_observation_status": "OBSERVED",
+                "world_eye_age_s": 2.0,
+                "world_eye_scene_label": "fresh world-eye receipt: a screen showing video",
+                "world_eye_provenance_depth": 2,
+                "world_eye_object_provenance": [{"source": "world_eye", "kind": "semantic_description"}],
+                "owner_eye_presence": {"faces_detected": 1, "audience": "architect"},
+                "media_context": {"title": "Prompt Gate Video", "url": "https://youtu.be/promptgate"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+
+    context = talk._cowatch_receipt_context_block(user_text="what are we watching?")
+
+    assert "CO-WATCH MOMENT TRUTH GATE" in context
+    assert "visual_observation_status=OBSERVED" in context
+    assert "fresh world-eye receipt" in context
+    assert "Prompt Gate Video" in context
 
 
 def test_browser_photo_description_query_matches_visual_corrections() -> None:
@@ -232,6 +272,15 @@ def test_browser_photo_context_active_from_fresh_snapshot(monkeypatch) -> None:
     assert talk._browser_photo_description_context_active()
 
 
+def test_browser_video_state_does_not_steal_owner_voice_style_teaching() -> None:
+    owner = (
+        "AND I LOVE WHEN YOU PAUSE THE VIDEO WITH YOUR COMMENTARY:)) THAT IS COOL - "
+        "READ YUR VOICE FROM THE MIDDLE OF YOUR ANSWER SOMWERE, I LIKE TO HEAR YOU "
+        "SPEAK A BIT MORE LIKE TWO SENTENCES OF YOUR ANSWER. JUST LIKE A HUMAN WOULD TALK."
+    )
+    assert not talk._is_browser_video_state_query(owner)
+
+
 def test_direct_url_question_does_not_become_navigation_command() -> None:
     question = (
         "so now i still have alice browser loaded on this page "
@@ -241,7 +290,7 @@ def test_direct_url_question_does_not_become_navigation_command() -> None:
     command = "Alice, open https://www.youtube.com/watch?v=N5fCM8U4S4I"
 
     assert talk._extract_browser_url(question) == "https://www.youtube.com/watch?v=N5fCM8U4S4I"
-    assert talk._is_browser_video_state_query(question)
+    assert not talk._is_browser_video_state_query(question)
     assert not talk._is_direct_browser_url_effector_command(question)
     assert talk._is_direct_browser_url_effector_command(command)
 

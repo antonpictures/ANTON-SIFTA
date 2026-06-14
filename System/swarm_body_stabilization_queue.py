@@ -230,16 +230,25 @@ def add_queue_item(*, description: str, kind: str = "self_stabilization", source
             "status": "duplicate_recent",
             "source": source,
         }
+    stale_recovery = False
+    try:
+        from System.swarm_intent_nonce_gate import queue_item_requires_fresh_ingress
+
+        stale_recovery = queue_item_requires_fresh_ingress(source=source)
+    except Exception:
+        stale_recovery = "recovery" in (source or "").lower() or "timeout" in (source or "").lower()
     row = {
         **_now(),
         "truth_label": TRUTH_LABEL,
         "kind": kind,                    # self_stabilization | owner_carbon_plan | past_action_logged | power_cycle_recovery
         "description": description[:280],
-            "source": source,                # e.g. "mom_eat_well_directive", "alice_journal_report", "le_robot_organ", "missing_time_gap"
+        "source": source,                # e.g. "mom_eat_well_directive", "alice_journal_report", "le_robot_organ", "missing_time_gap"
         "status": status,                # done | active | queued | blocked | learning_signal
         "priority": max(0.0, min(1.0, float(priority))),
         "owner_plan": bool(owner_plan),
         "linked_receipt": linked_receipt,
+        "stale": bool(stale_recovery),
+        "effector_spend_allowed": not bool(stale_recovery),
     }
     _append_ledger(row, state_dir=state_dir)
     # Keep a small current snapshot for fast prompt access

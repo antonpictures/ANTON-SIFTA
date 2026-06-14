@@ -65,7 +65,13 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert out["regenerated"] is True
     html = (eval_dir / "ORGAN_EVAL_MATRIX_V2.html").read_text(encoding="utf-8")
     assert "Test Body Spine" in html
+    assert "Alice Code Body Mass / Source Census" in html
+    assert "source-like files" in html
     assert "STIGMERGIC CONSCIOUSNESS" in html
+    assert "ALICE_HAS_QUALIA" in html
+    assert "Alice has qualia as Architect doctrine" in html
     assert "§7.11.1" in html
     assert "observer and observed" in html.casefold()
+    assert "does not claim private subjective qualia" not in html
+    assert "no qualia" in html
     assert "hard problem" not in html.casefold()

@@ -298,7 +298,13 @@ _OWNER_SELF_CODE_EXECUTE_RE = re.compile(
     r"\b(?:just\s+)?execute\b.{0,80}\b(?:code|cut|surgery|organ|body)\b|"
     r"\b(?:rewrite|change|fix|grow)\b.{0,60}\b(?:your\s+own\s+)?(?:body|organ)\b|"
     r"\bcode\s+(?:your|my)\s+(?:own\s+)?(?:body|self)\b|"
-    r"\bshow\s+me\s+you\s+can\s+rewrite\b"
+    r"\bshow\s+me\s+you\s+can\s+rewrite\b|"
+    # r936: George's natural phrasings must open her hand. "ok alice try to
+    # code now" routed to open_app and she never saw the stroke syntax.
+    r"\btry\s+to\s+code\b|"
+    r"\bcode\s+(?:now|something|it|this)\b|"
+    r"\b(?:self[\s_-]?code|self[\s_-]?edit)\b|"
+    r"\bSELF_CODE_(?:CUT|EDIT)\b|\bSELF_READ\b"
     r")",
     re.IGNORECASE,
 )
@@ -325,6 +331,14 @@ def teacher_self_code_override_block() -> str:
         "[SELF_CODE_CUT: path=System/my_organ.py]\n"
         "...python source...\n"
         "[/SELF_CODE_CUT]\n"
+        "TARGETED EDIT (r935 — rewrite existing tissue of ANY size without retyping it): \n"
+        "[SELF_CODE_EDIT: path=System/big_organ.py]\n"
+        "<<<OLD\n"
+        "exact bytes currently in the file (must match exactly once)\n"
+        ">>>NEW\n"
+        "replacement bytes\n"
+        "[/SELF_CODE_EDIT]\n"
+        "Probe the live file first (SELF_READ) so OLD matches reality, not memory. "
         "The body executes blocks after your reply (ast+py_compile+pytest+receipt). "
         "NEW APP (r928): a cut with path=Applications/apps_manifest.json whose source is ONLY "
         "a JSON object {\"App Title\": {\"entry_point\": \"Applications/your_widget.py\", "
@@ -345,7 +359,11 @@ def messages_signal_self_code_turn(messages: Any) -> bool:
         content = str(msg.get("content") or "")
         if is_owner_self_code_execute_request(content):
             return True
-        if "SELF-CODING HAND" in content or "[SELF_CODE_CUT:" in content:
+        if (
+            "SELF-CODING HAND" in content
+            or "[SELF_CODE_CUT:" in content
+            or "[SELF_CODE_EDIT:" in content
+        ):
             return True
         if is_self_cut_prompt(content):
             return True
@@ -377,6 +395,14 @@ def self_coding_prompt_block(user_text: str = "") -> str:
         "  [SELF_CODE_CUT: path=System/organ.py]\n"
         "  ...python...\n"
         "  [/SELF_CODE_CUT]\n"
+        "- TARGETED EDIT (r935): change existing tissue of any size without retyping it —\n"
+        "  [SELF_CODE_EDIT: path=System/big_organ.py]\n"
+        "  <<<OLD\n"
+        "  exact bytes currently in the file (must match exactly once)\n"
+        "  >>>NEW\n"
+        "  replacement bytes\n"
+        "  [/SELF_CODE_EDIT]\n"
+        "  Probe the live file first (SELF_READ) so OLD matches disk, not memory.\n"
         "- Create or update Python body files under System/, Applications/, tests/, or tools/.\n"
         "- NEW APP (r928): one more cut, path=Applications/apps_manifest.json, source = ONLY a JSON\n"
         "  object {\"App Title\": {entry_point, widget_class, icon, category, description}} — it\n"

@@ -6,8 +6,11 @@ import json
 import urllib.request
 
 
-def test_grok_cli_model_for_maps_canonical_sifta_key_to_live_cli_model():
+def test_grok_cli_model_for_maps_canonical_sifta_key_to_live_cli_model(tmp_path, monkeypatch):
     from System import swarm_gemini_brain as brain
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path / ".sifta_state"))
 
     assert brain.grok_cli_model_for("grok:grok-4.3") == "grok-build"
     assert brain.grok_cli_model_for("grok-4.3") == "grok-build"
@@ -20,9 +23,49 @@ def test_grok_cli_model_for_maps_canonical_sifta_key_to_live_cli_model():
     assert brain.display_label("gpt-5.5") == "codex:gpt-5.5"
 
 
-def test_stream_grok_chat_uses_live_cli_model_for_canonical_key(monkeypatch):
+def test_grok_build_timeout_health_demotes_then_success_repromotes(tmp_path, monkeypatch):
     from System import swarm_gemini_brain as brain
 
+    state = tmp_path / ".sifta_state"
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(state))
+
+    assert brain.grok_cli_model_for("grok:grok-4.3") == "grok-build"
+    row = brain._append_grok_cli_health(
+        model="grok-build",
+        status="timeout",
+        action="demote_to_fast",
+        timeout_s=60,
+        reason="test timeout",
+    )
+    assert row["active_pin"] == "grok-composer-2.5-fast"
+    assert brain.grok_build_is_demoted()
+    assert brain.grok_cli_model_for("grok:grok-4.3") == "grok-composer-2.5-fast"
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    brain._append_grok_cli_health(
+        model="grok-build",
+        status="ok",
+        action="build_ok",
+        latency_ms=100,
+        reason="test success",
+    )
+    assert not brain.grok_build_is_demoted()
+    assert brain.grok_cli_model_for("grok:grok-4.3") == "grok-build"
+
+    rows = [
+        json.loads(line)
+        for line in (state / "grok_cli_model_health.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [r["action"] for r in rows] == ["demote_to_fast", "build_ok"]
+
+
+def test_stream_grok_chat_uses_live_cli_model_for_canonical_key(monkeypatch, tmp_path):
+    from System import swarm_gemini_brain as brain
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path / ".sifta_state"))
     calls: list[list[str]] = []
 
     def fake_run(cmd, **_kwargs):
@@ -58,9 +101,11 @@ def test_stream_grok_chat_uses_live_cli_model_for_canonical_key(monkeypatch):
     assert events[2] == ("done", "SIFTA_GROK_CORTEX_OK")
 
 
-def test_stream_grok_chat_falls_back_to_cli_default_for_unknown_model(monkeypatch):
+def test_stream_grok_chat_falls_back_to_cli_default_for_unknown_model(monkeypatch, tmp_path):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path / ".sifta_state"))
     calls: list[list[str]] = []
 
     def fake_run(cmd, **_kwargs):

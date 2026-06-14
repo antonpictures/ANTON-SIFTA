@@ -65,6 +65,52 @@ def test_keeps_current_vision_cortex(monkeypatch, tmp_path):
     assert cap.is_vision_capable_model("gemini:gemini-2.5-flash", require_native_image_payload=True)
 
 
+def test_keeps_selected_grok_as_speaking_cortex_for_vision(monkeypatch, tmp_path):
+    from System import swarm_cortex_capabilities as cap
+
+    monkeypatch.setattr(
+        cap,
+        "_ollama_tags",
+        lambda: ["igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"],
+    )
+    monkeypatch.setattr(cap, "list_available_cortexes_with_canonical_fallback", lambda: [])
+
+    row = cap.select_cortex_for_need(
+        "image_pixels",
+        current_model="grok:grok-4.3",
+        query_text="look at the screen",
+        state_dir=tmp_path,
+        write=False,
+    )
+
+    assert row["selected_model"] == "grok:grok-4.3"
+    assert row["reason"] == "current_owner_selected_cloud_speaker_kept"
+    assert row["switched"] is False
+
+
+def test_keeps_selected_mimo_as_speaking_cortex_for_vision(monkeypatch, tmp_path):
+    from System import swarm_cortex_capabilities as cap
+
+    monkeypatch.setattr(
+        cap,
+        "_ollama_tags",
+        lambda: ["igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"],
+    )
+    monkeypatch.setattr(cap, "list_available_cortexes_with_canonical_fallback", lambda: [])
+
+    row = cap.select_cortex_for_need(
+        "image_pixels",
+        current_model="mimo:mimo-cli-default",
+        query_text="use the camera receipt but answer with mimo",
+        state_dir=tmp_path,
+        write=False,
+    )
+
+    assert row["selected_model"] == "mimo:mimo-cli-default"
+    assert row["reason"] == "current_owner_selected_cloud_speaker_kept"
+    assert row["switched"] is False
+
+
 def test_alice_m5_cortex_is_native_multimodal_after_ollama_show_receipt():
     from System import swarm_cortex_capabilities as cap
 

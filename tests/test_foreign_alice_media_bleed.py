@@ -34,3 +34,21 @@ def test_own_browser_playback_suppresses_long_stt(monkeypatch):
     )
     assert decision["route"] == "observed_media"
     assert decision["reason"] == "my_own_browser_playback_suppresses_owner_stt"
+
+
+def test_owner_direct_colistening_address_during_playback_routes_direct(monkeypatch):
+    monkeypatch.setattr(
+        gate,
+        "is_my_own_browser_playback",
+        lambda **kwargs: (True, {"domain": "www.youtube.com", "playing": True}),
+    )
+    decision = classify_spoken_ingress(
+        "Alice, are you listening with me?",
+        stt_conf=0.66,
+        focus_context=YOUTUBE_CONTEXT,
+    )
+    assert decision["route"] == "direct"
+    assert decision["reason"] in {
+        "owner_direct_address_during_own_browser_playback",
+        "owner_interrogative_reply_required",
+    }

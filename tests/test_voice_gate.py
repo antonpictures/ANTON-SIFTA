@@ -7,6 +7,7 @@ Owner-direct speech must remain open to the normal direct path.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -97,6 +98,54 @@ def test_mandatory_voice_gate_helper_allows_direct_owner_speech(monkeypatch):
     monkeypatch.setattr(youtube_context, "get_latest_context", lambda max_age_s=7200.0: "")
 
     assert tw._mandatory_voice_ingress_receipt("Alice, help me with Stanford.", 0.92, {}) is None
+
+
+def test_mandatory_voice_gate_reports_and_recovers_direct_owner_false_positive(tmp_path, monkeypatch):
+    from Applications import sifta_talk_to_alice_widget as tw
+    from Applications import sifta_stigmergic_deterministic_tracker as tracker
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(tw, "_STATE_DIR", state)
+    monkeypatch.setattr(tracker, "_DETERMINISTIC_MISTAKES_LEDGER", state / "deterministic_mistakes.jsonl")
+    monkeypatch.setattr(tracker, "_TRACKER_LEDGER", state / "stigmergic_deterministic_tracker.jsonl")
+    monkeypatch.setattr(tw, "_media_focus_context_for_audio_gate", lambda: "youtube playing")
+    monkeypatch.setattr(
+        mig,
+        "classify_spoken_ingress",
+        lambda *args, **kwargs: {
+            "route": "observed_media",
+            "reason": "my_own_browser_playback_suppresses_owner_stt",
+            "confidence": 0.92,
+        },
+    )
+    monkeypatch.setattr(
+        mig,
+        "classify_external_consciousness_lane",
+        lambda *args, **kwargs: {
+            "source_class": "my_own_browser_playback",
+            "attention_policy": "store_silent_context_as_self_body_output",
+        },
+    )
+    monkeypatch.setattr(
+        mig,
+        "write_gate_receipt",
+        lambda decision, **kwargs: {
+            "ts": 123.0,
+            "route": decision["route"],
+            "reason": decision["reason"],
+            "confidence": decision["confidence"],
+            "stt_confidence": kwargs.get("stt_conf", 0.0),
+            "external_consciousness": kwargs.get("external_consciousness", {}),
+        },
+    )
+
+    result = tw._mandatory_voice_ingress_receipt("Alice, are you listening with me?", 0.66, {})
+
+    assert result is None
+    row = json.loads((state / "deterministic_mistakes.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert row["bypass_type"] == "owner_direct_turn_silenced_as_external_ingest"
+    assert row["recovered_to_cortex"] is True
 
 
 def test_real_widget_ambient_input_never_reaches_brain(monkeypatch):
@@ -235,6 +284,7 @@ def test_widget_direct_owner_input_reaches_brain(monkeypatch):
     monkeypatch.setattr(tw, "_wordace_cue_currently_open", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(tw, "_foreground_ide_voice_attribution", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(tw, "_polarity_asr_clarification_reply", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(tw.QTimer, "singleShot", lambda _ms, cb: cb())
 
     widget = DummyTalk()
     tw.TalkToAliceWidget._on_stt_done(widget, "Alice, help me with Stanford.", 0.94, typed_turn=False)

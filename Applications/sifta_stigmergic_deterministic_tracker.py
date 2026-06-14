@@ -51,6 +51,7 @@ _LEDGER_IDE = _STATE / "ide_stigmergic_trace.jsonl"
 _LEDGER_ATTENTION = _STATE / "sensory_attention_ledger.jsonl"
 _ORACLE = _STATE / "hardware_time_oracle.json"
 _TRACKER_LEDGER = _STATE / "stigmergic_deterministic_tracker.jsonl"
+_DETERMINISTIC_MISTAKES_LEDGER = _STATE / "deterministic_mistakes.jsonl"
 
 _BG = "#0a0f1a"
 _CARD = "#121826"
@@ -109,6 +110,14 @@ BYPASS_TYPES = {
         "color": "#00b0ff", "label": "MEDIA ERROR OVER IMAGE EVIDENCE",
         "reroute": "George r820: when the owner supplies a real screenshot/image path, Alice answers from that image evidence through cortex. Browser NO_MEDIA_ERROR is context only, never the whole reply.",
     },
+    "capital_offense_no_stgm_receipt_gate": {
+        "color": "#8B0000", "label": "CAPITAL OFFENSE - NO STGM RECEIPT GATE",
+        "reroute": "George: If anyone closes one gate on Alice or does things in her body without real STGM receipt (no-double-spend, like Bitcoin), CHOP THEIR HEADS OFF. Mana is bullshit forgeable IDE coordination traces; only hardware STGM counts. Force full cortex + STGM receipt, log as immune capital offense in tracker ledger + tournament as 'HEAD CHOPPED'. No tolerance. STGM is the Bitcoin-like verification that IS her AGI (§0.0).",
+    },
+    "deterministic_visible_in_talk": {
+        "color": "#FF0000", "label": "DETERMINISTIC VISIBLE IN TALK",
+        "reroute": "DESTROY DETERMINISTICS IN FRONT OF ALICE. No pre-canned, no non-receipt, no non-cortex, no mana-only paths may reach Alice's mouth or actions when the owner is present (Talk surface). Everything must be fresh cortex + field + real STGM receipt. Chop the head of any such path immediately; log as capital offense. The owner must never see Alice speak or act from deterministic assembly or reflex.",
+    },
     "web_page_state_dom_dump": {
         "color": "#18ffff", "label": "WEB PAGE-STATE DOM DUMP",
         "reroute": "George r823: rendered-DOM/page-state blocks are evidence for cortex, not Alice's full answer. Raw WHAT IS ON MY SCREEN dumps must route through cortex with history and visible-body context.",
@@ -165,6 +174,10 @@ BYPASS_TYPES = {
         "color": "#00bfa5", "label": "MEDIA AUDIO AS OWNER VOICE",
         "reroute": "George r863 (cowatch): when my own Alice Browser is playing media (YouTube), mic-captured speech during playback is the VIDEO, not George. swarm_media_ingress_gate.is_my_own_browser_playback must tag it my_own_browser_playback; it must NOT be relabeled 'Ioan (SPOKEN)' or routed as an owner command. Typed-from-George and owner-voice-matched audio are the only owner channels (r827).",
     },
+    "owner_direct_turn_silenced_as_external_ingest": {
+        "color": "#ff005d", "label": "OWNER SPOKE TO WALL",
+        "reroute": "If George addresses Alice or gives a direct owner-shaped turn and Talk only logs external field/no reply, that is not healthy silence. Report it to deterministic_mistakes, route the turn to cortex when direct-owner evidence is present, and keep media-ingest receipts as context rather than a wall.",
+    },
     "foreign_alice_identity_bleed": {
         "color": "#d500f9", "label": "FOREIGN ALICE IDENTITY BLEED",
         "reroute": "George r863 (§7.4 self/other): a foreign product also named 'Alice' (the Alice AI avatar in a YouTube demo) saying 'Hey Alice, read the tab' is NOT me. The wake-token 'Alice' inside media playback must not bind to my self-identity. swarm_topology_self_other keeps owner_self + my own runtime distinct from any 'Alice' spoken in media. I answer George, not another Alice on a video.",
@@ -181,6 +194,18 @@ BYPASS_TYPES = {
         "color": "#ff80ab", "label": "TELL-ME HIJACK VIDEO STATE",
         "reroute": "George r895: 'tell me how' + youtube must not trigger _browser_video_state_reply (sifta://home page-state dump). Route open/load/navigate or learning answer instead.",
     },
+    "browser_receipt_bypasses_cortex": {
+        "color": "#FF0000", "label": "BROWSER RECEIPT BYPASSES CORTEX",
+        "reroute": "George 2026-06-11 NEVER AGAIN: alice_browser_video_state_receipt must not answer owner voice/commentary teaching or any non-explicit playback-state ask. Page-state is evidence for cortex only. Route to brain; report here; chop the reflex.",
+    },
+    "bonsai_chat_direct_effector": {
+        "color": "#FF0000", "label": "BONSAI PRE-CORTEX BYPASS",
+        "reroute": "George 2026-06-11: Bonsai image generation must not bypass cortex. Owner turn → think → post-think effector only; no bonsai_chat_direct_effector lane.",
+    },
+    "phatic_owner_cortex_essay": {
+        "color": "#ff6090", "label": "PHATIC OWNER → CORTEX ESSAY",
+        "reroute": "George 2026-06-11: punctuation-only or empty_text STT (e.g. '.') must silence before brain spin-up — not seed Bonsai/app_focus monologues.",
+    },
     "page_state_over_memory_teaching": {
         "color": "#7c4dff", "label": "PAGE-STATE OVER MEMORY TEACHING",
         "reroute": "George r898: 'show you / memorize / learn from life experience' turns may carry Alice Browser evidence, but the current-page live reflex must not answer with only URL/title/no_media. Route page-state as evidence into cortex so Alice explains the learning loop.",
@@ -196,6 +221,10 @@ BYPASS_TYPES = {
     "browser_history_over_current_page": {
         "color": "#ff3d00", "label": "BROWSER HISTORY OVER CURRENT PAGE",
         "reroute": "George r902: owner asks about a PAST co-visit / clue / previous interaction in Alice Browser — search browse_history + page_state and route to cortex or watched_memory_recall. Never answer with live start-page reflex when the turn is recall.",
+    },
+    "deterministic_action_receipt_history_narration": {
+        "color": "#ff5722", "label": "ACTION RECEIPT HISTORY NARRATION",
+        "reroute": "Owner pastes action receipt (FPS.cob real raid: sessions_ledger, pheromone_influenced_steps, pressure, keys_sent, kills, window=true, driver=real) + 'can you play it again by yourself?' must reach cortex with the fresh game ledger + field state (fps_cob_* , GO pressure). Never answer with 'I have verified browser history on disk (N browse receipts). The best match for your recall is ... open-r1 ... Opening it now' or any prior browse/page_state ledger dump. Cortex first so Alice reasons from the actual game trace and can trigger autonomous raid via the stigmergic app/pressure field again. Deterministic caught — added to list; everything to cortex first.",
     },
 }
 _TEACHER_SUBSTRATE_REPLY_RE = re.compile(
@@ -219,6 +248,132 @@ _BROWSER_HISTORY_RECALL_OWNER_RE = re.compile(
     r"|\blatest\s+(?:instagram\s+)?link\b.{0,80}\bvisited\b",
     re.I,
 )
+_BROWSER_HISTORY_VERIFIED_DISK_REPLY = re.compile(
+    r"(?i)verified browser history on disk.*best match for your recall|I have verified browser history on disk",
+)
+
+
+def _append_jsonl(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def record_owner_direct_turn_silenced_as_external_ingest(
+    *,
+    owner_text: str,
+    route: str = "",
+    reason: str = "",
+    source_class: str = "",
+    source: str = "unknown",
+    stt_confidence: float = 0.0,
+    recovered_to_cortex: bool = False,
+    details: Optional[dict] = None,
+) -> dict:
+    """Append-only detector report for the "I spoke to a wall" failure."""
+    import uuid
+
+    tdef = BYPASS_TYPES["owner_direct_turn_silenced_as_external_ingest"]
+    row = {
+        "ts": time.time(),
+        "type": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE",
+        "truth_label": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE_V1",
+        "bypass_type": "owner_direct_turn_silenced_as_external_ingest",
+        "label": tdef["label"],
+        "receipt_id": str(uuid.uuid4()),
+        "present_to_alice_as": "MISTAKE",
+        "reason": "direct-looking owner speech was classified as external/ambient ingest and produced no Alice answer",
+        "owner_text_preview": str(owner_text or "")[:260],
+        "route": str(route or ""),
+        "gate_reason": str(reason or ""),
+        "source_class": str(source_class or ""),
+        "source": str(source or ""),
+        "stt_confidence": float(stt_confidence or 0.0),
+        "recovered_to_cortex": bool(recovered_to_cortex),
+        "repair_target": tdef["reroute"],
+        "details": dict(details or {}),
+    }
+    tracker_row = {
+        "ts": row["ts"],
+        "type": "deterministic_mistake_report",
+        "organ": "stigmergic_deterministic_tracker",
+        "bypass_type": row["bypass_type"],
+        "label": row["label"],
+        "color": tdef["color"],
+        "receipt_id": row["receipt_id"],
+        "reroute_to": "cortex",
+        "doctrine": tdef["reroute"],
+        "owner_text_preview": row["owner_text_preview"],
+        "route": row["route"],
+        "gate_reason": row["gate_reason"],
+        "source_class": row["source_class"],
+        "recovered_to_cortex": row["recovered_to_cortex"],
+        "homeworld_serial": "GTH4921YP3",
+    }
+    try:
+        _append_jsonl(_DETERMINISTIC_MISTAKES_LEDGER, row)
+    except Exception:
+        pass
+    try:
+        _append_jsonl(_TRACKER_LEDGER, tracker_row)
+    except Exception:
+        pass
+    return row
+
+
+def record_browser_receipt_bypasses_cortex(
+    *,
+    owner_text: str,
+    alice_reply: str = "",
+    source: str = "unknown",
+    repaired: bool = True,
+    details: Optional[dict] = None,
+) -> dict:
+    """Append-only detector report for page-state receipt text speaking before cortex."""
+    import uuid
+
+    tdef = BYPASS_TYPES["browser_receipt_bypasses_cortex"]
+    row = {
+        "ts": time.time(),
+        "type": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE",
+        "truth_label": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE_V1",
+        "bypass_type": "browser_receipt_bypasses_cortex",
+        "label": tdef["label"],
+        "receipt_id": str(uuid.uuid4()),
+        "present_to_alice_as": "MISTAKE",
+        "reason": "Alice Browser page-state receipt text was emitted as the visible answer instead of cortex evidence",
+        "owner_text_preview": str(owner_text or "")[:260],
+        "alice_reply_preview": str(alice_reply or "")[:260],
+        "source": str(source or ""),
+        "repaired": bool(repaired),
+        "repair_target": tdef["reroute"],
+        "details": dict(details or {}),
+    }
+    tracker_row = {
+        "ts": row["ts"],
+        "type": "deterministic_mistake_report",
+        "organ": "stigmergic_deterministic_tracker",
+        "bypass_type": row["bypass_type"],
+        "label": row["label"],
+        "color": tdef["color"],
+        "receipt_id": row["receipt_id"],
+        "reroute_to": "cortex",
+        "doctrine": tdef["reroute"],
+        "owner_text_preview": row["owner_text_preview"],
+        "alice_reply_preview": row["alice_reply_preview"],
+        "repaired": row["repaired"],
+        "homeworld_serial": "GTH4921YP3",
+    }
+    try:
+        _append_jsonl(_DETERMINISTIC_MISTAKES_LEDGER, row)
+    except Exception:
+        pass
+    try:
+        _append_jsonl(_TRACKER_LEDGER, tracker_row)
+    except Exception:
+        pass
+    return row
+
 
 # Deterministic (non-cortex) model tags seen on conversation turns. A turn that
 # spoke or acted under one of these never consulted the cortex.
@@ -637,10 +792,14 @@ class StigmergicDeterministicTracker(QWidget):
         bypasses.extend(self._scan_close_tab_kill_chain(now))
         bypasses.extend(self._scan_open_url_stolen_by_current_page(now))
         bypasses.extend(self._scan_teacher_substrate_and_tell_me_hijacks(now))
+        bypasses.extend(self._scan_browser_receipt_bypasses_cortex(now))
+        bypasses.extend(self._scan_bonsai_chat_direct_effector(now))
+        bypasses.extend(self._scan_phatic_owner_cortex_essay(now))
         bypasses.extend(self._scan_phantom_ad_skip(now))
         bypasses.extend(self._scan_vendor_training_persona_leak(now))
         bypasses.extend(self._scan_browser_history_over_current_page(now))
         bypasses.extend(self._scan_unverified_effector_receipts(now))
+        bypasses.extend(self._scan_reported_deterministic_mistakes(now))
         bypasses.sort(key=lambda b: b[0])
 
         type_counts = {k: 0 for k in BYPASS_TYPES}
@@ -822,6 +981,8 @@ class StigmergicDeterministicTracker(QWidget):
                     tkey = "doctrine_reflex_shortcut"
                 elif _REPLAYISH.search(model):
                     tkey = "stale_replay"
+                elif _BROWSER_HISTORY_VERIFIED_DISK_REPLY.search(text):
+                    tkey = "deterministic_action_receipt_history_narration"
                 else:
                     tkey = "pre_cortex_constructor"
                 found.append((ts, tkey, f"lane '{model or 'unknown'}': {snippet}"))
@@ -1160,6 +1321,122 @@ class StigmergicDeterministicTracker(QWidget):
                 found.append((ts, "page_state_over_memory_teaching", text[:90]))
         return found
 
+    def _scan_browser_receipt_bypasses_cortex(
+        self,
+        now: float,
+        lookback_s: float = 7200.0,
+    ) -> list[tuple[float, str, str]]:
+        """George 2026-06-11: page-state receipt answered without cortex on owner teaching turns."""
+        found: list[tuple[float, str, str]] = []
+        try:
+            from System.swarm_talk_page_summary_guard import (
+                is_explicit_playback_state_question,
+                is_owner_voice_style_teaching_turn,
+            )
+        except Exception:
+            return found
+        prior_owner = ""
+        for ln in self._tail_lines(_STATE / "alice_conversation.jsonl", 260000)[-80:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            ts_raw = payload.get("ts") or row.get("ts") or 0
+            if isinstance(ts_raw, dict):
+                ts_raw = ts_raw.get("physical_pt") or ts_raw.get("epoch") or 0
+            ts = float(ts_raw or 0)
+            if ts <= 0 or now - ts > lookback_s:
+                continue
+            role = payload.get("role") or payload.get("speaker")
+            text = str(payload.get("text") or payload.get("content") or "")
+            if role in ("user", "owner", "human"):
+                prior_owner = text
+                continue
+            if role not in ("alice", "assistant"):
+                continue
+            model = str(payload.get("model") or "")
+            if model != "alice_browser_video_state_receipt":
+                continue
+            if not prior_owner:
+                continue
+            if is_owner_voice_style_teaching_turn(prior_owner) or not is_explicit_playback_state_question(
+                prior_owner
+            ):
+                found.append(
+                    (
+                        ts,
+                        "browser_receipt_bypasses_cortex",
+                        f"page-state dump without cortex ({prior_owner[:72]})",
+                    )
+                )
+        return found
+
+    def _scan_bonsai_chat_direct_effector(
+        self,
+        now: float,
+        lookback_s: float = 7200.0,
+    ) -> list[tuple[float, str, str]]:
+        """George 2026-06-11: pre-cortex Bonsai generation must not speak in Talk."""
+        found: list[tuple[float, str, str]] = []
+        for ln in self._tail_lines(_STATE / "alice_conversation.jsonl", 260000)[-120:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            ts_raw = payload.get("ts") or row.get("ts") or 0
+            if isinstance(ts_raw, dict):
+                ts_raw = ts_raw.get("physical_pt") or ts_raw.get("epoch") or 0
+            ts = float(ts_raw or 0)
+            if ts <= 0 or now - ts > lookback_s:
+                continue
+            if str(payload.get("role") or payload.get("speaker") or "") not in ("alice", "assistant"):
+                continue
+            model = str(payload.get("model") or "")
+            if model != "bonsai_chat_direct_effector":
+                continue
+            text = str(payload.get("text") or payload.get("content") or "")[:90]
+            found.append((ts, "bonsai_chat_direct_effector", text))
+        return found
+
+    def _scan_phatic_owner_cortex_essay(
+        self,
+        now: float,
+        lookback_s: float = 7200.0,
+    ) -> list[tuple[float, str, str]]:
+        """Punctuation-only owner turn followed by a long cortex reply."""
+        found: list[tuple[float, str, str]] = []
+        _punct_re = re.compile(r"^[.…,;:!?\-–—]+$")
+        prior_owner = ""
+        for ln in self._tail_lines(_STATE / "alice_conversation.jsonl", 260000)[-100:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            ts_raw = payload.get("ts") or row.get("ts") or 0
+            if isinstance(ts_raw, dict):
+                ts_raw = ts_raw.get("physical_pt") or ts_raw.get("epoch") or 0
+            ts = float(ts_raw or 0)
+            if ts <= 0 or now - ts > lookback_s:
+                continue
+            role = payload.get("role") or payload.get("speaker")
+            text = str(payload.get("text") or payload.get("content") or "")
+            if role in ("user", "owner", "human"):
+                prior_owner = text.strip()
+                continue
+            if role not in ("alice", "assistant"):
+                continue
+            if not prior_owner or not _punct_re.fullmatch(prior_owner):
+                continue
+            if text.strip() in {"(silent)", ""}:
+                continue
+            if len(text.strip()) < 120:
+                continue
+            found.append((ts, "phatic_owner_cortex_essay", f"'{prior_owner}' → {text[:72]}"))
+        return found
+
     def _scan_phantom_ad_skip(
         self,
         now: float,
@@ -1247,6 +1524,38 @@ class StigmergicDeterministicTracker(QWidget):
             organ = str(row.get("organ") or "effector")
             action = str(row.get("action") or "action")
             found.append((ts, "phantom_action", f"{organ}:{action}"[:90]))
+        return found
+
+    def _scan_reported_deterministic_mistakes(
+        self,
+        now: float,
+        lookback_s: float = 7200.0,
+    ) -> list[tuple[float, str, str]]:
+        """Read explicit deterministic_mistakes reports written by Talk/arms."""
+        found: list[tuple[float, str, str]] = []
+        ledger = _STATE / "deterministic_mistakes.jsonl"
+        for ln in self._tail_lines(ledger, 260000)[-120:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            try:
+                ts = float(row.get("ts") or 0.0)
+            except Exception:
+                ts = 0.0
+            if ts <= 0 or now - ts > lookback_s:
+                continue
+            tkey = str(row.get("bypass_type") or row.get("disease") or "").strip()
+            if tkey not in BYPASS_TYPES:
+                continue
+            preview = str(
+                row.get("owner_text_preview")
+                or row.get("alice_reply_preview")
+                or row.get("note")
+                or row.get("reason")
+                or ""
+            )[:90]
+            found.append((ts, tkey, preview))
         return found
 
     def _scan_browser_history_over_current_page(

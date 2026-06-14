@@ -1000,6 +1000,15 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 - **Failure mode:** On harder boards the current swarm only commits forced placements (naked/hidden singles). If it stalls, the honest reading is “this constraint field needs a stronger stigmergic move proposer,” not “Alice solved it.”
 - **Key principle:** The test is whether local pheromone + constraint pressure can converge without teacher-forcing or peeking at `self.solution`.
 
+### Stigmergic Go
+- **Purpose:** 19×19 Go where the board is a living pheromone field. Every stone is a permanent deposit of influence; ACO swimmers explore empty intersections biased by pheromone density and liberties, and the field itself computes partial territory value. Built by the Grok arm in the 3-cortex app tournament (registration a96120ae).
+- **Who plays whom:** Three modes in the dropdown — **You Black vs Swarm White**, **You White vs Swarm Black** (you against Alice's pheromone field — her moves come from swimmer deposits, not a minimax Go engine), and **Swarm vs Swarm** (watch her field play itself).
+- **How to play:** Pick a mode, click an intersection to place your stone; the swarm answers from its field. **Field Evolve** runs ACO steps and highlights the high-pheromone legal points as suggestions for the current player. **Score** reads the field's territory estimate.
+- **What to watch:** Pheromone heat reinforcing walls, eyes, and connections while it evaporates elsewhere — territory emerging from local deposits, the same stigmergy as the ant trails the OS is built on.
+- **Receipts:** Games publish app_focus rows and live `.sifta_state/` traces in the sidebar.
+- **Failure mode:** The swarm is a field player, not a dan-ranked engine — it plays the pressure it can feel locally. If it loses to you, that is an honest reading of how far local pheromone pressure reaches today, not a broken app.
+- **Key principle:** Stones as stigmergic deposits — the board IS the shared memory, and play is coordination through the field, no central planner.
+
 ### Stigmergic Nanobot Tic-Tac-Toe
 - **Purpose:** Alice-X plays Nanobot-O on a 3x3 world-model board. Cells carry sematectonic pheromone and refractory traces; each move is a legal claim into the shared field, not a prewritten result.
 - **How it moves:** Each swarm senses empty cells, line pressure, old pheromone, opponent pressure, and refractory decay. The strongest legal gradient wins the move. No duplicate cell claim is accepted.

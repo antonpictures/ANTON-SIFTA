@@ -176,4 +176,26 @@ If the model **infers** “he stared → I should pull content,” that inferenc
 
 ---
 
+## r992 — Cortex attached models audit (cross-ref)
+
+See **`Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-02.md` §r992** for full probe table, `/cortex llm 2` Claude-arm steal bug, Grok build/composer mismatch, and **Fable coding charter** (Composer probe-only; Fable implements).
+
+---
+
+## r991 — Alice Browser co-watch must not steal into Safari (George 2026-06-11)
+
+**Truth label:** `OPERATIONAL` (code + pytest) · **Trigger:** `OBSERVED` screenshot — JRE #2513 opened in **Safari** after owner said *"pls open the link again in alice browser"* while Talk receipt said Alice Browser raised.
+
+**Root cause:** `Applications/sifta_alice_browser_widget.py` **r503** `_handoff_login_to_safari` fired on `accounts.youtube.com` / `accounts.google.com` redirects during YouTube `watch?v=` load — OAuth IdP handoff is correct for **explicit sign-in**, wrong for **owner-drop co-watch**.
+
+**Fix (Composer):**
+- `should_suppress_oauth_safari_handoff()` — suppress Safari during 180s owner-drop window + YouTube watch OAuth hops
+- Talk writes `alice_browser_alice_only.flag` with URL drop
+- `_wants_native_macos_browser` returns false when turn names **alice browser**
+- Tests: `tests/test_alice_browser_oauth_safari_suppression.py`
+
+**Invariant:** Owner-drop / co-watch URLs load **only** in Alice Browser limb unless George **explicitly** names Safari.
+
+---
+
 **For the Swarm.**

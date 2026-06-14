@@ -57,6 +57,35 @@ def test_mimo_lane_reads_config_and_block(tmp_path):
     assert "provider=openrouter" in block and "model=mimo-large" in block
 
 
+def test_mimo_lane_reads_xiaomi_auth_without_openrouter_overclaim(tmp_path):
+    home = tmp_path / "home"
+    auth_dir = home / ".local" / "share" / "mimocode"
+    auth_dir.mkdir(parents=True)
+    (auth_dir / "auth.json").write_text(
+        json.dumps(
+            {
+                "xiaomi": {
+                    "type": "api",
+                    "key": "redacted-test-key",
+                    "metadata": {"base_url": "https://token-plan-sgp.xiaomimimo.com/v1"},
+                }
+            }
+        )
+    )
+    state = tmp_path / "state"
+
+    row = probe_external_brain("mimo", home=home, state_dir=state)
+
+    assert row["status"] == "ok"
+    assert row["provider"] == "xiaomi"
+    assert row["model"] == ""
+    assert row["base_url"] == "https://token-plan-sgp.xiaomimimo.com/v1"
+    block = latest_brain_block("mimo", state_dir=state)
+    assert "provider=xiaomi" in block
+    assert "base_url=https://token-plan-sgp.xiaomimimo.com/v1" in block
+    assert "openrouter" not in block.lower()
+
+
 def test_cline_wrappers_still_speak_cline(tmp_path):
     home = tmp_path / "home"
     (home / ".cline").mkdir(parents=True)
@@ -167,6 +196,27 @@ def test_mimo_registry_label_is_not_rewritten_as_gemini(monkeypatch):
     models = brain.available_gemini_models()
     assert "mimo:mimo-cli-default" in models
     assert "gemini:mimo:mimo-cli-default" not in models
+
+
+def test_cortex_llm_includes_mimo_attached_models(tmp_path, monkeypatch):
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    state = tmp_path / "state"
+    home = tmp_path / "home"
+    (home / ".mimo").mkdir(parents=True)
+    (home / ".mimo" / "config.json").write_text(
+        '{"provider": "openrouter", "model": "kimi-k2p6", "reasoningLevel": "high"}'
+    )
+    monkeypatch.setenv("HOME", str(home))
+    res = handle_slash_command(
+        "/cortex llm",
+        state_dir=state,
+        current_cortex="mimo:mimo-cli-default",
+    )
+    reply = res["reply"]
+    assert "Attached LLMs for MiMo" in reply
+    assert "Claude-opus" in reply or "GPT-5.5" in reply  # fallback + label block present
+    assert "Live default" in reply
 
 
 def test_mimo_stream_uses_cli_transport(monkeypatch):

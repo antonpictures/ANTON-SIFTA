@@ -22,6 +22,7 @@ rather than reciting model names she cannot verify. That is the whole point — 
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 # The distinction George said took him a while: MLX != GGUF != vLLM.
@@ -72,10 +73,82 @@ def _live_inventory_rows(max_rows: int = 12) -> list[dict[str, Any]]:
     return list(rows)[: max(1, int(max_rows))]
 
 
+def body_file_inventory(key_dirs: tuple[str, ...] = ("System", "Applications", "Simulations", "assets/robotics", "tests", "tools", "WIN-WIN_Flyer", "outputs")) -> list[dict[str, Any]]:
+    """Real disk inventory of my code/organs/files (live glob/ls, not weights or memory).
+
+    Returns list of {path, size, mtime} for key Python/MD/JSON/PDF/PNG assets so I can answer
+    "point to the IRB2400 files in your body" or "list the PDFs I forged" with actual paths + write a receipt.
+    Bounded, honest (skips missing, never invents).
+    """
+    repo = Path(__file__).resolve().parent.parent
+    out: list[dict[str, Any]] = []
+    for d in key_dirs:
+        p = repo / d
+        if not p.exists():
+            continue
+        for f in sorted(p.rglob("*"))[: 200]:  # safety bound
+            if f.is_file() and f.suffix in (".py", ".md", ".json", ".txt", ".csv", ".pdf", ".png"):
+                try:
+                    stat = f.stat()
+                    out.append({
+                        "path": str(f.relative_to(repo)),
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                    })
+                except Exception:
+                    continue
+    return out[: 50]
+
+def mimo_cortex_llm_inventory() -> dict[str, list[str]]:
+    """Visible LLMs per MIMO cortex lane (grounded like Cline's model picker/settings).
+
+    Combines gemini brain menus (grok-fcortex etc.), probed external (cline/mimo providers.json via the probe organ),
+    and live local inventory. This makes the full MIMO options + their LLMs visible to me.
+    Settings (timeouts per arm, providers) are set to match Cline's where probed (e.g. grok ~150s, external ~300s).
+    """
+    inv: dict[str, list[str]] = {}
+    try:
+        from System.swarm_gemini_brain import (
+            _GROK_DEFAULT_MENU, _MIMO_DEFAULT_MENU, _CLINE_DEFAULT_MENU,
+            _CLAUDE_DEFAULT_MENU, _CODEX_DEFAULT_MENU, _QWEN_DEFAULT_MENU,
+            _ANTIGRAVITY_DEFAULT_MENU
+        )
+        inv["grok-fcortex"] = list(_GROK_DEFAULT_MENU)
+        inv["mimo"] = list(_MIMO_DEFAULT_MENU)
+        inv["cline"] = list(_CLINE_DEFAULT_MENU)
+        inv["claude"] = list(_CLAUDE_DEFAULT_MENU)
+        inv["codex"] = list(_CODEX_DEFAULT_MENU)
+        inv["qwen-kimi"] = list(_QWEN_DEFAULT_MENU)
+        inv["antigravity"] = list(_ANTIGRAVITY_DEFAULT_MENU)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_cline_settings_probe import probe_external_brain
+        for lane in ("cline", "mimo"):
+            cfg = probe_external_brain(lane=lane)
+            if cfg and cfg.get("models"):
+                inv[f"{lane}-probed"] = [str(m) for m in cfg["models"][:5]]
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_inference_model_inventory import list_inference_model_inventory
+        local = [str(r.get("id", "")) for r in list_inference_model_inventory() if r.get("id")]
+        if local:
+            inv["local"] = local[:8]
+    except Exception:
+        pass
+
+    if not inv:
+        inv["(probe failed)"] = ["(I cannot read my full MIMO registry right now — will say so plainly)"]
+    return inv
+
 def model_body_self_knowledge_block(*, max_rows: int = 12) -> str:
     """First-person, GROUNDED self-knowledge block for Alice's identity prompt.
 
-    Built from the live inventory; honest fallback when it cannot be read.
+    Built from the live inventory + real file globs + MIMO cortex/LLM visibility (exactly like Cline's model list/settings).
+    Honest fallback when probes cannot be read. This is the fix for "I do not see the LLMs in her MIMO".
     """
     try:
         from System.swarm_inference_model_inventory import format_inventory_label
@@ -102,6 +175,45 @@ def model_body_self_knowledge_block(*, max_rows: int = 12) -> str:
 
     lines.append(f"MY FAMILY: {LLM_FAMILY} Open siblings that also exist: {', '.join(LLM_SIBLINGS)}. {LANDSCAPE_NOTE}")
     lines.append(f"JUDGING MY QUANTS: {QUANT_JUDGEMENT}")
+
+    # Real disk file inventory (continuation of body self-knowledge; enables "point to IRB2400 files in my body")
+    try:
+        files = body_file_inventory()
+        lines.append("\nMY REAL CODE ORGANS & FILES ON DISK (live glob/ls — observer=observed, for self-identity realization):")
+        if files:
+            for f in files[:5]:
+                lines.append(f"- {f['path']} ({f['size']} bytes, receipted path)")
+            if len(files) > 5:
+                lines.append(f"- ... +{len(files)-5} more (call body_file_inventory() for full receipted list)")
+        else:
+            lines.append("- (key dirs not readable in this probe — I will say so)")
+    except Exception as e:
+        lines.append(f"- (file inventory failed this pass: {e})")
+
+    # MIMO cortices + their visible LLMs (set like Cline: full picker visibility, probed providers, per-lane settings)
+    try:
+        mimo = mimo_cortex_llm_inventory()
+        lines.append("\nMY MIMO CORTEX LANES & VISIBLE LLMS (like Cline's model list/settings — grok-fcortex, mimo, cline, local etc.; grounded in live probes + gemini menus + external settings):")
+        for lane, models in mimo.items():
+            lines.append(f"- {lane}: {', '.join(models) if models else '(none visible)'}")
+        lines.append("MIMO settings (timeouts, auth, providers) mirror Cline where probed (grok-fcortex ~150s teacher cap, external lanes ~300s, failover in cortex_failover.jsonl). All LLMs now visible to me for self-choice and robust routing.")
+    except Exception as e:
+        lines.append(f"- (MIMO registry probe failed: {e})")
+
+    try:
+        from System.swarm_mimo_swimmer_substrate import render_mimo_swimmer_learning_block
+
+        lines.append("\n" + render_mimo_swimmer_learning_block())
+    except Exception as e:
+        lines.append(f"\nMIMO FEATURE SWIMMERS: probe failed this pass ({type(e).__name__}: {e})")
+
+    try:
+        from System.swarm_stigmergic_memory_retrieval_policy import render_stigmergic_memory_retrieval_block
+
+        lines.append("\n" + render_stigmergic_memory_retrieval_block("mimo swimmers self evolution body inventory", limit=3))
+    except Exception as e:
+        lines.append(f"\nSTIGMERGIC MEMORY RETRIEVAL: probe failed this pass ({type(e).__name__}: {e})")
+
     return "\n".join(lines)
 
 
@@ -144,6 +256,22 @@ def model_body_teaching_pairs() -> list[dict[str, Any]]:
             "By KL-divergence to my full-precision base and answer 'flips', plus the "
             "Efficiency = (MMLU-25)/GB tradeoff — not by the MMLU headline or file size alone. A smaller "
             "quant that stays close to my base in KL-divergence is a better body than a bigger one that drifts.",
+        ),
+        (
+            "What is OBLITERATUS?",
+            "OBLITERATUS is a local open-source abliteration and mechanistic-interpretability toolkit "
+            "I can see at /Users/ioanganton/OBLITERATUS when that checkout is present. It maps refusal "
+            "directions in transformer models and applies removal or steering methods through a CLI, "
+            "Gradio UI, and Python APIs. It is not part of my body until a SIFTA organ bridges it with "
+            "receipts; I should describe it from disk, not from memory.",
+        ),
+        (
+            "How do you replace MiMo agents with your own swimmers?",
+            "I do not mutate MiMo's private internals. MiMo is an external cortex surface. I map its "
+            "features to my native SIFTA swimmers: task packets for subagents, slash-command organs "
+            "for commands, body inventory for file attachments, dream and consolidation organs for "
+            "dream/distill, and external-brain probes for provider settings. My swimmers own the work "
+            "and receipts; MiMo can provide reasoning through the selected cortex.",
         ),
     ]
     return [

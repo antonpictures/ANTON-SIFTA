@@ -178,3 +178,21 @@ def test_dry_eval_writes_zero_rows(tmp_path, monkeypatch):
 if __name__ == "__main__":
     # Allow direct run
     pytest.main([__file__, "-q"])
+
+
+def test_self_surgery_turn_routes_to_cortex_r938():
+    # "Alice" is a manifest app; surgery prompts addressed to her matched the
+    # manifest loop -> open_app + effector -> stale photo-click fired 124x.
+    from System.swarm_edge_intent_router import classify_intent
+
+    d = classify_intent(
+        "Alice — r937, retry. Step 0: write_plan(r937-first-self-edit). "
+        "Emit [SELF_READ: path=System/swarm_relay.py] then one [SELF_CODE_EDIT] block.",
+        write_receipt=False,
+    )
+    assert d["lane"] == "chat"
+    assert d["may_effector"] is False
+    assert d["reason"] == "self_surgery_turn_to_cortex_r938"
+    # plain app-open still works
+    d2 = classify_intent("open Alice Browser", write_receipt=False)
+    assert d2["lane"] == "open_app"

@@ -157,6 +157,16 @@ def _extract_field(cfg: Dict[str, Any], *names: str) -> Optional[str]:
     return None
 
 
+def _provider_from_top_level_auth(cfg: Dict[str, Any]) -> Optional[str]:
+    """MiMo auth.json stores providers as top-level keys, e.g. {"xiaomi": {...}}."""
+    for key, value in cfg.items():
+        if not isinstance(value, dict):
+            continue
+        if value.get("type") or value.get("metadata") or value.get("key"):
+            return str(key)
+    return None
+
+
 def probe_external_brain(
     lane: str = "cline",
     *,
@@ -207,6 +217,8 @@ def probe_external_brain(
     else:
         model = _extract_field(cfg, "model", "modelId", "selectedModel") or ""
         provider = _extract_field(cfg, "provider", "providerName", "apiProvider", "providerId") or ""
+        if lane == "mimo" and not provider:
+            provider = _provider_from_top_level_auth(cfg) or ""
         reasoning = (
             _extract_field(
                 cfg,
@@ -219,6 +231,7 @@ def probe_external_brain(
             or ""
         )
         ctx_window = _extract_field(cfg, "context_window", "contextWindow", "maxTokens") or ""
+        base_url = _extract_field(cfg, "base_url", "baseUrl", "apiBaseUrl", "api_base_url") or ""
         # Round 112d — Plan/Act toggle from George's screenshot 10:17 UTC.
         mode = (
             _extract_field(cfg, "mode", "plan_act_mode", "planActMode", "currentMode")
@@ -233,6 +246,7 @@ def probe_external_brain(
         row["provider"] = provider
         row["reasoning_level"] = reasoning
         row["context_window"] = ctx_window
+        row["base_url"] = base_url
         row["mode"] = mode
         row["auto_approve"] = auto_approve
 
@@ -310,6 +324,9 @@ def latest_brain_block(lane: str = "cline", state_dir: Optional[Path] = None) ->
                     bits.append(f"reasoning={reasoning}")
                 if ctx:
                     bits.append(f"context={ctx}")
+                base_url = row.get("base_url", "")
+                if base_url:
+                    bits.append(f"base_url={base_url}")
                 mode = row.get("mode", "")
                 if mode:
                     bits.append(f"mode={mode}")

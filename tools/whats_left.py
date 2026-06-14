@@ -37,6 +37,7 @@ _STATE = _REPO / ".sifta_state"
 _SNAPSHOT = _STATE / "whats_left.json"
 
 _ROUND_RE = re.compile(r"^##\s+(r\d+.*)$", re.IGNORECASE)
+_ANCHOR_RE = re.compile(r"\[r[0-9a-z][\w-]*-[a-f0-9]{8}\]", re.IGNORECASE)
 _WIL_RE = re.compile(r"what\s*is\s*left|what'?s\s*left|whats\s*left", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^\s*([-*•]|\d+[.)])\s+(.*\S)")
 _CATEGORY_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s*:?\s*$")
@@ -82,13 +83,28 @@ def parse_whats_left(text: str) -> list[dict]:
     lines = text.splitlines()
     sections: list[dict] = []
     current_round = ""
+    current_anchor = ""
+    pending_anchor = ""
     i = 0
     n = len(lines)
     while i < n:
         line = lines[i]
+        line_anchor = _ANCHOR_RE.search(line)
         m = _ROUND_RE.match(line.strip())
         if m and not _WIL_RE.search(line):
-            current_round = m.group(1).strip()
+            hdr = m.group(1).strip()
+            anchor_m = _ANCHOR_RE.search(hdr)
+            current_round = hdr
+            current_anchor = anchor_m.group(0) if anchor_m else pending_anchor
+            pending_anchor = ""
+            i += 1
+            continue
+        if line_anchor and not _is_wil_header(line):
+            # C1: doctors may put the unique round anchor on a separate line
+            # before a section; carry it into the next "what is left" block.
+            pending_anchor = line_anchor.group(0)
+            if current_round:
+                current_anchor = pending_anchor
             i += 1
             continue
         if _is_wil_header(line):
@@ -113,6 +129,7 @@ def parse_whats_left(text: str) -> list[dict]:
             if items:
                 sections.append({
                     "round": current_round,
+                    "anchor": current_anchor,
                     "header": header,
                     "items": items,
                     "line": i + 1,
@@ -133,6 +150,7 @@ def build_snapshot(doc: Path) -> dict:
         "source_doc": str(doc.relative_to(_REPO)) if str(doc).startswith(str(_REPO)) else str(doc),
         "section_count": len(sections),
         "live_round": live["round"],
+        "live_anchor": live.get("anchor", ""),
         "live_header": live["header"],
         "open_items": live["items"],
         "open_item_count": len(live["items"]),

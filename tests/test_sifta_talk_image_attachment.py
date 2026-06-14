@@ -124,6 +124,34 @@ def test_image_attachment_mime_from_format():
     assert _image_attachment_mime_from_format("png") == "image/png"
 
 
+def test_talk_image_turn_redirects_text_only_igor_to_vlm():
+    from Applications.sifta_talk_to_alice_widget import _image_turn_vlm_redirect_for_talk
+
+    out = _image_turn_vlm_redirect_for_talk(
+        "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
+        "alice-m5-cortex-8b-6.3gb:latest",
+        has_image=True,
+        available_vlms=["mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"],
+    )
+
+    assert out["redirected"] is True
+    assert out["model"] == "mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"
+
+
+def test_talk_image_turn_does_not_redirect_non_text_only_model():
+    from Applications.sifta_talk_to_alice_widget import _image_turn_vlm_redirect_for_talk
+
+    out = _image_turn_vlm_redirect_for_talk(
+        "alice-m5-cortex-8b-6.3gb:latest",
+        "alice-m5-cortex-8b-6.3gb:latest",
+        has_image=True,
+        available_vlms=["mlx-vlm:osmQwopus-3.6-27B-OptiQ-3.7bpw-mlx"],
+    )
+
+    assert out["redirected"] is False
+    assert out["model"] == "alice-m5-cortex-8b-6.3gb:latest"
+
+
 def test_attachment_context_prompt_block_turns_image_into_text_input(tmp_path):
     from Applications.sifta_talk_to_alice_widget import _attachment_context_prompt_block
 

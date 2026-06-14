@@ -31,11 +31,13 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     is no longer a fallback candidate on the M5. The Architect removed it
     because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
     Keep the constant for old receipts, but do not auto-route to it.
-  - **Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline are selectable
+  - **Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks (legacy "Qwen" namespace for the Fireworks path), Cline, and now MiMo (Xiaomi MiMo coding platform) are selectable
     through the same signed-in CLI/OAuth surfaces used by the arms. Kimi is the only
     owner-facing Fireworks cortex because it carries
     the vision lane needed for Alice's browser-photo demo. Older Fireworks
     drafter/long-context tags remain compatibility constants, not picker rows.
+    MiMo added this round as the coding-focused cortex whose memory/checkpoint/dream/distill
+    features directly support Alice's ongoing body-code persistent memory + self-understanding work.
   - **All installed alice-* cortexes** are user-selectable from the
     Settings panel through `list_installed_alice_cortexes()` — no
     hardcoded "Daily / Fallback / Extra Research" tiering anymore.
@@ -139,12 +141,30 @@ CANONICAL_CLOUD_CODEX = "codex:gpt-5.5"
 # already exist as registered arms (round 86 + round 87). Surfacing them in
 # the inference dropdown lets the owner pick them as the talk-to-alice cortex
 # the same way Claude and Codex teachers are pickable.
+# Owner update (this round): the "Qwen" namespace label is legacy for the
+# Fireworks path. Current owner setup (thinking with Cline) uses Kimi models
+# (Kimi K2.6 etc.) via Fireworks API. The qwen: prefix remains for compat with
+# existing arms / child env (see swarm_fireworks_qwen_config.py) but the
+# effective model for owner-facing work is Kimi-backed.
 CANONICAL_CLOUD_QWEN = "qwen:accounts/fireworks/models/gpt-oss-20b"
 # Round 97 — Kimi K2.6 remains available for upgrade dispatches that need its
 # 262k context window + vision; kept as a non-default alias here.
 CANONICAL_CLOUD_QWEN_PREMIUM_KIMI = "qwen:accounts/fireworks/models/kimi-k2p6"
 CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH = "qwen:accounts/fireworks/models/deepseek-v4-flash"
 CANONICAL_CLOUD_CLINE = "cline:cline-cli-default"
+# This round: add MiMo (Xiaomi MiMo coding platform) as a selectable cortex.
+# Ties to prior persistent-memory / body-code self-understanding work (r978).
+# MiMo brings strong checkpoint/dream/distill-style features that map to
+# Alice's need for deep cross-session understanding of her own body code on
+# the unique crypto hardware. API surface follows the Fireworks/cloud pattern
+# or dedicated arm (to be wired in follow-up smallest cuts). "we code together".
+# r985 unification (per the owner invite in the Dr Cursor row: "if the exact
+# tag should be a different string, say the word"): ONE mimo tag everywhere,
+# matching the cline:cline-cli-default pattern. The r984 external-brain lane
+# family, /cortex llm branch, and brain labels all key on the "mimo" prefix,
+# and gemini_brain's gated menu emits this same string — exact-string dedupe
+# collapses the two sources into one registry row. One CLI, one tag.
+CANONICAL_CLOUD_MIMO = "mimo:mimo-cli-default"
 DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES = frozenset((
     CANONICAL_CLOUD_QWEN,
     CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH,
@@ -671,6 +691,15 @@ def list_installed_alice_cortexes(
     return names
 
 
+def list_installed_diffusion_cortexes() -> list[str]:
+    """Return local GGUF diffusion cortexes (``diffusion:<id>``) when CLI + GGUF exist."""
+    try:
+        from System import swarm_diffusion_cortex
+        return list(swarm_diffusion_cortex.available_models() or [])
+    except Exception:
+        return []
+
+
 def list_installed_mlx_cortexes(timeout: float = 1.2) -> list[str]:
     """Return MLX cortexes the local mlx-omni-server is serving, as ``mlx:<id>``.
 
@@ -737,13 +766,21 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
             # r261 (Architect 2026-06-01): the only Qwen/Fireworks cortex shown in the picker is
             # Kimi K2.6 (native multimodal — vision). gpt-oss-20b + deepseek-v4-flash stay as
             # internal drafter constants but are no longer separate picker entries.
+            # Owner note this round (thinking with Cline): "Qwen" label is the legacy namespace
+            # for the Fireworks path; effective model is Kimi-backed.
             CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
             CANONICAL_CLOUD_CLINE,
+            # This round: MiMo (Xiaomi MiMo coding platform) added to the selectable cloud
+            # cortex list. Its memory / checkpoint / dream / distill features map directly
+            # to Alice's body-code persistent memory + cross-session self-understanding work.
+            # "we code together". Full arm wiring follows in smallest subsequent cuts.
+            CANONICAL_CLOUD_MIMO,
         ))
         return _dedupe(cloud)
 
     local = list_installed_alice_cortexes()
     mlx = list_installed_mlx_cortexes()
+    diffusion = list_installed_diffusion_cortexes()
     # Direct MLX VLM (osmQwopus etc) for vision command cortex — merge so picker dropdown offers mlx-vlm: names
     vlm_direct = []
     try:
@@ -752,8 +789,8 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
     except Exception:
         pass
     cloud = _available_cloud_cortexes()
-    if local or mlx or vlm_direct:
-        return _dedupe(local + mlx + vlm_direct + cloud)
+    if local or mlx or diffusion or vlm_direct:
+        return _dedupe(local + mlx + diffusion + vlm_direct + cloud)
     return _dedupe([
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_GEMMA4_SMALL,
@@ -767,6 +804,7 @@ __all__ = [
     "CANONICAL_CLOUD_CLINE",
     "CANONICAL_CLOUD_CODEX",
     "CANONICAL_CLOUD_GROK",
+    "CANONICAL_CLOUD_MIMO",
     "CANONICAL_CLOUD_QWEN",
     "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
     "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",

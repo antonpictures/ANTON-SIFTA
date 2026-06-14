@@ -39,6 +39,7 @@ except Exception:  # pragma: no cover - fallback only for damaged boot paths
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "primary_cortex_switches.jsonl"
+_PRIMARY_CORTEX_JSON = _STATE / "primary_cortex.json"
 APP_CONTEXT = "talk_to_alice"
 
 # Stable defaults plus local experimental slots. The actual dropdown filters to
@@ -214,6 +215,55 @@ def primary_cortex_options(
     return out
 
 
+def _provider_for_model(model: str) -> str:
+    low = str(model or "").strip().lower()
+    if low.startswith("diffusion:") or low.startswith("usd:"):
+        return "local_diffusion"
+    if low.startswith(("grok:", "claude:", "codex:", "qwen:", "cline:", "mimo:", "antigravity:")):
+        return "cloud_bridge"
+    if low.startswith(("mlx-vlm:", "mlx:")):
+        return "mlx_local"
+    return "ollama"
+
+
+def persist_active_cortex_snapshot(
+    model_name: str,
+    *,
+    source: str = "talk_cortex_switch",
+) -> Dict[str, Any]:
+    """CUR-F9: align primary_cortex.json with the live Talk selection ladder."""
+    model = str(model_name or "").strip()
+    if not model:
+        return {}
+    row: Dict[str, Any] = {
+        "primary_cortex": model.replace(":", "_").replace("/", "_")[:96],
+        "provider": _provider_for_model(model),
+        "model": model,
+        "set_by": str(source or "talk_cortex_switch"),
+        "changed_at": time.time(),
+        "note": (
+            "Synced from live Talk cortex selection (CUR-F9). "
+            "Authoritative runtime pin remains swimmer_ollama_assignments.json."
+        ),
+        "talk_to_alice": True,
+        "global_chat": True,
+        "truth_label": "PRIMARY_CORTEX_SNAPSHOT_V1",
+    }
+    try:
+        if _PRIMARY_CORTEX_JSON.exists():
+            prev = json.loads(_PRIMARY_CORTEX_JSON.read_text(encoding="utf-8"))
+            if isinstance(prev, dict) and prev.get("auth"):
+                row["auth"] = prev["auth"]
+    except Exception:
+        pass
+    _STATE.mkdir(parents=True, exist_ok=True)
+    _PRIMARY_CORTEX_JSON.write_text(
+        json.dumps(row, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return row
+
+
 def set_primary_cortex(
     model_name: str,
     *,
@@ -374,6 +424,7 @@ __all__ = [
     "PREFERRED_PRIMARY_CORTICES",
     "current_primary_cortex_truth",
     "installed_ollama_models",
+    "persist_active_cortex_snapshot",
     "primary_cortex_options",
     "set_primary_cortex",
 ]

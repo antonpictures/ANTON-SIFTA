@@ -330,6 +330,28 @@ def remember_youtube_watch(
         "notes_file": notes_file,
         "reality_frame": frame,
     }
+    # P7 (r1036): persist co-watch provenance into the watch-memory ledger row.
+    # Previously page_context / object_provenance / provenance_depth reached only
+    # the latent feed + notes file and were dropped from youtube_watch_memory.jsonl,
+    # so "what are we watching?" could not cite where the label came from. Additive
+    # and presence-gated — non-co-watch callers are unaffected. No pixels stored.
+    _page_context = _clean_text(row.get("page_context"), 900)
+    if _page_context:
+        out["page_context"] = _page_context
+    _obj_prov = row.get("object_provenance")
+    if isinstance(_obj_prov, (list, tuple)) and _obj_prov:
+        normalized: list[Any] = []
+        for item in list(_obj_prov)[:32]:
+            if isinstance(item, Mapping):
+                normalized.append({str(k): item[k] for k in item})
+            else:
+                normalized.append(str(item))
+        out["object_provenance"] = normalized
+    if "provenance_depth" in row or "object_provenance" in row:
+        try:
+            out["provenance_depth"] = int(row.get("provenance_depth") or 0)
+        except Exception:
+            out["provenance_depth"] = 0
     append_line_locked(state / WATCH_LEDGER, json.dumps(out, ensure_ascii=False, sort_keys=True) + "\n")
 
     try:

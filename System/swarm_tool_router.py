@@ -826,6 +826,20 @@ def _exec_send_whatsapp(
     owner_present: bool = False,
 ) -> Dict[str, Any]:
     """Execute WhatsApp send through the existing biological actuator."""
+    try:
+        from System.swarm_effector_gate import require_network_effector
+
+        gate = require_network_effector("whatsapp_send", state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"send_whatsapp refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     from System.whatsapp_bridge_autopilot import (
         autonomous_send_whatsapp,
         send_whatsapp,
@@ -1028,6 +1042,20 @@ def _exec_stigmergic_bus_tail(params: Dict[str, str]) -> Dict[str, Any]:
 
 def _exec_run_local_command(params: Dict[str, str]) -> Dict[str, Any]:
     """Guarded local terminal primitive: allowlisted argv, no shell."""
+    try:
+        from System.swarm_effector_gate import require_shell_effector
+
+        gate = require_shell_effector(str(params.get("command") or "local_command"), state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"run_local_command refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     try:
         from System.swarm_hermes_tool_surface import run_local_command
 
@@ -1689,6 +1717,20 @@ def _exec_run_terminal(params: Dict[str, str]) -> Dict[str, Any]:
     if term is None:
         return {"ok": False, "status": "NO_EXECUTOR", "error": "terminal organ unavailable"}
     command = str(params.get("command") or "")
+    try:
+        from System.swarm_effector_gate import require_shell_effector
+
+        gate = require_shell_effector(command, state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"run_terminal refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     raw = term.run_terminal(
         command,
         cwd=params.get("cwd") or None,
@@ -1767,6 +1809,20 @@ def _exec_write_file(params: Dict[str, str]) -> Dict[str, Any]:
     if fileo is None:
         return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
     path = str(params.get("path") or "")
+    try:
+        from System.swarm_effector_gate import require_file_write_effector
+
+        gate = require_file_write_effector(path, state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"write_file refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     raw = fileo.write_file(path, str(params.get("content") or ""))
     ok = isinstance(raw, dict) and bool(raw.get("wrote_ok"))
     return _legacy_tool_result(
@@ -1781,6 +1837,20 @@ def _exec_edit_file(params: Dict[str, str]) -> Dict[str, Any]:
     if fileo is None:
         return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
     path = str(params.get("path") or "")
+    try:
+        from System.swarm_effector_gate import require_file_write_effector
+
+        gate = require_file_write_effector(path, state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"edit_file refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     raw = fileo.edit_file(
         path,
         str(params.get("old_text") or ""),
@@ -1814,6 +1884,20 @@ def _exec_fetch_url(params: Dict[str, str]) -> Dict[str, Any]:
     if web is None:
         return {"ok": False, "status": "NO_EXECUTOR", "error": "web organ unavailable"}
     url = str(params.get("url") or "")
+    try:
+        from System.swarm_effector_gate import require_network_effector
+
+        gate = require_network_effector(url[:120], state_dir=_STATE)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "status": "EFFECTOR_GATE_REFUSED",
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+                "alice_summary": f"fetch_url refused: {gate.get('reason')}",
+            }
+    except Exception:
+        pass
     raw = web.fetch_url(
         url,
         max_chars=_int_param(params, "max_chars", 4000),

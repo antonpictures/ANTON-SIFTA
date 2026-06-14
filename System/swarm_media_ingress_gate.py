@@ -213,6 +213,19 @@ DIRECT_REQUEST_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+OWNER_PLAYBACK_DIRECT_ADDRESS_RE = re.compile(
+    r"\b(?:"
+    r"are\s+you\s+listening(?:\s+with\s+me)?|"
+    r"listen(?:ing)?\s+with\s+me|"
+    r"do\s+you\s+hear\s+me|can\s+you\s+hear\s+me|"
+    r"i\s+(?:am|['’]m)\s+(?:talking|speaking)\s+to\s+you|"
+    r"answer\s+me|"
+    r"i\s+just\s+spoke|"
+    r"spoke\s+to\s+a\s+wall|"
+    r"no\s+answer"
+    r")\b",
+    re.IGNORECASE,
+)
 OWNER_SENSOR_CONTROL_RE = re.compile(
     r"\b(?:"
     r"(?:switch|change|move|route|turn|look|focus|use|select|activate|open|enable)\b"
@@ -925,6 +938,34 @@ def _classify_spoken_ingress_core(
     except Exception:
         own_browser_playing, own_browser_details = False, {"reason": "own_browser_probe_failed"}
 
+    try:
+        from System.swarm_talk_page_summary_guard import (
+            is_explicit_playback_state_question,
+            is_owner_interrogative_turn,
+        )
+    except Exception:
+        def is_explicit_playback_state_question(_t: str) -> bool:  # type: ignore
+            return False
+
+        def is_owner_interrogative_turn(_t: str) -> bool:  # type: ignore
+            return False
+
+    # r1017 P0.1: owner questions always get a reply lane — even during co-watch.
+    if is_explicit_playback_state_question(clean) or (
+        is_owner_interrogative_turn(clean)
+        and (
+            (stt_conf and stt_conf >= 1.0)
+            or float(stt_conf or 0.0) >= 0.55
+            or bool(DIRECT_ADDRESS_RE.search(clean))
+        )
+    ):
+        return {
+            "route": "direct",
+            "reason": "owner_interrogative_reply_required",
+            "confidence": 1.0 if (stt_conf and stt_conf >= 1.0) else max(0.74, float(stt_conf or 0.0)),
+            "own_browser": dict(own_browser_details) if isinstance(own_browser_details, Mapping) else {},
+        }
+
     # r874 P1-A/P1-B: playback audio is body output; foreign "Alice" in media ≠ SIFTA Alice.
     if own_browser_playing and not (stt_conf and stt_conf >= 1.0):
         paused_owner = bool(
@@ -939,11 +980,28 @@ def _classify_spoken_ingress_core(
             and not re.search(r"\b(?:george|ioan)\b", clean, re.IGNORECASE)
             and (voice_george_conf or 0.0) < 0.55
         )
+        owner_direct_playback_signal = bool(
+            not foreign_alice_wake
+            and OWNER_PLAYBACK_DIRECT_ADDRESS_RE.search(clean)
+            and (
+                DIRECT_ADDRESS_RE.search(clean)
+                or re.search(r"\b(?:i|i['’]m|i\s+am|me|my|we|our)\b", clean, re.IGNORECASE)
+                or acoustic_cue == "nearfield_voice_likely"
+                or (voice_george_conf or 0.0) >= 0.35
+            )
+        )
         if foreign_alice_wake:
             return {
                 "route": "observed_media",
                 "reason": "foreign_alice_identity_bleed_in_playback",
                 "confidence": 0.93,
+                "own_browser": dict(own_browser_details) if isinstance(own_browser_details, Mapping) else {},
+            }
+        if owner_direct_playback_signal:
+            return {
+                "route": "direct",
+                "reason": "owner_direct_address_during_own_browser_playback",
+                "confidence": max(0.74, min(1.0, float(stt_conf or 0.0))),
                 "own_browser": dict(own_browser_details) if isinstance(own_browser_details, Mapping) else {},
             }
         if not paused_owner and (voice_george_conf or 0.0) < 0.60:
@@ -1408,6 +1466,28 @@ def write_gate_receipt(
             digest_once(state_dir=LEDGER.parent, max_rows=32)
     except Exception:
         pass
+    if route in {"ambient_media", "observed_media"} and str(text or "").strip():
+        try:
+            from System.swarm_cowatch_moment_binder import bind_cowatch_moment
+
+            moment = bind_cowatch_moment(
+                str(text or ""),
+                source_row=row,
+                state_dir=LEDGER.parent,
+                now=float(row.get("ts") or time.time()),
+            )
+            row["co_watch_moment"] = {
+                "moment_id": moment.get("moment_id"),
+                "status": moment.get("status"),
+                "world_eye_blink_id": moment.get("world_eye_blink_id"),
+                "owner_eye_blink_id": moment.get("owner_eye_blink_id"),
+                "privacy_policy": moment.get("privacy_policy"),
+            }
+        except Exception as exc:
+            row["co_watch_moment"] = {
+                "status": "ERROR",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
     _append_jsonl(LEDGER, row)
     return row
 

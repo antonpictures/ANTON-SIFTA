@@ -932,6 +932,103 @@ def test_visible_page_control_click_executes_in_alice_browser(monkeypatch):
     assert "Receipt: r-enlarge" in reply
 
 
+def test_browser_click_spends_fresh_owner_intent_nonce(monkeypatch, tmp_path):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    lines = []
+    calls = []
+    widget._append_system_line = lambda line, *args, **kwargs: lines.append((line, kwargs.get("error", False)))
+    widget._desktop_app_launcher = lambda: None
+
+    class Browser:
+        def click_visible_control_matching_text(self, query):
+            calls.append(query)
+            return {"clicked": True, "mode": "visible_control_click", "label": "Play", "score": 80}
+
+        def refresh_current_page_state(self):
+            calls.append("refresh")
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-fresh-click")
+    from System.swarm_effector_gate import bind_owner_ingress
+
+    bind_owner_ingress(
+        owner_text="Alice click play in the browser",
+        surface="test",
+        stt_conf=0.93,
+        ingress_kind="typed",
+        state_dir=state_dir,
+    )
+
+    reply = talk.TalkToAliceWidget._execute_sifta_app_command(
+        widget,
+        {
+            "kind": "browser_action",
+            "app_name": "Alice Browser",
+            "action": "click_visible_page_control",
+            "query": "click play",
+            "owner_text": "Alice click play in the browser",
+            "stt_conf": 0.93,
+        },
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (state_dir / "intent_nonce_gate.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert calls == ["click play", "refresh"]
+    assert any(row.get("action") == "mint" for row in rows)
+    assert any(row.get("action") == "spend" and row.get("effector") == "browser:click_visible_page_control" for row in rows)
+    assert "Play" in reply
+    assert lines == [("App/browser receipt: r-fresh-click", False)]
+
+
+def test_browser_click_blocks_low_conf_owner_ingress(monkeypatch, tmp_path):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    lines = []
+    widget._append_system_line = lambda line, *args, **kwargs: lines.append((line, kwargs.get("error", False)))
+    widget._desktop_app_launcher = lambda: None
+
+    class Browser:
+        def click_visible_control_matching_text(self, query):
+            raise AssertionError("low confidence ingress must not touch the browser")
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-blocked-click")
+    from System.swarm_effector_gate import bind_owner_ingress
+
+    bind_owner_ingress(
+        owner_text="maybe click play",
+        surface="test",
+        stt_conf=0.31,
+        ingress_kind="spoken",
+        state_dir=state_dir,
+    )
+
+    reply = talk.TalkToAliceWidget._execute_sifta_app_command(
+        widget,
+        {
+            "kind": "browser_action",
+            "app_name": "Alice Browser",
+            "action": "click_visible_page_control",
+            "query": "click play",
+            "owner_text": "maybe click play",
+            "stt_conf": 0.31,
+        },
+    )
+
+    assert "did not move the Alice Browser" in reply
+    assert "stt_conf_too_low" in reply
+    assert lines == [("App/browser receipt: r-blocked-click", True)]
+    assert (state_dir / "intent_nonce_gate.jsonl").exists()
+
+
 def test_duckduckgo_image_grid_selection_never_routes_to_youtube():
     phrase = "OK, SELECT THE CERAMIC VASE PHOTO FROM THE CURRENT ALICE BROWSER SCREEN"
 

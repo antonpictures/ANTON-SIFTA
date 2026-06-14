@@ -281,6 +281,29 @@ def send_swimmer(
             full_message=full_message,
             request_hash=request_hash,
         )
+
+    try:
+        from System.swarm_effector_gate import require_iphone_effector
+
+        gate = require_iphone_effector(full_message[:120], state_dir=_STATE)
+        if not gate.get("ok"):
+            return finish(
+                "EFFECTOR_GATE_REFUSED",
+                False,
+                str(gate.get("reason") or "effector_gate_refused"),
+                target_id=target_id,
+                full_message=full_message,
+                request_hash=request_hash,
+            )
+    except Exception as exc:
+        return finish(
+            "EFFECTOR_GATE_ERROR",
+            False,
+            f"{type(exc).__name__}: {exc}",
+            target_id=target_id,
+            full_message=full_message,
+            request_hash=request_hash,
+        )
     
     # Send via AppleScript
     # We use 'service 1' which is almost always the active iMessage service

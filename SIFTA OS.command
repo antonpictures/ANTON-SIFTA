@@ -51,6 +51,13 @@ export SIFTA_BURN_LOOP_ENABLE="${SIFTA_BURN_LOOP_ENABLE:-1}"
 # owner explicitly starts SIFTA with SIFTA_MATRIX_ENABLE_AGENT_CLI=1.
 export SIFTA_MATRIX_ENABLE_AGENT_CLI="${SIFTA_MATRIX_ENABLE_AGENT_CLI:-0}"
 
+# r943 — Architect 2026-06-11: Fable 5 as Alice's claude cortex. The claude
+# arm honors this pin (System/swarm_agent_arm_launcher.py); without it the
+# Claude Code CLI default decides (was Opus 4.8). A terminal `export` does
+# not reach the double-clicked .command, so the pin lives here. Set to "" to
+# return to the CLI default.
+export SIFTA_CLAUDE_ARM_MODEL="${SIFTA_CLAUDE_ARM_MODEL:-claude-fable-5}"
+
 if [ -x ".venv/bin/python3" ]; then
   PYTHON_BIN=".venv/bin/python3"
 else

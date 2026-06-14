@@ -50,6 +50,8 @@ def test_records_missing_time_on_wake(tmp_path):
     assert "missing time" in row["logbook"].lower()
     assert row["why_guess"]
     assert row["question_for_george"]  # 2h gap -> she asks
+    assert row["owner_gap_evidence"]["truth_label"] == cont.OWNER_GAP_EVIDENCE_TRUTH_LABEL
+    assert "George is the missing data provider" in row["quest_for_george"]
     # persisted to the diary ledger
     ledger = sifta / "os_consciousness" / "alice_missing_time_diary.jsonl"
     assert ledger.exists()
@@ -119,3 +121,21 @@ def test_owner_text_can_resolve_missing_time(tmp_path):
     assert row is not None
     assert row["resolved"] is True
     assert "reboot the Mac" in row["resolution_answer"]
+
+
+def test_missing_time_scans_owner_activity_inside_gap(tmp_path):
+    sifta = tmp_path / ".sifta_state"
+    now = time.time()
+    last_on = now - 7200
+    _seed_heartbeat(sifta, ts=last_on)
+    (sifta / "owner_activity_segments.jsonl").write_text(
+        json.dumps({"ts": last_on + 1200, "label": "George was using the Mac after Alice went dark"}) + "\n",
+        encoding="utf-8",
+    )
+
+    row = cont.record_missing_time_diary(state_dir=sifta, now=now)
+
+    evidence = row["owner_gap_evidence"]
+    assert evidence["evidence_count"] == 1
+    assert evidence["counts_by_source"]["owner_activity_segments.jsonl"] == 1
+    assert "using the Mac" in evidence["samples"][0]["summary"]

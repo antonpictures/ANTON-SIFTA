@@ -248,6 +248,32 @@ def test_r902_current_page_query_bypasses_history_recall():
     assert not _is_current_page_query(q)
 
 
+def test_r990_forgot_podcast_uses_co_watch_memory(tmp_path):
+    """George 2026-06-11 17:10 — 'i forgot the podcast we were listening to
+    together' missed recall cues and spun 87K sysprompt grok until timeout."""
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    podcast_url = "https://www.youtube.com/watch?v=4Uk0_1yqdJo"
+    row = {
+        "ts": time.time(),
+        "truth_label": "YOUTUBE_COWATCH_MEMORY_V1",
+        "title": "Podcast",
+        "url": podcast_url,
+        "video_id": "4Uk0_1yqdJo",
+        "content_kind": "podcast",
+        "status": "owner_requested_remember_for_restart",
+    }
+    (state / "youtube_watch_memory.jsonl").write_text(
+        json.dumps(row) + "\n", encoding="utf-8"
+    )
+    q = "i forgot the podcast we were listening to together:"
+    out = watched_memory_fast_reply(q, state_dir=state)
+    assert out.get("reply"), "podcast recall must fire without cortex"
+    assert podcast_url in out["reply"]
+    block = watched_memory_recall_block(q, state_dir=state)
+    assert "WATCHED MEMORY RECALL" in block or podcast_url in block
+
+
 def test_coding_command_outranks_browser_lanes(tmp_path):
     """r922 regression: 'Alice try to code your body now:' + quoted essay
     mentioning a YouTube video stole the coding turn and re-opened Bilyeu.

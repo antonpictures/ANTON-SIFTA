@@ -670,7 +670,26 @@ def audio_io() -> Dict[str, Any]:
 
 # ── WRITE SURFACES (touch) ─────────────────────────────────────────────
 
+def _gate_applescript_effector(action: str) -> Optional[Dict[str, Any]]:
+    try:
+        from System.swarm_effector_gate import require_applescript_effector
+
+        gate = require_applescript_effector(action)
+        if not gate.get("ok"):
+            return {
+                "ok": False,
+                "reason": gate.get("reason"),
+                "gate_receipt_id": gate.get("gate_receipt_id"),
+            }
+    except Exception:
+        pass
+    return None
+
+
 def set_volume(level: int) -> Dict[str, Any]:
+    refused = _gate_applescript_effector("set_volume")
+    if refused:
+        return refused
     level = max(0, min(100, int(level)))
     rc, _, err = _run(["osascript", "-e", f"set volume output volume {level}"])
     res = {"ok": rc == 0, "level": level, "error": err.strip() or None}
@@ -679,6 +698,9 @@ def set_volume(level: int) -> Dict[str, Any]:
 
 
 def set_mute(muted: bool) -> Dict[str, Any]:
+    refused = _gate_applescript_effector("set_mute")
+    if refused:
+        return refused
     arg = "true" if muted else "false"
     rc, _, err = _run(["osascript", "-e", f"set volume with output muted {arg}"])
     res = {"ok": rc == 0, "muted": muted, "error": err.strip() or None}
@@ -687,6 +709,9 @@ def set_mute(muted: bool) -> Dict[str, Any]:
 
 
 def set_brightness(level: float) -> Dict[str, Any]:
+    refused = _gate_applescript_effector("set_brightness")
+    if refused:
+        return refused
     level = max(0.0, min(1.0, float(level)))
     script = (
         f'tell application "System Events" to tell process "SystemUIServer" to '
@@ -714,6 +739,9 @@ def clipboard_write(text: str) -> Dict[str, Any]:
 
 
 def notify(title: str, body: str = "") -> Dict[str, Any]:
+    refused = _gate_applescript_effector("notify")
+    if refused:
+        return refused
     title_q = title.replace('"', "'")
     body_q = body.replace('"', "'")
     script = f'display notification "{body_q}" with title "{title_q}"'
@@ -910,6 +938,9 @@ def set_appearance(mode: str) -> Dict[str, Any]:
 
 
 def open_url(url: str) -> Dict[str, Any]:
+    refused = _gate_applescript_effector(f"open_url:{url[:80]}")
+    if refused:
+        return refused
     rc, _, err = _run(["open", url], timeout=3.0)
     res = {"ok": rc == 0, "url": url, "error": err.strip() or None}
     _log("open_url", "ui", {"url": url}, res)

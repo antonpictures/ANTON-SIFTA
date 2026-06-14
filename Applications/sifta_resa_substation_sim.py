@@ -52,7 +52,7 @@ QHeaderView::section { background: #111a28; color: #5eead4; padding: 4px; }
 class _FlowMixin:
     """Shared energize + particle flow state for diagram canvases."""
 
-    def __init_flow(self) -> None:
+    def _init_flow(self) -> None:
         self._energized = False
         self._phase = 0.0
         self._timer = QTimer(self)
@@ -73,7 +73,7 @@ class _MechanicalCanvas(QWidget, _FlowMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(360)
-        self.__init_flow__()
+        self._init_flow()
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -85,10 +85,7 @@ class _MechanicalCanvas(QWidget, _FlowMixin):
         p.fillRect(0, 0, w, h, grad)
 
         order = default_order()
-        sections = order.sections + tuple(
-            {"id": d["id"], "name": d["name"], "mechanical": [f"{sum(b['count'] for b in d['breakers'])} breakers"]}
-            for d in order.distribution_sections
-        )
+        sections = order.sections
         n = len(sections)
         pad = 24
         slot_w = (w - pad * 2) / n
@@ -106,7 +103,7 @@ class _MechanicalCanvas(QWidget, _FlowMixin):
             p.setFont(QFont("Menlo", 9, QFont.Weight.Bold))
             p.drawText(QRectF(x, y0 + 8, sw, 24), Qt.AlignmentFlag.AlignCenter, sec["id"])
             p.setFont(QFont("Menlo", 8))
-            lines = sec.get("mechanical", [])[:3]
+            lines = sec.get("mechanical", [])[:4]
             for li, line in enumerate(lines):
                 p.drawText(QRectF(x + 6, y0 + 34 + li * 16, sw - 12, 16), Qt.AlignmentFlag.AlignLeft, line[:42])
 
@@ -123,14 +120,14 @@ class _MechanicalCanvas(QWidget, _FlowMixin):
 
         p.setPen(QColor("#7fa8d4"))
         p.setFont(QFont("Menlo", 10))
-        p.drawText(12, h - 18, "Front elevation — SS-SA lineup (SIMULATION)")
+        p.drawText(12, h - 18, "Front elevation — RPS-666530-1 · 4 sections shipped individually (SIMULATION)")
 
 
 class _SingleLineCanvas(QWidget, _FlowMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(400)
-        self.__init_flow__()
+        self._init_flow()
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -144,11 +141,11 @@ class _SingleLineCanvas(QWidget, _FlowMixin):
         p.setFont(QFont("Menlo", 9))
 
         nodes = [
-            ("Utility 12.47 kV", cx - w * 0.38, cy - 60),
-            ("LI Switch 600A", cx - w * 0.18, cy - 60),
-            ("2500 kVA XFMR", cx, cy - 60),
-            ("Main 4000A 65kAIC", cx + w * 0.2, cy - 60),
-            ("Dist S4+S5", cx + w * 0.38, cy - 60),
+            ("Utility Service 240V", cx - w * 0.40, cy - 60),
+            ("EUSERC Metering", cx - w * 0.20, cy - 60),
+            ("Main 1600AT/2000AF", cx, cy - 60),
+            ("Dist Bus 1600A", cx + w * 0.20, cy - 60),
+            ("Feeders 400·400·1200A", cx + w * 0.40, cy - 60),
         ]
 
         for i, (label, x, y) in enumerate(nodes):
@@ -172,14 +169,14 @@ class _SingleLineCanvas(QWidget, _FlowMixin):
                 p.drawEllipse(QPointF(px, y1), 6, 6)
 
         p.setPen(QColor("#94a3b8"))
-        p.drawText(12, h - 16, "Single-line diagram — 12.47 kV → 480Y/277 V (SIMULATION)")
+        p.drawText(12, h - 16, "Single-line — RPS-666530-1 · 1600A main · 240V · EUSERC (SIMULATION)")
 
 
 class _ThreeLineCanvas(QWidget, _FlowMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(420)
-        self.__init_flow__()
+        self._init_flow()
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -226,7 +223,7 @@ class _ThreeLineCanvas(QWidget, _FlowMixin):
 
         p.setPen(QColor("#94a3b8"))
         p.setFont(QFont("Menlo", 10))
-        p.drawText(12, h - 16, f"Three-line — {order.total_breakers} bolt-on LI breakers @ 480V 65kAIC (SIMULATION)")
+        p.drawText(12, h - 16, "Three-line — 1600A main · feeders 400 / 400 / 1200A @ 240V 65kAIC (SIMULATION)")
 
 
 class ResaSubstationSimWidget(SiftaBaseWidget):
@@ -237,8 +234,8 @@ class ResaSubstationSimWidget(SiftaBaseWidget):
         order = default_order()
 
         header = QLabel(
-            f"<span style='color:#5eead4;font-size:16px;font-weight:bold;'>⚡ {order.vendor} — Unit Substation {order.order_id}</span><br/>"
-            f"<span style='color:#7fa8d4;'>2500 kVA · 12.47 kV → 480Y/277 V · {order.total_breakers} distribution breakers · Ship 2026-09-28</span>"
+            f"<span style='color:#5eead4;font-size:16px;font-weight:bold;'>⚡ {order.vendor} — Switchboard {order.order_id}</span><br/>"
+            f"<span style='color:#7fa8d4;'>{order.misc['main']} · {order.misc['service']} · {len(order.sections)} sections shipped individually</span>"
         )
         header.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(header)
@@ -286,7 +283,7 @@ class ResaSubstationSimWidget(SiftaBaseWidget):
             rows.append((sec["id"], sec["name"], "1", sec["electrical"][0] if sec["electrical"] else ""))
         for dist in order.distribution_sections:
             for br in dist["breakers"]:
-                rows.append((dist["id"], "LI Breaker", str(br["count"]), f"{br['trip_label']} 3P 65k@480V"))
+                rows.append((dist["id"], "Feeder", str(br["count"]), br["trip_label"]))
         table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             for c, val in enumerate(row):

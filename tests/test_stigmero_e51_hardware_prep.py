@@ -17,6 +17,7 @@ from System.stigmerobotics_e51_hardware_prep import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GOOD = FIXTURES / "stigmero_e51_hardware_prep_good.jsonl"
+NAO_GOOD = FIXTURES / "stigmero_e51_hardware_prep_nao_good.jsonl"
 MISSING = FIXTURES / "stigmero_e51_hardware_prep_missing.jsonl"
 
 
@@ -28,6 +29,26 @@ def test_e51_good_fixture_abb_chain() -> None:
     assert report.proof_of_property["truth_label"] == "HYPOTHESIS"
     assert report.proof_of_property["physical_motion_label"] == "HYPOTHESIS"
     assert all(report.steps_present.values())
+
+
+def test_e51_good_fixture_nao_chain() -> None:
+    report = fixture_hardware_prep(NAO_GOOD, target_body_id="nao_arkoma_physical")
+
+    assert report.ok
+    assert report.virtual_body_id == "nao_arkoma_virtual"
+    assert report.proof_of_property["truth_label"] == "HYPOTHESIS"
+    assert report.proof_of_property["physical_motion_label"] == "HYPOTHESIS"
+    assert all(report.steps_present.values())
+
+
+def test_e51_default_fixture_is_body_aware() -> None:
+    abb = fixture_hardware_prep(target_body_id="abb_irb2400_physical")
+    nao = fixture_hardware_prep(target_body_id="nao_arkoma_physical")
+
+    assert abb.ok
+    assert abb.virtual_body_id == "abb_irb2400_virtual"
+    assert nao.ok
+    assert nao.virtual_body_id == "nao_arkoma_virtual"
 
 
 def test_e51_missing_steps_breaks_chain() -> None:

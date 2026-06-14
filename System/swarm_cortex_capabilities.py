@@ -164,12 +164,13 @@ def is_vision_capable_model(model: str, *, require_native_image_payload: bool = 
 def _keeps_selected_cloud_speaker_for_vision(model: str) -> bool:
     """Cloud provider selected by owner remains the speaking cortex.
 
-    Grok's Talk transport can reason from the visual receipt/context blocks that
-    Alice builds before dispatch. If we replace it with a local VLM here, the UI
-    truth breaks: /cortex says Grok while the live worker waits on local silicon.
+    Some Talk transports can reason from the visual receipt/context blocks that
+    Alice builds before dispatch. If we replace them with a local VLM here, the
+    UI truth breaks: /cortex says the owner-picked speaker while the live worker
+    waits on local silicon.
     """
     low = str(model or "").strip().lower()
-    return low.startswith(("grok:", "grok-"))
+    return low.startswith(("grok:", "grok-", "mimo:", "mimo-"))
 
 
 def _capability_row(model: str) -> dict[str, Any]:
@@ -384,15 +385,42 @@ _GROK_OAUTH_MODELS: tuple[str, ...] = (
     "grok-composer-2.5-fast",
     "grok-build",
 )
-_CLINE_ATTACHABLE_VIA_OAUTH: tuple[str, ...] = (
+_MIMO_NATIVE_MODELS: tuple[str, ...] = (
+    "mimo-v2.5-pro",
+    "mimo-v2-flash",
+    "mimo-v2-omni",
+    "mimo-v2-pro",
+    "mimo-v2.5",
+    "mimo-v2.5-pro-ultraspeed",
+    "mimo-auto",
+)
+# Neutral shared catalog: every model attachable over an OAuth / upstream
+# picker, across vendors. No cortex owns it — Cline and MiMo are equal
+# consumers of the SAME source, so neither depends on the other and the two
+# lists cannot drift. (r1108: MiMo is no longer defined as "Cline's list".)
+_OAUTH_ATTACHABLE_MODELS: tuple[str, ...] = (
     *_CODEX_PICKER_MODELS,
     *_GROK_OAUTH_MODELS,
     *_ANTHROPIC_ARM_MODELS,
+)
+# Per-cortex names kept for back-compat with existing references/tests; both
+# point straight at the neutral source above — equal siblings, no hierarchy.
+_CLINE_ATTACHABLE_VIA_OAUTH: tuple[str, ...] = _OAUTH_ATTACHABLE_MODELS
+_MIMO_ATTACHABLE_VIA_UPSTREAM: tuple[str, ...] = (
+    *_MIMO_NATIVE_MODELS,
+    *_OAUTH_ATTACHABLE_MODELS,
 )
 
 _ATTACHED_MODEL_LABELS: dict[str, str] = {
     "grok-composer-2.5-fast": "Composer 2.5",
     "grok-build": "Grok Build",
+    "mimo-v2.5-pro": "MiMo-V2.5-Pro",
+    "mimo-v2-flash": "MiMo-V2-Flash",
+    "mimo-v2-omni": "MiMo-V2-Omni",
+    "mimo-v2-pro": "MiMo-V2-Pro",
+    "mimo-v2.5": "MiMo-V2.5",
+    "mimo-v2.5-pro-ultraspeed": "MiMo-V2.5-Pro-UltraSpeed",
+    "mimo-auto": "MiMo Auto (free)",
     "claude-fable-5": "Fable 5",
     "claude-opus-4-8": "Opus 4.8",
     "claude-opus-4-7": "Opus 4.7",
@@ -419,6 +447,13 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
     "GPT-5.3-Codex-Spark": "Ultra-fast coding model.",
     "grok-composer-2.5-fast": "Cursor's latest coding model.",
     "grok-build": "Best for advanced coding tasks.",
+    "mimo-v2.5-pro": "Paid MiMo Token-Plan flagship observed in George's MiMo picker.",
+    "mimo-v2-flash": "Fast MiMo native model observed in George's MiMo picker.",
+    "mimo-v2-omni": "Omni MiMo native model observed in George's MiMo picker.",
+    "mimo-v2-pro": "Pro MiMo native model observed in George's MiMo picker.",
+    "mimo-v2.5": "MiMo V2.5 native model observed in George's MiMo picker.",
+    "mimo-v2.5-pro-ultraspeed": "UltraSpeed MiMo V2.5 Pro native model observed in George's MiMo picker.",
+    "mimo-auto": "Free MiMo Auto route observed in George's MiMo picker.",
     "claude-fable-5": "For toughest challenges; owner screenshot says included until June 22.",
     "claude-opus-4-8": "For complex tasks.",
     "claude-sonnet-4-6": "Most efficient for everyday tasks.",
@@ -507,6 +542,7 @@ def sync_cortex_attached_models_catalog(
     sd = _state_dir(state_dir)
     results: dict[str, Any] = {"synced": [], "ts": time.time()}
     cline_default = ""
+    mimo_default = ""
     try:
         from System.swarm_cline_settings_probe import probe_external_brain
 
@@ -518,6 +554,19 @@ def sync_cortex_attached_models_catalog(
                 cline_default = f"{provider}:{model}"
             elif model:
                 cline_default = model
+    except Exception:
+        pass
+    try:
+        from System.swarm_cline_settings_probe import probe_external_brain
+
+        mimo_row = probe_external_brain("mimo", state_dir=sd)
+        if str(mimo_row.get("status") or "") == "ok":
+            mimo_model = str(mimo_row.get("model") or "").strip()
+            mimo_provider = str(mimo_row.get("provider") or "").strip()
+            if mimo_provider and mimo_model:
+                mimo_default = f"{mimo_provider}:{mimo_model}"
+            elif mimo_model:
+                mimo_default = mimo_model
     except Exception:
         pass
     grok_models = _grok_cli_model_ids()
@@ -532,6 +581,21 @@ def sync_cortex_attached_models_catalog(
         state_dir=sd,
     )
     results["synced"].append("cline:cline-cli-default")
+    record_attached_models(
+        "mimo:mimo-cli-default",
+        list(_MIMO_ATTACHABLE_VIA_UPSTREAM),
+        # r1109 (George): when MiMo isn't configured yet, suggest his paid
+        # Token-Plan flagship (mimo-v2.5-pro) — NOT a generic GPT that isn't a
+        # MiMo model. A live probe still overrides this the moment MiMo is
+        # authenticated and a model is picked.
+        default_attached=mimo_default or "mimo-v2.5-pro",
+        source="live_probe_2026-06-14_mimo_upstream_models",
+        routes_any_provider=True,
+        picker_is_upstream=True,
+        live=bool(mimo_default),
+        state_dir=sd,
+    )
+    results["synced"].append("mimo:mimo-cli-default")
     record_attached_models(
         "grok:grok-4.3",
         grok_models,

@@ -528,6 +528,7 @@
   "SIFTA PDF Forge": {
     "category": "Utilities",
     "entry_point": "Applications/sifta_pdf_forge_widget.py",
+    "description": "Deterministic render hand (§7.2): offline WIN-WIN-style flyer builder (viewer for the classic static HTML). The receipt-wired app version lives at sifta_pdf_forge_app.py and is usable from any cortex.",
     "widget_class": "PdfForgeWidget",
     "window_width": 1280,
     "window_height": 900,

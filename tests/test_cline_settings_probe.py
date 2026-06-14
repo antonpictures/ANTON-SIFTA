@@ -42,6 +42,53 @@ def test_probe_finds_dot_cline_config_json(tmp_path: Path) -> None:
     assert row["context_window"] == "922000"
 
 
+def test_probe_finds_current_cline_providers_json(tmp_path: Path) -> None:
+    fake_home = tmp_path / "home"
+    settings = fake_home / ".cline" / "data" / "settings"
+    settings.mkdir(parents=True)
+    cfg = {
+        "version": 1,
+        "lastUsedProvider": "openai-codex",
+        "providers": {
+            "openai-codex": {
+                "settings": {
+                    "provider": "openai-codex",
+                    "model": "gpt-5.4",
+                    "reasoning": {"enabled": True, "effort": "xhigh"},
+                }
+            }
+        },
+    }
+    (settings / "providers.json").write_text(json.dumps(cfg))
+    state = tmp_path / "state"
+    row = probe.probe_cline_settings(home=fake_home, state_dir=state, now=250.0)
+    assert row["source"] == "config"
+    assert row["status"] == "ok"
+    assert row["provider"] == "openai-codex"
+    assert row["model"] == "gpt-5.4"
+    assert row["reasoning_level"] == "xhigh"
+    block = probe.latest_cline_brain_block(state_dir=state)
+    assert "provider=openai-codex" in block
+    assert "model=gpt-5.4" in block
+    assert "reasoning=xhigh" in block
+
+
+def test_probe_falls_back_to_latest_session_metadata(tmp_path: Path) -> None:
+    fake_home = tmp_path / "home"
+    session_dir = fake_home / ".cline" / "data" / "sessions" / "200_new"
+    session_dir.mkdir(parents=True)
+    (session_dir / "200_new.json").write_text(json.dumps({
+        "provider": "openai-codex",
+        "model": "gpt-5.3-codex-spark",
+    }))
+    state = tmp_path / "state"
+    row = probe.probe_cline_settings(home=fake_home, state_dir=state, now=260.0)
+    assert row["source"] == "latest_session"
+    assert row["status"] == "ok"
+    assert row["provider"] == "openai-codex"
+    assert row["model"] == "gpt-5.3-codex-spark"
+
+
 def test_probe_handles_nested_config(tmp_path: Path) -> None:
     fake_home = tmp_path / "home"
     (fake_home / ".config" / "cline").mkdir(parents=True)

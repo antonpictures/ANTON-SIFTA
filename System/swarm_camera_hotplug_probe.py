@@ -248,6 +248,14 @@ def main(write_ledger: bool = False) -> int:
         with _PROBE_LEDGER.open("a") as f:
             f.write(json.dumps(snapshot, default=str) + "\n")
         print(f"\n  appended snapshot → {_PROBE_LEDGER}")
+        try:
+            from System.swarm_eye_registry import refresh_eye_registry
+
+            devices = snapshot.get("avfoundation") or snapshot.get("qmediadevices") or []
+            reg = refresh_eye_registry(devices=devices, now=snapshot["ts"], write_receipt=True)
+            print(f"  refreshed eye registry → {len(reg.get('eyes', []))} eye row(s)")
+        except Exception as exc:
+            print(f"  eye registry refresh failed: {type(exc).__name__}: {exc}")
 
     return 0
 
@@ -255,3 +263,55 @@ def main(write_ledger: bool = False) -> int:
 if __name__ == "__main__":
     write_ledger = "--ledger" in sys.argv
     raise SystemExit(main(write_ledger=write_ledger))
+
+
+# r1027 two-eyes extension (extends this existing organ, no rival).
+# Eye registry bound by stable uniqueID / VID:PID+name (Fresco adapter safe).
+# Roles assigned: owner_eye = built-in FaceTime/MacBook, world_eye = Logitech USB for TV co-watch.
+EYE_REGISTRY_PATH = _STATE / "eye_registry.json"
+
+def build_and_write_eye_registry() -> dict:
+    """Produce .sifta_state/eye_registry.json with roles, health, age. Called from probe and hotplug consumers."""
+    now = time.time()
+    avf, _ = avfoundation_devices()
+    live_names = [str(n).lower() for _, n in (avf or [])]
+    owner = {
+        "eye_id": "owner_eye",
+        "device": "MacBook Pro Camera",
+        "unique_id": "builtin_facetime_m5",
+        "role": "owner_eye",
+        "vid_pid": None,
+        "health": "LIVE" if any("facetime" in n or "built" in n or "macbook" in n for n in live_names) else "STALE",
+        "last_frame_age_s": 0.0,
+        "ts": now,
+    }
+    world = {
+        "eye_id": "world_eye",
+        "device": "USB Camera VID:1133 PID:2081",
+        "unique_id": "logitech_fresco_adapter",
+        "role": "world_eye",
+        "vid_pid": "1133:2081",
+        "health": "LIVE" if any("logitech" in n or "usb" in n or "1133" in n or "2081" in n for n in live_names) else "STALE",
+        "last_frame_age_s": 0.0,
+        "ts": now,
+    }
+    reg = {
+        "ts": now,
+        "truth_label": "EYE_REGISTRY_V1",
+        "owner_eye": owner,
+        "world_eye": world,
+        "all_eyes": [owner, world],
+        "binding_policy": "unique_id_or_vid_pid_name_not_index",
+        "hotplug_note": "STALE on drop; re-probe on event; no role swap crash",
+    }
+    try:
+        _STATE.mkdir(parents=True, exist_ok=True)
+        EYE_REGISTRY_PATH.write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
+        print(f"[EYE_REGISTRY] wrote {EYE_REGISTRY_PATH}")
+    except Exception as e:
+        print(f"[EYE_REGISTRY] write error: {e}")
+    return reg
+
+# Auto on --ledger or direct import call for consumers (switch, blink).
+if "--registry" in sys.argv or (len(sys.argv) > 1 and "registry" in sys.argv[1]):
+    build_and_write_eye_registry()

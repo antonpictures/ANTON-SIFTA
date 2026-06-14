@@ -387,6 +387,39 @@ def _domain(url: str) -> str:
         return ""
 
 
+_OAUTH_IDP_HOSTS = (
+    "accounts.google.com",
+    "accounts.youtube.com",
+    "appleid.apple.com",
+    "login.microsoftonline.com",
+    "login.live.com",
+)
+
+
+def should_suppress_oauth_safari_handoff(
+    url: str,
+    *,
+    suppress_until: float = 0.0,
+    owner_drop_target: str = "",
+    now: float | None = None,
+) -> bool:
+    """r991: George 2026-06-11 — owner said 'open in alice browser' for JRE #2513;
+    Talk wrote the drop + raised Alice Browser, but r503 handed accounts.youtube.com
+    to Safari and the podcast played in Safari instead of the limb.
+
+    Co-watch / owner-drop YouTube ``watch?v=`` navigations must stay inside Alice
+    Browser. Only explicit Safari requests (Talk ``native_browser_url``) may leave."""
+    t = float(now if now is not None else time.time())
+    if t < float(suppress_until or 0.0):
+        return True
+    target = str(owner_drop_target or "").strip().lower()
+    if target and "youtube.com/watch" in target:
+        low = str(url or "").lower()
+        if any(h in low for h in _OAUTH_IDP_HOSTS):
+            return True
+    return False
+
+
 def _is_instagram_media_url(url: str) -> bool:
     text = str(url or "")
     return "instagram.com" in text and any(part in text for part in ("/reel/", "/p/", "/tv/"))
@@ -2082,10 +2115,8 @@ class AliceBrowserWidget(QMainWindow):
     # ── Signal handlers ───────────────────────────────────────────────────────
 
     # r503 (cowork — George: hand federated sign-in to Safari; "Safari is always on any Mac").
-    _OAUTH_IDP_HOSTS = (
-        "accounts.google.com", "accounts.youtube.com", "appleid.apple.com",
-        "login.microsoftonline.com", "login.live.com",
-    )
+    # r991: suppressed during owner Alice Browser drop navigations — see should_suppress_oauth_safari_handoff.
+    _OAUTH_IDP_HOSTS = _OAUTH_IDP_HOSTS
     _OAUTH_PATH_MARKERS = ("/o/oauth2/", "/oauth/authorize", "/signin/oauth", "/oauth2/authorize")
 
     def _url_is_oauth_idp(self, url: str) -> bool:
@@ -2106,6 +2137,12 @@ class AliceBrowserWidget(QMainWindow):
         embedded QtWebEngine surface and clears Google's grey disallowed_useragent wall.
         Guarded + rate-limited per host; never raises."""
         try:
+            if should_suppress_oauth_safari_handoff(
+                url,
+                suppress_until=float(getattr(self, "_suppress_safari_handoff_until", 0.0) or 0.0),
+                owner_drop_target=str(getattr(self, "_owner_drop_target_url", "") or ""),
+            ):
+                return
             import sys as _sys
             if _sys.platform != "darwin":
                 return
@@ -2719,8 +2756,42 @@ class AliceBrowserWidget(QMainWindow):
         }})();
         """
 
+    def _gate_browser_effector(self, action: str) -> dict | None:
+        """r1016 P0: refuse world-touch without fresh owner nonce."""
+        try:
+            from System.swarm_effector_gate import require_browser_effector
+
+            gate = require_browser_effector(action)
+            if not gate.get("ok"):
+                return {
+                    "ok": False,
+                    "action": action,
+                    "reason": gate.get("reason"),
+                    "gate_receipt_id": gate.get("gate_receipt_id"),
+                    "incident_prevented": gate.get("incident_prevented"),
+                }
+        except Exception as exc:
+            return {"ok": False, "action": action, "reason": f"gate_error:{exc}"}
+        return None
+
+    def _gate_click_refused(self, action: str) -> dict | None:
+        refused = self._gate_browser_effector(action)
+        if not refused:
+            return None
+        return {
+            "clicked": False,
+            "ok": False,
+            "action": action,
+            "reason": refused.get("reason"),
+            "gate_receipt_id": refused.get("gate_receipt_id"),
+            "incident_prevented": refused.get("incident_prevented"),
+        }
+
     def _dispatch_qt_mouse_click(self, x: float, y: float) -> dict:
         """Trusted Qt mouse press+release at viewport coordinates (r901)."""
+        refused = self._gate_browser_effector("qt_mouse_click")
+        if refused:
+            return refused
         if self._view is None:
             return {"ok": False, "reason": "no_view", "method": "qt_mouse"}
         try:
@@ -3193,6 +3264,29 @@ class AliceBrowserWidget(QMainWindow):
                 }
             } catch (e) {}
             var body = document.body ? ((document.body.innerText || '').trim()) : '';
+            function bestReadableText() {
+                var selectors = [
+                    'article',
+                    'main',
+                    '[role="main"]',
+                    '.entry-content',
+                    '.post-content',
+                    '.article-content',
+                    '.story-content',
+                    '.content',
+                    '#content'
+                ];
+                var best = '';
+                for (var si = 0; si < selectors.length; si++) {
+                    var nodes = document.querySelectorAll(selectors[si]);
+                    for (var ni = 0; ni < nodes.length; ni++) {
+                        var txt = (nodes[ni].innerText || '').trim();
+                        if (txt.length > best.length) best = txt;
+                    }
+                }
+                return best.length >= 400 ? best : body;
+            }
+            var readableText = bestReadableText();
             var playbackErrorText = "";
             try {
                 var playbackErrorMatch = body.match(/Sorry,\s*we['’]re\s+having\s+trouble\s+playing\s+this\s+video\.?/i);
@@ -3333,7 +3427,9 @@ class AliceBrowserWidget(QMainWindow):
             } catch (e) {}
 
             return {
-                text: body.slice(0, 4000),
+                text: readableText.slice(0, 50000),
+                body_text_chars: body.length,
+                readable_text_chars: readableText.length,
                 headings: heads, links: links, buttons: btns, controls: controls, images: imgs, og: og,
                 comments: comments,
                 media: media,
@@ -3743,6 +3839,9 @@ class AliceBrowserWidget(QMainWindow):
         """r657: click the LARGEST visible image on the page — on listing pages (eBay etc.)
         that is the main photo, and clicking it opens the enlarged/gallery view. This is the
         primary 'enlarge the photo' hand; labeled enlarge controls are the fallback."""
+        refused = self._gate_browser_effector("click_main_image")
+        if refused:
+            return refused
         if self._view is None:
             return {"ok": False, "action": "click_main_image", "reason": "no_web_view"}
         js = """
@@ -3783,6 +3882,9 @@ class AliceBrowserWidget(QMainWindow):
         """r656: click a visible page element by its text/aria-label/title (best match).
         Her generic finger for ANY page control — enlarge buttons, tabs, accept buttons —
         grounded in what is actually in the DOM, never a hardcoded site map."""
+        refused = self._gate_browser_effector("click_page_element")
+        if refused:
+            return refused
         want = " ".join(str(label or "").split())
         if not want:
             return {"ok": False, "action": "click_element", "reason": "empty_label"}
@@ -4359,6 +4461,9 @@ class AliceBrowserWidget(QMainWindow):
         return {}
 
     def _click_visible_media_candidate(self, candidate: dict) -> dict:
+        refused = self._gate_click_refused("click_visible_media_candidate")
+        if refused:
+            return refused
         href = str((candidate or {}).get("href") or "")
         index = int((candidate or {}).get("index") or 0)
         js = f"""
@@ -4410,6 +4515,9 @@ class AliceBrowserWidget(QMainWindow):
         method prefers obvious result links and requires the chosen node to be
         on-screen.
         """
+        refused = self._gate_click_refused("click_first_search_result")
+        if refused:
+            return refused
         if not self._view:
             return {"clicked": False, "reason": "no_web_view"}
         js = r"""
@@ -4491,6 +4599,10 @@ class AliceBrowserWidget(QMainWindow):
         Generic page-effector for buttons like "enlarge the photo", "open larger
         image", "share", etc. The live DOM decides; no site/person hardcode.
         """
+        refused = self._gate_click_refused("click_visible_control_matching_text")
+        if refused:
+            refused["query"] = query
+            return refused
         if not self._view:
             return {"clicked": False, "reason": "no_web_view", "query": query}
         js = f"""
@@ -4617,6 +4729,9 @@ class AliceBrowserWidget(QMainWindow):
         "Images". This stays inside Alice Browser and uses the current query
         from the visible Google page.
         """
+        refused = self._gate_click_refused("click_google_images_tab")
+        if refused:
+            return refused
         if not self._view:
             return {"clicked": False, "reason": "no_web_view"}
         try:
@@ -4720,6 +4835,11 @@ class AliceBrowserWidget(QMainWindow):
         1=first, 2=second ... -1=last; 0 keeps the prominent best-score pick. This is a
         pure body effector — Alice just executes the click; she does not need to be
         conscious of what the tile shows (George 2026-06-02)."""
+        refused = self._gate_click_refused("click_visible_google_image_result")
+        if refused:
+            refused["query"] = query
+            refused["ordinal"] = ordinal
+            return refused
         if not self._view:
             return {"clicked": False, "reason": "no_web_view", "query": query}
         try:
@@ -4936,6 +5056,10 @@ class AliceBrowserWidget(QMainWindow):
         Me" while Alice Browser is on YouTube. It only clicks visible
         ``watch?v=`` links inside Alice Browser, never Safari/Chrome.
         """
+        refused = self._gate_click_refused("click_youtube_result_matching")
+        if refused:
+            refused["query"] = query
+            return refused
         if not self._view:
             return {"clicked": False, "reason": "no_web_view", "query": query}
         try:
@@ -5053,6 +5177,11 @@ class AliceBrowserWidget(QMainWindow):
         ocean backdrop" — it must never route to the SIFTA app launcher just
         because the word "open" appears.
         """
+        refused = self._gate_click_refused("open_visible_photo_matching_text")
+        if refused:
+            refused["status"] = "failed"
+            refused["query"] = query
+            return refused
         if not self._view:
             return {"status": "failed", "reason": "no_web_view"}
         candidates_result = self._visible_instagram_media_candidates()
@@ -5891,8 +6020,33 @@ class AliceBrowserWidget(QMainWindow):
 
     # ── Stigmergic drop file consumer ────────────────────────────────────────
 
+    def _apply_alice_only_handoff_flag(self) -> None:
+        """Consume Talk's alice-only flag so OAuth redirects stay in this limb."""
+        try:
+            flag = _STATE / "alice_browser_alice_only.flag"
+            if not flag.exists():
+                return
+            raw = flag.read_text(encoding="utf-8").strip().splitlines()
+            flag.unlink(missing_ok=True)
+            if not raw:
+                return
+            try:
+                ts = float(raw[0])
+            except Exception:
+                ts = time.time()
+            target = raw[1].strip() if len(raw) > 1 else ""
+            if target:
+                self._owner_drop_target_url = target
+            self._suppress_safari_handoff_until = max(
+                float(getattr(self, "_suppress_safari_handoff_until", 0.0) or 0.0),
+                ts + 180.0,
+            )
+        except Exception:
+            pass
+
     def _check_drop_file(self) -> None:
         """Consume .sifta_state/alice_browser_open_url.txt if present."""
+        self._apply_alice_only_handoff_flag()
         drop = self._drop_file
         if not drop.exists():
             return
@@ -5910,6 +6064,8 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             return
         if url:
+            self._owner_drop_target_url = url
+            self._suppress_safari_handoff_until = time.time() + 180.0
             if new_tab and getattr(self, "_tabs", None) is not None:
                 self.new_tab(url)
                 self._status.showMessage(f"Opened new tab from Alice handoff: {url[:80]}")

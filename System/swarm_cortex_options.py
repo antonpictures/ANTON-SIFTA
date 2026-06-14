@@ -81,6 +81,38 @@ CORTEX_OPTIONS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "id": "mlx-community/diffusiongemma-26B-A4B-it-4bit",
+        "display": "DiffusionGemma 26B-A4B 4-bit MLX (EXPERIMENTAL diffusion cortex — not installed)",
+        "params": "26B total / ~4B active (A4B MoE)",
+        "arch": "gemma diffusion LM (denoising decode, NOT autoregressive)",
+        "context": "not benched on this M5 node",
+        "modalities": ("text",),
+        "capabilities": ("completion", "experimental_diffusion_decode", "fast_cortex_candidate"),
+        "install_target": "mlx",
+        "source_url": "hf://mlx-community/diffusiongemma-26B-A4B-it-4bit",
+        "owner_added": "2026-06-13 (George: 'PLS ADD TO CORTEX LIST'; Grok r1036 packet)",
+        "observed_by": "Grok r1036 OBSERVED: absent from `ollama list`; /cortex serves only installed+served brains",
+        "known_limits": (
+            "NOT installed/served today — a Talk restart alone will NOT surface it; needs Phase 0 + Phase 1 first.",
+            "Diffusion LM, not autoregressive: needs a denoising runner (Google uses vLLM --diffusion-config; plain "
+            "`mlx_lm generate` AR stream may error). Full organ = F1-F12 in r1036.",
+            "~16.5 GB MLX 4-bit on the 24 GB M5 — close Alice desktop / unload other MLX before benching.",
+            "Google states LOWER quality than Gemma 4; speed is HYPOTHESIS until benched on this M5 (Better Stack "
+            "H100 did not hit the marketed 1000 tok/s).",
+            "Experimental fast cortex only — keep alice-m5-cortex-8b for production Talk.",
+        ),
+        "note": (
+            "Registered as an EXPERIMENTAL diffusion-cortex CANDIDATE so Alice's body knows the option "
+            "(cowork_claude, 2026-06-13, George 'add to cortex list'). Honestly not_installed. RESTART-TO-TRY "
+            "GATE: only after Phase 0 (M5: cd ANTON_SIFTA && source .venv/bin/activate; pip install -U mlx-lm mlx-vlm "
+            "huggingface_hub; hf download mlx-community/diffusiongemma-26B-A4B-it-4bit; bench via "
+            "tools/diffusiongemma_bench.py) AND Phase 1 "
+            "(pip install -U mlx-omni-server; mlx-omni-server on :10240) — then restart Talk and pick "
+            "mlx:...diffusiongemma... if /v1/models lists it. Diffusion decodes by denoising a whole token field at "
+            "once, not left-to-right (see r1038 USD-vs-stigmergic research). Keep alice-m5-cortex-8b for production."
+        ),
+    },
+    {
         "id": "krishairnd/Gemma-4-Uncensored:latest",
         "display": "Gemma 4 Uncensored 8B (Ollama test alias)",
         "params": "8B",

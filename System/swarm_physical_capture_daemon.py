@@ -60,7 +60,16 @@ def _resolve_camera_index() -> int:
 
 
 def _open_capture():
+    try:
+        from System.swarm_camera_target import live_camera_allowed
+
+        if not live_camera_allowed():
+            return None, -1
+    except Exception:
+        pass
     idx = _resolve_camera_index()
+    if idx < 0:
+        return None, idx
     cap = cv2.VideoCapture(idx)
     if cap.isOpened():
         return cap, idx

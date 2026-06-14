@@ -171,6 +171,13 @@ def execute_camera_switch(target_idx: int) -> Dict[str, Any]:
         pass
 
     try:
+        from System.swarm_eye_registry import refresh_eye_registry
+
+        refresh_eye_registry(write_receipt=True)
+    except Exception:
+        pass
+
+    try:
         log = _STATE / "camera_hardware_probe.jsonl"
         row = {
             "ts": time.time(),

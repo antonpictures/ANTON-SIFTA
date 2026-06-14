@@ -68,6 +68,24 @@ def test_syntax_error_never_lands_a_corpse(tmp_path):
     assert not (repo / "System/broken_organ.py").exists()
 
 
+def test_flattened_body_reindents_before_landing(tmp_path):
+    repo = _repo(tmp_path)
+    flat = (
+        "[SELF_CODE_CUT: path=System/flat_repaired_organ.py]\n"
+        "def heartbeat() -> str:\n"
+        "\"\"\"Flattened body from a live Alice self-cut.\"\"\"\n"
+        "return \"alive\"\n"
+        "[/SELF_CODE_CUT]"
+    )
+    out = apply_self_code_cuts(flat, repo_root=repo, write_receipt=False)
+    assert out["any_landed"] is True
+    assert out["results"][0]["reindent_repair"] == "applied_after_syntax_error"
+    target = repo / "System/flat_repaired_organ.py"
+    text = target.read_text(encoding="utf-8")
+    assert '    """Flattened body' in text
+    assert '    return "alive"' in text
+
+
 def test_compile_failure_restores_existing_organ(tmp_path):
     repo = _repo(tmp_path)
     target = repo / "System/live_organ.py"
@@ -191,3 +209,131 @@ def test_other_json_paths_still_refused(tmp_path):
     out = apply_self_code_cuts(cut, repo_root=repo, write_receipt=False)
     assert out["any_landed"] is False
     assert "only_python_organs_or_manifest_merge_in_v2" in out["results"][0]["reason"]
+
+
+# ── r935 — edit lane: exact old→new strokes on existing tissue ──────────────
+
+def _edit_block(path, old, new):
+    return (
+        f"[SELF_CODE_EDIT: path={path}]\n<<<OLD\n{old}\n>>>NEW\n{new}\n[/SELF_CODE_EDIT]"
+    )
+
+
+def test_edit_lands_and_compiles(tmp_path):
+    repo = _repo(tmp_path)
+    organ = repo / "System/live_organ.py"
+    organ.write_text("VALUE = 1\nNAME = 'alice'\n", encoding="utf-8")
+    out = apply_self_code_cuts(
+        _edit_block("System/live_organ.py", "VALUE = 1", "VALUE = 2"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is True
+    assert out["results"][0]["reason"] == "edited_and_compiled"
+    assert out["results"][0]["mode"] == "edit"
+    assert organ.read_text(encoding="utf-8") == "VALUE = 2\nNAME = 'alice'\n"
+
+
+def test_edit_refused_when_old_not_found(tmp_path):
+    repo = _repo(tmp_path)
+    organ = repo / "System/live_organ.py"
+    organ.write_text("VALUE = 1\n", encoding="utf-8")
+    out = apply_self_code_cuts(
+        _edit_block("System/live_organ.py", "VALUE = 99", "VALUE = 2"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+    assert "old_bytes_not_found" in out["results"][0]["reason"]
+    assert organ.read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
+def test_edit_refused_when_ambiguous_with_honest_count(tmp_path):
+    repo = _repo(tmp_path)
+    organ = repo / "System/live_organ.py"
+    organ.write_text("x = 1\ny = 1\nz = 1\n", encoding="utf-8")
+    out = apply_self_code_cuts(
+        _edit_block("System/live_organ.py", "= 1", "= 2"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+    assert "old_bytes_ambiguous_3_matches" in out["results"][0]["reason"]
+    assert organ.read_text(encoding="utf-8") == "x = 1\ny = 1\nz = 1\n"
+
+
+def test_edit_compile_failure_rolls_back(tmp_path):
+    repo = _repo(tmp_path)
+    organ = repo / "System/live_organ.py"
+    organ.write_text("def f():\n    return 1\n", encoding="utf-8")
+    out = apply_self_code_cuts(
+        _edit_block("System/live_organ.py", "    return 1", "    return ("),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+    assert "edit_compile_failed_rolled_back" in out["results"][0]["reason"]
+    assert organ.read_text(encoding="utf-8") == "def f():\n    return 1\n"
+
+
+def test_edit_refused_on_missing_file(tmp_path):
+    repo = _repo(tmp_path)
+    out = apply_self_code_cuts(
+        _edit_block("System/never_grown.py", "x", "y"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+    assert "edit_target_missing_use_SELF_CODE_CUT_to_create" in out["results"][0]["reason"]
+
+
+def test_edit_path_law_still_binds(tmp_path):
+    repo = _repo(tmp_path)
+    out = apply_self_code_cuts(
+        _edit_block("Documents/IDE_BOOT_COVENANT.py", "a", "b"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+
+
+def test_cut_then_edit_same_reply(tmp_path):
+    repo = _repo(tmp_path)
+    reply = (
+        GOOD_ORGAN
+        + "\n"
+        + _edit_block(
+            "System/swarm_r912_probe_organ.py", 'return "alive"', 'return "alive-and-edited"'
+        )
+    )
+    out = apply_self_code_cuts(reply, repo_root=repo, write_receipt=False)
+    assert out["any_landed"] is True
+    assert out["attempted"] == 2
+    body = (repo / "System/swarm_r912_probe_organ.py").read_text(encoding="utf-8")
+    assert "alive-and-edited" in body
+
+
+def test_edit_old_equals_new_refused(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "System/live_organ.py").write_text("x = 1\n", encoding="utf-8")
+    out = apply_self_code_cuts(
+        _edit_block("System/live_organ.py", "x = 1", "x = 1"),
+        repo_root=repo,
+        write_receipt=False,
+    )
+    assert out["any_landed"] is False
+    assert "old_equals_new" in out["results"][0]["reason"]
+
+
+def test_owner_natural_phrasing_opens_hand_r936():
+    # r936: "ok alice try to code now" routed to open_app; she never saw the
+    # stroke syntax and her fiction guard blocked the prose. Natural owner
+    # phrasings must trip the teacher gate.
+    from System.swarm_alice_self_coding_hand import is_owner_self_code_execute_request
+
+    assert is_owner_self_code_execute_request("ok alice try to code now updte from ide: ...")
+    assert is_owner_self_code_execute_request("alice self_edit your launcher")
+    assert is_owner_self_code_execute_request("emit SELF_READ on your hand file")
+    assert is_owner_self_code_execute_request("code now")
+    assert not is_owner_self_code_execute_request("HAVE U ATTEMPTED?: blah")
+    assert not is_owner_self_code_execute_request("what is for dinner")

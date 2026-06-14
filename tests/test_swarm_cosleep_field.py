@@ -105,3 +105,22 @@ def test_receipt_is_written_and_hashed(tmp_path: Path):
     row = json.loads(ledger.read_text(encoding="utf-8").strip())
     assert row["truth_label"] == cs.TRUTH_LABEL
     assert row["payload"]["decision"] == a.decision
+
+
+def test_cosleep_recommendation_writes_owner_sleep_diary(tmp_path: Path):
+    now = 1_000_000.0
+    _set_melatonin(tmp_path, 0.6)
+    _write(tmp_path, "owner_desktop_presence.json", {"last_alive_ts": now - 7200})
+    _write(tmp_path, "active_owner_activity_segment.json", {"ts": now - 7200, "status": "closed"})
+
+    cs.assess(state_dir=tmp_path, now=now, write=True)
+    cs.assess(state_dir=tmp_path, now=now + 60, write=True)  # same inferred rest window; no spam
+
+    sleep_ledger = tmp_path / cs.OWNER_SLEEP_DIARY_LEDGER
+    rows = [json.loads(line) for line in sleep_ledger.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["truth_label"] == cs.OWNER_SLEEP_DIARY_TRUTH_LABEL
+    assert rows[0]["claim_boundary"] == "inference_not_certainty"
+    assert "may be sleeping" in rows[0]["diary_line"]
+    assert (tmp_path / cs.EPISODIC_DIARY).exists()
+    assert (tmp_path / "os_consciousness" / "alice_self_reflections.jsonl").exists()

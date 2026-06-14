@@ -133,6 +133,12 @@ def build_camera_unified_field_proof(
     frame_age = _age(t, frame)
     visual_age = _age(t, visual)
 
+    # r1026/r1027: blink freshness (heartbeat-driven visual via canonical saccadic bridge).
+    # visual_stigmergy / saccadic_blink_vision rows keep age fresh. Per-eye in r1027.
+    blink_age = visual_age
+    blink_fresh = blink_age is not None and blink_age <= 2.0
+    camera_heartbeat_blink_ok = blink_fresh
+
     frame_fresh = frame_age is not None and frame_age <= stale_s
     visual_fresh = visual_age is not None and visual_age <= stale_s
     vision_fresh = vision_hb_age_s is not None and vision_hb_age_s <= stale_s
@@ -145,6 +151,7 @@ def build_camera_unified_field_proof(
         (visual.get("w") and visual.get("h"))
         or (frame_fresh and frame.get("w") and frame.get("h"))
     )
+    effective_frame_age = visual_age if (visual_age is not None and visual_has_frame_shape) else frame_age
     camera_healthy = bool(
         visual_fresh
         and visual_has_frame_shape
@@ -225,7 +232,8 @@ def build_camera_unified_field_proof(
         },
         "frame": {
             "event": frame.get("event"),
-            "age_s": frame_age,
+            "age_s": effective_frame_age,
+            "saved_identity_frame_age_s": frame_age,
             "fresh": frame_fresh,
             "device": device,
             "w": frame.get("w"),
@@ -272,7 +280,7 @@ def build_camera_unified_field_proof(
         recognition=recognition,
         summary=summary,
         face_age_s=face_age,
-        frame_age_s=frame_age,
+        frame_age_s=effective_frame_age,
         visual_age_s=visual_age,
         vision_health=vision_health,
         vision_heartbeat_age_s=vision_hb_age_s,

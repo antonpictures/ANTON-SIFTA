@@ -39,6 +39,7 @@ def test_stigmergic_deterministic_tracker_constructs_and_writes_receipt(tmp_path
     monkeypatch.setattr(tracker, "_LEDGER_ATTENTION", attention)
     monkeypatch.setattr(tracker, "_ORACLE", oracle)
     monkeypatch.setattr(tracker, "_TRACKER_LEDGER", state / "stigmergic_deterministic_tracker.jsonl")
+    monkeypatch.setattr(tracker, "_DETERMINISTIC_MISTAKES_LEDGER", state / "deterministic_mistakes.jsonl")
     tracker.StigmergicDeterministicTracker._live_instance = None
     tracker.StigmergicDeterministicTracker._initialized_instance_ids.clear()
 
@@ -51,6 +52,80 @@ def test_stigmergic_deterministic_tracker_constructs_and_writes_receipt(tmp_path
     row = json.loads(tracker._TRACKER_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
     assert row["organ"] == "stigmergic_deterministic_tracker"
     assert row["grounding_score"] == 100
+
+    widget.close()
+    app.processEvents()
+
+
+def test_tracker_records_owner_spoke_to_wall_incident(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from Applications import sifta_stigmergic_deterministic_tracker as tracker
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(tracker, "_DETERMINISTIC_MISTAKES_LEDGER", state / "deterministic_mistakes.jsonl")
+    monkeypatch.setattr(tracker, "_TRACKER_LEDGER", state / "stigmergic_deterministic_tracker.jsonl")
+
+    row = tracker.record_owner_direct_turn_silenced_as_external_ingest(
+        owner_text="Alice, are you listening with me?",
+        route="observed_media",
+        reason="my_own_browser_playback_suppresses_owner_stt",
+        source_class="my_own_browser_playback",
+        source="test",
+        stt_confidence=0.66,
+        recovered_to_cortex=True,
+    )
+
+    assert row["bypass_type"] == "owner_direct_turn_silenced_as_external_ingest"
+    assert row["recovered_to_cortex"] is True
+    mistake = json.loads((state / "deterministic_mistakes.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    tracker_row = json.loads((state / "stigmergic_deterministic_tracker.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert mistake["label"] == "OWNER SPOKE TO WALL"
+    assert tracker_row["bypass_type"] == "owner_direct_turn_silenced_as_external_ingest"
+
+
+def test_tracker_counts_browser_receipt_bypass_detector_rows(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    qtwidgets = pytest.importorskip("PyQt6.QtWidgets")
+    from Applications import sifta_stigmergic_deterministic_tracker as tracker
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(tracker, "_STATE", state)
+    monkeypatch.setattr(tracker, "_LEDGER_NARRATION", state / "self_narration_receipts.jsonl")
+    monkeypatch.setattr(tracker, "_LEDGER_IDE", state / "ide_stigmergic_trace.jsonl")
+    monkeypatch.setattr(tracker, "_LEDGER_ATTENTION", state / "sensory_attention_ledger.jsonl")
+    monkeypatch.setattr(tracker, "_ORACLE", state / "hardware_time_oracle.json")
+    monkeypatch.setattr(tracker, "_TRACKER_LEDGER", state / "stigmergic_deterministic_tracker.jsonl")
+    monkeypatch.setattr(tracker, "_DETERMINISTIC_MISTAKES_LEDGER", state / "deterministic_mistakes.jsonl")
+    tracker.StigmergicDeterministicTracker._live_instance = None
+    tracker.StigmergicDeterministicTracker._initialized_instance_ids.clear()
+
+    row = tracker.record_browser_receipt_bypasses_cortex(
+        owner_text="I paused the video to read your answer, good job AGI Alice.",
+        alice_reply="I can read my Alice Browser page-state receipt: YouTube; media status is paused.",
+        source="test_standard_report",
+        repaired=True,
+    )
+    assert row["bypass_type"] == "browser_receipt_bypasses_cortex"
+    with (state / "deterministic_mistakes.jsonl").open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "disease": "browser_receipt_bypasses_cortex",
+                    "status": "repaired",
+                    "note": "peer row used disease instead of bypass_type",
+                }
+            )
+            + "\n"
+        )
+
+    app = qtwidgets.QApplication.instance() or qtwidgets.QApplication([])
+    widget = tracker.StigmergicDeterministicTracker()
+    out = widget._scan_reported_deterministic_mistakes(time.time() + 1, lookback_s=30)
+
+    assert sum(1 for _ts, tkey, _preview in out if tkey == "browser_receipt_bypasses_cortex") == 2
 
     widget.close()
     app.processEvents()

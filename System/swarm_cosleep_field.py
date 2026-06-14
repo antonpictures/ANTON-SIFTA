@@ -59,6 +59,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER_NAME = "cosleep_field.jsonl"
 TRUTH_LABEL = "OWNER_COSLEEP_FIELD_V1"
+OWNER_SLEEP_DIARY_LEDGER = "owner_sleep_diary.jsonl"
+OWNER_SLEEP_DIARY_TRUTH_LABEL = "OWNER_SLEEP_DIARY_NOTE_V1"
+EPISODIC_DIARY = "episodic_diary.jsonl"
 
 # Owner quiet ramps over this window: at IDLE_FLOOR he is clearly active (0.0),
 # by IDLE_CEIL of continuous quiet he is very likely asleep/away (1.0).
@@ -331,6 +334,79 @@ def _write_receipt(audit: CoSleepAssessment, *, state_dir: Path, now: float) -> 
         "payload": audit.to_dict(),
     }
     append_line_locked(state_dir / LEDGER_NAME, json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+    if audit.decision == DECISION_COSLEEP:
+        _write_owner_sleep_diary_note(audit, state_dir=state_dir, now=now)
+
+
+def _last_owner_sleep_note(state_dir: Path) -> dict[str, Any]:
+    path = state_dir / OWNER_SLEEP_DIARY_LEDGER
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return {}
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            return row
+    return {}
+
+
+def _write_owner_sleep_diary_note(audit: CoSleepAssessment, *, state_dir: Path, now: float) -> dict[str, Any]:
+    """Bridge co-sleep inference into Alice's readable diary.
+
+    This is explicitly an inference, not a claim that George is asleep. It is the
+    note George asked for: when Alice is left on and the field says owner quiet +
+    body sleep pressure, she writes that she observed the pattern.
+    """
+    inferred_start = max(0.0, float(now) - float(audit.owner_idle_seconds or 0.0))
+    last = _last_owner_sleep_note(state_dir)
+    try:
+        if abs(float(last.get("inferred_sleep_start_ts") or -1.0) - inferred_start) <= PRESENCE_FRESH_S:
+            return last
+    except Exception:
+        pass
+
+    note = (
+        "I infer George may be sleeping or away: owner quiet is high, no fresh "
+        "camera/voice presence is present, and my co-sleep pressure says rest. "
+        "This is an inference from sensors, not certainty."
+    )
+    row = {
+        "ts": now,
+        "kind": "OWNER_SLEEP_INFERENCE_DIARY",
+        "truth_label": OWNER_SLEEP_DIARY_TRUTH_LABEL,
+        "source_truth_label": TRUTH_LABEL,
+        "source": "swarm_cosleep_field",
+        "decision": audit.decision,
+        "inferred_owner_state": "probably_sleeping_or_away",
+        "inferred_sleep_start_ts": inferred_start,
+        "owner_idle_seconds": audit.owner_idle_seconds,
+        "owner_quiet_likelihood": audit.owner_quiet_likelihood,
+        "cosleep_pressure": audit.cosleep_pressure,
+        "confidence": audit.confidence,
+        "claim_boundary": "inference_not_certainty",
+        "diary_line": note,
+        "source_sha256": audit.sha256,
+    }
+    line = json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n"
+    append_line_locked(state_dir / OWNER_SLEEP_DIARY_LEDGER, line)
+    append_line_locked(state_dir / EPISODIC_DIARY, line)
+    reflection = {
+        "ts": now,
+        "kind": "ALICE_SELF_REFLECTION",
+        "truth_label": OWNER_SLEEP_DIARY_TRUTH_LABEL,
+        "source": "swarm_cosleep_field",
+        "reflection": note,
+        "tags": ["owner_sleep", "cosleep", "diary", OWNER_SLEEP_DIARY_TRUTH_LABEL],
+    }
+    append_line_locked(
+        state_dir / "os_consciousness" / "alice_self_reflections.jsonl",
+        json.dumps(reflection, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+    return row
 
 
 CONSOLIDATION_MARKER = "cosleep_last_consolidation.json"
@@ -367,6 +443,7 @@ __all__ = [
     "DECISION_MONITORING",
     "DECISION_OWNER_PRESENT",
     "TRUTH_LABEL",
+    "OWNER_SLEEP_DIARY_TRUTH_LABEL",
     "assess",
     "consolidation_due",
     "mark_consolidation",

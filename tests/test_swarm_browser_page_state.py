@@ -28,6 +28,36 @@ def test_record_and_read_structured_state(tmp_path):
     assert ps.has_readable_content(s) is True
 
 
+def test_article_text_sidecar_and_readability_status(tmp_path):
+    article = "\n\n".join(
+        [
+            "Which Molty? Our blind study says memory beats model.",
+            "Over four weeks, the same research assistant kept its memory while the model underneath changed.",
+            "The point of the experiment was to test whether continuity and grounded memory mattered more than raw model identity.",
+            "Participants judged the agent by what it remembered, how it followed context, and whether it stayed useful over time.",
+        ]
+        * 4
+    )
+    ps.record_page_state(
+        "https://example.com/which-molty",
+        title="Which Molty?",
+        text=article,
+        headings=["Which Molty?"],
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state = ps.latest_page_state(now=1001.0, state_dir=tmp_path)
+    assert state["article_text_chars"] >= len(article) - 20
+    assert state["article_text_path"].startswith("browser_article_text/")
+    full_text = ps.article_text_from_state(state, state_dir=tmp_path)
+    assert "memory beats model" in full_text
+    status = ps.article_readability_status(now=1001.0, state_dir=tmp_path)
+    assert status["can_read"] is True
+    assert status["reason"] == "browser_readable_article_text"
+    assert status["text_chars"] >= 400
+
+
 def test_visible_controls_are_recorded_and_surfaced(tmp_path):
     ps.record_page_state(
         "https://www.ebay.com/itm/example",

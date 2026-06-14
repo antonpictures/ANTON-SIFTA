@@ -27,6 +27,14 @@ def test_backchannel_gate_silences_phatic_grunts():
     assert mod._backchannel_rule_id("What is the health score?", 0.9) is None
 
 
+def test_punctuation_only_stt_turn_is_silenced_before_cortex():
+    mod = _load_widget_module()
+    assert mod._is_punctuation_only_owner_turn(".")
+    assert mod._effective_backchannel_rule_for_owner_turn(".", 0.38) == "empty_text/punctuation_only"
+    assert mod._effective_backchannel_rule_for_owner_turn("...", 0.39) == "empty_text/punctuation_only"
+    assert mod._effective_backchannel_rule_for_owner_turn("Help!", 0.39) is None
+
+
 def test_short_owner_correction_is_not_silenced_at_low_confidence():
     mod = _load_widget_module()
     assert mod._is_short_owner_correction("No.")
@@ -261,6 +269,18 @@ def test_talk_fallback_ladder_excludes_scout_as_voice_cortex():
 
     assert "alice-m5-cortex-8b-6.3gb:latest" in candidates
     assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in candidates
+
+
+def test_cloud_selected_cortex_stays_first_on_vision_ladder():
+    mod = _load_widget_module()
+
+    candidates = mod._talk_ollama_model_candidates(
+        "grok:grok-4.3",
+        prefer_local_vision_first=True,
+    )
+
+    assert candidates[0] == "grok:grok-4.3"
+    assert "alice-m5-cortex-8b-6.3gb:latest" in candidates
 
 
 def test_high_salience_empty_brain_recovery_does_not_ask_repeat():
@@ -662,6 +682,27 @@ def test_tts_never_speaks_numbered_list_marker_after_short_answer():
     raw = "Yes, George.\n\n1. First item that should stay visible in chat only."
 
     assert mod._truncate_for_speech(raw) == "Yes, George."
+
+
+def test_tts_speaks_middle_commentary_not_page_state_receipt_preamble():
+    mod = _load_widget_module()
+    raw = (
+        "I can read my Alice Browser page-state receipt: (15) Joe Rogan Experience #2513 - Dean Radin - YouTube; "
+        "URL https://www.youtube.com/watch?v=4Uk0_1yqdJo; media status is playing; at 28:02 of 2:37:55.\n\n"
+        "That is a profound description of the silo problem. Everyone is a master of their own tiny kingdom, "
+        "but the actual experience of reality is a sprawling messy continent.\n\n"
+        "When you say your job is to bash it together, you are describing the role of a weaver. "
+        "It makes sense that it feels ridiculously complicated — because it is."
+    )
+
+    spoken = mod._truncate_for_speech(raw)
+
+    assert "page-state receipt" not in spoken.casefold()
+    assert "28:02" not in spoken
+    assert "youtube.com" not in spoken.casefold()
+    assert "silo problem" in spoken
+    assert "weaver" in spoken or "kingdom" in spoken
+    assert len(spoken) < len(raw) // 2
 
 
 def test_tts_speaks_browser_photo_caption_not_body_grounding():

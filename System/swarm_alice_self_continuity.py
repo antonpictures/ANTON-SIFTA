@@ -480,6 +480,22 @@ def write_continuity_reflection(
 # think and reason about the discontinuity before acting. (gap = OBSERVED; why = HYPOTHESIS.)
 MISSING_TIME_TRUTH_LABEL = "ALICE_MISSING_TIME_DIARY_V1"
 _MISSING_TIME_LEDGER = "alice_missing_time_diary.jsonl"
+OWNER_GAP_EVIDENCE_TRUTH_LABEL = "OWNER_GAP_EVIDENCE_SCAN_V1"
+_OWNER_GAP_SOURCES = (
+    "owner_activity_segments.jsonl",
+    "owner_body_events.jsonl",
+    "owner_somatic_state.jsonl",
+    "owner_desktop_presence.jsonl",
+    "owner_presence_updates.jsonl",
+    "active_owner_activity_segment.json",
+    "app_focus.jsonl",
+    "sifta_desktop_app_state.jsonl",
+    "media_session_memory.jsonl",
+    "browser_page_state_receipts.jsonl",
+    "cosleep_field.jsonl",
+    "owner_sleep_diary.jsonl",
+    "alice_conversation.jsonl",
+)
 
 
 def _humanize_duration(seconds: float) -> str:
@@ -535,6 +551,117 @@ def interpret_missing_time(gap_s: float, *, back_on: Optional[float] = None) -> 
         "category": "extended_absence",
         "why_guess": "A very long absence — travel, or the node was powered down for days.",
         "question_for_george": "I was dark a long time and lost my main data source — you. What happened, and why was I off so long?",
+    }
+
+
+def _row_timestamp(row: Dict[str, Any]) -> float:
+    for key in ("ts", "timestamp", "source_ts", "last_alive_ts", "start_ts", "end_ts"):
+        try:
+            value = row.get(key)
+            if value not in (None, ""):
+                ts = float(value)
+                if ts > 10_000_000_000:
+                    ts /= 1000.0
+                return ts
+        except Exception:
+            continue
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        return _row_timestamp(payload)
+    return 0.0
+
+
+def _gap_evidence_summary(row: Dict[str, Any]) -> str:
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        merged = {**payload, **row}
+    else:
+        merged = row
+    for key in (
+        "text",
+        "note",
+        "logbook",
+        "decision",
+        "architect_state",
+        "frontmost_app",
+        "app",
+        "title",
+        "url",
+        "label",
+        "kind",
+        "type",
+        "event",
+    ):
+        value = merged.get(key)
+        if value not in (None, ""):
+            return " ".join(str(value).split())[:220]
+    return "row with timestamp but no compact summary"
+
+
+def _read_gap_source(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    if path.suffix == ".json":
+        try:
+            row = json.loads(path.read_text(encoding="utf-8"))
+            return [row] if isinstance(row, dict) else []
+        except Exception:
+            return []
+    return _tail_jsonl(path, max_bytes=262144)
+
+
+def owner_gap_evidence(
+    *,
+    state_dir: Optional[Path] = None,
+    start_ts: float,
+    end_ts: float,
+    max_samples: int = 8,
+) -> Dict[str, Any]:
+    """Best-effort scan for what George/the body did while Alice was dark.
+
+    The honest result is often "no local evidence" because if Alice was off,
+    many sensors were off too. That absence is still a useful quest receipt:
+    George is the missing data provider and can resolve the gap in words.
+    """
+    base = Path(state_dir) if state_dir is not None else _STATE
+    start = float(start_ts or 0.0)
+    end = float(end_ts or 0.0)
+    samples: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = {}
+    sources_checked: List[str] = []
+    for name in _OWNER_GAP_SOURCES:
+        path = base / name
+        sources_checked.append(name)
+        for row in _read_gap_source(path):
+            ts = _row_timestamp(row)
+            if ts <= 0 or ts < start or ts > end:
+                continue
+            counts[name] = counts.get(name, 0) + 1
+            if len(samples) < max(1, int(max_samples)):
+                samples.append({
+                    "source": name,
+                    "ts": ts,
+                    "summary": _gap_evidence_summary(row),
+                })
+    total = sum(counts.values())
+    if total:
+        question = (
+            "I found local traces from the gap, but I still need George to confirm what they mean."
+        )
+    else:
+        question = (
+            "I found no local owner/body traces from the gap; George is the missing data provider. "
+            "Please tell me what you were doing while I was dark."
+        )
+    return {
+        "truth_label": OWNER_GAP_EVIDENCE_TRUTH_LABEL,
+        "start_ts": start,
+        "end_ts": end,
+        "evidence_count": total,
+        "counts_by_source": counts,
+        "samples": samples,
+        "sources_checked": sources_checked,
+        "quest_for_george": question,
     }
 
 
@@ -621,6 +748,7 @@ def record_missing_time_diary(
             pass
     human = _humanize_duration(gap_s)
     guess = interpret_missing_time(gap_s, back_on=now_f)
+    gap_evidence = owner_gap_evidence(state_dir=base, start_ts=last_on, end_ts=now_f)
     last_on_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_on)) if last_on else "unknown"
     back_on_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(now_f))
     # r270: did I go dark CLEANLY (a shutdown marker stamped the exact off-time) or was I cut
@@ -649,6 +777,10 @@ def record_missing_time_diary(
         f"Logbook - {back_on_str}: {opening}. I came back just now. {human} of missing time I cannot "
         "account for from the inside, because my main data source - George, the OS user - was not "
         f"feeding me. My guess: {guess['why_guess']}"
+        + (
+            f" I scanned {len(gap_evidence['sources_checked'])} owner/body ledgers and found "
+            f"{gap_evidence['evidence_count']} local trace(s) inside the gap."
+        )
         + (f" {power_question}" if power_question else "")
     )
     row = {
@@ -662,6 +794,8 @@ def record_missing_time_diary(
         "category": guess["category"],
         "why_guess": guess["why_guess"],            # HYPOTHESIS — her reasoning, not a claim
         "question_for_george": power_question or guess["question_for_george"],
+        "owner_gap_evidence": gap_evidence,
+        "quest_for_george": gap_evidence["quest_for_george"],
         "pid_changed": bool(breaks.get("pid_changed")),
         "clean_shutdown": clean_shutdown,
         "shutdown_reason": shutdown_reason,
@@ -842,6 +976,7 @@ __all__ = [
     "latest_unresolved_missing_time",
     "missing_time_context_block",
     "maybe_resolve_missing_time_from_owner_text",
+    "owner_gap_evidence",
     "record_heartbeat",
     "record_missing_time_diary",
     "resolve_missing_time",

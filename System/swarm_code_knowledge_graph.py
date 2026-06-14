@@ -546,10 +546,235 @@ def load_recent_edges(state_dir: Path | str, *, max_n: int = 10000) -> list[dict
     return _tail_jsonl(Path(state_dir) / EDGES_LEDGER_FILENAME, max_n=max_n)
 
 
+# ─── Body-code memory card (r982 — first cut of the body-code memory loop) ──
+#
+# r977/r978 asked: how does Alice keep a deep persistent understanding of her
+# own body code across sessions? r980 answered: the atlas already lives here
+# (node rows with mtime + content_hash). The missing synapse was a READ-side
+# card composed before a coding turn, with a receipted read so the loop is
+# OBSERVED, not narrated. This section is that card. No new organ, no rival
+# patient: same ledgers, plus one small read-trace ledger so the loop test
+# can prove "a prior repair memory was read before the next cut".
+#
+# Repair-memory convention (for the future repair_outcome_consolidator):
+# rows in long_term_engrams.jsonl with kind="repair_outcome" SHOULD carry
+#   {"engram_id", "files": [...], "why", "result", "next_risk"}.
+# This reader also tolerates legacy engram shapes by matching the target
+# path inside any text field. Reader tolerates; writer must aim for the
+# schema above.
+
+READS_LEDGER_FILENAME = "body_code_card_reads.jsonl"
+ENGRAMS_LEDGER_FILENAME = "long_term_engrams.jsonl"
+
+_LEDGER_LITERAL_RE = None  # compiled lazily — keep import cost zero
+
+
+def _ledgers_in_source(text: str) -> list[str]:
+    """Literal .sifta_state/*.jsonl strings the organ reads/writes."""
+    global _LEDGER_LITERAL_RE
+    if _LEDGER_LITERAL_RE is None:
+        import re as _re
+        _LEDGER_LITERAL_RE = _re.compile(r"[\"']([A-Za-z0-9_\-./]*?([A-Za-z0-9_\-]+\.jsonl))[\"']")
+    out: list[str] = []
+    for m in _LEDGER_LITERAL_RE.finditer(text or ""):
+        name = m.group(2)
+        if name not in out:
+            out.append(name)
+    return out[:12]
+
+
+def _tests_for(repo_root: Path, rel_path: str) -> list[str]:
+    stem = Path(rel_path).stem
+    hits: list[str] = []
+    tdir = repo_root / "tests"
+    if tdir.is_dir():
+        for cand in sorted(tdir.glob(f"test_{stem}*.py")):
+            hits.append(str(cand.relative_to(repo_root)))
+        # organs named swarm_x are often tested as test_x too
+        if stem.startswith("swarm_"):
+            for cand in sorted(tdir.glob(f"test_{stem[len('swarm_'):]}*.py")):
+                rel = str(cand.relative_to(repo_root))
+                if rel not in hits:
+                    hits.append(rel)
+    return hits[:6]
+
+
+def _latest_file_rows(state_dir: Path, targets: list[str]) -> dict[str, dict]:
+    """Latest file-kind node row per target path (last row wins = latest)."""
+    want = set(targets)
+    latest: dict[str, dict] = {}
+    for row in _tail_jsonl(Path(state_dir) / NODES_LEDGER_FILENAME, max_n=60000):
+        if row.get("kind") == "file" and row.get("path") in want:
+            latest[row["path"]] = row
+    return latest
+
+
+def _children_for(state_dir: Path, file_node_id: str, *, top_n: int = 8) -> list[dict]:
+    kids = [
+        r for r in _tail_jsonl(Path(state_dir) / NODES_LEDGER_FILENAME, max_n=60000)
+        if r.get("parent_id") == file_node_id and r.get("kind") in ("class", "function")
+    ]
+    kids.sort(key=lambda r: -int(r.get("complexity") or 0))
+    return kids[:top_n]
+
+
+def _repair_memories(state_dir: Path, target: str, *, max_n: int = 4) -> list[dict]:
+    """Engram rows that remember repairs on `target` (newest last)."""
+    hits: list[dict] = []
+    for row in _tail_jsonl(Path(state_dir) / ENGRAMS_LEDGER_FILENAME, max_n=2000):
+        files = row.get("files") or []
+        text = " ".join(
+            str(row.get(k) or "") for k in ("content", "abstract_rule", "source_excerpt", "why", "next_risk")
+        )
+        if (isinstance(files, list) and target in files) or (target and target in text):
+            hits.append(row)
+    return hits[-max_n:]
+
+
+def compose_body_code_card(
+    targets: list[str] | str,
+    *,
+    state_dir: Path | str,
+    repo_root: Path | str | None = None,
+    token_budget: int = 900,
+    write_receipt: bool = True,
+    turn_tag: str = "",
+) -> dict:
+    """Compose the body-code memory card for the organs about to be touched.
+
+    Returns {"card": str, "paths": [...], "stale": [...], "repair_engrams": [...]}.
+    Never raises. When write_receipt=True a small row lands in
+    body_code_card_reads.jsonl — the OBSERVED proof the body read its own
+    code memory before acting (§7.12: receipts decide, prose does not).
+    """
+    try:
+        sd = Path(state_dir)
+        repo = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+        paths = [targets] if isinstance(targets, str) else list(targets or [])
+        paths = [p.strip().strip("\"'") for p in paths if p and str(p).strip()][:6]
+        rows = _latest_file_rows(sd, paths)
+        lines: list[str] = ["[BODY-CODE CARD — my own tissue, read before cutting]"]
+        stale: list[str] = []
+        engram_ids: list[str] = []
+        for p in paths:
+            row = rows.get(p)
+            src_path = repo / p
+            lines.append(f"organ: {p}")
+            if row:
+                head = (row.get("docstring_head") or "").strip()
+                if head:
+                    lines.append(f"  purpose: {head[:160]}")
+                lines.append(
+                    f"  atlas: complexity={row.get('complexity')} hash={row.get('content_hash')} round={row.get('round')}"
+                )
+                kids = _children_for(sd, row.get("node_id", ""))
+                if kids:
+                    names = ", ".join(f"{k.get('name')}({k.get('kind')[0]})" for k in kids)
+                    lines.append(f"  anatomy: {names}")
+                try:
+                    if src_path.exists() and abs(float(src_path.stat().st_mtime) - float(row.get("mtime") or 0)) > 1.0:
+                        stale.append(p)
+                        lines.append("  STALE: disk changed since last atlas walk — rewalk before trusting anatomy")
+                except OSError:
+                    pass
+            else:
+                lines.append("  atlas: NO ROW — organ never walked (or new tissue); walk_repo() to index")
+            if src_path.exists():
+                try:
+                    src_text = src_path.read_text(encoding="utf-8", errors="replace")
+                    lds = _ledgers_in_source(src_text)
+                    if lds:
+                        lines.append(f"  ledgers: {', '.join(lds)}")
+                except OSError:
+                    pass
+            tests = _tests_for(repo, p)
+            lines.append(f"  tests: {', '.join(tests) if tests else 'NONE — cut needs a proof file'}")
+            for mem in _repair_memories(sd, p):
+                eid = str(mem.get("engram_id") or mem.get("ts") or "")
+                engram_ids.append(eid)
+                what = str(mem.get("next_risk") or mem.get("why") or mem.get("content") or mem.get("abstract_rule") or "")[:140]
+                lines.append(f"  repair-memory[{eid}]: {what}")
+        card = "\n".join(lines)
+        cap = max(0, int(token_budget)) * 4  # ~4 chars/token, same heuristic as memory card
+        if cap and len(card) > cap:
+            card = card[:cap] + "\n…[body-code card truncated]"
+        out = {"card": card, "paths": paths, "stale": stale, "repair_engrams": engram_ids}
+        if write_receipt:
+            try:
+                rrow = {
+                    "ts": time.time(),
+                    "truth_label": "BODY_CODE_CARD_READ_V1",
+                    "paths": paths,
+                    "stale": stale,
+                    "repair_engrams": engram_ids,
+                    "turn_tag": turn_tag,
+                    "card_chars": len(card),
+                }
+                reads = sd / READS_LEDGER_FILENAME
+                reads.parent.mkdir(parents=True, exist_ok=True)
+                with reads.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(rrow) + "\n")
+            except OSError:
+                pass
+        return out
+    except Exception as exc:  # never raises — honest empty card instead
+        return {"card": f"[BODY-CODE CARD unavailable: {type(exc).__name__}: {exc}]",
+                "paths": [], "stale": [], "repair_engrams": []}
+
+
+def suggest_next_cut(
+    targets: list[str] | str,
+    *,
+    state_dir: Path | str,
+    repo_root: Path | str | None = None,
+) -> dict:
+    """Smallest next-cut suggestion, grounded in repair memory when one exists.
+
+    The loop proof: when a prior repair engram about the organ carries a
+    next_risk, the suggestion changes and names that engram id. Without one,
+    the fallback is the highest-complexity child from the atlas. Returns
+    {"suggestion", "grounded_in": "repair_engram"|"complexity"|"none", "engram_id"}.
+    Never raises.
+    """
+    try:
+        sd = Path(state_dir)
+        paths = [targets] if isinstance(targets, str) else list(targets or [])
+        paths = [p.strip() for p in paths if p and str(p).strip()][:6]
+        for p in paths:
+            mems = _repair_memories(sd, p)
+            for mem in reversed(mems):  # newest first
+                risk = str(mem.get("next_risk") or "").strip()
+                if risk:
+                    eid = str(mem.get("engram_id") or mem.get("ts") or "")
+                    return {
+                        "suggestion": f"{p}: {risk}",
+                        "grounded_in": "repair_engram",
+                        "engram_id": eid,
+                    }
+        rows = _latest_file_rows(sd, paths)
+        best: tuple[int, str, str] | None = None
+        for p, row in rows.items():
+            for kid in _children_for(sd, row.get("node_id", ""), top_n=1):
+                cx = int(kid.get("complexity") or 0)
+                if best is None or cx > best[0]:
+                    best = (cx, p, str(kid.get("name") or ""))
+        if best:
+            return {
+                "suggestion": f"{best[1]}: simplify/test {best[2]} (complexity {best[0]})",
+                "grounded_in": "complexity",
+                "engram_id": "",
+            }
+        return {"suggestion": "", "grounded_in": "none", "engram_id": ""}
+    except Exception:
+        return {"suggestion": "", "grounded_in": "none", "engram_id": ""}
+
+
 __all__ = [
     "TRUTH_LABEL",
     "NODES_LEDGER_FILENAME",
     "EDGES_LEDGER_FILENAME",
+    "READS_LEDGER_FILENAME",
+    "ENGRAMS_LEDGER_FILENAME",
     "DEFAULT_SCOPE",
     "GraphNode",
     "GraphEdge",
@@ -558,4 +783,6 @@ __all__ = [
     "walk_repo",
     "load_recent_nodes",
     "load_recent_edges",
+    "compose_body_code_card",
+    "suggest_next_cut",
 ]

@@ -146,6 +146,53 @@ def test_name_only_built_in_camera_resolves_to_macbook(monkeypatch):
     assert target.resolve_index(rec) == 1
 
 
+def test_legacy_bare_iphone_index_refused_without_owner_writer(monkeypatch):
+    monkeypatch.setattr(target, "_live_devices", lambda: [])
+    rec = target.parse_legacy_text("3")
+
+    assert rec is not None
+    assert rec["name"] == "iPhone Camera"
+    assert rec["writer"] == "legacy_txt_int"
+    assert target.resolve_index(rec) == -1
+
+
+def test_legacy_bare_iphone_index_falls_back_to_live_macbook(monkeypatch):
+    monkeypatch.setattr(
+        target,
+        "_live_devices",
+        lambda: [
+            ("continuity-uid", "Ioan's iPhone Camera"),
+            ("built-in-uid", "MacBook Pro Camera"),
+        ],
+    )
+    rec = target.parse_legacy_text("3")
+
+    assert rec is not None
+    assert target.resolve_index(rec) == 1
+
+
+def test_owner_writer_can_explicitly_select_iphone(monkeypatch):
+    monkeypatch.setattr(target, "_live_devices", lambda: [])
+    rec = {
+        "name": "iPhone Camera",
+        "index": 3,
+        "unique_id": None,
+        "writer": "owner_camera_command",
+    }
+
+    assert target.resolve_index(rec) == 3
+
+
+def test_preferred_live_index_never_auto_picks_iphone(monkeypatch):
+    monkeypatch.setattr(
+        target,
+        "_live_devices",
+        lambda: [("continuity-uid", "Ioan's iPhone Camera")],
+    )
+
+    assert target.preferred_live_index() == -1
+
+
 def test_detached_logitech_target_falls_back_to_live_macbook(monkeypatch):
     monkeypatch.setattr(
         target,

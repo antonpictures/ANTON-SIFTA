@@ -43,3 +43,26 @@ def test_video_state_query_suppressed_on_close_tab():
         "close the two OPENCLAW TABS PLS"
     )
     assert suppress is True
+
+
+def test_video_state_suppressed_on_owner_voice_style_teaching():
+    owner = (
+        "AND I LOVE WHEN YOU PAUSE THE VIDEO WITH YOUR COMMENTARY THAT IS COOL - "
+        "READ YOUR VOICE FROM THE MIDDLE OF YOUR ANSWER I LIKE TWO SENTENCES "
+        "JUST LIKE A HUMAN WOULD TALK"
+    )
+    suppress, reason = should_suppress_browser_video_state_query(owner)
+    assert suppress is True
+    assert reason == "cortex_only_no_deterministic_page_state_reply"
+
+
+def test_video_state_suppressed_even_on_explicit_playback_ask():
+    """George 2026-06-11: no deterministic page-state mouth — cortex only."""
+    owner = (
+        "so now i still have alice browser loaded on this page "
+        "https://www.youtube.com/watch?v=N5fCM8U4S4I i'm now paused at min 9:04 "
+        "pls tellme if you are aware of it"
+    )
+    suppress, reason = should_suppress_browser_video_state_query(owner)
+    assert suppress is True
+    assert reason == "cortex_only_no_deterministic_page_state_reply"

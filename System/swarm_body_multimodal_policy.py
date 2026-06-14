@@ -51,6 +51,67 @@ _BODY_TASK_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── CUR-V5 (2026-06-13): image turns must reach a VLM, not a text-only cortex ──
+# George OBSERVED the text-only Igor/heretic Gemma being handed images instead of
+# the osmQwopus VLM. A text-only model has no vision tower; feeding it pixels
+# yields a hallucinated description. These pure helpers let the brain router
+# force an image-bearing turn onto the VLM arm. Conservative: an unknown model is
+# treated as NOT text-only, so we never strip vision from a real VLM.
+_TEXT_ONLY_MODEL_RE = re.compile(
+    r"(heretic|igorls/|qat-q4_0-unquantized|text[\s_-]*only|-text\b)", re.IGNORECASE
+)
+
+
+def is_text_only_cortex(model: str) -> bool:
+    """True for cortexes with no vision tower (e.g. the igorls/heretic Gemma 4
+    12B QAT, whose card says 'TEXT only; vision goes to a separate VLM arm')."""
+    return bool(_TEXT_ONLY_MODEL_RE.search(str(model or "")))
+
+
+def _default_vlms() -> list[str]:
+    out: list[str] = []
+    try:
+        from System import swarm_mlx_vlm_brain
+
+        for model in list(swarm_mlx_vlm_brain.describe_models() or []):
+            if model and model not in out:
+                out.append(model)
+        for model in list(swarm_mlx_vlm_brain.available_models() or []):
+            if model and model not in out:
+                out.append(model)
+    except Exception:
+        pass
+    return out
+
+
+def image_turn_vlm_redirect(
+    active_model: str,
+    has_image: bool,
+    *,
+    available_vlms: "list[str] | None" = None,
+) -> dict[str, Any]:
+    """Decide whether an image-bearing turn must redirect to a vision VLM.
+
+    Returns a receipt-shaped dict ``{redirect, to, reason}`` with NO side effects;
+    the brain router applies it. Redirect only when there is an image AND the
+    active cortex is text-only AND a VLM is available — otherwise an honest gap.
+    """
+    if not has_image:
+        return {"redirect": False, "to": None, "reason": "no image in turn"}
+    if not is_text_only_cortex(active_model):
+        return {"redirect": False, "to": None, "reason": "active cortex can see (not text-only)"}
+    vlms = list(available_vlms) if available_vlms is not None else _default_vlms()
+    pick = next((v for v in vlms if "osmqwopus" in v.lower()), (vlms[0] if vlms else None))
+    if not pick:
+        return {"redirect": False, "to": None,
+                "reason": "image on text-only cortex but NO VLM available — honest gap, do not fake sight"}
+    return {
+        "redirect": True,
+        "to": pick,
+        "reason": f"image on text-only cortex {active_model!r}; route pixels to VLM {pick!r}",
+        "truth_label": TRUTH_LABEL,
+    }
+
 
 def _state_dir(state_dir: Path | str | None = None) -> Path:
     return Path(state_dir) if state_dir is not None else STATE

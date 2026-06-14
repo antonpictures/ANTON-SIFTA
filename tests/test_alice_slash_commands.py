@@ -50,6 +50,8 @@ def test_help_lists_her_own_commands(tmp_path):
     res, calls = _run("/help", tmp_path)
     assert res["handled"] and not res["error"]
     assert "/cortex" in res["reply"] and "/schedule" in res["reply"]
+    assert "/grok" in res["reply"]
+    assert "/heart" in res["reply"]
     assert "/p" in res["reply"]
     assert "SIFTA OS commands" in res["reply"]
     assert "global chat slash surface" in res["reply"]
@@ -65,6 +67,8 @@ def test_question_mark_slash_shows_palette(tmp_path):
     res, calls = _run("/?", tmp_path)
     assert res["handled"] and not res["error"]
     assert "/cortex" in res["reply"]
+    assert "/grok" in res["reply"]
+    assert "/heart" in res["reply"]
     assert "/schedule" in res["reply"]
     assert "/sc" in res["reply"]
     assert "/p" in res["reply"]
@@ -168,3 +172,160 @@ def test_page_affordance_command_passes_through_to_talk(tmp_path):
 
     res, _ = _run("/page-buttons", tmp_path)
     assert res["handled"] is False
+
+
+def test_cortex_llm_lane_r943(tmp_path, monkeypatch):
+    # George 2026-06-11: /cortex llm lists the claude-arm models and pins one
+    # live via SIFTA_CLAUDE_ARM_MODEL — honored by the r943 launcher cut.
+    import os
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.delenv("SIFTA_CLAUDE_ARM_MODEL", raising=False)
+    r = handle_slash_command("/cortex llm", state_dir=tmp_path, current_cortex="c")
+    assert r["handled"] and "claude-fable-5" in r["reply"]
+    assert "Selected Talk cortex: c" in r["reply"]
+    r2 = handle_slash_command("/cortex pin claude 1", state_dir=tmp_path, current_cortex="c")
+    assert r2["switched"] and os.environ["SIFTA_CLAUDE_ARM_MODEL"] == "claude-fable-5"
+    r3 = handle_slash_command("/cortex llm default", state_dir=tmp_path, current_cortex="c")
+    assert "SIFTA_CLAUDE_ARM_MODEL" not in os.environ and "cleared" in r3["reply"]
+    # the plain switch lane is untouched
+    r4 = handle_slash_command(
+        "/cortex 2", state_dir=tmp_path, current_cortex="a",
+        available=["a", "b"], set_cortex_fn=lambda t: None,
+    )
+    assert r4["switched"] and r4["to_tag"] == "b"
+
+
+def test_cortex_llm_reports_cline_external_brain(tmp_path, monkeypatch):
+    from System import swarm_cortex_capabilities as cap
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.setattr(cap, "_grok_cli_model_ids", lambda: ["grok-composer-2.5-fast", "grok-build"])
+    fake_home = tmp_path / "home"
+    (fake_home / ".cline").mkdir(parents=True)
+    (fake_home / ".cline" / "config.json").write_text(json.dumps({
+        "provider": "OpenAI",
+        "model": "GPT-5.3 Codex Spark",
+        "reasoningLevel": "medium",
+    }))
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    r = handle_slash_command(
+        "/cortex llm",
+        state_dir=tmp_path,
+        current_cortex="cline:cline-cli-default",
+    )
+    assert r["handled"] and not r["error"]
+    assert "Selected Talk cortex: cline:cline-cli-default" in r["reply"]
+    assert "CLINE EXTERNAL BRAIN" in r["reply"]
+    assert "GPT-5.3 Codex Spark" in r["reply"]
+    assert "Claude-arm pin below does not steer Cline" in r["reply"]
+    assert "Attached LLMs for Cline" in r["reply"]
+    assert "GPT-5.5" in r["reply"]
+    assert "Grok Build (grok-build)" in r["reply"]
+    assert "Opus 4.7 (claude-opus-4-7)" in r["reply"]
+    assert "Haiku 4.5 (claude-haiku-4-5-20251001)" in r["reply"]
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "external_brain_settings.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["lane"] == "cline"
+    assert rows[-1]["model"] == "GPT-5.3 Codex Spark"
+
+
+def test_grok_health_and_fast_pin(tmp_path, monkeypatch):
+    import os
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+
+    r = handle_slash_command("/grok", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+    assert r["handled"] and not r["error"]
+    assert "Grok cortex health" in r["reply"]
+    assert "/grok fast" in r["reply"]
+
+    r2 = handle_slash_command("/grok fast", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+    assert r2["handled"] and r2["switched"]
+    assert os.environ["SIFTA_GROK_CLI_MODEL"] == "grok-composer-2.5-fast"
+
+    r3 = handle_slash_command("/grok build", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+    assert r3["handled"] and os.environ["SIFTA_GROK_CLI_MODEL"] == "grok-build"
+
+    r4 = handle_slash_command("/grok default", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+    assert r4["handled"] and "SIFTA_GROK_CLI_MODEL" not in os.environ
+    rows = _diary_rows(tmp_path)
+    assert rows[-1]["kind"] == "CORTEX_SWITCH_CONTINUITY"
+
+
+def test_cortex_llm_number_is_contextual_for_grok(tmp_path, monkeypatch):
+    import os
+    from System import swarm_cortex_capabilities as cap
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.delenv("SIFTA_CLAUDE_ARM_MODEL", raising=False)
+    monkeypatch.setattr(cap, "_grok_cli_model_ids", lambda: ["grok-composer-2.5-fast", "grok-build"])
+
+    handle_slash_command("/cortex llm", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+    r = handle_slash_command(
+        "/cortex llm 2",
+        state_dir=tmp_path,
+        current_cortex="grok:grok-4.3",
+    )
+
+    assert r["handled"] and r["switched"] and not r["error"]
+    assert os.environ["SIFTA_GROK_CLI_MODEL"] == "grok-build"
+    assert "SIFTA_CLAUDE_ARM_MODEL" not in os.environ
+    assert "Grok attached LLM pin" in r["reply"]
+    assert "Claude arm untouched" in r["reply"]
+
+
+def test_cortex_llm_number_does_not_pin_claude_for_cline(tmp_path, monkeypatch):
+    import json
+    import os
+    from System import swarm_cortex_capabilities as cap
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.delenv("SIFTA_CLAUDE_ARM_MODEL", raising=False)
+    monkeypatch.setattr(cap, "_grok_cli_model_ids", lambda: ["grok-composer-2.5-fast", "grok-build"])
+    fake_home = tmp_path / "home"
+    (fake_home / ".cline").mkdir(parents=True)
+    (fake_home / ".cline" / "config.json").write_text(json.dumps({"provider": "OpenAI", "model": "GPT-5.4"}))
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    handle_slash_command("/cortex llm", state_dir=tmp_path, current_cortex="cline:cline-cli-default")
+    r = handle_slash_command(
+        "/cortex llm 2",
+        state_dir=tmp_path,
+        current_cortex="cline:cline-cli-default",
+    )
+
+    assert r["handled"] and r["error"] == "upstream_picker_refused"
+    assert "SIFTA_CLAUDE_ARM_MODEL" not in os.environ
+    assert "did not pin Claude" in r["reply"]
+
+
+def test_heart_command_writes_hardware_receipt(tmp_path, monkeypatch):
+    from System.swarm_alice_slash_commands import handle_slash_command
+
+    monkeypatch.setenv("SIFTA_HEART_SENSOR_PROBE", "0")
+    r = handle_slash_command("/heart", state_dir=tmp_path, current_cortex="grok:grok-4.3")
+
+    assert r["handled"] and not r["error"]
+    assert "HEART:" in r["reply"]
+    assert "monotonic_ns=" in r["reply"]
+    ledger = tmp_path / "hardware_heart.jsonl"
+    assert ledger.exists()
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["schema"] == "SIFTA_HARDWARE_HEART_V1"
+    assert row["pacemaker"] == "monotonic_timer"
+
+
+def test_grok_cli_model_for_honors_live_pin(monkeypatch):
+    from System.swarm_gemini_brain import grok_cli_model_for
+
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    assert grok_cli_model_for("grok:grok-4.3") == "grok-build"
+    monkeypatch.setenv("SIFTA_GROK_CLI_MODEL", "grok-composer-2.5-fast")
+    assert grok_cli_model_for("grok:grok-4.3") == "grok-composer-2.5-fast"

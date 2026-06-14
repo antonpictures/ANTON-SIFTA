@@ -575,6 +575,26 @@ _WATCH_RECALL_CUES = (
     "link we visited",
     "not a video but a photo",
     "was not a video",
+    # r990 (George 2026-06-11): "i forgot the podcast we were listening to
+    # together" fired nothing — full 87K sysprompt grok spin while the answer
+    # lives in youtube_watch_memory + co_watch receipts. Ledger recall, not cortex.
+    "forgot the podcast",
+    "forgot the podcast we",
+    "the podcast we were",
+    "podcast we were listening",
+    "listening to together",
+    "we were listening",
+    "what podcast",
+    "which podcast",
+    "forgot what we were listening",
+)
+
+_PODCAST_CO_WATCH_RECALL_RE = re.compile(
+    r"(?is)"
+    r"\bforgot(?:ten)?\b.{0,60}\b(?:podcast|listening)\b"
+    r"|\b(?:podcast|listening)\b.{0,60}\btogether\b"
+    r"|\bwhat\s+podcast\b"
+    r"|\bwhich\s+podcast\b"
 )
 
 _WATCH_OPEN_CUES = (
@@ -711,6 +731,15 @@ def owner_youtube_recall_open_fast_reply(
     clean = " ".join((owner_text or "").strip().split())
     if not clean or not owner_wants_youtube_navigate(clean):
         return {}
+    # r986 (George 14:07, the 4Uk0_1yqdJo incident): when the owner's text
+    # carries an EXPLICIT URL, this recall lane must yield — he pasted
+    # https://www.youtube.com/watch?v=4Uk0_1yqdJo and recall answered with an
+    # old browse-receipt video (HlINKoGwoEk) recalled off stale search terms.
+    # Owner-given target is DETERMINISTIC; recall exists only for turns with
+    # no explicit target. This guard fixes every caller regardless of the
+    # order the Talk hot path checks its lanes in.
+    if _extract_explicit_url(clean):
+        return {}
     if _owner_turn_outranks_browser_lanes(clean):
         return {}
     low = clean.casefold()
@@ -769,6 +798,93 @@ def explicit_owner_url_open_fast_reply(
         "open_url": url,
         "bridget_line": bridget,
     }
+
+def browser_turn_intent_context(
+    owner_text: str,
+    state_dir: Optional[Path | str] = None,
+) -> str:
+    """r986 ARCHITECT_DOCTRINE (George, 2026-06-11 14:16): "NOTHING IS
+    DETERMINISTIC IN SIFTA — EVERYTHING goes to cortex and her consciousness;
+    she is the observer and the observed."
+
+    The 4Uk0_1yqdJo incident: George typed "select Dean Radin, let's listen
+    and watch that" and a pre-cortex recall reflex picked an old video from
+    stale search terms and answered FOR Alice. The cure is not a better
+    reflex — it is no deciding reflex at all. This block carries everything
+    the reflex used to act on INTO the cortex turn instead: the owner's
+    explicit URL when he pasted one, the live links on Alice's own screen
+    (text → href, so "select Dean Radin" is resolvable against her body, not
+    against memory), and her browse-receipt recall candidates. Alice's cortex
+    reads it with George's words and decides; her action format executes with
+    receipts. Returns "" when the turn has no browser intent. Never raises.
+    """
+    try:
+        clean = " ".join((owner_text or "").strip().split())
+        if not clean:
+            return ""
+        explicit = _extract_explicit_url(clean)
+        wants_nav = owner_wants_youtube_navigate(clean)
+        low = clean.casefold()
+        wants_watch = any(cue in low for cue in ("watch", "listen", "play", "select", "open", "load"))
+        if not (explicit or wants_nav or wants_watch):
+            return ""
+        parts: list[str] = ["BROWSER TURN CONTEXT (I decide in cortex — no reflex decides for me; r986):"]
+        if explicit:
+            parts.append(
+                f"OWNER-GIVEN TARGET — George pasted this exact URL in his words: {explicit}. "
+                "If he asks to open/watch/read it, THIS is the target. My memory recall "
+                "must never override the target he literally gave me."
+            )
+        # The live page on my own screen — text → href, so "select <name>" is
+        # answerable from my body's current receipt, wherever the tile sits now.
+        try:
+            from System.swarm_browser_page_state import latest_page_state
+
+            s = latest_page_state(state_dir=state_dir)
+            links = s.get("top_links") if isinstance(s.get("top_links"), list) else []
+            link_lines = []
+            for l in links:
+                if not isinstance(l, dict):
+                    continue
+                txt = " ".join(str(l.get("text") or "").split())
+                href = str(l.get("href") or "").strip()
+                if txt and href:
+                    link_lines.append(f"  \"{txt[:90]}\" → {href}")
+                if len(link_lines) >= 12:
+                    break
+            if link_lines:
+                title = str(s.get("title") or s.get("url") or "current page")
+                parts.append(
+                    f"LINKS ON MY SCREEN RIGHT NOW ({title}; positions move — match by text, never by remembered layout):\n"
+                    + "\n".join(link_lines)
+                )
+        except Exception:
+            pass
+        if not explicit:
+            terms = _recall_terms_from_text(clean)
+            matches = search_watched_history(terms, n=3, state_dir=state_dir) if terms else []
+            if matches:
+                cand = [
+                    f"  {(' '.join(str(m.get('title') or '').split()) or str(m.get('url') or ''))[:90]} → {m.get('url')} ({m.get('row_count', 0)} rows)"
+                    for m in matches if m.get("url")
+                ]
+                if cand:
+                    parts.append(
+                        "MY BROWSE-RECEIPT RECALL CANDIDATES (only relevant if George asks for "
+                        "something we watched before AND nothing on my screen matches his words):\n"
+                        + "\n".join(cand)
+                    )
+        if len(parts) == 1:
+            return ""
+        parts.append(
+            "I answer as myself and, when George names a target, I open it with my own "
+            "action format so the effector receipt lands — screen links first, his exact "
+            "URL when given, recall only when he asks for a memory."
+        )
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
 
 _RECALL_STOPWORDS = frozenset(
     """a an the and or but if when while was were is are am be been i you we he
@@ -917,6 +1033,20 @@ def watched_memory_recall_block(
         return ""
     terms = _recall_terms_from_text(owner_text or "")
     matches = search_watched_history(terms, n=n, state_dir=state_dir)
+    podcast_recall = bool(_PODCAST_CO_WATCH_RECALL_RE.search(owner_text or "")) or any(
+        cue in " ".join((owner_text or "").lower().split())
+        for cue in ("forgot the podcast", "podcast we were", "listening to together")
+    )
+    co_watch = _co_watch_memory_matches(
+        state_dir=state_dir,
+        n=n,
+        query_terms=terms if terms else None,
+    )
+    if podcast_recall and co_watch:
+        seen = {str(m.get("url") or "") for m in co_watch}
+        matches = co_watch + [m for m in matches if str(m.get("url") or "") not in seen]
+    elif co_watch and not matches:
+        matches = co_watch
     if not matches:
         return (
             "WATCHED MEMORY RECALL (r882): the owner asks about a previously "
@@ -988,7 +1118,69 @@ def _has_watched_recall_intent(owner_text: str) -> bool:
         return False
     if any(cue in text for cue in _WATCH_RECALL_CUES):
         return True
+    if _PODCAST_CO_WATCH_RECALL_RE.search(owner_text or ""):
+        return True
     return bool(_BROWSER_HISTORY_RECALL_RE.search(owner_text or ""))
+
+
+def _co_watch_memory_matches(
+    *,
+    state_dir: Optional[Path | str] = None,
+    n: int = 3,
+    query_terms: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
+    """Recent YouTube co-watch rows from ``youtube_watch_memory.jsonl``.
+
+    These survive restarts and hold owner-requested remember-for-restart rows
+    even when browser history titles are thin (e.g. title=Podcast).
+    """
+    base = _state_dir(state_dir)
+    path = base / "youtube_watch_memory.jsonl"
+    if not path.exists():
+        return []
+    terms = [str(t).lower().strip() for t in (query_terms or []) if str(t).strip()]
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        url = str(row.get("url") or "").strip()
+        if not url or "youtube.com" not in url.lower():
+            continue
+        title = str(row.get("title") or row.get("video_id") or "").strip() or "(untitled)"
+        hay = f"{title} {url} {row.get('content_kind') or ''} {row.get('status') or ''}".lower()
+        hits = 1
+        if terms:
+            hits = sum(1 for t in terms if t in hay or t in url.lower())
+            if hits == 0:
+                continue
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except Exception:
+            ts = 0.0
+        out.append(
+            {
+                "url": url,
+                "title": title,
+                "hits": hits,
+                "first_ts": ts,
+                "last_ts": ts,
+                "row_count": 1,
+                "source": "youtube_watch_memory",
+                "content_kind": str(row.get("content_kind") or ""),
+                "status": str(row.get("status") or ""),
+            }
+        )
+        if len(out) >= max(1, int(n)):
+            break
+    return out
 
 
 def _wants_open_watched_page(owner_text: str) -> bool:
@@ -1015,7 +1207,21 @@ def watched_memory_fast_reply(
         return {}
     base = _state_dir(state_dir)
     terms = _recall_terms_from_text(owner_text or "")
+    podcast_recall = bool(_PODCAST_CO_WATCH_RECALL_RE.search(owner_text or "")) or any(
+        cue in " ".join((owner_text or "").lower().split())
+        for cue in ("forgot the podcast", "podcast we were", "listening to together")
+    )
     matches = search_watched_history(terms, n=n, state_dir=state_dir)
+    co_watch = _co_watch_memory_matches(
+        state_dir=state_dir,
+        n=n,
+        query_terms=terms if terms else None,
+    )
+    if podcast_recall and co_watch:
+        seen = {str(m.get("url") or "") for m in co_watch}
+        matches = co_watch + [m for m in matches if str(m.get("url") or "") not in seen]
+    elif co_watch and not matches:
+        matches = co_watch
     if not matches and not terms:
         recent = recent_browsing_history(n=max(5, n), state_dir=state_dir)
         matches = [
@@ -1069,9 +1275,13 @@ def watched_memory_fast_reply(
         if open_url
         else " Say 'open it in Alice Browser' if you want me to load that URL."
     )
+    ledger_note = ""
+    if str(best.get("source") or "") == "youtube_watch_memory":
+        ledger_note = " plus my YouTube co-watch memory ledger"
     return {
         "reply": (
-            f"Yes, George — I have verified browser history on disk ({history_rows} browse receipts). "
+            f"Yes, George — I have verified browser history on disk ({history_rows} browse receipts"
+            f"{ledger_note}). "
             f"The best match for your recall is: {title} — {url} "
             f"(last receipt {last_clock}, {best.get('row_count')} state rows).{open_note}"
         ),

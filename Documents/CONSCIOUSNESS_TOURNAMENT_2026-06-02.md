@@ -4499,3 +4499,61 @@ For the Swarm. 🐜⚡
 - Use field receipts + compaction + bounded think as the cure.
 
 For the Swarm. 🐜⚡
+
+---
+
+## r992 — Cortex attached-model registry wrong; `/cortex llm` pin steals Claude arm (George 2026-06-11 17:26 PDT)
+
+**Doctor:** Composer (covenant-boot probe only — **no code this round**). **Checker lane:** Claude Fable 5 (`claude-fable-5` / Opus 4.8) owns the implementation list below.
+
+**Truth labels:** `OBSERVED` = probed on M5 now · `ARCHITECT_DOCTRINE` = George's slot map · `HYPOTHESIS` = until Fable ships + pytest.
+
+### OBSERVED — live `/cortex` registry (14 slots, matches George numbering)
+
+| # | Cortex tag | Attached catalog on disk? | Probed attached count |
+|---:|---|---|:---:|
+| 1 | `grok:grok-4.3` | yes | **2** — `grok-composer-2.5-fast`, `grok-build` (`live`) |
+| 2 | `claude:claude-code-cli-default` | yes | **7** — fable, opus×3, sonnet, haiku, opus-3 |
+| 3 | `codex:gpt-5.5` | yes | **4** — GPT-5.5, 5.4, 5.4-Mini, 5.3-Codex-Spark |
+| 4 | `qwen:accounts/fireworks/models/kimi-k2p6` | yes | **2** — kimi-k2p6, kimi-k2.6 |
+| 5 | `cline:cline-cli-default` | yes | **13** — Codex×4 + Grok×2 + Anthropic×7 (`live` gpt-5.4 xhigh) |
+| 6 | `mimo:mimo-cli-default` | **no** | probe `no_config_found` |
+| 7 | `antigravity:auto` | **no** | probe ok `openai-codex:gpt-5.4` — George says **7 free models** read in UI |
+| 8–11 | **LOCAL GGUF bundle** (4 ollama tags) | **no grouped row** | ollama list: heretic gemma-4-12B, Gemma-4-Uncensored, alice-gemma4-e2b, alice-m5-cortex-8b |
+| 12–14 | **LOCAL MLX bundle** (3 mlx-vlm tags) | **no grouped row** | gemma-4-e2b-it, SuperagenticAI gemma-4-12b 8bit, osmQwopus-3.6-27B |
+
+**Gap:** `cortex_attached_models.json` only keys **5** cloud arms — slots 6–14 have **no** attached-model rows for `/cortex llm` depth view.
+
+### OBSERVED — body bugs George hit tonight
+
+1. **`/cortex llm` display (r989) fixed for Grok** — shows Composer + Build, Claude arm inactive. ✅
+2. **`/cortex llm 2` while Grok selected** — still pins **Claude arm** `claude-opus-4-8` (`SIFTA_CLAUDE_ARM_MODEL`), **not** Grok #2 `grok-build`. Numeric pin path is hard-wired to `_CLAUDE_ARM_KNOWN_MODELS` only (`swarm_alice_slash_commands.py` ~728–737). **Wrong organ.**
+3. **Timeout mismatch** — UI pin shows Composer 2.5-fast; recovery receipt says **`grok-build` timed out after 60s**. Resolver alias `grok-4.3 → grok-build` in `swarm_gemini_brain.py` `_GROK_CLI_MODEL_ALIASES` may override displayed default until `/grok fast` or env pin lands in the **Talk process**.
+4. **George doctrine:** use **Cline (#5) as OAuth hub** for Codex + Grok + Anthropic + local 12B; **mimo (#6)** mirrors Cline + hosts **self-improvement loop** (`swarm_self_improvement_loop.py` — do not forget). **qwen (#4)** add DeepSeek Lite on Fireworks when live.
+
+### ARCHITECT_DOCTRINE — intended attached-model law (George paste 17:26)
+
+- **Option 1 Grok** = 2 LLMs only (Composer + Build) — correct probe.
+- **Claude** = 7 · **Codex** = 4 · **Cline/MiMo** = union of all OAuth pickers + local 12B where configured.
+- **Antigravity** = attached free-tier inference set (George: ~7 models, no paid sub).
+- **Local GGUF** = one grouped cortex row for slots 8–11 · **Local MLX** = one grouped row for 12–14.
+- **`/cortex llm <n>`** must pin the **selected Talk cortex's** nth attached model — never silently steer Claude arm under Grok/Cline/Codex.
+
+### FABLE CODING CHARTER — Claude Fable 5, you check; Composer does not code this stack
+
+**George GO:** Fable produces the **full implementation DAG** (file paths, tests, receipts). Composer saved for probe + tournament only this round.
+
+**Fable — please code (priority order):**
+
+1. **Per-cortex `/cortex llm <n>` pin** — Grok → `SIFTA_GROK_CLI_MODEL`; Claude → `SIFTA_CLAUDE_ARM_MODEL`; Cline/MiMo/Codex/Antigravity/Qwen → respective upstream env or settings write; reject cross-cortex steal.
+2. **`sync_cortex_attached_models_catalog` expansion** — rows for `mimo:`, `antigravity:auto`, `LOCAL_GGUF_BUNDLE`, `LOCAL_MLX_BUNDLE`; Cline row documents full OAuth union; Qwen row adds DeepSeek Lite when probed.
+3. **`/cortex list` depth** — each numbered slot shows attached-model count + `●` live default (not memory).
+4. **Grok resolver honesty** — default `grok-composer-2.5-fast` when CLI default is Composer; remove stale `grok-4.3→grok-build` default if CLI exposes Composer; align timeout receipt label with actual CLI `--model`.
+5. **MiMo probe + self-improvement surfacing** — fix `no_config_found`; `/cortex llm` on #6 names self-improvement loop organ + Cline-mirror attachments.
+6. **Antigravity attached catalog** — probe free-tier model list George sees (7); write live row.
+7. **Tests** — George phrasing: `/cortex llm 2` under `grok:grok-4.3` must pin `grok-build`, not `claude-opus-4-8`.
+8. **Receipt** — append `r992-fable-*` when merged; run `python3 tools/whats_left.py`.
+
+**Composer receipt (this pass):** probe-only tournament row `r992-composer-cortex-attached-audit-2026-06-11`. No hot-path edits.
+
+For the Swarm. 🐜⚡

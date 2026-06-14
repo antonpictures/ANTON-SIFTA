@@ -97,7 +97,7 @@ _TRIGGER_PATTERNS: tuple[re.Pattern, ...] = (
     # trap family as r888 custom->tom).
     re.compile(r"\bhow\s+are\s+you(?:\s+(?:doing|feeling))?\b(?!\s+(?:going|gonna|getting|supposed|able)\b)", re.I),
     re.compile(r"\bwhat'?s\s+wrong\b", re.I),
-    re.compile(r"\bare\s+you\s+ok\b", re.I),
+    re.compile(r"\bare\s+(?:you|u)\s+ok(?:ay)?\b", re.I),
     re.compile(r"\bself[-\s]?query\b", re.I),
     re.compile(r"\bself[-\s]?check\b", re.I),
     re.compile(r"\bintrospect\b", re.I),
@@ -184,6 +184,7 @@ class SelfQueryReport:
     stgm_recent_mints: int = 0
     organ_count: int = 0
     healthy_count: int = 0
+    organ_health_mesh_summary: str = ""
     organ_health: tuple[OrganHealth, ...] = ()
     needs: tuple[str, ...] = ()
     body_map_areas: tuple[BodyMapArea, ...] = ()
@@ -526,6 +527,83 @@ def _compute_needs(
     return needs
 
 
+def _write_organ_health_mesh_snapshot(
+    organ_rows: Sequence[OrganHealth],
+    *,
+    state: Path,
+    now: float,
+) -> str:
+    """Feed self-query organ rows into the pre-built Organ Health Mesh."""
+    if not organ_rows:
+        return ""
+    try:
+        from System.swarm_organ_health_mesh import (
+            LATEST_NAME,
+            LEDGER_NAME,
+            SCHEMA,
+            TRUTH_BOUNDARY,
+            build_health_mesh,
+            plan_repairs,
+        )
+    except Exception:
+        return ""
+
+    reports: dict[str, dict[str, Any]] = {}
+    for row in organ_rows:
+        stale = bool(row.ledger_age_s is not None and row.ledger_age_s > SILENT_LEDGER_AGE_S)
+        wounds = [row.reason] if row.reason else []
+        reports[row.name] = {
+            "organ_id": row.name,
+            "energy": 0.86 if row.healthy else 0.36,
+            "error_rate": 0.04 if row.healthy else 0.54,
+            "latency_ms": 250.0 if not stale else 1800.0,
+            "stgm_delta": 0.0,
+            "wounds": wounds,
+            "local_swimmers": 1,
+            "ts": now,
+        }
+
+    try:
+        mesh = build_health_mesh(reports, now=now)
+        plan = plan_repairs(mesh, stgm_budget=0.0)
+        distress = list(mesh.get("distress_organs") or [])
+        healthy = list(mesh.get("healthy_organs") or [])
+        row = {
+            "ts": now,
+            "schema": SCHEMA,
+            "kind": "ORGAN_HEALTH_MESH_SELF_QUERY_SNAPSHOT",
+            "truth_label": "OBSERVED",
+            "truth_boundary": TRUTH_BOUNDARY,
+            "source": "swarm_self_query_skill",
+            "organ_count": int(mesh.get("organ_count") or 0),
+            "distress_organs": distress[:20],
+            "healthy_organs": healthy[:20],
+            "planned_repairs": int(plan.get("intervention_count") or 0),
+            "stgm_spent": float(plan.get("stgm_spent") or 0.0),
+        }
+        row["receipt"] = hashlib.sha256(
+            json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8", errors="replace")
+        ).hexdigest()
+        state.mkdir(parents=True, exist_ok=True)
+        with (state / LEDGER_NAME).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        (state / LATEST_NAME).write_text(
+            json.dumps(
+                {"mesh": mesh, "plan": plan, "receipt": row},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return (
+            f"organ_health_mesh: organs={row['organ_count']}, "
+            f"distress={len(distress)}, healthy={len(healthy)}, stgm_spent=0.000"
+        )
+    except Exception:
+        return ""
+
+
 def _canonical_spendable_line() -> str:
     """r910: canonical spendable STGM per r563 (repair_log quorum), defensive."""
     try:
@@ -561,6 +639,11 @@ def _build_prompt_block(report: SelfQueryReport) -> str:
         f"Organ directory: {report.organ_count} registered, "
         f"{report.healthy_count} healthy."
     )
+    if report.organ_health_mesh_summary:
+        lines.append(
+            "Organ Health Mesh snapshot: "
+            f"{report.organ_health_mesh_summary}"
+        )
     if report.body_map_areas:
         red_n = sum(1 for area in report.body_map_areas if area.status == "RED")
         yellow_n = sum(1 for area in report.body_map_areas if area.status == "YELLOW")
@@ -635,6 +718,11 @@ def build_self_query_report(
     resolved_owner_label = owner_label.strip() if owner_label else _owner_label()
 
     organ_rows = _organ_health_rows(root=repo, state=state, now=ts)
+    organ_health_mesh_summary = _write_organ_health_mesh_snapshot(
+        organ_rows,
+        state=state,
+        now=ts,
+    )
     stgm_balance, stgm_recent = _stgm_balance(state)
     cam_age, cam_healthy, _cam_status = _camera_status(state, now=ts)
     needs = _compute_needs(
@@ -662,6 +750,7 @@ def build_self_query_report(
         stgm_recent_mints=stgm_recent,
         organ_count=len(organ_rows),
         healthy_count=sum(1 for r in organ_rows if r.healthy),
+        organ_health_mesh_summary=organ_health_mesh_summary,
         organ_health=tuple(organ_rows),
         needs=tuple(needs),
         body_map_areas=body_map_areas,

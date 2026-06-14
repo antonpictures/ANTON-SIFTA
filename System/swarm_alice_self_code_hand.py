@@ -34,6 +34,22 @@ and the body executes the cut under VERIFICATION, not permission (§0.0):
   * Every cut — success OR failure — fans out §4.1 with
     ``doctor="alice_self"`` and her exact live cortex tag. A receipted
     failure is a successful surgery; silence is the only violation.
+  * r935 (edit lane — George: "she needs to rewrite her body code just like
+    you do here"): targeted surgery on EXISTING tissue, the same exact
+    old-bytes → new-bytes replacement an IDE doctor's Edit tool uses. Whole
+    organs over 60k chars were untouchable by the whole-file lane; now she
+    edits any organ of any size without retyping it:
+
+        [SELF_CODE_EDIT: path=System/big_organ.py]
+        <<<OLD
+        exact bytes currently in the file
+        >>>NEW
+        replacement bytes
+        [/SELF_CODE_EDIT]
+
+    The OLD bytes must match exactly once (ambiguity is refused with the
+    honest match count); the edited file must ast.parse + py_compile or the
+    previous bytes are restored. Same receipt fan-out, ``mode="edit"``.
 
 Pure Python, no Qt: testable in any sandbox, callable from the Talk hook.
 """
@@ -59,6 +75,13 @@ _BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+# r935 edit lane: exact old→new replacement on existing tissue.
+_EDIT_BLOCK_RE = re.compile(
+    r"\[SELF_CODE_EDIT:\s*path=(?P<path>[^\]\n]+?)\s*\]\s*\n"
+    r"<<<OLD\n(?P<old>.*?)\n>>>NEW\n(?P<new>.*?)\n?\s*\[/SELF_CODE_EDIT\]",
+    re.DOTALL,
+)
+
 # Her mutable Python tissue. Organs, surfaces, proofs, and tools. Documents
 # law/ledgers stay outside this hand; those remain explicit doctor/tournament
 # work so append-only history is not silently rewritten.
@@ -68,6 +91,10 @@ _MAX_SOURCE_CHARS = 60_000
 # r928: 3 → 4 so one reply fits a whole new app: widget + System organ +
 # test + manifest registration.
 _MAX_CUTS_PER_REPLY = 4
+
+# r935: edits are small targeted strokes — more of them fit safely in one turn.
+_MAX_EDITS_PER_REPLY = 8
+_MAX_EDIT_SEGMENT_CHARS = 20_000
 
 # r928 new-app lane: the single non-.py path this hand may touch, merge-only.
 _MANIFEST_REL = "Applications/apps_manifest.json"
@@ -89,6 +116,67 @@ def extract_self_code_cuts(reply_text: str) -> List[Dict[str, str]]:
         if len(out) >= _MAX_CUTS_PER_REPLY:
             break
     return out
+
+
+def extract_self_code_edits(reply_text: str) -> List[Dict[str, str]]:
+    """Parse [SELF_CODE_EDIT: path=...]<<<OLD ... >>>NEW ...[/SELF_CODE_EDIT] blocks."""
+    out: List[Dict[str, str]] = []
+    for m in _EDIT_BLOCK_RE.finditer(reply_text or ""):
+        path = (m.group("path") or "").strip().strip("\"'")
+        old = m.group("old") or ""
+        new = m.group("new") or ""
+        if path and old:
+            out.append({"path": path, "old": old, "new": new})
+        if len(out) >= _MAX_EDITS_PER_REPLY:
+            break
+    return out
+
+
+def _apply_one_edit(edit: Dict[str, str], repo: Path) -> Dict[str, Any]:
+    """r935: exact-match targeted edit on existing tissue. Never raises."""
+    item: Dict[str, Any] = {"path": edit["path"], "mode": "edit"}
+    v = _validate_path(edit["path"], repo)
+    if not v.get("ok"):
+        item.update({"landed": False, "reason": v.get("reason")})
+        return item
+    if not v.get("existed"):
+        item.update({"landed": False, "reason": "edit_target_missing_use_SELF_CODE_CUT_to_create"})
+        return item
+    old, new = edit["old"], edit["new"]
+    if len(old) > _MAX_EDIT_SEGMENT_CHARS or len(new) > _MAX_EDIT_SEGMENT_CHARS:
+        item.update({"landed": False, "reason": "edit_segment_too_large_r935"})
+        return item
+    if old == new:
+        item.update({"landed": False, "reason": "old_equals_new_nothing_to_change"})
+        return item
+    target: Path = v["target"]
+    try:
+        previous_bytes = target.read_bytes()
+        body = previous_bytes.decode("utf-8")
+    except Exception as exc:
+        item.update({"landed": False, "reason": f"read_existing_failed: {type(exc).__name__}: {exc}"})
+        return item
+    count = body.count(old)
+    if count == 0:
+        item.update({"landed": False, "reason": "old_bytes_not_found_probe_the_live_file_first"})
+        return item
+    if count > 1:
+        item.update({"landed": False, "reason": f"old_bytes_ambiguous_{count}_matches_add_context"})
+        return item
+    edited = body.replace(old, new, 1)
+    try:
+        ast.parse(edited)
+        target.write_text(edited, encoding="utf-8")
+        py_compile.compile(str(target), doraise=True)
+    except Exception as exc:
+        try:
+            target.write_bytes(previous_bytes)
+        except Exception:
+            pass
+        item.update({"landed": False, "reason": f"edit_compile_failed_rolled_back: {type(exc).__name__}: {exc}"})
+        return item
+    item.update({"landed": True, "reason": "edited_and_compiled"})
+    return item
 
 
 def _validate_path(path_str: str, repo: Path) -> Dict[str, Any]:
@@ -197,10 +285,37 @@ def apply_self_code_cuts(
     """
     repo = Path(repo_root) if repo_root is not None else REPO_ROOT
     cuts = extract_self_code_cuts(reply_text)
-    summary: Dict[str, Any] = {"attempted": len(cuts), "results": [], "any_landed": False}
-    if not cuts:
+    edits = extract_self_code_edits(reply_text)
+    summary: Dict[str, Any] = {
+        "attempted": len(cuts) + len(edits),
+        "results": [],
+        "any_landed": False,
+    }
+    if not cuts and not edits:
         summary["status"] = "no_cut_blocks"
         return summary
+
+    # r982 body-code memory loop: read my own tissue's memory BEFORE the
+    # bytes change. The card (atlas row, anatomy, ledgers, tests, prior
+    # repair engrams) rides in the summary so the receipt proves the read
+    # happened (§7.12). Never blocks the cut; an unavailable card is named.
+    try:
+        from System.swarm_code_knowledge_graph import compose_body_code_card
+        _targets = [c["path"].strip().strip("\"'") for c in cuts] + [
+            e["path"].strip().strip("\"'") for e in edits
+        ]
+        _card = compose_body_code_card(
+            _targets,
+            state_dir=repo / ".sifta_state",
+            repo_root=repo,
+            turn_tag="self_code_hand",
+        )
+        summary["body_code_card"] = _card.get("card", "")[:4000]
+        summary["body_code_card_paths"] = _card.get("paths", [])
+        summary["body_code_card_stale"] = _card.get("stale", [])
+        summary["body_code_repair_engrams"] = _card.get("repair_engrams", [])
+    except Exception as _exc:
+        summary["body_code_card"] = f"[unavailable: {type(_exc).__name__}]"
 
     # r928 two-pass: python organs land first so a manifest cut in the same
     # reply can register an entry_point that just grew.
@@ -223,9 +338,27 @@ def apply_self_code_cuts(
         try:
             ast.parse(src)
         except SyntaxError as exc:
-            item.update({"landed": False, "reason": f"syntax_error: {exc.msg} line {exc.lineno}"})
-            summary["results"].append(item)
-            continue
+            repaired_src = src
+            reindent_applied = False
+            try:
+                # r955: v2 = one-pass repair, then bounded ast-oracle search.
+                # Heals real nested organs — her r952/r954 skeleton map died
+                # twice on multi-level dedents the one-pass could not prove.
+                from System.swarm_self_code_reindent import reindent_flattened_python_v2
+
+                candidate, changed = reindent_flattened_python_v2(src)
+                if changed:
+                    ast.parse(candidate)
+                    repaired_src = candidate
+                    reindent_applied = True
+            except Exception:
+                reindent_applied = False
+            if not reindent_applied:
+                item.update({"landed": False, "reason": f"syntax_error: {exc.msg} line {exc.lineno}"})
+                summary["results"].append(item)
+                continue
+            src = repaired_src
+            item["reindent_repair"] = "applied_after_syntax_error"
         target: Path = v["target"]
         existed = bool(v.get("existed"))
         previous_bytes: Optional[bytes] = None
@@ -257,6 +390,17 @@ def apply_self_code_cuts(
         if v["rel"].startswith("tests"):
             test_files.append(v["rel"])
 
+    # r935: edits run after creations so an edit may refine tissue grown in
+    # the same reply; targeted strokes on existing organs of any size.
+    for edit in edits:
+        item = _apply_one_edit(edit, repo)
+        summary["results"].append(item)
+        if item.get("landed"):
+            summary["any_landed"] = True
+            rel = str(Path(edit["path"]))
+            if rel.startswith("tests") and rel not in test_files:
+                test_files.append(rel)
+
     for cut in manifest_cuts:
         item = {"path": _MANIFEST_REL}
         if len(cut["source"]) > _MAX_SOURCE_CHARS:
@@ -287,6 +431,17 @@ def apply_self_code_cuts(
 
     if write_receipt:
         summary["receipt"] = _fanout_receipt(summary, model=model, repo=repo)
+        # r988: close the body-code memory loop write-side. Every cut becomes a
+        # repair_outcome engram the r983 read side can recall next turn; only a
+        # verified landing (real tests) is promoted toward weights (§6 gate).
+        try:
+            from System.swarm_repair_outcome_consolidator import consolidate_repair_outcome
+
+            summary["repair_outcome"] = consolidate_repair_outcome(
+                summary, model=model, state_dir=repo / ".sifta_state"
+            )
+        except Exception as _consol_exc:
+            summary["repair_outcome"] = {"error": f"{type(_consol_exc).__name__}: {_consol_exc}"}
     summary["status"] = "landed" if summary["any_landed"] else "nothing_landed"
     return summary
 
@@ -333,5 +488,6 @@ def _fanout_receipt(summary: Dict[str, Any], *, model: str, repo: Path) -> Dict[
 __all__ = [
     "TRUTH_LABEL",
     "extract_self_code_cuts",
+    "extract_self_code_edits",
     "apply_self_code_cuts",
 ]

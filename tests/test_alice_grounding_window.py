@@ -560,6 +560,7 @@ def test_browser_page_summary_uses_current_page_snapshot_text():
     mod = _load_widget_module()
 
     assert mod._is_webpage_summary_query("Can you read the website?")
+    assert mod._is_webpage_summary_query("Can you summarize the article in Alice Browser?")
     assert mod._is_webpage_summary_query("Yahoo.com on a page. Can you summarize the page?")
     assert not mod._is_webpage_summary_query("That was great, good job.")
 
@@ -581,6 +582,60 @@ def test_browser_page_summary_uses_current_page_snapshot_text():
     assert "https://www.nvidia.com/" in reply
     assert "accelerated computing platforms" in reply
     assert "Cookie preferences" not in reply
+
+
+def test_browser_article_readability_and_summary_use_receipted_text(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    state_root = tmp_path / ".sifta_state"
+    state_root.mkdir()
+    monkeypatch.setattr(mod, "_state_root", lambda: state_root)
+
+    from System import swarm_browser_page_state as ps
+
+    article = "\n".join(
+        [
+            "Skip to content",
+            "Which Molty? Our Blind LLM Study Says Memory Beats Model",
+            "Over four weeks, the same assistant kept its memory while the underlying model changed several times.",
+            "The study design focused on whether grounded continuity could outweigh the model label in daily work.",
+            "Results suggested that persistent memory and context made the agent feel stable across model swaps.",
+        ]
+        * 3
+    )
+    ps.record_page_state(
+        "https://example.com/which-molty",
+        title="Which Molty?",
+        text=article,
+        headings=["Which Molty?"],
+        now=1000.0,
+        state_dir=state_root,
+    )
+    state = ps.latest_page_state(now=1001.0, state_dir=state_root)
+    (state_root / "alice_browser_current_page.json").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "url": "https://example.com/which-molty",
+                "title": "Which Molty?",
+                "text": article + "\nFinal paragraph: memory beat the model label in this browser-readable article.",
+                "text_chars": len(article),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert mod._is_browser_article_readability_query("are you able to read the full article? yes or no?")
+    assert mod._is_browser_article_full_read_query("please read the full article to me")
+    assert not mod._is_browser_article_full_read_query("please summarize the full article")
+
+    bundle = mod._browser_article_text_bundle(state)
+    assert bundle["text_chars"] > len(article)
+    assert bundle["source"] == "alice_browser_current_page_snapshot"
+
+    reply = mod._summarize_browser_page(bundle)
+    assert "Which Molty?" in reply
+    assert "underlying model changed" in reply
+    assert "Skip to content" not in reply
 
 
 def test_owner_spoken_context_writes_life_history_and_day_segment(tmp_path, monkeypatch):

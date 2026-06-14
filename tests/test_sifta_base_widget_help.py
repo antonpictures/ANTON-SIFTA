@@ -82,6 +82,14 @@ class _DisabledChatLoop(SiftaBaseWidget):
         layout.addWidget(QLabel("disabled body"))
 
 
+class _StickyOptInLoop(SiftaBaseWidget):
+    APP_NAME = "Sticky Opt In"
+    STICKY_GLOBAL_CHAT_ENABLED = True
+
+    def build_ui(self, layout):
+        layout.addWidget(QLabel("sticky body"))
+
+
 def _chat_toggle_buttons(widget):
     return [
         button
@@ -100,16 +108,41 @@ def _sticky_toggle_buttons(widget):
 
 def test_normal_apps_do_not_embed_alice_chat_panel(monkeypatch):
     monkeypatch.delenv("SIFTA_ENABLE_APP_LOCAL_CHAT", raising=False)
+    monkeypatch.delenv("SIFTA_STICKY_GLOBAL_CHAT", raising=False)
+    widget = _NormalLoop()
+    try:
+        assert widget._gci_visible is False
+        assert widget._splitter.count() == 1
+        assert _chat_toggle_buttons(widget) == []
+        assert _sticky_toggle_buttons(widget) == []
+        assert widget._sticky_global_chat_visible is False
+        # Legacy apps can still call _gci safely; it is a non-visual bridge.
+        widget._gci.chat_display.append("ignored")
+        widget._gci.set_app_context("state update")
+    finally:
+        widget.close()
+
+
+def test_sticky_global_chat_mirror_is_opt_in_by_class(monkeypatch):
+    monkeypatch.delenv("SIFTA_STICKY_GLOBAL_CHAT", raising=False)
+    widget = _StickyOptInLoop()
+    try:
+        assert widget._gci_visible is False
+        assert widget._splitter.count() == 2
+        assert len(_sticky_toggle_buttons(widget)) == 1
+        assert widget._sticky_global_chat_visible is True
+    finally:
+        widget.close()
+
+
+def test_sticky_global_chat_mirror_can_be_forced_by_env(monkeypatch):
+    monkeypatch.setenv("SIFTA_STICKY_GLOBAL_CHAT", "1")
     widget = _NormalLoop()
     try:
         assert widget._gci_visible is False
         assert widget._splitter.count() == 2
-        assert _chat_toggle_buttons(widget) == []
         assert len(_sticky_toggle_buttons(widget)) == 1
         assert widget._sticky_global_chat_visible is True
-        # Legacy apps can still call _gci safely; it is a non-visual bridge.
-        widget._gci.chat_display.append("ignored")
-        widget._gci.set_app_context("state update")
     finally:
         widget.close()
 

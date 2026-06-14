@@ -51,6 +51,7 @@ def test_grok_cli_timeout_recovers_without_error_event(tmp_path, monkeypatch):
 
     state = tmp_path / ".sifta_state"
     monkeypatch.setenv("SIFTA_STATE_DIR", str(state))
+    monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
     monkeypatch.setattr(brain, "_grok_cli_binary", lambda: "/fake/grok")
 
     def _timeout(*_args, **_kwargs):
@@ -71,6 +72,16 @@ def test_grok_cli_timeout_recovers_without_error_event(tmp_path, monkeypatch):
     assert "Try again" not in events[0][1]
     assert (state / "cortex_timeout_recovery.jsonl").exists()
     assert (state / "parallel_cortex_arm_diagnostics.jsonl").exists()
+    health_rows = [
+        json.loads(line)
+        for line in (state / "grok_cli_model_health.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert health_rows[-1]["model"] == "grok-build"
+    assert health_rows[-1]["status"] == "timeout"
+    assert health_rows[-1]["action"] == "demote_to_fast"
+    assert health_rows[-1]["active_pin"] == "grok-composer-2.5-fast"
+    assert brain.grok_cli_model_for("grok:grok-4.3") == "grok-composer-2.5-fast"
 
 
 def test_self_code_marker_timeout_recovers_packet_and_receipts(tmp_path):
