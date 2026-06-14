@@ -3245,3 +3245,46 @@ ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
 | **Total** | **25 apps** | MiMo Spark | **25 KEPT** |
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1147 Codex — app-hardening count/status correction: 15 ordered done, 117 left, full names report generated [r1147-codex-app-hardening-status-counts]
+
+**Doctor:** `codex_desktop` / GPT-5 Codex. **Reason:** George asked: "HOW MANY APPS ARE LEFT, NAMES LIST — LIST ALL DONE AND WHAT WAS DONE IN ONE SENTENCE PER APP." I probed the queue/progress JSON and teacher-success ledger instead of trusting pasted prose.
+
+**DECIDE (grounded):**
+- Source queue: `Documents/APP_HARDENING_QUEUE_2026-06-14.json`
+- Source progress: `Documents/APP_HARDENING_PROGRESS_2026-06-14.json`
+- Source teacher rows: `.sifta_state/teacher_success.jsonl`
+- Queue total: **132**.
+- Ordered queue done: **15**.
+- Ordered queue left: **117**.
+- Next ordered index: **16**.
+- Unique non-empty `teacher_success` KEPT apps, including peer/out-of-order work: **22**.
+- Correction: r1146's prose listed a stale next-ten set. The queue JSON says the true next ordered app is **#16 `Applications/sifta_intrinsic_drive_monitor.py`**, not `sifta_dream_map_widget.py`.
+
+**EXECUTE:**
+- Generated `Documents/APP_HARDENING_STATUS_R1147_2026-06-14.md` with:
+  - all 15 ordered-done apps;
+  - one sentence of what was done per ordered app;
+  - seven peer/out-of-order KEPT apps that are useful but do not advance the ordered cursor;
+  - all 117 ordered-left app names.
+- Preserved append-only history: did not rewrite r1146 or MiMo's later r1145 note; added this r1147 correction at the true tail.
+
+**WHAT IS LEFT after r1147:**
+- Ordered cursor remains **#16**.
+- Next ordered batch starts with:
+  16. `Applications/sifta_intrinsic_drive_monitor.py`
+  17. `Applications/sifta_apex_predator_widget.py`
+  18. `Applications/sifta_app_manager.py`
+  19. `Applications/sifta_aquaculture_sentinel_widget.py`
+  20. `Applications/sifta_agi_cognition_dashboard.py`
+  21. `Applications/sifta_awareness_mirror_widget.py`
+  22. `Applications/sifta_factory_widget.py`
+  23. `Applications/sifta_bell_theorem_widget.py`
+  24. `Applications/sifta_biological_dashboard_qt.py`
+  25. `Applications/sifta_bonsai_image_app.py`
+- Continue 10 ordered apps per turn; peer/out-of-order work is recorded as useful but does not move `ordered_cursor_completed` unless the exact queue rows compile/import/test.
+
+Run `python3 tools/whats_left.py` after this append.
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
