@@ -563,6 +563,78 @@ def load_self_eval() -> dict:
                 })
         except Exception:
             pass
+    # r1115+: Spinal Cord + MiMo Borg — Alice's self-evolution loop organs
+    try:
+        from System.swarm_spinal_cord import spinal_cord_status
+        sc = spinal_cord_status(state_dir=_STATE)
+        sc_cycles = sc.get("total_cycles", 0)
+        sc_proposals = sc.get("proposals", {})
+        sc_kept = sc_proposals.get("kept", 0)
+        sc_reverted = sc_proposals.get("reverted", 0)
+        if sc_kept > 0:
+            sc_status, sc_score = "GREEN", 0.9
+        elif sc_cycles > 0:
+            sc_status, sc_score = "YELLOW", 0.6
+        else:
+            sc_status, sc_score = "YELLOW", 0.4
+        organs.append({
+            "name": "Spinal Cord — Reflexive Self-Evolution Bridge (r1115)",
+            "status": sc_status,
+            "score": sc_score,
+            "age": "live",
+            "module": "System/swarm_spinal_cord.py (OBSERVE→FORMULATE→ROUTE→APPLY→MEASURE→REINFORCE/REVERT)",
+            "red": False,
+            "yellow": sc_kept == 0,
+            "raw": (
+                f"{sc_cycles} cycles (kept={sc_kept}, reverted={sc_reverted}, "
+                f"blocked={sc_proposals.get('blocked_by_governor', 0)}, "
+                f"pending={sc_proposals.get('pending', 0)}). "
+                "Bridges self-detection signals to MiMo cortex for body code patches. "
+                "Gate: mutation governor + AST check + tests."
+            ),
+        })
+    except Exception:
+        pass
+    try:
+        sc_traces = _STATE / "mimo_stigmergic_traces.jsonl"
+        sc_phero = _STATE / "mimo_stigmergic_pheromones.jsonl"
+        t_count = t_ok = 0
+        if sc_traces.exists():
+            for ln in sc_traces.read_text(encoding="utf-8", errors="replace").splitlines():
+                if not ln.strip():
+                    continue
+                try:
+                    row = json.loads(ln)
+                    t_count += 1
+                    if row.get("ok"):
+                        t_ok += 1
+                except Exception:
+                    pass
+        p_count = 0
+        if sc_phero.exists():
+            p_count = sum(1 for l in sc_phero.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip())
+        if t_ok > 0:
+            mb_status, mb_score = "GREEN", 0.9
+        elif t_count > 0:
+            mb_status, mb_score = "YELLOW", 0.6
+        else:
+            mb_status, mb_score = "YELLOW", 0.3
+        organs.append({
+            "name": "MiMo Stigmergic Adapter — Borged Cortex (r1130)",
+            "status": mb_status,
+            "score": mb_score,
+            "age": "live",
+            "module": "System/swarm_mimo_stigmergic.py (read field → inject → call MiMo → receipt + pheromone)",
+            "red": False,
+            "yellow": t_ok == 0,
+            "raw": (
+                f"{t_count} traces (ok={t_ok}, fail={t_count - t_ok}), "
+                f"{p_count} pheromones. Every MiMo call reads the field and writes "
+                "§4.1 four-ledger receipt + pheromone. MiMo is a swimmer-organ, not a passive cortex."
+            ),
+        })
+    except Exception:
+        pass
     for o in organs:
         o.setdefault("yellow", str(o.get("status", "")).upper().startswith("YELLOW"))
     red = [o for o in organs if o["red"]]
