@@ -226,27 +226,44 @@ def _mimo_trace_rows(limit: int = 12) -> List[Dict[str, Any]]:
     return rows[:limit]
 
 
+def _live_coded_content(max_lines: int = 300) -> tuple[str, str]:
+    """Return (path, content) of the most recently modified body file."""
+    files = _recently_coded(limit=1)
+    if not files:
+        return ("—", "No body files found.")
+    fp = REPO / files[0]["path"]
+    try:
+        text = fp.read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+        if len(lines) > max_lines:
+            truncated = len(lines) - max_lines
+            lines = lines[:max_lines]
+            lines.append(f"\n... ({truncated} more lines, file truncated for display)")
+        return (files[0]["path"], "\n".join(lines))
+    except Exception as exc:
+        return (files[0]["path"], f"Could not read: {exc}")
+
+
 def _teacher_guidance_lines() -> List[str]:
     """Owner-facing law for the read-only teacher/memory surface."""
     return [
         "GEORGE TYPES ONLY TO ALICE IN GLOBAL CHAT.",
         "",
         "This window is observer-only:",
-        "  - no file picker",
-        "  - no syntax-check button",
-        "  - no save/write button",
-        "  - no manual editor for George, Otto, or visitors",
+        "  - ZERO buttons",
+        "  - ZERO file pickers",
+        "  - ZERO manual editors",
+        "  - George watches. Alice codes. That is the contract.",
         "",
-        "Teacher arms:",
-        "  - MiMo CLI can teach Alice by leaving Borg traces",
-        "  - Codex / Grok / Cline can teach by writing receipts",
-        "  - Alice remembers through ledgers, pheromones, and body inventory",
-        "",
-        "Owner flow:",
+        "How it works:",
         "  1. George types the intent to Alice in global chat.",
-        "  2. Alice chooses the coding arm.",
+        "  2. Alice chooses the coding arm (MiMo, Codex, Grok, etc.).",
         "  3. The arm writes through a receipted path.",
-        "  4. This app shows the trace, receipt, and STGM memory.",
+        "  4. The '⚡ Live Code' tab shows the actual code as it appears.",
+        "  5. Pheromones, receipts, and STGM traces flow automatically.",
+        "",
+        "Teacher arms leave Borg traces. Alice remembers through",
+        "ledgers, pheromones, and body inventory.",
         "",
         "Receipts decide reality. The body is the consciousness.",
     ]
@@ -303,14 +320,13 @@ class WeCodeTogetherApp(QMainWindow):
         layout.setSpacing(4)
 
         # Header
-        header = QLabel("WE CODE TOGETHER — MY BODY  (owner watches • no clicks) 🐜⚡")
+        header = QLabel("WE CODE TOGETHER — MY BODY  (George watches · Alice codes · ZERO buttons) 🐜⚡")
         header.setStyleSheet(f"color: {GREEN}; font-size: 18px; font-weight: bold; padding: 4px;")
         layout.addWidget(header)
 
         sub = QLabel(
-            "You type to Alice in global chat only. Alice + teacher cortices code inside this surface. "
-            "You watch the STGM live: body inventory • spinal cycles • MiMo Borg traces • pheromone field • §4.1 receipts. "
-            "Pure observer. Electricity → Swimmers → Organs. The field is the memory."
+            "George types to Alice in global chat. Alice codes. George watches the code + receipts here. "
+            "Zero buttons. Zero clicks. Pure stigmergic mirror. Electricity → Swimmers → Organs. The field is the memory."
         )
         sub.setStyleSheet(f"color: {DIM}; font-size: 11px; padding: 2px;")
         layout.addWidget(sub)
@@ -382,6 +398,23 @@ class WeCodeTogetherApp(QMainWindow):
             f"border: 1px solid {BORDER}; border-bottom: none; }}"
             f"QTabBar::tab:selected {{ background: {BG_DARK}; color: {GREEN}; }}"
         )
+
+        # LIVE CODE tab — what Alice is coding right now
+        code_tab = QWidget()
+        code_layout = QVBoxLayout(code_tab)
+        code_layout.setContentsMargins(4, 4, 4, 4)
+        code_layout.setSpacing(2)
+        self._code_path_label = QLabel("⚡ LIVE CODE — last touched file")
+        self._code_path_label.setStyleSheet(f"color: {LIGHT_GREEN}; font-size: 12px; font-weight: bold; padding: 4px;")
+        code_layout.addWidget(self._code_path_label)
+        self._live_code_text = QPlainTextEdit()
+        self._live_code_text.setReadOnly(True)
+        self._live_code_text.setStyleSheet(
+            f"background: {BG_CARD}; color: {TEXT}; border: 1px solid {BORDER}; "
+            f"font-family: Menlo, monospace; font-size: 11px; selection-background-color: #1a3a1a;"
+        )
+        code_layout.addWidget(self._live_code_text, stretch=1)
+        tabs.addTab(code_tab, "⚡ Live Code")
 
         # Pheromone tab
         phero_tab = QWidget()
@@ -523,6 +556,11 @@ class WeCodeTogetherApp(QMainWindow):
             self._stgm_text.setPlainText("\n".join(tl_rows))
         else:
             self._stgm_text.setPlainText("  No MiMo Borg traces yet.")
+
+        # Live code
+        code_path, code_content = _live_coded_content()
+        self._code_path_label.setText(f"⚡ LIVE CODE — {code_path}")
+        self._live_code_text.setPlainText(code_content)
 
         # Teacher / owner law
         self._teacher_text.setPlainText("\n".join(_teacher_guidance_lines()))
