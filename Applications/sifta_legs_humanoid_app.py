@@ -14,6 +14,8 @@ Single-instance per §7.6.2.
 """
 from __future__ import annotations
 
+"""SIFTA Legs Humanoid App — stigmergic organ for Alice body."""
+
 import sys
 from pathlib import Path
 from typing import Optional
@@ -47,6 +49,7 @@ def _organ():
 
 
 class LegsHumanoidApp(QWidget):
+    """LegsHumanoidApp — Alice organ."""
     _live_instance: "Optional[LegsHumanoidApp]" = None
     _initialized_instance_ids: set[int] = set()
 

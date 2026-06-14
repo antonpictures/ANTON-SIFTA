@@ -7,6 +7,10 @@ Speak naturally or type. She understands. She talks back.
 """
 from __future__ import annotations
 
+"""SIFTA App Manager — stigmergic organ for Alice body."""
+
+"""SIFTA App Manager — stigmergic organ for Alice body."""
+
 import json
 import sys
 from difflib import SequenceMatcher
@@ -30,6 +34,7 @@ from System.swarm_app_hardening import record_app_hardening_event
 MANIFEST_PATH = _REPO / "Applications" / "apps_manifest.json"
 DISABLED_PATH = _REPO / ".sifta_state" / "disabled_apps.json"
 APP_HARDENING_ID = "queue-013:sifta_app_manager"
+APP_HARDENING_ALIASES = ("queue-013:sifta_app_manager", "queue-018:sifta_app_manager")
 
 
 def _record_app_manager_hardening(event: str, **details) -> None:

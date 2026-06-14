@@ -31,6 +31,8 @@ Truth label: AWARENESS_MIRROR_V1.
 """
 from __future__ import annotations
 
+"""SIFTA Awareness Mirror Widget — stigmergic organ for Alice body."""
+
 import sys
 import time
 from pathlib import Path
@@ -52,10 +54,26 @@ from PyQt6.QtWidgets import (
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_hardening import record_app_hardening_event
 
 
 # ── Frame source — the file the canonical camera worker writes ────
 _FRAME_FILE = _REPO / ".sifta_state" / "owner_body_vision_frames" / "active_eye_latest.png"
+APP_HARDENING_ID = "queue-021:sifta_awareness_mirror_widget"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str]] = set()
+
+
+def _record_mirror_hardening(event: str, **details) -> None:
+    key = (event, str(details.get("path", "")), str(details.get("error", ""))[:160])
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
 
 TRUTH_LABEL = "AWARENESS_MIRROR_V1"
 TRUTH_BOUNDARY = (
@@ -92,6 +110,7 @@ class _MirrorCanvas(QWidget):
         """Try to load the latest frame from disk. Returns True on success."""
         if not _FRAME_FILE.exists():
             self._fresh = False
+            _record_mirror_hardening("awareness_frame_missing", path=str(_FRAME_FILE))
             return False
         try:
             mtime = _FRAME_FILE.stat().st_mtime
@@ -103,6 +122,7 @@ class _MirrorCanvas(QWidget):
                 return True
             pixmap = QPixmap(str(_FRAME_FILE))
             if pixmap.isNull():
+                _record_mirror_hardening("awareness_frame_decode_failed", path=str(_FRAME_FILE))
                 return False
             # Scale to widget size, keep aspect, smooth
             self._pixmap = pixmap.scaled(
@@ -114,7 +134,12 @@ class _MirrorCanvas(QWidget):
             self._fresh = (time.time() - mtime) < 5.0
             self.update()
             return True
-        except Exception:
+        except Exception as exc:
+            _record_mirror_hardening(
+                "awareness_frame_load_failed",
+                path=str(_FRAME_FILE),
+                error=f"{type(exc).__name__}: {exc}",
+            )
             return False
 
     def paintEvent(self, event):  # type: ignore[override]

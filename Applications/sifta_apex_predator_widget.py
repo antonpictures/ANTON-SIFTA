@@ -21,6 +21,8 @@ NOT a simulation. Reads live from:
 """
 from __future__ import annotations
 
+"""SIFTA Apex Predator Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import sys
@@ -43,6 +45,28 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-017:sifta_apex_predator_widget"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str, str]] = set()
+
+
+def _record_apex_hardening(event: str, **details) -> None:
+    key = (
+        event,
+        str(details.get("path", "")),
+        str(details.get("error", details.get("error_type", "")))[:160],
+        str(details.get("line_preview", ""))[:80],
+    )
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
 
 # ── Color palette (modality-physics grounded) ─────────────────────────────────
 MOD_COLORS: Dict[str, QColor] = {
@@ -78,10 +102,20 @@ def _tail_jsonl(path: Path, max_bytes: int = 32768) -> List[Dict]:
             if line.startswith("{"):
                 try:
                     rows.append(json.loads(line))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _record_apex_hardening(
+                        "apex_jsonl_parse_failed",
+                        path=str(path),
+                        error=f"{type(exc).__name__}: {exc}",
+                        line_preview=line[:160],
+                    )
         return rows
-    except Exception:
+    except Exception as exc:
+        _record_apex_hardening(
+            "apex_jsonl_read_failed",
+            path=str(path),
+            error=f"{type(exc).__name__}: {exc}",
+        )
         return []
 
 
@@ -458,9 +492,16 @@ class ApexPredatorWidget(SiftaBaseWidget):
         self.gate_chart.push(raw_N, gate_N)
 
         # Alice focus text
-        from System.swarm_apex_perceiver import get_global_perceiver
-        perceiver = get_global_perceiver()
-        self.focus_text.setPlainText(perceiver.summary_for_alice())
+        try:
+            from System.swarm_apex_perceiver import get_global_perceiver
+            perceiver = get_global_perceiver()
+            self.focus_text.setPlainText(perceiver.summary_for_alice())
+        except Exception as exc:
+            _record_apex_hardening(
+                "apex_focus_summary_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            self.focus_text.setPlainText("Live focus summary unavailable; see hardening ledger.")
 
         # Status bar
         pct = stats.get("compression_pct", 0)
@@ -512,6 +553,10 @@ class ApexPredatorWidget(SiftaBaseWidget):
             self.focus_text.setPlainText(perceiver.summary_for_alice())
 
         except Exception as exc:
+            _record_apex_hardening(
+                "apex_demo_synthesis_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             self.focus_text.setPlainText(f"Demo error: {exc}")
 
 

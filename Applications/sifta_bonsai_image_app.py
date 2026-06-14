@@ -16,6 +16,8 @@ Single-instance per §7.6.2.
 
 from __future__ import annotations
 
+"""SIFTA Bonsai Image App — stigmergic organ for Alice body."""
+
 import json
 import os
 import time
@@ -30,13 +32,36 @@ from PyQt6.QtWidgets import (
 
 _REPO = Path(__file__).resolve().parent.parent
 _IDLE_AFTER_ENV = "SIFTA_BONSAI_IDLE_AFTER_S"
+APP_HARDENING_ID = "queue-025:sifta_bonsai_image_app"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str]] = set()
+
+from System.swarm_app_hardening import record_app_hardening_event
+
+
+def _record_bonsai_hardening(event: str, **details) -> None:
+    key = (event, str(details.get("path", "")), str(details.get("error", ""))[:160])
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
 
 
 def _idle_after_seconds() -> float:
     raw = os.environ.get(_IDLE_AFTER_ENV, "90").strip()
     try:
         return max(10.0, float(raw))
-    except ValueError:
+    except ValueError as exc:
+        _record_bonsai_hardening(
+            "bonsai_idle_env_invalid",
+            env_var=_IDLE_AFTER_ENV,
+            value=raw,
+            error=f"{type(exc).__name__}: {exc}",
+        )
         return 90.0
 
 
@@ -59,6 +84,10 @@ class _BonsaiWorker(QThread):
                 self._prompt, self._owner_label, self._meaning, seed=self._seed
             )
         except Exception as exc:  # noqa: BLE001
+            _record_bonsai_hardening(
+                "bonsai_generate_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         self.done.emit(result if isinstance(result, dict) else {"ok": False, "error": "no result"})
 
@@ -76,11 +105,16 @@ class _BonsaiComposeWorker(QThread):
             from System.swarm_bonsai_image_organ import compose_bonsai_ant_cortex
             result = compose_bonsai_ant_cortex(seed=self._seed, timeout_s=45)
         except Exception as exc:  # noqa: BLE001
+            _record_bonsai_hardening(
+                "bonsai_compose_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         self.done.emit(result if isinstance(result, dict) else {"ok": False, "error": "no result"})
 
 
 class BonsaiImageStudioApp(QWidget):
+    """BonsaiImageStudioApp — Alice organ."""
     _live_instance: "Optional[BonsaiImageStudioApp]" = None
     _initialized_instance_ids: set[int] = set()
 
@@ -94,8 +128,11 @@ class BonsaiImageStudioApp(QWidget):
                 else:
                     try:
                         existing.show(); existing.raise_(); existing.activateWindow()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _record_bonsai_hardening(
+                            "bonsai_existing_instance_activation_failed",
+                            error=f"{type(exc).__name__}: {exc}",
+                        )
                     return existing
             except RuntimeError:
                 cls._live_instance = None
@@ -190,6 +227,10 @@ class BonsaiImageStudioApp(QWidget):
 
             status = bonsai_backend_status()
         except Exception as exc:  # noqa: BLE001
+            _record_bonsai_hardening(
+                "bonsai_backend_preflight_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             return f"backend preflight failed: {type(exc).__name__}: {exc}"
         if status.get("ok"):
             return ""
@@ -223,9 +264,11 @@ class BonsaiImageStudioApp(QWidget):
                 self._last_trace_ts = max(self._last_trace_ts, ts)
                 return
             if not Path(path).exists():
+                _record_bonsai_hardening("bonsai_image_missing", path=path)
                 return
             pix = QPixmap(path)
             if pix.isNull():
+                _record_bonsai_hardening("bonsai_image_decode_failed", path=path)
                 return
             self._last_trace_ts = ts
             self._last_image_path = path
@@ -241,8 +284,11 @@ class BonsaiImageStudioApp(QWidget):
                 f"Alice rendered this from the field: '{str(row.get('owner_label') or '')}' "
                 f"(receipt {str(row.get('receipt_id') or '?')[:12]}). Export JPG is live."
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_bonsai_hardening(
+                "bonsai_field_sync_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def _idle_tick(self) -> None:
         self._check_field_for_new_renders()
@@ -363,8 +409,11 @@ class BonsaiImageStudioApp(QWidget):
         )
         try:
             self.show(); self.raise_(); self.activateWindow()
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_bonsai_hardening(
+                "bonsai_talk_mirror_activation_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
         return {"ok": True, "mirrored": True, "image_path": self._last_image_path}
 
     def _on_done(self, result: Dict[str, Any]) -> None:

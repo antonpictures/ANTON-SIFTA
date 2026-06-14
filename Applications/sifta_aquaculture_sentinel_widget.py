@@ -24,6 +24,8 @@ Truth boundary:
 
 from __future__ import annotations
 
+"""SIFTA Aquaculture Sentinel Widget — stigmergic organ for Alice body."""
+
 import json
 import re
 import sys
@@ -46,6 +48,28 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.sifta_base_widget import SiftaBaseWidget  # noqa: E402
+from System.swarm_app_hardening import record_app_hardening_event  # noqa: E402
+
+APP_HARDENING_ID = "queue-019:sifta_aquaculture_sentinel_widget"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str, str]] = set()
+
+
+def _record_aquaculture_hardening(event: str, **details) -> None:
+    key = (
+        event,
+        str(details.get("path", "")),
+        str(details.get("error", details.get("error_type", "")))[:160],
+        str(details.get("line_preview", ""))[:80],
+    )
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
 
 _DOCTRINE_MD = _REPO / "Documents" / "OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md"
 _AQUA_LEDGER = _REPO / ".sifta_state" / "aquaculture_field.jsonl"
@@ -58,11 +82,21 @@ def _read_doctrine_section() -> str:
         return "(doctrine markdown not found on disk)"
     try:
         text = _DOCTRINE_MD.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
+    except OSError as exc:
+        _record_aquaculture_hardening(
+            "aquaculture_doctrine_read_failed",
+            path=str(_DOCTRINE_MD),
+            error=f"{type(exc).__name__}: {exc}",
+        )
         return "(doctrine markdown unreadable)"
     # Slice the §14.G section to the next ### or ## heading.
     m = re.search(r"### 14\.G[\s\S]*?(?=\n###\s|\n##\s|\n---\s|$)", text)
     if not m:
+        _record_aquaculture_hardening(
+            "aquaculture_doctrine_section_missing",
+            path=str(_DOCTRINE_MD),
+            section="14.G",
+        )
         return "(§14.G section not found — Codex may have moved it)"
     return m.group(0).strip()
 
@@ -74,16 +108,28 @@ def _status_snapshot() -> dict:
         try:
             lines = [line for line in _AQUA_LEDGER.read_text(encoding="utf-8").splitlines() if line.strip()]
             latest = json.loads(lines[-1]) if lines else None
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            _record_aquaculture_hardening(
+                "aquaculture_receipt_parse_failed",
+                path=str(_AQUA_LEDGER),
+                error=f"{type(exc).__name__}: {exc}",
+            )
             latest = None
+    receipt_count = 0
+    if _AQUA_LEDGER.exists():
+        try:
+            receipt_count = sum(1 for _ in _AQUA_LEDGER.open(encoding="utf-8", errors="ignore"))
+        except OSError as exc:
+            _record_aquaculture_hardening(
+                "aquaculture_receipt_count_failed",
+                path=str(_AQUA_LEDGER),
+                error=f"{type(exc).__name__}: {exc}",
+            )
     return {
         "doctrine_pinned":       _DOCTRINE_MD.exists(),
         "simulator_module":      _SIM_MODULE.exists(),
         "receipt_ledger":        _AQUA_LEDGER.exists(),
-        "receipt_count":         (
-            sum(1 for _ in _AQUA_LEDGER.open(encoding="utf-8", errors="ignore"))
-            if _AQUA_LEDGER.exists() else 0
-        ),
+        "receipt_count":         receipt_count,
         "latest_receipt":         latest,
     }
 

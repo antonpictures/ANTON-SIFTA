@@ -1,3 +1,5 @@
+
+"""SIFTA Gaze Monitor Widget — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 Applications/sifta_gaze_monitor_widget.py

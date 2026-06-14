@@ -23,6 +23,8 @@ Research spine (Event 99 / Event 100):
 """
 from __future__ import annotations
 
+"""SIFTA Intrinsic Drive Monitor — stigmergic organ for Alice body."""
+
 import json
 import math
 import sys
@@ -42,20 +44,48 @@ from PyQt6.QtWidgets import (
 )
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _RECEIPT_LOG  = _STATE / "intrinsic_drive_receipts.jsonl"
 _MEMORY_LOG   = _STATE / "body_brain_memory.jsonl"
 
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-016:sifta_intrinsic_drive_monitor"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str, str]] = set()
+
+
+def _record_intrinsic_hardening(event: str, **details) -> None:
+    key = (
+        event,
+        str(details.get("path", "")),
+        str(details.get("error", details.get("error_type", "")))[:160],
+        str(details.get("line_preview", ""))[:80],
+    )
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
+
 # ── George Prior daemon import (non-fatal if System not on path) ──────────────
 try:
-    sys.path.insert(0, str(_REPO))
     from System.swarm_intrinsic_drive import (
         start_george_prior, stop_george_prior, get_current_drive,
         intrinsic_drive_tick,
     )
     _GEORGE_PRIOR_AVAILABLE = True
-except Exception:
+except Exception as exc:
     _GEORGE_PRIOR_AVAILABLE = False
+    _record_intrinsic_hardening(
+        "george_prior_import_failed",
+        error=f"{type(exc).__name__}: {exc}",
+    )
     def start_george_prior(*a, **kw): return None  # type: ignore
     def stop_george_prior(): pass  # type: ignore
     def get_current_drive(): return None  # type: ignore
@@ -75,6 +105,7 @@ TOPICS = list(TOPIC_COLORS.keys())
 
 # ── Score history per topic (last 60 ticks) ──────────────────────────────────
 class ScoreHistory:
+    """ScoreHistory — Alice organ."""
     def __init__(self, maxlen: int = 60):
         self._data: Dict[str, deque] = {t: deque([0.0] * maxlen, maxlen) for t in TOPICS}
         self._last_goal: str = "Waiting for Alice's first spontaneous thought…"
@@ -102,10 +133,19 @@ class ScoreHistory:
                     self._last_topic = topic
                     self._last_score = score
                     self._receipt_count += 1
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as exc:
+                    _record_intrinsic_hardening(
+                        "intrinsic_receipt_parse_failed",
+                        path=str(_RECEIPT_LOG),
+                        error=f"{type(exc).__name__}: {exc}",
+                        line_preview=line[:160],
+                    )
+        except Exception as exc:
+            _record_intrinsic_hardening(
+                "intrinsic_receipt_read_failed",
+                path=str(_RECEIPT_LOG),
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def entropy(self) -> float:
         """Shannon entropy of recent topic distribution."""
@@ -212,16 +252,22 @@ class DriveMonitorWidget(QWidget):
         if _GEORGE_PRIOR_AVAILABLE:
             try:
                 self._daemon = start_george_prior(tick_interval=5.0)  # 5 s for live UI
-            except Exception:
-                pass
+            except Exception as exc:
+                _record_intrinsic_hardening(
+                    "george_prior_start_failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
 
         # ── Backfill: generate 8 fast ticks immediately so bars aren't empty ─
         if _GEORGE_PRIOR_AVAILABLE:
             try:
                 for _ in range(8):
                     intrinsic_drive_tick()
-            except Exception:
-                pass
+            except Exception as exc:
+                _record_intrinsic_hardening(
+                    "george_prior_backfill_failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
 
         # ── Seed cursor at 0 to backfill ALL history from disk ────────────────
         self.history._cursor = 0
@@ -439,10 +485,19 @@ class DriveMonitorWidget(QWidget):
                     # Auto-scroll
                     sb = self._scroll.verticalScrollBar()
                     sb.setValue(sb.maximum())
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as exc:
+                    _record_intrinsic_hardening(
+                        "memory_ledger_parse_failed",
+                        path=str(_MEMORY_LOG),
+                        error=f"{type(exc).__name__}: {exc}",
+                        line_preview=line[:160],
+                    )
+        except Exception as exc:
+            _record_intrinsic_hardening(
+                "memory_ledger_read_failed",
+                path=str(_MEMORY_LOG),
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
 
 # ── OS App entry point ────────────────────────────────────────────────────────

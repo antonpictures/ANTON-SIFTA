@@ -8,6 +8,8 @@ must not load Tkinter / ``_tkinter``.
 
 from __future__ import annotations
 
+"""SIFTA Biological Dashboard Qt — stigmergic organ for Alice body."""
+
 import math
 import random
 import sys
@@ -18,10 +20,38 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from Applications.sifta_biological_core import hud_body, read_biology_tension
+from System.swarm_app_hardening import record_app_hardening_event
 
 from PyQt6.QtCore import QPointF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
+
+APP_HARDENING_ID = "queue-024:sifta_biological_dashboard_qt"
+_HARDENING_EVENT_KEYS: set[tuple[str, str]] = set()
+
+
+def _record_biology_hardening(event: str, **details) -> None:
+    key = (event, str(details.get("error", ""))[:160])
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
+
+
+def _safe_biology_tension() -> float:
+    try:
+        return float(read_biology_tension())
+    except Exception as exc:
+        _record_biology_hardening(
+            "biology_tension_read_failed",
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        return 0.25
 
 
 class BiologicalDashboardWidget(QWidget):
@@ -86,8 +116,11 @@ class BiologicalDashboardWidget(QWidget):
         try:
             from System.swarm_app_focus import publish_focus
             publish_focus("Alice Health", "Monitoring biology tension and particle physics")
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_biology_hardening(
+                "biology_focus_publish_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def hideEvent(self, event):
         self._timer.stop()
@@ -98,7 +131,7 @@ class BiologicalDashboardWidget(QWidget):
         h = max(float(self.height()), 300.0)
         if not self._particles:
             self._reset_particles_for_size(w, h)
-        tension = read_biology_tension()
+        tension = _safe_biology_tension()
         self._step_physics(w, h, tension)
 
         painter = QPainter(self)
