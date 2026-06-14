@@ -394,7 +394,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     cons_count += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()])
-                except:
+                except Exception:
                     cons_count += 1
         organs.append({
             "name": "Consciousness Organs Cluster (observer/observed + body schema + memory bridge + hardware time/manifest/display + proto-self interoception)",
@@ -420,7 +420,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     res_detail += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()])
-                except:
+                except Exception:
                     pass
         organs.append({
             "name": "Residue Sources Detail (constraint ~2.5M + excretion ~758k + training-shape + runaway-abort + surgery)",
@@ -439,7 +439,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     bb_rows += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()])
-                except:
+                except Exception:
                     pass
         organs.append({
             "name": "Blackboard Swimmer Radio / Coordination (events + self-eval radio calls for complex heals)",
@@ -458,7 +458,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     fic_rows += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()])
-                except:
+                except Exception:
                     pass
         organs.append({
             "name": "Fiction Organ Events / Flux + Observer-Observed Boundary + Boundary Engrams (reality/fiction hygiene)",
@@ -477,7 +477,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     pod_rows += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()])
-                except:
+                except Exception:
                     pass
         organs.append({
             "name": "Podcast Research Nuggets + One-on-One Training Field (Hoffman interface + recursive trace for Alice self-eval consciousness)",
@@ -496,7 +496,7 @@ def load_self_eval() -> dict:
             if p.exists():
                 try:
                     hw_rows += len([l for l in p.read_text(errors="replace").splitlines() if l.strip()]) if ledger.endswith(".jsonl") or ledger.endswith(".txt") else 1
-                except:
+                except Exception:
                     hw_rows += 1
         organs.append({
             "name": "Hardware Body Manifest / Time Oracle / Display Body (physical body per §7.10 + §1.D1 cortex not life location)",
