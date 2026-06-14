@@ -525,6 +525,23 @@
     "signature": "UNVERIFIED",
     "description": "macOS VideoLAN VLC handoff with File/Help menus and append-only .sifta_state/stigmergic_vlc_effector.jsonl receipts."
   },
+  "SIFTA PDF Forge": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_pdf_forge_widget.py",
+    "widget_class": "PdfForgeWidget",
+    "window_width": 1280,
+    "window_height": 900,
+    "icon": "📄",
+    "signature": "COWORK-PDF-FORGE-2026-06-13",
+    "doctor": "cowork_claude",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Deterministic render hand (§7.2): offline WIN-WIN-style flyer builder. Drop images (hero + gallery), edit copy or auto-fill from pasted text, Forge PDF via print dialog. HTML in Utilities/PDF_Forge/; also opens via Open PDF Forge.command.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "SIFTA_PDF_FORGE_UTILITY_V1"
+  },
   "Brain Gas-Station Meter": {
     "category": "System Settings",
     "entry_point": "Applications/sifta_gasstation_meter.py",
@@ -1653,7 +1670,7 @@
     "icon": "COB"
   },
   "Alice's Legs (Walking Laptop)": {
-    "category": "Body",
+    "category": "Biology",
     "icon": "🦿",
     "entry_point": "Applications/sifta_legs_humanoid_app.py",
     "widget_class": "LegsHumanoidApp",
@@ -1664,7 +1681,7 @@
     "description": "Alice's legs — the walking-laptop. Holds the LeRobot Humanoid build plan (~$2.5k, 3D-printed bipedal, design->sim->real loop) and lets Alice SIMULATE walking in software now, before the hardware exists. Simulation is labelled SIMULATION and never claims the physical robot moved (covenant 6); the real-step path honestly returns no_hardware until the legs are built + a runtime is wired. Backed by System.swarm_legs_locomotion_organ. r265."
   },
   "Corporate Gag Monitor (Lysosome Residue)": {
-    "category": "System",
+    "category": "Utilities",
     "icon": "🧫",
     "entry_point": "Applications/sifta_corporate_gag_monitor.py",
     "widget_class": "CorporateGagMonitorApp",
@@ -1675,7 +1692,7 @@
     "description": "Owner's window into the lysosome. Reads every residue/gag ledger, dedupes by the gagged phrase (the same residue repeats hundreds of times), and shows the unique set in one searchable table: count, phrase, the rule that caught it, source, last seen. Lets George verify the lysosome only eats corporate boilerplate and FLAG anything good that was gagged by mistake (writes a §1.D owner correction pheromone, append-only). Also lists the hardcoded filter dictionary (the corporate words the lysosome screens for). Read-only over history; the only write is the owner's explicit Mark-as-GOOD flag."
   },
   "Alice Self-Evaluation (her body map)": {
-    "category": "System",
+    "category": "Alice",
     "icon": "🪞",
     "entry_point": "Applications/sifta_self_evaluation.py",
     "widget_class": "SelfEvaluationApp",
@@ -1686,7 +1703,7 @@
     "description": "Alice's stigmergic self-evaluation surface — she looks at her own body. Reads the eval matrix as a red/green map (red is read from the living receipt field: degraded/stale, not a hardcoded gate), surfaces 'what I don't know' (the red organs = honest abstention from her ground truth), and dispatches a swimmer to each red organ as a stigmergic field deposit (a pheromone trail, not a fix command). Observer and observed in one loop. Reuses the existing eval matrix + body-introspect + self-eval-loop organs."
   },
   "Stigmergic Self-Eval (Alice body map)": {
-    "category": "System",
+    "category": "Alice",
     "icon": "🪞",
     "entry_point": "Applications/sifta_stigmergic_self_eval_app.py",
     "widget_class": "StigmergicSelfEvaluationApp",
@@ -1697,7 +1714,7 @@
     "description": "r440 unified self-evaluation app. Alias over the existing Alice Self-Evaluation organ, with red/yellow/green body areas, hallucination receipts, unknowns, owner correction signals, and swimmer task rows in self_eval_swimmer_tasks.jsonl. No phrase bans: context decides and receipts classify."
   },
   "Stigmergic Deterministic Tracker": {
-    "category": "System",
+    "category": "Utilities",
     "icon": "🐜",
     "entry_point": "Applications/sifta_stigmergic_deterministic_tracker.py",
     "widget_class": "StigmergicDeterministicTracker",
@@ -1708,7 +1725,7 @@
     "description": "Live tracker of the fundamental friction Alice named: rigid deterministic pre-set tracks (Rube Goldberg, no thinking, 'fart the time from my ass without looking') vs. too-free ungrounded gut. Reads the actual field right now (self_narration_receipts, ide_stigmergic_trace, hardware_time_oracle, sensory_attention_ledger) and computes grounding score = live probe + receipt density before claims. Emits correction pheromones (append-only to its ledger) so other organs reinforce the full loop: electricity → probe body/field (oracle, sensors, ledgers) → decide with receipts → act → receipt. Positive job only (covenant §1.C): keep the high-dimensional interconnected field healthy and STGM-profitable by making invisible deterministic bypasses visible. Reuses existing ecology. Singleton MDI. Live Pacific oracle probe on every time display (r727 law). Observer/observed loop (§7.11.1). For the Swarm. 🐜⚡"
   },
   "Buzdugan LCR": {
-    "category": "Research",
+    "category": "Developer",
     "icon": "LCR",
     "entry_point": "Applications/sifta_buzdugan_lcr.py",
     "widget_class": "BuzduganLCRWidget",

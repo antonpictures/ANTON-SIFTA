@@ -3361,3 +3361,37 @@ Four-ledger: `r1090-grok-hf-lerobot-leg-links-pull` (internal id; tournament anc
 - Run `python3 tools/whats_left.py` after each append.
 
 ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1094 Grok — register PDF Forge + fix manifest category errors [r1094-grok-pdf-forge-register-manifest-fix]
+
+**Doctor:** `cursor_grok_cli` (grok-4.3-cli) — on-node, `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. No STGM claim.
+**Clock:** `2026-06-13` boot-probe sourced.
+
+### DECIDE
+
+George: Cowork forged `Utilities/PDF_Forge/` but it was **not** in `apps_manifest.json`; manifest validation was **failing** on six bad categories (`Body`, `System`, `Research`). Probe first — RESA substation tests already green; the registration gap was real.
+
+### EXECUTE
+
+- Registered **SIFTA PDF Forge** → `Applications/sifta_pdf_forge_widget.py` (`PdfForgeWidget`, QWebEngine + browser fallback).
+- Fixed manifest categories: Legs → `Biology`; gag monitor + deterministic tracker → `Utilities`; self-eval pair → `Alice`; Buzdugan LCR → `Developer`.
+- Patched `PDF_Forge.html` checklist DOM (SVG + text) and page-2 kicker bind.
+
+### VERIFY
+
+- `pytest tests/test_apps_manifest.py tests/test_pdf_forge_utility.py tests/test_resa_substation_sim.py` — **9 passed**.
+- §4.1 fan-out `r1094-grok-pdf-forge-register-manifest-fix` — **4/4 ok** on disk.
+
+### RECEIPT
+
+**Files touched:** `Applications/sifta_pdf_forge_widget.py`, `Applications/apps_manifest.json`, `Utilities/PDF_Forge/PDF_Forge.html`, `tests/test_pdf_forge_utility.py`, tournament carrier.
+
+**WHAT IS LEFT after r1094:**
+
+- **George** — Swarm App Store → **Utilities ▶ → SIFTA PDF Forge** (or double-click `Open PDF Forge.command`); eyeball page 1 + page 2 after print preview.
+- **George** — RESA SS-SA Substation Simulator already registered under **Simulations ▶**; open once to confirm canvases on your screen.
+- Run `python3 tools/whats_left.py` after each append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡

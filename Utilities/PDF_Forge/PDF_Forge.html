@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIFTA PDF Forge</title>
+<style>
+  :root{
+    --ink:#16242e; --navy:#0a3a63; --green:#2e8b57; --gold:#e0a92e; --goldtext:#ffd34d;
+    --line:#e3e9ef; --bg:#11161b; --panel:#1b232c; --panel2:#222c36; --muted:#8aa0b2;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:'Carlito',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:#dce6ee}
+
+  /* ---------- App chrome ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;background:#0c1218;border-bottom:1px solid #232f3a;position:sticky;top:0;z-index:30}
+  .brand{font-weight:800;letter-spacing:.3px;font-size:16px;color:#eaf2f8}
+  .brand span{font-size:11px;font-weight:700;color:#0c1218;background:var(--goldtext);padding:2px 8px;border-radius:20px;margin-left:8px;vertical-align:2px}
+  .actions{display:flex;gap:10px;align-items:center}
+  button{font-family:inherit;cursor:pointer;border:0;border-radius:9px;padding:10px 16px;font-weight:700;font-size:13px}
+  #forge{background:var(--green);color:#fff;box-shadow:0 2px 10px rgba(46,139,87,.35)}
+  #forge:hover{filter:brightness(1.07)}
+  .ghost{background:#2a3641;color:#cdd9e3}
+  .ghost:hover{background:#34424f}
+  .hint{font-size:12.5px;color:var(--muted);padding:8px 18px;background:#0c1218;border-bottom:1px solid #232f3a}
+  .hint b{color:#cfe0ee}
+
+  .app{display:grid;grid-template-columns:380px 1fr;height:calc(100% - 92px)}
+  @media (max-width:900px){.app{grid-template-columns:1fr;height:auto}}
+
+  /* ---------- Editor ---------- */
+  .editor{overflow:auto;padding:16px;background:var(--panel);border-right:1px solid #232f3a}
+  .grp{margin-bottom:16px;background:var(--panel2);border:1px solid #2c3742;border-radius:11px;padding:12px}
+  .grp h4{margin:0 0 9px;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+  label{display:block;font-size:11px;color:#9fb3c4;margin:9px 0 3px}
+  input[type=text],textarea{width:100%;background:#0e151b;border:1px solid #31404d;border-radius:7px;color:#e8f0f6;font-family:inherit;font-size:13px;padding:8px 9px}
+  textarea{resize:vertical;line-height:1.4}
+  input[type=text]:focus,textarea:focus{outline:0;border-color:var(--green)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .applybtn{margin-top:8px;background:#2a3641;color:#cfe0ee;width:100%;padding:9px}
+  .applybtn:hover{background:#34424f}
+
+  /* drop zone */
+  .drop{border:2px dashed #3c4c5a;border-radius:11px;padding:18px;text-align:center;color:#9fb3c4;font-size:13px;background:#0e151b;transition:.15s}
+  .drop.hot{border-color:var(--green);background:#102117;color:#cdeedd}
+  .drop b{color:#cfe0ee}
+  .drop input{display:none}
+  .pick{display:inline-block;margin-top:8px;background:#2a3641;color:#cfe0ee;padding:7px 12px;border-radius:7px;font-size:12px;font-weight:700}
+  #thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .thumb{position:relative;width:84px;border:1px solid #31404d;border-radius:8px;overflow:hidden;background:#0e151b}
+  .thumb img{width:100%;height:54px;object-fit:cover;display:block}
+  .thumb .tag{position:absolute;top:3px;left:3px;font-size:9px;font-weight:800;background:var(--goldtext);color:#0c1218;padding:1px 5px;border-radius:10px}
+  .thumb .bar{display:flex}
+  .thumb .bar button{flex:1;border-radius:0;padding:4px 0;font-size:10px;font-weight:700;background:#1d2832;color:#bcd}
+  .thumb .bar button:hover{background:#27343f}
+  .thumb .bar .star:hover{color:var(--goldtext)}
+  .thumb .bar .del:hover{color:#ff8a8a}
+
+  /* ---------- Stage / preview ---------- */
+  .stage{overflow:auto;background:#2a2f36;padding:22px;display:flex;flex-direction:column;align-items:center;gap:18px}
+  .zoombar{position:sticky;top:0;align-self:flex-end;display:flex;gap:8px;align-items:center;font-size:12px;color:#cdd9e3;background:rgba(20,24,29,.8);padding:6px 10px;border-radius:8px;z-index:5}
+  .zoombar input{width:120px}
+
+  /* ---------- The flyer (matches the WIN-WIN PDF) ---------- */
+  .flyer{transform-origin:top center}
+  .page{width:816px;height:1056px;position:relative;overflow:hidden;background:#fff;color:var(--ink);box-shadow:0 10px 40px rgba(0,0,0,.45)}
+  .hdr{background:var(--navy);color:#fff;padding:20px 40px;position:relative}
+  .hdr:after{content:"";position:absolute;left:0;bottom:0;height:6px;width:100%;background:linear-gradient(90deg,var(--green) 0%,var(--green) 55%,var(--gold) 55%,var(--gold) 100%)}
+  .kick{letter-spacing:3px;font-size:12px;color:#bcd6ea;font-weight:700;text-transform:uppercase}
+  .h1{font-size:44px;font-weight:800;line-height:1.0;margin-top:5px}
+  .loc{font-size:19px;font-weight:700;color:var(--goldtext);letter-spacing:1px;margin-top:2px}
+  .sub{font-size:14px;color:#dbe8f2;margin-top:9px;font-weight:600;max-width:690px}
+  .hero{position:relative;height:232px;background:#cfd8df}
+  .hero img{width:100%;height:100%;object-fit:cover;display:block}
+  .hero .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7c89;font-weight:700;font-size:15px}
+  .hero .cap{position:absolute;left:0;bottom:0;width:100%;padding:22px 40px 11px;color:#fff;font-weight:700;font-size:15px;background:linear-gradient(0deg,rgba(7,26,44,.9),rgba(7,26,44,0))}
+  .pillars{padding:14px 26px 2px;font-size:0}
+  .card{display:inline-block;vertical-align:top;width:50%;padding:8px 14px}
+  .inner{position:relative;border:1px solid var(--line);border-radius:11px;padding:13px 15px 13px 60px;min-height:150px;background:#fff}
+  .badge{position:absolute;left:13px;top:14px;width:36px;height:36px;border-radius:50%}
+  .b-blue{background:var(--navy)}.b-gold{background:#c9881a}.b-green{background:#2e7d4f}.b-white{background:#fff;border:1px solid var(--line)}
+  .card h3{font-size:15px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.3px;line-height:1.1;padding-top:2px;margin:0}
+  .card p{font-size:12.5px;line-height:1.46;margin:8px 0 0;color:#34434e}
+  .deliver{margin:8px 40px 0;background:var(--navy);border-radius:12px;padding:13px 16px 6px;color:#fff}
+  .deliver h2{font-size:14px;letter-spacing:1.5px;text-transform:uppercase;text-align:center;color:var(--goldtext);margin:0 0 9px;font-weight:800}
+  .dgrid{font-size:0}
+  .ditem{display:inline-block;vertical-align:top;width:50%;font-size:12.7px;padding:5px 10px 5px 0;line-height:1.3;color:#fff}
+  .ditem svg{vertical-align:-3px;margin-right:8px}
+  .cta{text-align:center;padding:15px 40px 8px}
+  .cta .big{font-size:27px;font-weight:800;color:var(--green);letter-spacing:.5px}
+  .cta .l2{font-size:13.5px;color:#34434e;margin-top:5px;font-weight:600}
+  .cta .l3{font-size:14px;color:var(--navy);margin-top:7px;font-weight:800}
+  .foot{position:absolute;bottom:0;left:0;width:100%;background:#eef3f8;color:#62717e;font-size:10px;text-align:center;padding:7px 10px}
+  /* page 2 */
+  .g-hdr{background:var(--navy);color:#fff;padding:18px 40px;position:relative}
+  .g-hdr:after{content:"";position:absolute;left:0;bottom:0;height:5px;width:100%;background:linear-gradient(90deg,var(--green) 0%,var(--green) 55%,var(--gold) 55%,var(--gold) 100%)}
+  .gal{padding:16px 48px}
+  .gintro{font-size:12.5px;color:#34434e;text-align:center;margin-bottom:10px;line-height:1.5}
+  .gitem{width:442px;margin:0 auto 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .gitem img{width:100%;display:block}
+  .gcap{padding:6px 14px;font-size:12px;color:#34434e;background:#f6fafc;font-weight:600}
+
+  /* ---------- Print ---------- */
+  @media print{
+    @page{size:Letter;margin:0}
+    html,body{background:#fff}
+    .topbar,.hint,.editor,.zoombar{display:none !important}
+    .app{display:block;height:auto}
+    .stage{padding:0;background:#fff;display:block}
+    .flyer{transform:none !important;zoom:1 !important}
+    .page{box-shadow:none;page-break-after:always;break-after:page}
+    .page.last{page-break-after:auto;break-after:auto}
+    #page2.hidden{display:none}
+  }
+  .hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">🐜⚡ SIFTA PDF Forge <span>Utilities</span></div>
+  <div class="actions">
+    <button id="reset" class="ghost">Reset copy</button>
+    <button id="forge">Forge PDF &rarr;</button>
+  </div>
+</div>
+<div class="hint">Drop your images at left &middot; edit the copy &middot; press <b>Forge PDF</b>, then choose <b>Save as PDF</b> in the print dialog. Works offline. Page&nbsp;2 (renderings) appears only when you add 2+ images.</div>
+
+<div class="app">
+  <!-- ============ EDITOR ============ -->
+  <aside class="editor">
+
+    <div class="grp">
+      <h4>Assets</h4>
+      <div class="drop" id="drop">
+        <div><b>Drop images here</b></div>
+        <div style="font-size:11.5px;margin-top:4px">First image = hero (page 1). Next images = renderings gallery (page 2).</div>
+        <label class="pick">Choose files<input type="file" id="file" accept="image/*" multiple></label>
+      </div>
+      <div id="thumbs"></div>
+    </div>
+
+    <div class="grp">
+      <h4>Prompt / paste content</h4>
+      <textarea id="prompt" rows="5" placeholder="Paste the proposal or notes here. Use blank lines between the 4 points and they will fill the four cards; otherwise the text fills the intro line."></textarea>
+      <button class="applybtn" id="apply">Auto-fill copy from text</button>
+    </div>
+
+    <div class="grp">
+      <h4>Header</h4>
+      <label>Kicker (top line)</label><input type="text" data-k="kicker">
+      <label>Title</label><input type="text" data-k="title">
+      <label>Location / subtitle</label><input type="text" data-k="loc">
+      <label>Intro paragraph</label><textarea data-k="sub" rows="3"></textarea>
+      <label>Hero caption</label><input type="text" data-k="heroCap">
+    </div>
+
+    <div class="grp">
+      <h4>Card 1 &mdash; Land Swap</h4>
+      <label>Heading</label><input type="text" data-k="c1t">
+      <label>Body</label><textarea data-k="c1b" rows="4"></textarea>
+    </div>
+    <div class="grp">
+      <h4>Card 2 &mdash; Gift</h4>
+      <label>Heading</label><input type="text" data-k="c2t">
+      <label>Body</label><textarea data-k="c2b" rows="4"></textarea>
+    </div>
+    <div class="grp">
+      <h4>Card 3 &mdash; Tax</h4>
+      <label>Heading</label><input type="text" data-k="c3t">
+      <label>Body</label><textarea data-k="c3b" rows="4"></textarea>
+    </div>
+    <div class="grp">
+      <h4>Card 4 &mdash; Water &amp; Power</h4>
+      <label>Heading</label><input type="text" data-k="c4t">
+      <label>Body</label><textarea data-k="c4b" rows="4"></textarea>
+    </div>
+
+    <div class="grp">
+      <h4>&ldquo;Delivers for everyone&rdquo; checklist</h4>
+      <label>Item 1</label><input type="text" data-k="d1">
+      <label>Item 2</label><input type="text" data-k="d2">
+      <label>Item 3</label><input type="text" data-k="d3">
+      <label>Item 4</label><input type="text" data-k="d4">
+    </div>
+
+    <div class="grp">
+      <h4>Call to action</h4>
+      <label>Headline</label><input type="text" data-k="ctaBig">
+      <label>Line 2</label><input type="text" data-k="ctaL2">
+      <label>Line 3</label><input type="text" data-k="ctaL3">
+      <label>Footer strip</label><input type="text" data-k="foot">
+    </div>
+
+    <div class="grp">
+      <h4>Page 2 &mdash; Renderings</h4>
+      <label>Page title</label><input type="text" data-k="galTitle">
+      <label>Intro</label><textarea data-k="galIntro" rows="2"></textarea>
+      <label>Caption 1</label><input type="text" data-k="gc1">
+      <label>Caption 2</label><input type="text" data-k="gc2">
+      <label>Caption 3</label><input type="text" data-k="gc3">
+    </div>
+
+  </aside>
+
+  <!-- ============ PREVIEW ============ -->
+  <main class="stage">
+    <div class="zoombar">Zoom <input type="range" id="zoom" min="35" max="100" value="62"><span id="zval">62%</span></div>
+    <div class="flyer" id="flyer">
+
+      <div class="page" id="page1">
+        <div class="hdr">
+          <div class="kick" id="pv_kicker"></div>
+          <div class="h1" id="pv_title"></div>
+          <div class="loc" id="pv_loc"></div>
+          <div class="sub" id="pv_sub"></div>
+        </div>
+        <div class="hero">
+          <img id="pv_hero" alt="" style="display:none">
+          <div class="ph" id="pv_heroph">Hero image &mdash; drop one at left</div>
+          <div class="cap" id="pv_heroCap"></div>
+        </div>
+        <div class="pillars">
+          <div class="card"><div class="inner">
+            <span class="badge b-blue"><svg width="36" height="36" viewBox="0 0 36 36"><g stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 H25"/><path d="M22 11 L25 14 L22 17"/><path d="M27 22 H11"/><path d="M14 19 L11 22 L14 25"/></g></svg></span>
+            <h3 id="pv_c1t"></h3><p id="pv_c1b"></p>
+          </div></div>
+          <div class="card"><div class="inner">
+            <span class="badge b-gold"><svg width="36" height="36" viewBox="0 0 36 36"><g stroke="#fff" stroke-width="2" fill="none" stroke-linejoin="round"><rect x="10" y="17" width="16" height="9"/><rect x="8.5" y="13" width="19" height="4"/><path d="M18 13 V26"/><path d="M18 13 c-1-4-7-3-5 0 z"/><path d="M18 13 c1-4 7-3 5 0 z"/></g></svg></span>
+            <h3 id="pv_c2t"></h3><p id="pv_c2b"></p>
+          </div></div>
+          <div class="card"><div class="inner">
+            <span class="badge b-white"><svg width="36" height="36" viewBox="0 0 36 36"><path d="M18 18 L18 5 A13 13 0 1 1 5.6 14.3 Z" fill="#0a3a63"/><path d="M18 18 L5.6 14.3 A13 13 0 0 1 18 5 Z" fill="#e0a92e"/></svg></span>
+            <h3 id="pv_c3t"></h3><p id="pv_c3b"></p>
+          </div></div>
+          <div class="card"><div class="inner">
+            <span class="badge b-green"><svg width="36" height="36" viewBox="0 0 36 36"><path d="M13 9 C13 9 8 15.5 8 19.5 a5 5 0 0 0 10 0 C18 15.5 13 9 13 9 Z" fill="#fff"/><path d="M24 9 L18.5 19.5 H22.5 L20.5 27 L28 16 H23.5 Z" fill="#fff"/></svg></span>
+            <h3 id="pv_c4t"></h3><p id="pv_c4b"></p>
+          </div></div>
+        </div>
+        <div class="deliver">
+          <h2 id="pv_dtitle">The Win-Win Delivers For Everyone</h2>
+          <div class="dgrid" id="pv_dgrid"></div>
+        </div>
+        <div class="cta">
+          <div class="big" id="pv_ctaBig"></div>
+          <div class="l2" id="pv_ctaL2"></div>
+          <div class="l3" id="pv_ctaL3"></div>
+        </div>
+        <div class="foot" id="pv_foot"></div>
+      </div>
+
+      <div class="page last" id="page2">
+        <div class="g-hdr">
+          <div class="kick" id="pv_galkick"></div>
+          <div class="h1" style="font-size:28px" id="pv_galTitle"></div>
+        </div>
+        <div class="gal">
+          <div class="gintro" id="pv_galIntro"></div>
+          <div id="pv_gallery"></div>
+        </div>
+        <div class="foot">Renderings provided for illustration.</div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+var CHECK='<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2.5 8.5 L6.5 12.5 L13.5 4" fill="none" stroke="#ffd34d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+var DEFAULTS={
+  kicker:"A Better Way Forward — Cooperation Beats Litigation",
+  title:"WIN-WIN SOLUTION",
+  loc:"FOR IMPERIAL COUNTY",
+  sub:"A better site · A public benefit · Shared tax revenue · Jobs and growth. Real wins for residents, the City, the County, and our future.",
+  heroCap:"The relocated, fully landscaped site — set back behind a buffer, over half a mile from any homes.",
+  c1t:"Smart Land Swap",
+  c1b:"The data center relocates to the 95-acre industrial site at Imperial Ave & Clark Rd — over half a mile from homes and surrounded by industrial uses, for zero direct impact on neighbors. In exchange, the City annexes the 75-acre Aten & Clark Rd site, gaining control of the land nearest residences.",
+  c2t:"$7 Million Community Gift",
+  c2b:"Once the building permit is approved on the new site, the full 75 acres is deeded FREE to the City — to become a park, soccer fields, playgrounds, or any public benefit the City chooses. A $7 million gift to the community.",
+  c3t:"Fair Tax Sharing",
+  c3b:"The County and City enter a tax-sharing agreement on the millions in tax revenue the data center will generate: the County receives 80% and the City receives 20%.",
+  c4t:"Responsible Water & Power",
+  c4b:"The project pursued three zero-impact solutions for just 880 acre-feet of water — while IID sends ~600,000 acre-feet (about 20% of supply) out of the Valley each year, and exports 61% of its electricity. There is ample capacity to serve a data center here, and it has agreed to non-firm power.",
+  d1:"Homes & neighborhoods fully protected",
+  d2:"City gains control + a $7M park gift",
+  d3:"County & City both share the tax dollars",
+  d4:"The largest economic opportunity in county history moves forward",
+  ctaBig:"SUPPORT THE WIN-WIN SOLUTION",
+  ctaL2:"Choose cooperation over conflict. Let's unlock progress, parks, and prosperity together.",
+  ctaL3:"Imperial County is strongest when we work together.",
+  foot:"A better industrial site · A stunning new public park · Shared prosperity · Jobs & growth for our families",
+  galTitle:"Project Renderings",
+  galIntro:"Visualizations of the proposed site and the surrounding area.",
+  gc1:"View to the South — landscaped facility, retention pond, and buffer.",
+  gc2:"View to the North — existing substation and infrastructure.",
+  gc3:"View to the East — commercial / retail frontage."
+};
+
+var F=Object.assign({},DEFAULTS);
+var images=[]; // {id,url}
+var uid=0;
+
+function $(s){return document.querySelector(s);}
+function setText(id,val){var el=document.getElementById(id); if(el) el.textContent=val;}
+
+function renderText(){
+  ["kicker","title","loc","sub","heroCap","c1t","c1b","c2t","c2b","c3t","c3b","c4t","c4b",
+   "ctaBig","ctaL2","ctaL3","foot","galTitle","galIntro"].forEach(function(k){ setText("pv_"+k,F[k]); });
+  setText("pv_galkick", F.kicker || "");
+  var g=$("#pv_dgrid"); g.innerHTML="";
+  ["d1","d2","d3","d4"].forEach(function(k){
+    if(F[k] && F[k].trim()){
+      var d=document.createElement("div"); d.className="ditem";
+      d.innerHTML=CHECK;
+      d.appendChild(document.createTextNode(" "+F[k]));
+      g.appendChild(d);
+    }
+  });
+}
+
+function renderImages(){
+  var hero=$("#pv_hero"), ph=$("#pv_heroph");
+  if(images.length){ hero.src=images[0].url; hero.style.display="block"; ph.style.display="none"; }
+  else { hero.removeAttribute("src"); hero.style.display="none"; ph.style.display="flex"; }
+
+  var gal=images.slice(1,4);
+  var box=$("#pv_gallery"); box.innerHTML="";
+  var caps=[F.gc1,F.gc2,F.gc3];
+  gal.forEach(function(im,i){
+    var it=document.createElement("div"); it.className="gitem";
+    var img=document.createElement("img"); img.src=im.url; it.appendChild(img);
+    var cap=document.createElement("div"); cap.className="gcap"; cap.textContent=caps[i]||""; it.appendChild(cap);
+    box.appendChild(it);
+  });
+  $("#page2").classList.toggle("hidden", gal.length===0);
+
+  // thumbs
+  var t=$("#thumbs"); t.innerHTML="";
+  images.forEach(function(im,i){
+    var d=document.createElement("div"); d.className="thumb";
+    var img=document.createElement("img"); img.src=im.url; d.appendChild(img);
+    if(i===0){ var tag=document.createElement("div"); tag.className="tag"; tag.textContent="HERO"; d.appendChild(tag); }
+    var bar=document.createElement("div"); bar.className="bar";
+    var star=document.createElement("button"); star.className="star"; star.textContent="★"; star.title="Make hero";
+    star.onclick=function(){ var x=images.splice(i,1)[0]; images.unshift(x); renderImages(); };
+    var del=document.createElement("button"); del.className="del"; del.textContent="✕"; del.title="Remove";
+    del.onclick=function(){ images.splice(i,1); renderImages(); };
+    bar.appendChild(star); bar.appendChild(del); d.appendChild(bar);
+    t.appendChild(d);
+  });
+}
+
+function addFiles(list){
+  var arr=Array.prototype.slice.call(list);
+  arr.forEach(function(f){
+    if(!/^image\//.test(f.type)) return;
+    var r=new FileReader();
+    r.onload=function(e){ images.push({id:++uid,url:e.target.result}); renderImages(); };
+    r.readAsDataURL(f);
+  });
+}
+
+// ---- wire inputs ----
+function wire(){
+  document.querySelectorAll("[data-k]").forEach(function(el){
+    var k=el.getAttribute("data-k");
+    el.value=F[k]!==undefined?F[k]:"";
+    var ev=function(){ F[k]=el.value; renderText(); renderImages(); };
+    el.addEventListener("input",ev);
+  });
+}
+
+// ---- drop zone ----
+var drop=$("#drop");
+["dragenter","dragover"].forEach(function(ev){ drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add("hot");}); });
+["dragleave","drop"].forEach(function(ev){ drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.remove("hot");}); });
+drop.addEventListener("drop",function(e){ if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+$("#file").addEventListener("change",function(e){ addFiles(e.target.files); e.target.value=""; });
+// allow dropping anywhere on the stage too
+window.addEventListener("dragover",function(e){e.preventDefault();});
+window.addEventListener("drop",function(e){e.preventDefault(); if(e.target.closest&&e.target.closest(".editor")) return; if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length) addFiles(e.dataTransfer.files);});
+
+// ---- prompt auto-fill ----
+$("#apply").addEventListener("click",function(){
+  var txt=$("#prompt").value.trim();
+  if(!txt) return;
+  var blocks=txt.split(/\n\s*\n/).map(function(s){return s.trim();}).filter(Boolean);
+  if(blocks.length>=4){
+    F.c1b=blocks[0]; F.c2b=blocks[1]; F.c3b=blocks[2]; F.c4b=blocks.slice(3).join(" ");
+  } else {
+    F.sub=txt.replace(/\s*\n\s*/g," ");
+  }
+  syncInputs(); renderText();
+});
+
+function syncInputs(){
+  document.querySelectorAll("[data-k]").forEach(function(el){ var k=el.getAttribute("data-k"); el.value=F[k]!==undefined?F[k]:""; });
+}
+
+// ---- buttons ----
+$("#forge").addEventListener("click",function(){ window.print(); });
+$("#reset").addEventListener("click",function(){ F=Object.assign({},DEFAULTS); syncInputs(); renderText(); renderImages(); });
+
+// ---- zoom ----
+var zoom=$("#zoom");
+function applyZoom(){ var z=zoom.value/100; $("#flyer").style.transform="scale("+z+")"; $("#zval").textContent=zoom.value+"%"; }
+zoom.addEventListener("input",applyZoom);
+
+// ---- boot ----
+wire(); renderText(); renderImages(); applyZoom();
+</script>
+</body>
+</html>
