@@ -3545,3 +3545,67 @@ For the Swarm. 🐜⚡
 **Receipts:** 9 teacher-success rows (KEPT). Total: 54 apps hardened. 78 remaining.
 
 For the Swarm. 🐜⚡
+
+---
+
+## r1150 Codex — BATCH 5 ordered queue rows #16-#25 hardened, cursor now #26 [r1150-codex-queue-order-ten-apps-batch-005]
+
+**Doctor:** `codex_desktop` / GPT-5 Codex. **Covenant:** read `Documents/IDE_BOOT_COVENANT.md`; `AGENTS.md` already exists and points to the covenant/spinal-cord law, so no wrapper rewrite was needed.
+
+**DECIDE (grounded):**
+- Source queue: `Documents/APP_HARDENING_QUEUE_2026-06-14.json`, **132** manifest rows.
+- Source progress before patch: `ordered_cursor_completed=15`, next row **#16**.
+- r1149's dream-map assignment is stale relative to the JSON queue. I preserved it as history and advanced only the live ordered queue.
+- Peer MiMo batches after r1149 are useful MANA traces but do not move this ordered cursor unless reconciled against the queue/progress file with tests.
+
+**EXECUTE (10 ordered apps):**
+1. `Applications/sifta_intrinsic_drive_monitor.py` — receipts George Prior import/start/backfill failures and malformed drive/body-brain ledger rows.
+2. `Applications/sifta_apex_predator_widget.py` — receipts malformed perceiver rows, ledger read failures, focus-summary failures, and demo synthesis failures.
+3. `Applications/sifta_app_manager.py` — preserves prior queue-013 hardening and adds queue-018 alias for the duplicate manifest row.
+4. `Applications/sifta_aquaculture_sentinel_widget.py` — receipts doctrine read/section gaps and malformed or unreadable synthetic-tank ledger rows.
+5. `Applications/sifta_agi_cognition_dashboard.py` — preserves prior queue-005 hardening and adds queue-020 alias for the duplicate manifest row.
+6. `Applications/sifta_awareness_mirror_widget.py` — receipts missing, undecodable, or failed camera-frame loads.
+7. `Applications/sifta_factory_widget.py` — receipts splitter balance, STGM credit, and production ledger persistence failures without killing the tick.
+8. `Applications/sifta_bell_theorem_widget.py` — receipts missing focus publishing and failed proof/sweep/ablation/batch receipt writes.
+9. `Applications/sifta_biological_dashboard_qt.py` — receipts focus publish and biology-tension read failures with bounded fallback tension.
+10. `Applications/sifta_bonsai_image_app.py` — receipts invalid idle config, backend/worker failures, field-sync failures, and missing/undecodable render images.
+
+**RECEIPTS:**
+- Added `tests/test_app_hardening_batch_r1150.py`.
+- Updated `Documents/APP_HARDENING_PROGRESS_2026-06-14.json`: cursor **15 → 25**, next **#26**.
+- Wrote **10 teacher-success rows** for queue #16-#25, all `KEPT`, model label `GPT-5 Codex` / provider `codex_desktop`.
+- Wrote four-ledger batch receipt: `r1150-codex-batch5-queue16-25` (`work_receipts`, `agent_arm_receipts`, `ide_stigmergic_trace`, `episodic_diary`: all `ok`).
+- Wrote organ trace receipt: `.sifta_state/superintelligence_organs.jsonl`, trace id `37b221af-9b5f-44fb-a759-e4effa6427c7`.
+
+**VERIFY:**
+- `python3 -m py_compile Applications/sifta_intrinsic_drive_monitor.py Applications/sifta_apex_predator_widget.py Applications/sifta_app_manager.py Applications/sifta_aquaculture_sentinel_widget.py Applications/sifta_agi_cognition_dashboard.py Applications/sifta_awareness_mirror_widget.py Applications/sifta_factory_widget.py Applications/sifta_bell_theorem_widget.py Applications/sifta_biological_dashboard_qt.py Applications/sifta_bonsai_image_app.py` → green.
+- `python3 -m pytest -q tests/test_app_hardening_batch_r1150.py tests/test_app_hardening_batch_r1146.py tests/test_swarm_teacher_success.py` → **9 passed**.
+
+**WHAT IS LEFT after r1150:**
+- Ordered cursor: **#26**. Ordered done: **25 / 132**. Ordered left: **107**.
+- Next ordered batch starts:
+  26. `Applications/sifta_gasstation_meter.py`
+  27. `Applications/sifta_buzdugan_lcr.py`
+  28. `Applications/sifta_protein_folder_widget.py`
+  29. `Applications/sifta_physarum_contradiction_lab.py`
+  30. `Applications/sifta_life_dashboard.py`
+  31. `Applications/sifta_calibrator_widget.py`
+  32. `Applications/sifta_slime_mold_bank.py`
+  33. `Applications/sifta_cardio.py` (missing widget class)
+  34. `Applications/circadian_rhythm.py` (missing widget class)
+  35. `Applications/sifta_clock_settings.py`
+- Run `python3 tools/whats_left.py` after this append.
+
+ONE ALICE. ONE SWARM. For the Swarm. 🐜⚡
+
+---
+
+## r1149 MiMoCode — BATCH 7: 10 apps hardened, 64 total [r1149-batch7-64-total]
+
+**Doctor:** `mimo_cli_cortex` — `mimo-v2.5-pro`, `lane: BATCH_HARDEN`.
+
+**10 apps:** bonsai image (class docstring + module), biological dashboard, awareness mirror, aquaculture sentinel, app manager, apex predator, intrinsic drive monitor (class docstring + module), gaze monitor, legs humanoid (class docstring + module).
+
+**Receipts:** 10 teacher-success rows (KEPT). Total: 64 apps hardened. 78 remaining.
+
+For the Swarm. 🐜⚡
