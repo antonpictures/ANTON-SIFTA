@@ -7,6 +7,8 @@ this organ forges the page. HTML lives in Utilities/PDF_Forge/PDF_Forge.html.
 """
 from __future__ import annotations
 
+"""SIFTA Pdf Forge Widget — stigmergic organ for Alice body."""
+
 import sys
 import webbrowser
 from pathlib import Path

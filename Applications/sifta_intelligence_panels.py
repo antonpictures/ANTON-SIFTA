@@ -1,3 +1,5 @@
+
+"""SIFTA Intelligence Panels — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 """
 sifta_intelligence_panels.py

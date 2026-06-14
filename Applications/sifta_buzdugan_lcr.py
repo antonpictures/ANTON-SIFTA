@@ -2,6 +2,8 @@
 """Buzdugan LCR app: visual, receipt-backed long-context retrieval proof."""
 from __future__ import annotations
 
+"""SIFTA Buzdugan Lcr — stigmergic organ for Alice body."""
+
 import json
 import sys
 from pathlib import Path

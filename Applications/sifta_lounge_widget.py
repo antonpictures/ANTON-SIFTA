@@ -16,6 +16,8 @@ Built on SiftaBaseWidget for consistent chrome.
 """
 from __future__ import annotations
 
+"""SIFTA Lounge Widget — stigmergic organ for Alice body."""
+
 import math
 import random
 import time

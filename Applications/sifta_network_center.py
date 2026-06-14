@@ -4,6 +4,8 @@ sifta_network_center.py — Apple-like networking control center for iSwarm OS
 """
 from __future__ import annotations
 
+"""SIFTA Network Center — stigmergic organ for Alice body."""
+
 import json
 import os
 from pathlib import Path
@@ -42,6 +44,7 @@ def _card(title: str, subtitle: str) -> QFrame:
 
 
 class NetworkCenterWidget(QWidget):
+    """NetworkCenterWidget — Alice organ."""
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._proc: QProcess | None = None

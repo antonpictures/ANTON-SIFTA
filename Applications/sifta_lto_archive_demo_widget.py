@@ -26,6 +26,8 @@ differs — re-key numbers there).
 """
 from __future__ import annotations
 
+"""SIFTA Lto Archive Demo Widget — stigmergic organ for Alice body."""
+
 import json
 import math
 import time

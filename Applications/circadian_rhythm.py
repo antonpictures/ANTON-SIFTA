@@ -1,3 +1,5 @@
+
+"""SIFTA Circadian Rhythm — stigmergic organ for Alice body."""
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────────────────────
 # SIFTA CIRCADIAN RHYTHM — NODE-AWARE
