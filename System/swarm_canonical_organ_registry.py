@@ -30,7 +30,9 @@ _STATE = _REPO / ".sifta_state"
 
 SNAPSHOT_NAME = "canonical_organ_registry_snapshot.json"
 QUERY_LEDGER_NAME = "canonical_organ_query_map.jsonl"
+ORGAN_FIELD_LEDGER_NAME = "organ_field.jsonl"
 TRUTH_LABEL = "CANONICAL_ORGAN_REGISTRY_V1"
+ORGAN_FIELD_TRUTH = "ORGAN_FIELD_VITALS_V1"
 
 RESEARCH_BASIS = (
     {
@@ -222,6 +224,28 @@ CANONICAL_ORGANS: tuple[OrganSpec, ...] = (
         aliases=("self_improvement", "weight", "candidate", "fine_tune"),
     ),
     OrganSpec(
+        "spinal_cord",
+        "Spinal Cord — Self-Evolution Bridge",
+        "cognition",
+        ("System/swarm_spinal_cord.py",),
+        ("spinal_cord_cycles.jsonl", "spinal_cord_proposals.jsonl"),
+        ("body_signal_detection", "mimo_dispatch", "mutation_governor_gate", "self_evolution_loop"),
+        ("spinal cord", "self evolve", "self modification", "mimo dispatch", "body signal", "reflexive"),
+        write_action=True,
+        aliases=("spinal_cord", "reflexive_self_evolution", "self_evolution_bridge"),
+    ),
+    OrganSpec(
+        "mimo_stigmergic",
+        "MiMo Stigmergic Adapter — Borged Cortex",
+        "cognition",
+        ("System/swarm_mimo_stigmergic.py",),
+        ("mimo_stigmergic_traces.jsonl", "mimo_stigmergic_pheromones.jsonl"),
+        ("field_state_injection", "pheromone_deposit", "four_ledger_receipt"),
+        ("mimo", "stigmergic", "borg", "cortex adapter", "field injection"),
+        write_action=True,
+        aliases=("mimo_borg", "mimo_stigmergic_adapter"),
+    ),
+    OrganSpec(
         "biology_self_learning_fuel",
         "Biology Research Nuggets / Self-Learning Fuel",
         "cognition",
@@ -255,6 +279,48 @@ CANONICAL_ORGANS: tuple[OrganSpec, ...] = (
         ("cortex", "brain", "thinking", "ollama", "model load", "vram", "timeout", "cold"),
         owner_sensitive=False,
         aliases=("primary brain", "local cortex", "ollama brain", "thinking organ"),
+    ),
+    OrganSpec(
+        "stigmerobotics_rob501",
+        "Stigmerobotics / ROB501 Robot-Data Falsifier",
+        "effector",
+        (
+            "Applications/sifta_stigmerobotics_widget.py",
+            "System/stigmerobotics_irb2400_ik.py",
+            "System/stigmerobotics_arkoma_ik.py",
+            "System/stigmerobotics_ik_baseline.py",
+            "System/stigmerobotics_e51_hardware_prep.py",
+            "System/stigmerobotics_effector_bridge.py",
+            "System/stigmerobotics_body_connection.py",
+        ),
+        ("work_receipts.jsonl", "agent_arm_receipts.jsonl"),
+        (
+            "ik_ingest_e49_irb2400",
+            "ik_ingest_e50_arkoma",
+            "nearest_neighbor_ik_baseline",
+            "e51_hardware_prep_chain",
+            "receipted_virtual_effector",
+        ),
+        ("robot", "robotics", "stigmerobotics", "kinematics", "irb2400", "arkoma", "nao", "joint", "inverse kinematics", "rob501", "e49", "e50", "e51"),
+        write_action=True,
+        aliases=("robotics", "stigmerobotics", "rob501", "irb2400", "arkoma", "ik_benchmark", "robot_data"),
+    ),
+    OrganSpec(
+        "agent_commerce_intent_gate",
+        "Agent Commerce Intent Gate / MCP Receipt Manifest",
+        "effector",
+        (
+            "System/swarm_intent_nonce_gate.py",
+            "System/swarm_effector_gate.py",
+            "System/swarm_mcp_receipt_manifest.py",
+            "sifta_mcp_server.py",
+        ),
+        ("effector_gate.jsonl", "work_receipts.jsonl"),
+        ("purchase_intent_nonce", "pre_effector_gate", "mcp_manifest_enforce", "no_double_spend"),
+        ("commerce", "purchase", "intent", "nonce", "mcp", "effector gate", "manifest", "double spend", "checkout"),
+        write_action=True,
+        owner_sensitive=True,
+        aliases=("intent_gate", "commerce_gate", "mcp_manifest", "purchase_gate"),
     ),
 )
 
@@ -740,6 +806,14 @@ def build_registry(
             gaps.append(f"{organ['organ_id']}: no organ path present")
         elif organ["coverage"] < 0.5:
             gaps.append(f"{organ['organ_id']}: sparse ledger/path coverage {organ['coverage']}")
+    code_inventory: dict[str, Any] = {}
+    try:
+        from System.swarm_code_body_inventory import build_code_inventory
+
+        code_inventory = build_code_inventory(repo=repo, state_dir=state, write_appearance_ledger=True)
+    except Exception:
+        code_inventory = {}
+
     snapshot: dict[str, Any] = {
         "ts": time.time(),
         "trace_id": str(uuid.uuid4()),
@@ -749,6 +823,7 @@ def build_registry(
         "research_basis": RESEARCH_BASIS,
         "organs": organs,
         "gaps": gaps[:20],
+        "code_inventory": code_inventory,
     }
     snapshot["receipt"] = _json_hash(snapshot)
     return snapshot
@@ -859,6 +934,82 @@ def write_registry_snapshot(
                 handle.write(line)
         return {"snapshot": snapshot, "query_map": row}
     return {"snapshot": snapshot}
+
+
+def publish_organ_vital(
+    *,
+    organ: str,
+    health: float,
+    load: float = 0.0,
+    top_signal: str = "",
+    state_dir: Path | str | None = None,
+) -> Dict[str, Any]:
+    """Unified organ vitals field v0 (r1015 §B3)."""
+    sd = _STATE if state_dir is None else (Path(state_dir) if Path(state_dir).name == ".sifta_state" else Path(state_dir) / ".sifta_state")
+    row: Dict[str, Any] = {
+        "schema": ORGAN_FIELD_TRUTH,
+        "organ": str(organ or "").strip(),
+        "health": max(0.0, min(1.0, float(health))),
+        "load": max(0.0, min(1.0, float(load))),
+        "last_beat": time.time(),
+        "top_signal": (top_signal or "")[:220],
+    }
+    line = json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n"
+    path = sd / ORGAN_FIELD_LEDGER_NAME
+    if append_line_locked is not None:
+        append_line_locked(path, line, encoding="utf-8")
+    else:  # pragma: no cover
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    return row
+
+
+def latest_organ_field(
+    *,
+    state_dir: Path | str | None = None,
+    stale_after_s: float = 120.0,
+) -> List[Dict[str, Any]]:
+    """Latest vital per organ with soft staleness decay."""
+    sd = _STATE if state_dir is None else (Path(state_dir) if Path(state_dir).name == ".sifta_state" else Path(state_dir) / ".sifta_state")
+    path = sd / ORGAN_FIELD_LEDGER_NAME
+    if not path.exists():
+        return []
+    by_organ: Dict[str, Dict[str, Any]] = {}
+    now = time.time()
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict) or not row.get("organ"):
+                continue
+            by_organ[str(row["organ"])] = row
+    except Exception:
+        return []
+    out: List[Dict[str, Any]] = []
+    for organ, row in sorted(by_organ.items()):
+        age = max(0.0, now - float(row.get("last_beat") or row.get("ts") or 0))
+        decay = max(0.0, 1.0 - age / max(1.0, stale_after_s))
+        out.append({**row, "staleness_s": round(age, 2), "field_weight": round(decay * float(row.get("health") or 0), 4)})
+    return out
+
+
+def format_organ_field_reply(*, state_dir: Path | str | None = None) -> str:
+    rows = latest_organ_field(state_dir=state_dir)
+    lines = ["ORGAN FIELD (organ_field.jsonl):"]
+    if not rows:
+        lines.append("  (empty — organs not publishing vitals yet)")
+        return "\n".join(lines)
+    for r in rows[:40]:
+        lines.append(
+            f"  {r.get('organ')}: health={r.get('health')} load={r.get('load')} "
+            f"staleness={r.get('staleness_s')}s signal={r.get('top_signal') or '-'}"
+        )
+    return "\n".join(lines)
 
 
 def summary_for_prompt(query: str = "", *, state_dir: Path | str | None = None, max_lines: int = 8) -> str:
