@@ -1045,14 +1045,36 @@ and the allostasis-specific spine in
 
 ### Marketing & Pitch Documents (BD lane)
 
-- [`Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md`](Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md) — **mega catalog: 23 unique SIFTA products only** (no commodity overlap; truth labels + proof paths).
-- [`Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`](Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md) — CSET Dec 2025 China embodied-AI report vs SIFTA: same philosophy, different engineering; not mossing (r1077).
-- [`Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md) — the core breakthrough doc (Bell + scheduler + memory + competitive landscape).
-- [`Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) — the meta-regulator (field-of-fields) pitch with allostasis framing for pharma / defense / VCs.
-- [`Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md) — long-form Chorum Gate pitch directly aimed at agricultural OEMs (John Deere, Caterpillar, Kubota) and defense buyers.
-- [`Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md) — short safety-tilted version of the same pitch.
-- [`Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`](Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md) — broad company-mapping memo (foundation for the campaign).
-- [`Documents/SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md`](Documents/SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md) — protein-folding apps audit for the DeepMind / Hassabis lane.
+**Live inventory (r1160):** [`data/eval/marketing_commercial_inventory.json`](data/eval/marketing_commercial_inventory.json) — probed census of sellable docs + Philippe status. Regenerate: `python3 -c "from System.swarm_marketing_commercial_inventory import build_inventory; build_inventory()"`. Also visible in [ORGAN_EVAL_MATRIX_V2.html](.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html) → *Marketing / Commercial Inventory* panel.
+
+**Philippe report status (`OPERATIONAL` steps 1–5; step 6 spinal kept patch = `HYPOTHESIS`):**
+
+| Asset | Path | Status |
+|---|---|---|
+| Commercial one-pager | [`outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf`](outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf) | Send first |
+| Runnable demo | [`demo/alice_demo_for_philippe.py`](demo/alice_demo_for_philippe.py) | `python3 demo/alice_demo_for_philippe.py` |
+| Demo README | [`demo/README_PHILIPPE.md`](demo/README_PHILIPPE.md) | Honest gaps documented |
+| Tests | `tests/test_philippe_demo.py` | 3 passed, 1 skipped (live spinal auth) |
+
+**Mega catalog (23 unique products — do not sell commodities):**
+
+- [`Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md`](Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md) — master BD deck source.
+
+**Sellable lanes on disk (canonical set):**
+
+| Category | Documents / assets |
+|---|---|
+| Agent trust | [`MARKETING_ROBOTICS_PROOF_FIGUERA_JONGERIUS_2026-06-13.md`](Documents/MARKETING_ROBOTICS_PROOF_FIGUERA_JONGERIUS_2026-06-13.md), [`SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md`](Documents/SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md) |
+| FieldSight / FarSight | [`SIFTA_FIELDSIGHT_PRODUCT_VALUE_BRIEF.md`](Documents/SIFTA_FIELDSIGHT_PRODUCT_VALUE_BRIEF.md), [`SIFTA_FIELDSIGHT_CARLTON_BRIEF_V2.pdf`](Documents/SIFTA_FIELDSIGHT_CARLTON_BRIEF_V2.pdf), [`STIGMERGIC_FARSIGHT_CARLTON_BRIEF_V4_SOVEREIGN.pdf`](Documents/STIGMERGIC_FARSIGHT_CARLTON_BRIEF_V4_SOVEREIGN.pdf) |
+| Chorum / field physics | [`MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md`](Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md), [`MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md), [`MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md`](Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md) |
+| Stigmergicode / fractals | [`MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md`](Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md), [`SIFTA_FRACTALS_CARLTON_MARKETING_2026-05-18.pdf`](Documents/SIFTA_FRACTALS_CARLTON_MARKETING_2026-05-18.pdf) |
+| Fundraising / founder | [`SIFTA_SEED_PROPOSAL_KOLE_2026-05-18.pdf`](Documents/SIFTA_SEED_PROPOSAL_KOLE_2026-05-18.pdf), [`SIFTA_AI_NATIVE_ONE_FOUNDER_BRIEF.pdf`](Documents/SIFTA_AI_NATIVE_ONE_FOUNDER_BRIEF.pdf), [`SIFTA_Technical_Brief.pdf`](Documents/SIFTA_Technical_Brief.pdf) |
+| Lawyer / product stack | [`SIFTA_Lawyer_Real_Product_Stack_Consequence.pdf`](SIFTA_Lawyer_Real_Product_Stack_Consequence.pdf) (regenerate v2: `python3 outputs/build_sifta_sellable_products_onepage_v2.py`) |
+| WIN-WIN forge | [`outputs/WIN-WIN_10x10_sebastian_final.pdf`](outputs/WIN-WIN_10x10_sebastian_final.pdf), [`Applications/sifta_pdf_forge_app.py`](Applications/sifta_pdf_forge_app.py) |
+| Outreach / competitive | [`MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md`](Documents/MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md), [`MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md`](Documents/MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md), [`ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md`](Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md) |
+| Robotics proof (code) | `System/stigmerobotics_irb2400_ik.py`, E49 fixture + demo step 5 |
+| Apps tour / economy | [`SIFTA_FOUR_FLAGSHIP_APPS.md`](Documents/SIFTA_FOUR_FLAGSHIP_APPS.md), [`CRYPTO_ECONOMY.md`](Documents/CRYPTO_ECONOMY.md) |
+| Protein folding lane | [`SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md`](Documents/SIFTA_PROTEIN_FOLDING_APP_AUDIT_2026-05-10.md) — DeepMind / Hassabis audit |
 
 ### Credits — Where Due
 

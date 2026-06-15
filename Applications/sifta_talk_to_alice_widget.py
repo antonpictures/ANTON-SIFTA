@@ -21236,6 +21236,29 @@ def _log_turn(
         payload.setdefault("rlhs_regime", "ERROR")
         payload.setdefault("rlhs_applicable", role == "user")
 
+    # r1122: Engram feedback loop — closes the learning gap.
+    # After each owner turn, reinforce/decay active engrams based on
+    # owner acceptance/rejection signals. Engrams must change behavior,
+    # not just sit on disk.
+    if role == "user":
+        try:
+            from System.swarm_engram_feedback_loop import process_owner_turn
+            _engram_fb = process_owner_turn(
+                text,
+                state_dir=_state_root(),
+                write=True,
+            )
+            payload["engram_feedback"] = {
+                "truth_label": "ENGRAM_FEEDBACK_V1",
+                "owner_signal": _engram_fb.get("owner_signal", 0.0),
+                "engrams_matched": _engram_fb.get("engrams_matched", 0),
+            }
+        except Exception as _engram_exc:
+            payload.setdefault("engram_feedback", {
+                "truth_label": "ENGRAM_FEEDBACK_V1",
+                "error": f"{type(_engram_exc).__name__}: {_engram_exc}",
+            })
+
     try:
         from System.swarm_event_clock import EventClock
         clock = EventClock(chain_path=_CONVO_LOG)
@@ -22653,7 +22676,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # them live: italic, dimmer, collapsible. Header shows "💭
         # thinking…" while a stream is active, "💭 last thought"
         # otherwise. Architect can collapse with the toggle.
-        self._thinking_header_btn = QPushButton("💭  hide thinking")
+        #
+        # One unified thinking header (r1154): purple ∙˙·∙˙ shuttle lives on
+        # the clickable toggle — never a second QLabel stacked above it.
+        self._thinking_bubble_phase = 0
+        self._thinking_bubble_was_active = False
+        self._thinking_bubble_timer = QTimer(self)
+        self._thinking_bubble_timer.setInterval(300)
+        self._thinking_bubble_timer.timeout.connect(self._tick_thinking_bubble)
+        try:
+            self._thinking_bubble_timer.start()
+        except Exception:
+            pass
+
+        self._thinking_header_btn = QPushButton("💭  thinking trace")
         self._thinking_header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Round 88 — thinking toggle: monochrome restful, accent on hover only.
         self._thinking_header_btn.setStyleSheet(
@@ -35989,9 +36025,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         try:
             if not panel.isVisible():
                 panel.setVisible(True)
-            btn = getattr(self, "_thinking_header_btn", None)
-            if btn is not None:
-                btn.setText("💭  observable processing…  (live)")
+            self._refresh_thinking_header()
             # Per-arm bright colour. appendHtml renders one coloured block and
             # still honours maximumBlockCount(600); text is HTML-escaped so code
             # lines (<, >, &) can't break the markup. claude-opus-4-7 2026-05-25.
@@ -36268,12 +36302,82 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # hidden checkbox is only a compatibility stub for older call sites/tests.
         return True
 
+    def _thinking_is_active(self) -> bool:
+        return bool(
+            getattr(self, "_thinking_stream_active", False)
+            or getattr(self, "_busy", False)
+        )
+
+    @staticmethod
+    def _thinking_header_idle_style() -> str:
+        return (
+            "QPushButton { background: #0a0a0a; color: #888888; "
+            "border: 1px solid #1f1f1f; border-radius: 8px; padding: 4px 12px; "
+            "font-size: 11px; font-weight: 600; text-align: left; }"
+            "QPushButton:hover { background: #111111; color: #00d4aa; "
+            "border: 1px solid #00d4aa; }"
+        )
+
+    @staticmethod
+    def _thinking_header_active_style() -> str:
+        return (
+            "QPushButton { background: rgb(60,55,90); color: rgb(220,210,255); "
+            "border: 1px solid rgb(140,120,200); border-radius: 8px; "
+            "padding: 6px 12px; "
+            "font-family: 'Menlo','Monaco','Courier New',monospace; "
+            "font-size: 12px; font-weight: 600; text-align: left; }"
+            "QPushButton:hover { background: rgb(70,62,108); color: rgb(240,230,255); "
+            "border: 1px solid rgb(160,140,220); }"
+        )
+
+    def _refresh_thinking_header(self, *, phase: int | None = None) -> None:
+        """Single thinking line: animated shuttle while active, toggle label when idle."""
+        btn = getattr(self, "_thinking_header_btn", None)
+        panel = getattr(self, "_thinking_panel", None)
+        if btn is None:
+            return
+        active = self._thinking_is_active()
+        n_chars = len(panel.toPlainText() or "") if panel is not None else 0
+        panel_visible = bool(panel.isVisible()) if panel is not None else False
+        if active:
+            try:
+                from System.swarm_thinking_bubble_frames import bubble_line
+
+                if phase is None:
+                    phase = int(getattr(self, "_thinking_bubble_phase", 0) or 0)
+                trace_hint = "hide trace" if panel_visible else "show trace"
+                btn.setText(f"{bubble_line(phase)}  ·  {trace_hint}")
+                btn.setStyleSheet(self._thinking_header_active_style())
+            except Exception:
+                pass
+            return
+        btn.setStyleSheet(self._thinking_header_idle_style())
+        if n_chars <= 0:
+            btn.setText("💭  thinking trace")
+            return
+        if panel_visible:
+            btn.setText(f"💭  hide thinking  ({n_chars} chars)")
+        else:
+            btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+
+    def _tick_thinking_bubble(self) -> None:
+        """Advance the unified header shuttle while Alice is composing."""
+        active = self._thinking_is_active()
+        if not active:
+            if getattr(self, "_thinking_bubble_was_active", False):
+                self._thinking_bubble_was_active = False
+                self._refresh_thinking_header()
+            return
+        self._thinking_bubble_was_active = True
+        phase = int(getattr(self, "_thinking_bubble_phase", 0) or 0)
+        self._thinking_bubble_phase = (phase + 1) % 240
+        self._refresh_thinking_header(phase=self._thinking_bubble_phase)
+
     def _toggle_thinking_panel(self) -> None:
         """Show/hide Alice's live thinking panel. Architect's eye-to-eye
         feedback loop: when he wants to read along while she works, he
         clicks the header; when he wants the wall back, click again."""
         panel = getattr(self, "_thinking_panel", None)
-        btn = getattr(self, "_thinking_header_btn", None)
         if panel is None:
             return
         self._thinking_user_interacted = True
@@ -36285,12 +36389,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
         visible_now = not panel.isVisible()
         panel.setVisible(visible_now)
-        if btn is not None:
-            n_chars = len(panel.toPlainText() or "")
-            btn.setText(
-                f"💭  hide thinking  ({n_chars} chars)" if visible_now
-                else f"💭  show thinking  ({n_chars} chars buffered)"
-            )
+        self._refresh_thinking_header()
 
     def _auto_collapse_thinking_panel(self) -> None:
         """Collapse the thinking panel after a completed turn unless the
@@ -36303,15 +36402,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if getattr(self, "_thinking_user_interacted", False):
             return
         panel = getattr(self, "_thinking_panel", None)
-        btn = getattr(self, "_thinking_header_btn", None)
         if panel is None:
             return
         n_chars = len(panel.toPlainText() or "")
         if n_chars <= 0:
             return
         panel.setVisible(False)
-        if btn is not None:
-            btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+        self._refresh_thinking_header()
 
     def _schedule_thinking_auto_collapse(self) -> None:
         """Start the end-of-turn auto-collapse timer when appropriate."""
@@ -36383,9 +36480,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     and not getattr(self, "_thinking_user_interacted", False)
                 ):
                     panel.setVisible(True)
-                btn = getattr(self, "_thinking_header_btn", None)
-                if btn is not None:
-                    btn.setText(f"💭  thinking…  (live)")
+                self._refresh_thinking_header()
                 if hasattr(panel, "insertPlainText"):
                     panel.insertPlainText(piece)
                 elif hasattr(panel, "append"):
@@ -36516,14 +36611,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # scroll back through this turn's reasoning if he wants.
         if getattr(self, "_thinking_stream_active", False):
             self._thinking_stream_active = False
-            btn = getattr(self, "_thinking_header_btn", None)
-            panel = getattr(self, "_thinking_panel", None)
-            if btn is not None and panel is not None:
-                n_chars = len(panel.toPlainText() or "")
-                if panel.isVisible():
-                    btn.setText(f"💭  hide thinking  ({n_chars} chars — last turn)")
-                else:
-                    btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+            self._refresh_thinking_header()
             self._schedule_thinking_auto_collapse()
         raw = (text or "".join(self._streaming_response)).strip()
         import re

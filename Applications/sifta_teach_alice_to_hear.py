@@ -1000,28 +1000,10 @@ class TeachAliceToHearWidget(QWidget):
 
     # ── heartbeat ────────────────────────────────────────────────────
 
-    _HEARTBEAT_FRAMES = (
-        "•          ",
-        " •         ",
-        "  •        ",
-        "   •       ",
-        "    •      ",
-        "     •     ",
-        "      •    ",
-        "       •   ",
-        "        •  ",
-        "         • ",
-        "          •",
-        "         • ",
-        "        •  ",
-        "       •   ",
-        "      •    ",
-        "     •     ",
-        "    •      ",
-        "   •       ",
-        "  •        ",
-        " •         ",
-    )
+    try:
+        from System.swarm_thinking_bubble_frames import FRAMES as _HEARTBEAT_FRAMES
+    except Exception:
+        _HEARTBEAT_FRAMES = ("∙˙·∙˙     ",)
     _HEARTBEAT_BREATH = (
         0.08, 0.12, 0.18, 0.26, 0.36, 0.42,
         0.46, 0.42, 0.36, 0.26, 0.18, 0.12,

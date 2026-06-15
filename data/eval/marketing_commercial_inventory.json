@@ -1,0 +1,258 @@
+{
+  "schema": "MARKETING_COMMERCIAL_INVENTORY_V1",
+  "ts": 1781484024.856255,
+  "philippe_report": {
+    "buyer": "Philippe",
+    "demo_script": "demo/alice_demo_for_philippe.py",
+    "demo_readme": "demo/README_PHILIPPE.md",
+    "one_pager_pdf": "outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf",
+    "demo_present": true,
+    "readme_present": true,
+    "pdf_present": true,
+    "pytest_green": true,
+    "pytest_tail": "3 passed, 1 skipped, 5 warnings in 0.73s",
+    "spinal_cycle_rows": 7,
+    "truth_summary": "OPERATIONAL: demo + README + one-pager + pytest (steps 1\u20135). HYPOTHESIS: full kept spinal patch until MiMo provider auth completes.",
+    "receipt_ids": [
+      "r1127-codex-philippe-commercial-response-pdf",
+      "r1131-codex-audit-fix-mimo-borg-philippe-demo"
+    ]
+  },
+  "summary": {
+    "total_assets": 30,
+    "on_disk": 29,
+    "missing": 1,
+    "categories": [
+      "agent_trust",
+      "apps_tour",
+      "chorum",
+      "competitive",
+      "economy",
+      "farsight",
+      "field_physics",
+      "fieldsight",
+      "founder",
+      "fractals",
+      "lawyer_stack",
+      "mega_catalog",
+      "outreach",
+      "philippe_packet",
+      "robotics_proof",
+      "seed_fundraising",
+      "stigmergicode",
+      "winwin_flyer"
+    ]
+  },
+  "assets": [
+    {
+      "category": "mega_catalog",
+      "path": "Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md",
+      "product": "23 Unique SIFTA Products (mega catalog)",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "philippe_packet",
+      "path": "outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf",
+      "product": "Philippe commercial-viability one-pager",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "philippe_packet",
+      "path": "demo/alice_demo_for_philippe.py",
+      "product": "Philippe runnable 6-step demo",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "agent_trust",
+      "path": "Documents/MARKETING_ROBOTICS_PROOF_FIGUERA_JONGERIUS_2026-06-13.md",
+      "product": "Robotics proof \u2014 Figuera/Jongerius outreach",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "agent_trust",
+      "path": "Documents/SIFTA_CONTACT_TARGETS_AGENT_TRUST_2026-06-13.md",
+      "product": "Agent trust BD targets",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "fieldsight",
+      "path": "Documents/SIFTA_FIELDSIGHT_PRODUCT_VALUE_BRIEF.md",
+      "product": "SIFTA FieldSight",
+      "label": "SIFTA_FIELDSIGHT_V0",
+      "on_disk": true
+    },
+    {
+      "category": "fieldsight",
+      "path": "Documents/SIFTA_FIELDSIGHT_CARLTON_BRIEF_V2.pdf",
+      "product": "FieldSight Carlton deck v2",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "chorum",
+      "path": "Documents/MARKETING_CHORUM_GATE_JOHN_DEERE_2026-05-11.md",
+      "product": "Chorum Gate (John Deere / defense)",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "chorum",
+      "path": "Documents/MARKETING_CHORUM_GATE_AGRICULTURE_2026-05-11.md",
+      "product": "Chorum Gate (agriculture short)",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "field_physics",
+      "path": "Documents/MARKETING_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md",
+      "product": "Bell / Field Scheduler breakthrough",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "field_physics",
+      "path": "Documents/MARKETING_ALLOSTATIC_FIELD_REGULATOR_2026-05-11.md",
+      "product": "Allostatic Field Regulator",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "stigmergicode",
+      "path": "Documents/MARKETING_STIGMERGICODE_COMPANY_APPLICATIONS_2026-05-10.md",
+      "product": "Stigmergicode company applications map",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "fractals",
+      "path": "Documents/SIFTA_FRACTALS_CARLTON_MARKETING_2026-05-18.pdf",
+      "product": "Stigmergic Fractals sales one-pager",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "fractals",
+      "path": "Documents/STIGMERGIC_FRACTALS_ONE_PAGER.md",
+      "product": "Stigmergic Fractals markdown source",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "seed_fundraising",
+      "path": "Documents/SIFTA_SEED_PROPOSAL_KOLE_2026-05-18.pdf",
+      "product": "Seed proposal (Kole)",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "seed_fundraising",
+      "path": "Documents/SIFTA_SEVEN_GROWTH_LANES_KOLE_2026-05-18.pdf",
+      "product": "Seven growth lanes",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "founder",
+      "path": "Documents/SIFTA_AI_NATIVE_ONE_FOUNDER_BRIEF.pdf",
+      "product": "AI-native one-founder brief",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "founder",
+      "path": "Documents/SIFTA_Technical_Brief.pdf",
+      "product": "SIFTA technical brief (engineering review)",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "lawyer_stack",
+      "path": "SIFTA_Lawyer_Real_Product_Stack_Consequence.pdf",
+      "product": "Lawyer real product stack",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "lawyer_stack",
+      "path": "SIFTA_Sellable_Products_OnePage_Lawyer_v2_2026-06-05.pdf",
+      "product": "Lawyer sellable products v2 one-pager",
+      "label": "REGENERATE",
+      "on_disk": false
+    },
+    {
+      "category": "winwin_flyer",
+      "path": "outputs/WIN-WIN_10x10_sebastian_final.pdf",
+      "product": "WIN-WIN Solution flyer (Sebastian final)",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "winwin_flyer",
+      "path": "Applications/sifta_pdf_forge_app.py",
+      "product": "PDF Forge \u2014 receipted WIN-WIN forge organ",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "outreach",
+      "path": "Documents/MARKETING_OUTREACH_PURNOMO_ATENCIO_2026-06-13.md",
+      "product": "Purnomo/Atencio robotics outreach",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "outreach",
+      "path": "Documents/MARKETING_X_POST_SOVEREIGN_NODE_VS_CLOUD_2026-06-13.md",
+      "product": "Sovereign node vs cloud X post",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "competitive",
+      "path": "Documents/ISSUE_BRIEF_CHINA_EMBODIED_AI_VS_SIFTA_2026-12-13.md",
+      "product": "China embodied-AI vs SIFTA",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "farsight",
+      "path": "Documents/STIGMERGIC_FARSIGHT_CARLTON_BRIEF_V4_SOVEREIGN.pdf",
+      "product": "Stigmergic FarSight v4 sovereign deck",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "farsight",
+      "path": "Documents/STIGMERGIC_FARSIGHT_BUSINESS_CALL_BRIEF_2026-05-18.pdf",
+      "product": "FarSight business call brief",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "robotics_proof",
+      "path": "System/stigmerobotics_irb2400_ik.py",
+      "product": "E49/E50 IRB2400 virtual effector lane",
+      "label": "OPERATIONAL",
+      "on_disk": true
+    },
+    {
+      "category": "apps_tour",
+      "path": "Documents/SIFTA_FOUR_FLAGSHIP_APPS.md",
+      "product": "Four flagship apps tour",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    },
+    {
+      "category": "economy",
+      "path": "Documents/CRYPTO_ECONOMY.md",
+      "product": "STGM / crypto economy narrative",
+      "label": "MARKETING_BRIEF",
+      "on_disk": true
+    }
+  ]
+}

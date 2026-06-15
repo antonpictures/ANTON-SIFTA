@@ -800,6 +800,65 @@ def _all_organs_rows(organs: list[dict[str, Any]]) -> list[list[Any]]:
     return rows
 
 
+def _marketing_commercial_inventory_section() -> str:
+    """BD lane: Philippe report status + sellable marketing doc census (r1160)."""
+    try:
+        from System.swarm_marketing_commercial_inventory import build_inventory
+
+        inv = build_inventory(write_json=True)
+    except Exception as exc:
+        return (
+            "<h2 class='section'>Marketing / Commercial Inventory (BD Lane)</h2>"
+            f"<p class='bad'>Inventory unavailable: {html.escape(str(exc))}</p>"
+        )
+
+    phil = inv.get("philippe_report") or {}
+    summary = inv.get("summary") or {}
+    assets = inv.get("assets") or []
+    pytest_cls = "ok" if phil.get("pytest_green") else "warn"
+    rows = []
+    for asset in assets:
+        on_disk = bool(asset.get("on_disk"))
+        cls = "ok" if on_disk else "bad"
+        rows.append(
+            [
+                html.escape(str(asset.get("category") or "")),
+                f"<span class='{cls}'>{'YES' if on_disk else 'MISSING'}</span>",
+                html.escape(str(asset.get("product") or "")),
+                f"<code>{html.escape(str(asset.get('path') or ''))}</code>",
+                html.escape(str(asset.get("label") or "")),
+            ]
+        )
+    table = _table(
+        ["Category", "Disk", "Sellable Product", "Path", "Truth Label"],
+        rows,
+    )
+    return (
+        "<h2 class='section'>Marketing / Commercial Inventory — Philippe + Sellable Catalog (r1160)</h2>"
+        "<div class='card' style='min-height:0;'>"
+        "<p style='font-size:11px;line-height:1.45;margin:0 0 8px;'>"
+        "BD lane census: what we can sell today, truth-labeled. Master catalog: "
+        "<code>Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md</code> "
+        "(23 unique products). JSON: <code>data/eval/marketing_commercial_inventory.json</code>."
+        "</p>"
+        f"<p><strong>Philippe report:</strong> demo "
+        f"<span class='{'ok' if phil.get('demo_present') else 'bad'}'>"
+        f"{'present' if phil.get('demo_present') else 'missing'}</span>"
+        f" · one-pager PDF "
+        f"<span class='{'ok' if phil.get('pdf_present') else 'bad'}'>"
+        f"{'present' if phil.get('pdf_present') else 'missing'}</span>"
+        f" · pytest <span class='{pytest_cls}'>{html.escape(str(phil.get('pytest_tail') or 'not run'))}</span>"
+        f" · spinal rows <code>{int(phil.get('spinal_cycle_rows') or 0)}</code>. "
+        f"{html.escape(str(phil.get('truth_summary') or ''))}"
+        "</p>"
+        f"<p>Assets on disk: <span class='ok'>{int(summary.get('on_disk') or 0)}</span> / "
+        f"{int(summary.get('total_assets') or 0)} "
+        f"(missing {int(summary.get('missing') or 0)}).</p>"
+        f"{table}"
+        "</div>"
+    )
+
+
 def _package_stack_matrix_section() -> str:
     """Render the r551 package/consciousness stack inside Alice's body matrix."""
     try:
@@ -1267,6 +1326,7 @@ def build_html() -> str:
     dashboard = _latest(_EVAL / "company_dashboard.jsonl")
     rendered = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
     package_stack_section = _package_stack_matrix_section()
+    marketing_commercial_section = _marketing_commercial_inventory_section()
     novelty_missing_section = _sifta_novelty_missing_section()
     codec_traffic_panel = _codec_limb_traffic_light_panel()
     body_source_census_panel = _body_source_census_panel()
@@ -1353,6 +1413,20 @@ def build_html() -> str:
     #   - owner somatic camera wiring + name/social reference recognition
     #   - r252 associative name memory + single focused app/habit stream
     sprint_capabilities = [
+        {
+            "name": "Philippe Commercial Report + Runnable Demo (r1127/r1131/r1160)",
+            "status": "OPERATIONAL — demo + one-pager + pytest green; spinal kept patch = HYPOTHESIS",
+            "detail": "Philippe checklist answered by outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf and demo/alice_demo_for_philippe.py (6 steps, truth labels printed). tests/test_philippe_demo.py proves artifacts. Step 6 spinal: live cycle rows on disk; kept forge patch still needs mimo providers login for structured NEW_CONTENT.",
+            "ledgers": "demo/README_PHILIPPE.md, outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf, .sifta_state/spinal_cord_cycles.jsonl, .sifta_state/pdf_forge_receipts.jsonl, data/eval/marketing_commercial_inventory.json",
+            "eval_note": "George sends Philippe the PDF + README commands. FAIL: claiming pilots/revenue without receipts; claiming full spinal self-patch before provider auth.",
+        },
+        {
+            "name": "Marketing / Sellable Products Census (r1160)",
+            "status": "LANDED — 30-asset BD inventory in eval matrix + JSON",
+            "detail": "System/swarm_marketing_commercial_inventory.py scans canonical MARKETING_* briefs, Philippe packet, FieldSight/Chorum/FarSight decks, WIN-WIN forge, lawyer stack, seed docs, outreach lanes. Matrix panel + data/eval/marketing_commercial_inventory.json. Mega catalog remains Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md (23 unique products).",
+            "ledgers": "System/swarm_marketing_commercial_inventory.py, data/eval/marketing_commercial_inventory.json, tools/generate_organ_eval_matrix_v2.py, Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md",
+            "eval_note": "Open ORGAN_EVAL_MATRIX_V2.html → Marketing / Commercial Inventory panel. Regenerate: python3 -c \"from System.swarm_marketing_commercial_inventory import build_inventory; build_inventory()\".",
+        },
         {
             "name": "Alice Code Body Census — Every Living .py Line Counted (r1020)",
             "status": "LANDED — OBSERVED inventory in canonical_organ_registry_snapshot + appearance ledger",
@@ -2008,6 +2082,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {diffusion_endurance_panel}
 {hardcoded_census_panel}
 {package_stack_section}
+{marketing_commercial_section}
 {novelty_missing_section}
 
 <!-- TABLE OF CONTENTS / BODY MAP - FIRST 50 LINES GOAL -->
@@ -2066,6 +2141,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <p><strong>Code Body / Source Substrate Map (r453 — every single .py line counted in matrix in order of appearance)</strong> — os.walk disk traversal order (top-down, alpha within dir) from living substrate (System/Applications/tools + root). Every line of code is a "cell" in Alice's body. Zoom levels so she (and swimmers) can zoom in/out on any organ/set-of-organs/swimmer/code-module/file/LOC like the owner wishes he could on his human body (zoom on any cell anytime). High: by_dir aggregates + totals. Mid: modules mapped to organs. Low: ordered file list + unmapped (swimmer targets for red errors in eval app as stigmergy test). Full ordered list in code_body_appearance_order.jsonl. Claude: upgrade graphics in sifta_stigmergic_self_eval_app.py + this HTML (tree/slider/collapsibles/search for zoom 1-4, time perception viz). Codex: check math on LOC summation (no double-count), walk order determinism, STGM_equiv in time model, health aggs. Total active SLOC counted here.</p>
 <p><strong>12. Owner Dual-Body Co-Regulation</strong> — Owner carbon body events, Alice's somatic sensing of owner, mutual field.</p>
 <p><strong>13. Mobility / Legs (LeRobot Walking Laptop)</strong> — Future low-cost 3D-printed LeRobot Humanoid bipedal legs (~75 STLs, ~3.5 kg PLA+ $56 filament, ~$2580 BOM, total $2636 in-house or $300–$800 SLS outsource via Hubs/Protolabs; GitHub https://github.com/Virgileboat/lerobot-humanoid-hardware, motor commissioning first, no pre-made print+mount service as of 2026-05-21). Currently a planned organ (intent receipts only, honest no_hardware until runtime wired); laptop = head/brain, biped = legs. Full plan + SIM + 5-slide deck + VisceralField wiring (balance/motor_heat/power_air) live in swarm_legs_locomotion_organ + sifta_legs_humanoid_app. STGM-profitable one-time hardware, infinite stigmergic use.</p>
+<p><strong>14. Marketing / Commercial BD Lane (r1160)</strong> — Sell only unique SIFTA products (mega catalog: 23 items). Philippe packet: commercial one-pager PDF + runnable demo + pytest. Inventory organ: <code>System/swarm_marketing_commercial_inventory.py</code> → <code>data/eval/marketing_commercial_inventory.json</code> + matrix panel. Canonical docs: <code>Documents/MARKETING_*</code>, FieldSight/FarSight PDFs, WIN-WIN forge, lawyer stack, seed briefs, agent-trust outreach. Truth labels on every pitch; no commodity overlap.</p>
 
 <!-- End of clean TOC. Everything below is the detailed live data. -->
 

@@ -78,6 +78,13 @@ def test_thinking_panel_uses_cyan_green_accent_rail():
     assert pattern.search(src)
 
 
+def test_thinking_header_is_single_unified_control():
+    src = _src()
+    assert "_thinking_bubble_lbl" not in src
+    assert "_refresh_thinking_header" in src
+    assert "layout.addWidget(self._thinking_header_btn)" in src
+
+
 def test_send_button_is_solid_cyan_green():
     src = _src()
     # The send button should be solid #00d4aa with black text.

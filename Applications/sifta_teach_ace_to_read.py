@@ -1541,31 +1541,11 @@ class TeachAceToReadWidget(QWidget):
             except Exception:
                 pass
 
-    # Eight-frame breathing sequence — used while Alice is composing.
-    # The dot WALKS across the band so the eye registers motion, not
-    # just a counter incrementing. Em-spaces hold the band width steady.
-    _THINKING_FRAMES = (
-        "•          ",
-        " •         ",
-        "  •        ",
-        "   •       ",
-        "    •      ",
-        "     •     ",
-        "      •    ",
-        "       •   ",
-        "        •  ",
-        "         • ",
-        "          •",
-        "         • ",
-        "        •  ",
-        "       •   ",
-        "      •    ",
-        "     •     ",
-        "    •      ",
-        "   •       ",
-        "  •        ",
-        " •         ",
-    )
+    # Five-char ∙˙·∙˙ shuttle — shared with Talk thinking bubble (r1153).
+    try:
+        from System.swarm_thinking_bubble_frames import FRAMES as _THINKING_FRAMES
+    except Exception:
+        _THINKING_FRAMES = ("∙˙·∙˙     ",)
 
     # 12-step breathing brightness for the background. The opacity
     # sweeps up and down so the band feels like a slow inhale/exhale
