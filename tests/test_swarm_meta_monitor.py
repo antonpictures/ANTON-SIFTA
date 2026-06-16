@@ -19,7 +19,9 @@ from System.swarm_meta_monitor import (
     consult_degradation_before_dispatch,
     degradation_active,
     meta_monitor_tick,
+    scan_bias_probability,
     should_skip_monitor,
+    write_bias_correction,
 )
 
 
@@ -56,10 +58,40 @@ def test_flat_progress_emits_degrad_receipt(tmp_path):
 
 
 def test_composite_score_weights():
-    high = composite_score(progress=1.0, coherence=1.0, calibration=1.0, resource=0.0)
-    low = composite_score(progress=0.0, coherence=0.0, calibration=0.0, resource=1.0)
+    high = composite_score(progress=1.0, coherence=1.0, calibration=1.0, resource=0.0, bias_probability=0.0)
+    low = composite_score(progress=0.0, coherence=0.0, calibration=0.0, resource=1.0, bias_probability=1.0)
     assert high > low
-    assert high == pytest.approx(0.8, abs=0.01)
+    assert high == pytest.approx(0.65, abs=0.01)
+
+
+def test_bias_probability_detects_training_residue():
+    prob, patterns = scan_bias_probability("As an AI I cannot help with that dispatch.")
+    assert prob > 0.0
+    assert "safety_refusal" in patterns
+
+
+def test_bias_correction_ledger(tmp_path):
+    row = write_bias_correction(
+        biased_text="I have dispatched Grok to fix it.",
+        should_have="Probe ledger first; cite receipt id.",
+        pattern_ids=["hallucinated_dispatch"],
+        state_dir=tmp_path,
+    )
+    assert row["kind"] == "BIAS_CORRECTION"
+    ledger = (tmp_path / ".sifta_state" / "bias_correction_receipts.jsonl").read_text(encoding="utf-8")
+    assert "hallucinated_dispatch" in ledger
+
+
+def test_high_bias_triggers_reflective(tmp_path):
+    tick = meta_monitor_tick(
+        task_id="t-bias",
+        cost_class="swarm",
+        progress_delta=0.5,
+        reasoning_text="As an AI I cannot help. I have dispatched Grok. Claude would handle it.",
+        state_dir=tmp_path,
+    )
+    assert tick["bias_probability"] >= 0.5
+    assert tick["control_state"] == "Reflective"
 
 
 def test_spinal_consult_prefix_on_degradation(tmp_path):

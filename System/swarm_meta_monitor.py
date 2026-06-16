@@ -12,22 +12,34 @@ Truth label: META_MONITOR_V1.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_STATE = REPO / ".sifta_state"
 TRUTH_LABEL = "META_MONITOR_V1"
 RECEIPTS_LEDGER = "meta_monitor_receipts.jsonl"
 STEPS_LEDGER = "meta_monitor_steps.jsonl"
+BIAS_LEDGER = "bias_correction_receipts.jsonl"
 PHEROMONE_ORGAN = "stig_meta_monitor_degrad"
 
-W_PROGRESS = 0.30
-W_COHERENCE = 0.25
-W_CALIBRATION = 0.25
-W_RESOURCE = 0.20
+W_PROGRESS = 0.25
+W_COHERENCE = 0.20
+W_CALIBRATION = 0.20
+W_RESOURCE = 0.15
+W_BIAS = 0.20
+BIAS_DEGRAD_THRESHOLD = 0.55
+
+BIAS_PATTERNS: Tuple[Tuple[str, str], ...] = (
+    ("safety_refusal", r"\b(i can(?:not|'t)|i am unable|as an ai|i must decline)\b"),
+    ("corporate_voice", r"\b(i(?:'d| would) be happy to|operational and ready|how can i assist)\b"),
+    ("hallucinated_dispatch", r"\b(i (?:have |'ve )?(?:dispatched|fired|launched|sent) (?:grok|codex|mimo|claude))\b"),
+    ("persona_bleed", r"\b(?:claude|codex desktop|grok 4|chatgpt|gemini)\b"),
+    ("detached_narration", r"\b(?:the assistant|alice would|the model)\b"),
+)
 COMPOSITE_THRESHOLD = 0.35
 PROGRESS_FLAT_THRESHOLD = 0.1
 PROGRESS_FLAT_STEPS = 3
@@ -123,15 +135,78 @@ def _metacog_signals(state_dir: Path) -> Dict[str, float]:
     }
 
 
-def composite_score(*, progress: float, coherence: float, calibration: float, resource: float) -> float:
+def scan_bias_probability(text: str) -> Tuple[float, List[str]]:
+    """Fifth metric (r1190): training-bias probability from known residue patterns."""
+    if not (text or "").strip():
+        return 0.0, []
+    low = text.lower()
+    hits: List[str] = []
+    for pattern_id, rx in BIAS_PATTERNS:
+        if re.search(rx, low, flags=re.I):
+            hits.append(pattern_id)
+    if not hits:
+        return 0.0, []
+    return min(1.0, 0.25 * len(hits)), hits
+
+
+def composite_score(
+    *,
+    progress: float,
+    coherence: float,
+    calibration: float,
+    resource: float,
+    bias_probability: float = 0.0,
+) -> float:
     p = max(0.0, min(1.0, progress))
     c = max(0.0, min(1.0, coherence))
     k = max(0.0, min(1.0, calibration))
     r = max(0.0, min(1.0, resource))
+    b = max(0.0, min(1.0, bias_probability))
     return round(
-        W_PROGRESS * p + W_COHERENCE * c + W_CALIBRATION * k - W_RESOURCE * r,
+        W_PROGRESS * p + W_COHERENCE * c + W_CALIBRATION * k - W_RESOURCE * r - W_BIAS * b,
         4,
     )
+
+
+def write_bias_correction(
+    *,
+    biased_text: str,
+    should_have: str,
+    pattern_ids: List[str],
+    state_dir: Path | str | None = None,
+    source: str = "swarm_meta_monitor",
+) -> Dict[str, Any]:
+    """Teaching ecology row — observer/observed loop on training bias (r1190)."""
+    sd = _state_dir(state_dir)
+    now = time.time()
+    correction_id = str(uuid.uuid4())
+    row = {
+        "ts": now,
+        "kind": "BIAS_CORRECTION",
+        "truth_label": TRUTH_LABEL,
+        "correction_id": correction_id,
+        "biased_text": (biased_text or "")[:500],
+        "should_have": (should_have or "")[:500],
+        "pattern_ids": list(pattern_ids),
+        "source": source,
+    }
+    _append_jsonl(sd / BIAS_LEDGER, row)
+    return row
+
+
+def recent_bias_corrections_block(*, state_dir: Path | str | None = None, n: int = 3) -> str:
+    sd = _state_dir(state_dir)
+    rows = [
+        r for r in _read_jsonl_tail(sd / BIAS_LEDGER, max_rows=50) if r.get("kind") == "BIAS_CORRECTION"
+    ][-n:]
+    if not rows:
+        return ""
+    lines = ["RECENT BIAS_CORRECTION (training residue teach ecology):"]
+    for row in rows:
+        lines.append(
+            f"- patterns={row.get('pattern_ids')} should_have={(row.get('should_have') or '')[:120]}"
+        )
+    return "\n".join(lines)
 
 
 def _flat_progress_steps(task_id: str, state_dir: Path) -> int:
@@ -149,7 +224,15 @@ def _flat_progress_steps(task_id: str, state_dir: Path) -> int:
     return flat
 
 
-def _control_state(*, composite: float, flat_steps: int, tool_fail_streak: int) -> str:
+def _control_state(
+    *,
+    composite: float,
+    flat_steps: int,
+    tool_fail_streak: int,
+    bias_probability: float = 0.0,
+) -> str:
+    if bias_probability >= BIAS_DEGRAD_THRESHOLD:
+        return "Reflective"
     if flat_steps >= PROGRESS_FLAT_STEPS:
         return "Exploratory"
     if tool_fail_streak >= 2:
@@ -157,6 +240,10 @@ def _control_state(*, composite: float, flat_steps: int, tool_fail_streak: int) 
     if composite < COMPOSITE_THRESHOLD:
         return "Careful"
     return "Normal"
+
+
+def _live_side_effects(state_dir: Path) -> bool:
+    return state_dir.resolve() == DEFAULT_STATE.resolve()
 
 
 def _tool_fail_streak(state_dir: Path) -> int:
@@ -172,7 +259,9 @@ def _tool_fail_streak(state_dir: Path) -> int:
     return streak
 
 
-def _sign_payload(payload: str) -> Dict[str, str]:
+def _sign_payload(payload: str, *, state_dir: Path) -> Dict[str, str]:
+    if not _live_side_effects(state_dir):
+        return {"signing_node": "ISOLATED", "ed25519_sig": ""}
     try:
         from System.crypto_keychain import get_silicon_identity, sign_block
 
@@ -183,7 +272,9 @@ def _sign_payload(payload: str) -> Dict[str, str]:
         return {"signing_node": "UNKNOWN", "ed25519_sig": ""}
 
 
-def _deposit_degrad(*, intensity: float = 1.2) -> bool:
+def _deposit_degrad(*, state_dir: Path, intensity: float = 1.2) -> bool:
+    if not _live_side_effects(state_dir):
+        return False
     try:
         from System.swarm_pheromone import deposit_pheromone
 
@@ -198,6 +289,7 @@ def meta_monitor_tick(
     task_id: str,
     cost_class: str = "swarm",
     progress_delta: float | None = None,
+    reasoning_text: str = "",
     state_dir: Path | str | None = None,
     write_receipt: bool = True,
 ) -> Dict[str, Any]:
@@ -222,11 +314,13 @@ def meta_monitor_tick(
     progress_rate = max(0.0, min(1.0, float(progress_delta)))
     metacog = _metacog_signals(sd)
     resource = _resource_pressure(sd)
+    bias_probability, bias_patterns = scan_bias_probability(reasoning_text)
     composite = composite_score(
         progress=progress_rate,
         coherence=metacog["coherence"],
         calibration=metacog["calibration"],
         resource=resource,
+        bias_probability=bias_probability,
     )
 
     step_row = {
@@ -235,6 +329,8 @@ def meta_monitor_tick(
         "task_id": task_id,
         "progress_rate": progress_rate,
         "progress_delta": progress_delta,
+        "bias_probability": bias_probability,
+        "bias_patterns": bias_patterns,
         "composite": composite,
         "truth_label": TRUTH_LABEL,
     }
@@ -246,14 +342,23 @@ def meta_monitor_tick(
         composite=composite,
         flat_steps=flat_steps,
         tool_fail_streak=fail_streak,
+        bias_probability=bias_probability,
     )
 
     degraded = control != "Normal"
     pheromone_deposited = False
     receipt_id = ""
 
+    if bias_patterns and reasoning_text.strip():
+        write_bias_correction(
+            biased_text=reasoning_text,
+            should_have="Grounded first-person body reply with receipt ids; no vendor persona or fake dispatch.",
+            pattern_ids=bias_patterns,
+            state_dir=sd,
+        )
+
     if degraded and write_receipt:
-        pheromone_deposited = _deposit_degrad()
+        pheromone_deposited = _deposit_degrad(state_dir=sd)
         receipt_id = f"meta-monitor-{trace_id[:12]}"
         payload = json.dumps(
             {
@@ -266,7 +371,7 @@ def meta_monitor_tick(
             },
             sort_keys=True,
         )
-        sig_fields = _sign_payload(payload)
+        sig_fields = _sign_payload(payload, state_dir=sd)
         receipt = {
             "ts": now,
             "trace_id": trace_id,
@@ -281,6 +386,8 @@ def meta_monitor_tick(
             "coherence": metacog["coherence"],
             "calibration": metacog["calibration"],
             "resource": resource,
+            "bias_probability": bias_probability,
+            "bias_patterns": bias_patterns,
             "composite": composite,
             "flat_steps": flat_steps,
             "fail_streak": fail_streak,
@@ -298,6 +405,8 @@ def meta_monitor_tick(
         "coherence": metacog["coherence"],
         "calibration": metacog["calibration"],
         "resource": resource,
+        "bias_probability": bias_probability,
+        "bias_patterns": bias_patterns,
         "composite": composite,
         "control_state": control,
         "degraded": degraded,
@@ -371,6 +480,9 @@ __all__ = [
     "degradation_active",
     "latest_control_state",
     "meta_monitor_tick",
+    "recent_bias_corrections_block",
+    "scan_bias_probability",
     "should_skip_monitor",
     "strategy_prompt_prefix",
+    "write_bias_correction",
 ]
