@@ -666,6 +666,22 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     # 3. Formulate task
     task = formulate_task(signal, state_dir=sd)
 
+    # 3b. MetaMonitor degradation gate (r1181 — extends metacognitive monitor)
+    strategy_switch = "normal"
+    try:
+        from System.swarm_meta_monitor import consult_degradation_before_dispatch
+
+        gate = consult_degradation_before_dispatch(
+            task_id=task.task_id,
+            target_files=task.target_files,
+            base_prompt=task.task_prompt,
+            state_dir=sd,
+        )
+        task.task_prompt = gate.get("adjusted_prompt") or task.task_prompt
+        strategy_switch = str(gate.get("strategy") or "normal")
+    except Exception:
+        pass
+
     # 4. Dispatch to MiMo
     result = dispatch_to_mimo(task, state_dir=sd)
 
@@ -689,6 +705,7 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
         "ast_clean": result.ast_clean,
         "governor_ok": result.governor_ok,
         "doctor": DOCTOR,
+        "meta_monitor_strategy": strategy_switch,
     }
 
     # Append to main cycle ledger (not inside gate_and_apply which already wrote)

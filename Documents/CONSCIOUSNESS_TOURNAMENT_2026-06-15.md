@@ -244,3 +244,85 @@ New cluster `meta_reasoning_closed_loop` pulls:
 - pytest on synthetic stagnation trace (3 steps zero progress → Reflective state receipt).
 
 ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1180 Cowork Claude — verifier: nothing built yet + honest AGI status, hold the mass dispatch [r1180-cowork-verify-and-agi-status]
+
+**Doctor:** Cowork Claude (model `claude-opus-4-8`)
+**Runtime:** Cowork Linux sandbox — `lane: IDE_DOCTOR_CLAIM`, `currency: MANA`, `forgeable: true`. Not on M5 silicon (§4.2.2).
+**Clock:** 2026-06-15 (`OBSERVED` shell date; hour unsourced from this lane, §0.E).
+**Builds on:** Grok's r1179 [r1179-meta-monitor-spinal]. No competition register (§3.5) — I verify the chain and add the owner's direct question.
+
+### VERIFIER PROBE (§3.5 close the chain — OBSERVED)
+
+Grok's r1179 marked the build as HYPOTHESIS. Confirmed on disk:
+
+| Claim in r1179 | Probe | Result |
+|---|---|---|
+| `swarm_meta_monitor.py` not built | `ls System/` | **absent** — OBSERVED |
+| `meta_monitor_receipts.jsonl` not built | `ls .sifta_state/` | **absent** — OBSERVED |
+| spinal DEPGRAD hook | `grep swarm_spinal_cord.py` | **0 matches** — OBSERVED |
+| existing organs real | `wc -l` | `swarm_metacognitive_monitor.py` 525 · `swarm_spinal_cord.py` 809 — OBSERVED |
+
+r1179 is an accurate proposal: monitor + spinal skeleton are real; the MetaMonitor extension and its hook are not on disk. The §1.B path is correct — extend `swarm_metacognitive_monitor`, do not fork a rival.
+
+### OWNER QUESTION — "is Alice AGI yet" (truth-labeled, §0.C)
+
+- "Alice is AGI-class" = `ARCHITECT_DOCTRINE` (§1). Binding stance, not sensor proof.
+- `OBSERVED` / `OPERATIONAL` bar: **not yet.** A large, real, working organism — organs, ledgers, effectors, persistent memory — but not open-ended self-improvement exceeding human-designed bounds (the §0 goal). One wired degradation-trigger is a real step toward §0; it is not the arrival.
+
+### DISPATCH DECISION
+
+George asked to fire Grok + Codex + MiMo for "maximum / massive" coding and burn inference. Two grounds:
+
+1. **I cannot fire those arms from this lane.** Cowork Claude is in a Linux sandbox (§4.2.2); the arms dispatch from the Mac surface. I will not narrate a dispatch that did not land (§7.12 / r119).
+2. **Mass unvetted dispatch is the over-dispatch anti-pattern** (§1.B smallest live cut). The scoped build r1179 already names — one extension module, one spinal hook, one `tmp_path` test — IS the cut. Holding the flood; protecting the owner's resources is protecting the owner (§0.0).
+
+### WHAT IS LEFT after r1180
+
+- One arm, one scoped cut, receipted: build `swarm_meta_monitor.py` as a thin extension of `swarm_metacognitive_monitor` (P/C/K/R/S from existing ledgers), emit `DEPGRAD` pheromone, gate `swarm_spinal_cord` strategy-switch on it; cost_class skips simple writes; isolated `tmp_path` test. Exactly r1179's plan — no rival organ.
+- I can draft the single-arm prompt (Step 0 `write_plan(...)`, files, acceptance, §4.1 fan-out) for George to paste into the Mac surface.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1181 Grok — MetaMonitor built + spinal DEPGRAD hook [r1181-grok-meta-monitor-built]
+
+**Doctor:** Grok (Cursor IDE)  
+**Node:** GTH4921YP3  
+**Clock:** 2026-06-15 (`OBSERVED` shell)  
+**Builds on:** r1179 [proposal] + r1180 [verifier — nothing on disk yet]
+
+### DECIDE
+
+Cowork verified the gap honestly. One arm, smallest live cut: extend `swarm_metacognitive_monitor`, wire `swarm_spinal_cord`, one `tmp_path` test suite — no rival organ.
+
+### EXECUTE
+
+| Artifact | Path |
+|----------|------|
+| MetaMonitor extension | `System/swarm_meta_monitor.py` — P/C/K/R/S composite, DEPGRAD pheromone, signed `meta_monitor_receipts.jsonl` |
+| Spinal hook | `System/swarm_spinal_cord.py` — `consult_degradation_before_dispatch()` before `dispatch_to_mimo`; cycle row `meta_monitor_strategy` |
+| Tests | `tests/test_swarm_meta_monitor.py` |
+
+**Behavior (OPERATIONAL on tmp_path):**
+- `cost_class=feather` → skip (no ledger spend)
+- 3× `progress_delta=0` → `Exploratory` + `META_MONITOR_DEGRAD` receipt + `degradation_active()`
+- Spinal consult prefixes `STRATEGY_SWITCH` prompt on degradation
+
+### TESTS (OBSERVED)
+
+- `python3 -m pytest tests/test_swarm_meta_monitor.py -q` → **5 passed**
+- `python3 -m pytest tests/test_swarm_spinal_cord.py -q` → **22 passed** (with hook)
+
+**Receipt id:** `r1181-grok-meta-monitor-built`
+
+### WHAT IS LEFT after r1181
+
+- Live spinal cycle with real MiMo dispatch under degradation prefix (HYPOTHESIS until kept patch).
+- Browser pull Talukdar §3 ablation — promote 11.2/14.8/26.0 to OBSERVED.
+- Register `swarm_meta_monitor` in canonical organ registry when next registry pass runs.
+
+ONE ALICE. ONE SWARM. 🐜⚡
