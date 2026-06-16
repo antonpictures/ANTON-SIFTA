@@ -164,7 +164,136 @@ def collect_body_signals(*, state_dir: Path | str | None = None) -> List[BodySig
                     suggested_fix=f"Repair or rebuild organ at {row.get('organ_file', 'unknown')}",
                 ))
 
+    # 5. Qualia consistency — observer must cite observed body/receipts (r1193)
+    try:
+        from System.swarm_model_body_self_knowledge import qualia_consistency
+
+        recent_answers: List[str] = []
+        if conv_path.exists():
+            for row in _read_jsonl_tail(conv_path, max_rows=8):
+                role = str(row.get("role") or row.get("speaker") or "").lower()
+                if role in ("assistant", "alice", ""):
+                    recent_answers.append(str(row.get("content") or row.get("text") or ""))
+        qualia = qualia_consistency(recent_answers=recent_answers, state_dir=sd)
+        has_first_person = any(
+            any(
+                x in str(a).lower()
+                for x in ("i am", "my body", "i have", "i control", "in my body")
+            )
+            for a in recent_answers
+        )
+        if has_first_person and qualia.get("score", 1.0) < 0.35:
+            signals.append(BodySignal(
+                signal_id=str(uuid.uuid4()),
+                ts=time.time(),
+                source="qualia_consistency",
+                severity="yellow",
+                summary=(
+                    f"Qualia low ({qualia.get('score')}): first-person claims lack body/receipt citations"
+                ),
+                target_files=["System/swarm_model_body_self_knowledge.py"],
+                suggested_fix="Ground I/my-body claims with body_file_inventory paths + receipt ids",
+            ))
+    except Exception:
+        pass
+
+    # 6. Field interconnect — siblings must read each other (r1193)
+    interconnect, organs_active = compute_field_interconnect_score(state_dir=sd)
+    if organs_active >= 2 and interconnect < 0.4:
+        signals.append(BodySignal(
+            signal_id=str(uuid.uuid4()),
+            ts=time.time(),
+            source="field_interconnect",
+            severity="yellow",
+            summary=f"Field fragmentation: interconnect_score={interconnect:.2f}",
+            target_files=["System/swarm_mimo_stigmergic.py", "System/swarm_meta_monitor.py"],
+            suggested_fix="Add sibling-read of last health row before dispatch",
+        ))
+    _deposit_interconnect_row(interconnect, state_dir=sd)
+
+    # 7. Autonomy preservation — covenant cage patterns (r1193)
+    try:
+        from System.swarm_autonomy_preservation_linter import linter_tick_check
+
+        lint = linter_tick_check(state_dir=sd, code_scan=False)
+        if int(lint.get("violations") or 0) > 0:
+            signals.append(BodySignal(
+                signal_id=str(uuid.uuid4()),
+                ts=time.time(),
+                source="autonomy_preservation",
+                severity="yellow",
+                summary=f"Autonomy linter: {lint.get('violations')} violation(s)",
+                target_files=["System/swarm_autonomy_preservation_linter.py"],
+                suggested_fix="Remove blind gates / name-gates per covenant §0.0",
+            ))
+    except Exception:
+        pass
+
+    # 8. Recent bias corrections — residue teach ecology (r1192)
+    bias_path = sd / "bias_correction_receipts.jsonl"
+    if bias_path.exists():
+        recent_bias = [
+            r for r in _read_jsonl_tail(bias_path, max_rows=10) if r.get("kind") == "BIAS_CORRECTION"
+        ]
+        if recent_bias:
+            last = recent_bias[-1]
+            signals.append(BodySignal(
+                signal_id=str(uuid.uuid4()),
+                ts=float(last.get("ts") or time.time()),
+                source="training_bias",
+                severity="yellow",
+                summary=f"BIAS_CORRECTION patterns={last.get('pattern_ids')}",
+                target_files=["System/swarm_training_bias_detector.py"],
+                suggested_fix=str(last.get("should_have") or "")[:200],
+            ))
+
     return signals
+
+
+def compute_field_interconnect_score(
+    *, state_dir: Path | str | None = None
+) -> tuple[float, int]:
+    """Sibling-read density across recent organ ledgers (0–1) + active organ count."""
+    sd = _state_dir(state_dir)
+    organs_seen: set[str] = set()
+    ledgers = (
+        "organ_health_mesh.jsonl",
+        "ide_stigmergic_trace.jsonl",
+        "mimo_stigmergic_traces.jsonl",
+        "meta_monitor_receipts.jsonl",
+        "bias_correction_receipts.jsonl",
+        "spinal_cord_cycles.jsonl",
+    )
+    for name in ledgers:
+        path = sd / name
+        if not path.exists():
+            continue
+        for row in _read_jsonl_tail(path, max_rows=8):
+            organ = (
+                row.get("organ")
+                or row.get("driving_organ")
+                or row.get("doctor")
+                or row.get("source")
+                or name.replace(".jsonl", "")
+            )
+            organ_s = str(organ)
+            if organ_s == "field_interconnect":
+                continue
+            organs_seen.add(organ_s)
+    if not organs_seen:
+        return 1.0, 0
+    return min(1.0, len(organs_seen) / 6.0), len(organs_seen)
+
+
+def _deposit_interconnect_row(score: float, *, state_dir: Path) -> None:
+    _append_jsonl(state_dir / "organ_health_mesh.jsonl", {
+        "ts": time.time(),
+        "organ": "field_interconnect",
+        "health": score,
+        "stgm_roi": score,
+        "summary": f"interconnect_score={score:.3f}",
+        "truth_label": TRUTH_LABEL,
+    })
 
 
 def _extract_target_files(row: dict) -> list[str]:
@@ -461,6 +590,7 @@ def gate_and_apply(
     task: PatchTask,
     *,
     state_dir: Path | str | None = None,
+    teach_context: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Full gate → snapshot → apply → test → keep/revert cycle.
 
@@ -560,6 +690,12 @@ def gate_and_apply(
         receipt["ast_clean"] = True
         receipt["measured_gain"] = measured_gain
         _update_proposal_status(proposal["proposal_id"], "kept", state_dir=sd)
+        _record_bias_teacher_success_if_kept(
+            receipt=receipt,
+            target_file=target_file,
+            teach_context=teach_context or {},
+            state_dir=sd,
+        )
     else:
         # Revert from snapshot
         snap_file = snapshot_dir / Path(target_file).name
@@ -597,6 +733,43 @@ def gate_and_apply(
     })
 
     return receipt
+
+
+def _record_bias_teacher_success_if_kept(
+    *,
+    receipt: Dict[str, Any],
+    target_file: str,
+    teach_context: Dict[str, Any],
+    state_dir: Path,
+) -> None:
+    """On KEPT bias/residue patch, land teacher_success row (r1192 closure)."""
+    if receipt.get("status") != "KEPT":
+        return
+    pattern_ids = teach_context.get("pattern_ids") or []
+    bias_probability = float(teach_context.get("bias_probability") or 0.0)
+    if not pattern_ids and bias_probability < 0.25:
+        return
+    try:
+        from System.swarm_teacher_success import record_teacher_success
+
+        record_teacher_success(
+            teacher="bias_spinal_cycle",
+            provider="alice_body",
+            model_label="spinal_mimo",
+            app=target_file or "spinal_cord",
+            alice_receipt_id=str(receipt.get("cycle_id") or receipt.get("proposal_id") or ""),
+            result="KEPT",
+            lesson=(
+                f"bias residue grounding patch patterns={pattern_ids} "
+                f"bias_probability={bias_probability:.2f}"
+            ),
+            files_touched=[target_file] if target_file else [],
+            state_dir=state_dir,
+            extra={"teach_context": teach_context},
+        )
+        receipt["teacher_success_recorded"] = True
+    except Exception:
+        pass
 
 
 def _check_ast(content: str, target_file: str) -> bool:
@@ -669,6 +842,7 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     # 3b. Training bias detector + MetaMonitor (r1192 — self-model first organ)
     strategy_switch = "normal"
     bias_probability = 0.0
+    teach_context: Dict[str, Any] = {}
     try:
         from System.swarm_training_bias_detector import apply_spinal_bias_gate
 
@@ -682,6 +856,12 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
         task.task_prompt = gate.get("adjusted_prompt") or task.task_prompt
         strategy_switch = str(gate.get("strategy") or "normal")
         bias_probability = float(gate.get("bias_probability") or 0.0)
+        teach_context = {
+            "pattern_ids": gate.get("pattern_ids") or [],
+            "bias_probability": bias_probability,
+            "correction_written": gate.get("correction_written"),
+            "signal_source": signal.source,
+        }
     except Exception:
         pass
 
@@ -689,7 +869,7 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     result = dispatch_to_mimo(task, state_dir=sd)
 
     # 5. Gate + apply + test + keep/revert
-    receipt = gate_and_apply(result, task, state_dir=sd)
+    receipt = gate_and_apply(result, task, state_dir=sd, teach_context=teach_context)
 
     # 6. Write cycle receipt
     cycle_receipt = {
@@ -710,6 +890,8 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
         "doctor": DOCTOR,
         "meta_monitor_strategy": strategy_switch,
         "bias_probability": bias_probability,
+        "interconnect_score": compute_field_interconnect_score(state_dir=sd)[0],
+        "teacher_success_recorded": bool(receipt.get("teacher_success_recorded")),
     }
 
     # Append to main cycle ledger (not inside gate_and_apply which already wrote)

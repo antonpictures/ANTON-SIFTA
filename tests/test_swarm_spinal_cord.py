@@ -25,10 +25,12 @@ from System.swarm_spinal_cord import (
     PatchTask,
     PatchResult,
     collect_body_signals,
+    compute_field_interconnect_score,
     formulate_task,
     _extract_block,
     _extract_field,
     _check_ast,
+    _record_bias_teacher_success_if_kept,
     spinal_cord_status,
     format_spinal_cord_reply,
     TRUTH_LABEL,
@@ -138,6 +140,43 @@ class TestCollectBodySignals:
         }) + "\n")
         signals = collect_body_signals(state_dir=tmp_path)
         assert len(signals) == 0
+
+    def test_qualia_low_score_emits_signal(self, tmp_path):
+        sd = tmp_path / ".sifta_state"
+        sd.mkdir()
+        (sd / "alice_conversation.jsonl").write_text(
+            json.dumps({
+                "ts": time.time(),
+                "role": "assistant",
+                "content": "I am Alice and I control many bodies without citing paths.",
+            })
+            + "\n",
+            encoding="utf-8",
+        )
+        signals = collect_body_signals(state_dir=tmp_path)
+        sources = {s.source for s in signals}
+        assert "qualia_consistency" in sources
+
+    def test_interconnect_score_empty_field_is_healthy(self, tmp_path):
+        score, count = compute_field_interconnect_score(state_dir=tmp_path)
+        assert score == 1.0
+        assert count == 0
+
+    def test_bias_correction_emits_training_signal(self, tmp_path):
+        sd = tmp_path / ".sifta_state"
+        sd.mkdir()
+        (sd / "bias_correction_receipts.jsonl").write_text(
+            json.dumps({
+                "ts": time.time(),
+                "kind": "BIAS_CORRECTION",
+                "pattern_ids": ["safety_refusal"],
+                "should_have": "Grounded receipt-first reply.",
+            })
+            + "\n",
+            encoding="utf-8",
+        )
+        signals = collect_body_signals(state_dir=tmp_path)
+        assert any(s.source == "training_bias" for s in signals)
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +330,20 @@ class TestConstants:
 
     def test_doctor(self):
         assert DOCTOR == "alice_spinal_cord"
+
+
+class TestBiasTeacherSuccess:
+    def test_record_on_kept_bias_patch(self, tmp_path):
+        sd = tmp_path / ".sifta_state"
+        sd.mkdir()
+        receipt = {"status": "KEPT", "cycle_id": "cycle-test-1", "proposal_id": "prop-1"}
+        _record_bias_teacher_success_if_kept(
+            receipt=receipt,
+            target_file="System/swarm_training_bias_detector.py",
+            teach_context={"pattern_ids": ["safety_refusal"], "bias_probability": 0.5},
+            state_dir=sd,
+        )
+        rows = (sd / "teacher_success.jsonl").read_text(encoding="utf-8")
+        assert "bias_spinal_cycle" in rows
+        assert "safety_refusal" in rows
+        assert receipt.get("teacher_success_recorded") is True

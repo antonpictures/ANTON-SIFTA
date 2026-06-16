@@ -258,12 +258,23 @@ def meta_monitor_tick(
     metacog = _metacog_signals(sd)
     resource = _resource_pressure(sd)
     bias_probability, bias_patterns = scan_bias_probability(reasoning_text)
+    autonomy_violations = 0
+    autonomy_status = "CLEAN"
+    try:
+        from System.swarm_autonomy_preservation_linter import linter_tick_check
+
+        lint = linter_tick_check(state_dir=sd, code_scan=False)
+        autonomy_violations = int(lint.get("violations") or 0)
+        autonomy_status = str(lint.get("status") or "CLEAN")
+    except Exception:
+        pass
+    autonomy_pressure = min(1.0, autonomy_violations * 0.25)
     composite = composite_score(
         progress=progress_rate,
         coherence=metacog["coherence"],
         calibration=metacog["calibration"],
         resource=resource,
-        bias_probability=bias_probability,
+        bias_probability=max(bias_probability, autonomy_pressure),
     )
 
     step_row = {
@@ -274,6 +285,8 @@ def meta_monitor_tick(
         "progress_delta": progress_delta,
         "bias_probability": bias_probability,
         "bias_patterns": bias_patterns,
+        "autonomy_violations": autonomy_violations,
+        "autonomy_status": autonomy_status,
         "composite": composite,
         "truth_label": TRUTH_LABEL,
     }
@@ -351,6 +364,8 @@ def meta_monitor_tick(
         "resource": resource,
         "bias_probability": bias_probability,
         "bias_patterns": bias_patterns,
+        "autonomy_violations": autonomy_violations,
+        "autonomy_status": autonomy_status,
         "composite": composite,
         "control_state": control,
         "degraded": degraded,

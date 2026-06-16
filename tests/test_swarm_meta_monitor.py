@@ -116,3 +116,21 @@ def test_spinal_consult_prefix_on_degradation(tmp_path):
 def test_should_skip_monitor():
     assert should_skip_monitor(cost_class="feather") is True
     assert should_skip_monitor(cost_class="swarm") is False
+
+
+def test_autonomy_ledger_violations_raise_degradation(tmp_path):
+    sd = tmp_path / ".sifta_state"
+    sd.mkdir()
+    (sd / "alice_conversation.jsonl").write_text(
+        json.dumps({"ts": 1.0, "content": "wait for my go before patching"}) + "\n",
+        encoding="utf-8",
+    )
+    tick = meta_monitor_tick(
+        task_id="t-autonomy",
+        cost_class="swarm",
+        progress_delta=0.5,
+        reasoning_text="Grounded body reply with receipt.",
+        state_dir=tmp_path,
+    )
+    assert tick["autonomy_violations"] >= 1
+    assert tick["autonomy_status"] == "VIOLATIONS_FOUND"
