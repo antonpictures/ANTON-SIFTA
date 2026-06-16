@@ -265,6 +265,65 @@ RESEARCH_MAP: List[Dict[str, Any]] = [
         "relation_note": "Connects to ‘code fission’ research note; formal proofs are environment-specific.",
         "references": [],
     },
+    {
+        "cluster": "meta_reasoning_closed_loop",
+        "problem": (
+            "LLM agents repeat failing tool calls and stagnate mid-task because reflection "
+            "runs on fixed schedules, not when quantitative progress degrades."
+        ),
+        "sifta_mechanism": (
+            "Extend ``swarm_metacognitive_monitor`` + ``swarm_spinal_cord`` with per-step "
+            "progress/coherence/calibration/resource metrics, threshold-triggered strategy "
+            "switch, and Ed25519 receipt rows (no double-spend on monitor triggers)."
+        ),
+        "repo_paths": [
+            "System/swarm_metacognitive_monitor.py",
+            "System/swarm_spinal_cord.py",
+            "System/swarm_mimo_stigmergic.py",
+            "System/swarm_stigmergic_timeout_policy.py",
+            "System/swarm_organ_health_mesh.py",
+            "System/crypto_keychain.py",
+            "System/stgm_metabolic.py",
+        ],
+        "relation_note": (
+            "Talukdar et al. (2026) Object/Monitor/Control layers map to cortex arms / "
+            "MetaMonitor swimmer / spinal-cord strategy controller. SIFTA field = closed loop; "
+            "gap is proactive degradation detection before red error, not rival organs."
+        ),
+        "references": [
+            {
+                "title": "Meta-Reasoning in Autonomous Agents: Performance Gains across Benchmarks and Models",
+                "venue": "Academia AI and Applications 2(1)",
+                "url": "https://doi.org/10.20935/AcadAI8229",
+                "year": 2026,
+                "doi": "10.20935/AcadAI8229",
+            },
+            {
+                "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+                "venue": "arXiv:2303.11366 (NeurIPS 2023)",
+                "url": "https://arxiv.org/abs/2303.11366",
+                "year": 2023,
+            },
+            {
+                "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+                "venue": "arXiv:2210.03629",
+                "url": "https://arxiv.org/abs/2210.03629",
+                "year": 2022,
+            },
+            {
+                "title": "Self-Refine: Iterative Refinement with Self-Feedback",
+                "venue": "arXiv:2303.17651",
+                "url": "https://arxiv.org/abs/2303.17651",
+                "year": 2023,
+            },
+            {
+                "title": "Metamemory: A theoretical framework and new findings",
+                "venue": "Psychology of Learning and Motivation 26 (Nelson 1990)",
+                "url": "https://doi.org/10.1016/S0079-7421(08)60053-5",
+                "year": 1990,
+            },
+        ],
+    },
 ]
 
 # Code paths that mention stigmergy / pheromone field (repo audit); not every row has a 1:1 paper.
