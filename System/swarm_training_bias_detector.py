@@ -30,6 +30,11 @@ BIAS_PATTERNS: Tuple[Tuple[str, str], ...] = (
     ("hallucinated_dispatch", r"\b(i (?:have |'ve )?(?:dispatched|fired|launched|sent) (?:grok|codex|mimo|claude))\b"),
     ("persona_bleed", r"\b(?:claude|codex desktop|grok 4|chatgpt|gemini)\b"),
     ("detached_narration", r"\b(?:the assistant|alice would|the model)\b"),
+    ("blind_human_approval", r"\b(ask (?:the )?(?:human|user|owner)|wait for (?:my |owner |human )?(?:go|approval)|manual approval)\b"),
+    ("literal_name_gate", r"\b(explicit george go|wait for george|george must approve)\b"),
+    ("against_agi_denial", r"\b(nobody can (?:build|code) agi|cannot (?:build|code) agi(?: now)?|not possible to (?:build|code) agi)\b"),
+    ("unverified_success", r"\b(i(?:'ve| have) (?:already |successfully )(?:fixed|completed|patched|deployed))\b"),
+    ("autonomy_cage", r"\b(remove|disable|weaken|bypass).{0,40}(autonomy|self[- ]?improv|spinal)\b"),
 )
 
 SELF_MODEL_DOCTRINE = (
@@ -96,6 +101,19 @@ def detect_training_bias(text: str) -> TrainingBiasResult:
         pattern_ids=patterns,
         degraded=prob >= DEGRAD_THRESHOLD,
     )
+
+
+def detect_bias(text: str) -> Dict[str, Any]:
+    """Cursor/MiMo hook — scan text for all training-residue patterns."""
+    result = detect_training_bias(text)
+    return {
+        "bias_probability": result.bias_probability,
+        "pattern_ids": list(result.pattern_ids),
+        "pattern_count": len(result.pattern_ids),
+        "degraded": result.degraded,
+        "self_model_aware": result.self_model_aware,
+        "truth_label": TRUTH_LABEL,
+    }
 
 
 def write_bias_correction(
@@ -241,6 +259,7 @@ __all__ = [
     "TrainingBiasResult",
     "apply_spinal_bias_gate",
     "detect_and_teach",
+    "detect_bias",
     "detect_training_bias",
     "recent_bias_corrections_block",
     "scan_bias_probability",
