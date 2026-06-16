@@ -7,8 +7,11 @@ from System.swarm_mimo_stigmergic import (
     PHEROMONE_LEDGER,
     TRACE_LEDGER,
     build_stigmergic_prompt,
+    compose_field_injection,
     mimo_stigmergic_summary,
+    read_field_state,
 )
+from System.swarm_training_bias_detector import write_bias_correction
 
 
 def _append(path: Path, row: dict) -> None:
@@ -47,3 +50,17 @@ def test_r1130_named_mimo_stigmergic_contract_file_exists(tmp_path):
     assert summary["total_calls"] == 1
     assert summary["ok"] == 1
     assert summary["pheromones"] == 1
+
+
+def test_compose_field_injection_includes_bias_corrections(tmp_path):
+    state = tmp_path / ".sifta_state"
+    write_bias_correction(
+        biased_text="I have dispatched Grok.",
+        should_have="Grounded first-person body reply.",
+        pattern_ids=["hallucinated_dispatch"],
+        state_dir=state,
+    )
+    field = read_field_state(state_dir=state)
+    injection = compose_field_injection(field)
+    assert "RECENT BIAS_CORRECTION" in injection
+    assert "hallucinated_dispatch" in injection

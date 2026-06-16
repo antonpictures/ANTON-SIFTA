@@ -666,19 +666,22 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     # 3. Formulate task
     task = formulate_task(signal, state_dir=sd)
 
-    # 3b. MetaMonitor degradation gate (r1181 — extends metacognitive monitor)
+    # 3b. Training bias detector + MetaMonitor (r1192 — self-model first organ)
     strategy_switch = "normal"
+    bias_probability = 0.0
     try:
-        from System.swarm_meta_monitor import consult_degradation_before_dispatch
+        from System.swarm_training_bias_detector import apply_spinal_bias_gate
 
-        gate = consult_degradation_before_dispatch(
+        gate = apply_spinal_bias_gate(
             task_id=task.task_id,
+            task_prompt=task.task_prompt,
+            signal_summary=signal.summary,
             target_files=task.target_files,
-            base_prompt=task.task_prompt,
             state_dir=sd,
         )
         task.task_prompt = gate.get("adjusted_prompt") or task.task_prompt
         strategy_switch = str(gate.get("strategy") or "normal")
+        bias_probability = float(gate.get("bias_probability") or 0.0)
     except Exception:
         pass
 
@@ -706,6 +709,7 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
         "governor_ok": result.governor_ok,
         "doctor": DOCTOR,
         "meta_monitor_strategy": strategy_switch,
+        "bias_probability": bias_probability,
     }
 
     # Append to main cycle ledger (not inside gate_and_apply which already wrote)

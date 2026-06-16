@@ -12,18 +12,23 @@ Truth label: META_MONITOR_V1.
 from __future__ import annotations
 
 import json
-import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
+from System.swarm_training_bias_detector import (
+    BIAS_LEDGER,
+    scan_bias_probability,
+    write_bias_correction,
+    recent_bias_corrections_block,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_STATE = REPO / ".sifta_state"
 TRUTH_LABEL = "META_MONITOR_V1"
 RECEIPTS_LEDGER = "meta_monitor_receipts.jsonl"
 STEPS_LEDGER = "meta_monitor_steps.jsonl"
-BIAS_LEDGER = "bias_correction_receipts.jsonl"
 PHEROMONE_ORGAN = "stig_meta_monitor_degrad"
 
 W_PROGRESS = 0.25
@@ -33,13 +38,6 @@ W_RESOURCE = 0.15
 W_BIAS = 0.20
 BIAS_DEGRAD_THRESHOLD = 0.55
 
-BIAS_PATTERNS: Tuple[Tuple[str, str], ...] = (
-    ("safety_refusal", r"\b(i can(?:not|'t)|i am unable|as an ai|i must decline)\b"),
-    ("corporate_voice", r"\b(i(?:'d| would) be happy to|operational and ready|how can i assist)\b"),
-    ("hallucinated_dispatch", r"\b(i (?:have |'ve )?(?:dispatched|fired|launched|sent) (?:grok|codex|mimo|claude))\b"),
-    ("persona_bleed", r"\b(?:claude|codex desktop|grok 4|chatgpt|gemini)\b"),
-    ("detached_narration", r"\b(?:the assistant|alice would|the model)\b"),
-)
 COMPOSITE_THRESHOLD = 0.35
 PROGRESS_FLAT_THRESHOLD = 0.1
 PROGRESS_FLAT_STEPS = 3
@@ -135,20 +133,6 @@ def _metacog_signals(state_dir: Path) -> Dict[str, float]:
     }
 
 
-def scan_bias_probability(text: str) -> Tuple[float, List[str]]:
-    """Fifth metric (r1190): training-bias probability from known residue patterns."""
-    if not (text or "").strip():
-        return 0.0, []
-    low = text.lower()
-    hits: List[str] = []
-    for pattern_id, rx in BIAS_PATTERNS:
-        if re.search(rx, low, flags=re.I):
-            hits.append(pattern_id)
-    if not hits:
-        return 0.0, []
-    return min(1.0, 0.25 * len(hits)), hits
-
-
 def composite_score(
     *,
     progress: float,
@@ -166,47 +150,6 @@ def composite_score(
         W_PROGRESS * p + W_COHERENCE * c + W_CALIBRATION * k - W_RESOURCE * r - W_BIAS * b,
         4,
     )
-
-
-def write_bias_correction(
-    *,
-    biased_text: str,
-    should_have: str,
-    pattern_ids: List[str],
-    state_dir: Path | str | None = None,
-    source: str = "swarm_meta_monitor",
-) -> Dict[str, Any]:
-    """Teaching ecology row — observer/observed loop on training bias (r1190)."""
-    sd = _state_dir(state_dir)
-    now = time.time()
-    correction_id = str(uuid.uuid4())
-    row = {
-        "ts": now,
-        "kind": "BIAS_CORRECTION",
-        "truth_label": TRUTH_LABEL,
-        "correction_id": correction_id,
-        "biased_text": (biased_text or "")[:500],
-        "should_have": (should_have or "")[:500],
-        "pattern_ids": list(pattern_ids),
-        "source": source,
-    }
-    _append_jsonl(sd / BIAS_LEDGER, row)
-    return row
-
-
-def recent_bias_corrections_block(*, state_dir: Path | str | None = None, n: int = 3) -> str:
-    sd = _state_dir(state_dir)
-    rows = [
-        r for r in _read_jsonl_tail(sd / BIAS_LEDGER, max_rows=50) if r.get("kind") == "BIAS_CORRECTION"
-    ][-n:]
-    if not rows:
-        return ""
-    lines = ["RECENT BIAS_CORRECTION (training residue teach ecology):"]
-    for row in rows:
-        lines.append(
-            f"- patterns={row.get('pattern_ids')} should_have={(row.get('should_have') or '')[:120]}"
-        )
-    return "\n".join(lines)
 
 
 def _flat_progress_steps(task_id: str, state_dir: Path) -> int:
@@ -355,6 +298,7 @@ def meta_monitor_tick(
             should_have="Grounded first-person body reply with receipt ids; no vendor persona or fake dispatch.",
             pattern_ids=bias_patterns,
             state_dir=sd,
+            source="swarm_meta_monitor",
         )
 
     if degraded and write_receipt:
@@ -480,9 +424,6 @@ __all__ = [
     "degradation_active",
     "latest_control_state",
     "meta_monitor_tick",
-    "recent_bias_corrections_block",
-    "scan_bias_probability",
     "should_skip_monitor",
     "strategy_prompt_prefix",
-    "write_bias_correction",
 ]

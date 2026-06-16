@@ -152,6 +152,16 @@ def read_field_state(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
             for cy in cycles[-3:]
         ]
 
+    # 7. Training bias teach ecology (self-model first organ — r1192)
+    try:
+        from System.swarm_training_bias_detector import recent_bias_corrections_block
+
+        block = recent_bias_corrections_block(state_dir=sd)
+        if block:
+            context["bias_corrections_block"] = block
+    except Exception:
+        pass
+
     return context
 
 
@@ -184,6 +194,10 @@ def compose_field_injection(context: Dict[str, Any]) -> str:
     if prior:
         last = prior[-1]
         parts.append(f"Last MiMo action: {last.get('intent', '?')[:60]} ok={last.get('ok')}")
+
+    bias_block = context.get("bias_corrections_block") or ""
+    if bias_block:
+        parts.append(bias_block)
 
     injection = "\n".join(parts)
     # Hard cap
