@@ -104,7 +104,7 @@ def test_cowatch_receipt_context_includes_moment_truth_gate(tmp_path, monkeypatc
 
 
 def test_browser_photo_description_query_matches_visual_corrections() -> None:
-    assert talk._is_browser_photo_description_query("Actually, this is bikini. You have to look again.")
+    assert talk._is_browser_photo_description_query("Actually, this is swimsuit. You have to look again.")
     assert talk._is_browser_photo_description_query("Look again, this is a swimsuit.")
     assert talk._is_browser_photo_description_query("I wish you could see her body.")
     assert talk._is_browser_photo_description_query("please look again at her swimsuit")
@@ -970,7 +970,7 @@ def test_browser_photo_context_uses_same_url_anchor_after_grok_403(monkeypatch, 
     )
     photo_desc.record_photo_description(
         url,
-        description="A woman wears a colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers, and heels.",
+        description="A woman wears a colorful floral swim top, green swim bottoms, fuzzy green leg warmers, and heels.",
         arm="claude_agent",
         now=time.time() - 20,
         state_dir=state_dir,
@@ -1000,13 +1000,13 @@ def test_browser_photo_context_uses_same_url_anchor_after_grok_403(monkeypatch, 
 
     block = talk.TalkToAliceWidget._browser_page_cortex_context_block(
         DummyTalk(),
-        "so BioHuman body example she is wearing bikini or shorts, can you describe photo scan again",
+        "so BioHuman body example she is wearing swimsuit or shorts, can you describe photo scan again",
     )
 
     assert "ANCHORED VISUAL EVIDENCE" in block
     assert "fresh selected-eye scan failed" in block
     assert "grok_agent:oauth_bad_credentials" in block
-    assert "green bikini bottoms" in block
+    assert "green swim bottoms" in block
     assert "VISUAL EVIDENCE — what my vision arm actually saw" not in block
 
 
@@ -1156,7 +1156,7 @@ def test_direct_photo_description_uses_same_url_anchor_after_grok_failure(monkey
     url = "https://www.instagram.com/p/CbVbizsJzKi/"
     photo_desc.record_photo_description(
         url,
-        description="A woman wears a colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers, and heels.",
+        description="A woman wears a colorful floral swim top, green swim bottoms, fuzzy green leg warmers, and heels.",
         arm="claude_agent",
         now=time.time() - 10,
         state_dir=state_dir,
@@ -1192,11 +1192,11 @@ def test_direct_photo_description_uses_same_url_anchor_after_grok_failure(monkey
 
     reply = talk.TalkToAliceWidget._execute_current_browser_photo_description(
         DummyTalk(),
-        "bikini or shorts?",
+        "swimsuit or shorts?",
     )
 
     assert "fresh Grok scan failed" in reply
-    assert "green bikini bottoms" in reply
+    assert "green swim bottoms" in reply
     assert "not calling that a new look" in reply
 
 
@@ -1241,6 +1241,63 @@ def test_direct_photo_description_reports_codex_failure_without_claude_fallback(
     assert "selected Codex eye" in reply
     assert "codex returned no usable visual text" in reply
     assert "did not switch to Claude" in reply
+
+
+def test_failed_browser_photo_eye_is_quarantined_not_spoken(monkeypatch, tmp_path) -> None:
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    from Applications import sifta_stigmergic_deterministic_tracker as tracker
+
+    monkeypatch.setattr(tracker, "_DETERMINISTIC_MISTAKES_LEDGER", state_dir / "deterministic_mistakes.jsonl")
+    monkeypatch.setattr(tracker, "_TRACKER_LEDGER", state_dir / "stigmergic_deterministic_tracker.jsonl")
+
+    class FakeBrowser:
+        _current_url = "https://duckduckgo.com/?q=taylor+swift&iax=images&ia=images"
+
+        def refresh_current_page_state(self):
+            return self._current_url
+
+        def describe_current_photo(self, **kwargs):
+            return {
+                "status": "failed",
+                "description": "",
+                "arm": "grok_agent",
+                "error_summary": "vision arm timeout",
+                "attempts": [{"arm": "grok_agent", "status": "failed"}],
+            }
+
+    class DummyTalk:
+        def __init__(self):
+            self.lines = []
+
+        def _append_system_line(self, line, error=False):
+            self.lines.append((line, error))
+
+        def _append_observable_processing(self, line):
+            self.lines.append((line, False))
+
+        def _current_brain_model(self, owner_text):
+            return "grok:grok-4.3"
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: FakeBrowser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "photo-receipt")
+
+    reply = talk.TalkToAliceWidget._execute_current_browser_photo_description(
+        DummyTalk(),
+        "DESCRIBE CLOTHING IN PHOTO IN BROWSER PLS",
+    )
+
+    assert reply == ""
+    assert "no vision description receipt came back" not in reply
+    rows = [
+        json.loads(line)
+        for line in (state_dir / "deterministic_mistakes.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["bypass_type"] == "deterministic_visible_in_talk"
+    assert rows[-1]["details"]["guard"] == "browser_photo_failed_eye_mouth_quarantine"
+    assert rows[-1]["details"]["blocked_visible_reply"] is True
 
 
 def test_direct_photo_description_anchors_direct_asset_to_parent_page(monkeypatch, tmp_path) -> None:
@@ -1521,7 +1578,7 @@ def test_browser_photo_open_context_invokes_browser_selection_before_vision(monk
             return {
                 "status": "described",
                 "arm": "grok_agent",
-                "description": "A woman poses on a beach in a bikini with ocean water behind her.",
+                "description": "A woman poses on a beach in a swimsuit with ocean water behind her.",
             }
 
     class DummyTalk:
@@ -1560,7 +1617,7 @@ def test_contextual_visual_shopping_search_composes_query_then_opens_google(monk
                 {
                     "role": "assistant",
                     "content": (
-                        "Yeah. Beach one now. Pink and black checkered bikini, "
+                        "Yeah. Beach one now. Pink and black checkered swimsuit, "
                         "arms raised overhead, ocean waves behind her."
                     ),
                 }
@@ -1575,32 +1632,32 @@ def test_contextual_visual_shopping_search_composes_query_then_opens_google(monk
 
         def _execute_sifta_app_command(self, command):
             opened.update(command)
-            return "Searching Google for pink black checkered bikini."
+            return "Searching Google for pink black checkered swimsuit."
 
     monkeypatch.setattr(
         talk,
         "_latest_contextual_search_evidence",
-        lambda **kwargs: "Latest browser photo vision: Pink and black checkered bikini on a beach.",
+        lambda **kwargs: "Latest browser photo vision: Pink and black checkered swimsuit on a beach.",
     )
     monkeypatch.setattr(
         talk,
         "_compose_contextual_search_query_with_cortex",
         lambda owner_text, evidence, model="": {
-            "query": "pink black checkered bikini",
+            "query": "pink black checkered swimsuit",
             "source": "cortex",
-            "raw": '{"query":"pink black checkered bikini"}',
+            "raw": '{"query":"pink black checkered swimsuit"}',
         },
     )
     monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "search-receipt")
 
-    phrase = "Where can I buy this type of bikini? Can you search on Google?"
+    phrase = "Where can I buy this type of swimsuit? Can you search on Google?"
     assert talk._is_contextual_browser_search_request(phrase)
     reply = talk.TalkToAliceWidget._execute_contextual_browser_search(DummyTalk(), phrase)
 
-    assert "searched Google for pink black checkered bikini" in reply
+    assert "searched Google for pink black checkered swimsuit" in reply
     assert opened["kind"] == "browser_url"
-    assert opened["query"] == "pink black checkered bikini"
-    assert opened["url"].endswith("q=pink+black+checkered+bikini")
+    assert opened["query"] == "pink black checkered swimsuit"
+    assert opened["url"].endswith("q=pink+black+checkered+swimsuit")
 
 
 def test_contextual_visual_search_resolves_vague_wardrobe_piece(monkeypatch, tmp_path) -> None:
@@ -1622,8 +1679,8 @@ def test_contextual_visual_search_resolves_vague_wardrobe_piece(monkeypatch, tmp
             return "Searching Google."
 
     evidence = (
-        "Latest browser photo vision: BioHuman Body on desert rocks in a colorful floral bikini top, "
-        "green bikini bottoms, fuzzy green leg warmers, and heels."
+        "Latest browser photo vision: BioHuman Body on desert rocks in a colorful floral swim top, "
+        "green swim bottoms, fuzzy green leg warmers, and heels."
     )
     monkeypatch.setattr(talk, "_latest_contextual_search_evidence", lambda **kwargs: evidence)
     monkeypatch.setattr(

@@ -380,10 +380,37 @@ def cortex_brain_label(tag: str, *, state_dir: Optional[Path] = None) -> str:
         if prefix in _KNOWN_LANES:  # cline, mimo — external CLIs with own pickers
             row = latest_brain_row(prefix, state_dir=state_dir)
             if row and row.get("status") == "ok":
-                bits = [b for b in (row.get("provider", ""), row.get("model", "")) if b]
-                if row.get("reasoning_level"):
-                    bits.append(str(row["reasoning_level"]))
-                return " ".join(bits)
+                provider = str(row.get("provider") or "").strip()
+                model = str(row.get("model") or "").strip()
+                if model:
+                    bits = [b for b in (provider, model) if b]
+                    if row.get("reasoning_level"):
+                        bits.append(str(row["reasoning_level"]))
+                    return " ".join(bits)
+                if prefix != "mimo" and provider:
+                    return provider
+            if prefix == "mimo":
+                try:
+                    from System.swarm_cortex_capabilities import (
+                        attached_models_for_cortex,
+                        format_attached_model,
+                    )
+
+                    rec = attached_models_for_cortex(t, state_dir=state_dir)
+                    active = str(rec.get("default_attached") or "").strip()
+                    if active:
+                        if "accounts/fireworks/models/" in active.lower():
+                            try:
+                                from System.swarm_fireworks_qwen_config import fireworks_model_slug
+
+                                slug = fireworks_model_slug(active)
+                                if slug:
+                                    return f"fireworks-api {slug}"
+                            except Exception:
+                                pass
+                        return f"mimo-picker {format_attached_model(active)}"
+                except Exception:
+                    pass
             if row:
                 status = str(row.get("status") or "unknown")
                 return f"upstream picker ({status})"
@@ -410,6 +437,18 @@ def cortex_brain_label(tag: str, *, state_dir: Optional[Path] = None) -> str:
                 return f"fireworks-api {model}" if model else "fireworks-api"
             return f"qwen-cli {model}" if model else ""
         if prefix == "codex":
+            try:
+                from System.swarm_cortex_capabilities import (
+                    attached_models_for_cortex,
+                    format_attached_model,
+                )
+
+                rec = attached_models_for_cortex(t, state_dir=state_dir)
+                active = str(rec.get("default_attached") or "").strip()
+                if active:
+                    return f"openai-codex {format_attached_model(active)}"
+            except Exception:
+                pass
             return f"openai {bare}" if bare else "openai"
         if prefix == "grok":
             return f"xai {bare}" if bare else "xai"

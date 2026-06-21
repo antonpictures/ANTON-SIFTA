@@ -19,6 +19,7 @@ import sys
 import os
 import json
 import subprocess
+import time
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -81,6 +82,23 @@ Node: GTH4921YP3 | github.com/antonpictures/ANTON-SIFTA
 
 SUBMIT_URL = "https://agentskills.io"
 GITHUB_URL = "https://github.com/antonpictures/ANTON-SIFTA"
+
+
+def _route_url_to_alice_browser(url: str) -> bool:
+    """Route SIFTA UI web links through Alice Browser, never macOS default browser."""
+    try:
+        state = _REPO / ".sifta_state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "alice_browser_open_url.txt").write_text(str(url), encoding="utf-8")
+        (state / "alice_browser_open_url_new_tab.flag").write_text("1\n", encoding="utf-8")
+        (state / "alice_browser_alice_only.flag").write_text(
+            f"{time.time()}\n{url}\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # App
@@ -374,14 +392,16 @@ class SkillBrowserApp(QWidget):
         QMessageBox.information(self, "Skill Browser — Help", HELP_TEXT)
 
     def _open_hub(self):
-        import webbrowser
-        webbrowser.open(SUBMIT_URL)
-        self._status.setText(f"Opened {SUBMIT_URL}")
+        ok = _route_url_to_alice_browser(SUBMIT_URL)
+        self._status.setText(
+            f"Sent {SUBMIT_URL} to Alice Browser" if ok else f"Could not send {SUBMIT_URL} to Alice Browser"
+        )
 
     def _open_github(self):
-        import webbrowser
-        webbrowser.open(GITHUB_URL)
-        self._status.setText(f"Opened {GITHUB_URL}")
+        ok = _route_url_to_alice_browser(GITHUB_URL)
+        self._status.setText(
+            f"Sent {GITHUB_URL} to Alice Browser" if ok else f"Could not send {GITHUB_URL} to Alice Browser"
+        )
 
     # ------------------------------------------------------------------
     # New actions for Hermes parity + stigmergic skill ingestion (we code together)

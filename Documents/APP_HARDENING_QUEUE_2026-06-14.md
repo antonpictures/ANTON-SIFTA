@@ -110,7 +110,6 @@ George types only to Alice in global chat. IDE arms harden apps one by one; WE C
 | 77 | P3 | Grok | SIFTA NLE Panel | `Applications/sifta_nle_widget.py` | `NLEWidget` | ok |
 | 78 | P3 | MiMo | SIFTA PDF Forge | `Applications/sifta_pdf_forge_widget.py` | `PdfForgeWidget` | ok |
 | 79 | P3 | Cline | SIFTA Physics Observatory | `Applications/sifta_physics_observatory.py` | `PhysicsObservatoryWidget` | ok |
-| 80 | P3 | Cursor | SIFTA Seed Deal Evidence Crucible | `Applications/sifta_seed_deal_evidence_crucible.py` | `SeedDealEvidenceCrucible` | ok |
 | 81 | P3 | Codex | SIFTA Skill Browser | `Applications/sifta_skill_browser.py` | `SkillBrowserApp` | ok |
 | 82 | P3 | Grok | SIFTA Tournament Briefing | `Applications/sifta_tournament_briefing_widget.py` | `TournamentBriefingWidget` | ok |
 | 83 | P3 | MiMo | SIFTA ∥ OpenAI — Math Benchmarks | `Applications/sifta_openai_math_benchmark_widget.py` | `MathBenchmarkWidget` | ok |

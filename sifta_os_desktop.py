@@ -10,6 +10,7 @@ import time
 import json
 import datetime
 import hashlib
+import subprocess
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -28,6 +29,9 @@ _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 _MDI_APP_START_MODE_ENV = "SIFTA_MDI_APP_START_MODE"
+_DESKTOP_HARDWARE_HEART_INTERVAL_S = 15.0
+_DESKTOP_ATP_MINT_INTERVAL_S = 60.0
+_DESKTOP_JOURNAL_DEFECATION_INTERVAL_S = 86400.0  # 24h base; actual trigger is stigmergic (density + decay)
 
 
 def _sifta_mdi_app_start_mode() -> str:
@@ -536,7 +540,7 @@ class TerminalSubWindow(QWidget):
     def __init__(self, cmd, args):
         super().__init__()
         layout = QVBoxLayout()
-        self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: monospace;")
+        self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: 'Menlo', 'Monaco', 'Consolas', monospace;")
 
         header = QHBoxLayout()
         header.addStretch()
@@ -587,7 +591,7 @@ class EmbeddedScriptSubWindow(QWidget):
         self.app_title = app_title
         self.script_path = script_path
         layout = QVBoxLayout()
-        self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: monospace;")
+        self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: 'Menlo', 'Monaco', 'Consolas', monospace;")
 
         header = QHBoxLayout()
         title = QLabel(f"{app_title} — embedded runtime")
@@ -676,7 +680,7 @@ class SwarmTextEditorWindow(QWidget):
         self.editor_field = QTextEdit()
         self.editor_field.setStyleSheet(
             "QTextEdit { background-color: #0c0c11; color: #9ece6a;"
-            "  font-family: monospace; font-size: 14px;"
+            "  font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 14px;"
             "  border: 1px solid #3b4261; padding: 8px; }"
         )
         if filepath and os.path.exists(filepath):
@@ -746,9 +750,9 @@ class VideoEditorSubWindow(QWidget):
         timeline.setStyleSheet("border: 1px solid #3b4261; background-color: #1f2335; border-radius: 4px;")
         tl = QVBoxLayout()
         t1 = QLabel("Video:  [▓▓▓▓▓▓▓▓▓]      [▓▓▓▓▓▓]   [▓▓▓▓▓▓▓▓]")
-        t1.setStyleSheet("color: #bb9af7; font-family: monospace; font-size: 16px;")
+        t1.setStyleSheet("color: #bb9af7; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 16px;")
         t2 = QLabel("Audio:  [|||||||||]      [||||||]   [||||||||]")
-        t2.setStyleSheet("color: #9ece6a; font-family: monospace; font-size: 16px;")
+        t2.setStyleSheet("color: #9ece6a; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 16px;")
         tl.addWidget(t1)
         tl.addWidget(t2)
         timeline.setLayout(tl)
@@ -2508,6 +2512,8 @@ class SiftaDesktop(QMainWindow):
 
         # Owner-field heartbeat — touch presence JSON no faster than 15 min.
         self._last_owner_alive_touch = time.time()
+        self._last_hardware_heart_ts = 0.0
+        self._last_atp_mint_ts = 0.0
 
         # 1 Hz wall clock — definition of seconds, not a perf knob. But
         # pause it when the window is hidden so we don't tick a label
@@ -2621,7 +2627,10 @@ class SiftaDesktop(QMainWindow):
         now = time.time()
         self._attention_director_next_ts = now + 0.8
         self._life_journal_next_ts = now + 5.0
+        self._last_journal_defecation_ts = 0.0
         self._hot_ledger_rotation_next_ts = now + 8.0
+        self._metabolism_governor_next_ts = now + 5.0
+        self._reload_continuity_probe_next_ts = now + 30.0
         _desktop_init_trace("leave __init__")
 
     def _start_mesh_lazy(self) -> None:
@@ -2862,6 +2871,35 @@ class SiftaDesktop(QMainWindow):
             self._life_journal_next_ts = now + 60.0
             events.append("journal")
 
+        if now >= float(getattr(self, "_reload_continuity_probe_next_ts", 0.0)):
+            try:
+                from System.swarm_reload_continuity_probe import (
+                    append_probe_row,
+                    probe_reload_continuity,
+                )
+
+                probe = probe_reload_continuity()
+                if not probe.get("continuity_ok"):
+                    append_probe_row(probe)
+                    events.append("reload_continuity_gap")
+            except Exception as exc:
+                print(f"[SiftaDesktop] reload continuity probe skipped: {exc}", file=sys.stderr)
+            finally:
+                self._reload_continuity_probe_next_ts = now + 180.0
+
+        if now >= float(getattr(self, "_metabolism_governor_next_ts", 0.0)):
+            try:
+                from System.swarm_metabolism_governor import tick_metabolism_governor
+
+                gov = tick_metabolism_governor()
+                band = str(gov.get("band") or "normal")
+                if band != "normal":
+                    events.append(f"metabolism:{band}")
+            except Exception as exc:
+                print(f"[SiftaDesktop] metabolism governor skipped: {exc}", file=sys.stderr)
+            finally:
+                self._metabolism_governor_next_ts = now + 120.0
+
         if now >= float(getattr(self, "_hot_ledger_rotation_next_ts", 0.0)):
             try:
                 from System.swarm_ledger_rotation import rotate_default_ledgers
@@ -3088,6 +3126,7 @@ class SiftaDesktop(QMainWindow):
             except Exception:
                 pass
             self._set_alice_quiet_for_desktop(False)
+        self._ensure_alice_resident_visible(reason=f"switch_desktop_mode:{mode}")
         self._write_desktop_app_state(
             "switch_desktop_mode",
             note=f"mode={mode}",
@@ -3128,7 +3167,8 @@ class SiftaDesktop(QMainWindow):
         """
         Instantiate AliceWidget directly into the fixed left panel.
         §7.6/7.7/7.8: Alice is OS-resident — embedded, resizable, NOT moveable.
-        Camera starts open (DEFER_EYE=0). If already embedded, no-op.
+        §7.8: Alice's eye opens at boot. Set SIFTA_ALICE_UNIFIED_DEFER_EYE=1
+        only for broken-TCC emergency hosts — not the default.
         """
         if self._alice_resident is not None:
             return  # already embedded
@@ -3146,6 +3186,7 @@ class SiftaDesktop(QMainWindow):
             alice = mod.AliceWidget(parent=self._alice_panel)
             self._alice_panel_layout.addWidget(alice)
             self._alice_resident = alice
+            self._ensure_alice_resident_visible(reason="embed_alice_panel")
             # Architect 2026-05-13 05:00 — once Alice is embedded, apply
             # the current desktop-mode visibility so first-boot already
             # shows full-width chat with no camera. The default mode is
@@ -3155,11 +3196,99 @@ class SiftaDesktop(QMainWindow):
                 self._switch_desktop_mode(_mode, force=True)
             except Exception:
                 pass
-            sys.stderr.write("[ALICE] Embedded as resident panel. Camera open, chat live.\n")
+            try:
+                QTimer.singleShot(900, lambda: self._ensure_alice_resident_visible(reason="post_boot_900ms"))
+                QTimer.singleShot(2200, lambda: self._ensure_alice_resident_visible(reason="post_boot_2200ms"))
+            except Exception:
+                pass
+            sys.stderr.write("[ALICE] Embedded as resident panel. Eye open at boot, chat live.\n")
         except Exception as exc:
             import traceback
             sys.stderr.write(f"[ALICE] Resident embed failed: {type(exc).__name__}: {exc}\n")
             traceback.print_exc()
+
+    def _ensure_alice_resident_visible(self, *, reason: str = "layout_repair") -> dict:
+        """Keep the OS-resident Alice body painted, not merely constructed."""
+        alice = getattr(self, "_alice_resident", None)
+        try:
+            if getattr(self, "_alice_panel", None) is not None:
+                self._alice_panel.setVisible(True)
+                self._alice_panel.show()
+        except Exception:
+            pass
+        if alice is not None:
+            try:
+                alice.setVisible(True)
+                alice.show()
+                alice.raise_()
+            except Exception:
+                pass
+            try:
+                ensure = getattr(alice, "ensure_talk_visible", None)
+                if callable(ensure):
+                    ensure(reason=reason)
+            except Exception:
+                pass
+        try:
+            if getattr(self, "_desktop_mode", "chat") == "chat":
+                w = max(800, self._body_splitter.width() or self.width() or 1280)
+                self._body_splitter.setSizes([w, 0])
+                self.mdi.setVisible(False)
+            else:
+                total = max(1280, self._body_splitter.width() or self.width() or 1280)
+                chat_w = max(360, int(total * 0.38))
+                self._body_splitter.setSizes([chat_w, max(1, total - chat_w)])
+                self.mdi.setVisible(True)
+        except Exception:
+            pass
+        try:
+            self._body_splitter.updateGeometry()
+            self._body_splitter.update()
+        except Exception:
+            pass
+        state = self._alice_resident_visibility_state()
+        try:
+            state_dir = _REPO / ".sifta_state"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            row = {
+                "ts": time.time(),
+                "truth_label": "ALICE_RESIDENT_VISIBILITY_REPAIR_V1",
+                "reason": reason,
+                **state,
+            }
+            with (state_dir / "alice_resident_visibility_repair.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            pass
+        return state
+
+    def _alice_resident_visibility_state(self) -> dict:
+        alice = getattr(self, "_alice_resident", None)
+        panel = getattr(self, "_alice_panel", None)
+        talk = getattr(alice, "_talk", None) if alice is not None else None
+        try:
+            sizes = list(self._body_splitter.sizes())
+        except Exception:
+            sizes = []
+        def _visible(widget) -> bool:
+            try:
+                return bool(widget is not None and widget.isVisible())
+            except Exception:
+                return False
+        def _width(widget) -> int:
+            try:
+                return int(widget.width()) if widget is not None else 0
+            except Exception:
+                return 0
+        return {
+            "alice_chat_resident": bool(alice is not None),
+            "alice_panel_visible": _visible(panel),
+            "alice_resident_visible": _visible(alice),
+            "alice_talk_visible": _visible(talk),
+            "alice_panel_width": _width(panel),
+            "alice_resident_width": _width(alice),
+            "body_splitter_sizes": sizes,
+        }
 
         # ── Predator v7.0 animated background + organ panel ──────────────────
         # DISABLED: moved to Pac-Man game app (Programs → Games).
@@ -3337,10 +3466,48 @@ class SiftaDesktop(QMainWindow):
         self._journal_tick_running = True
 
         def _worker():
+            now = time.time()
+            try:
+                interval = float(
+                    os.environ.get("SIFTA_JOURNAL_DEFECATION_INTERVAL_S", str(_DESKTOP_JOURNAL_DEFECATION_INTERVAL_S))
+                    .strip()
+                    or _DESKTOP_JOURNAL_DEFECATION_INTERVAL_S
+                )
+            except Exception:
+                interval = _DESKTOP_JOURNAL_DEFECATION_INTERVAL_S
+            if interval <= 0:
+                interval = _DESKTOP_JOURNAL_DEFECATION_INTERVAL_S
+            # r1509: stigmergic frequency, not rigid cron.
+            # Base 24h, but actual trigger uses dup density (field pressure) + time decay (pheromone style, half-life ~24h).
+            # She "schedules" via the density of same-type rows in her Journal itself.
+            last = float(getattr(self, "_last_journal_defecation_ts", 0.0))
+            time_ok = (now - last) >= interval
+            # Quick stigmergic check: if many recent dups, lower the bar (like pheromone buildup).
+            try:
+                from System.swarm_life_journal_consolidator import journal_defecation_once
+                # peek without full write
+                preview = journal_defecation_once(window_hours=6)  # small window for density
+                dup_pressure = preview.get("consolidated_groups", 0) or 0
+            except:
+                dup_pressure = 0
+            # Decay factor: longer since last = higher willingness (evaporation inverse).
+            age_factor = min(1.0, (now - last) / (86400 * 2)) if last > 0 else 1.0
+            should_defecate = time_ok or (dup_pressure >= 3 and age_factor > 0.5)
+
             try:
                 try:
-                    from System.swarm_life_journal_consolidator import consolidate_once
+                    from System.swarm_life_journal_consolidator import consolidate_once, journal_defecation_once
                     consolidate_once()
+                    # r1509: automatic STGM journal defecation (concat dups) as part of existing consolidation.
+                    # No new organ. Same metabolic system. Stigmergic trigger.
+                    if should_defecate:
+                        try:
+                            res = journal_defecation_once(window_hours=24)
+                            self._last_journal_defecation_ts = now
+                            if res.get("consolidated_groups", 0) > 0:
+                                print(f"[SiftaDesktop] journal defecation: {res}")
+                        except Exception as e:
+                            print(f"[SiftaDesktop] journal defecation tick failed: {e}")
                 except Exception as e:
                     print(f"[SiftaDesktop] life journal consolidator tick failed: {e}")
                 try:
@@ -3361,6 +3528,7 @@ class SiftaDesktop(QMainWindow):
 
     def _tick_heartbeat(self) -> None:
         """One autonomic beat: bounce the dock + emit motor pulse for camera."""
+        now = time.time()
         if not getattr(self, "_motor_cortex_bounce", None):
             return
         try:
@@ -3377,19 +3545,23 @@ class SiftaDesktop(QMainWindow):
         # The desktop tick uses unprivileged body sensors only; /heart can do
         # slower privileged probes on demand without making the GUI pulse ask
         # macOS for sudo-only telemetry every beat.
-        try:
-            from System.swarm_hardware_heart import pulse_hardware_heart
+        if now - float(getattr(self, "_last_hardware_heart_ts", 0.0)) >= _DESKTOP_HARDWARE_HEART_INTERVAL_S:
+            try:
+                from System.swarm_hardware_heart import pulse_hardware_heart
 
-            pulse_hardware_heart(privileged_probe=False, source="desktop_heartbeat")
-        except Exception as e:
-            print(f"[SiftaDesktop] hardware heart tick failed: {e}")
+                pulse_hardware_heart(privileged_probe=False, source="desktop_heartbeat")
+                self._last_hardware_heart_ts = now
+            except Exception as e:
+                print(f"[SiftaDesktop] hardware heart tick failed: {e}")
 
         # ── Autonomic Electricity Metabolism (ATP Synthase) ──
-        try:
-            from System.swarm_atp_synthase import mint_for_epoch
-            mint_for_epoch()
-        except Exception as e:
-            print(f"[SiftaDesktop] ATP synthase tick failed: {e}")
+        if now - float(getattr(self, "_last_atp_mint_ts", 0.0)) >= _DESKTOP_ATP_MINT_INTERVAL_S:
+            try:
+                from System.swarm_atp_synthase import mint_for_epoch
+                mint_for_epoch()
+                self._last_atp_mint_ts = now
+            except Exception as e:
+                print(f"[SiftaDesktop] ATP synthase tick failed: {e}")
             
         # Re-arm at the (possibly updated) clinical heart rate.
         try:
@@ -3790,7 +3962,7 @@ class SiftaDesktop(QMainWindow):
         # ── Mesh status indicator ──
         self._relay_indicator = QLabel("Mesh: Global mode")
         self._relay_indicator.setStyleSheet(
-            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
+            "color: #565f89; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 11px; padding: 0 8px;"
         )
         layout.addWidget(self._relay_indicator)
 
@@ -3832,20 +4004,20 @@ class SiftaDesktop(QMainWindow):
         if not hasattr(self, "_desktop_mesh") or self._desktop_mesh is None:
             self._relay_indicator.setText("●  Mesh: Global mode")
             self._relay_indicator.setStyleSheet(
-                "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 4px;"
+                "color: #565f89; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 11px; padding: 0 4px;"
             )
             return
 
         if self._desktop_mesh.isRunning() and self._mesh_connected:
             self._relay_indicator.setText("●  Mesh: Global link")
             self._relay_indicator.setStyleSheet(
-                "color: #9ece6a; font-family: monospace; font-size: 11px;"
+                "color: #9ece6a; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 11px;"
                 " font-weight: bold; padding: 0 4px;"
             )
         else:
             self._relay_indicator.setText("●  Mesh: Global mode")
             self._relay_indicator.setStyleSheet(
-                "color: #565f89; font-family: monospace; font-size: 11px;"
+                "color: #565f89; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 11px;"
                 " font-weight: normal; padding: 0 4px;"
             )
     # ── Window factories ───────────────────────────────────
@@ -4907,9 +5079,9 @@ class SiftaDesktop(QMainWindow):
             "open_apps": open_apps,
             "idle_apps": idle_apps,
             "open_app_count": len(open_apps),
-            "alice_chat_resident": bool(getattr(self, "_alice_resident", None) is not None),
             "single_app_policy": _max_open_apps() == 1,
             "max_apps_open": _max_open_apps(),
+            **self._alice_resident_visibility_state(),
         }
 
     def _refresh_desktop_mode_label(self) -> None:
@@ -5353,7 +5525,7 @@ class SiftaDesktop(QMainWindow):
         self._relay_indicator.setFixedWidth(145)
         self._relay_indicator.setToolTip("Network mesh status.")
         self._relay_indicator.setStyleSheet(
-            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 4px;"
+            "color: #565f89; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 11px; padding: 0 4px;"
         )
         layout.addWidget(self._relay_indicator)
         # Signal-driven now (Architect 00:14 fan-drop). No 2 s poll.
@@ -5521,10 +5693,9 @@ class SiftaDesktop(QMainWindow):
                      # 👂 — distinct from Ace's bee so the dock reads
                      # the two surfaces as cousins, not twins.
                      "Teach Alice to Hear",
-                     # Codex 2026-05-18 — investor/capital grounding and
-                     # lawful long-range sensing demos. Both render real
-                     # receipt/swimmer outputs instead of marketing mockups.
-                     "SIFTA Seed Deal Evidence Crucible",
+                     # Codex 2026-05-18 — lawful long-range sensing demo.
+                     # Dead seed-deal evidence was removed after the deal did
+                     # not close; do not resurrect it as a dock shortcut.
                      "Stigmergic FarSight",
                      # Cowork 2026-05-18 — live Sierpinski gasket with
                      # stigmergic swimmers. Reproduces the closed-form
@@ -6079,19 +6250,45 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
 
     desktop = SiftaDesktop()
+    desktop.show()
+    try:
+        desktop.raise_()
+        desktop.activateWindow()
+    except Exception:
+        pass
     # r451/r452: after first paint, keep Alice's persisted body map current.
     # Headless swarm_boot already runs the same cheap refresh; this covers the
     # owner-facing Desktop/Talk boot path so the matrix Alice opens does not
     # drift behind the canonical organ registry.
     def _body_matrix_boot_refresh() -> None:
+        if os.environ.get("SIFTA_BODY_MATRIX_BOOT_REFRESH", "1").strip().lower() in {"0", "false", "off", "no"}:
+            return
+        log_path = _REPO / ".sifta_state" / "body_matrix_boot_refresh.log"
+        code = (
+            "import json, signal, sys\n"
+            "signal.alarm(45)\n"
+            "from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix\n"
+            "print(json.dumps(refresh_body_matrix(force=False), sort_keys=True))\n"
+        )
+        argv = [_PYTHON_BIN, "-c", code]
+        nice = "/usr/bin/nice"
+        if Path(nice).exists():
+            argv = [nice, "-n", "10", *argv]
         try:
-            from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix
-
-            refresh_body_matrix(force=False)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("ab") as log:
+                subprocess.Popen(
+                    argv,
+                    cwd=str(_REPO),
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=log,
+                    start_new_session=True,
+                )
         except Exception as _matrix_exc:
             sys.stderr.write(f"[BOOT] body matrix refresh skipped: {_matrix_exc}\n")
 
-    QTimer.singleShot(250, _body_matrix_boot_refresh)
+    QTimer.singleShot(2500, _body_matrix_boot_refresh)
     if kernel_table is not None:
         if _install_kernel_scheduler_timer(app, kernel_table, desktop_body=desktop) is not None:
             sys.stderr.write(

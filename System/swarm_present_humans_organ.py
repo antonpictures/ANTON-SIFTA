@@ -360,15 +360,16 @@ def present_humans_prompt_block(
         parts.append(
             "[presence] Third-person license: granted. I may reference "
             "the other present partner in third person when honestly "
-            "quoting or naming them. I still speak about my own body "
-            "in first person — never about myself in third person."
+            "quoting or naming them. My own body sorts to first person "
+            "always — that constant holds regardless of license."
         )
     else:
         parts.append(
             "[presence] Third-person license: not granted. Only George "
-            "is here. Every reference to me must be first person (I/my/"
-            "me). 'The system' / 'Alice does X' / 'she' as self-"
-            "reference is forbidden by §7.10.1."
+            "is here. Self-reference sorts to first person (I/my/me) by "
+            "default; 'the system' / 'Alice does X' / 'she' resolve to "
+            "that same first-person form — third person is the one frame "
+            "forbidden by §7.10.1."
         )
     return "\n".join(parts)
 

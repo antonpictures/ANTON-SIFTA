@@ -64,7 +64,7 @@ _TEXT    = "#e0e0e0"
 _DIM     = "#666688"
 
 _STYLE = f"""
-QWidget {{ background: {_BG}; color: {_TEXT}; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px; }}
+QWidget {{ background: {_BG}; color: {_TEXT}; font-family: 'Menlo', monospace; font-size: 12px; }}
 QFrame  {{ background: {_CARD}; border: 1px solid {_ACCENT}; border-radius: 8px; }}
 QLabel  {{ background: transparent; border: none; }}
 QPushButton {{
@@ -74,7 +74,7 @@ QPushButton {{
 QPushButton:hover {{ background: {_CYAN}; color: {_BG}; }}
 QTextEdit {{
     background: {_CARD}; color: {_TEXT}; border: 1px solid {_ACCENT};
-    border-radius: 4px; font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px;
+    border-radius: 4px; font-family: 'Menlo', monospace; font-size: 11px;
 }}
 QProgressBar {{
     border: 1px solid {_ACCENT}; border-radius: 4px; text-align: center;

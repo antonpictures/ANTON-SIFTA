@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from System import swarm_photo_understanding as pu
 
-PROSE = ("BioHuman Body on desert rocks in a colorful floral bikini top, green bikini bottoms, "
+PROSE = ("BioHuman Body on desert rocks in a colorful floral swim top, green swim bottoms, "
          "fuzzy green leg warmers, and heels. Long dark hair, sunglasses up, standing among "
          "boulders and dry brush in harsh sunlight.")
 
@@ -25,7 +25,7 @@ def test_prose_fallback_builds_full_scene():
     assert sc["source"] == "prose_fallback"
     assert len(sc["humans"]) == 1
     garments = [c["piece"] for c in sc["humans"][0]["clothing"]]
-    assert "leg warmers" in garments and "bikini bottoms" in garments and "heels" in garments
+    assert "leg warmers" in garments and "swim bottoms" in garments and "heels" in garments
     assert any(o["class"] in ("rocks", "boulders") for o in sc["objects"])
     assert sc["location"]["setting"] == "desert" and sc["location"]["indoor_outdoor"] == "outdoor"
     assert sc["environment"]["lighting"]

@@ -108,7 +108,7 @@ _EXECUTE_PATTERNS = re.compile(
     r"just\s+send|send\s+alice|send\s+that|ok\s+send|do\s+it|fire\s+it|confirm|"
     # AG46 2026-05-07: catch 'draft it and send it', 'send it on WhatsApp'
     r"draft\s+(?:it\s+)?and\s+send(?:\s+it)?|"
-    r"send\s+(?:it\s+)?on\s+(?:what[''s]*app|whatsapp|iMessage|telegram)|"
+    r"send\s+(?:it\s+)?on\s+(?:what[''s]*app|whatsapp|iMessage)|"
     r"go\s+send|just\s+send\s+it|please\s+send\s+it)\b",
     re.IGNORECASE,
 )

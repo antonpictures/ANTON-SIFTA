@@ -43,9 +43,9 @@ from System.swarm_token_immune_swimmers import (
 
 # ── Default swimmer pool ───────────────────────────────────────────
 
-def test_default_swimmer_pool_has_5_swimmers_from_spec():
+def test_default_swimmer_pool_has_7_swimmers_from_spec():
     pool = default_swimmer_pool()
-    assert len(pool) == 5
+    assert len(pool) == 7
     types = {type(s).__name__ for s in pool}
     assert types == {
         "CaretakerResidueSwimmer",
@@ -53,6 +53,8 @@ def test_default_swimmer_pool_has_5_swimmers_from_spec():
         "TruthBoundarySwimmer",
         "ReceiptAnchorSwimmer",
         "OwnerDirectnessSwimmer",
+        "ClothingFabricationSwimmer",
+        "FabricatedSystemReportSwimmer",
     }
 
 

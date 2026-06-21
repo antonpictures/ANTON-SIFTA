@@ -209,6 +209,28 @@ class AliceJournalWidget(SiftaBaseWidget):
         )
         self._refresh_btn.clicked.connect(self._reload)
         bar.addWidget(self._refresh_btn)
+
+        # r1509: direct "defecate journal" / concat dups button. Triggers STGM elimination.
+        # Same system as body. Receipted.
+        self._defecate_btn = QPushButton("♻ Defecate Dups")
+        self._defecate_btn.setFixedHeight(28)
+        self._defecate_btn.setStyleSheet(
+            "QPushButton { background: rgb(40, 20, 20); color: rgb(255, 180, 150); "
+            "border: 1px solid rgb(80, 40, 40); border-radius: 6px; "
+            "padding: 2px 12px; font-size: 11px; font-weight: bold; } "
+            "QPushButton:hover { background: rgb(60, 25, 25); }"
+        )
+        def _do_defecate():
+            try:
+                from System.swarm_life_journal_consolidator import journal_defecation_once
+                res = journal_defecation_once(window_hours=48)
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.information(self, "Journal Defecation", f"Groups: {res.get('consolidated_groups',0)} | Dups handled: {res.get('dups_handled',0)}")
+                self._reload()
+            except Exception as e:
+                print(f"defecate failed: {e}")
+        self._defecate_btn.clicked.connect(_do_defecate)
+        bar.addWidget(self._defecate_btn)
         layout.addLayout(bar)
 
         # Truth principle: always name the ledger path on screen.

@@ -938,13 +938,44 @@ def set_appearance(mode: str) -> Dict[str, Any]:
 
 
 def open_url(url: str) -> Dict[str, Any]:
+    """Open URL in Alice's browser — Kimi WebBridge (Chrome) or Alice Browser drop file.
+    
+    NEVER use macOS 'open' — that opens Safari, which is NOT Alice's browser.
+    Per AGENTS.md: ALWAYS use Kimi WebBridge or the drop file mechanism.
+    """
     refused = _gate_applescript_effector(f"open_url:{url[:80]}")
     if refused:
         return refused
-    rc, _, err = _run(["open", url], timeout=3.0)
-    res = {"ok": rc == 0, "url": url, "error": err.strip() or None}
-    _log("open_url", "ui", {"url": url}, res)
-    return res
+    
+    # Try Kimi WebBridge first (Chrome with login sessions)
+    try:
+        from System.swarm_kimi_webbridge_bridge import navigate as kimi_navigate, read_daemon_status
+        status = read_daemon_status()
+        if status.get("running") and status.get("extension_connected"):
+            result = kimi_navigate(url, new_tab=True)
+            if result.get("ok"):
+                res = {"ok": True, "url": url, "via": "kimi_webbridge", "error": None}
+                _log("open_url", "ui", {"url": url, "via": "kimi_webbridge"}, res)
+                return res
+    except Exception:
+        pass
+    
+    # Fallback: write to drop file for Alice Browser (QWebEngine)
+    try:
+        from pathlib import Path
+        state_dir = Path(__file__).resolve().parent.parent / ".sifta_state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        drop_file = state_dir / "alice_browser_open_url.txt"
+        drop_file.write_text(url, encoding="utf-8")
+        new_tab_flag = state_dir / "alice_browser_open_url_new_tab.flag"
+        new_tab_flag.write_text("1\n", encoding="utf-8")
+        res = {"ok": True, "url": url, "via": "alice_browser_drop", "error": None}
+        _log("open_url", "ui", {"url": url, "via": "alice_browser_drop"}, res)
+        return res
+    except Exception as exc:
+        res = {"ok": False, "url": url, "error": f"Failed to open in Alice Browser: {exc}"}
+        _log("open_url", "ui", {"url": url}, res)
+        return res
 
 
 def music_play_pause() -> Dict[str, Any]:

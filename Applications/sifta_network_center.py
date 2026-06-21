@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
-"""
-sifta_network_center.py — Apple-like networking control center for iSwarm OS
-"""
+"""sifta_network_center.py -- networking control center for active SIFTA bridges."""
 from __future__ import annotations
 
 """SIFTA Network Center — stigmergic organ for Alice body."""
 
-import json
-import os
+import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
+from PyQt6.QtCore import QProcess, QProcessEnvironment
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QMessageBox,
     QPushButton,
     QPlainTextEdit,
     QVBoxLayout,
@@ -25,7 +21,6 @@ from PyQt6.QtWidgets import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = REPO_ROOT / "sifta_channels.json"
 
 
 def _card(title: str, subtitle: str) -> QFrame:
@@ -49,7 +44,6 @@ class NetworkCenterWidget(QWidget):
         super().__init__(parent)
         self._proc: QProcess | None = None
         self._build_ui()
-        self._load_config()
 
     def _build_ui(self) -> None:
         self.setStyleSheet(
@@ -77,7 +71,7 @@ class NetworkCenterWidget(QWidget):
 
         title = QLabel("Network Center")
         title.setStyleSheet("font-size: 22px; font-weight: 800; color: #bb9af7;")
-        subtitle = QLabel("Configure and run Telegram, WhatsApp, and Discord bridges from inside iSwarm OS.")
+        subtitle = QLabel("Configure and run active SIFTA network bridges.")
         subtitle.setStyleSheet("color: #a9b1d6;")
         root.addWidget(title)
         root.addWidget(subtitle)
@@ -85,49 +79,14 @@ class NetworkCenterWidget(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
-        grid.addWidget(_card("Telegram", "Bot token + optional target chat ID for startup ping."), 0, 0)
-        grid.addWidget(_card("WhatsApp", "Use the SIFTA WhatsApp bridge for ingress and sends; native app fallback is diagnostic only."), 0, 1)
-        grid.addWidget(_card("Discord", "Optional token for users who run a Discord bot."), 0, 2)
+        grid.addWidget(_card("WhatsApp", "Use the SIFTA WhatsApp bridge for ingress and sends; native app fallback is diagnostic only."), 0, 0)
         root.addLayout(grid)
 
-        fields = QGridLayout()
-        fields.setHorizontalSpacing(8)
-        fields.setVerticalSpacing(8)
-        fields.addWidget(QLabel("Telegram token"), 0, 0)
-        self.telegram_token = QLineEdit()
-        self.telegram_token.setEchoMode(QLineEdit.EchoMode.Password)
-        fields.addWidget(self.telegram_token, 0, 1)
-
-        fields.addWidget(QLabel("Telegram chat ID"), 1, 0)
-        self.telegram_chat_id = QLineEdit()
-        self.telegram_chat_id.setPlaceholderText("-100... or @channel_username")
-        fields.addWidget(self.telegram_chat_id, 1, 1)
-
-        fields.addWidget(QLabel("Discord token"), 2, 0)
-        self.discord_token = QLineEdit()
-        self.discord_token.setEchoMode(QLineEdit.EchoMode.Password)
-        fields.addWidget(self.discord_token, 2, 1)
-        root.addLayout(fields)
-
         btn_row = QHBoxLayout()
-        save_btn = QPushButton("Save Channels")
-        save_btn.clicked.connect(self._save_config)
-        btn_row.addWidget(save_btn)
-
-        tg_btn = QPushButton("Launch Telegram")
-        tg_btn.setObjectName("secondary")
-        tg_btn.clicked.connect(lambda: self._run(["python3", "Applications/telegram_swarm.py"]))
-        btn_row.addWidget(tg_btn)
-
         wa_btn = QPushButton("Launch WhatsApp (QR)")
         wa_btn.setObjectName("secondary")
         wa_btn.clicked.connect(lambda: self._run(["/bin/bash", "start_swarm_whatsapp.sh"]))
         btn_row.addWidget(wa_btn)
-
-        dc_btn = QPushButton("Launch Discord")
-        dc_btn.setObjectName("secondary")
-        dc_btn.clicked.connect(lambda: self._run(["python3", "Applications/discord_swarm.py"]))
-        btn_row.addWidget(dc_btn)
 
         stop_btn = QPushButton("Stop")
         stop_btn.setObjectName("danger")
@@ -147,44 +106,13 @@ class NetworkCenterWidget(QWidget):
         )
         root.addWidget(self.log, 1)
 
-    def _load_config(self) -> None:
-        cfg = {}
-        if CONFIG_PATH.exists():
-            try:
-                cfg = json.loads(CONFIG_PATH.read_text())
-            except Exception:
-                cfg = {}
-        self.telegram_token.setText(str(cfg.get("TELEGRAM_BOT_TOKEN", "")))
-        self.telegram_chat_id.setText(str(cfg.get("TELEGRAM_CHAT_ID", "")))
-        self.discord_token.setText(str(cfg.get("DISCORD_BOT_TOKEN", "")))
-
-    def _save_config(self) -> None:
-        cfg = {}
-        if CONFIG_PATH.exists():
-            try:
-                cfg = json.loads(CONFIG_PATH.read_text())
-            except Exception:
-                cfg = {}
-        cfg["TELEGRAM_BOT_TOKEN"] = self.telegram_token.text().strip()
-        cfg["TELEGRAM_CHAT_ID"] = self.telegram_chat_id.text().strip()
-        cfg["DISCORD_BOT_TOKEN"] = self.discord_token.text().strip()
-        CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
-        self.status.setText(f"Saved → {CONFIG_PATH.name}")
-        self.status.setStyleSheet("color: #7dcfff; font-family: monospace;")
-        self.log.appendPlainText("[NetworkCenter] Channel credentials saved.")
-
     def _run(self, cmd: list[str]) -> None:
         if self._proc and self._proc.state() != QProcess.ProcessState.NotRunning:
             self.log.appendPlainText("[NetworkCenter] Existing process running. Stop it first.")
             return
-        self._save_config()
         self._proc = QProcess(self)
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONUNBUFFERED", "1")
-        if self.telegram_token.text().strip():
-            env.insert("TELEGRAM_BOT_TOKEN", self.telegram_token.text().strip())
-        if self.telegram_chat_id.text().strip():
-            env.insert("TELEGRAM_CHAT_ID", self.telegram_chat_id.text().strip())
         self._proc.setProcessEnvironment(env)
         self._proc.setWorkingDirectory(str(REPO_ROOT))
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)

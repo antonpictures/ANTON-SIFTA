@@ -30,6 +30,20 @@ def test_final_marker_preserves_answer_after_reasoning():
     assert "Analyze the Context" not in result.text
 
 
+def test_thinking_process_lead_collapses_to_empty():
+    raw = (
+        "Here's a thinking process for generating that response:\n\n"
+        "1. Analyze the User Input (the Command): The user is correcting my previous assumption.\n"
+        "2. Determine Tone & Persona: apologetic.\n"
+        "3. Drafting and Polishing: add flair."
+    )
+    result = sanitize_reasoning_leak(raw)
+
+    assert result.changed
+    assert result.text == ""
+    assert "reasoning_leak/thinking_process_lead" in result.rule_ids
+
+
 def test_legitimate_numbered_answer_survives():
     raw = "1. Restart Alice.\n2. Open the video.\n3. Ask her by name."
     result = sanitize_reasoning_leak(raw)

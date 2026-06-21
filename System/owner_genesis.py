@@ -37,6 +37,7 @@ _REPO = Path(__file__).resolve().parent.parent
 STATE_DIR = _REPO / ".sifta_state"
 GENESIS_FILE = STATE_DIR / "owner_genesis.json"
 GENESIS_LOG = STATE_DIR / "owner_genesis_history.jsonl"
+GENESIS_REPAIR_LOG = STATE_DIR / "owner_genesis_repair.jsonl"
 
 # Owner photo lives ONLY here — local filesystem, never git
 OWNER_DIR = Path.home() / ".sifta_keys" / "owner_genesis"
@@ -72,6 +73,83 @@ def _verify(serial: str, payload: str, sig: str) -> bool:
     sys.path.insert(0, str(_REPO / "System"))
     from crypto_keychain import verify_block
     return verify_block(serial, payload, sig)
+
+
+def _scar_has_owner_identity(scar: Dict) -> bool:
+    return bool(
+        isinstance(scar, dict)
+        and str(scar.get("owner_name") or "").strip()
+        and str(scar.get("photo_hash") or "").strip()
+        and str(scar.get("genesis_anchor") or "").strip()
+        and str(scar.get("sig") or "").strip()
+    )
+
+
+def _latest_valid_history_scar() -> Optional[Dict]:
+    if not GENESIS_LOG.exists():
+        return None
+    try:
+        lines = GENESIS_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            scar = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(scar, dict):
+            continue
+        if scar.get("event") != "OWNER_GENESIS":
+            continue
+        if scar.get("status") != "ACTIVE":
+            continue
+        if not _scar_has_owner_identity(scar):
+            continue
+        sig = str(scar.get("sig") or "")
+        serial = str(scar.get("silicon") or "")
+        payload = json.dumps(
+            {k: v for k, v in scar.items() if k != "sig"},
+            sort_keys=True,
+        )
+        try:
+            if _verify(serial, payload, sig):
+                return scar
+        except Exception:
+            continue
+    return None
+
+
+def repair_genesis_from_history_if_degraded(reason: str = "current_genesis_degraded") -> Optional[Dict]:
+    """Restore current scar from signed append-only history when identity fields vanish."""
+    try:
+        current = json.loads(GENESIS_FILE.read_text(encoding="utf-8")) if GENESIS_FILE.exists() else {}
+    except Exception:
+        current = {}
+    if _scar_has_owner_identity(current):
+        return current
+    scar = _latest_valid_history_scar()
+    if not scar:
+        return None
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    GENESIS_FILE.write_text(json.dumps(scar, indent=2) + "\n", encoding="utf-8")
+    try:
+        GENESIS_REPAIR_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with GENESIS_REPAIR_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "event": "OWNER_GENESIS_REPAIRED_FROM_HISTORY",
+                "ts": time.time(),
+                "reason": reason,
+                "owner_name": scar.get("owner_name"),
+                "silicon": scar.get("silicon"),
+                "history_ts": scar.get("ts"),
+                "genesis_anchor": scar.get("genesis_anchor"),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return scar
 
 
 # ── Genesis Ceremony ─────────────────────────────────────────────────────
@@ -180,6 +258,10 @@ def verify_genesis() -> Dict:
         scar = json.loads(GENESIS_FILE.read_text())
     except Exception:
         return result
+    if not _scar_has_owner_identity(scar):
+        repaired = repair_genesis_from_history_if_degraded()
+        if repaired:
+            scar = repaired
 
     result["exists"] = True
     result["status"] = scar.get("status", "UNKNOWN")

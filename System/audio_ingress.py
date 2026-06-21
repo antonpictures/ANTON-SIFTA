@@ -41,6 +41,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re as _re_mic
 import struct
 import subprocess
 import sys
@@ -81,17 +82,96 @@ _AVFOUNDATION_AUDIO_AVOID = (
     "aggregate",
     "multi-output",
     "screen capture",
+    "obs",
+    "virtual",
 )
 
-# Preference order for picking the "best" real mic when multiple candidates
-# pass the avoid filter. Earlier match wins. Fall through to first-available.
+# Default-owner preference — embedded chassis mic first, wireless last.
+# All real hardware stays available; this only ranks the DEFAULT open order.
 _AVFOUNDATION_AUDIO_PREFER = (
-    "macbook pro microphone",      # built-in is most reliable on this machine
+    "macbook pro microphone",
     "macbook air microphone",
     "built-in microphone",
-    "iphone microphone",            # Continuity Camera mic
-    "usb audio",                    # generic USB mic
+    "facetime",
+    "usb audio",
+    "sound bar",
+    "iphone microphone",
+    "iphone",
 )
+
+_EMBEDDED_OWNER_MIC_MARKERS = (
+    "macbook pro microphone",
+    "macbook air microphone",
+    "built-in microphone",
+    "facetime",
+)
+_WIRELESS_MIC_MARKERS = ("iphone", "ipad", "continuity", "desk view")
+
+
+def _norm_mic_name(text: str) -> str:
+    return " ".join(str(text).replace("’", "'").strip().lower().split())
+
+
+def is_embedded_owner_microphone(name: Optional[str]) -> bool:
+    """True for the built-in MacBook/FaceTime mic inside the laptop body."""
+    if not name:
+        return False
+    norm = _norm_mic_name(str(name))
+    return any(token in norm for token in _EMBEDDED_OWNER_MIC_MARKERS)
+
+
+def is_virtual_microphone(name: Optional[str]) -> bool:
+    if not name:
+        return True
+    norm = _norm_mic_name(str(name))
+    return any(token in norm for token in _AVFOUNDATION_AUDIO_AVOID)
+
+
+def default_microphone_rank(name: Optional[str]) -> int:
+    """Lower rank = tried earlier as DEFAULT. Embedded owner mic wins."""
+    if not name or is_virtual_microphone(name):
+        return 900
+    norm = _norm_mic_name(str(name))
+    for i, pref in enumerate(_AVFOUNDATION_AUDIO_PREFER):
+        if pref in norm:
+            return i
+    if any(token in norm for token in _WIRELESS_MIC_MARKERS):
+        return 40
+    if any(token in norm for token in ("usb", "sound bar", "webcam", "external")):
+        return 20
+    return 10
+
+
+def rank_input_microphones(sd: Any = None) -> List[Tuple[int, str]]:
+    """All real PortAudio inputs ranked for DEFAULT selection (embedded first)."""
+    if sd is None:
+        if not HAS_SOUNDDEVICE or _sd is None:
+            return []
+        sd = _sd
+    try:
+        devices = list(sd.query_devices())
+    except Exception:
+        return []
+    ranked: List[Tuple[int, str, int]] = []
+    for idx, info in enumerate(devices):
+        if int(info.get("max_input_channels") or 0) <= 0:
+            continue
+        name = str(info.get("name") or "").strip()
+        if not name or is_virtual_microphone(name):
+            continue
+        ranked.append((idx, name, default_microphone_rank(name)))
+    ranked.sort(key=lambda row: (row[2], row[0]))
+    return [(idx, name) for idx, name, _rank in ranked]
+
+
+def resolve_default_owner_microphone(sd: Any = None) -> Tuple[int, str]:
+    """Default open target: embedded MacBook/FaceTime mic when present."""
+    ranked = rank_input_microphones(sd)
+    if not ranked:
+        return -1, ""
+    idx, name = ranked[0]
+    return int(idx), str(name)
+
 
 # Backends that count as REAL audio capture (not synthetic).
 # Used by the smoke test to label runs [LIVE] vs [DEGRADED] honestly,
@@ -275,10 +355,10 @@ def _resolve_audio_index() -> Tuple[int, str]:
         _AUDIO_INDEX_CACHE = (0, "avfoundation_default_unverified")
         return _AUDIO_INDEX_CACHE
 
-    # Filter out virtual / loopback / TTS-style pseudo-devices.
+    # Filter out virtual / loopback pseudo-devices only — real hardware stays.
     real = [
         (idx, name) for (idx, name) in devices
-        if not any(av in name.lower() for av in _AVFOUNDATION_AUDIO_AVOID)
+        if not is_virtual_microphone(name)
     ]
     if not real:
         # Every device matched an avoid pattern — pick the first listed anyway,
@@ -478,15 +558,10 @@ def _samples_to_hash(samples: List[float]) -> str:
 
 
 def _resolve_sounddevice_index() -> int:
-    """Find the first real input device index. Fallback if default fails."""
-    try:
-        # First try the global default
-        default_in = _sd.default.device[0]
-        if default_in is not None and default_in >= 0:
-            return default_in
-    except Exception:
-        pass
-    # Scan all devices for the first input
+    """Default PortAudio input: embedded owner mic when present."""
+    idx, _name = resolve_default_owner_microphone(_sd)
+    if idx >= 0:
+        return idx
     try:
         devices = _sd.query_devices()
         for i, d in enumerate(devices):

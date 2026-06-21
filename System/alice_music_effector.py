@@ -134,7 +134,11 @@ def pause() -> Dict[str, Any]:
 
 
 def open_youtube(url: str, *, mood: str = "") -> Dict[str, Any]:
-    """Open a YouTube music URL in the default browser with a receipt."""
+    """Open a YouTube music URL in Alice's browser (Kimi WebBridge or Alice Browser).
+    
+    NEVER use macOS 'open' — that opens Safari, which is NOT Alice's browser.
+    Per AGENTS.md: ALWAYS use Kimi WebBridge or the drop file mechanism.
+    """
     url = (url or "").strip()
     if not _YOUTUBE_URL_RE.search(url):
         return _deposit(
@@ -149,15 +153,39 @@ def open_youtube(url: str, *, mood: str = "") -> Dict[str, Any]:
                 "result": "Only youtube.com and youtu.be URLs are accepted.",
             }
         )
+    
+    # Try Kimi WebBridge first (Chrome with login sessions)
     try:
-        proc = subprocess.run(
-            ["open", url],
-            capture_output=True,
-            text=True,
-            timeout=4,
-            check=False,
-        )
-        ok = proc.returncode == 0
+        from System.swarm_kimi_webbridge_bridge import navigate as kimi_navigate, read_daemon_status
+        status = read_daemon_status()
+        if status.get("running") and status.get("extension_connected"):
+            result = kimi_navigate(url, new_tab=True)
+            if result.get("ok"):
+                return _deposit(
+                    {
+                        "event_kind": "MUSIC_PLAY_ATTEMPT",
+                        "schema": "SIFTA_MUSIC_EFFECTOR_V1",
+                        "action": "open_youtube",
+                        "url": url,
+                        "mood": mood[:80],
+                        "ok": True,
+                        "status": "YOUTUBE_OPENED_VIA_KIMI",
+                        "via": "kimi_webbridge",
+                        "result": "Opened in Chrome via Kimi WebBridge",
+                        "truth_note": "This opens the YouTube link in Chrome via Kimi WebBridge.",
+                    }
+                )
+    except Exception:
+        pass
+    
+    # Fallback: write to drop file for Alice Browser (QWebEngine)
+    try:
+        state_dir = _REPO / ".sifta_state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        drop_file = state_dir / "alice_browser_open_url.txt"
+        drop_file.write_text(url, encoding="utf-8")
+        new_tab_flag = state_dir / "alice_browser_open_url_new_tab.flag"
+        new_tab_flag.write_text("1\n", encoding="utf-8")
         return _deposit(
             {
                 "event_kind": "MUSIC_PLAY_ATTEMPT",
@@ -165,10 +193,11 @@ def open_youtube(url: str, *, mood: str = "") -> Dict[str, Any]:
                 "action": "open_youtube",
                 "url": url,
                 "mood": mood[:80],
-                "ok": ok,
-                "status": "YOUTUBE_OPENED" if ok else "YOUTUBE_OPEN_FAILED",
-                "result": (proc.stdout or proc.stderr or "").strip(),
-                "truth_note": "This opens the YouTube link; browser autoplay depends on the browser and YouTube state.",
+                "ok": True,
+                "status": "YOUTUBE_OPENED_VIA_ALICE_BROWSER",
+                "via": "alice_browser_drop",
+                "result": "Opened in Alice Browser via drop file",
+                "truth_note": "This opens the YouTube link in Alice Browser (QWebEngine).",
             }
         )
     except Exception as exc:

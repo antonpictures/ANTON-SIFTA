@@ -531,7 +531,7 @@ class DoubleSlitWidget(QWidget):
     def _setup_ui(self) -> None:
         self.setStyleSheet(f"""
             QWidget {{ background: {BG}; color: {TEXT};
-                       font-family: 'SF Mono', 'Menlo', monospace; }}
+                       font-family: 'Menlo', monospace; }}
             QGroupBox {{ border: 1px solid {MUTED}; border-radius: 6px;
                          margin-top: 8px; padding-top: 14px;
                          font-weight: bold; color: {CYAN}; }}

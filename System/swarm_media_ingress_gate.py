@@ -48,7 +48,7 @@ DIRECT_ADDRESS_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
 # Short control words while YouTube plays — still the Architect, not the video track.
 _ARCHITECT_CONTROL_UTTERANCE_RE = re.compile(
     r"^\s*(?:"
-    r"process|proceed|continue|pause|resume|stop|wait|listen|hey"
+    r"(?:ok(?:ay)?\s+)?(?:process|proceed|continue|pause|resume|stop|wait|listen)|hey"
     r")\s*[.!?…]?\s*$",
     re.IGNORECASE,
 )
@@ -266,6 +266,15 @@ AMBIENT_TV_RE = re.compile(
     r"\b(?:background_media|ambient_media_context|ambient_media(?:_youtube)?|ambient_tv|shared_media|television.*youtube|tv.*youtube)\b",
     re.IGNORECASE,
 )
+STT_QUIET_CONTEXT_RE = re.compile(
+    r"\b(?:owner_requested_stt_quiet|stt_quiet|speech_to_text_quiet|typed_only_stt_window)\b",
+    re.IGNORECASE,
+)
+RECORDED_BROADCAST_CONTEXT_RE = re.compile(
+    r"\b(?:recorded_broadcast|recorded\s+broadcast|owner_away|while\s+owner\s+(?:away|gone)|"
+    r"while\s+george\s+(?:away|gone)|tv\s+noise|podcast\s+noise|joe\s+rogan|jre)\b",
+    re.IGNORECASE,
+)
 AMBIENT_PHONE_RE = re.compile(
     r"\b(?:phone_call_background|background_phone|speakerphone|phone_call_active|ambient_phone)\b",
     re.IGNORECASE,
@@ -357,6 +366,103 @@ _MEDIA_TOPIC_LEXICON = {
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9']+", text or ""))
+
+
+_RECORDED_BROADCAST_NOTICE_RE = re.compile(
+    r"\b(?:"
+    r"(?:real\s+world\s+)?noise\s+from\s+(?:the\s+)?(?:tv|television|podcast|joe\s+rogan|jre|broadcast)|"
+    r"(?:tv|television|podcast|joe\s+rogan|jre|broadcast)\s+(?:is\s+)?(?:playing|on|noise|in\s+the\s+background)|"
+    r"(?:recorded\s+)?broadcasts?\s+(?:are|is)\s+(?:playing|recorded|not\s+me|not\s+george)|"
+    r"(?:while\s+i(?:'m| am)?\s+(?:gone|away|out|at\s+the\s+store|at\s+the\s+grocery\s+store))"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+_STT_QUIET_REQUEST_RE = re.compile(
+    r"\b(?:"
+    r"(?:ignore|mute|silence|pause|stop)\s+(?:the\s+)?(?:stt|s\.?t\.?t\.?|speech\s*(?:to|-)?\s*text|spoken|voice|audio|mic|microphone)|"
+    r"(?:stt|s\.?t\.?t\.?|speech\s*(?:to|-)?\s*text|spoken|voice|audio|mic|microphone)\s+(?:off|quiet|silent|muted|paused)|"
+    r"switch\s+to\s+typed|"
+    r"typed\s+only\s+(?:for\s+)?(?:a\s+bit|now|mode|window)"
+    r")\b",
+    re.IGNORECASE,
+)
+_STT_QUIET_DURATION_RE = re.compile(
+    r"\b(?:for\s+)?(?P<num>\d{1,3})\s*(?P<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_stt_quiet_request(text: str) -> dict[str, Any]:
+    """Detect typed owner commands that make spoken STT ambient for a while.
+
+    This is not a microphone allowlist or a hard mute. It records source
+    context: during the window, unverified STT is observed media/background,
+    while typed input and verified George voice still route normally.
+    """
+
+    clean = " ".join(str(text or "").split())
+    if not clean or not _STT_QUIET_REQUEST_RE.search(clean):
+        return {"detected": False}
+    match = _STT_QUIET_DURATION_RE.search(clean)
+    if match:
+        value = int(match.group("num"))
+        unit = match.group("unit").casefold()
+        if unit.startswith(("sec", "s")):
+            ttl_s = value
+        elif unit.startswith(("hour", "hr")):
+            ttl_s = value * 3600
+        else:
+            ttl_s = value * 60
+    else:
+        ttl_s = 30 * 60
+    ttl_s = max(10, min(int(ttl_s), 6 * 3600))
+    minutes = max(1, round(ttl_s / 60))
+    return {
+        "detected": True,
+        "source": "owner_requested_stt_quiet",
+        "ttl_s": float(ttl_s),
+        "minutes": minutes,
+        "note": (
+            "owner_requested_stt_quiet stt_quiet speech_to_text_quiet: "
+            "George typed that spoken STT should be treated as ambient for this window. "
+            "Typed turns and verified George voice may still route direct."
+        ),
+    }
+
+
+def detect_recorded_broadcast_notice(text: str) -> dict[str, Any]:
+    """Detect owner-authored notices that room audio is recorded media.
+
+    Typed George text stays direct owner intent, but this specific notice sets
+    the next STT lines into the ambient-media lane. Real humans on Joe Rogan,
+    TV, or podcasts remain real humans; their recorded speech is not George's
+    direct command unless he explicitly addresses Alice.
+    """
+
+    clean = " ".join(str(text or "").split())
+    if not clean or not _RECORDED_BROADCAST_NOTICE_RE.search(clean):
+        return {"detected": False}
+    low = clean.lower()
+    medium = "podcast" if re.search(r"\b(?:podcast|joe\s+rogan|jre)\b", low) else "tv"
+    owner_away = bool(re.search(r"\b(?:gone|away|out|store|grocery)\b", low))
+    source = "ambient_media_podcast" if medium == "podcast" else "ambient_media_youtube"
+    note_bits = [
+        f"George declared {medium} / recorded broadcast audio in the room.",
+        "Recorded broadcast voices are real people but not direct owner speech.",
+        "Route following STT as ambient/observed media unless George directly addresses Alice or requests action.",
+    ]
+    if owner_away:
+        note_bits.append("owner_away: George said he may be away from the microphone.")
+    return {
+        "detected": True,
+        "source": source,
+        "medium": medium,
+        "owner_away": owner_away,
+        "ttl_s": 3 * 3600.0 if owner_away else 90 * 60.0,
+        "note": " ".join(note_bits),
+    }
 
 
 def _observed_media_terms(rows: list[Mapping[str, Any]], *, limit: int = 12) -> list[str]:
@@ -463,6 +569,18 @@ def _load_recent_youtube_context(max_age_s: float = 7200.0) -> str:
     if boundary:
         suffix += f" dialogue_boundary={boundary}"
     return f"YouTube video: {title} caption_status={status}{suffix}".strip()
+
+
+def ambient_media_context_active(max_age_s: float = 6 * 3600.0) -> bool:
+    """True when owner-declared background media context is still fresh."""
+    if not AMBIENT_CONTEXT_FILE.exists():
+        return False
+    try:
+        row = json.loads(AMBIENT_CONTEXT_FILE.read_text(encoding="utf-8"))
+        ttl = float(row.get("ttl_s", max_age_s) or max_age_s)
+        return (time.time() - float(row.get("ts", 0.0) or 0.0)) <= ttl
+    except Exception:
+        return False
 
 
 def _load_recent_ambient_context(max_age_s: float = 6 * 3600.0) -> str:
@@ -862,6 +980,7 @@ def classify_spoken_ingress(
     focus_context: str = "",
     acoustic_fingerprint: Mapping[str, Any] | None = None,
     voice_george_conf: float = 0.0,
+    deferred_busy_capture: bool = False,
 ) -> dict[str, Any]:
     """Classify an STT turn as direct speech or ambient media bleed.
 
@@ -878,6 +997,7 @@ def classify_spoken_ingress(
         focus_context=focus_context,
         acoustic_fingerprint=acoustic_fingerprint,
         voice_george_conf=voice_george_conf,
+        deferred_busy_capture=deferred_busy_capture,
     )
     try:
         if decision.get("route") == "direct":
@@ -903,6 +1023,7 @@ def _classify_spoken_ingress_core(
     focus_context: str = "",
     acoustic_fingerprint: Mapping[str, Any] | None = None,
     voice_george_conf: float = 0.0,
+    deferred_busy_capture: bool = False,
 ) -> dict[str, Any]:
     """Core routing logic. Side-effect free except for receipt-less reads."""
     clean = " ".join(str(text or "").split())
@@ -912,6 +1033,22 @@ def _classify_spoken_ingress_core(
     # Typed text (stt_conf >= 1.0) is NEVER ambient media — the Architect typed it.
     if stt_conf and stt_conf >= 1.0:
         return {"route": "direct", "reason": "typed_input_always_direct", "confidence": 1.0}
+
+    # r1303: clips queued while Alice was busy on a typed turn are usually room
+    # bleed (podcast/TV) captured during owner typing — not fresh owner commands.
+    if deferred_busy_capture:
+        wc_early = _word_count(clean)
+        if (
+            ambient_media_context_active()
+            and wc_early >= 5
+            and not DIRECT_ADDRESS_RE.search(clean)
+            and float(voice_george_conf or 0.0) < 0.65
+        ):
+            return {
+                "route": "ambient_media",
+                "reason": "deferred_busy_clip_under_declared_ambient",
+                "confidence": 0.94,
+            }
 
     acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
     if acoustic_cue == "farfield_replay_likely" and re.match(r"^\s*alep\b", clean, re.IGNORECASE):
@@ -933,6 +1070,9 @@ def _classify_spoken_ingress_core(
     )
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context)) or _recent_media_route_active()
     has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
+    has_declared_ambient_tv = bool(AMBIENT_TV_RE.search(context))
+    has_stt_quiet_context = bool(STT_QUIET_CONTEXT_RE.search(context))
+    has_recorded_broadcast_context = bool(RECORDED_BROADCAST_CONTEXT_RE.search(context))
     try:
         own_browser_playing, own_browser_details = is_my_own_browser_playback(state_dir=STATE_DIR)
     except Exception:
@@ -950,15 +1090,67 @@ def _classify_spoken_ingress_core(
         def is_owner_interrogative_turn(_t: str) -> bool:  # type: ignore
             return False
 
-    # r1017 P0.1: owner questions always get a reply lane — even during co-watch.
-    if is_explicit_playback_state_question(clean) or (
-        is_owner_interrogative_turn(clean)
-        and (
-            (stt_conf and stt_conf >= 1.0)
-            or float(stt_conf or 0.0) >= 0.55
-            or bool(DIRECT_ADDRESS_RE.search(clean))
+    if has_stt_quiet_context:
+        owner_proof = (
+            acoustic_cue == "nearfield_voice_likely"
+            or float(voice_george_conf or 0.0) >= 0.35
         )
-    ):
+        direct_shape = bool(
+            DIRECT_ADDRESS_RE.search(clean)
+            or DIRECT_REQUEST_RE.search(clean)
+            or _OWNER_REALTIME_CORRECTION_RE.search(clean)
+        )
+        if owner_proof and direct_shape and not (
+            _word_count(clean) >= 18 and NARRATION_RE.search(clean)
+        ):
+            return {
+                "route": "direct",
+                "reason": "owner_breakthrough_under_stt_quiet_window",
+                "confidence": max(0.74, float(stt_conf or 0.0), float(voice_george_conf or 0.0)),
+            }
+        return {
+            "route": "ambient_media",
+            "reason": "owner_requested_stt_quiet_window",
+            "confidence": 0.97,
+        }
+
+    # r1017 P0.1: owner questions always get a reply lane during own-browser
+    # playback. Keep this narrow so generic podcast/TV questions and specific
+    # later guards (wake, identity, direct address, far-field replay) retain
+    # their more precise routing reasons.
+    owner_interrogative_required = bool(
+        is_owner_interrogative_turn(clean)
+        and not OWNER_PLAYBACK_DIRECT_ADDRESS_RE.search(clean)
+        and not _OWNER_IDENTITY_QUERY_RE.search(clean)
+        and not _OWNER_FEEDBACK_RE.search(clean)
+        and not _OWNER_GAG_SURGERY_RE.search(clean)
+        and acoustic_cue != "farfield_replay_likely"
+        and (
+            own_browser_playing
+            or (
+                not has_fiction_focus
+                and not DIRECT_ADDRESS_RE.search(clean)
+                and not DIRECT_REQUEST_RE.search(clean)
+                and not has_recorded_broadcast_context
+                and not (
+                    has_declared_ambient_tv
+                    and acoustic_cue != "nearfield_voice_likely"
+                    and (voice_george_conf or 0.0) < 0.35
+                )
+                and (
+                    (stt_conf and stt_conf >= 1.0)
+                    or float(stt_conf or 0.0) >= 0.55
+                )
+            )
+        )
+    )
+    explicit_playback_question_required = bool(
+        is_explicit_playback_state_question(clean)
+        and not _OWNER_FEEDBACK_RE.search(clean)
+        and not _OWNER_GAG_SURGERY_RE.search(clean)
+        and acoustic_cue != "farfield_replay_likely"
+    )
+    if explicit_playback_question_required or owner_interrogative_required:
         return {
             "route": "direct",
             "reason": "owner_interrogative_reply_required",
@@ -1073,15 +1265,52 @@ def _classify_spoken_ingress_core(
             acoustic_fingerprint=acoustic_fingerprint,
         )
         if wake.get("route") == "direct":
-            return {
-                "route": "direct",
-                "reason": f"wake_ear_{wake.get('reason')}",
-                "confidence": float(wake.get("confidence", 0.0) or 0.0),
-                "wake_ear": {
+            name_match = wake.get("name_match") if isinstance(wake.get("name_match"), Mapping) else {}
+            wake_target = str(name_match.get("target") or "").strip().lower()
+            fuzzy_you_without_word = (
+                has_fiction_focus
+                and wake_target == "you"
+                and not re.search(r"\byou\b", clean, re.IGNORECASE)
+            )
+            recorded_broadcast_you_bleed = (
+                has_declared_ambient_tv
+                and wake_target == "you"
+                and not DIRECT_ADDRESS_RE.search(clean)
+                and not DIRECT_REQUEST_RE.search(clean)
+                and acoustic_cue != "nearfield_voice_likely"
+                and (voice_george_conf or 0.0) < 0.35
+            )
+            paused_browser_wake_preempted = bool(own_browser_paused)
+            if not fuzzy_you_without_word and not recorded_broadcast_you_bleed and not paused_browser_wake_preempted:
+                wake_payload = {
                     "wake_score": wake.get("wake_score"),
                     "name_match": wake.get("name_match"),
-                },
-            }
+                }
+                if re.match(r"^\s*all\s+is\b", clean, re.IGNORECASE):
+                    wake_payload["name_match"] = {
+                        "target": "alice",
+                        "candidate": "allis",
+                        "similarity": max(
+                            0.0,
+                            min(
+                                1.0,
+                                float(
+                                    (
+                                        name_match.get("similarity")
+                                        if isinstance(name_match, Mapping)
+                                        else 0.92
+                                    )
+                                    or 0.92
+                                ),
+                            ),
+                        ),
+                    }
+                return {
+                    "route": "direct",
+                    "reason": f"wake_ear_{wake.get('reason')}",
+                    "confidence": float(wake.get("confidence", 0.0) or 0.0),
+                    "wake_ear": wake_payload,
+                }
     except Exception:
         pass
 
@@ -1232,21 +1461,35 @@ def _classify_spoken_ingress_core(
 
     if AMBIENT_TV_RE.search(context):
         # Owner-declared background YouTube is a strong prior that *most* long lines
-        # are room bleed — but one-word commands and very short interjections are
-        # almost always the Architect, not Jensen's keynote.
+        # are room bleed. Exact control tokens can still cut through; generic
+        # short fragments need owner proof, because podcasts produce "yeah",
+        # "probably", and other conversational shards constantly.
         wc = _word_count(clean)
         conf = float(stt_conf or 0.0)
+        owner_proof = (
+            acoustic_cue == "nearfield_voice_likely"
+            or float(voice_george_conf or 0.0) >= 0.35
+        )
         if _ARCHITECT_CONTROL_UTTERANCE_RE.match(clean):
             return {
                 "route": "direct",
                 "reason": "control_token_under_declared_ambient_tv",
                 "confidence": 0.95,
             }
-        if wc <= 4 and conf >= 0.38 and not bare_ace_bleed:
+        if (
+            has_recorded_broadcast_context
+            and wc >= 5
+            and not DIRECT_ADDRESS_RE.search(clean)
+            and not DIRECT_REQUEST_RE.search(clean)
+            and not _OWNER_REALTIME_CORRECTION_RE.search(clean)
+            and not OWNER_SENSOR_CONTROL_RE.search(clean)
+            and acoustic_cue != "nearfield_voice_likely"
+            and (voice_george_conf or 0.0) < 0.35
+        ):
             return {
-                "route": "direct",
-                "reason": "short_utterance_under_declared_ambient_tv",
-                "confidence": 0.86,
+                "route": "ambient_media",
+                "reason": "owner_declared_recorded_broadcast_or_podcast",
+                "confidence": 0.95,
             }
         if (
             wc >= 16
@@ -1264,14 +1507,15 @@ def _classify_spoken_ingress_core(
             stt_conf=conf,
             acoustic_fingerprint=acoustic_fingerprint,
         )
-        if owner_p >= 0.55:
+        if owner_proof and owner_p >= 0.55:
             return {
                 "route": "direct",
                 "reason": "owner_speech_sigmoid_under_declared_ambient_media",
                 "confidence": owner_p,
             }
         if (
-            wc <= 12
+            owner_proof
+            and wc <= 12
             and owner_p >= 0.30
             and _OWNER_GROUNDING_SIGNAL_RE.search(clean)
             and not NARRATION_RE.search(clean)
@@ -1658,6 +1902,8 @@ __all__ = [
     "clear_ambient_media_context",
     "classify_external_consciousness_lane",
     "classify_spoken_ingress",
+    "detect_recorded_broadcast_notice",
+    "detect_stt_quiet_request",
     "get_latest_observed_media_context",
     "record_ambient_media_context",
     "write_gate_receipt",

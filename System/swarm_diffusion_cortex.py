@@ -6,21 +6,25 @@ into the same (``token`` | ``done`` | ``error``) contract as ``swarm_local_brain
 
 Today on the M5:
   - ``diffusion:llada-8b`` — OBSERVED loadable via ``am17an/LLaDA-8B-GGUF`` (arch=llada).
-  - ``diffusion:diffusiongemma-26b`` — honest not_installed until upstream arch merges.
+  - ``diffusion:diffusiongemma-26b`` — honest not_installed until the DiffusionGemma
+    GGUF and dedicated ``llama-diffusion-cli`` runner are present on this node.
 
 Truth boundary: cortex composes from receipts; this organ only runs the denoising runner.
 """
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 _REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_CLI = _REPO / "Library" / "llama.cpp" / "build" / "bin" / "llama-diffusion-cli"
 _PREFIX = "diffusion:"
+_RECEIPT_LEDGER = "diffusion_cortex_receipts.jsonl"
 
 # Catalog ids -> HF repo + gguf filename. Only listed when weights resolve on disk.
 _DIFFUSION_CATALOG: Dict[str, Dict[str, Any]] = {
@@ -33,12 +37,16 @@ _DIFFUSION_CATALOG: Dict[str, Dict[str, Any]] = {
         "installed": "unknown",
     },
     "diffusiongemma-26b": {
-        "display": "DiffusionGemma 26B (GGUF — arch not in local llama.cpp yet)",
+        "display": "DiffusionGemma 26B (GGUF llama-diffusion-cli, not installed)",
         "repo": "unsloth/diffusiongemma-26B-A4B-it-GGUF",
-        "gguf": None,
+        "gguf": "diffusiongemma-26B-A4B-it-Q4_K_M.gguf",
         "schedule": "entropy_bounded",
-        "installed": False,
-        "block_reason": "diffusion-gemma arch unmerged in Library/llama.cpp (PR #24423/#24427); use mlx_vlm fallback",
+        "installed": "unknown",
+        "block_reason": (
+            "DiffusionGemma needs its GGUF weights and the dedicated "
+            "llama-diffusion-cli runner; standard llama-cli/llama-server/Ollama "
+            "cannot generate from this block-diffusion architecture."
+        ),
     },
 }
 
@@ -55,6 +63,29 @@ _LOG_PREFIXES = (
     "user ",
     "sys ",
 )
+
+
+def _state_root() -> Path:
+    raw = os.environ.get("SIFTA_STATE_DIR", "").strip()
+    if raw:
+        p = Path(raw).expanduser()
+        return p if p.name == ".sifta_state" else (p / ".sifta_state")
+    return _REPO / ".sifta_state"
+
+
+def _append_receipt(row: Dict[str, Any]) -> None:
+    """Append one local diffusion run receipt; never raises into generation."""
+    try:
+        payload = dict(row)
+        payload.setdefault("ts", time.time())
+        payload.setdefault("trace_id", str(uuid.uuid4()))
+        payload.setdefault("truth_label", "SIFTA_DIFFUSION_CORTEX_RUN_V1")
+        path = _state_root() / _RECEIPT_LEDGER
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def _cli_path() -> Path:
@@ -149,29 +180,90 @@ def available_models() -> List[str]:
     return out
 
 
-def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
-    parts: List[str] = []
+def _env_int(name: str, default: int, *, low: int, high: int) -> int:
+    try:
+        value = int(float(os.environ.get(name, str(default)).strip()))
+    except Exception:
+        value = int(default)
+    return max(int(low), min(int(high), int(value)))
+
+
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, list):
+        bits: List[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    bits.append(str(part.get("text") or ""))
+                elif "text" in part:
+                    bits.append(str(part.get("text") or ""))
+        return " ".join(bits)
+    return str(content or "")
+
+
+def _clip_text(text: str, max_chars: int) -> str:
+    clean = " ".join(str(text or "").split())
+    if len(clean) <= max_chars:
+        return clean
+    if max_chars <= 24:
+        return clean[:max_chars]
+    head = max_chars // 2
+    tail = max_chars - head - 19
+    return clean[:head].rstrip() + " ...[clipped]... " + clean[-tail:].lstrip()
+
+
+def compact_messages_for_diffusion(messages: List[Dict[str, Any]]) -> str:
+    """Build a bounded Talk prompt for llama-diffusion-cli.
+
+    The diffusion runner is not a long-context chat engine. Feeding Alice's
+    full system prompt/history can push Metal memory over the edge or leave no
+    denoising canvas for the answer. This compactor preserves the current owner
+    turn plus a small recent dialogue tail, with an honest Alice grounding stub.
+    """
+    max_prompt_chars = _env_int("SIFTA_DIFFUSION_MAX_PROMPT_CHARS", 2400, low=600, high=12000)
+    max_message_chars = _env_int("SIFTA_DIFFUSION_MAX_MESSAGE_CHARS", 700, low=160, high=3000)
+    keep_turns = _env_int("SIFTA_DIFFUSION_KEEP_TURNS", 6, low=1, high=20)
+    system_hint_chars = _env_int("SIFTA_DIFFUSION_SYSTEM_HINT_CHARS", 520, low=0, high=2000)
+
+    system_texts: List[str] = []
+    dialogue: List[Tuple[str, str]] = []
     for m in messages or []:
         role = str(m.get("role") or "user").lower()
-        content = m.get("content", "")
-        if isinstance(content, list):
-            bits = []
-            for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    bits.append(str(part.get("text") or ""))
-            content = " ".join(bits)
-        content = str(content or "").strip()
+        content = _message_content_to_text(m.get("content", "")).strip()
         if not content:
             continue
         if role == "system":
-            parts.append(f"SYSTEM: {content}")
+            system_texts.append(content)
         elif role == "assistant":
-            parts.append(f"ASSISTANT: {content}")
+            dialogue.append(("ASSISTANT", content))
         else:
-            parts.append(f"USER: {content}")
+            dialogue.append(("USER", content))
+
+    parts: List[str] = [
+        (
+            "SYSTEM: You are Alice's local diffusion text cortex. "
+            "Answer George directly in first person, grounded in the recent context. "
+            "If evidence is missing, say what is known and what is not."
+        )
+    ]
+    if system_hint_chars and system_texts:
+        parts.append("SYSTEM_CONTEXT: " + _clip_text(system_texts[-1], system_hint_chars))
+    for role, content in dialogue[-keep_turns:]:
+        parts.append(f"{role}: {_clip_text(content, max_message_chars)}")
+
     if not parts:
         return ""
-    return "\n\n".join(parts)
+    prompt = "\n\n".join(parts)
+    if len(prompt) <= max_prompt_chars:
+        return prompt
+    header = parts[0]
+    marker = "\n\n[diffusion prompt clipped to recent tail]\n"
+    budget = max(0, max_prompt_chars - len(header) - len(marker))
+    return header + marker + prompt[-budget:]
+
+
+def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
+    return compact_messages_for_diffusion(messages)
 
 
 def _is_diffusion_log_line(low: str) -> bool:
@@ -274,7 +366,15 @@ def stream_chat(
     timeout_s: Optional[int] = None,
 ) -> Iterator[Tuple[str, Any]]:
     """Run llama-diffusion-cli and yield token/done/error like other local brains."""
+    started = time.time()
+    _tag = request_tag or f"diffusion-{int(started)}"
     if not is_cli_built():
+        _append_receipt({
+            "status": "error",
+            "model": str(model or ""),
+            "request_tag": _tag,
+            "error": f"llama-diffusion-cli not found at {_cli_path()}",
+        })
         yield (
             "error",
             f"llama-diffusion-cli not found at {_cli_path()} — build with: "
@@ -285,15 +385,27 @@ def stream_chat(
 
     gguf, entry, err = resolve_model_spec(model)
     if gguf is None:
+        _append_receipt({
+            "status": "error",
+            "model": str(model or ""),
+            "request_tag": _tag,
+            "error": f"diffusion cortex unavailable: {err}",
+        })
         yield ("error", f"diffusion cortex unavailable for {model}: {err}")
         return
 
     prompt = _messages_to_prompt(messages)
     if not prompt.strip():
+        _append_receipt({
+            "status": "error",
+            "model": str(model or ""),
+            "request_tag": _tag,
+            "gguf": str(gguf),
+            "error": "empty compacted prompt",
+        })
         yield ("error", "diffusion cortex received empty prompt")
         return
 
-    _tag = request_tag or f"diffusion-{int(time.time())}"
     if timeout_s is None:
         _raw = os.environ.get("SIFTA_CORTEX_TIMEOUT_S", "600").strip().lower()
         try:
@@ -302,6 +414,17 @@ def stream_chat(
             timeout_s = 600
 
     cmd = build_cli_command(gguf, prompt, entry, temperature=temperature, prompt_id=_tag)
+    base_receipt = {
+        "model": str(model or ""),
+        "request_tag": _tag,
+        "gguf": str(gguf),
+        "cli": str(_cli_path()),
+        "timeout_s": timeout_s,
+        "prompt_chars": len(prompt),
+        "message_count": len(messages or []),
+        "steps": os.environ.get("SIFTA_DIFFUSION_STEPS", "64"),
+        "canvas_ub": os.environ.get("SIFTA_DIFFUSION_UB", os.environ.get("SIFTA_DIFFUSION_CANVAS_LEN", "128")),
+    }
     try:
         proc = subprocess.run(
             cmd,
@@ -311,19 +434,45 @@ def stream_chat(
             cwd=str(_REPO),
         )
     except subprocess.TimeoutExpired:
+        _append_receipt({
+            **base_receipt,
+            "status": "timeout",
+            "elapsed_s": round(time.time() - started, 3),
+            "error": f"llama-diffusion-cli timed out after {timeout_s}s",
+        })
         yield ("error", f"llama-diffusion-cli timed out after {timeout_s}s (tag={_tag})")
         return
     except Exception as exc:
+        _append_receipt({
+            **base_receipt,
+            "status": "error",
+            "elapsed_s": round(time.time() - started, 3),
+            "error": f"{type(exc).__name__}: {exc}",
+        })
         yield ("error", f"llama-diffusion-cli failed to start: {type(exc).__name__}: {exc}")
         return
 
     text = parse_diffusion_cli_output(proc.stdout or "", proc.stderr or "")
-    if proc.returncode != 0 and not text:
+    if proc.returncode != 0:
         tail = ((proc.stderr or "") + (proc.stdout or ""))[-400:].strip()
-        yield ("error", f"llama-diffusion-cli exit {proc.returncode}: {tail or 'no output'}")
+        _append_receipt({
+            **base_receipt,
+            "status": "error",
+            "returncode": proc.returncode,
+            "elapsed_s": round(time.time() - started, 3),
+            "error": tail or text or "no output",
+        })
+        yield ("error", f"llama-diffusion-cli exit {proc.returncode}: {tail or text or 'no output'}")
         return
     if not text:
         tail = ((proc.stdout or "") + (proc.stderr or ""))[-400:].strip()
+        _append_receipt({
+            **base_receipt,
+            "status": "empty",
+            "returncode": proc.returncode,
+            "elapsed_s": round(time.time() - started, 3),
+            "error": tail or "empty",
+        })
         yield (
             "error",
             f"llama-diffusion-cli returned no decoded text (exit {proc.returncode}); "
@@ -348,12 +497,21 @@ def stream_chat(
         )
     except Exception:
         pass
+    _append_receipt({
+        **base_receipt,
+        "status": "success",
+        "returncode": proc.returncode,
+        "elapsed_s": round(time.time() - started, 3),
+        "output_chars": len(full),
+        "output_preview": full[:240],
+    })
     yield ("done", full)
 
 
 __all__ = [
     "available_models",
     "build_cli_command",
+    "compact_messages_for_diffusion",
     "is_available",
     "is_cli_built",
     "parse_diffusion_cli_output",

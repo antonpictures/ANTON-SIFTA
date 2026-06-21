@@ -21,11 +21,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Multi-word garments first so "bikini top" beats "top", "leg warmers" beats nothing, etc.
+# Multi-word garments first so "swim top" beats "top", "leg warmers" beats nothing, etc.
 GARMENT_VOCAB: tuple[str, ...] = (
-    "leg warmers", "bikini top", "bikini bottoms", "crop top", "tank top", "tube top",
+    "leg warmers", "swim top", "swim bottoms", "crop top", "tank top", "tube top",
     "cowboy hat", "bucket hat", "high heels", "ankle boots", "knee boots",
-    "leggings", "stockings", "thigh highs", "bikini", "swimsuit", "bralette", "bra",
+    "leggings", "stockings", "thigh highs", "swimsuit", "bralette", "bra",
     "dress", "gown", "skirt", "shorts", "jeans", "trousers", "pants", "jacket", "blazer",
     "coat", "hoodie", "sweater", "cardigan", "blouse", "shirt", "robe", "kimono",
     "heels", "boots", "sneakers", "sandals", "loafers", "shoes",

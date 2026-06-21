@@ -33,9 +33,18 @@ public ``tick_writer_organs()`` API.
 from __future__ import annotations
 
 import json
+from collections import deque
 import time
 from pathlib import Path
 from typing import Any, Mapping
+
+try:
+    import fcntl
+
+    _HAVE_TICK_FLOCK = True
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
+    _HAVE_TICK_FLOCK = False
 
 try:
     from System.jsonl_file_lock import append_line_locked
@@ -47,7 +56,9 @@ except Exception:  # pragma: no cover
 
 
 TRUTH_LABEL = "BODY_WRITER_TICK_V1"
+SUPERVISOR_TRUTH_LABEL = "BODY_WRITER_TICK_SUPERVISOR_V1"
 TICK_LEDGER = "body_writer_tick.jsonl"
+TICK_LOCK = "body_writer_tick.lock"
 DEFAULT_STATE_DIR = ".sifta_state"
 
 # Default candidate loops for basal_ganglia. Each tick lets the
@@ -101,6 +112,86 @@ def _ledger_last_ts(path: Path) -> float | None:
         return float(ts) if ts is not None else None
     except Exception:
         return None
+
+
+def _append_supervisor_row(
+    state: Path,
+    *,
+    status: str,
+    error: str,
+    overall_status: str = "all_failed",
+    fail_count: int = 1,
+    write_receipt: bool = True,
+) -> dict:
+    producer: dict[str, object] = {
+        "producer": "body_writer_supervisor",
+        "status": status,
+        "flush": "missed" if fail_count else "skipped",
+        "error": error[:500],
+        "mode": "guarded_subprocess",
+    }
+    row: dict[str, object] = {
+        "ts": time.time(),
+        "truth_label": SUPERVISOR_TRUTH_LABEL,
+        "overall_status": overall_status,
+        "producer_count": 1,
+        "ok_count": 0,
+        "fail_count": int(fail_count),
+        "producers": [producer],
+    }
+    if write_receipt:
+        try:
+            append_line_locked(
+                state / TICK_LEDGER,
+                json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            row["receipt_write_error"] = f"{type(exc).__name__}: {exc}"
+    return row
+
+
+def recent_supervisor_timeout_count(
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+    *,
+    max_rows: int = 8,
+) -> int:
+    """Count recent isolated writer timeouts without scanning the large body ledgers."""
+    path = Path(state_dir) / TICK_LEDGER
+    if not path.exists():
+        return 0
+    rows: deque[str] = deque(maxlen=max(1, int(max_rows)))
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.strip():
+                    rows.append(line)
+    except Exception:
+        return 0
+    count = 0
+    for line in rows:
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if str(row.get("truth_label") or "") != SUPERVISOR_TRUTH_LABEL:
+            continue
+        producers = row.get("producers") or []
+        if not producers or not isinstance(producers[0], dict):
+            continue
+        if producers[0].get("status") == "timeout":
+            count += 1
+    return count
+
+
+def should_run_degraded_tick(
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+    *,
+    timeout_threshold: int = 3,
+    max_rows: int = 8,
+) -> bool:
+    """After repeated timeout pheromones, run a light breath tick first."""
+    return recent_supervisor_timeout_count(state_dir, max_rows=max_rows) >= max(1, int(timeout_threshold))
 
 
 def _tick_basal_ganglia(state_dir: Path, *, candidate_loops) -> dict:
@@ -331,6 +422,98 @@ def tick_writer_organs(
     return row
 
 
+def tick_writer_organs_guarded(
+    *,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+    candidate_loops: tuple = DEFAULT_CANDIDATE_LOOPS,
+    walker_params: Mapping[str, object] | None = None,
+    write_receipt: bool = True,
+    timeout_degrade_threshold: int = 1,
+    force_degraded: bool = False,
+) -> dict:
+    """Run one body writer tick with a process-wide lock and timeout pheromones.
+
+    The Talk GUI may restart while an isolated writer child is still alive.
+    This guard prevents duplicate children from burning CPU together. If the
+    recent field says the full writer keeps timing out, the next ticks run only
+    the fast basal-ganglia producer so Alice keeps a fresh breath receipt
+    instead of repeating the same failed heavy scan.
+    """
+    state = Path(state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    lock_path = state / TICK_LOCK
+    if _HAVE_TICK_FLOCK:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("w", encoding="utf-8") as lock_handle:
+            try:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return _append_supervisor_row(
+                    state,
+                    status="skipped_overlap",
+                    error="another body writer tick is already running",
+                    overall_status="skipped",
+                    fail_count=0,
+                    write_receipt=write_receipt,
+                )
+            try:
+                degraded = bool(force_degraded) or should_run_degraded_tick(
+                    state,
+                    timeout_threshold=timeout_degrade_threshold,
+                )
+                row = tick_writer_organs(
+                    state_dir=state,
+                    candidate_loops=candidate_loops,
+                    walker_params=walker_params,
+                    write_receipt=False,
+                    enable_basal_ganglia=True,
+                    enable_fractal_pheromone=not degraded,
+                    enable_field_slo=not degraded,
+                    enable_body_brain_loop=not degraded,
+                )
+                if degraded:
+                    row["degraded_mode"] = True
+                    row["degraded_reason"] = (
+                        "forced_light_breath" if force_degraded else "recent_supervisor_timeouts"
+                    )
+                if write_receipt:
+                    try:
+                        append_line_locked(
+                            state / TICK_LEDGER,
+                            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
+                            encoding="utf-8",
+                        )
+                    except Exception as exc:
+                        row["receipt_write_error"] = f"{type(exc).__name__}: {exc}"
+                return row
+            finally:
+                try:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+
+    degraded = bool(force_degraded) or should_run_degraded_tick(
+        state,
+        timeout_threshold=timeout_degrade_threshold,
+    )
+    row = tick_writer_organs(
+        state_dir=state,
+        candidate_loops=candidate_loops,
+        walker_params=walker_params,
+        write_receipt=write_receipt,
+        enable_basal_ganglia=True,
+        enable_fractal_pheromone=not degraded,
+        enable_field_slo=not degraded,
+        enable_body_brain_loop=not degraded,
+    )
+    if degraded:
+        row["degraded_mode"] = True
+        row["degraded_reason"] = (
+            "forced_light_breath" if force_degraded else "recent_supervisor_timeouts"
+        )
+    return row
+
+
 def summary_for_prompt(
     state_dir: Path | str = DEFAULT_STATE_DIR,
     *,
@@ -372,7 +555,12 @@ __all__ = [
     "DEFAULT_CANDIDATE_LOOPS",
     "DEFAULT_WALKER_PARAMS",
     "TICK_LEDGER",
+    "TICK_LOCK",
     "TRUTH_LABEL",
+    "SUPERVISOR_TRUTH_LABEL",
+    "recent_supervisor_timeout_count",
+    "should_run_degraded_tick",
     "summary_for_prompt",
     "tick_writer_organs",
+    "tick_writer_organs_guarded",
 ]

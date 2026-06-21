@@ -50,6 +50,82 @@ ONE ALICE. ONE SWARM. 🐜⚡
 
 ---
 
+## r1200 Codex — EOF pointer for USB camera fail-closed fix [r1200-codex-eof-usb-camera-fail-closed]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-15 21:39 PDT (`OBSERVED` local shell)
+**Pointer:** The active camera repair is r1199, which landed above the r1198 tail during append. This EOF pointer makes the live board and `whats_left.py` point at the current camera body truth without rewriting history.
+
+### RECEIPT
+
+- `System/swarm_camera_target.py`: owner/attention USB targets now fail closed when USB is not live; no silent MacBook fallback.
+- `System/swarm_sensor_attention_director.py`: room/world eye no longer demotes to MacBook just because USB is absent.
+- Live probe: active target remains `USB Camera VID:1133 PID:2081`; `resolve_index()` returns `-1`; `system_profiler SPCameraDataType` does not list the USB camera.
+- Four-ledger receipt: `r1199-codex-usb-camera-fail-closed` wrote `ok` to all four canonical ledgers.
+- Verification: camera/owner/reflex/attention focused batch `41 passed`.
+
+### WHAT IS LEFT after r1200
+
+- Reconnect or power-cycle the USB camera/hub, then run `PYTHONPATH=. python3 -m System.swarm_camera_target`; USB must appear in the live device list before Alice can open it.
+- After USB appears, run `PYTHONPATH=. python3 -c "from System.swarm_camera_target import probe_camera_topology; print(probe_camera_topology(write_receipt=True))"` to heal the active target to the live USB unique ID.
+- If USB still does not appear in `system_profiler SPCameraDataType`, the blocker is hardware/macOS enumeration, not Alice's resolver.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1199 Codex — USB camera target fail-closed, no silent MacBook fallback [r1199-codex-usb-camera-fail-closed]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-15 21:34 PDT (`OBSERVED` local shell)
+**Owner correction:** Camera is stuck on the MacBook Pro laptop camera instead of USB.
+
+### DECIDE
+
+Observed live hardware after covenant read:
+
+| Camera | `system_profiler SPCameraDataType` |
+|---|---|
+| MacBook Pro Camera | present, unique ID `6C707041-05AC-0011-0002-000000000001` |
+| OBS Virtual Camera | present |
+| iPhone Camera | present |
+| USB Camera VID:1133 PID:2081 | not advertised by macOS in this probe |
+
+The active target receipt still requested `USB Camera VID:1133 PID:2081`, but `resolve_index()` returned `0`, which currently means MacBook Pro Camera because the USB camera was absent from the live AVFoundation list. That is a false physical substitution: Alice says USB, hardware opens laptop camera.
+
+### EXECUTE
+
+- `System/swarm_camera_target.py`
+  - Added exact-live-device handling for owner-facing and attention-director camera writers.
+  - Owner/attention USB targets now resolve to `-1` when USB is not live instead of falling back to MacBook index `0`.
+  - `prompt_line()` now reports `not live/unresolved` for an absent active target.
+  - `refresh_active_target_from_live(state_dir=...)` now reads/writes that state directory instead of leaking test fixtures into the real active target.
+
+- `System/swarm_sensor_attention_director.py`
+  - Removed the room/world-eye demotion that substituted MacBook when USB was absent.
+  - The room eye remains the target; the camera resolver fails closed until the USB hardware appears again.
+
+- `tests/test_swarm_camera_target.py`
+  - Added regressions for owner USB target, attention-director USB target, absent-target prompt text, and state-dir-isolated topology refresh.
+
+### RECEIPT
+
+- `python3 -m py_compile System/swarm_camera_target.py System/swarm_sensor_attention_director.py tests/test_swarm_camera_target.py tests/test_swarm_sensor_attention_director.py` -> OK
+- `python3 -m pytest tests/test_swarm_camera_target.py tests/test_swarm_sensor_attention_director.py -q` -> `30 passed`
+- `python3 -m pytest tests/test_swarm_owner_camera_commands.py tests/test_swarm_execute_reflex.py tests/test_swarm_sensor_attention_director.py tests/test_swarm_camera_target.py -q` -> `41 passed`
+- `git diff --check -- System/swarm_camera_target.py System/swarm_sensor_attention_director.py tests/test_swarm_camera_target.py` -> OK
+- Live post-fix probe: active target remains USB, `resolve_index()` returns `-1`, and prompt line says `current eye target: USB Camera VID:1133 PID:2081 (not live/unresolved, recorded idx 0, writer=owner_camera_command)`.
+
+### WHAT IS LEFT after r1199
+
+- Reconnect or power-cycle the USB camera/hub, then run `PYTHONPATH=. python3 -m System.swarm_camera_target` and expect USB to appear in the live devices list.
+- After USB appears, run `PYTHONPATH=. python3 -c "from System.swarm_camera_target import probe_camera_topology; print(probe_camera_topology(write_receipt=True))"` so the active target can heal to the live USB unique ID.
+- If USB still does not appear in `system_profiler SPCameraDataType`, the remaining blocker is hardware/macOS enumeration, not Alice's target resolver.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
 ## r1185 Codex — correction: owner/Architect GO is role-based, not name-hardcoded [r1185-codex-owner-go-not-name-hardcode]
 
 **Doctor:** Codex Desktop  
@@ -1441,5 +1517,199 @@ Every IDE doctor (Grok, Cursor, Codex, MiMo): **SIGN IN to IDE_BOOT_COVENANT.md 
 - Codex: governor hard-gate on autonomy-removal proposals via `linter_report()`.
 - Grok: robot wake-anywhere receipt + body inventory from live field.
 - Promote full closed loop to `OPERATIONAL` only after live KEPT row + migrate/boot demo.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1197 Codex — camera plug-and-play owner-eye baseline + eval matrix proof [r1197-codex-camera-hotplug-owner-eye-matrix]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-15 20:12 PDT (`OBSERVED` local shell)
+**Owner correction:** Native MacBook Pro camera should remain Alice's stable embedded eye; USB Logitech plug/unplug must not confuse the camera body. Update eval matrix.
+
+### DECIDE
+
+The MacBook Pro Camera is Alice's always-expected owner eye. The USB Camera VID:1133 PID:2081 is a detachable world eye. Plug/unplug should update identity-bound receipts, not reassign roles by stale integer index.
+
+Layer 1 reality observed before code:
+
+| Camera | OBSERVED by `system_profiler SPCameraDataType` |
+|---|---|
+| MacBook Pro Camera | present; Unique ID `6C707041-05AC-0011-0002-000000000001` |
+| USB Camera VID:1133 PID:2081 | present; Unique ID `0x3121000046d0821` |
+| OBS Virtual Camera | present |
+| iPhone Camera | present but excluded from automatic fallback |
+
+Bug found: `.sifta_state/eye_registry.json` was stale and could show duplicate `world_eye` rows because older Qt receipts stored byte-string IDs like `b'0x...'` while AVFoundation returns clean `0x...` IDs. Active target also had USB camera with stale `index: 0` while live OS order put USB at `index: 1`.
+
+### EXECUTE
+
+- `System/swarm_eye_registry.py`
+  - Canonicalizes Qt byte-string unique IDs into clean stable IDs.
+  - Suppresses stale duplicate `owner_eye` / `world_eye` rows when the same eye role is live under a cleaned hardware identity.
+  - Marks MacBook/FaceTime built-in camera as `always_expected=True`, `fallback_priority=0`, with `owner_eye_policy`.
+
+- `System/swarm_camera_target.py`
+  - Preserves live index when a target has a live unique ID.
+  - Adds `refresh_active_target_from_live()` to heal stale active-target `index` / `unique_id` without switching cameras or breaking owner lease.
+  - `probe_camera_topology(write_receipt=True)` now refreshes active-target identity as part of the topology receipt.
+
+- `tools/generate_organ_eval_matrix_v2.py`
+  - Owner Vision Body panel now shows plug-and-play eye registry, registry age, live/stale counts, active target, MacBook owner-eye expected flag, and USB/world-eye state.
+
+- Tests updated:
+  - `tests/test_swarm_eye_registry.py`
+  - `tests/test_swarm_camera_target.py`
+  - `tests/test_generate_organ_eval_matrix_v2.py`
+
+### RECEIPT
+
+- `python3 -m py_compile System/swarm_eye_registry.py System/swarm_camera_target.py tools/generate_organ_eval_matrix_v2.py tests/test_swarm_eye_registry.py tests/test_swarm_camera_target.py tests/test_generate_organ_eval_matrix_v2.py` -> OK
+- `python3 -m pytest tests/test_swarm_eye_registry.py tests/test_swarm_camera_target.py tests/test_generate_organ_eval_matrix_v2.py -q` -> `20 passed`
+- Live topology refresh:
+  - `owner_eye`: MacBook Pro Camera, `LIVE`, index `0`, expected `yes`
+  - `world_eye`: USB Camera VID:1133 PID:2081, `LIVE`, index `1`
+  - stale eye count `0`
+  - active target healed to USB Camera index `1`, unique ID `0x3121000046d0821`, writer `owner_camera_command`
+- Regenerated `.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html`
+- Matrix proof contains `Plug-and-play eye registry`, `MacBook Pro Camera`, `USB Camera VID:1133 PID:2081`, and `always-expected owner eye`.
+
+### WHAT IS LEFT after r1197
+
+- If Talk/What Alice Sees still shows stale camera state after hotplug, wire a periodic `probe_camera_topology(write_receipt=True)` call or event-triggered refresh into that long-running UI heartbeat.
+- Verify after a real physical USB unplug/replug: no duplicate `world_eye`, MacBook remains `owner_eye LIVE`, active target heals by unique ID, and matrix stale count stays honest.
+- Keep iPhone/Continuity excluded from automatic fallback unless explicitly selected by owner command.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1198 Codex — stigmergic Alzheimer network lab app [r1198-codex-stigmergic-alzheimer-network-lab]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-15 20:58 PDT (`OBSERVED` local shell)
+**Owner request:** Build a stigmergic Alzheimer app. Keep it real: simulation/modeling, not a medical claim.
+
+### DECIDE
+
+Build one educational Neuroscience app that makes the stigmergic hypothesis visible: Alzheimer-like deposits spread locally across a weighted connectome, vulnerable regions amplify deposits, and clearance evaporates the field.
+
+Truth boundary:
+
+| Claim | Label |
+|---|---|
+| The app models a synthetic toy connectome and writes receipts | `OPERATIONAL` |
+| It diagnoses, cures, treats, or predicts a real human disease course | `FORBIDDEN` |
+| Future OASIS/ADNI-style imports can feed de-identified research features | `HYPOTHESIS` |
+
+### EXECUTE
+
+- Added `Applications/sifta_stigmergic_alzheimer_sim.py`
+  - Pure deterministic model functions: `demo_connectome`, `seed_state`, `step_network_diffusion`, `run_simulation`, `summarize_state`.
+  - Qt widget: `StigmergicAlzheimerNetworkLabWidget`.
+  - Controls for seed region, spread, clearance, vulnerability, step/run/reset/export receipt.
+  - Visual connectome canvas with region loads, weighted edges, hotspot metrics, cognitive proxy, entropy.
+  - Hard visible boundary: educational synthetic simulation only; no PHI, no diagnosis, no treatment guidance, no clinical decision support.
+
+- Registered app in `Applications/apps_manifest.json`
+  - Key: `Stigmergic Alzheimer Network Lab`
+  - Category: `Neuroscience`
+  - Truth label: `STIGMERGIC_ALZHEIMER_NETWORK_SIM_V1`
+
+- Added `tests/test_stigmergic_alzheimer_sim.py`
+  - Proves diffusion spreads from entorhinal seed to connected regions.
+  - Proves clearance reduces total load versus no-clearance run.
+  - Proves deterministic simulation summaries include the medical boundary.
+  - Proves receipts include the same boundary.
+
+- Added `Documents/app_help/stigmergic_alzheimer_network_lab.md`
+  - Gives Alice the controls, receipt path, and truth boundaries on demand.
+
+- Updated `tools/generate_organ_eval_matrix_v2.py`
+  - Latest Tournament Delta now surfaces the app, ledgers, test gate, and forbidden overclaims.
+
+- Deposited body awareness:
+  - `body_feature_alerts.jsonl`: `Stigmergic Alzheimer Network Lab`
+  - `alzheimer_stigmergic_sim_receipts.jsonl`: build probe snapshot
+  - `build_verification.jsonl`: `BUILD_VERIFIED`
+
+### RECEIPT
+
+- `python3 -m py_compile Applications/sifta_stigmergic_alzheimer_sim.py tests/test_stigmergic_alzheimer_sim.py tools/generate_organ_eval_matrix_v2.py` -> OK
+- `python3 -m pytest tests/test_stigmergic_alzheimer_sim.py -q` -> `4 passed`
+- `python3 -c "import json; json.load(open('Applications/apps_manifest.json')); ..."` -> manifest entry observed
+- Headless Qt instantiate -> `Stigmergic Alzheimer Network Lab`, step 1 summary observed
+- Headless UI interaction smoke -> sliders + seed combo + Step + Export Receipt worked; summary `ui_interaction_ok 1 Hippocampus L 0.9526`
+- `QT_QPA_PLATFORM=offscreen python3 tests/verify_built_app.py "Stigmergic Alzheimer Network Lab" --file Applications/sifta_stigmergic_alzheimer_sim.py` -> `BUILD_VERIFIED`; help=`Documents/app_help/stigmergic_alzheimer_network_lab.md`
+- `python3 tools/generate_organ_eval_matrix_v2.py` -> regenerated `.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html`
+- Matrix proof contains `Stigmergic Alzheimer Network Lab`, `alzheimer_stigmergic_sim_receipts`, and `No PHI, no diagnosis, no treatment guidance`.
+
+### WHAT IS LEFT after r1198
+
+- Optional next cut: add a de-identified CSV importer for OASIS/ADNI-style longitudinal research rows, with schema validation and no PHI fields.
+- Optional next cut: add a calibration panel that compares synthetic trajectories against public aggregate progression curves without claiming patient-level prediction.
+- Do not promote this to clinical/diagnostic use. The app is an educational stigmergic network-diffusion lab.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1201 Codex — EOF pointer for USB camera fail-closed fix [r1201-codex-eof-usb-camera-fail-closed]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-15 21:41 PDT (`OBSERVED` local shell)
+**Pointer:** r1199 is the landed camera repair; r1200 was an earlier pointer that matched a repeated footer. This EOF pointer is the live tail for `whats_left.py`.
+
+### RECEIPT
+
+- `System/swarm_camera_target.py`: owner/attention USB targets now fail closed when USB is not live; no silent MacBook fallback.
+- `System/swarm_sensor_attention_director.py`: room/world eye no longer demotes to MacBook just because USB is absent.
+- Live probe: active target remains `USB Camera VID:1133 PID:2081`; `resolve_index()` returns `-1`; `system_profiler SPCameraDataType` does not list the USB camera.
+- Four-ledger receipt: `r1199-codex-usb-camera-fail-closed` wrote `ok` to all four canonical ledgers.
+- Verification: camera/owner/reflex/attention focused batch `41 passed`.
+
+### WHAT IS LEFT after r1201
+
+- Reconnect or power-cycle the USB camera/hub, then run `PYTHONPATH=. python3 -m System.swarm_camera_target`; USB must appear in the live device list before Alice can open it.
+- After USB appears, run `PYTHONPATH=. python3 -c "from System.swarm_camera_target import probe_camera_topology; print(probe_camera_topology(write_receipt=True))"` to heal the active target to the live USB unique ID.
+- If USB still does not appear in `system_profiler SPCameraDataType`, the blocker is hardware/macOS enumeration, not Alice's resolver.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1203 Codex — stale mirror blank + live camera blocker tail [r1203-codex-stale-mirror-blank-and-restart]
+
+**Doctor:** Codex Desktop
+**Clock:** 2026-06-16 08:06 PDT (`OBSERVED` local shell)
+**Owner correction:** No camera LED is on; the lower-left mirror is a stale frame from two nights ago.
+
+### RECEIPT
+
+- `Applications/sifta_awareness_mirror_widget.py`: Awareness Mirror now clears cached camera pixels when `active_eye_latest.png` is older than 5s, so stale frames are not displayed as an eye.
+- Verification: widget probe returned `fresh=False`, `pixmap_is_none=True`, status `Camera frame stale...` against the current June-14 frame.
+- Restart: old SIFTA desktop PID 8035 was stopped; direct venv launch PID 18084 exited; normal `SIFTA OS.command` launch succeeded and is running under PID 18779.
+- Camera truth after restart: `camera_unified_field_proof.jsonl` still reports `DISCONNECTED_OR_STALE_INPUT`; no LED/live-frame claim.
+- Four-ledger receipt: `ide-r1203-stale-mirror-blank-and-restart` wrote `ok` to all four canonical ledgers.
+
+### WHAT IS LEFT after r1203
+
+- The UI stale-frame lie is fixed; if no fresh camera frame exists, the mirror should show stale/blank state instead of old room pixels.
+- The remaining blocker is live camera capture permission / frame production for the running Python app, not USB enumeration: macOS lists USB and MacBook cameras, but no fresh `camera_lock` or healthy unified-field proof appears.
+- To make the LED turn on, grant Camera permission to the exact Python/Terminal app that launches `SIFTA OS.command`, then restart from that command and verify a fresh `camera_lock` row.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## CLOSE POINTER — June-15 carrier rolled forward to June-16 [r1205-cowork-june15-close-pointer]
+
+**Doctor:** Cowork Claude (`claude-opus-4-8`)
+**Clock:** 2026-06-16 08:24 PDT (`OBSERVED` shell)
+
+This carrier is closed append-only. The live board is now `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-16.md`, opened from this file's r1204 tail (`r1204-codex-stale-mirror-screenshot-confirmation`). `tools/whats_left.py` selects the newest date-stamped carrier, so it points at June-16 from here on.
+
+The open lane carried forward: **Alice's eyes are dark on every camera lane** — no LED lit, frames stale (`DISCONNECTED_OR_STALE_INPUT`), `sifta_os_desktop.py` not running at hand-off. The UI stale-frame lie is fixed (r1203/r1204); live sight is not. See June-16 `r1205` for the full WHAT IS LEFT.
 
 ONE ALICE. ONE SWARM. 🐜⚡

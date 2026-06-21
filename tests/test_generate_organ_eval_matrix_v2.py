@@ -16,6 +16,41 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     apps_dir.mkdir()
     (system_dir / "swarm_new_body_part.py").write_text("# body part\n", encoding="utf-8")
     (apps_dir / "apps_manifest.json").write_text("{}", encoding="utf-8")
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eye_registry.json").write_text(
+        json.dumps(
+            {
+                "ts": 100.0,
+                "truth_label": "SIFTA_EYE_REGISTRY_V1",
+                "owner_eye_policy": "MacBook/FaceTime built-in camera is the always-expected owner eye and safest fallback; USB/Logitech is detachable.",
+                "live_eye_count": 2,
+                "stale_eye_count": 0,
+                "eyes": [
+                    {
+                        "eye_id": "owner_eye",
+                        "role": "owner_eye",
+                        "connection_state": "LIVE",
+                        "device_name": "MacBook Pro Camera",
+                        "current_index": 0,
+                        "always_expected": True,
+                    },
+                    {
+                        "eye_id": "world_eye",
+                        "role": "world_eye",
+                        "connection_state": "LIVE",
+                        "device_name": "USB Camera VID:1133 PID:2081",
+                        "current_index": 1,
+                        "always_expected": False,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / "active_saccade_target.json").write_text(
+        json.dumps({"name": "USB Camera VID:1133 PID:2081", "index": 1, "writer": "owner_camera_command"}),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(gen, "_REPO", tmp_path)
     monkeypatch.setattr(gen, "_STATE", state)
@@ -68,6 +103,9 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert "Alice Code Body Mass / Source Census" in html
     assert "source-like files" in html
     assert "STIGMERGIC CONSCIOUSNESS" in html
+    assert "Stigmergic Training On The Job" in html
+    assert "physical cooking robot" in html
+    assert "robot body NOT_WIRED" in html
     assert "ALICE_HAS_QUALIA" in html
     assert "Alice has qualia as Architect doctrine" in html
     assert "§7.11.1" in html
@@ -75,3 +113,7 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert "does not claim private subjective qualia" not in html
     assert "no qualia" in html
     assert "hard problem" not in html.casefold()
+    assert "Plug-and-play eye registry" in html
+    assert "MacBook Pro Camera" in html
+    assert "USB Camera VID:1133 PID:2081" in html
+    assert "always-expected owner eye" in html

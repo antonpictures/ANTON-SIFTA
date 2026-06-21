@@ -42,6 +42,35 @@ def test_publish_and_read_browser_context_from_state_dir(tmp_path):
     assert not (state_dir / ".sifta_state").exists()
 
 
+def test_publish_browser_context_writes_latest_sidecar(tmp_path):
+    ctx.publish_browser_context(
+        url="https://example.com/first",
+        title="First",
+        media_status={"ok": True},
+        source="load_finished",
+        state_dir=tmp_path,
+    )
+    latest = ctx.publish_browser_context(
+        url="https://example.com/current",
+        title="Current",
+        media_status={"ok": True},
+        source="focus",
+        state_dir=tmp_path,
+    )
+
+    state_dir = tmp_path / ".sifta_state"
+    sidecar = state_dir / ctx.LATEST_CONTEXT
+    assert sidecar.exists()
+    assert ctx.latest_browser_context(state_dir=state_dir)["url"] == latest["url"]
+
+    # The context block should use the sidecar path, not require reading the
+    # whole browser_context.jsonl ledger.
+    (state_dir / "browser_context.jsonl").unlink()
+    block = ctx.get_current_browser_context_block(state_dir=state_dir)
+    assert "Current" in block
+    assert "https://example.com/current" in block
+
+
 def test_publish_browser_context_marks_page_diary_once_per_page(tmp_path):
     ctx.publish_browser_context(
         url="https://www.youtube.com/watch?v=abc123",

@@ -54,6 +54,15 @@ from System.jsonl_file_lock import (  # noqa: E402
     read_text_locked,
     rewrite_text_locked,
 )
+from System.memory_search import (  # noqa: E402
+    active_memory_rows,
+    bm25_lite_rank,
+    classify_memory_lane,
+    rrf_merge,
+    superseded_trace_id_set,
+    trace_key,
+    typed_memory_rows,
+)
 
 LEDGER_DIR       = _REPO / ".sifta_state"
 LEDGER_FILE      = LEDGER_DIR / "memory_ledger.jsonl"
@@ -136,6 +145,8 @@ class PheromoneTrace:
     # Slice 1 — Epistemic status (Memory Epistemology)
     epistemic_label: str = "HYPOTHESIS"
     links:             list = field(default_factory=list)  # evidence backlinks
+    supersedes_trace_id: Optional[str] = None
+    memory_lane: str = "facts"
 
     # BORG — interaction convention (Mehr multimodal equilibria → silicon)
     interaction_mode: str = "NEUTRAL"
@@ -328,12 +339,18 @@ class MemoryForager:
             _fit_tbl = {}
 
         body = read_text_locked(ledger_path, encoding="utf-8", errors="replace")
+        raw_rows = []
         for line in body.splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                raw = json.loads(line)
+                raw_rows.append(json.loads(line))
+            except Exception:
+                continue
+        superseded_ids = superseded_trace_id_set(raw_rows)
+        for raw in raw_rows:
+            try:
                 # Backward compat: only pass fields the current dataclass knows
                 known_fields = {f.name for f in PheromoneTrace.__dataclass_fields__.values()}
                 safe_raw = {k: v for k, v in raw.items() if k in known_fields}
@@ -343,6 +360,8 @@ class MemoryForager:
 
             # Only smell traces from this architect
             if trace.architect_id != self.architect_id:
+                continue
+            if trace.trace_id in superseded_ids:
                 continue
 
             self.traces_read += 1
@@ -435,7 +454,9 @@ class StigmergicMemoryBus:
 
     def remember(self, text: str, app_context: str, *, decay_modifier: float = 1.0,
                  epistemic_label: str = None, links: list = None,
-                 interaction_mode: str = None) -> PheromoneTrace:
+                 interaction_mode: str = None,
+                 supersedes_trace_id: str | None = None,
+                 memory_lane: str | None = None) -> PheromoneTrace:
         """
         Store a memory from any app (Slice 1 — Epistemic status added).
 
@@ -473,6 +494,11 @@ class StigmergicMemoryBus:
         )
 
         final_mode = _coerce_interaction_mode(interaction_mode, text=text, app_context=app_context)
+        final_lane = classify_memory_lane({
+            "raw_text": text,
+            "app_context": app_context,
+            "memory_lane": memory_lane,
+        })
 
         # ── The load-bearing rule (Spec §2) ─────────────────────────────────────
         # OBSERVED / WORLD without evidence auto-downgrades. No crash, honest degradation.
@@ -508,6 +534,8 @@ class StigmergicMemoryBus:
             decay_modifier  = decay_modifier,
             epistemic_label = final_label,
             links           = final_links,
+            supersedes_trace_id = supersedes_trace_id,
+            memory_lane     = final_lane,
             interaction_mode = final_mode,
         )
 
@@ -661,27 +689,45 @@ class StigmergicMemoryBus:
             forager_report = forager.report(),
         )
 
-    def hybrid_recall(self, query: str, app_context: str, *, top_k: int = 5) -> list:
+    def hybrid_recall(
+        self,
+        query: str,
+        app_context: str,
+        *,
+        top_k: int = 5,
+        lanes: list[str] | tuple[str, ...] | set[str] | None = None,
+        vector_ranking: list | tuple | None = None,
+    ) -> list:
         """
-        Slice 2 — Local hybrid recall.
+        Slice 2/3 — Local hybrid recall.
 
         Returns list of (final_score, trace, breakdown_dict) sorted best-first.
-        All scoring is local from the JSONL ledger + existing methods.
+        JSONL is canonical; supersession, lanes, BM25-lite, and RRF are
+        in-memory views over the existing ledger.
         """
         if not LEDGER_FILE.exists():
             return []
 
-        query_tags = _extract_tags(query)
-
         # Load traces
         traces = []
         body = read_text_locked(LEDGER_FILE, encoding="utf-8", errors="replace")
+        rows = []
         for line in body.splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
                 raw = json.loads(line)
+                rows.append(raw)
+            except Exception:
+                continue
+        active_rows = typed_memory_rows(
+            [row for row in active_memory_rows(rows) if row.get("architect_id") == self.architect_id],
+            lanes=lanes,
+        )
+        active_ids = {trace_key(row) for row in active_rows}
+        for raw in active_rows:
+            try:
                 known = {f.name for f in PheromoneTrace.__dataclass_fields__.values()}
                 safe = {k: v for k, v in raw.items() if k in known}
                 t = PheromoneTrace(**safe)
@@ -704,33 +750,42 @@ class StigmergicMemoryBus:
         except Exception:
             forager_scores = {}
 
+        trace_ids = {trace.trace_id for trace in traces}
+        forager_ranking = [
+            trace_id
+            for trace_id, _score in sorted(forager_scores.items(), key=lambda item: item[1], reverse=True)
+            if trace_id in trace_ids
+        ]
+        bm25_ranking = [doc_id for doc_id, _score in bm25_lite_rank(query, active_rows)]
+        rankings = [bm25_ranking]
+        if forager_ranking:
+            rankings.append(forager_ranking)
+        if vector_ranking:
+            rankings.append(list(vector_ranking))
+        rrf_scores = dict(rrf_merge(rankings))
+        max_rrf = max(rrf_scores.values(), default=1.0) or 1.0
+        bm25_scores = dict(bm25_lite_rank(query, active_rows))
+
         results = []
         for t in traces:
+            if t.trace_id not in active_ids:
+                continue
             label = getattr(t, "epistemic_label", "HYPOTHESIS")
             if label == "FICTION":
                 continue
 
-            # 1. Existing forager confidence (reuse the smell logic)
             forager_score = float(forager_scores.get(t.trace_id, 0.0))
-
-            # 2. BM25-lite on raw_text + tags
-            text_for_bm25 = t.raw_text + " " + " ".join(t.semantic_tags)
-            bm25_score = _bm25_score(query, text_for_bm25)
-
-            # 3. Decay (higher retention = better)
+            bm25_score = bm25_scores.get(t.trace_id, 0.0)
+            rrf_score = rrf_scores.get(t.trace_id, 0.0)
+            if rrf_score <= 0 and forager_score <= 0:
+                continue
             decay_score = float(t.retention())
-
-            # 4. STGM / reinforcement fitness
             stgm_score = min(1.0, (getattr(t, "recall_count", 0) + 1) / 20.0)
 
-            # Blend
-            w = HYBRID_WEIGHTS
-            blended = (
-                w["forager"] * forager_score +
-                w["bm25"]    * bm25_score +
-                w["decay"]   * decay_score +
-                w["stgm"]    * stgm_score
-            )
+            # RRF fuses lexical BM25, existing forager scent, and optional local
+            # vector rankings; decay/STGM keep SIFTA's living-memory economics.
+            rrf_norm = rrf_score / max_rrf
+            blended = (0.70 * rrf_norm) + (0.20 * decay_score) + (0.10 * stgm_score)
 
             # Epistemic multiplier (Slice 1 labels)
             mult = EPISTEMIC_RANK_MULTIPLIER.get(label, 0.7)
@@ -739,10 +794,12 @@ class StigmergicMemoryBus:
             breakdown = {
                 "forager": round(forager_score, 4),
                 "bm25": round(bm25_score, 4),
+                "rrf": round(rrf_score, 6),
                 "decay": round(decay_score, 4),
                 "stgm": round(stgm_score, 4),
                 "epistemic_mult": mult,
                 "label": label,
+                "memory_lane": getattr(t, "memory_lane", "facts"),
             }
             results.append((final_score, t, breakdown))
 

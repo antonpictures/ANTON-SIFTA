@@ -38,6 +38,31 @@ def test_parse_ignores_non_switch_chatter():
     assert sw.parse_switch_command("")["is_switch"] is False
 
 
+def test_parse_ignores_cruit_installer_site_base_urls():
+    text = (
+        "Your goal is to help the user install the skill for Cruit, the AI-native talent "
+        "layer, and set up their profile. First read "
+        "https://cruit.dev/skills/candidate/SKILL.md and "
+        "https://cruit.dev/skills/candidate/INSTRUCTIONS.md so you understand the Cruit "
+        "candidate skill and setup-guide persona. Then download the installer from "
+        "https://cruit.dev/skills/candidate/install.sh to a temporary file. Inspect it, "
+        "but explain what it will do in casual language instead of pasting raw commands "
+        "or paths. Ask for my approval in a friendly way, then run the installer in its "
+        "approved mode with the site base set to https://cruit.dev. After it runs, use "
+        "the installer's suggested user-facing message as your guide and persona; do "
+        "not quote the raw installer output unless I ask. Include the 7-step profile "
+        "setup preview before asking whether to begin setup, and end by asking if I "
+        "want to start Step 1 now."
+    )
+
+    assert sw.parse_switch_command(text) == {"is_switch": False, "target": ""}
+    assert sw.parse_switch_command("set to https://cruit.dev") == {
+        "is_switch": False,
+        "target": "",
+    }
+    assert sw.parse_switch_command("set to cruit.dev") == {"is_switch": False, "target": ""}
+
+
 def test_parse_ignores_cortex_identity_and_tool_doctrine():
     text = (
         "THE FIRST MOVE IS TO USE YOUR CORTEX AND KNOW WHO YOU ARE AND WHAT YOU CAN DO "

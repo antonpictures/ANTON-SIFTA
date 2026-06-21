@@ -102,7 +102,6 @@ Generated from `Documents/APP_HARDENING_QUEUE_2026-06-14.json`, `Documents/APP_H
 77. **SIFTA NLE Panel** — `Applications/sifta_nle_widget.py` — NLEWidget
 78. **SIFTA PDF Forge** — `Applications/sifta_pdf_forge_widget.py` — PdfForgeWidget
 79. **SIFTA Physics Observatory** — `Applications/sifta_physics_observatory.py` — PhysicsObservatoryWidget
-80. **SIFTA Seed Deal Evidence Crucible** — `Applications/sifta_seed_deal_evidence_crucible.py` — SeedDealEvidenceCrucible
 81. **SIFTA Skill Browser** — `Applications/sifta_skill_browser.py` — SkillBrowserApp
 82. **SIFTA Tournament Briefing** — `Applications/sifta_tournament_briefing_widget.py` — TournamentBriefingWidget
 83. **SIFTA ∥ OpenAI — Math Benchmarks** — `Applications/sifta_openai_math_benchmark_widget.py` — MathBenchmarkWidget

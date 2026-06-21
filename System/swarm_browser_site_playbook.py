@@ -366,6 +366,34 @@ def _fill_site_template(template: str, placeholder: str, value: str) -> str:
     return template.replace(placeholder, quote_plus(value.strip()))
 
 
+_OWNER_QUERY_INSTRUCTION_TAIL_RE = re.compile(
+    r"\s*(?:[,;:-]\s*)?"
+    r"(?:"
+    r"do\s+not\s+include\b.*"
+    r"|don't\s+include\b.*"
+    r"|dont\s+include\b.*"
+    r"|without\s+including\b.*"
+    r"|not\s+including\b.*"
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def _strip_owner_query_instruction_tail(query: str) -> str:
+    """Remove routing/meta instruction tails from a search slot.
+
+    Owner speech can mix affection or instruction after the actual target:
+    "open instagram and search for taylor swift, do not include this text here
+    you beautiful". The search slot is "taylor swift"; the tail tells Alice what
+    *not* to send to the website. Strip it before URL construction so contextual
+    fallback never gets a chance to replace the explicit target.
+    """
+    q = " ".join(str(query or "").strip().split())
+    if not q:
+        return ""
+    return _OWNER_QUERY_INSTRUCTION_TAIL_RE.sub("", q).strip(" .?!,;:\"'")
+
+
 def _profile_template(skills: dict[str, Any]) -> str:
     for name in ("open profile", "profile", "open account", "account"):
         template = _url_template_from_skill(skills.get(name, {}), "<handle>")
@@ -468,6 +496,7 @@ def _extract_search_query_from_text(text: str, domain: str) -> str:
             flags=re.IGNORECASE,
         ).strip()
         query = re.sub(r"^\s*for\s+", "", query, flags=re.IGNORECASE)
+        query = _strip_owner_query_instruction_tail(query)
 
         routing_only = re.sub(
             r"\b(?:alice|browser|alice\s+browser|please|pls|open|show|display|load|bring\s+up|pull\s+up|go|to|navigate)\b",

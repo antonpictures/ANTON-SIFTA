@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────
 # SIFTA OS — External Gateway & API Bridge
 # ─────────────────────────────────────────────────────────────
-# Decouples WhatsApp and Discord grids natively. Pushes external
+# Decouples external WhatsApp/grid signals natively. Pushes external
 # signals straight into the decentralized Mempool. Holds the socket
 # open and polls the Dead Drop for the Cognitive Daemon's reply.
 # ─────────────────────────────────────────────────────────────

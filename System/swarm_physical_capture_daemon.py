@@ -143,8 +143,44 @@ def run_daemon(once=False):
     current_sleep_s = _FACE_FAST_S
     adaptive_off = os.environ.get("SIFTA_FACE_ADAPTIVE_OFF", "").strip() in ("1", "true", "yes")
 
+    # Track the current camera target so we switch when the saccade fires
+    _last_target_sig = ""
+
+    def _check_target_change() -> bool:
+        """Return True if the saccade target changed and we need to reopen."""
+        nonlocal _last_target_sig
+        try:
+            from System.swarm_camera_target import read_target
+            rec = read_target()
+            if not rec:
+                return False
+            sig = f"{rec.get('unique_id', '')}|{rec.get('name', '')}|{rec.get('index', '')}"
+            if sig == _last_target_sig:
+                return False
+            _last_target_sig = sig
+            return True
+        except Exception:
+            return False
+
     try:
         while True:
+            # r1243: check if the saccade target changed (camera switch requested)
+            if _check_target_change():
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap, camera_idx = _open_capture()
+                if cap is None or not cap.isOpened():
+                    time.sleep(1.0)
+                    continue
+                # Warm up new camera
+                for _ in range(3):
+                    cap.read()
+                    time.sleep(0.05)
+                empty_cycles = 0
+                current_sleep_s = _FACE_FAST_S
+
             ret, frame = cap.read()
             if not ret:
                 _append_event({

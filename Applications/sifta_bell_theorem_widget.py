@@ -170,9 +170,31 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+from System.swarm_app_hardening import record_app_hardening_event
+
+APP_HARDENING_ID = "queue-023:sifta_bell_theorem_widget"
+_HARDENING_EVENT_KEYS: set[tuple[str, str, str]] = set()
+
+
+def _record_bell_hardening(event: str, **details) -> None:
+    key = (event, str(details.get("path", "")), str(details.get("error", ""))[:160])
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
+
 try:
     from System.swarm_app_focus import publish_focus as _publish_focus
-except Exception:
+except Exception as exc:
+    _record_bell_hardening(
+        "bell_focus_publisher_unavailable",
+        error=f"{type(exc).__name__}: {exc}",
+    )
     def _publish_focus(*a, **kw):
         pass
 
@@ -647,6 +669,11 @@ class BellExperiment:
             self.batch_receipt_count += 1
         except Exception as exc:
             row["write_error"] = f"{type(exc).__name__}: {exc}"
+            _record_bell_hardening(
+                "bell_batch_receipt_write_failed",
+                path=str(self.receipt_path),
+                error=row["write_error"],
+            )
         self.last_batch_receipt = row
         return row
 
@@ -959,8 +986,12 @@ class BellExperiment:
                 json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_bell_hardening(
+                "bell_proof_write_failed",
+                path=str(_BELL_PROOF_LEDGER),
+                error=f"{type(exc).__name__}: {exc}",
+            )
         return row
 
     @property
@@ -1138,6 +1169,11 @@ def run_parameter_sweep(
             )
         except Exception as exc:
             row["write_error"] = f"{type(exc).__name__}: {exc}"
+            _record_bell_hardening(
+                "bell_sweep_write_failed",
+                path=str(out),
+                error=row["write_error"],
+            )
     return row
 
 
@@ -1241,6 +1277,11 @@ def run_ablation_experiment(
             )
         except Exception as exc:
             row["write_error"] = f"{type(exc).__name__}: {exc}"
+            _record_bell_hardening(
+                "bell_ablation_write_failed",
+                path=str(out),
+                error=row["write_error"],
+            )
     return row
 
 

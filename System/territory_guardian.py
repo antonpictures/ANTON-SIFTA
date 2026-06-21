@@ -18,7 +18,7 @@ Architecture:
 
 Alert pipeline:
   Deviation detected → severity scored (distance from safe trail) →
-  nerve channel UDP pulse → Telegram push → desktop notification
+  nerve channel UDP pulse → desktop notification
 
 Persistence:
   .sifta_state/territory_routine.json   — learned routine pheromone map

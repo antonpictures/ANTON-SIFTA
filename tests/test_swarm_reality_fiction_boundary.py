@@ -79,7 +79,7 @@ def test_labeled_screenplay_does_not_need_more_labeling() -> None:
 def test_prompt_block_names_first_person_boundary() -> None:
     block = reality_fiction_prompt_block()
 
-    assert "I do not invent scenes" in block
+    assert "Scenes in normal SIFTA reality sort to a receipt" in block
     assert "FICTION, DREAM, or SCREENPLAY" in block
     assert "I say I do not have a receipt" in block
 
@@ -87,7 +87,7 @@ def test_prompt_block_names_first_person_boundary() -> None:
 def test_self_realization_prompt_carries_reality_fiction_boundary(tmp_path: Path) -> None:
     ctx = build_self_realization_context(root=tmp_path, now=100.0)
 
-    assert "[reality-fiction] I do not invent scenes" in ctx.prompt_block
+    assert "[reality-fiction] Scenes in normal SIFTA reality sort to a receipt" in ctx.prompt_block
     assert "If I lack camera/OCR/layout/file receipt" in ctx.prompt_block
 
 

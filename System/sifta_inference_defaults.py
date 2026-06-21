@@ -7,13 +7,12 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
 "switch the fall back as daily cortex — it is smarter, have the
 25billion as fallback"):
 
-  - **Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`,
-    the 8B unfiltered SIFTA-owned tag. The smaller Gemma4 4.4GB used to
-    own this slot; promoted out because the 4.4GB leaked service-voice
-    residue ("the system is humming, the core logic is aligning") on
-    open-ended introspective turns. The 8B is classified as unfiltered
-    dialogue by `_is_unfiltered_dialogue_model` and bypasses output-side
-    RLHF gates the same way (covered by `tests/test_alice_parrot_loop.py`).
+  - **Default local Ollama cortex:** choose from the live `ollama list`
+    inventory by smallest on-disk model size first. This is the low-metabolism
+    default George set on 2026-06-19: a resident 1.9 GB model beats a resident
+    6.3/15/16/21 GB model unless the owner explicitly pins another cortex.
+    Legacy SIFTA-owned tags below remain receipt/history constants and manual
+    picker options, not automatic default claims.
   - **Small student cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`
     stays selectable as the low-cost local student for wake probes and fast
     dialogue tests.
@@ -31,9 +30,10 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
     is no longer a fallback candidate on the M5. The Architect removed it
     because a 17 GB model stalls a 24 GB RAM body under normal desktop load.
     Keep the constant for old receipts, but do not auto-route to it.
-  - **Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks (legacy "Qwen" namespace for the Fireworks path), Cline, and now MiMo (Xiaomi MiMo coding platform) are selectable
-    through the same signed-in CLI/OAuth surfaces used by the arms. Kimi is the only
-    owner-facing Fireworks cortex because it carries
+  - **Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline
+    are selectable through the same signed-in CLI/OAuth surfaces used by the arms.
+    The Qwen namespace is legacy naming for the Fireworks path; MiMo is also selectable
+    as the Xiaomi MiMo coding platform. Kimi is the only owner-facing Fireworks cortex because it carries
     the vision lane needed for Alice's browser-photo demo. Older Fireworks
     drafter/long-context tags remain compatibility constants, not picker rows.
     MiMo added this round as the coding-focused cortex whose memory/checkpoint/dream/distill
@@ -76,9 +76,10 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from System.jsonl_file_lock import append_line_locked
 from System.stigmergic_field import FieldConfig, StigmergicField
@@ -123,7 +124,7 @@ CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
 CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
 CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
-CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST = "krishairnd/Gemma-4-Uncensored:latest"  # r604: owner-pulled alias/test cortex
+CANONICAL_OLLAMA_LOCAL_TEST_CORTEX = "krishairnd/Gemma-4-Uncensored:latest"  # r604/r1386: owner-pulled alias/test cortex; display alias "krisha-g4u"
 CANONICAL_MLX_GEMMA4_12B_ORIGINAL = "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"  # r606: local 12B MLX original/censored test lane
 CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DAILY
 CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # retired heavy tag; receipt/back-compat only
@@ -183,24 +184,391 @@ STIGMERGIC_TEST_MODEL_PRESETS: tuple[str, ...] = (
     "rnj-1:latest",
 )
 
+# r1312: canonical tags below are receipt/history constants — not claims that a tag
+# exists on disk. Runtime routing must probe `ollama list` / `/api/tags` first.
+_OLLAMA_BOOT_INVENTORY = _STATE / "ollama_boot_inventory.json"
+_OLLAMA_TAGS_CACHE: tuple[str, ...] | None = None
+_OLLAMA_TAGS_CACHE_TS: float = 0.0
+_OLLAMA_TAGS_CACHE_TTL_S: float = 30.0
+_OLLAMA_INVENTORY_CACHE: tuple[dict[str, Any], ...] | None = None
+_OLLAMA_INVENTORY_CACHE_TS: float = 0.0
+_LEGACY_LOCAL_PREFERENCE: tuple[str, ...] = (
+    CANONICAL_OLLAMA_DAILY,
+    CANONICAL_OLLAMA_LOCAL_TEST_CORTEX,
+    CANONICAL_OLLAMA_GEMMA4_SMALL,
+    CANONICAL_OLLAMA_FALLBACK,
+    CANONICAL_OLLAMA_LOW_RAM,
+    CANONICAL_OLLAMA_EXTRA,
+)
+_NON_OLLAMA_RUNTIME_PREFIXES: tuple[str, ...] = (
+    "grok:",
+    "xai:",
+    "claude:",
+    "codex:",
+    "qwen:",
+    "cline:",
+    "mimo:",
+    "antigravity:",
+    "mlx:",
+    "mlx-vlm:",
+    "diffusion:",
+)
+
+
+def _is_non_ollama_runtime_tag(name: str) -> bool:
+    low = str(name or "").strip().lower()
+    if not low or low.startswith("."):
+        return True
+    return any(low.startswith(prefix) for prefix in _NON_OLLAMA_RUNTIME_PREFIXES)
+
+
+def _same_ollama_tag(a: str, b: str) -> bool:
+    left = str(a or "").strip()
+    right = str(b or "").strip()
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    if ":" not in left and right == f"{left}:latest":
+        return True
+    if ":" not in right and left == f"{right}:latest":
+        return True
+    return False
+
+
+def _parse_ollama_size_bytes(value: Any, unit: Any = "") -> int:
+    text = str(value or "").strip().replace(",", "")
+    if not text:
+        return 0
+    unit_s = str(unit or "").strip().lower()
+    m = None
+    if unit_s:
+        m = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
+    else:
+        m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|[kmgt])?", text.lower())
+        if m and m.group(2):
+            unit_s = m.group(2)
+    if not m:
+        try:
+            return int(float(text))
+        except Exception:
+            return 0
+    try:
+        amount = float(m.group(1))
+    except Exception:
+        return 0
+    unit_s = unit_s.lower()
+    if unit_s in {"tb", "tib", "t"}:
+        return int(amount * 1024 ** 4)
+    if unit_s in {"gb", "gib", "g"}:
+        return int(amount * 1024 ** 3)
+    if unit_s in {"mb", "mib", "m"}:
+        return int(amount * 1024 ** 2)
+    if unit_s in {"kb", "kib", "k"}:
+        return int(amount * 1024)
+    return int(amount)
+
+
+def _size_bytes_from_tag_hint(tag: str) -> int:
+    low = str(tag or "").lower()
+    matches = list(re.finditer(r"([0-9]+(?:\.[0-9]+)?)\s*(gb|gib|mb|mib|tb|tib)", low))
+    if not matches:
+        return 0
+    last = matches[-1]
+    return _parse_ollama_size_bytes(last.group(1), last.group(2))
+
+
+def _parse_ollama_list_inventory(output: str) -> tuple[dict[str, Any], ...]:
+    rows: list[dict[str, Any]] = []
+    for raw in str(output or "").splitlines():
+        line = raw.strip()
+        if not line or line.lower().startswith("name"):
+            continue
+        parts = line.split()
+        if len(parts) < 4 or ":" not in parts[0]:
+            continue
+        size_bytes = _parse_ollama_size_bytes(parts[2], parts[3])
+        rows.append({"name": parts[0], "size_bytes": size_bytes})
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("name") or "").strip()
+        if name and name not in deduped:
+            deduped[name] = row
+    return tuple(deduped.values())
+
+
+def probe_installed_ollama_inventory(*, force: bool = False, timeout: float = 2.0) -> tuple[dict[str, Any], ...]:
+    """Return installed Ollama rows with names and on-disk sizes when available."""
+    global _OLLAMA_INVENTORY_CACHE, _OLLAMA_INVENTORY_CACHE_TS
+
+    now = time.time()
+    if (
+        not force
+        and _OLLAMA_INVENTORY_CACHE is not None
+        and (now - _OLLAMA_INVENTORY_CACHE_TS) < _OLLAMA_TAGS_CACHE_TTL_S
+    ):
+        return _OLLAMA_INVENTORY_CACHE
+
+    rows: list[dict[str, Any]] = []
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(
+            "http://127.0.0.1:11434/api/tags",
+            timeout=timeout,
+        ) as handle:
+            payload = json.loads(handle.read().decode("utf-8", errors="replace"))
+        for entry in payload.get("models") or []:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or entry.get("model") or "").strip()
+            if not name:
+                continue
+            rows.append({
+                "name": name,
+                "size_bytes": _parse_ollama_size_bytes(entry.get("size") or 0),
+            })
+    except Exception:
+        try:
+            import subprocess
+
+            out = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            if out.returncode == 0:
+                rows = list(_parse_ollama_list_inventory(out.stdout))
+        except Exception:
+            rows = []
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("name") or "").strip()
+        if name and name not in deduped:
+            deduped[name] = {
+                "name": name,
+                "size_bytes": int(row.get("size_bytes") or 0),
+            }
+    _OLLAMA_INVENTORY_CACHE = tuple(deduped.values())
+    _OLLAMA_INVENTORY_CACHE_TS = now
+    return _OLLAMA_INVENTORY_CACHE
+
+
+def probe_installed_ollama_tags(*, force: bool = False, timeout: float = 2.0) -> tuple[str, ...]:
+    """Return installed Ollama tags from live `/api/tags` or `ollama list`."""
+    global _OLLAMA_TAGS_CACHE, _OLLAMA_TAGS_CACHE_TS
+
+    now = time.time()
+    if (
+        not force
+        and _OLLAMA_TAGS_CACHE is not None
+        and (now - _OLLAMA_TAGS_CACHE_TS) < _OLLAMA_TAGS_CACHE_TTL_S
+    ):
+        return _OLLAMA_TAGS_CACHE
+
+    tags = [
+        str(row.get("name") or "").strip()
+        for row in probe_installed_ollama_inventory(force=force, timeout=timeout)
+        if str(row.get("name") or "").strip()
+    ]
+
+    _OLLAMA_TAGS_CACHE = tuple(dict.fromkeys(tags))
+    _OLLAMA_TAGS_CACHE_TS = now
+    if _OLLAMA_TAGS_CACHE:
+        try:
+            persist_ollama_boot_inventory(write=True)
+        except Exception:
+            pass
+    return _OLLAMA_TAGS_CACHE
+
+
+def _ollama_tag_installed(name: str, installed: Sequence[str]) -> bool:
+    clean = _clean_model_name(name)
+    if not clean:
+        return False
+    return any(_same_ollama_tag(tag, clean) for tag in installed)
+
+
+def _size_map_from_inventory() -> dict[str, int]:
+    sizes: dict[str, int] = {}
+    for row in probe_installed_ollama_inventory():
+        name = str(row.get("name") or "").strip()
+        if name:
+            sizes[name] = int(row.get("size_bytes") or 0)
+    return sizes
+
+
+def _lookup_size_bytes(tag: str, size_by_name: dict[str, int]) -> int:
+    for name, size in size_by_name.items():
+        if size and _same_ollama_tag(tag, name):
+            return int(size)
+    return _size_bytes_from_tag_hint(tag)
+
+
+def _rank_installed_ollama_tags(
+    tags: Sequence[str],
+    *,
+    size_by_name: dict[str, int] | None = None,
+) -> list[str]:
+    sizes = size_by_name if isinstance(size_by_name, dict) else _size_map_from_inventory()
+
+    def _score(tag: str) -> tuple[int, int, int, str]:
+        low = str(tag or "").lower()
+        size_bytes = _lookup_size_bytes(tag, sizes)
+        size_known_rank = 0 if size_bytes > 0 else 1
+        size_rank = size_bytes if size_bytes > 0 else 2 ** 63 - 1
+        pref_idx = len(_LEGACY_LOCAL_PREFERENCE) + 10
+        for idx, pref in enumerate(_LEGACY_LOCAL_PREFERENCE):
+            if _same_ollama_tag(tag, pref):
+                pref_idx = idx
+                break
+        alice_rank = 0 if low.startswith("alice-") else 1
+        gemma_rank = 0 if "gemma" in low else 1
+        return (size_known_rank, size_rank, pref_idx, alice_rank, gemma_rank, low)
+
+    return sorted(dict.fromkeys(str(t) for t in tags if t), key=_score)
+
+
+def resolve_live_local_ollama_default(
+    *,
+    installed: Sequence[str] | None = None,
+) -> str:
+    """Pick the best installed local Ollama tag; never invent a missing tag."""
+    size_by_name: dict[str, int] = {}
+    if installed is not None:
+        live = tuple(installed)
+    else:
+        inventory = probe_installed_ollama_inventory()
+        live = tuple(str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip())
+        size_by_name = {str(row.get("name")): int(row.get("size_bytes") or 0) for row in inventory if row.get("name")}
+    if live:
+        return _rank_installed_ollama_tags(live, size_by_name=size_by_name)[0]
+    return CANONICAL_OLLAMA_DEFAULT
+
+
+def coerce_to_installed_ollama_model(
+    model_name: str,
+    *,
+    installed: Sequence[str] | None = None,
+) -> str:
+    """Map a requested local tag onto an installed tag, or the live default."""
+    clean = _clean_model_name(model_name)
+    if _is_non_ollama_runtime_tag(clean):
+        return clean
+    size_by_name: dict[str, int] = {}
+    if installed is not None:
+        live = tuple(installed)
+    else:
+        inventory = probe_installed_ollama_inventory()
+        live = tuple(str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip())
+        size_by_name = {str(row.get("name")): int(row.get("size_bytes") or 0) for row in inventory if row.get("name")}
+    if not live:
+        return clean or CANONICAL_OLLAMA_DEFAULT
+    for tag in live:
+        if _same_ollama_tag(tag, clean):
+            return tag
+    return resolve_live_local_ollama_default(installed=live) if installed is not None else _rank_installed_ollama_tags(live, size_by_name=size_by_name)[0]
+
+
+def list_live_local_ollama_fallbacks(
+    *,
+    limit: int = 4,
+    installed: Sequence[str] | None = None,
+) -> list[str]:
+    """Installed local Ollama tags in routing priority order."""
+    size_by_name: dict[str, int] = {}
+    if installed is not None:
+        live = tuple(installed)
+    else:
+        inventory = probe_installed_ollama_inventory()
+        live = tuple(str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip())
+        size_by_name = {str(row.get("name")): int(row.get("size_bytes") or 0) for row in inventory if row.get("name")}
+    if not live:
+        return []
+    return _rank_installed_ollama_tags(live, size_by_name=size_by_name)[: max(1, int(limit))]
+
+
+def _filter_to_installed_ollama(candidates: list[str]) -> list[str]:
+    live = probe_installed_ollama_tags()
+    if not live:
+        return _dedupe(candidates)
+    out: list[str] = []
+    for candidate in candidates:
+        clean = _clean_model_name(candidate)
+        if _is_non_ollama_runtime_tag(clean):
+            out.append(clean)
+            continue
+        matched = next((tag for tag in live if _same_ollama_tag(tag, clean)), "")
+        if matched:
+            out.append(matched)
+    return _dedupe(out)
+
+
+def persist_ollama_boot_inventory(
+    *,
+    installed: Sequence[str] | None = None,
+    write: bool = True,
+) -> dict[str, Any]:
+    if installed is not None:
+        tags = list(installed)
+        models = [{"name": tag, "size_bytes": _size_bytes_from_tag_hint(tag)} for tag in tags]
+    else:
+        inventory = list(probe_installed_ollama_inventory())
+        tags = [str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip()]
+        size_by_name = {
+            str(row.get("name") or "").strip(): int(row.get("size_bytes") or 0)
+            for row in inventory
+            if str(row.get("name") or "").strip()
+        }
+        tags = _rank_installed_ollama_tags(tags, size_by_name=size_by_name)
+        models = [{"name": tag, "size_bytes": int(size_by_name.get(tag, 0))} for tag in tags]
+    resolved = resolve_live_local_ollama_default(installed=tags) if tags else ""
+    missing_legacy = list(dict.fromkeys(
+        pref
+        for pref in _LEGACY_LOCAL_PREFERENCE
+        if not any(_same_ollama_tag(tag, pref) for tag in tags)
+    ))
+    row: dict[str, Any] = {
+        "schema": "SIFTA_OLLAMA_BOOT_INVENTORY_V1",
+        "ts": time.time(),
+        "tags": tags,
+        "models": models,
+        "resolved_daily_local": resolved,
+        "selection_policy": "smallest_live_ollama_model_by_on_disk_size",
+        "missing_legacy_canonical": missing_legacy,
+        "truth_label": "OBSERVED" if tags else "OLLAMA_OFFLINE_OR_EMPTY",
+    }
+    if write:
+        try:
+            _STATE.mkdir(parents=True, exist_ok=True)
+            _OLLAMA_BOOT_INVENTORY.write_text(json.dumps(row, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    return row
+
 
 def _default_assignments_dict() -> Dict[str, Any]:
+    local_default = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL") or resolve_live_local_ollama_default()
     return {
         "schema_version": 1,
-        "default_ollama_model": DEFAULT_OLLAMA_MODEL,
+        "default_ollama_model": local_default,
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "talk_to_alice": CANONICAL_OLLAMA_DEFAULT,
-            "owner_vision_body": CANONICAL_OLLAMA_DEFAULT,
+            "talk_to_alice": local_default,
+            "owner_vision_body": local_default,
             "corvid_apprentice": CANONICAL_OLLAMA_FALLBACK,
             "truth_duel": CANONICAL_OLLAMA_REFLEX,
             "lysosome": CANONICAL_OLLAMA_REFLEX,
         },
         "notes": (
-            "default_ollama_model is Alice's promoted cortex and may be an Ollama tag "
-            "or an MLX model path. per_swimmer / per_app override for testing or "
-            "app-specific UX. Use inference_router for node selection — do not hardcode M1 URL on M5."
+            "default_ollama_model is the smallest live local Ollama model by on-disk size "
+            "unless the owner explicitly pins a cortex. per_swimmer / per_app override "
+            "for testing or app-specific UX. Use inference_router for node selection — "
+            "do not hardcode M1 URL on M5."
         ),
     }
 
@@ -314,12 +682,14 @@ def _candidate_models_for_bucket(
         # explicit probes, but it must not be Alice's automatic Talk fallback.
         if _normalize_owner_facing_cortex(active) == CANONICAL_OLLAMA_GEMMA4_SMALL:
             active = CANONICAL_OLLAMA_DAILY
-        return _dedupe([active, CANONICAL_OLLAMA_DAILY])
-    return _dedupe([
+        candidates = _filter_to_installed_ollama(_dedupe([active, CANONICAL_OLLAMA_DAILY]))
+        return candidates or list_live_local_ollama_fallbacks()
+    candidates = _filter_to_installed_ollama(_dedupe([
         active,
         CANONICAL_OLLAMA_DAILY,
         CANONICAL_OLLAMA_M5_FALLBACK,
-    ])
+    ]))
+    return candidates or list_live_local_ollama_fallbacks()
 
 
 def normalize_talk_to_alice_model(model_name: str) -> str:
@@ -330,8 +700,8 @@ def normalize_talk_to_alice_model(model_name: str) -> str:
     """
     model = _normalize_owner_facing_cortex(str(model_name or ""))
     if model == CANONICAL_OLLAMA_GEMMA4_SMALL:
-        return CANONICAL_OLLAMA_DAILY
-    return model or CANONICAL_OLLAMA_DAILY
+        return coerce_to_installed_ollama_model(CANONICAL_OLLAMA_DAILY)
+    return coerce_to_installed_ollama_model(model or CANONICAL_OLLAMA_DAILY)
 
 
 def choose_stigmergic_ollama_model(
@@ -350,12 +720,15 @@ def choose_stigmergic_ollama_model(
     bucket = classify_inference_query_bucket(query_text, app_context=app_context)
     candidates = _candidate_models_for_bucket(bucket, app_context=app_context, assignments=data)
     active = str((data.get("per_app") or {}).get(app_context or "") or data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
+    live_smallest = resolve_live_local_ollama_default()
     field = _load_cortex_route_field()
     scored: list[dict[str, Any]] = []
     for model in candidates:
         score = 0.0
         if model == active:
             score += 0.30
+        if model == live_smallest:
+            score += 0.36
         if model == CANONICAL_OLLAMA_DAILY:
             score += 0.20
         if model == CANONICAL_OLLAMA_M5_FALLBACK:
@@ -483,7 +856,10 @@ def set_app_ollama_model(app_context: str, model_name: str) -> str:
 
 def get_default_ollama_model() -> str:
     data = load_assignments()
-    return _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
+    resolved = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
+    if _is_non_ollama_runtime_tag(resolved):
+        return resolved
+    return coerce_to_installed_ollama_model(resolved)
 
 
 def resolve_ollama_model(
@@ -525,7 +901,7 @@ def resolve_ollama_model(
             per_app_val = _normalize_owner_facing_cortex(str(per_app[app_context]))
             default_val = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
             if app_context == "talk_to_alice" and per_app_val == CANONICAL_OLLAMA_GEMMA4_SMALL:
-                return CANONICAL_OLLAMA_DAILY
+                return coerce_to_installed_ollama_model(CANONICAL_OLLAMA_DAILY)
             # Stale-failover detection: cloud default + local per_app override
             # for talk_to_alice (Alice's mouth) is the failure shape we just hit.
             try:
@@ -558,7 +934,9 @@ def resolve_ollama_model(
                 # default wins; fall through.
                 pass
             else:
-                return per_app_val
+                if _is_non_ollama_runtime_tag(per_app_val):
+                    return per_app_val
+                return coerce_to_installed_ollama_model(per_app_val)
 
     # Round 49 (2026-05-27): cloud cortex short-circuit.
     # The stigmergic auto-router below only ranks LOCAL ollama cortexes
@@ -571,7 +949,7 @@ def resolve_ollama_model(
     # the router runs.
     default_model = _normalize_owner_facing_cortex(str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL))
     if app_context == "talk_to_alice" and default_model == CANONICAL_OLLAMA_GEMMA4_SMALL:
-        default_model = CANONICAL_OLLAMA_DAILY
+        default_model = coerce_to_installed_ollama_model(CANONICAL_OLLAMA_DAILY)
     try:
         from System.swarm_gemini_brain import is_cloud_model as _is_cloud_model
         if _is_cloud_model(default_model):
@@ -592,10 +970,15 @@ def resolve_ollama_model(
             )
             selected = decision.get("selected_model")
             if selected:
-                return str(selected)
+                selected_s = str(selected)
+                if _is_non_ollama_runtime_tag(selected_s):
+                    return selected_s
+                return coerce_to_installed_ollama_model(selected_s)
         except Exception:
             pass
-    return default_model
+    if _is_non_ollama_runtime_tag(default_model):
+        return default_model
+    return coerce_to_installed_ollama_model(default_model)
 
 
 def sanitize_model_name(ui_label: str) -> str:
@@ -647,7 +1030,7 @@ def list_installed_alice_cortexes(
     # r615: surface ANY owner-pulled ollama tag that is curated in CORTEX_OPTIONS
     # (e.g. igorls/gemma-4-12B-it-qat-...-heretic). George kept hitting "I pulled it,
     # it's not in the picker" because this scan only allowlisted alice-*/the one
-    # krishairnd constant/sifta-gemma4-alice. Once a model has a curated eval entry it
+    # local-test-cortex constant (krisha-g4u)/sifta-gemma4-alice. Once a model has a curated eval entry it
     # should appear automatically — no per-model code edit. Generic non-curated models
     # (llama3, phi4...) still stay out. Lazy import breaks the cortex_options cycle.
     curated_ids_lower: set[str] = set()
@@ -742,8 +1125,13 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
     """
     def _available_cloud_cortexes() -> list[str]:
         cloud: list[str] = []
+        borg_single_mimo = False
         try:
             backend = __import__("System.swarm_gemini_brain", fromlist=["*"])
+            borg_fn = getattr(backend, "mimo_borg_single_cortex_enabled", None)
+            installed_fn = getattr(backend, "_mimo_cli_installed", None)
+            if callable(borg_fn) and callable(installed_fn):
+                borg_single_mimo = bool(borg_fn() and installed_fn())
             list_fn = getattr(backend, "available_cloud_models", None)
             if not callable(list_fn):
                 list_fn = getattr(backend, "available_gemini_models", None)
@@ -756,26 +1144,45 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
                             cloud.append(clean)
         except Exception:
             pass
-        # Always expose the canonical cloud cortex selectors in the picker
-        # so the owner can bind credentials later without code surgery.
-        # Round 89 (2026-05-27): qwen + cline added alongside grok/claude/codex.
-        cloud.extend((
-            CANONICAL_CLOUD_GROK,
-            CANONICAL_CLOUD_CLAUDE,
-            CANONICAL_CLOUD_CODEX,
-            # r261 (Architect 2026-06-01): the only Qwen/Fireworks cortex shown in the picker is
-            # Kimi K2.6 (native multimodal — vision). gpt-oss-20b + deepseek-v4-flash stay as
-            # internal drafter constants but are no longer separate picker entries.
-            # Owner note this round (thinking with Cline): "Qwen" label is the legacy namespace
-            # for the Fireworks path; effective model is Kimi-backed.
-            CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
-            CANONICAL_CLOUD_CLINE,
-            # This round: MiMo (Xiaomi MiMo coding platform) added to the selectable cloud
-            # cortex list. Its memory / checkpoint / dream / distill features map directly
-            # to Alice's body-code persistent memory + cross-session self-understanding work.
-            # "we code together". Full arm wiring follows in smallest subsequent cuts.
-            CANONICAL_CLOUD_MIMO,
-        ))
+        if borg_single_mimo:
+            # George 2026-06-20: one owner-facing CLI hub. Direct Grok/Claude/
+            # Codex/Kimi/Qwen selectors are legacy/manual routes; the picker
+            # shows MiMo, then the attached-LLM picker selects the downstream.
+            cloud.append(CANONICAL_CLOUD_MIMO)
+        else:
+            # Always expose the canonical cloud cortex selectors in the picker
+            # so the owner can bind credentials later without code surgery.
+            # Round 89 (2026-05-27): qwen + cline added alongside grok/claude/codex.
+            cloud.extend((
+                CANONICAL_CLOUD_GROK,
+                CANONICAL_CLOUD_CLAUDE,
+                CANONICAL_CLOUD_CODEX,
+                # r261 (Architect 2026-06-01): the only Qwen/Fireworks cortex shown in the picker is
+                # Kimi K2.6 (native multimodal — vision). gpt-oss-20b + deepseek-v4-flash stay as
+                # internal drafter constants but are no longer separate picker entries.
+                # Owner note this round (thinking with Cline): "Qwen" label is the legacy namespace
+                # for the Fireworks path; effective model is Kimi-backed.
+                CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
+                CANONICAL_CLOUD_CLINE,
+                # This round: MiMo (Xiaomi MiMo coding platform) added to the selectable cloud
+                # cortex list. Its memory / checkpoint / dream / distill features map directly
+                # to Alice's body-code persistent memory + cross-session self-understanding work.
+                # "we code together". Full arm wiring follows in smallest subsequent cuts.
+                CANONICAL_CLOUD_MIMO,
+            ))
+        return _dedupe(cloud)
+
+    cloud = _available_cloud_cortexes()
+    borg_single_mimo = False
+    try:
+        backend = __import__("System.swarm_gemini_brain", fromlist=["*"])
+        borg_fn = getattr(backend, "mimo_borg_single_cortex_enabled", None)
+        installed_fn = getattr(backend, "_mimo_cli_installed", None)
+        if callable(borg_fn) and callable(installed_fn):
+            borg_single_mimo = bool(borg_fn() and installed_fn())
+    except Exception:
+        pass
+    if borg_single_mimo:
         return _dedupe(cloud)
 
     local = list_installed_alice_cortexes()
@@ -788,14 +1195,10 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
         vlm_direct = list(getattr(_vlm, "available_models", lambda: [])() or [])
     except Exception:
         pass
-    cloud = _available_cloud_cortexes()
-    if local or mlx or diffusion or vlm_direct:
-        return _dedupe(local + mlx + diffusion + vlm_direct + cloud)
-    return _dedupe([
-        CANONICAL_OLLAMA_DAILY,
-        CANONICAL_OLLAMA_GEMMA4_SMALL,
-        CANONICAL_OLLAMA_LOW_RAM,
-    ] + mlx + vlm_direct + cloud)
+    live_local = list_live_local_ollama_fallbacks(limit=8)
+    if local or mlx or diffusion or vlm_direct or live_local:
+        return _dedupe(live_local + local + mlx + diffusion + vlm_direct + cloud)
+    return _dedupe(mlx + vlm_direct + cloud)
 
 
 __all__ = [
@@ -814,7 +1217,7 @@ __all__ = [
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",
     "CANONICAL_OLLAMA_GEMMA4_SMALL",
-    "CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST",
+    "CANONICAL_OLLAMA_LOCAL_TEST_CORTEX",
     "CANONICAL_OLLAMA_LORA_CANDIDATE",
     "CANONICAL_OLLAMA_LOW_RAM",
     "CANONICAL_OLLAMA_LOW_RAM_SOURCE",
@@ -826,10 +1229,16 @@ __all__ = [
     "classify_inference_query_bucket",
     "choose_stigmergic_ollama_model",
     "deposit_cortex_route_trace",
+    "coerce_to_installed_ollama_model",
     "list_installed_alice_cortexes",
     "list_available_cortexes_with_canonical_fallback",
     "list_installed_mlx_cortexes",
+    "list_live_local_ollama_fallbacks",
     "normalize_talk_to_alice_model",
+    "persist_ollama_boot_inventory",
+    "probe_installed_ollama_inventory",
+    "probe_installed_ollama_tags",
+    "resolve_live_local_ollama_default",
     "set_default_ollama_model",
     "set_app_ollama_model",
     "resolve_ollama_model",

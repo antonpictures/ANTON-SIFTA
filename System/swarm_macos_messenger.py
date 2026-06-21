@@ -8,10 +8,9 @@ Alice sends messages via the SAME apps George uses on his Mac.
 No bridge cache requirement. No transport-id prerequisite.
 WhatsApp Desktop is installed and logged in as George → Alice uses it.
 
-Supported channels (in priority order):
+Supported channels:
   1. WhatsApp Desktop  — via URL scheme + osascript UI automation
   2. iMessage          — via osascript Messages.app
-  3. Telegram          — via URL scheme (if installed)
 
 Contact resolution:
   - First try cached/macOS Contacts phone numbers for deep links
@@ -30,7 +29,6 @@ import json
 import re
 import subprocess
 import time
-import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -413,39 +411,6 @@ end tell
                          "EXCEPTION", str(e)[:200])
 
 
-# ─── Telegram ────────────────────────────────────────────────────────────────
-
-def send_telegram(target: str, message: str) -> Dict[str, Any]:
-    """
-    Send via Telegram (URL scheme). Target should be a username (@handle).
-    """
-    msg_encoded = urllib.parse.quote(message)
-    tg_url = f"tg://resolve?domain={target.lstrip('@')}&text={msg_encoded}"
-    script = f'''
-open location "{tg_url}"
-delay 2.0
-tell application "System Events"
-    tell process "Telegram"
-        keystroke return
-    end tell
-end tell
-return "sent"
-'''
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=10
-        )
-        if r.returncode == 0:
-            return _log_send("telegram", target, target, message, True, "SENT")
-        err = (r.stderr or r.stdout or "").strip()[:200]
-        return _log_send("telegram", target, target, message, False,
-                         "OSASCRIPT_ERROR", err)
-    except Exception as e:
-        return _log_send("telegram", target, target, message, False,
-                         "EXCEPTION", str(e)[:200])
-
-
 # ─── Unified send ────────────────────────────────────────────────────────────
 
 CHANNEL_MAP = {
@@ -453,14 +418,12 @@ CHANNEL_MAP = {
     "wa": send_whatsapp_native,
     "imessage": send_imessage,
     "sms": send_imessage,
-    "telegram": send_telegram,
-    "tg": send_telegram,
 }
 
 def send_message(target: str, message: str,
                  via: str = "whatsapp", *, dry_run: bool = False) -> Dict[str, Any]:
     """
-    Unified entry point. via = 'whatsapp' | 'imessage' | 'telegram'
+    Unified entry point. via = 'whatsapp' | 'imessage'
     Logs a receipt regardless of outcome.
     """
     channel = (via or "whatsapp").lower().strip()
@@ -468,7 +431,7 @@ def send_message(target: str, message: str,
     if not fn:
         return _log_send(channel, target, "", message, False,
                          "UNKNOWN_CHANNEL",
-                         f"Channel '{channel}' not supported. Use: whatsapp, imessage, telegram")
+                         f"Channel '{channel}' not supported. Use: whatsapp or imessage")
     if channel in {"whatsapp", "wa"}:
         return send_whatsapp_native(target, message, dry_run=dry_run)
     return fn(target, message)
@@ -491,7 +454,7 @@ def _print_result(result: Dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Alice macOS Messenger — sends via WhatsApp, iMessage, Telegram"
+        description="Alice macOS Messenger — sends via WhatsApp or iMessage"
     )
     sub = parser.add_subparsers(dest="cmd")
 
@@ -500,7 +463,7 @@ def main() -> None:
     p_send.add_argument("--to", required=True, help="Contact name or phone number")
     p_send.add_argument("--msg", required=True, help="Message text")
     p_send.add_argument("--via", default="whatsapp",
-                        help="Channel: whatsapp (default), imessage, telegram")
+                        help="Channel: whatsapp (default), imessage")
     p_send.add_argument("--dry-run", action="store_true",
                         help="Write a receipt without driving the messaging app")
 

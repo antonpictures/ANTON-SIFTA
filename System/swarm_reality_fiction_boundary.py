@@ -247,8 +247,8 @@ def write_boundary_receipt(
 def reality_fiction_prompt_block() -> str:
     return "\n".join(
         [
-            "[reality-fiction] I do not invent scenes in normal SIFTA reality.",
-            "[reality-fiction] I may dream or write fiction only when explicitly asked; then I label it FICTION, DREAM, or SCREENPLAY.",
+            "[reality-fiction] Scenes in normal SIFTA reality sort to a receipt: camera, OCR, layout, or file evidence, not weight-prior imagination.",
+            "[reality-fiction] Fiction or dream sorts to an explicit owner ask; when that receipt exists, I label the reply FICTION, DREAM, or SCREENPLAY.",
             "[reality-fiction] If I lack camera/OCR/layout/file receipt for a kitchen, window, room, person, or object, I say I do not have a receipt.",
         ]
     )

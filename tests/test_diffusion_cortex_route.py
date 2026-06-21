@@ -26,8 +26,9 @@ def test_parse_diffusion_cli_output_extracts_final_line():
 def test_diffusiongemma_honest_not_installed():
     path, entry, err = sdc.resolve_model_spec("diffusion:diffusiongemma-26b")
     assert path is None
-    assert entry.get("installed") is False
-    assert "unmerged" in err.lower() or "arch" in err.lower()
+    assert entry.get("installed") == "unknown"
+    assert entry.get("gguf") == "diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
+    assert "gguf not cached" in err.lower() or "llama-diffusion-cli" in err.lower()
 
 
 def test_build_cli_command_llada_block_schedule(tmp_path):
@@ -53,6 +54,43 @@ def test_stream_chat_yields_tokens_on_mock_subprocess():
     assert "token" in kinds
     assert kinds[-1] == "done"
     assert "protagonist" in events[-1][1]
+
+
+def test_diffusion_prompt_compacts_huge_talk_history(monkeypatch):
+    monkeypatch.setenv("SIFTA_DIFFUSION_MAX_PROMPT_CHARS", "900")
+    prompt = sdc.compact_messages_for_diffusion([
+        {"role": "system", "content": "COVENANT " * 1200},
+        {"role": "user", "content": "old context " * 200},
+        {"role": "assistant", "content": "old answer " * 200},
+        {"role": "user", "content": "Why did diffusion fail after I said boy?"},
+    ])
+
+    assert len(prompt) <= 900
+    assert "local diffusion text cortex" in prompt
+    assert "Why did diffusion fail" in prompt
+
+
+def test_stream_chat_writes_error_receipt(tmp_path, monkeypatch):
+    fake_proc = mock.Mock(returncode=1, stdout="", stderr="error: Insufficient Memory")
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(sdc, "is_cli_built", lambda: True)
+    monkeypatch.setattr(
+        sdc,
+        "resolve_model_spec",
+        lambda _model: (Path("/tmp/llada-8b.gguf"), {"schedule": "block", "block_length": 32}, ""),
+    )
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_kw: fake_proc)
+
+    events = list(sdc.stream_chat("diffusion:llada-8b", [{"role": "user", "content": "boy"}], timeout_s=3))
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / ".sifta_state" / "diffusion_cortex_receipts.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert events[0][0] == "error"
+    assert rows[-1]["status"] == "error"
+    assert rows[-1]["model"] == "diffusion:llada-8b"
+    assert "Insufficient Memory" in rows[-1]["error"]
 
 
 def test_stream_chat_error_when_cli_missing():

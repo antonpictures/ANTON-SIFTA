@@ -35,6 +35,7 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
 
     monkeypatch.setattr(defaults, "_STATE", tmp_path)
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+    monkeypatch.setattr(defaults, "probe_installed_ollama_inventory", lambda **kw: ())
 
     assert defaults.set_default_ollama_model("gemma4-phc:latest") == "gemma4-phc:latest"
     assert defaults.set_app_ollama_model("talk_to_alice", "alice-phc-cure") == "alice-phc-cure"
@@ -43,25 +44,35 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-phc-cure"
 
 
-def test_talk_to_alice_demoted_small_gemma_pin_normalizes_to_m5(tmp_path, monkeypatch):
+def test_talk_to_alice_missing_legacy_pin_normalizes_to_smallest_live(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
 
     monkeypatch.setattr(defaults, "_STATE", tmp_path)
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+    qwen_2b = "kaelri/qwen3.5-mt:2b"
+    monkeypatch.setattr(
+        defaults,
+        "probe_installed_ollama_inventory",
+        lambda **kw: (
+            {"name": defaults.CANONICAL_OLLAMA_DAILY, "size_bytes": 6_300_000_000},
+            {"name": defaults.CANONICAL_OLLAMA_GEMMA4_SMALL, "size_bytes": 4_400_000_000},
+            {"name": qwen_2b, "size_bytes": 1_900_000_000},
+        ),
+    )
 
-    defaults.set_default_ollama_model(defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
-    defaults.set_app_ollama_model("talk_to_alice", defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
+    defaults.set_default_ollama_model("alice-m5-cortex-8b-deleted:latest")
+    defaults.set_app_ollama_model("talk_to_alice", "alice-m5-cortex-8b-deleted:latest")
 
     assert (
         defaults.resolve_ollama_model(
             app_context="talk_to_alice",
             query_text="I am watching your Alice Browser organ now your body",
         )
-        == defaults.CANONICAL_OLLAMA_DAILY
+        == qwen_2b
     )
     assert (
-        defaults.normalize_talk_to_alice_model(defaults.CANONICAL_OLLAMA_GEMMA4_SMALL)
-        == defaults.CANONICAL_OLLAMA_DAILY
+        defaults.normalize_talk_to_alice_model("alice-m5-cortex-8b-deleted:latest")
+        == qwen_2b
     )
 
 
@@ -73,6 +84,15 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(defaults, "_CORTEX_FIELD_PATH", tmp_path / "cortex_route_field.json")
     monkeypatch.setattr(defaults, "_CORTEX_ROUTING_LEDGER", tmp_path / "cortex_route_receipts.jsonl")
+    monkeypatch.setattr(
+        defaults,
+        "probe_installed_ollama_inventory",
+        lambda **kw: (
+            {"name": defaults.CANONICAL_OLLAMA_DAILY, "size_bytes": 6_300_000_000},
+            {"name": defaults.CANONICAL_OLLAMA_GEMMA4_SMALL, "size_bytes": 4_400_000_000},
+            {"name": "kaelri/qwen3.5-mt:2b", "size_bytes": 1_900_000_000},
+        ),
+    )
 
     # Architect 2026-05-15: resolve_ollama_model honors per_app pins BEFORE the
     # stigmergic router (so the cortex picker UI is not overridden). To exercise
@@ -83,14 +103,14 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     raw.setdefault("per_app", {}).pop("talk_to_alice", None)
     defaults._ASSIGNMENTS.write_text(_json.dumps(raw), encoding="utf-8")
 
-    # For code/debug queries the router now stays inside the two local Gemma4
-    # student cortexes unless the owner explicitly selects a cloud teacher.
-    # The retired 17GB cortex must not be auto-selected on a 24GB body.
+    # The first automatic local pick is the smallest resident Ollama model.
+    # If that specific model then gets a failure receipt, the stigmergic field
+    # may escalate to a larger installed model instead of stubbornly looping.
     initial_pick = defaults.resolve_ollama_model(
         app_context="talk_to_alice",
         query_text="debug the kernel router and run pytest",
     )
-    assert initial_pick == defaults.CANONICAL_OLLAMA_DAILY
+    assert initial_pick == "kaelri/qwen3.5-mt:2b"
 
     bucket = defaults.classify_inference_query_bucket(
         "debug the kernel router and run pytest",
@@ -136,7 +156,7 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     )
     assert defaults.CANONICAL_CLOUD_CLINE == "cline:cline-cli-default"
     assert (
-        defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST
+        defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX
         == "krishairnd/Gemma-4-Uncensored:latest"
     )
     assert (
@@ -151,7 +171,7 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert defaults.CANONICAL_OLLAMA_REFLEX == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
     assert defaults.CANONICAL_OLLAMA_FALLBACK == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
     assert defaults.CANONICAL_OLLAMA_LORA_CANDIDATE == "sifta-gemma4-alice-lora:latest"
-    assert "Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
+    assert "Default local Ollama cortex:** choose from the live `ollama list`" in (defaults.__doc__ or "")
     assert "Experimental alias/test cortex:** `krishairnd/Gemma-4-Uncensored:latest`" in (defaults.__doc__ or "")
     assert "Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
     assert "Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
@@ -179,6 +199,14 @@ def test_talk_resolver_mirror_stale_cloud_pin_uses_owner_default(tmp_path, monke
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
 
     owner_selected = "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"
+    monkeypatch.setattr(
+        defaults,
+        "probe_installed_ollama_inventory",
+        lambda **kw: (
+            {"name": owner_selected, "size_bytes": 8_000_000_000},
+            {"name": "kaelri/qwen3.5-mt:2b", "size_bytes": 1_900_000_000},
+        ),
+    )
     defaults.set_default_ollama_model(owner_selected)
     defaults.set_app_ollama_model("talk_to_alice", defaults.CANONICAL_CLOUD_CLINE)
 
@@ -194,7 +222,7 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
         "models": [
             {"name": defaults.CANONICAL_OLLAMA_DAILY},
             {"name": defaults.CANONICAL_OLLAMA_GEMMA4_SMALL},
-            {"name": defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST},
+            {"name": defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX},
             {"name": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"},
             {"name": defaults.CANONICAL_OLLAMA_EXTRA},
             {"name": "llama3:latest"},
@@ -217,14 +245,14 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
     models = defaults.list_installed_alice_cortexes()
     assert defaults.CANONICAL_OLLAMA_DAILY in models
     assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL in models
-    assert defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST in models
+    assert defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX in models
     assert "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest" in models
     assert defaults.CANONICAL_OLLAMA_EXTRA not in models
     assert "llama3:latest" not in models
 
     monkeypatch.setenv("SIFTA_SHOW_RETIRED_CORTEXES", "1")
     assert defaults.CANONICAL_OLLAMA_EXTRA in defaults.list_installed_alice_cortexes()
-    assert "smaller Gemma4 4.4GB used to" in (defaults.__doc__ or "")
+    assert "low-metabolism" in (defaults.__doc__ or "")
     assert "M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest`" in (defaults.__doc__ or "")
     assert "Reflex path:** fast deterministic checks first, then the shared Gemma path" in (defaults.__doc__ or "")
     assert "Generative fallback/probe:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`" in (defaults.__doc__ or "")
@@ -296,6 +324,8 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert settings.findChild(QComboBox, "AliceBrainModelCombo") is None
         picker = settings.findChild(QComboBox, "AliceCortexPicker")
         assert picker is not None
+        attached_llm_picker = settings.findChild(QComboBox, "AliceCortexAttachedLLMPicker")
+        assert attached_llm_picker is not None
         inventory_picker = settings.findChild(QComboBox, "InstalledModelBodyPicker")
         assert inventory_picker is not None
         assert inventory_picker.isHidden()
@@ -304,8 +334,7 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in labels
         assert "sifta-classifier-c1-3.1b-6.2gb:latest" not in labels
         picker_items = "\n".join(picker.itemText(i) for i in range(picker.count()))
-        assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in picker_items
-        assert "alice-m5-cortex-8b-6.3gb:latest" in picker_items
+        assert "kaelri/qwen3.5-mt:2b" in picker_items
         assert "krishairnd/Gemma-4-Uncensored:latest" in picker_items
         assert "grok:grok-4.3" in picker_items
         assert "claude:claude-code-cli-default" in picker_items
@@ -515,6 +544,90 @@ def test_cline_cortex_indicator_refresh_message(monkeypatch, tmp_path):
         assert "alice-hand" in settings._cortex_auth_indicator.toolTip()
         settings._on_cortex_auth_indicator_clicked()
         assert "alice-hand" in settings._cortex_auth_indicator.toolTip()
+    finally:
+        settings.close()
+        for _ in range(10):
+            app.processEvents()
+
+
+def test_attached_llm_picker_reflects_mimo_keep_list(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+
+    from PyQt6.QtWidgets import QApplication, QComboBox
+
+    from Applications import sifta_system_settings as settings_mod
+    from System import swarm_cortex_capabilities as cap
+
+    mimo_tag = "mimo:mimo-cli-default"
+    monkeypatch.setattr(
+        settings_mod,
+        "list_available_cortexes_with_canonical_fallback",
+        lambda: [mimo_tag, "krishairnd/Gemma-4-Uncensored:latest"],
+    )
+    monkeypatch.setattr(settings_mod, "get_default_ollama_model", lambda: mimo_tag)
+    monkeypatch.setattr(settings_mod, "resolve_ollama_model", lambda **_kw: mimo_tag)
+    monkeypatch.setattr(settings_mod, "list_inference_model_inventory", lambda: [])
+    monkeypatch.setattr(settings_mod, "inference_runtime_nuggets", lambda: [])
+    monkeypatch.setattr(settings_mod, "STATE", tmp_path / ".sifta_state")
+
+    cap.sync_cortex_attached_models_catalog(state_dir=tmp_path / ".sifta_state")
+
+    app = QApplication.instance() or QApplication([])
+    settings = settings_mod.SystemSettingsWidget()
+    try:
+        llm_picker = settings.findChild(QComboBox, "AliceCortexAttachedLLMPicker")
+        assert llm_picker is not None
+        assert llm_picker.isEnabled()
+        items = [llm_picker.itemData(i) for i in range(llm_picker.count())]
+        assert "mimo-auto" in items
+        assert "krishairnd/Gemma-4-Uncensored:latest" in items
+        assert "mimo-v2.5-pro" not in items
+        rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path / ".sifta_state")
+        assert llm_picker.itemData(llm_picker.currentIndex()) == rec.get("default_attached")
+    finally:
+        settings.close()
+        for _ in range(10):
+            app.processEvents()
+
+
+def test_attached_llm_picker_persists_mimo_selection(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+
+    from PyQt6.QtWidgets import QApplication, QComboBox
+
+    from Applications import sifta_system_settings as settings_mod
+    from System import swarm_cortex_capabilities as cap
+
+    state = tmp_path / ".sifta_state"
+    mimo_tag = "mimo:mimo-cli-default"
+    monkeypatch.setattr(
+        settings_mod,
+        "list_available_cortexes_with_canonical_fallback",
+        lambda: [mimo_tag],
+    )
+    monkeypatch.setattr(settings_mod, "get_default_ollama_model", lambda: mimo_tag)
+    monkeypatch.setattr(settings_mod, "resolve_ollama_model", lambda **_kw: mimo_tag)
+    monkeypatch.setattr(settings_mod, "list_inference_model_inventory", lambda: [])
+    monkeypatch.setattr(settings_mod, "inference_runtime_nuggets", lambda: [])
+    monkeypatch.setattr(settings_mod, "STATE", state)
+
+    cap.sync_cortex_attached_models_catalog(state_dir=state)
+
+    app = QApplication.instance() or QApplication([])
+    settings = settings_mod.SystemSettingsWidget()
+    try:
+        llm_picker = settings.findChild(QComboBox, "AliceCortexAttachedLLMPicker")
+        assert llm_picker is not None
+        target_idx = next(
+            i
+            for i in range(llm_picker.count())
+            if llm_picker.itemData(i) == "mimo-auto"
+        )
+        llm_picker.setCurrentIndex(target_idx)
+        rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state)
+        assert rec.get("default_attached") == "mimo-auto"
     finally:
         settings.close()
         for _ in range(10):

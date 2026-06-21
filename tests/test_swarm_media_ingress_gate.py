@@ -7,6 +7,8 @@ from System import swarm_media_ingress_gate as gate
 from System.swarm_media_ingress_gate import (
     classify_external_consciousness_lane,
     classify_spoken_ingress,
+    detect_recorded_broadcast_notice,
+    detect_stt_quiet_request,
 )
 
 
@@ -225,7 +227,7 @@ def test_owner_here_greeting_under_youtube_is_direct_not_rejected():
         "hello hello I am here so good",
         stt_conf=0.62,
         focus_context="ambient_media_context source=background_media note=youtube playing",
-        acoustic_fingerprint={},
+        acoustic_fingerprint=NEARFIELD_FP,
     )
 
     assert decision["route"] == "direct"
@@ -507,6 +509,123 @@ def test_no_media_focus_means_normal_direct_routing():
     assert decision["route"] == "direct"
 
 
+def test_deferred_busy_clip_under_declared_ambient_is_silenced():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "TV/podcast playing; room audio is ambient.",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "when the UFC first started working with UFC was in 1997 and then I quit in 98",
+        stt_conf=0.69,
+        focus_context="",
+        voice_george_conf=0.20,
+        deferred_busy_capture=True,
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "deferred_busy_clip_under_declared_ambient"
+
+
+def test_deferred_busy_clip_george_voice_still_direct():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "TV/podcast playing; room audio is ambient.",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    decision = classify_spoken_ingress(
+        "Alice can you hear me right now",
+        stt_conf=0.72,
+        focus_context="",
+        voice_george_conf=0.70,
+        deferred_busy_capture=True,
+    )
+
+    assert decision["route"] == "direct"
+
+
+def test_detect_stt_quiet_request_parses_owner_duration():
+    notice = detect_stt_quiet_request(
+        "ALICE IGNORE THE STT FOR 30 MINUTES, I WANT TYPED TO WIN."
+    )
+
+    assert notice["detected"] is True
+    assert notice["source"] == "owner_requested_stt_quiet"
+    assert notice["ttl_s"] == 30 * 60
+    assert "stt_quiet" in notice["note"]
+
+
+def test_stt_quiet_window_silences_unverified_podcast_stt():
+    gate.record_ambient_media_context(
+        source="owner_requested_stt_quiet",
+        note=(
+            "owner_requested_stt_quiet stt_quiet speech_to_text_quiet: "
+            "George typed that spoken STT should be treated as ambient."
+        ),
+        ttl_s=1800.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "didn't wake up my pants off. It's pretty normal. Yeah, it's a common trail in Canada.",
+        stt_conf=0.55,
+        focus_context="",
+        voice_george_conf=0.12,
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_requested_stt_quiet_window"
+
+
+def test_stt_quiet_window_allows_verified_george_voice():
+    gate.record_ambient_media_context(
+        source="owner_requested_stt_quiet",
+        note="owner_requested_stt_quiet stt_quiet speech_to_text_quiet",
+        ttl_s=1800.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "what is in your Alice Browser now",
+        stt_conf=0.55,
+        focus_context="",
+        voice_george_conf=0.87,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "voice_identity_george_bypasses_media_gate"
+
+
+def test_declared_ambient_tv_short_podcast_fragment_stays_ambient_without_owner_proof():
+    gate.record_ambient_media_context(
+        source="ambient_media_youtube",
+        note="TV/podcast playing; room audio is ambient.",
+        ttl_s=3600.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "Probably. You're not at all.",
+        stt_conf=0.48,
+        focus_context="",
+        voice_george_conf=0.10,
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_background_media_youtube"
+
+
 def test_owner_declared_background_media_youtube_is_ambient():
     gate.AMBIENT_CONTEXT_FILE.write_text(
         json.dumps(
@@ -583,6 +702,60 @@ def test_declared_background_media_we_you_perception_sentence_stays_ambient():
 
     assert decision["route"] == "ambient_media"
     assert decision["reason"] == "owner_declared_background_media_long_unaddressed_narration"
+
+
+def test_owner_typed_recorded_broadcast_notice_sets_ambient_context():
+    notice = detect_recorded_broadcast_notice(
+        "real world noise from TV while I'm gone at the grocery store"
+    )
+
+    assert notice["detected"] is True
+    assert notice["source"] == "ambient_media_youtube"
+    assert notice["owner_away"] is True
+    assert "Recorded broadcast voices are real people" in notice["note"]
+
+
+def test_declared_recorded_broadcast_question_from_podcast_stays_ambient():
+    gate.record_ambient_media_context(
+        source="ambient_media_podcast",
+        note=(
+            "George declared podcast / recorded broadcast audio in the room. "
+            "Recorded broadcast voices are real people but not direct owner speech. "
+            "owner_away: George said he may be away from the microphone."
+        ),
+        ttl_s=3600.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "Jamie, you might want to actually drink those drugs. "
+        "What are the original paintings of Jesus with a bunch of mushrooms?",
+        stt_conf=0.55,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_recorded_broadcast_or_podcast"
+
+
+def test_declared_recorded_broadcast_first_person_chatter_stays_ambient():
+    gate.record_ambient_media_context(
+        source="ambient_media_podcast",
+        note=(
+            "Joe Rogan podcast is a recorded_broadcast while owner_away; "
+            "real humans in the broadcast are not George speaking to Alice."
+        ),
+        ttl_s=3600.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "I think my own goal is to do this and have fun. "
+        "And then once you do it, it is no longer recreational.",
+        stt_conf=0.52,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_recorded_broadcast_or_podcast"
 
 
 def test_declared_phone_background_is_silent_unless_alice_is_addressed():
@@ -712,7 +885,7 @@ def test_owner_declared_ambient_tv_short_interjection_routes_direct():
         focus_context="background_media_youtube",
     )
     assert decision["route"] == "direct"
-    assert decision["reason"] == "short_utterance_under_declared_ambient_tv"
+    assert decision["reason"] == "control_token_under_declared_ambient_tv"
 
 
 def test_observed_media_receipt_preserves_acoustic_context_not_raw_audio():

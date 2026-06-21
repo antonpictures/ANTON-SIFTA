@@ -123,6 +123,10 @@ class RecorderThread(QThread):
     def run(self):
         try:
             import sounddevice as sd
+            from System.audio_ingress import resolve_default_owner_microphone
+
+            mic_idx, _mic_name = resolve_default_owner_microphone(sd)
+            mic_device = mic_idx if mic_idx >= 0 else None
             self._stop = False
             self._chunks = []
 
@@ -132,7 +136,7 @@ class RecorderThread(QThread):
                 rms = float(np.sqrt(np.mean(chunk ** 2)))
                 self.level_update.emit(min(rms * 8.0, 1.0))
 
-            with sd.InputStream(samplerate=_SAMPLE_RATE, channels=1,
+            with sd.InputStream(device=mic_device, samplerate=_SAMPLE_RATE, channels=1,
                                  dtype="float32", blocksize=_CHUNK,
                                  callback=callback):
                 while not self._stop:
@@ -167,9 +171,17 @@ class LiveClassifierThread(QThread):
             print(f"[VoiceIdentity] sounddevice unavailable: {e}")
             return
 
+        try:
+            from System.audio_ingress import resolve_default_owner_microphone
+
+            mic_idx, _mic_name = resolve_default_owner_microphone(sd)
+            mic_device = mic_idx if mic_idx >= 0 else None
+        except Exception:
+            mic_device = None
+
         while self._running:
             try:
-                with sd.InputStream(samplerate=_SAMPLE_RATE, channels=1,
+                with sd.InputStream(device=mic_device, samplerate=_SAMPLE_RATE, channels=1,
                                     dtype="float32", blocksize=0) as stream:
                     frames_needed = int(_SAMPLE_RATE * 1.5)
                     data, _ = stream.read(frames_needed)
@@ -389,7 +401,7 @@ class VoiceIdentityWidget(QMainWindow):
             QMainWindow, QWidget {
                 background: #0d1117;
                 color: #c9d1d9;
-                font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+                font-family: 'Menlo', 'JetBrains Mono', Consolas, monospace;
             }
             QLabel#title {
                 font-size: 18px;

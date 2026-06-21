@@ -269,6 +269,10 @@ def test_memory_card_includes_image_vision_arm_failover(tmp_ledgers):
     assert "NOT limited to Kimi" in prompt
     assert "BROWSER SCREENSHOT RULE" in prompt
     assert "web-page contents" in prompt
+    assert "fresh inner-viewport / physical-screen pixels first" in prompt
+    assert "Readable monitor pixels are hard body evidence" in prompt
+    assert "PHYSICAL DISPLAY ANCHOR" in prompt
+    assert "Do not confuse the visible subject with George's identity" in prompt
 
 
 def test_memory_card_includes_mutable_site_search_interests(tmp_ledgers):

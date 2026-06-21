@@ -397,6 +397,47 @@ def test_site_search_uses_site_category_playbook_for_changing_query():
     assert out.get("url") == "https://www.tiktok.com/search?q=ferrari", out
     out2 = tw._extract_sifta_app_command("search mercedes on TikTok in Alice Browser")
     assert out2.get("url") == "https://www.tiktok.com/search?q=mercedes", out2
+    out3 = tw._extract_sifta_app_command("SEARCH TAYLOR SWIFT ON INSTAGRAM.COM PLS")
+    assert out3.get("kind") == "browser_url", out3
+    assert out3.get("app_name") == "Alice Browser", out3
+    assert out3.get("search_site") == "instagram.com", out3
+    assert out3.get("query") == "TAYLOR SWIFT", out3
+    assert out3.get("url") == "https://www.instagram.com/explore/search/keyword/?q=TAYLOR+SWIFT", out3
+    out4 = tw._extract_sifta_app_command(
+        "open instagram and search for taylor swift, do not include this text here you beautiful"
+    )
+    assert out4.get("kind") == "browser_url", out4
+    assert out4.get("app_name") == "Alice Browser", out4
+    assert out4.get("search_site") == "instagram.com", out4
+    assert out4.get("query") == "taylor swift", out4
+    assert out4.get("url") == "https://www.instagram.com/explore/search/keyword/?q=taylor+swift", out4
+    assert "you+beautiful" not in out4.get("url", ""), out4
+    assert "swimsuit" not in out4.get("url", "").lower(), out4
+
+
+def test_site_search_action_reply_names_real_browser_move(monkeypatch, tmp_path):
+    state_dir = _use_tmp_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(tw, "_write_app_command_receipt", lambda **kwargs: "r-instagram-search")
+    monkeypatch.setattr(tw.QTimer, "singleShot", lambda *args, **kwargs: None)
+    launcher = _FakeLauncher(["Alice Browser"])
+    harness = _TalkHarness(launcher)
+    url = "https://www.instagram.com/explore/search/keyword/?q=TAYLOR+SWIFT"
+
+    reply = tw.TalkToAliceWidget._execute_sifta_app_command(
+        harness,
+        {
+            "kind": "browser_url",
+            "app_name": "Alice Browser",
+            "url": url,
+            "search_site": "instagram.com",
+            "query": "TAYLOR SWIFT",
+        },
+    )
+
+    assert (state_dir / "alice_browser_open_url.txt").read_text(encoding="utf-8") == url
+    assert reply == "I searched Instagram for TAYLOR SWIFT in Alice Browser. Receipt: r-instagram-search"
+    assert "Receipt: r-instagram-search" in reply
+    assert reply != "Receipt: r-instagram-search"
 
 
 def test_open_marketplace_target_on_ebay_routes_to_browser_before_app_match():
@@ -416,11 +457,14 @@ def test_open_marketplace_target_on_ebay_routes_to_browser_before_app_match():
     assert out2.get("url") == "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater", out2
 
 
-def test_explicit_safari_marketplace_request_routes_native_not_alice_browser():
+def test_explicit_safari_marketplace_request_stays_in_alice_browser_by_doctrine():
+    # r1243: George's browser doctrine keeps all web work inside Alice Browser.
+    # r1316 tightens it: even explicit native browser wording does not leave
+    # the Alice Browser limb while the limb is learning.
     out = tw._extract_sifta_app_command("open blue red sweater on eBay in Safari Mac OS")
-    assert out.get("kind") == "native_browser_url", out
-    assert out.get("app_name") == "Safari", out
-    assert out.get("browser_app") == "Safari", out
+    assert out.get("kind") == "browser_url", out
+    assert out.get("app_name") == "Alice Browser", out
+    assert out.get("browser_app") != "Safari", out
     assert out.get("url") == "https://www.ebay.com/sch/i.html?_nkw=blue+red+sweater", out
 
     default = tw._extract_sifta_app_command("open blue red sweater on eBay")
@@ -428,7 +472,7 @@ def test_explicit_safari_marketplace_request_routes_native_not_alice_browser():
     assert default.get("app_name") == "Alice Browser", default
 
 
-def test_execute_native_safari_url_does_not_write_alice_browser_drop(monkeypatch, tmp_path):
+def test_execute_native_safari_url_reroutes_to_alice_browser(monkeypatch, tmp_path):
     state_dir = _use_tmp_state(monkeypatch, tmp_path)
     monkeypatch.setattr(tw, "_write_app_command_receipt", lambda **kwargs: "receipt-native")
     calls = []
@@ -450,9 +494,9 @@ def test_execute_native_safari_url_does_not_write_alice_browser_drop(monkeypatch
         {"kind": "native_browser_url", "app_name": "Safari", "url": url, "owner_text": "open in Safari"},
     )
 
-    assert calls and calls[0][0] == ["open", "-a", "Safari", url]
-    assert not (state_dir / "alice_browser_open_url.txt").exists()
-    assert "Safari" in reply
+    assert calls == []
+    assert (state_dir / "alice_browser_open_url.txt").read_text(encoding="utf-8") == url
+    assert "Alice Browser" in reply
 
 
 if __name__ == "__main__":

@@ -96,8 +96,8 @@ def test_block_fires_on_operational_without_evidence():
     assert "HONEST UNCERTAINTY" in block
     assert "did_alice_do_X" in block
     assert "I don't know" in block
-    assert "covenant §6" in block or "effector immunity" in block
-    assert "DO NOT" in block
+    assert "RECEIPT-FIRST UNCERTAINTY" in block
+    assert "ledger" in block.lower()
 
 
 def test_block_suggests_codex_or_claude_for_receipt_lookup():
@@ -126,13 +126,13 @@ def test_block_includes_memory_card_excerpt_when_provided():
     assert "recent_actions: nothing relevant" in block
 
 
-def test_block_warns_against_spiritualism_language():
+def test_block_prefers_measurement_language():
     block = hu.uncertainty_prompt_block(
         user_text="what is my stgm balance",
         memory_card_has_relevant=False,
     )
-    assert "seminar" in block.lower() or "spiritualism" in block.lower()
-    assert "I sense" in block or "I perceive" in block
+    assert "RECEIPT-FIRST UNCERTAINTY" in block
+    assert "ledger" in block.lower()
 
 
 # ─── write_unknown ─────────────────────────────────────────────────────────

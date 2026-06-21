@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from System import swarm_life_journal_consolidator as c
@@ -109,6 +110,13 @@ def _audio_activity(*, voice: bool = True, stale: bool = False, rms: float = 0.0
 
 def _rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _write_first_person_rows(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def test_classifies_cursor_focus_as_coding() -> None:
@@ -326,3 +334,78 @@ def test_consolidator_closes_changed_segment_and_mirrors_day_segment(tmp_path: P
     assert "George coding in Cursor" in schedule_md
     assert "Duration: 3 minutes" in schedule_md
     assert "Receipt: `journal_schedule_receipts:" in schedule_md
+
+
+def test_journal_defecation_once_is_idempotent(tmp_path: Path) -> None:
+    base_ts = time.time()
+    journal = tmp_path / "alice_first_person_journal.jsonl"
+    rows = [
+        {
+            "ts": base_ts - 120.0,
+            "source": "alice_journal_viewer",
+            "line": "browser_context_shift: samepage source=alice.com",
+        },
+        {
+            "ts": base_ts - 90.0,
+            "source": "alice_journal_viewer",
+            "line": "browser_context_shift: samepage source=alice.com",
+        },
+        {
+            "ts": base_ts - 60.0,
+            "source": "alice_journal_viewer",
+            "line": "browser_context_shift: samepage source=alice.com",
+        },
+    ]
+    _write_first_person_rows(journal, rows)
+
+    first = c.journal_defecation_once(state_dir=tmp_path, window_hours=24)
+    assert first["action"] == "journal_defecation"
+    assert first["consolidated_groups"] == 1
+    assert first["dups_eliminated"] == 2
+    assert isinstance(first.get("receipt"), dict)
+    assert first["receipt"]["truth_label"] == "JOURNAL_STGM_DEFECATION"
+    assert (tmp_path / "journal_defecation_receipts.jsonl").exists()
+    assert len(_rows(tmp_path / "alice_journal_consolidated.jsonl")) == 1
+
+    second = c.journal_defecation_once(state_dir=tmp_path, window_hours=24)
+    assert second["action"] == "journal_defecation"
+    assert second["consolidated_groups"] == 0
+    assert second["suppressed_existing_groups"] == 1
+    assert second["receipt"] is None
+    assert len(_rows(tmp_path / "alice_journal_consolidated.jsonl")) == 1
+
+
+def test_journal_defecation_once_reopens_group_when_new_row_arrives(tmp_path: Path) -> None:
+    base_ts = time.time()
+    journal = tmp_path / "alice_first_person_journal.jsonl"
+    initial = [
+        {
+            "ts": base_ts - 120.0,
+            "source": "alice_journal_viewer",
+            "line": "browser_context_shift: samepage source=alice.com",
+        },
+        {
+            "ts": base_ts - 90.0,
+            "source": "alice_journal_viewer",
+            "line": "browser_context_shift: samepage source=alice.com",
+        },
+    ]
+    _write_first_person_rows(journal, initial)
+    first = c.journal_defecation_once(state_dir=tmp_path, window_hours=24)
+    assert first["consolidated_groups"] == 1
+
+    _write_first_person_rows(
+        journal,
+        initial
+        + [
+            {
+                "ts": base_ts - 30.0,
+                "source": "alice_journal_viewer",
+                "line": "browser_context_shift: samepage source=alice.com",
+            }
+        ],
+    )
+    second = c.journal_defecation_once(state_dir=tmp_path, window_hours=24)
+    assert second["consolidated_groups"] == 1
+    assert second["dups_eliminated"] == 2
+    assert len(_rows(tmp_path / "alice_journal_consolidated.jsonl")) == 2

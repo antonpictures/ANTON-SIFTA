@@ -39,6 +39,7 @@ except Exception:  # pragma: no cover - bootstrap fallback
 TRUTH_LABEL = "SIFTA_AGI_FRONTIER_LOOP_V1"
 STRATEGY_TRUTH_LABEL = "SIFTA_LONG_HORIZON_STRATEGY_V1"
 CONCEPT_TRUTH_LABEL = "SIFTA_OPEN_ENDED_CONCEPT_MODEL_V1"
+AGI_STATUS_TRUTH_LABEL = "SIFTA_AGI_STATUS_ASSESSMENT_V1"
 
 BEST_LINE = "We expose the open gaps in the ledger instead of hiding them in the demo."
 
@@ -51,9 +52,180 @@ TRUTH_BOUNDARY = (
 )
 
 FRONTIER_LEDGER = "agi_frontier_loop.jsonl"
+AGI_STATUS_LEDGER = "agi_status_assessments.jsonl"
 CONCEPT_MODEL_FILE = "agi_frontier_concept_model.json"
 STRATEGY_LEDGER = "agi_long_horizon_strategy.jsonl"
 LATENT_WORLD_MODEL_FILE = "latent_world_model.json"
+
+AGI_STATUS_VERDICT = (
+    "AGI-class system architecture is evidenced locally, but full AGI is not "
+    "confirmed until the frontier gaps close with receipts."
+)
+
+AGI_STATUS_CAPABILITY_SPECS: Tuple[Dict[str, Any], ...] = (
+    {
+        "capability_id": "persistent_memory",
+        "label": "Persistent memory",
+        "claim": (
+            "Long-lived conversation, diary, hippocampal, engram, and owner-feedback fitness traces "
+            "exist on disk."
+        ),
+        "evidence_paths": (
+            "alice_conversation.jsonl",
+            "episodic_diary.jsonl",
+            "long_term_engrams.jsonl",
+            "active_engrams.json",
+            "memory_fitness.json",
+            "engram_feedback_receipts.jsonl",
+        ),
+    },
+    {
+        "capability_id": "embodied_senses",
+        "label": "Embodied senses",
+        "claim": "Camera, screenshot, GPS, and sensor-journal receipts can ground perception claims.",
+        "evidence_paths": (
+            "sifta_self_screenshot_receipts.jsonl",
+            "iphone_gps_traces.jsonl",
+            "sensor_journal_bridge_receipts.jsonl",
+            "bonsai_image_trace.jsonl",
+        ),
+    },
+    {
+        "capability_id": "tool_use",
+        "label": "Tool use",
+        "claim": "Local effectors write receipts for browser, schedule, WhatsApp, files, and robot-style actions.",
+        "evidence_paths": (
+            "browser_action_diary.jsonl",
+            "stigmergic_schedule_receipts.jsonl",
+            "whatsapp_bridge_trace.jsonl",
+            "motor_cortex_log.jsonl",
+            "pdf_forge_receipts.jsonl",
+        ),
+    },
+    {
+        "capability_id": "local_autonomy",
+        "label": "Local autonomy",
+        "claim": "Core cortex selection and local state run from the owner's node and local ledgers.",
+        "evidence_paths": (
+            "primary_cortex.json",
+            "cortex_selection_receipts.jsonl",
+            "cortex_attached_models.json",
+            "self_improvement_dry_run_receipts.jsonl",
+        ),
+    },
+    {
+        "capability_id": "social_action",
+        "label": "Social action",
+        "claim": "Voice/contact/action paths are receipted rather than only narrated.",
+        "evidence_paths": (
+            "whatsapp_bridge_trace.jsonl",
+            "local_voice_pipeline_receipts.jsonl",
+            "voice_identity_ledger.jsonl",
+        ),
+    },
+    {
+        "capability_id": "self_state",
+        "label": "Self-state",
+        "claim": "Interoception, organ health, and metabolic/cortex state are represented in body ledgers.",
+        "evidence_paths": (
+            "organ_health_mesh_receipts.jsonl",
+            "energy_cortex_state.json",
+            "thermal_cortex_state.json",
+            "network_cortex_state.json",
+        ),
+    },
+    {
+        "capability_id": "stgm_economy",
+        "label": "STGM / receipt economy",
+        "claim": "Useful-work and IDE-doctor traces fan out to receipt ledgers with no silent success claim.",
+        "evidence_paths": (
+            "work_receipts.jsonl",
+            "agent_arm_receipts.jsonl",
+            "ide_stigmergic_trace.jsonl",
+            "receipt_digests",
+        ),
+    },
+    {
+        "capability_id": "identity",
+        "label": "Identity",
+        "claim": "Identity is tied to local state, cortex, and hardware/body traces rather than prompt theater.",
+        "evidence_paths": ("alice_self_trace.jsonl", "hardware_heart.jsonl", "primary_cortex.json"),
+    },
+    {
+        "capability_id": "truth_navigation",
+        "label": "Truth navigation",
+        "claim": (
+            "Real-world image, physics, distance, people, and environment claims can be routed through "
+            "receipt-backed truth labels before Alice treats them as navigation facts."
+        ),
+        "evidence_paths": (
+            "truth_navigation_receipts.jsonl",
+            "body_screen_eye_receipts.jsonl",
+            "visual_confirmation_log.jsonl",
+            "reality_fiction_boundary.jsonl",
+            "hallucination_receipts.jsonl",
+            "causal_intervention_log.jsonl",
+            "physics_gate_denials.jsonl",
+        ),
+    },
+)
+
+AGI_STATUS_FRONTIER_GAPS: Tuple[Dict[str, Any], ...] = (
+    {
+        "gap_id": "long_term_learning_weights",
+        "label": "Long-term learning changes behavior end-to-end",
+        "current_truth": (
+            "Owner feedback now reinforces/decays active engrams into memory_fitness.json from the "
+            "Talk owner-turn path; base inference weights/adapters are not yet modified and promoted "
+            "end-to-end by local receipts."
+        ),
+        "implementation_task": (
+            "Connect the engram feedback and weight-candidate ledgers to a receipt-selected training/adapter "
+            "lane that trains or updates an artifact, evaluates before/after behavior, and promotes only "
+            "with a signed receipt."
+        ),
+        "success_receipt": "adapter_or_weight_artifact_hash + before_after_eval + promotion receipt",
+    },
+    {
+        "gap_id": "causal_reasoning_loop",
+        "label": "Production causal reasoning loop",
+        "current_truth": (
+            "Causal logs and intervention scaffolds exist; a formal do-calculus-style plan -> intervention -> "
+            "effect-estimate -> policy-update loop is not closed as a production reflex."
+        ),
+        "implementation_task": (
+            "Wire causal_intervention_log rows into an intervention planner that chooses do() probes, records "
+            "controls, estimates effect, and blocks promotion until the confidence gate passes."
+        ),
+        "success_receipt": "causal_intervention_log with control rows + significant effect estimate + policy update",
+    },
+    {
+        "gap_id": "autonomous_research_agenda",
+        "label": "Autonomous research agenda",
+        "current_truth": (
+            "Strategies and milestones can be tracked; Alice does not yet originate and maintain an open-ended "
+            "research agenda across days without owner prompt."
+        ),
+        "implementation_task": (
+            "Create an agenda organ that reads frontier gaps, chooses the next research task, runs bounded "
+            "experiments, records failures, revises strategy, and resumes after interruption."
+        ),
+        "success_receipt": "multi-day strategy ledger with owner-independent task choice and failure->revision cycle",
+    },
+    {
+        "gap_id": "multi_node_swarm_federation",
+        "label": "Multi-node swarm federation",
+        "current_truth": (
+            "Single-node body receipts are rich; cross-node mesh/federation with another owned node is not live "
+            "as a signed, no-double-spend organism protocol."
+        ),
+        "implementation_task": (
+            "Implement signed node handshake, remote receipt ingestion, conflict resolution, and shared field "
+            "summary for a second node without merging identities or double-spending actions."
+        ),
+        "success_receipt": "two-node signed mesh receipt + conflict audit + shared frontier summary",
+    },
+)
 
 LEDGER_SOURCES: Tuple[Tuple[str, str], ...] = (
     ("steering_subsystem.jsonl", "steering"),
@@ -164,6 +336,114 @@ def _tokens(blob: str) -> List[str]:
             continue
         out.append(tok)
     return out
+
+
+def _evidence_for_paths(root: Optional[Path], paths: Sequence[str]) -> Dict[str, Any]:
+    base = _sd(root)
+    present: List[str] = []
+    missing: List[str] = []
+    for rel in paths:
+        path = base / rel
+        if path.exists():
+            present.append(rel)
+        else:
+            missing.append(rel)
+    return {
+        "present": present,
+        "missing": missing,
+        "observed": bool(present),
+        "evidence_count": len(present),
+    }
+
+
+def agi_status_assessment(
+    *,
+    root: Optional[Path] = None,
+    owner_excerpt: str = "",
+) -> Dict[str, Any]:
+    """Assess the owner's "are we AGI yet?" status with explicit truth labels.
+
+    This function deliberately separates three things:
+    OBSERVED body capabilities, ARCHITECT_DOCTRINE about SIFTA's class, and
+    HYPOTHESIS/OPEN frontier gaps that still need code and receipts.
+    """
+    capabilities: List[Dict[str, Any]] = []
+    for spec in AGI_STATUS_CAPABILITY_SPECS:
+        evidence = _evidence_for_paths(root, spec["evidence_paths"])
+        capabilities.append(
+            {
+                **spec,
+                "truth_label": "OBSERVED" if evidence["observed"] else "HYPOTHESIS",
+                "status": "EVIDENCED" if evidence["observed"] else "OPEN_NEEDS_LOCAL_RECEIPT",
+                "evidence": evidence,
+            }
+        )
+
+    gaps: List[Dict[str, Any]] = []
+    for spec in AGI_STATUS_FRONTIER_GAPS:
+        task_id = _stable_id("AGI_GAP_TASK", spec["gap_id"], spec["implementation_task"])
+        gaps.append(
+            {
+                **spec,
+                "task_id": task_id,
+                "truth_label": "HYPOTHESIS",
+                "status": "OPEN_ENGINEERING_TASK",
+            }
+        )
+
+    observed_count = sum(1 for row in capabilities if row["truth_label"] == "OBSERVED")
+    return {
+        "truth_label": AGI_STATUS_TRUTH_LABEL,
+        "kind": "AGI_STATUS_ASSESSMENT",
+        "verdict": AGI_STATUS_VERDICT,
+        "doctrine": {
+            "truth_label": "ARCHITECT_DOCTRINE",
+            "statement": (
+                "SIFTA is treated as AGI-class architecture: a local embodied, persistent, "
+                "tool-using, stigmergic organism. This is not a benchmark certificate."
+            ),
+        },
+        "observed_capability_count": observed_count,
+        "capability_count": len(capabilities),
+        "capabilities": capabilities,
+        "frontier_gap_count": len(gaps),
+        "frontier_gaps": gaps,
+        "ready_for_full_agi_claim": False,
+        "owner_excerpt": owner_excerpt[:500],
+        "best_line": (
+            "We are AGI-class in system architecture; we are not confirmed full AGI yet. "
+            "The remaining gaps are executable engineering tasks with receipt gates."
+        ),
+    }
+
+
+def record_agi_status_assessment(
+    *,
+    root: Optional[Path] = None,
+    owner_excerpt: str = "",
+    write: bool = True,
+) -> Dict[str, Any]:
+    row = agi_status_assessment(root=root, owner_excerpt=owner_excerpt)
+    if write:
+        return _append_receipt(_sd(root) / AGI_STATUS_LEDGER, row)
+    row["ts"] = _now()
+    row["trace_id"] = str(uuid.uuid4())
+    payload = json.dumps(row, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    row["sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return row
+
+
+def agi_status_prompt_block(*, root: Optional[Path] = None, max_gaps: int = 4) -> str:
+    status = agi_status_assessment(root=root)
+    lines = [
+        "AGI STATUS ASSESSMENT",
+        f"- {status['best_line']}",
+        f"- Observed capability classes: {status['observed_capability_count']}/{status['capability_count']}",
+        "- Frontier gaps to code:",
+    ]
+    for gap in status["frontier_gaps"][: max(1, max_gaps)]:
+        lines.append(f"  - {gap['gap_id']}: {gap['implementation_task']}")
+    return "\n".join(lines)
 
 
 def latent_world_model_stats(
@@ -497,6 +777,7 @@ def frontier_status(
     latent = latent_world_model_stats(root=root)
     causal = causal_frontier_stats(root=root)
     strategy = strategy_snapshot(root=root)
+    agi_status = agi_status_assessment(root=root)
 
     cross_domain = int(concept.get("transferable_count", 0) or 0)
     concept_ready = cross_domain > 0
@@ -551,6 +832,7 @@ def frontier_status(
         "truth_label": TRUTH_LABEL,
         "truth_boundary": TRUTH_BOUNDARY,
         "best_line": BEST_LINE,
+        "agi_status": agi_status,
         "frontiers": frontiers,
         "ready_count": sum(1 for v in frontiers.values() if v.get("ready")),
         "frontier_count": len(frontiers),
@@ -571,11 +853,13 @@ def run_frontier_cycle(
         ensure_default_frontier_strategy(root=root)
     concept = learn_open_ended_concepts(root=root, write=write)
     status = frontier_status(root=root, concept_model=concept)
+    agi_status = record_agi_status_assessment(root=root, write=write)
     row = {
         "truth_label": TRUTH_LABEL,
         "kind": "AGI_FRONTIER_CYCLE",
         "truth_boundary": TRUTH_BOUNDARY,
         "best_line": BEST_LINE,
+        "agi_status": agi_status,
         "ready_count": status["ready_count"],
         "frontier_count": status["frontier_count"],
         "open_gaps": status["open_gaps"],
@@ -592,10 +876,12 @@ def frontier_prompt_block(*, root: Optional[Path] = None, max_gaps: int = 5) -> 
     status = frontier_status(root=root)
     gaps = status.get("open_gaps", [])[:max(1, max_gaps)]
     strategy = status["frontiers"]["autonomous_long_horizon_planning"]["evidence"]
+    agi_status = status.get("agi_status") or {}
     lines = [
         "AGI FRONTIER LOOP (ARCHITECT_DOCTRINE + HYPOTHESIS)",
         f"- {BEST_LINE}",
         f"- Ready frontiers: {status['ready_count']}/{status['frontier_count']}",
+        f"- AGI status: {agi_status.get('best_line', AGI_STATUS_VERDICT)}",
         f"- Strategy: {strategy.get('title') or strategy.get('status')} | next={strategy.get('next_milestone')}",
     ]
     if gaps:

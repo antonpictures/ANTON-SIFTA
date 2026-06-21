@@ -22,6 +22,11 @@ def test_quiet_mode_has_bounded_default() -> None:
     assert _cowatch_quiet_duration_s("Alice, just listen.") == 20 * 60
 
 
+def test_quiet_mode_accepts_stt_quiet_request() -> None:
+    assert _is_cowatch_quiet_trigger("Alice, ignore STT for 30 minutes.")
+    assert _cowatch_quiet_duration_s("Alice, ignore STT for 30 minutes.") == 30 * 60
+
+
 def test_sleeping_with_tv_enters_quiet_mode() -> None:
     text = (
         "Alice, listen to me carefully. I'm going to sleep right now and "

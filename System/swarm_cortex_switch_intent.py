@@ -60,6 +60,25 @@ def parse_switch_command(text: str) -> Dict[str, object]:
     raw = (m.group("target") or "").strip()
     verb = str((m.groupdict().get("verb") if hasattr(m, "groupdict") else "") or "").lower()
 
+    # r1516 (George 2026-06-21: pasted a long Cruit install-skill instruction whose
+    # "...with the site base set to https://cruit.dev. After it runs, use the
+    # installer's..." clause matched _SWITCH_TO_RE -- "set"/"use" + "to" + a target --
+    # with zero cortex/model/brain/llm word anywhere nearby. _SWITCH_RE always
+    # requires that keyword; _SWITCH_TO_RE (intentionally looser per its docstring,
+    # "switch to X" relying on caller-side cortex context) does not, so it alone
+    # caught a website-config sentence that had nothing to do with switching her
+    # cortex. The post-processing below then split "https://cruit.dev" on its
+    # literal "." and kept only "https://cruit", which resolve_cortex_target
+    # correctly failed to match -- but the caller's r639 guard only suppresses the
+    # confusing "I could not match" reply for unresolved 3+ word targets, and
+    # "https"/"cruit" is only 2 words, so the noise reached George. No real cortex
+    # tag is ever shaped like a URL or bare domain, so a target that looks like one
+    # was never a switch attempt regardless of which regex caught it.
+    if re.match(r"^(?:https?://|www\.)", raw, re.IGNORECASE) or re.match(
+        r"^[\w-]+\.(?:dev|com|org|net|io|ai|app|co|md|sh)\b", raw, re.IGNORECASE
+    ):
+        return {"is_switch": False, "target": ""}
+
     # r641: "use your cortex and know who you are / use tools" is an operating doctrine, not a
     # request to switch to a model named "AND KNOW WHO YOU ARE". Keep "switch/change/set cortex to X"
     # alive, but do not let identity/capability teaching turns become fake cortex targets.

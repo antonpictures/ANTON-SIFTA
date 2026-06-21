@@ -218,6 +218,26 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "module_version",     # System/swarm_api_sentry.py version stamp
     },
 
+    # macOS privacy/cache surface scan — written by
+    # System/swarm_macos_privacy_cache_scanner.py.
+    # Metadata-only: cache names, stat data, service classification, and owner
+    # control locations. It must not read private cache payload contents.
+    "macos_privacy_cache_scan.jsonl": {
+        "trace_id",
+        "ts",
+        "truth_label",
+        "scanner",
+        "cache_root",
+        "privacy_mode",
+        "entry_count",
+        "readable_total_bytes",
+        "sifta_entries",
+        "apple_service_entries",
+        "delete_candidate_entries",
+        "errors",
+        "entries",
+    },
+
     # IDE peer-review traces — written by C47H, AG31, AO46, BISHOP
     # ALSO carries kind="agent_message" rows under the SIC-P v1 protocol
     # (see bin/msg). For agent_message rows, `payload` is itself structured:

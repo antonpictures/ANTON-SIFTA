@@ -18,6 +18,11 @@ from typing import Any, Mapping
 from System.jsonl_file_lock import append_line_locked
 
 try:
+    from System.swarm_fireworks_qwen_config import FIREWORKS_KIMI_K2P6_MODEL
+except Exception:  # pragma: no cover - import-safe fallback
+    FIREWORKS_KIMI_K2P6_MODEL = "accounts/fireworks/models/kimi-k2p6"
+
+try:
     from System.sifta_inference_defaults import (
         CANONICAL_CLOUD_QWEN_PREMIUM_KIMI,
         list_available_cortexes_with_canonical_fallback,
@@ -293,13 +298,70 @@ def load_attached_models(*, state_dir: str | Path | None = None) -> dict[str, An
     return {"schema": _ATTACHED_SCHEMA, "updated_ts": 0.0, "cortexes": {}}
 
 
+def _resolve_mimo_default_attached(
+    current: str,
+    *,
+    catalog: tuple[str, ...] | None = None,
+) -> str:
+    """Keep owner-selected defaults only when they remain in the MiMo keep-list."""
+    cur = str(current or "").strip()
+    allowed = set(catalog if catalog is not None else _MIMO_ATTACHABLE_VIA_UPSTREAM)
+    if cur in allowed:
+        return cur
+    return _MIMO_DEFAULT_ATTACHED
+
+
+def _migrate_legacy_local_ollama_id(model_id: str) -> str:
+    mid = str(model_id or "").strip()
+    return _MIMO_LEGACY_LOCAL_OLLAMA_ALIASES.get(mid, mid)
+
+
+def _migrate_legacy_mimo_attached_id(model_id: str) -> str:
+    """Rewrite pruned MiMo attached rows to the current owner catalog."""
+    mid = _migrate_legacy_local_ollama_id(model_id)
+    if mid == "mimo-v2.5-pro-ultraspeed":
+        return FIREWORKS_KIMI_K2P6_MODEL
+    return mid
+
+
+def _sanitize_mimo_attached_record(rec: dict[str, Any]) -> dict[str, Any]:
+    """Drop pruned MiMo cloud ids and fix stale defaults on read."""
+    out = dict(rec)
+    models = [
+        _migrate_legacy_mimo_attached_id(str(mid))
+        for mid in (out.get("attached_models") or [])
+        if _migrate_legacy_mimo_attached_id(str(mid)) in _MIMO_ATTACHABLE_VIA_UPSTREAM
+    ]
+    if not models:
+        models = list(_MIMO_ATTACHABLE_VIA_UPSTREAM)
+    out["attached_models"] = models
+    resolved = _resolve_mimo_default_attached(
+        _migrate_legacy_mimo_attached_id(str(out.get("default_attached") or ""))
+    )
+    out["default_attached"] = resolved
+    default_label = attached_model_label(resolved)
+    if default_label != resolved:
+        out["default_label"] = default_label
+    elif "default_label" in out and resolved == _MIMO_DEFAULT_ATTACHED:
+        out["default_label"] = default_label
+    if str(rec.get("default_attached") or "") in _MIMO_REMOVED_ATTACHABLE_IDS:
+        out["source"] = "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
+    return out
+
+
 def attached_models_for_cortex(
     cortex_id: str, *, state_dir: str | Path | None = None
 ) -> dict[str, Any]:
     """Return the attached-models record for one cortex id, or {} if unknown."""
     data = load_attached_models(state_dir=state_dir)
-    rec = data.get("cortexes", {}).get(str(cortex_id or "").strip())
-    return dict(rec) if isinstance(rec, dict) else {}
+    cid = str(cortex_id or "").strip()
+    rec = data.get("cortexes", {}).get(cid)
+    if not isinstance(rec, dict):
+        return {}
+    out = dict(rec)
+    if cid == _MIMO_CORTEX_ID:
+        out = _sanitize_mimo_attached_record(out)
+    return out
 
 
 def record_attached_models(
@@ -372,6 +434,7 @@ _CODEX_PICKER_MODELS: tuple[str, ...] = (
     "GPT-5.4-Mini",
     "GPT-5.3-Codex-Spark",
 )
+_CODEX_DEFAULT_ATTACHED = "GPT-5.3-Codex-Spark"
 _ANTHROPIC_ARM_MODELS: tuple[str, ...] = (
     "claude-fable-5",
     "claude-opus-4-8",
@@ -386,13 +449,43 @@ _GROK_OAUTH_MODELS: tuple[str, ...] = (
     "grok-build",
 )
 _MIMO_NATIVE_MODELS: tuple[str, ...] = (
-    "mimo-v2.5-pro",
-    "mimo-v2-flash",
-    "mimo-v2-omni",
-    "mimo-v2-pro",
-    "mimo-v2.5",
-    "mimo-v2.5-pro-ultraspeed",
     "mimo-auto",
+)
+# George 2026-06-20: UltraSpeed beta replaced by Fireworks Kimi K2.6 on the MiMo
+# attached picker — same brain as qwen:accounts/fireworks/models/kimi-k2p6.
+_MIMO_FIREWORKS_ATTACHABLE_MODELS: tuple[str, ...] = (
+    FIREWORKS_KIMI_K2P6_MODEL,
+)
+_MIMO_LOCAL_QWEN_OLLAMA = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+_MIMO_LOCAL_QWEN35_MT = "kaelri/qwen3.5-mt:2b"
+_MIMO_LEGACY_LOCAL_OLLAMA_ALIASES: dict[str, str] = {
+    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_QWEN_OLLAMA,
+}
+_MIMO_LOCAL_OLLAMA_MODELS: tuple[str, ...] = (
+    "krishairnd/Gemma-4-Uncensored:latest",
+    _MIMO_LOCAL_QWEN35_MT,
+    _MIMO_LOCAL_QWEN_OLLAMA,
+)
+_MIMO_LOCAL_DIFFUSION_MODELS: tuple[str, ...] = (
+    "diffusion:diffusiongemma-26b",
+)
+# r1386 (George 2026-06-19): default attached model must always be the
+# smallest local model, not the largest. krishairnd/Gemma-4-Uncensored:latest
+# is 8B; kaelri/qwen3.5-mt:2b is 1.9GB and was the smaller live default
+# George had already switched to manually. This also sidesteps the
+# is_unfiltered_dialogue exemption (r1385) for any model id containing
+# "uncensored", since this id does not.
+_MIMO_DEFAULT_ATTACHED = _MIMO_LOCAL_QWEN35_MT
+_MIMO_CORTEX_ID = "mimo:mimo-cli-default"
+# Owner-pruned 2026-06-17 (r1244): paid MiMo cloud natives stay off the picker.
+_MIMO_REMOVED_ATTACHABLE_IDS: frozenset[str] = frozenset(
+    {
+        "mimo-v2.5-pro",
+        "mimo-v2-flash",
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2.5",
+    }
 )
 # Neutral shared catalog: every model attachable over an OAuth / upstream
 # picker, across vendors. No cortex owns it — Cline and MiMo are equal
@@ -403,12 +496,21 @@ _OAUTH_ATTACHABLE_MODELS: tuple[str, ...] = (
     *_GROK_OAUTH_MODELS,
     *_ANTHROPIC_ARM_MODELS,
 )
+_MIMO_OWNER_KEPT_ATTACHABLE_MODELS: tuple[str, ...] = (
+    "GPT-5.3-Codex-Spark",
+    "grok-composer-2.5-fast",
+    "grok-build",
+    "claude-fable-5",
+)
 # Per-cortex names kept for back-compat with existing references/tests; both
 # point straight at the neutral source above — equal siblings, no hierarchy.
 _CLINE_ATTACHABLE_VIA_OAUTH: tuple[str, ...] = _OAUTH_ATTACHABLE_MODELS
 _MIMO_ATTACHABLE_VIA_UPSTREAM: tuple[str, ...] = (
     *_MIMO_NATIVE_MODELS,
-    *_OAUTH_ATTACHABLE_MODELS,
+    *_MIMO_FIREWORKS_ATTACHABLE_MODELS,
+    *_MIMO_LOCAL_OLLAMA_MODELS,
+    *_MIMO_LOCAL_DIFFUSION_MODELS,
+    *_MIMO_OWNER_KEPT_ATTACHABLE_MODELS,
 )
 
 _ATTACHED_MODEL_LABELS: dict[str, str] = {
@@ -419,8 +521,12 @@ _ATTACHED_MODEL_LABELS: dict[str, str] = {
     "mimo-v2-omni": "MiMo-V2-Omni",
     "mimo-v2-pro": "MiMo-V2-Pro",
     "mimo-v2.5": "MiMo-V2.5",
-    "mimo-v2.5-pro-ultraspeed": "MiMo-V2.5-Pro-UltraSpeed",
+    FIREWORKS_KIMI_K2P6_MODEL: "Kimi K2.6 (fireworks-api kimi-k2p6)",
     "mimo-auto": "MiMo Auto (free)",
+    "krishairnd/Gemma-4-Uncensored:latest": "krisha-g4u (local Ollama)",
+    _MIMO_LOCAL_QWEN35_MT: "kaelri-q3.5-mt-2b (local Ollama)",
+    _MIMO_LOCAL_QWEN_OLLAMA: "Qwen3.6 27B Uncensored Balanced (local Ollama)",
+    "diffusion:diffusiongemma-26b": "DiffusionGemma 26B (local diffusion)",
     "claude-fable-5": "Fable 5",
     "claude-opus-4-8": "Opus 4.8",
     "claude-opus-4-7": "Opus 4.7",
@@ -448,12 +554,32 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
     "grok-composer-2.5-fast": "Cursor's latest coding model.",
     "grok-build": "Best for advanced coding tasks.",
     "mimo-v2.5-pro": "Paid MiMo Token-Plan flagship observed in George's MiMo picker.",
-    "mimo-v2-flash": "Fast MiMo native model observed in George's MiMo picker.",
+    "mimo-v2-flash": "Legacy fast MiMo native model; vendor notice says V2-Flash auto-routes to V2.5 on 2026-06-18 GMT+8 and deprecates by June 30.",
     "mimo-v2-omni": "Omni MiMo native model observed in George's MiMo picker.",
     "mimo-v2-pro": "Pro MiMo native model observed in George's MiMo picker.",
     "mimo-v2.5": "MiMo V2.5 native model observed in George's MiMo picker.",
-    "mimo-v2.5-pro-ultraspeed": "UltraSpeed MiMo V2.5 Pro native model observed in George's MiMo picker.",
+    FIREWORKS_KIMI_K2P6_MODEL: (
+        "Kimi K2.6 on the Fireworks API — same lane as "
+        "qwen:accounts/fireworks/models/kimi-k2p6 (fireworks-api kimi-k2p6)."
+    ),
     "mimo-auto": "Free MiMo Auto route observed in George's MiMo picker.",
+    "krishairnd/Gemma-4-Uncensored:latest": (
+        "Local Ollama Gemma 4 Uncensored tag observed on GTH4921YP3: "
+        "8B, Q4_K_M, 131072 context, vision/audio/tools/thinking."
+    ),
+    _MIMO_LOCAL_QWEN35_MT: (
+        "Local Ollama kaelri/qwen3.5-mt:2b on GTH4921YP3: Qwen3.5 2.3B, Q4_K_M, "
+        "262144 context, 1.9 GB, vision/tools/thinking/completion, pulled 2026-06-19."
+    ),
+    _MIMO_LOCAL_QWEN_OLLAMA: (
+        "Local Ollama Qwen3.6 27B Uncensored HauhauCS Balanced IQ4_XS on GTH4921YP3: "
+        "27.4B, 262144 context, 16 GB, digest e5630341d1d8, vision/tools/thinking, pulled 2026-06-18."
+    ),
+    "diffusion:diffusiongemma-26b": (
+        "Experimental local DiffusionGemma / Gemma 4 26B A4B diffusion cortex. "
+        "Not a MiMo native cloud model and not an Ollama tag; requires the "
+        "DiffusionGemma GGUF plus the dedicated llama-diffusion-cli runner before it is runnable."
+    ),
     "claude-fable-5": "For toughest challenges; owner screenshot says included until June 22.",
     "claude-opus-4-8": "For complex tasks.",
     "claude-sonnet-4-6": "Most efficient for everyday tasks.",
@@ -581,15 +707,27 @@ def sync_cortex_attached_models_catalog(
         state_dir=sd,
     )
     results["synced"].append("cline:cline-cli-default")
+    existing_mimo_raw = load_attached_models(state_dir=sd).get("cortexes", {}).get(_MIMO_CORTEX_ID)
+    existing_mimo = (
+        dict(existing_mimo_raw) if isinstance(existing_mimo_raw, dict) else {}
+    )
+    mimo_raw_default = str(existing_mimo.get("default_attached") or "").strip()
+    mimo_preserved_default = _resolve_mimo_default_attached(mimo_raw_default)
+    if (
+        mimo_preserved_default == mimo_raw_default
+        and mimo_raw_default
+        and mimo_raw_default != _MIMO_DEFAULT_ATTACHED
+    ):
+        mimo_source = f"preserved_user_binding_from_{existing_mimo.get('source', 'unknown')}"
+    elif mimo_raw_default in _MIMO_REMOVED_ATTACHABLE_IDS:
+        mimo_source = "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
+    else:
+        mimo_source = "owner_default_2026-06-15_mimo_local_gemma4"
     record_attached_models(
-        "mimo:mimo-cli-default",
+        _MIMO_CORTEX_ID,
         list(_MIMO_ATTACHABLE_VIA_UPSTREAM),
-        # r1109 (George): when MiMo isn't configured yet, suggest his paid
-        # Token-Plan flagship (mimo-v2.5-pro) — NOT a generic GPT that isn't a
-        # MiMo model. A live probe still overrides this the moment MiMo is
-        # authenticated and a model is picked.
-        default_attached=mimo_default or "mimo-v2.5-pro",
-        source="live_probe_2026-06-14_mimo_upstream_models",
+        default_attached=mimo_preserved_default,
+        source=mimo_source,
         routes_any_provider=True,
         picker_is_upstream=True,
         live=bool(mimo_default),
@@ -610,8 +748,8 @@ def sync_cortex_attached_models_catalog(
     record_attached_models(
         "codex:gpt-5.5",
         list(_CODEX_PICKER_MODELS),
-        default_attached="GPT-5.5",
-        source="codex_picker_catalog_2026-06-11",
+        default_attached=_CODEX_DEFAULT_ATTACHED,
+        source="codex_picker_catalog_2026-06-14_owner_default_option_4",
         routes_any_provider=False,
         picker_is_upstream=True,
         live=False,
@@ -922,17 +1060,235 @@ def record_cortex_arm_habit(
     return row
 
 
+_CANONICAL_ATTACHED_CORTEX_BY_PREFIX: tuple[tuple[str, str], ...] = (
+    ("mimo:", "mimo:mimo-cli-default"),
+    ("cline:", "cline:cline-cli-default"),
+    ("grok:", "grok:grok-4.3"),
+    ("codex:", "codex:gpt-5.5"),
+    ("claude:", "claude:claude-code-cli-default"),
+    ("qwen:", "qwen:accounts/fireworks/models/kimi-k2p6"),
+)
+
+
+def resolve_attached_models_cortex_id(
+    cortex_tag: str,
+    *,
+    state_dir: str | Path | None = None,
+) -> str:
+    """Map a Settings/Talk cortex tag to the attached-model ledger row."""
+    tag = str(cortex_tag or "").strip()
+    if not tag:
+        return ""
+    rec = attached_models_for_cortex(tag, state_dir=state_dir)
+    if rec.get("attached_models"):
+        return tag
+    low = tag.lower()
+    for prefix, canonical in _CANONICAL_ATTACHED_CORTEX_BY_PREFIX:
+        if low.startswith(prefix):
+            if attached_models_for_cortex(canonical, state_dir=state_dir).get("attached_models"):
+                return canonical
+    return tag
+
+
+_MIMO_CODEX_ATTACHED_TO_CLI: dict[str, str] = {
+    "GPT-5.5": "openai-codex/gpt-5.5",
+    "GPT-5.4": "openai-codex/gpt-5.4",
+    "GPT-5.4-Mini": "openai-codex/gpt-5.4-mini",
+    "GPT-5.3-Codex-Spark": "openai-codex/gpt-5.3-codex-spark",
+}
+_MIMO_NATIVE_CLI_PROVIDER: dict[str, str] = {
+    "mimo-v2.5-pro": "xiaomi",
+    "mimo-v2-flash": "xiaomi",
+    "mimo-v2-omni": "xiaomi",
+    "mimo-v2-pro": "xiaomi",
+    "mimo-v2.5": "xiaomi",
+    "mimo-v2.5-pro-ultraspeed": "xiaomi",
+    "mimo-auto": "mimo",
+}
+
+
+def mimo_oauth_attached_to_cli_upstream(model_id: str) -> str:
+    """Map a MiMo-cortex OAuth picker row to ``mimo run -m provider/model``.
+
+    MiMo CLI hosts Codex/Grok/Claude OAuth internally (r1265). This is NOT a
+    separate ``codex exec`` / Grok / Claude arm — one CLI chain only.
+    """
+    mid = str(model_id or "").strip()
+    if not mid:
+        return ""
+    if mid in _MIMO_CODEX_ATTACHED_TO_CLI:
+        return _MIMO_CODEX_ATTACHED_TO_CLI[mid]
+    if mid in _GROK_OAUTH_MODELS:
+        return f"xai/{mid}"
+    if mid in _ANTHROPIC_ARM_MODELS:
+        return f"anthropic/{mid}"
+    return ""
+
+
+def mimo_native_attached_to_cli_upstream(model_id: str) -> str:
+    """Map a native MiMo attached id to ``mimo run -m provider/model``."""
+    mid = str(model_id or "").strip()
+    if not mid:
+        return ""
+    bare = mid.rsplit("/", 1)[-1].rsplit(":", 1)[-1].strip()
+    low = bare.lower()
+    if not (low.startswith("mimo-v") or low == "mimo-auto"):
+        return ""
+    provider = _MIMO_NATIVE_CLI_PROVIDER.get(bare, "xiaomi")
+    return f"{provider}/{bare}"
+
+
+def mimo_cli_upstream_model(model_id: str) -> str:
+    """Resolve any routable MiMo-cortex attached row to ``provider/model``."""
+    return mimo_native_attached_to_cli_upstream(model_id) or mimo_oauth_attached_to_cli_upstream(
+        model_id
+    )
+
+
+def mimo_attached_dispatch_lane(model_id: str) -> str:
+    """Classify a MiMo-cortex attached default for runtime dispatch.
+
+    Returns one of: ``mimo_native``, ``mimo_cli_codex_bridge``,
+    ``mimo_cli_grok_bridge``, ``mimo_cli_claude_bridge``,
+    ``mimo_cli_qwen_bridge``, ``mimo_cli_ollama_bridge``, ``local_non_cli``,
+    ``unconfigured``.
+
+    Attached CLI families are downstream bridges owned by MiMo: Alice calls
+    MiMo first, then MiMo is instructed to use the selected local CLI/model.
+    There is no direct Talk -> Codex/Grok/Claude/Ollama bypass in the MiMo
+    cortex route.
+    """
+    mid = str(model_id or "").strip()
+    if not mid:
+        return "unconfigured"
+    if mid in _MIMO_LOCAL_OLLAMA_MODELS:
+        return "mimo_cli_ollama_bridge"
+    if mid in _MIMO_LOCAL_DIFFUSION_MODELS:
+        return "local_non_cli"
+    if mid in _MIMO_NATIVE_MODELS:
+        return "mimo_native"
+    if mid in _CODEX_PICKER_MODELS:
+        return "mimo_cli_codex_bridge"
+    if mid in _GROK_OAUTH_MODELS:
+        return "mimo_cli_grok_bridge"
+    if mid in _ANTHROPIC_ARM_MODELS:
+        return "mimo_cli_claude_bridge"
+    if mid in _MIMO_FIREWORKS_ATTACHABLE_MODELS or "accounts/fireworks/models/" in mid.lower():
+        return "mimo_cli_qwen_bridge"
+    if mid.startswith("mimo-v") or mid == "mimo-auto":
+        return "mimo_native"
+    return "unconfigured"
+
+
+def active_attached_model_for_cortex(
+    cortex_tag: str,
+    *,
+    state_dir: str | Path | None = None,
+) -> str:
+    """Return the live attached/default model id for a cortex picker tag."""
+    import os
+
+    tag = str(cortex_tag or "").strip().lower()
+    if tag.startswith("grok:"):
+        pin = os.environ.get("SIFTA_GROK_CLI_MODEL", "").strip()
+        if pin:
+            return pin
+    if tag.startswith("claude:"):
+        pin = os.environ.get("SIFTA_CLAUDE_ARM_MODEL", "").strip()
+        if pin:
+            return pin
+    cid = resolve_attached_models_cortex_id(cortex_tag, state_dir=state_dir)
+    rec = attached_models_for_cortex(cid, state_dir=state_dir)
+    return str(rec.get("default_attached") or "").strip()
+
+
+def persist_attached_llm_default(
+    cortex_tag: str,
+    model_id: str,
+    *,
+    state_dir: str | Path | None = None,
+    source: str = "system_settings_attached_llm_picker",
+    owner_text: str = "system_settings:attached_llm_picker",
+) -> dict[str, Any]:
+    """Persist one cortex's attached/default LLM — same ledger as /cortex llm."""
+    import os
+
+    from System.swarm_cortex_llm_list_binding import write_binding_receipt
+
+    target = str(model_id or "").strip()
+    cid = resolve_attached_models_cortex_id(cortex_tag, state_dir=state_dir)
+    existing = attached_models_for_cortex(cid, state_dir=state_dir)
+    models = [str(m) for m in (existing.get("attached_models") or []) if str(m).strip()]
+    if not models:
+        return {"ok": False, "reason": "no_attached_list", "cortex_id": cid}
+    if target not in models:
+        return {"ok": False, "reason": "not_in_attached_list", "cortex_id": cid, "model_id": target}
+
+    before = str(existing.get("default_attached") or "").strip()
+    record_attached_models(
+        cid,
+        models,
+        default_attached=target,
+        source=source,
+        routes_any_provider=bool(existing.get("routes_any_provider", False)),
+        picker_is_upstream=bool(existing.get("picker_is_upstream", True)),
+        live=False,
+        state_dir=state_dir,
+    )
+
+    low = str(cortex_tag or cid).lower()
+    if low.startswith("grok:"):
+        if target:
+            os.environ["SIFTA_GROK_CLI_MODEL"] = target
+        else:
+            os.environ.pop("SIFTA_GROK_CLI_MODEL", None)
+    elif low.startswith("claude:"):
+        if target:
+            os.environ["SIFTA_CLAUDE_ARM_MODEL"] = target
+        else:
+            os.environ.pop("SIFTA_CLAUDE_ARM_MODEL", None)
+
+    write_binding_receipt(
+        action="settings_attached_llm_set",
+        payload={
+            "cortex_id": cid,
+            "cortex_tag": cortex_tag,
+            "from_default": before,
+            "to_default": target,
+            "owner_text_preview": owner_text[:120],
+            "source": source,
+        },
+        state_dir=state_dir,
+    )
+    return {
+        "ok": True,
+        "cortex_id": cid,
+        "from_default": before,
+        "to_default": target,
+        "switched": before != target,
+    }
+
+
 __all__ = [
     "ATTACHED_MODELS_PATH",
+    "active_attached_model_for_cortex",
+    "attached_model_matches_active",
     "attached_models_for_cortex",
+    "format_attached_model",
     "is_vision_capable_model",
     "list_known_cortexes",
+    "mimo_attached_dispatch_lane",
+    "mimo_cli_upstream_model",
+    "mimo_native_attached_to_cli_upstream",
+    "mimo_oauth_attached_to_cli_upstream",
     "load_attached_models",
+    "persist_attached_llm_default",
     "pick_vision_arm",
     "prompt_block_for_attached",
     "prompt_block_for_selection",
     "record_cortex_arm_habit",
     "record_attached_models",
+    "resolve_attached_models_cortex_id",
     "sync_cortex_attached_models_catalog",
     "select_cortex_for_need",
     "vision_arms_block",

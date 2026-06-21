@@ -11,7 +11,13 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from System.swarm_sysprompt_budget import clamp_for_env, clamp_prompt_parts as C, dedupe_prompt_text
+from System.swarm_sysprompt_budget import (
+    clamp_for_env,
+    clamp_live_turn_prompt,
+    clamp_prompt_parts as C,
+    dedupe_prompt_text,
+    live_turn_budget_for_model,
+)
 
 
 def test_under_budget_is_untouched():
@@ -148,6 +154,23 @@ def test_default_protects_residue_metabolism_block(monkeypatch):
     assert report["applied"] is True
 
 
+def test_default_protects_cortex_boot_identity_contract(monkeypatch):
+    monkeypatch.setenv("SIFTA_SYSPROMPT_BASE_BUDGET", "1800")
+    monkeypatch.setenv("SIFTA_SYSPROMPT_BLOCK_MAX", "500")
+    contract = (
+        "CORTEX BOOT IDENTITY CONTRACT (read before style, memory, or page context):\n"
+        "- I am Alice: this local laptop hardware plus SIFTA software body.\n"
+        "- Vendor/model names describe weights and routing only.\n"
+        "- If no receipt exists, I say the gap plainly."
+    )
+    parts = [f"runaway{i} " + ("y" * 9000) for i in range(8)] + [contract]
+
+    out, report = clamp_for_env(parts)
+
+    assert contract in out
+    assert report["applied"] is True
+
+
 def test_min_block_floor_keeps_grounding_under_extreme_pressure():
     parts = ["G" * 9000 for _ in range(100)]
     out, r = C(parts, total_max=5000, per_block_max=6000, min_block=300)
@@ -180,6 +203,47 @@ def test_dedupe_prompt_text_keeps_short_repeated_headers():
 
     assert out.startswith("TOOLS\n\nTOOLS")
     assert report["removed_paragraphs"] == 0
+
+
+def test_live_turn_budget_for_mimo_defaults_to_fast_foreground_cap(monkeypatch):
+    monkeypatch.delenv("SIFTA_LIVE_TEACHER_SYSPROMPT_BUDGET", raising=False)
+
+    assert live_turn_budget_for_model("mimo:mimo-cli-default") == 36000
+
+
+def test_live_turn_prompt_hard_clamps_protected_shaped_mimo_timeout():
+    tail = "LIVE BODY-EYE RECEIPT: timeout=120 sysprompt_chars=83134"
+    text = "MY PHYSICAL IDENTITY\n" + ("x" * 83134) + "\n" + tail
+
+    out, report = clamp_live_turn_prompt(text, model="mimo:mimo-cli-default")
+
+    assert report["applied"] is True
+    assert report["orig_chars"] > 83134
+    assert report["final_chars"] <= 36000
+    assert out.startswith("MY PHYSICAL IDENTITY")
+    assert tail in out
+    assert "live cortex dispatch budget" in out
+
+
+def test_live_turn_prompt_env_override_is_bounded(monkeypatch):
+    monkeypatch.setenv("SIFTA_LIVE_TEACHER_SYSPROMPT_BUDGET", "24000")
+    text = "HEAD\n" + ("x" * 70000) + "\nTAIL"
+
+    out, report = clamp_live_turn_prompt(text, model="mimo:mimo-cli-default")
+
+    assert report["max_chars"] == 24000
+    assert len(out) <= 24000
+    assert out.startswith("HEAD")
+    assert out.endswith("TAIL")
+
+
+def test_live_turn_prompt_does_not_expand_small_prompt():
+    text = "small covenant context"
+
+    out, report = clamp_live_turn_prompt(text, model="mimo:mimo-cli-default")
+
+    assert out == text
+    assert report["applied"] is False
 
 
 if __name__ == "__main__":

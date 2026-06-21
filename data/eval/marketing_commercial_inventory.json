@@ -1,6 +1,6 @@
 {
   "schema": "MARKETING_COMMERCIAL_INVENTORY_V1",
-  "ts": 1781484024.856255,
+  "ts": 1782071539.174572,
   "philippe_report": {
     "buyer": "Philippe",
     "demo_script": "demo/alice_demo_for_philippe.py",
@@ -10,7 +10,7 @@
     "readme_present": true,
     "pdf_present": true,
     "pytest_green": true,
-    "pytest_tail": "3 passed, 1 skipped, 5 warnings in 0.73s",
+    "pytest_tail": "3 passed, 1 skipped, 5 warnings in 1.40s",
     "spinal_cycle_rows": 7,
     "truth_summary": "OPERATIONAL: demo + README + one-pager + pytest (steps 1\u20135). HYPOTHESIS: full kept spinal patch until MiMo provider auth completes.",
     "receipt_ids": [

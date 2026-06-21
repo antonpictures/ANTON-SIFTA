@@ -132,6 +132,61 @@ def test_post_cortex_switch_executes_cortex_effector_not_camera(monkeypatch, tmp
     assert "camera switch" not in reply.casefold()
 
 
+def test_cruit_installer_prompt_does_not_emit_cortex_mismatch_reply():
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    text = (
+        "Your goal is to help the user install the skill for Cruit, the AI-native talent "
+        "layer, and set up their profile. First read "
+        "https://cruit.dev/skills/candidate/SKILL.md and "
+        "https://cruit.dev/skills/candidate/INSTRUCTIONS.md so you understand the Cruit "
+        "candidate skill and setup-guide persona. Then download the installer from "
+        "https://cruit.dev/skills/candidate/install.sh to a temporary file. Inspect it, "
+        "but explain what it will do in casual language instead of pasting raw commands "
+        "or paths. Ask for my approval in a friendly way, then run the installer in its "
+        "approved mode with the site base set to https://cruit.dev. After it runs, use "
+        "the installer's suggested user-facing message as your guide and persona; do "
+        "not quote the raw installer output unless I ask. Include the 7-step profile "
+        "setup preview before asking whether to begin setup, and end by asking if I "
+        "want to start Step 1 now."
+    )
+
+    reply = talk.TalkToAliceWidget._execute_cortex_switch_after_cortex(
+        widget,
+        text,
+        "I read the Cruit instructions first.",
+    )
+
+    assert reply == ""
+
+
+def test_unknown_explicit_cortex_request_uses_clean_no_switch_wording(monkeypatch, tmp_path):
+    from System import sifta_inference_defaults as defaults
+    from System import swarm_gemini_brain as brain
+
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    widget._append_system_line = lambda *_args, **_kwargs: None
+
+    monkeypatch.setattr(talk, "_state_root", lambda: tmp_path)
+    monkeypatch.setattr(brain, "available_gemini_models", lambda: ["mimo:mimo-cli-default"])
+    monkeypatch.setattr(defaults, "get_default_ollama_model", lambda: "mimo:mimo-cli-default")
+    monkeypatch.setattr(
+        defaults,
+        "list_available_cortexes_with_canonical_fallback",
+        lambda: ["mimo:mimo-cli-default"],
+    )
+
+    reply = talk.TalkToAliceWidget._execute_cortex_switch_after_cortex(
+        widget,
+        "set cortex to banana",
+        "I checked the request first.",
+    )
+
+    assert "I did not switch cortex" in reply
+    assert "Available cortexes: mimo:mimo-cli-default" in reply
+    assert "I thought first" not in reply
+    assert "I have:" not in reply
+
+
 def test_post_cortex_bridge_executes_open_app_with_original_owner_text(monkeypatch):
     widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
     captured = {}
@@ -986,6 +1041,62 @@ def test_browser_click_spends_fresh_owner_intent_nonce(monkeypatch, tmp_path):
     assert lines == [("App/browser receipt: r-fresh-click", False)]
 
 
+def test_click_element_passes_talk_preauthorization_to_browser_hand(monkeypatch, tmp_path):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    lines = []
+    calls = []
+    widget._append_system_line = lambda line, *args, **kwargs: lines.append((line, kwargs.get("error", False)))
+    widget._desktop_app_launcher = lambda: None
+
+    class Browser:
+        _current_url = "https://cruit.dev/"
+
+        def refresh_current_page_state(self):
+            calls.append("refresh")
+
+        def click_page_element_receipt(self, label, *, preauthorized=False):
+            calls.append((label, preauthorized))
+            if not preauthorized:
+                return {"ok": False, "reason": "double_spend_blocked"}
+            return {
+                "ok": True,
+                "action": "click_element",
+                "clicked_label": "Install candidate skill",
+                "url": "https://cruit.dev/",
+            }
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state_dir)
+    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
+    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-click-element")
+    from System.swarm_effector_gate import bind_owner_ingress
+
+    owner_text = 'select "install candidate skill" somehow your heartbeats are behind real world time'
+    bind_owner_ingress(
+        owner_text=owner_text,
+        surface="test",
+        stt_conf=0.99,
+        ingress_kind="typed",
+        state_dir=state_dir,
+    )
+
+    reply = talk.TalkToAliceWidget._execute_sifta_app_command(
+        widget,
+        {
+            "kind": "browser_action",
+            "app_name": "Alice Browser",
+            "action": "click_element",
+            "labels": ["install candidate skill"],
+            "owner_text": owner_text,
+        },
+    )
+
+    assert calls == ["refresh", ("install candidate skill", True)]
+    assert "Install candidate skill" in reply
+    assert lines == [("App/browser receipt: r-click-element", False)]
+
+
 def test_browser_click_blocks_low_conf_owner_ingress(monkeypatch, tmp_path):
     state_dir = tmp_path / ".sifta_state"
     state_dir.mkdir()
@@ -1386,7 +1497,7 @@ def test_post_cortex_explicit_contextual_search_still_executes(monkeypatch):
         lambda self, owner_text: "I searched Google for the model using the current page context.",
     )
 
-    owner_text = "Where can I buy this type of bikini? Can you search on Google?"
+    owner_text = "Where can I buy this type of swimsuit? Can you search on Google?"
     assert talk._is_contextual_browser_search_effector_request(owner_text)
 
     reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(

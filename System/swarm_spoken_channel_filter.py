@@ -357,13 +357,17 @@ def spoken_channel_text(
     spoken = _clean_spoken_markup("\n\n".join(kept))
     changed = removed > 0 or spoken != _clean_spoken_markup(printed)
     fallback = ""
+    reason = "filtered_display_receipts" if changed else "unchanged"
     if not spoken and changed:
         owner_low = str(owner_text or "").lower()
         if "speaking and typing are different" in owner_low or "out loud" in owner_low:
             fallback = "I see it. I will print receipts in chat and only read them out loud when you ask."
+            spoken = fallback
+            reason = "receipt_only_spoken_boundary"
         else:
-            fallback = "I printed the receipt details; I will not read them out loud unless you ask."
-        spoken = fallback
+            # George r1347: receipt-only turns stay silent in the mouth; chat keeps the row.
+            spoken = ""
+            reason = "receipt_only_silent"
 
     row = {
         "ts": float(now if now is not None else time.time()),
@@ -386,13 +390,13 @@ def spoken_channel_text(
         pass
 
     return {
-        "ok": bool(spoken),
+        "ok": True,
         "spoken_text": spoken,
         "changed": bool(changed),
         "removed_display_paragraphs": removed,
         "fallback_used": bool(fallback),
         "print_text_unchanged": True,
-        "reason": "filtered_display_receipts" if changed else "unchanged",
+        "reason": reason,
     }
 
 

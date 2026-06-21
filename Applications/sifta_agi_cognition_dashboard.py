@@ -80,6 +80,10 @@ QPushButton      {{ background:#141c2e; color:{_TEXT}; border:1px solid {_BORDER
 QPushButton:hover {{ border-color:{_NEUT}; }}
 """
 APP_HARDENING_ID = "queue-005:sifta_agi_cognition_dashboard"
+APP_HARDENING_ALIASES = (
+    "queue-005:sifta_agi_cognition_dashboard",
+    "queue-020:sifta_agi_cognition_dashboard",
+)
 _JSONL_ERROR_KEYS: set[str] = set()
 
 

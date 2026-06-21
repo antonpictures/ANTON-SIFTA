@@ -114,7 +114,7 @@ CORTEX_OPTIONS: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "krishairnd/Gemma-4-Uncensored:latest",
-        "display": "Gemma 4 Uncensored 8B (Ollama test alias)",
+        "display": "krisha-g4u 8B (Ollama test alias)",  # r1386: display alias only, id is the real Ollama tag
         "params": "8B",
         "arch": "gemma4",
         "context": "131K advertised / runtime num_ctx not explicit in Modelfile",

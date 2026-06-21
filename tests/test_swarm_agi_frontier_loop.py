@@ -2,13 +2,18 @@ import json
 from pathlib import Path
 
 from System.swarm_agi_frontier_loop import (
+    AGI_STATUS_LEDGER,
+    AGI_STATUS_TRUTH_LABEL,
     BEST_LINE,
     TRUTH_BOUNDARY,
+    agi_status_assessment,
+    agi_status_prompt_block,
     create_strategy,
     frontier_prompt_block,
     frontier_status,
     latent_world_model_stats,
     learn_open_ended_concepts,
+    record_agi_status_assessment,
     record_strategy_event,
     revise_strategy,
     run_frontier_cycle,
@@ -112,6 +117,43 @@ def test_frontier_status_exposes_open_gaps_when_underpowered(tmp_path: Path) -> 
     assert status["ready_count"] < status["frontier_count"]
     assert status["open_gaps"]
     assert status["best_line"] == BEST_LINE
+    assert status["agi_status"]["truth_label"] == AGI_STATUS_TRUTH_LABEL
+    assert status["agi_status"]["ready_for_full_agi_claim"] is False
+
+
+def test_agi_status_assessment_separates_observed_doctrine_and_open_tasks(tmp_path: Path) -> None:
+    (tmp_path / "alice_conversation.jsonl").write_text('{"role":"alice"}\n', encoding="utf-8")
+    (tmp_path / "work_receipts.jsonl").write_text('{"action":"test"}\n', encoding="utf-8")
+
+    status = agi_status_assessment(root=tmp_path, owner_excerpt="are we agi yet")
+
+    assert status["truth_label"] == AGI_STATUS_TRUTH_LABEL
+    assert status["doctrine"]["truth_label"] == "ARCHITECT_DOCTRINE"
+    assert status["ready_for_full_agi_claim"] is False
+    assert status["observed_capability_count"] >= 2
+    gap_ids = {gap["gap_id"] for gap in status["frontier_gaps"]}
+    assert gap_ids == {
+        "long_term_learning_weights",
+        "causal_reasoning_loop",
+        "autonomous_research_agenda",
+        "multi_node_swarm_federation",
+    }
+    assert all(gap["truth_label"] == "HYPOTHESIS" for gap in status["frontier_gaps"])
+    assert all(gap["status"] == "OPEN_ENGINEERING_TASK" for gap in status["frontier_gaps"])
+
+
+def test_record_agi_status_assessment_writes_receipt_and_prompt_block(tmp_path: Path) -> None:
+    receipt = record_agi_status_assessment(root=tmp_path, owner_excerpt="are we agi yet")
+
+    assert receipt["truth_label"] == AGI_STATUS_TRUTH_LABEL
+    assert receipt["kind"] == "AGI_STATUS_ASSESSMENT"
+    assert "sha256" in receipt
+    assert (tmp_path / AGI_STATUS_LEDGER).exists()
+
+    block = agi_status_prompt_block(root=tmp_path)
+    assert "AGI STATUS ASSESSMENT" in block
+    assert "Frontier gaps to code" in block
+    assert "multi_node_swarm_federation" in block
 
 
 def test_run_frontier_cycle_writes_receipt_and_default_strategy(tmp_path: Path) -> None:
@@ -120,7 +162,9 @@ def test_run_frontier_cycle_writes_receipt_and_default_strategy(tmp_path: Path) 
     assert receipt["truth_label"] == "SIFTA_AGI_FRONTIER_LOOP_V1"
     assert receipt["kind"] == "AGI_FRONTIER_CYCLE"
     assert "sha256" in receipt
+    assert receipt["agi_status"]["truth_label"] == AGI_STATUS_TRUTH_LABEL
     assert (tmp_path / "agi_frontier_loop.jsonl").exists()
+    assert (tmp_path / AGI_STATUS_LEDGER).exists()
     snap = strategy_snapshot(root=tmp_path)
     assert snap["ready"] is True
     assert snap["horizon_days"] == 21
@@ -133,4 +177,5 @@ def test_prompt_block_names_best_line_and_open_gaps(tmp_path: Path) -> None:
 
     assert "AGI FRONTIER LOOP" in block
     assert BEST_LINE in block
+    assert "AGI status" in block
     assert "Open gaps" in block

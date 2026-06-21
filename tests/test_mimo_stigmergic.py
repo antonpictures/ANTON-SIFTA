@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from System.swarm_mimo_stigmergic import (
+    DEFAULT_MIMO_CLI_MODEL,
     PHEROMONE_LEDGER,
     TRACE_LEDGER,
     build_stigmergic_prompt,
@@ -57,6 +59,35 @@ def test_mimo_call_reads_field_and_writes_receipts_without_cli(tmp_path, monkeyp
         "episodic_diary.jsonl",
     ):
         assert (state / ledger).exists(), ledger
+
+
+def test_mimo_call_defaults_to_free_auto_model_flag(tmp_path, monkeypatch):
+    state = tmp_path / ".sifta_state"
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "MIMO_OK"
+        stderr = ""
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd and cmd[0] == "/tmp/mimo":
+            captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/tmp/mimo" if name == "mimo" else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    receipt = mimo_stigmergic_call(
+        "say hi",
+        intent="free auto default proof",
+        driving_organ="test",
+        state_dir=state,
+    )
+
+    assert receipt.ok is True
+    assert receipt.model == DEFAULT_MIMO_CLI_MODEL
+    assert captured["cmd"][captured["cmd"].index("-m") + 1] == DEFAULT_MIMO_CLI_MODEL
 
 
 def test_second_prompt_contains_prior_mimo_trace(tmp_path):

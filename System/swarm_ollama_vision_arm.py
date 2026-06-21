@@ -42,8 +42,16 @@ _LOCAL_VISION_NEEDLES: tuple[str, ...] = (
 # Preferred local eye, in order: George's designated gemma4 first, then any other
 # installed vision model. The cortex he TYPES can be text-only; the EYE he borrows
 # should be his local gemma4, not a paid cloud arm.
+# George 2026-06-18: Krishna (krishairnd/Gemma-4) is the default local image/video eye —
+# reuse the warm Ollama cortex instead of loading a second MLX VLM into RAM.
+LOCAL_VISION_EYE_DEFAULT = "krishairnd/Gemma-4-Uncensored:latest"  # r1386: renamed identifier only; real Ollama tag unchanged
 _PREFERRED_VISION_NEEDLES: tuple[str, ...] = (
-    "sifta-gemma4-alice", "gemma4", "gemma-4", "gemma3", "gemma-3",
+    "krishairnd/gemma-4-uncensored",
+    "sifta-gemma4-alice",
+    "gemma4",
+    "gemma-4",
+    "gemma3",
+    "gemma-3",
 )
 _DEFAULT_HOST = "http://127.0.0.1:11434"
 _VISION_EYE_OVERRIDE_FILE = "local_vision_eye.txt"  # owner names the exact tag here

@@ -43,7 +43,7 @@ def test_both_constants_in__all__():
     assert "CANONICAL_CLOUD_QWEN" in defaults.__all__
     assert "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH" in defaults.__all__
     assert "CANONICAL_CLOUD_CLINE" in defaults.__all__
-    assert "CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST" in defaults.__all__
+    assert "CANONICAL_OLLAMA_LOCAL_TEST_CORTEX" in defaults.__all__
     assert "CANONICAL_MLX_GEMMA4_12B_ORIGINAL" in defaults.__all__
 
 
@@ -93,15 +93,15 @@ def test_owner_pulled_uncensored_gemma4_can_be_curated_picker_row(monkeypatch):
         "list_installed_alice_cortexes",
         lambda: [
             defaults.CANONICAL_OLLAMA_DAILY,
-            defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST,
+            defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX,
         ],
     )
     monkeypatch.setattr(defaults, "list_installed_mlx_cortexes", lambda: [])
 
     cortexes = defaults.list_available_cortexes_with_canonical_fallback()
 
-    assert defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST in cortexes
-    assert cortexes.count(defaults.CANONICAL_OLLAMA_GEMMA4_UNCENSORED_TEST) == 1
+    assert defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX in cortexes
+    assert cortexes.count(defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX) == 1
 
 
 def test_original_gemma4_12b_mlx_can_be_curated_picker_row(monkeypatch):

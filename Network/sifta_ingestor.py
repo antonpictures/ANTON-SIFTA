@@ -2,7 +2,7 @@
 """
 sifta_ingestor.py
 The Constitutional Gatekeeper for the SIFTA Life Fabric.
-It assumes all incoming transport (Telegram, iCloud) is hostile.
+It assumes all incoming transport is hostile until signed and verified.
 Validates Ed25519 signatures, Nonces, and TTLs before writing to the Task Ledger.
 """
 import json
@@ -117,5 +117,5 @@ def ingest_command_envelope(raw_json: str, phone_pubkey: bytes):
 
 if __name__ == "__main__":
     init_dbs()
-    # In a live system, this runs constantly listening to Telegram/iCloud
+    # In a live system, this runs constantly behind signed relay ingress.
     print("[*] SIFTA Ingestor initialized. Constitutional Gates Locked.")

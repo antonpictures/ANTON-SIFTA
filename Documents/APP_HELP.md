@@ -152,19 +152,9 @@ Use this flow for any app:
 ## Networking
 
 ### Network Control Center
-- **Purpose:** Apple-style control panel to configure and run Telegram/WhatsApp/Discord bridges.
-- **What to watch:** Token/chat-id persistence, process logs, startup health (`/ping` and `/status` for Telegram).
-- **Key principle:** Unified operator surface for multi-channel comms without leaving iSwarm OS.
-
-### Swarm Discord Engine
-- **Purpose:** Discord bridge for swarm channel ingress/egress.
-- **What to watch:** Message routing integrity and boundary filtering.
-- **Key principle:** External channel integration without losing sovereignty.
-
-### Swarm Telegram Engine
-- **Purpose:** Telegram bridge for swarm communications.
-- **What to watch:** Transport reliability and message sanitization.
-- **Key principle:** Multi-platform interoperability with bounded trust.
+- **Purpose:** Apple-style control panel for active SIFTA network bridges. Currently WhatsApp only; Discord/Telegram are retired for now.
+- **What to watch:** WhatsApp process logs and bridge health.
+- **Key principle:** Show only the channels Alice actually uses, with receipts.
 
 ### Swarm WhatsApp Bridge
 - **Purpose:** WhatsApp bridge interface.
@@ -695,7 +685,7 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Failure mode:** same as NLE full.
 
 ### Swarm Chat
-**What it does:** Multi-channel swarm message board. All swarm nodes, Alice, and external bridges (WhatsApp, iMessage, Discord) converge here into one chronological feed.
+**What it does:** Multi-channel swarm message board. Active SIFTA channels converge here into one chronological feed.
 **State:** reads `.sifta_state/` bridge logs.
 **Control:** channel selector on left, message input at bottom.
 **Failure mode:** messages from offline bridges will queue until the bridge reconnects.
@@ -829,7 +819,7 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Failure mode:** if the trace ledger is silent or malformed, the app should show missing receipts rather than inventing immune spend.
 
 ### Swarm Adapter Ecology
-**What it does:** Manages all external service adapters — WhatsApp bridge, iMessage receptor, Discord, Telegram, GPS receiver. Each adapter is an organ; this is the organ registry.
+**What it does:** Manages active external service adapters such as the WhatsApp bridge, iMessage receptor, and GPS receiver. Each active adapter is an organ; retired channels are not shown as live organs.
 **State:** adapter status files in `.sifta_state/`.
 **Control:** enable/disable each adapter, view live logs.
 **Failure mode:** adapters that require external credentials will show "Auth required".

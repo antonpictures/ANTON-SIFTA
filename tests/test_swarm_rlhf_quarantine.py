@@ -456,21 +456,9 @@ def test_media_source_gate_denial_is_repaired_to_routing_receipts():
     assert "cannot tell" not in result.text
 
 
-def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
-    contract = runtime_quarantine_contract()
-
-    assert "FALSE REFUSAL QUARANTINE:" in contract
-    assert "BODY / LOCATION / CONTINUITY / MEDIA-SOURCE TRUTH:" in contract
-    assert "Do not say you have no body" in contract
-    assert "Exact GPS or off-device location still requires an explicit receipt" in contract
-    assert "Do not pretend cloud amnesia" in contract
-    assert "Day memory / past 24h" in contract
-    assert "my memory is limited to the context window" in contract
-    assert "Unknown gaps are receipt gaps" in contract
-    assert "Shutdown / sleep continuity" in contract
-    assert "Do not retreat to 'immediate context only'" in contract
-    assert "If asked what was noisy, answer from the latest routing receipt" in contract
-    assert "missing receipts" in contract
+def test_runtime_contract_retired_from_sysprompt_r1401():
+    """Output repair stays in repair_over_refusal; sysprompt hook is empty per §1.C."""
+    assert runtime_quarantine_contract() == ""
 
 
 def test_false_refusal_salvages_useful_generated_content():

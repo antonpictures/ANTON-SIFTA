@@ -48,23 +48,35 @@ class TestSwarmLocalBrain(unittest.TestCase):
         self.assertTrue(any("Hello there." in d for d in done))
 
     def test_get_default_model_prefers_m5_8b_even_if_ollama_lists_small_first(self):
-        models = [
-            "ollama:alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
-            "ollama:alice-Q-m1-scout-2.3b-2.7gb:latest",
-            "ollama:alice-m5-cortex-8b-6.3gb:latest",
-        ]
-        with patch.object(swarm_local_brain, "available_models", return_value=models):
+        with patch(
+            "System.sifta_inference_defaults.resolve_live_local_ollama_default",
+            return_value="alice-m5-cortex-8b-6.3gb:latest",
+        ):
             self.assertEqual(
                 swarm_local_brain.get_default_model(),
                 "ollama:alice-m5-cortex-8b-6.3gb:latest",
             )
 
-    def test_get_default_model_falls_back_to_m5_8b_when_ollama_has_no_models(self):
-        with patch.object(swarm_local_brain, "available_models", return_value=[]):
+    def test_get_default_model_uses_live_rank_when_m5_missing(self):
+        with patch(
+            "System.sifta_inference_defaults.resolve_live_local_ollama_default",
+            return_value="krishairnd/Gemma-4-Uncensored:latest",
+        ):
             self.assertEqual(
                 swarm_local_brain.get_default_model(),
-                "ollama:alice-m5-cortex-8b-6.3gb:latest",
+                "ollama:krishairnd/Gemma-4-Uncensored:latest",
             )
+
+    def test_get_default_model_falls_back_to_legacy_constant_when_probe_fails(self):
+        with patch(
+            "System.sifta_inference_defaults.resolve_live_local_ollama_default",
+            side_effect=RuntimeError("probe failed"),
+        ):
+            with patch.object(swarm_local_brain, "available_models", return_value=[]):
+                self.assertEqual(
+                    swarm_local_brain.get_default_model(),
+                    "ollama:alice-m5-cortex-8b-6.3gb:latest",
+                )
 
 
 if __name__ == "__main__":

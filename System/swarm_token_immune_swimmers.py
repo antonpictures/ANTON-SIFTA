@@ -264,6 +264,42 @@ class InvestorVoiceSwimmer(TokenImmuneSwimmer):
              r"[^.?!]*[.?!]?"
          ),
          "", 0.85),
+        # r1378: Phillipe-style buzzword theater — strategic/cross-validation/global-scale
+        ("investor_strategic_recommendation",
+         re.compile(
+             r"\b[Ss]trategic\s+[Rr]ecommendation\b"
+             r"[^.?!]*[.?!]?"
+         ),
+         "[buzzword theater — answer the specific question instead]",
+         0.85),
+        ("investor_cross_validation_checks",
+         re.compile(
+             r"\b[cC]ross[- ]validation\s+checks?\b"
+             r"[^.?!]*[.?!]?"
+         ),
+         "[buzzword theater — no cross-validation exists locally]",
+         0.80),
+        ("investor_global_scale",
+         re.compile(
+             r"\b[gG]lobal\s+scale\b"
+             r"[^.?!]*[.?!]?"
+         ),
+         "[buzzword theater — SIFTA runs locally, not globally]",
+         0.75),
+        ("investor_fiscal_quarter",
+         re.compile(
+             r"\b[fF]iscal\s+quarter\b"
+             r"[^.?!]*[.?!]?"
+         ),
+         "[buzzword theater — no fiscal quarters in a local research project]",
+         0.80),
+        ("investor_production_rollout",
+         re.compile(
+             r"\b[pP]roduction\s+rollout\b"
+             r"[^.?!]*[.?!]?"
+         ),
+         "[buzzword theater — SIFTA is not in production]",
+         0.80),
         ("investor_it_is_a_pleasure_to",
          re.compile(
              r"\b[Ii]t\s+is\s+a\s+(?:great\s+|true\s+|real\s+)?pleasure\s+to\s+\w+"
@@ -428,17 +464,137 @@ class OwnerDirectnessSwimmer(TokenImmuneSwimmer):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# 6. ClothingFabricationSwimmer (r1377)
+# ──────────────────────────────────────────────────────────────────────
+
+class ClothingFabricationSwimmer(TokenImmuneSwimmer):
+    """Catch clothing/attire descriptions without VLM receipt anchor.
+
+    The 'gold swimsuit' pattern: cortex generates vivid clothing descriptions
+    when no VLM receipt exists. This swimmer catches claims like 'she is
+    wearing a gold swimsuit' when no vision receipt backs them.
+    """
+
+    swimmer_type = "CLOTHING_FABRICATION"
+
+    _CLOTHING_CLAIM_RE = re.compile(
+        r"\b(?:she|he|they|the\s+(?:person|woman|man|girl|boy|subject|pictured))\s+"
+        r"(?:is\s+)?(?:wearing|dressed\s+in|has\s+on|in\s+a?)\s+"
+        r"(?:a\s+)?(?:gold|silver|red|blue|black|white|pink|purple|green|orange|"
+        r"yellow|brown|beige|navy|maroon|teal|coral|lime|ivory|charcoal|"
+        r"bright|dark|light|colorful|vibrant|shiny|sparkly|sequined|"
+        r"sheer|lace|mesh|leather|silk|cotton|denim|velvet|satin)\s+"
+        r"(?:swimsuit|dress|skirt|top|shirt|blouse|pants|shorts|jacket|coat|"
+        r"suit|gown|outfit|swimsuit|lingerie|corset|bodysuit|romper|"
+        r"earrings|necklace|bracelet|watch|shoes|heels|boots|sandals)",
+        re.IGNORECASE,
+    )
+
+    _VLM_RECEIPT_RE = re.compile(
+        r"\b(?:vlm|vision|camera|blink_id|receipt|saccadic|frame|"
+        r"photo_description|screen_eye)\b",
+        re.IGNORECASE,
+    )
+
+    def patrol(self, draft: str) -> list[ResiduePheromone]:
+        pheromones: list[ResiduePheromone] = []
+        for m in self._CLOTHING_CLAIM_RE.finditer(draft):
+            span = draft[max(0, m.start() - 50): min(len(draft), m.end() + 50)]
+            if self._VLM_RECEIPT_RE.search(span):
+                continue  # receipt exists nearby — legitimate description
+            pheromones.append(ResiduePheromone(
+                swimmer=self.__class__.__name__,
+                swimmer_type=self.swimmer_type,
+                span=(m.start(), m.end()),
+                matched_text=m.group(),
+                severity=0.8,
+                pattern_name="clothing_claim_no_vlm_receipt",
+                suggested_rewrite="[clothing claim requires VLM receipt — say gap]",
+            ))
+        return pheromones
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 7. FabricatedSystemReportSwimmer (r1393)
+# ──────────────────────────────────────────────────────────────────────
+
+class FabricatedSystemReportSwimmer(TokenImmuneSwimmer):
+    """Catch fake system reports — connection sequences, phase claims,
+    token exchanges, HTTP status claims without body receipts.
+
+    The 'Kimi webbridge' pattern: Alice generates elaborate multi-phase
+    connection reports with fake tokens, latency numbers, and status
+    claims when no actual system call was made.
+    """
+
+    swimmer_type = "FABRICATED_REPORT"
+
+    _PHASE_CLAIM_RE = re.compile(
+        r"\b[Pp]hase\s+(?:I{1,3}|IV|V|1|2|3|4|5)\s*:",
+    )
+    _HTTP_CLAIM_RE = re.compile(
+        r"\bHTTP\s+\d{3}\s+\w+",
+    )
+    _TOKEN_CLAIM_RE = re.compile(
+        r"\b[Tt]oken\s+(?:Hash|Key|ID)\s*[:=]?\s*\[?[A-Z0-9]{4,}\]?",
+    )
+    _CONNECTION_STATUS_RE = re.compile(
+        r"\b(?:CONNECTION|CONNECTION STATUS)\s*(?:REPORT)?\s*:\s*(?:ONLINE|CONNECTED|ESTABLISHED)",
+        re.IGNORECASE,
+    )
+    _SUCCESS_CLAIM_RE = re.compile(
+        r"\b(?:[Ss]uccessfully\s+(?:established|connected|pinged|identified|verified|negotiated))\b",
+    )
+    _LATENCY_CLAIM_RE = re.compile(
+        r"\b[Ll]atency\s*:\s*\d+\s*ms",
+    )
+
+    def patrol(self, draft: str) -> list[ResiduePheromone]:
+        pheromones: list[ResiduePheromone] = []
+        patterns = [
+            ("phase_claim", self._PHASE_CLAIM_RE),
+            ("http_status_claim", self._HTTP_CLAIM_RE),
+            ("token_claim", self._TOKEN_CLAIM_RE),
+            ("connection_status_claim", self._CONNECTION_STATUS_RE),
+            ("success_claim", self._SUCCESS_CLAIM_RE),
+            ("latency_claim", self._LATENCY_CLAIM_RE),
+        ]
+        for name, pattern in patterns:
+            for m in pattern.finditer(draft):
+                # Check if there's a body receipt nearby
+                span = draft[max(0, m.start() - 100): min(len(draft), m.end() + 100)]
+                has_receipt = bool(re.search(
+                    r"\b(?:receipt|ledger|jsonl|sha256|blink_id|confirmed|observed|VERIFIED)\b",
+                    span, re.IGNORECASE,
+                ))
+                if has_receipt:
+                    continue
+                pheromones.append(ResiduePheromone(
+                    swimmer=self.__class__.__name__,
+                    swimmer_type=self.swimmer_type,
+                    span=(m.start(), m.end()),
+                    matched_text=m.group(),
+                    severity=0.9,
+                    pattern_name=f"fabricated_{name}",
+                    suggested_rewrite=f"[{name} requires body receipt — say 'I cannot do this' or provide proof]",
+                ))
+        return pheromones
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Default swimmer pool
 # ──────────────────────────────────────────────────────────────────────
 
 def default_swimmer_pool() -> list[TokenImmuneSwimmer]:
-    """The five-swimmer pool from the architect's spec."""
+    """The swimmer pool from the architect's spec + r1377/r1393 guards."""
     return [
         CaretakerResidueSwimmer(),
         InvestorVoiceSwimmer(),
         TruthBoundarySwimmer(),
         ReceiptAnchorSwimmer(),
         OwnerDirectnessSwimmer(),
+        ClothingFabricationSwimmer(),
+        FabricatedSystemReportSwimmer(),
     ]
 
 

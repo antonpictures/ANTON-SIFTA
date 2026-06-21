@@ -64,7 +64,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Tuple
+from typing import Callable, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -91,6 +91,12 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_base_widget import SiftaBaseWidget
 from System.ledger_append import append_ledger_line
+from System.swarm_camera_frame_paths import (
+    active_eye_frame_path,
+    camera_device_frame_index_path,
+    device_eye_frame_path,
+    root_active_eye_frame_path,
+)
 from System.swarm_visual_acuity_budget import (
     configured_default_acuity,
     configured_max_acuity,
@@ -154,24 +160,59 @@ _VIDEO_PREFER = ("macbook pro camera", "facetime hd camera", "logitech",
                  "usb camera")
 
 
+def _camera_priority_score(description: str) -> int:
+    """Built-in owner eye is primary; detachable USB is a secondary body eye."""
+    desc = str(description or "").lower()
+    if any(tok in desc for tok in ("macbook pro camera", "facetime hd camera", "built-in", "built in")):
+        return 0
+    if any(tok in desc for tok in ("logitech", "usb camera", "vid:1133")):
+        return 1
+    if any(tok in desc for tok in _VIDEO_AVOID):
+        return 3
+    return 2
+
+
+def _is_secondary_world_eye(description: str) -> bool:
+    """True only for the detachable USB/Logitech world eye.
+
+    This secondary writer is intentionally narrower than the visible camera
+    ranker: it must never wake OBS, iPhone, Continuity, or Desk View just to
+    feed the small dual mirror tile.
+    """
+    desc = str(description or "").lower()
+    if any(tok in desc for tok in ("iphone", "ipad", "continuity", "desk view")):
+        return False
+    if any(tok in desc for tok in ("obs", "virtual", "screen capture", "passthrough")):
+        return False
+    return "vid:1133" in desc and "pid:2081" in desc
+
+
 def _rank_cameras(devs: List[QCameraDevice]) -> List[QCameraDevice]:
     """
-    Order: preferred-real-cameras first, other reals, virtual/loopback last.
-    Same posture used by swarm_iris and Alice CLI so the user sees Alice's
-    actual choice surfaced first.
+    Order: MacBook owner eye first, USB Logitech world eye second.
+    Same strict allowlist as ``swarm_camera_target._filter_body_cameras``.
     """
-    real = [d for d in devs if not any(av in d.description().lower()
-                                       for av in _VIDEO_AVOID)]
-    virt = [d for d in devs if any(av in d.description().lower()
-                                   for av in _VIDEO_AVOID)]
-    preferred: List[QCameraDevice] = []
-    other_real: List[QCameraDevice] = []
-    for d in real:
-        if any(p in d.description().lower() for p in _VIDEO_PREFER):
-            preferred.append(d)
-        else:
-            other_real.append(d)
-    return preferred + other_real + virt
+    try:
+        from System.swarm_camera_target import is_allowed_owner_body_camera
+    except Exception:
+        is_allowed_owner_body_camera = lambda _name: True  # type: ignore[assignment,misc]
+    body_devs: List[QCameraDevice] = []
+    seen_names: set[str] = set()
+    for d in devs:
+        desc = str(d.description() or "").strip()
+        if not is_allowed_owner_body_camera(desc):
+            continue
+        name_key = " ".join(desc.casefold().split())
+        if name_key in seen_names:
+            continue
+        seen_names.add(name_key)
+        body_devs.append(d)
+    return [
+        d for _original_index, d in sorted(
+            enumerate(body_devs),
+            key=lambda item: (_camera_priority_score(item[1].description()), item[0]),
+        )
+    ]
 
 
 def _short_camera_label(name: str, uid: str = "") -> str:
@@ -715,6 +756,62 @@ class _VisionBodyProbeWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _SecondaryDeviceFrameWriter:
+    """Write fresh frames for a non-active body eye without changing active gaze."""
+
+    _PERIOD_S = _env_float("SIFTA_SECONDARY_WORLD_EYE_FRAME_PERIOD_S", 1.0, lo=0.2, hi=10.0)
+
+    def __init__(
+        self,
+        device_label: str,
+        unique_id: str,
+        *,
+        on_frame_saved: Optional[Callable[[Path], None]] = None,
+    ) -> None:
+        self._device_label = str(device_label or "").strip()
+        self._unique_id = str(unique_id or "").strip()
+        self._last_save_ts = 0.0
+        self._on_frame_saved = on_frame_saved
+
+    def on_video_frame(self, frame) -> None:  # type: ignore[no-untyped-def]
+        now = time.time()
+        if now - self._last_save_ts < self._PERIOD_S:
+            return
+        if not frame.isValid():
+            return
+        try:
+            img = frame.toImage()
+        except Exception:
+            return
+        if img is None or img.isNull():
+            return
+        img = img.convertToFormat(QImage.Format.Format_RGB32)
+        path = device_eye_frame_path(self._device_label, self._unique_id)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not img.save(str(path), "PNG"):
+                return
+            self._last_save_ts = now
+            with camera_device_frame_index_path().open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": now,
+                    "event": "CAMERA_DEVICE_LATEST_FRAME_SECONDARY",
+                    "path": str(path),
+                    "device": self._device_label,
+                    "unique_id": self._unique_id,
+                    "w": int(img.width()),
+                    "h": int(img.height()),
+                    "writer": "what_alice_sees_secondary_world_eye",
+                }, separators=(",", ":")) + "\n")
+            if self._on_frame_saved is not None:
+                try:
+                    self._on_frame_saved(path)
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+
 # ── The video canvas: paints frames + the HUD overlay ────────────────────────
 class _VideoCanvas(QWidget):
     """
@@ -747,6 +844,7 @@ class _VideoCanvas(QWidget):
         self._photon: Optional[PhotonStigmergy] = None
         self._last_ledger_ts: float = 0.0
         self._device_label: str = "(no camera)"
+        self._device_unique_id: str = ""
         self._fps_emit: float = 0.0
         self._frames_seen: int = 0
         self._fps_window_t0: float = time.time()
@@ -792,8 +890,9 @@ class _VideoCanvas(QWidget):
             pass
 
     # ── Public mutators (called by parent widget) ──────────────────────────
-    def set_device_label(self, text: str) -> None:
+    def set_device_label(self, text: str, unique_id: str = "") -> None:
         self._device_label = text or "(no camera)"
+        self._device_unique_id = str(unique_id or "").strip()
         self._error = None
         self._image = None
         self.update()
@@ -874,6 +973,28 @@ class _VideoCanvas(QWidget):
                     img.save(str(_frame_path), "JPEG", quality=85)
                 except Exception:
                     pass
+            # Mirror tiles need fresh per-device PNGs (~1 Hz). Identity ledger rows
+            # stay at the slower cadence so we do not spam receipts.
+            if _EYE_FRAME_PERIOD_S > 0 and _now - getattr(self, "_last_mirror_frame_save_ts", 0.0) >= _EYE_FRAME_PERIOD_S:
+                self._last_mirror_frame_save_ts = _now
+                try:
+                    _id_dir = active_eye_frame_path().parent
+                    _id_dir.mkdir(parents=True, exist_ok=True)
+                    _id_path = active_eye_frame_path()
+                    img.save(str(_id_path), "PNG")
+                    _device_path = device_eye_frame_path(
+                        self._device_label,
+                        self._device_unique_id,
+                    )
+                    _device_path.parent.mkdir(parents=True, exist_ok=True)
+                    img.save(str(_device_path), "PNG")
+                    try:
+                        root_png = root_active_eye_frame_path()
+                        img.save(str(root_png), "PNG")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
             try:
                 _identity_period = float(
                     os.environ.get("SIFTA_EYE_IDENTITY_FRAME_PERIOD_S", "10") or "10"
@@ -883,16 +1004,31 @@ class _VideoCanvas(QWidget):
             if _identity_period > 0 and _now - getattr(self, "_last_identity_frame_save_ts", 0.0) >= _identity_period:
                 self._last_identity_frame_save_ts = _now
                 try:
-                    _id_dir = _REPO / ".sifta_state" / "owner_body_vision_frames"
-                    _id_dir.mkdir(parents=True, exist_ok=True)
-                    _id_path = _id_dir / "active_eye_latest.png"
-                    img.save(str(_id_path), "PNG")
+                    _id_path = active_eye_frame_path()
+                    _device_path = device_eye_frame_path(
+                        self._device_label,
+                        self._device_unique_id,
+                    )
+                    with camera_device_frame_index_path().open("a", encoding="utf-8") as f:
+                        f.write(json.dumps({
+                            "ts": _now,
+                            "event": "CAMERA_DEVICE_LATEST_FRAME",
+                            "path": str(_device_path),
+                            "active_path": str(_id_path),
+                            "device": self._device_label,
+                            "unique_id": self._device_unique_id,
+                            "w": int(img.width()),
+                            "h": int(img.height()),
+                            "sha8": self._last_sha8,
+                        }, separators=(",", ":")) + "\n")
                     with (_REPO / ".sifta_state" / "active_eye_identity_frames.jsonl").open("a", encoding="utf-8") as f:
                         f.write(json.dumps({
                             "ts": _now,
                             "event": "ACTIVE_EYE_IDENTITY_FRAME",
                             "path": str(_id_path),
+                            "device_path": str(_device_path),
                             "device": self._device_label,
+                            "unique_id": self._device_unique_id,
                             "w": int(img.width()),
                             "h": int(img.height()),
                             "sha8": self._last_sha8,
@@ -1303,6 +1439,23 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._session = QMediaCaptureSession(self)
         self._session.setVideoSink(self._sink)
         self._sink.videoFrameChanged.connect(self._canvas.on_video_frame)
+        self._secondary_world_camera: Optional[QCamera] = None
+        self._secondary_world_sink: Optional[QVideoSink] = None
+        self._secondary_world_session: Optional[QMediaCaptureSession] = None
+        self._secondary_world_writer: Optional[_SecondaryDeviceFrameWriter] = None
+        self._secondary_world_signature: str = ""
+        self._secondary_world_started_at: float = 0.0
+        self._secondary_world_last_frame_ts: float = 0.0
+        self._secondary_world_pulse_camera: Optional[QCamera] = None
+        self._secondary_world_pulse_sink: Optional[QVideoSink] = None
+        self._secondary_world_pulse_session: Optional[QMediaCaptureSession] = None
+        self._secondary_world_pulse_writer: Optional[_SecondaryDeviceFrameWriter] = None
+        self._secondary_world_pulse_active: bool = False
+        self._secondary_world_pulse_timer = QTimer(self)
+        self._secondary_world_pulse_timer.setInterval(
+            int(_env_float("SIFTA_SECONDARY_WORLD_EYE_PULSE_PERIOD_S", 5.0, lo=2.0, hi=30.0) * 1000)
+        )
+        self._secondary_world_pulse_timer.timeout.connect(self._pulse_secondary_world_eye)
 
         # ── Hot-plug awareness ─────────────────────────────────────────────
         self._media_devs = QMediaDevices(self)
@@ -1335,7 +1488,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._poll_timer.timeout.connect(self._poll_saccade_target)
         self._poll_timer.timeout.connect(self._poll_acuity_target)
         self._poll_timer.timeout.connect(self._poll_camera_yield)
-        self._poll_timer.start(800)
+        try:
+            from System.swarm_metabolism_governor import governed_interval_ms
+
+            poll_ms = governed_interval_ms(800, organ_id="what_alice_sees_poll")
+        except Exception:
+            poll_ms = 800
+        self._poll_timer.start(poll_ms)
 
         self._refresh_cameras()
 
@@ -1443,6 +1602,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         if not ranked:
             self._cam_combo.addItem("(no cameras detected — check macOS Camera permission)", None)
             self._cam_combo.blockSignals(False)
+            self._stop_secondary_world_eye()
             err_text = (
                 "No cameras detected.\n\n"
                 "Open System Settings → Privacy & Security → Camera "
@@ -1482,6 +1642,294 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             default_idx = 0 if _EYE_BOOT_OFF else min(1, self._cam_combo.count() - 1)
             self._cam_combo.setCurrentIndex(default_idx)
             self._on_cam_changed(default_idx)
+        self._refresh_secondary_world_eye()
+
+    def _stop_secondary_world_eye(self) -> None:
+        if hasattr(self, "_secondary_world_pulse_timer"):
+            self._secondary_world_pulse_timer.stop()
+        self._finish_secondary_world_pulse("secondary_world_eye_stop", restart_primary=False)
+        camera = self._secondary_world_camera
+        self._secondary_world_camera = None
+        sink = self._secondary_world_sink
+        self._secondary_world_sink = None
+        self._secondary_world_writer = None
+        self._secondary_world_signature = ""
+        self._secondary_world_started_at = 0.0
+        session = self._secondary_world_session
+        self._secondary_world_session = None
+        if session is not None:
+            try:
+                session.setCamera(None)
+            except Exception:
+                pass
+        if camera is not None:
+            try:
+                camera.stop()
+            except Exception:
+                pass
+            try:
+                camera.deleteLater()
+            except Exception:
+                pass
+        if session is not None:
+            try:
+                session.deleteLater()
+            except Exception:
+                pass
+        if sink is not None:
+            try:
+                sink.deleteLater()
+            except Exception:
+                pass
+
+    def _on_secondary_world_frame_saved(self, _path: Path) -> None:
+        self._secondary_world_last_frame_ts = time.time()
+        if self._secondary_world_pulse_active:
+            self._finish_secondary_world_pulse("frame_saved", restart_primary=True)
+        elif hasattr(self, "_secondary_world_pulse_timer"):
+            self._secondary_world_pulse_timer.stop()
+
+    def _secondary_world_eye_candidate(self) -> Optional[QCameraDevice]:
+        if not _env_flag("SIFTA_SECONDARY_WORLD_EYE", "1"):
+            return None
+        try:
+            from System.swarm_camera_target import live_camera_allowed
+            if not live_camera_allowed():
+                return None
+        except Exception:
+            pass
+        try:
+            from System.swarm_camera_target import normalize_unique_id as _normalize_unique_id
+        except Exception:
+            _normalize_unique_id = lambda value: str(value or "").strip()  # type: ignore[assignment]
+        active_uid = _normalize_unique_id(self._cam_combo.currentData())
+        active_name = str(self._cam_combo.currentText() or "").strip()
+        for dev in _rank_cameras(QMediaDevices.videoInputs()):
+            name = str(dev.description() or "").strip()
+            uid = _normalize_unique_id(dev.id())
+            if uid and active_uid and uid == active_uid:
+                continue
+            if name and active_name and name == active_name:
+                continue
+            if _is_secondary_world_eye(name):
+                return dev
+        return None
+
+    def _refresh_secondary_world_eye(self, *, active_unique_id: str = "", active_name: str = "") -> None:
+        dev = self._secondary_world_eye_candidate()
+        if dev is None:
+            if self._secondary_world_camera is not None:
+                self._stop_secondary_world_eye()
+            return
+        try:
+            from System.swarm_camera_target import normalize_unique_id as _normalize_unique_id
+            uid = _normalize_unique_id(dev.id())
+        except Exception:
+            uid = str(dev.id() or "").strip()
+        name = str(dev.description() or "").strip()
+        if active_unique_id and uid and uid == active_unique_id:
+            self._stop_secondary_world_eye()
+            return
+        if active_name and name and name == active_name:
+            self._stop_secondary_world_eye()
+            return
+        signature = f"{uid}|{name}"
+        if signature == self._secondary_world_signature and self._secondary_world_camera is not None:
+            return
+        self._stop_secondary_world_eye()
+        try:
+            sink = QVideoSink(self)
+            session = QMediaCaptureSession(self)
+            writer = _SecondaryDeviceFrameWriter(
+                name,
+                uid,
+                on_frame_saved=self._on_secondary_world_frame_saved,
+            )
+            sink.videoFrameChanged.connect(writer.on_video_frame)
+            session.setVideoSink(sink)
+            camera = QCamera(dev, self)
+            camera.errorOccurred.connect(self._on_secondary_world_camera_error)
+            session.setCamera(camera)
+            camera.start()
+            self._secondary_world_sink = sink
+            self._secondary_world_session = session
+            self._secondary_world_writer = writer
+            self._secondary_world_camera = camera
+            self._secondary_world_signature = signature
+            self._secondary_world_started_at = time.time()
+            with camera_device_frame_index_path().open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": self._secondary_world_started_at,
+                    "event": "SECONDARY_WORLD_EYE_STARTED",
+                    "device": name,
+                    "unique_id": uid,
+                    "writer": "what_alice_sees_widget",
+                }, separators=(",", ":")) + "\n")
+            QTimer.singleShot(2500, self._check_secondary_world_delivery)
+        except Exception as exc:
+            self._stop_secondary_world_eye()
+            try:
+                append_ledger_line(camera_device_frame_index_path(), {
+                    "ts": time.time(),
+                    "event": "SECONDARY_WORLD_EYE_START_FAILED",
+                    "device": name,
+                    "unique_id": uid,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "writer": "what_alice_sees_widget",
+                })
+            except Exception:
+                pass
+
+    def _on_secondary_world_camera_error(self, _err, msg: str) -> None:  # type: ignore[no-untyped-def]
+        try:
+            append_ledger_line(camera_device_frame_index_path(), {
+                "ts": time.time(),
+                "event": "SECONDARY_WORLD_EYE_ERROR",
+                "device_signature": self._secondary_world_signature,
+                "error": str(msg or _err),
+                "writer": "what_alice_sees_widget",
+            })
+        except Exception:
+            pass
+
+    def _check_secondary_world_delivery(self) -> None:
+        signature = str(getattr(self, "_secondary_world_signature", "") or "")
+        started_at = float(getattr(self, "_secondary_world_started_at", 0.0) or 0.0)
+        last_frame = float(getattr(self, "_secondary_world_last_frame_ts", 0.0) or 0.0)
+        if not signature or started_at <= 0.0:
+            return
+        if last_frame >= started_at:
+            return
+        try:
+            append_ledger_line(camera_device_frame_index_path(), {
+                "ts": time.time(),
+                "event": "SECONDARY_WORLD_EYE_NO_FRAMES",
+                "device_signature": signature,
+                "fallback": "pulse_single_camera_session",
+                "writer": "what_alice_sees_widget",
+            })
+        except Exception:
+            pass
+        # macOS/Qt can enumerate and start a second camera session without
+        # delivering frames. Fall back to one-at-a-time saccadic pulses:
+        # momentarily release the MacBook owner eye, capture USB, then restore.
+        self._stop_secondary_world_eye()
+        self._secondary_world_pulse_timer.start()
+        self._pulse_secondary_world_eye()
+
+    def _pulse_secondary_world_eye(self) -> None:
+        if getattr(self, "_secondary_world_pulse_active", False):
+            return
+        if getattr(self, "_yielded", False):
+            return
+        if self._camera is None or self._cam_combo.currentData() == "OFF":
+            return
+        dev = self._secondary_world_eye_candidate()
+        if dev is None:
+            return
+        try:
+            from System.swarm_camera_target import normalize_unique_id as _normalize_unique_id
+            uid = _normalize_unique_id(dev.id())
+        except Exception:
+            uid = str(dev.id() or "").strip()
+        name = str(dev.description() or "").strip()
+        try:
+            self._camera.stop()
+            self._session.setCamera(None)
+        except Exception:
+            pass
+        try:
+            sink = QVideoSink(self)
+            session = QMediaCaptureSession(self)
+            writer = _SecondaryDeviceFrameWriter(
+                name,
+                uid,
+                on_frame_saved=self._on_secondary_world_frame_saved,
+            )
+            sink.videoFrameChanged.connect(writer.on_video_frame)
+            session.setVideoSink(sink)
+            camera = QCamera(dev, self)
+            camera.errorOccurred.connect(self._on_secondary_world_camera_error)
+            session.setCamera(camera)
+            self._secondary_world_pulse_sink = sink
+            self._secondary_world_pulse_session = session
+            self._secondary_world_pulse_writer = writer
+            self._secondary_world_pulse_camera = camera
+            self._secondary_world_pulse_active = True
+            camera.start()
+            append_ledger_line(camera_device_frame_index_path(), {
+                "ts": time.time(),
+                "event": "SECONDARY_WORLD_EYE_PULSE_STARTED",
+                "device": name,
+                "unique_id": uid,
+                "writer": "what_alice_sees_widget",
+            })
+            QTimer.singleShot(1800, lambda: self._finish_secondary_world_pulse("timeout", restart_primary=True))
+        except Exception as exc:
+            try:
+                append_ledger_line(camera_device_frame_index_path(), {
+                    "ts": time.time(),
+                    "event": "SECONDARY_WORLD_EYE_PULSE_FAILED",
+                    "device": name,
+                    "unique_id": uid,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "writer": "what_alice_sees_widget",
+                })
+            except Exception:
+                pass
+            self._finish_secondary_world_pulse("start_failed", restart_primary=True)
+
+    def _finish_secondary_world_pulse(self, reason: str, *, restart_primary: bool) -> None:
+        if not getattr(self, "_secondary_world_pulse_active", False):
+            return
+        camera = self._secondary_world_pulse_camera
+        session = self._secondary_world_pulse_session
+        sink = self._secondary_world_pulse_sink
+        self._secondary_world_pulse_camera = None
+        self._secondary_world_pulse_session = None
+        self._secondary_world_pulse_sink = None
+        self._secondary_world_pulse_writer = None
+        self._secondary_world_pulse_active = False
+        if session is not None:
+            try:
+                session.setCamera(None)
+            except Exception:
+                pass
+        if camera is not None:
+            try:
+                camera.stop()
+            except Exception:
+                pass
+            try:
+                camera.deleteLater()
+            except Exception:
+                pass
+        if session is not None:
+            try:
+                session.deleteLater()
+            except Exception:
+                pass
+        if sink is not None:
+            try:
+                sink.deleteLater()
+            except Exception:
+                pass
+        if restart_primary and self._camera is not None and self._cam_combo.currentData() != "OFF":
+            try:
+                self._session.setCamera(self._camera)
+                self._camera.start()
+            except Exception:
+                pass
+        try:
+            append_ledger_line(camera_device_frame_index_path(), {
+                "ts": time.time(),
+                "event": "SECONDARY_WORLD_EYE_PULSE_FINISHED",
+                "reason": reason,
+                "restarted_primary": bool(restart_primary),
+                "writer": "what_alice_sees_widget",
+            })
+        except Exception:
+            pass
 
     def _on_cam_changed(self, _idx: int) -> None:
         dev_id = self._cam_combo.currentData()
@@ -1505,6 +1953,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 pass
                 
         if dev_id == "OFF":
+            self._stop_secondary_world_eye()
             self._canvas.set_device_label("(Eye Closed)")
             self._canvas.set_error("Eye closed. Waiting for Alice's active gaze (saccade).")
             self.set_status("Camera: OFF")
@@ -1536,13 +1985,23 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
 
 
+        try:
+            from System.swarm_camera_target import normalize_unique_id as _normalize_unique_id
+            target_uid_s = _normalize_unique_id(target.id())
+        except Exception:
+            target_uid_s = str(target.id() or "").strip()
+
         self._camera = QCamera(target, self)
         self._camera.errorOccurred.connect(self._on_camera_error)
         self._session.setCamera(self._camera)
-        self._canvas.set_device_label(target.description())
+        self._canvas.set_device_label(target.description(), unique_id=target_uid_s)
         self._camera.start()
         self.set_status(f"Camera: {target.description()}")
         self._refresh_active_eye_label()
+        self._refresh_secondary_world_eye(
+            active_unique_id=target_uid_s,
+            active_name=target.description(),
+        )
 
         if self._applying_saccade_target:
             return
@@ -1552,17 +2011,17 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # 2026-04-23 C47H — closes the split-brain that let the iris organ
         # think it was on a different camera than the one whose LED is lit.
         try:
-            from System.swarm_camera_target import write_target as _write_target
-            tid = target.id()
-            tid_s = tid.decode() if isinstance(tid, (bytes, bytearray)) else str(tid)
+            from System.swarm_camera_target import (
+                write_target as _write_target,
+            )
             rec = _write_target(
                 name=target.description(),
-                unique_id=tid_s,
+                unique_id=target_uid_s,
                 writer="what_alice_sees_widget",
             )
             # Suppress the next saccade poll from re-firing on our own write.
             self._last_saccade_signature = (
-                f"{tid_s}|{target.description()}|"
+                f"{target_uid_s}|{target.description()}|"
                 f"{rec.get('index') if rec.get('index') is not None else ''}"
             )
         except Exception:
@@ -1787,6 +2246,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 })
                 # Line of truth on UI
                 self._canvas.set_chyron(f"🔒 SENSOR LOCKED: Receiving live {w}x{h} frames from {curr_dev}", QColor(100, 255, 100))
+                # Grounded LED note per covenant hardware layer: code + receipts prove device open + frames; the green LED on the physical camera body part is owner-visible only (look at the hardware). No double-spend claims.
+                try:
+                    import sys
+                    py_path = sys.executable
+                    self.set_status(f"live {w}x{h} from {curr_dev} | Physical LED: owner eye only (green light on camera hardware) | TCC path for grant: {py_path}")
+                except Exception:
+                    self.set_status(f"live {w}x{h} from {curr_dev} | Physical LED: owner-visible on hardware body part only")
             except Exception:
                 pass
 
@@ -2006,6 +2472,36 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 )
                 QTimer.singleShot(1500, self._refresh_active_eye_label)
 
+            # Surface the exact unified field proof banner (the "X ... stale" the owner sees in [Image #1])
+            # so the eye organ itself carries the current health state. Helps Alice + the others (other doctors)
+            # see the same receipt the proof builder produces without external tailing.
+            try:
+                from System.swarm_camera_unified_field_proof import build_camera_unified_field_proof
+                proof = build_camera_unified_field_proof()
+                if proof and (not getattr(proof, "ok", True) or getattr(proof, "connection_state", "") != "LIVE_CAPTURE_VERIFIED"):
+                    summary = getattr(proof, "summary", "✗ unified field: not proven")
+                    self._canvas.set_chyron(summary, QColor(200, 60, 60))
+                    # Help the others: write a diagnostic row with actionable path + current target so future rounds have the exact state + grant target.
+                    try:
+                        import sys
+                        from System.ledger_append import append_jsonl_line
+                        from System.swarm_camera_target import read_target as _rt
+                        t = _rt() or {}
+                        append_jsonl_line(_REPO / ".sifta_state" / "camera_proof_diagnostics.jsonl", {
+                            "ts": time.time(),
+                            "event": "eye_unified_field_stale",
+                            "summary": summary,
+                            "connection_state": getattr(proof, "connection_state", ""),
+                            "disconnect_reasons": getattr(proof, "disconnect_reasons", []),
+                            "python_for_tcc": sys.executable,
+                            "active_target": t.get("name") or t.get("unique_id"),
+                            "writer": "what_alice_sees_widget",
+                        })
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
     def _poll_acuity_target(self) -> None:
         """Poll the canonical visual-acuity target and move the slider.
 
@@ -2049,13 +2545,15 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # 1) unique_id against itemData (which holds QCameraDevice.id())
         uid = rec.get("unique_id")
         if uid:
+            try:
+                from System.swarm_camera_target import normalize_unique_id as _normalize_unique_id
+            except Exception:
+                _normalize_unique_id = lambda value: str(value or "").strip()  # type: ignore[assignment]
+            uid_s = _normalize_unique_id(uid)
             for i in range(self._cam_combo.count()):
                 data = self._cam_combo.itemData(i)
-                data_s = (
-                    data.decode() if isinstance(data, (bytes, bytearray))
-                    else (str(data) if data is not None else "")
-                )
-                if data_s == uid:
+                data_s = _normalize_unique_id(data)
+                if data_s == uid_s:
                     return i
         # 2) exact name against itemText
         name = (rec.get("name") or "").strip()

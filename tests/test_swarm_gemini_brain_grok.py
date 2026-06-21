@@ -6,6 +6,16 @@ import json
 import urllib.request
 
 
+def _content_tokens(events):
+    from System import swarm_gemini_brain as brain
+
+    return [
+        piece
+        for kind, piece in events
+        if kind == "token" and piece != brain._BATCH_CLI_LIVENESS_TOKEN
+    ]
+
+
 def test_grok_cli_model_for_maps_canonical_sifta_key_to_live_cli_model(tmp_path, monkeypatch):
     from System import swarm_gemini_brain as brain
 
@@ -65,6 +75,7 @@ def test_stream_grok_chat_uses_live_cli_model_for_canonical_key(monkeypatch, tmp
     from System import swarm_gemini_brain as brain
 
     monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path / ".sifta_state"))
     calls: list[list[str]] = []
 
@@ -91,20 +102,20 @@ def test_stream_grok_chat_uses_live_cli_model_for_canonical_key(monkeypatch, tmp
     assert len(calls) == 1
     assert "--model" in calls[0]
     assert calls[0][calls[0].index("--model") + 1] == "grok-build"
-    assert events[0][0] == "token"
-    assert events[0][1] == "SIFTA_GROK_CORTEX_OK"
-    assert events[1][0] == "usage"
-    assert events[1][1].model == "grok-build"
-    assert events[1][1].raw.get("requested_model") == "grok-4.3"
-    assert events[1][1].raw.get("cli_model") == "grok-build"
-    assert events[1][1].raw.get("fallback_to_cli_default") is False
-    assert events[2] == ("done", "SIFTA_GROK_CORTEX_OK")
+    assert _content_tokens(events) == ["SIFTA_GROK_CORTEX_OK"]
+    usage = next(event[1] for event in events if event[0] == "usage")
+    assert usage.model == "grok-build"
+    assert usage.raw.get("requested_model") == "grok-4.3"
+    assert usage.raw.get("cli_model") == "grok-build"
+    assert usage.raw.get("fallback_to_cli_default") is False
+    assert events[-1] == ("done", "SIFTA_GROK_CORTEX_OK")
 
 
 def test_stream_grok_chat_falls_back_to_cli_default_for_unknown_model(monkeypatch, tmp_path):
     from System import swarm_gemini_brain as brain
 
     monkeypatch.delenv("SIFTA_GROK_CLI_MODEL", raising=False)
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path / ".sifta_state"))
     calls: list[list[str]] = []
 
@@ -138,15 +149,16 @@ def test_stream_grok_chat_falls_back_to_cli_default_for_unknown_model(monkeypatc
     assert "--model" in calls[0]
     assert calls[0][calls[0].index("--model") + 1] == "unknown-future"
     assert "--model" not in calls[1]
-    assert events[0] == ("token", "UNKNOWN_MODEL_FALLBACK_OK")
-    assert events[1][0] == "usage"
-    assert events[1][1].raw.get("fallback_to_cli_default") is True
-    assert events[2] == ("done", "UNKNOWN_MODEL_FALLBACK_OK")
+    assert _content_tokens(events) == ["UNKNOWN_MODEL_FALLBACK_OK"]
+    usage = next(event[1] for event in events if event[0] == "usage")
+    assert usage.raw.get("fallback_to_cli_default") is True
+    assert events[-1] == ("done", "UNKNOWN_MODEL_FALLBACK_OK")
 
 
 def test_stream_grok_chat_errors_when_no_key_and_no_cli(monkeypatch):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     monkeypatch.setattr(brain, "xai_api_key", lambda: None)
     monkeypatch.setattr(brain, "_grok_cli_binary", lambda: None)
 
@@ -179,6 +191,7 @@ def test_xai_sse_content_delta_parser():
 def test_stream_grok_chat_streams_xai_sse_without_duplicate_final_token(monkeypatch):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     captured: dict[str, object] = {}
 
     class FakeStreamingResponse:
@@ -231,6 +244,7 @@ def test_stream_grok_chat_streams_xai_sse_without_duplicate_final_token(monkeypa
 def test_stream_claude_teacher_uses_signed_in_cli(monkeypatch):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     calls: list[list[str]] = []
 
     def fake_run(cmd, **_kwargs):
@@ -251,13 +265,14 @@ def test_stream_claude_teacher_uses_signed_in_cli(monkeypatch):
     assert calls
     assert calls[0][0].endswith("claude")
     assert "--permission-mode" in calls[0]
-    assert "CLAUDE_TEACHER_OK" in events[0][1]
+    assert _content_tokens(events) == ["CLAUDE_TEACHER_OK"]
     assert events[-1] == ("done", "CLAUDE_TEACHER_OK")
 
 
 def test_stream_codex_teacher_uses_signed_in_cli_read_only(monkeypatch, tmp_path):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
     calls: list[list[str]] = []
     monkeypatch.setattr(brain, "_STATE", tmp_path)
 
@@ -290,6 +305,8 @@ def test_stream_codex_teacher_uses_signed_in_cli_read_only(monkeypatch, tmp_path
 def test_stream_grok_chat_falls_back_to_cli_on_xai_auth_denied(monkeypatch):
     from System import swarm_gemini_brain as brain
 
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
+
     def fake_urlopen(*_args, **_kwargs):
         raise HTTPError(
             url="https://api.x.ai/v1/chat/completions",
@@ -320,6 +337,8 @@ def test_stream_grok_chat_falls_back_to_cli_on_xai_auth_denied(monkeypatch):
 
 def test_stream_grok_chat_falls_back_to_cli_on_xai_unknown_model(monkeypatch):
     from System import swarm_gemini_brain as brain
+
+    monkeypatch.setenv("SIFTA_MIMO_BORG_SINGLE_CORTEX", "0")
 
     class FakeBody:
         def read(self):

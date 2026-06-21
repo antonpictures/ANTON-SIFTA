@@ -73,7 +73,7 @@ QListWidget {{
 }}
 QTextEdit {{
     background: {_CARD}; color: {_TEXT}; border: 1px solid #3b4261;
-    border-radius: 6px; font-family: 'SF Mono', Menlo, monospace; font-size: 11px;
+    border-radius: 6px; font-family: 'Menlo', monospace; font-size: 11px;
 }}
 QMenuBar {{
     background: {_CARD}; color: {_TEXT}; border-bottom: 1px solid #3b4261;

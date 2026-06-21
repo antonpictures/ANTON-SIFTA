@@ -1,9 +1,0 @@
-FROM ./alice-m5-cortex-8b-6.3gb.gguf
-TEMPLATE {{ .Prompt }}
-RENDERER gemma4
-PARSER gemma4
-PARAMETER num_ctx 8192
-PARAMETER stop <turn|>
-PARAMETER temperature 1
-PARAMETER top_k 64
-PARAMETER top_p 0.95

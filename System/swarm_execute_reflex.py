@@ -86,13 +86,14 @@ def _read_current_camera() -> int:
     return 1
 
 
-# ── Camera index names ───────────────────────────────────────────────────────
-_CAMERA_NAMES = {
-    0: "USB Camera VID:1133 PID:2081",
-    1: "MacBook Pro Camera",
-    2: "OBS Virtual Camera",
-    3: "iPhone Camera",
-}
+def _camera_name_for_role(role: str) -> str:
+    from System.swarm_eye_registry import live_owner_eye_device, live_world_eye_device
+
+    if role == "owner":
+        return str(live_owner_eye_device().get("name") or "")
+    if role == "world":
+        return str(live_world_eye_device().get("name") or "")
+    return ""
 
 
 def _handle_camera_switch(text: str) -> Optional[dict]:
@@ -100,22 +101,35 @@ def _handle_camera_switch(text: str) -> Optional[dict]:
     if not _CAMERA_SWITCH_RE.search(text):
         return None
 
+    role = "cycle"
     if _CAMERA_MACBOOK_RE.search(text):
-        idx = 1
+        role = "owner"
     elif _CAMERA_LOGITECH_RE.search(text):
-        idx = 0
+        role = "world"
     elif _CAMERA_IPHONE_RE.search(text):
-        idx = 3
+        role = "iphone"
     else:
-        # Generic "switch camera" → cycle
         current = _read_current_camera()
-        idx = 0 if current == 1 else 1
+        role = "world" if current == 1 else "owner"
 
-    name = _CAMERA_NAMES.get(idx, f"Camera {idx}")
     try:
-        from System.swarm_camera_target import name_for_index, write_target
+        from System.swarm_camera_switch import _index_for_role
+        from System.swarm_camera_target import write_target
 
-        canonical_name = name_for_index(idx) or name
+        if role == "iphone":
+            idx = 3
+            canonical_name = _camera_name_for_role("owner")
+        else:
+            idx = _index_for_role(role)
+            canonical_name = _camera_name_for_role(role)
+        if idx is None and not canonical_name:
+            return {
+                "effector": "camera_switch",
+                "ok": False,
+                "error": "no live camera for requested role",
+                "action_summary": "camera switch failed: no live device",
+                "example_action": "I could not move my active eye",
+            }
         rec = write_target(
             name=canonical_name,
             index=idx,

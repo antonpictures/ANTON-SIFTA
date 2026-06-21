@@ -8,7 +8,6 @@ import os
 import sys
 import subprocess
 import time
-import webbrowser
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -17,6 +16,21 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI(title="SIFTA Setup Wizard")
+
+
+def _route_url_to_alice_browser(url: str) -> bool:
+    try:
+        state = Path(__file__).resolve().parent.parent / ".sifta_state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "alice_browser_open_url.txt").write_text(str(url), encoding="utf-8")
+        (state / "alice_browser_open_url_new_tab.flag").write_text("1\n", encoding="utf-8")
+        (state / "alice_browser_alice_only.flag").write_text(
+            f"{time.time()}\n{url}\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
 
 app.add_middleware(
     CORSMiddleware,
@@ -108,36 +122,11 @@ def launch_whatsapp():
     return StreamingResponse(iter_process_output(), media_type="text/plain")
 
 
-import json
 @app.post("/api/setup/channels/save")
 async def save_channels(request: Request):
-    """Save Telegram/Discord channels config to sifta_channels.json.
-    Accepted keys in request JSON:
-      - telegram: TELEGRAM_BOT_TOKEN
-      - telegram_chat_id: TELEGRAM_CHAT_ID
-      - discord: DISCORD_BOT_TOKEN
-    """
-    data = await request.json()
-    config_path = ROOT_DIR / "sifta_channels.json"
-    
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-        except Exception:
-            config = {}
-    else:
-        config = {}
-        
-    if "telegram" in data and data["telegram"]:
-        config["TELEGRAM_BOT_TOKEN"] = data["telegram"]
-    if "telegram_chat_id" in data and data["telegram_chat_id"]:
-        config["TELEGRAM_CHAT_ID"] = str(data["telegram_chat_id"]).strip()
-    if "discord" in data and data["discord"]:
-        config["DISCORD_BOT_TOKEN"] = data["discord"]
-        
-    config_path.write_text(json.dumps(config, indent=4))
-    
-    return {"status": "success", "message": "Channels saved successfully."}
+    """Retired endpoint kept for old setup pages; Discord/Telegram are inactive."""
+    await request.json()
+    return {"status": "retired", "message": "Discord and Telegram setup are retired for now."}
 
 
 if __name__ == "__main__":
@@ -145,7 +134,7 @@ if __name__ == "__main__":
     # Auto-open browser before server starts (delaying slightly so server binds)
     def open_browser():
         time.sleep(1)
-        webbrowser.open(f"http://localhost:{PORT}")
+        _route_url_to_alice_browser(f"http://localhost:{PORT}")
     
     import threading
     threading.Thread(target=open_browser, daemon=True).start()

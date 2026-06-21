@@ -432,6 +432,23 @@ def bind_cowatch_moment(
         row["youtube_watch_memory"] = {"ok": False, "skipped": True, "reason": status}
     if write:
         _append_jsonl(state / LEDGER_NAME, row)
+        media_title = str(
+            (row.get("media_context") or {}).get("title")
+            or (row.get("media_context") or {}).get("media_title")
+            or ""
+        ).strip()
+        if media_title:
+            try:
+                from System.swarm_human_identity_constants import ingest_media_context
+
+                ingest_media_context(
+                    media_title,
+                    state_dir=state,
+                    now=ts,
+                    evidence_ref=f"{LEDGER_NAME}:{row.get('moment_id')}",
+                )
+            except Exception:
+                pass
     return row
 
 

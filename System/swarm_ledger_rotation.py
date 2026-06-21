@@ -130,6 +130,43 @@ DEFAULT_POLICIES: Dict[str, RotationPolicy] = {
         min_bytes=64 * 1024 * 1024,
         reason="hot kernel heartbeats; live table consumes snapshot plus recent tail",
     ),
+    "fractal_pheromone_field.jsonl": RotationPolicy(
+        "fractal_pheromone_field.jsonl",
+        keep_last=5_000,
+        min_bytes=256 * 1024 * 1024,
+        reason="giant pheromone trace; recent gradients matter for live walkers",
+    ),
+    "browser_page_state.jsonl": RotationPolicy(
+        "browser_page_state.jsonl",
+        keep_last=15_000,
+        min_bytes=128 * 1024 * 1024,
+        reason="browser DOM/page snapshots; current tail drives proprioception",
+    ),
+    "browser_context.jsonl": RotationPolicy(
+        "browser_context.jsonl",
+        keep_last=20_000,
+        min_bytes=64 * 1024 * 1024,
+        reason="browser context shifts; recent tail feeds present-time memory",
+    ),
+}
+
+GIANT_BYTE_LEDGER_NAMES: tuple[str, ...] = (
+    "fractal_pheromone_field.jsonl",
+    "browser_page_state.jsonl",
+    "kernel_process_table.jsonl",
+)
+
+GIANT_FRAME_DIRECTORIES: Dict[str, Dict[str, object]] = {
+    "iris_frames": {
+        "keep_files": 400,
+        "min_bytes": 256 * 1024 * 1024,
+        "reason": "camera frame cache; recent frames anchor live vision",
+    },
+    "browser_viewport": {
+        "keep_files": 120,
+        "min_bytes": 256 * 1024 * 1024,
+        "reason": "browser viewport PNG cache; recent captures drive photo describe",
+    },
 }
 
 
@@ -292,12 +329,115 @@ def fast_rotate_ledger_by_bytes(
 
     row["after_bytes"] = int(path.stat().st_size)
     row["kept_lines"] = int(sum(1 for line in tail.splitlines() if line.strip()))
+    # Count archived lines from the archive file
+    archived_count = 0
+    try:
+        with open(archive_path, "rb") as fh:
+            for _ in fh:
+                archived_count += 1
+    except Exception:
+        archived_count = 0
+    row["archived_lines"] = archived_count
     row["archive_path"] = str(archive_path)
     row["archive_sha256"] = f"fast-archive-id:{archive_id}"
     row["archive_bytes"] = int(archive_path.stat().st_size)
     row["reason"] = (
         "fast byte-tail rotation; full old ledger moved to archive, active ledger "
         f"keeps last {int(keep_bytes)} bytes"
+    )
+    assert_payload_keys("ledger_rotation.jsonl", row, strict=True)
+    append_line_locked(audit, json.dumps(row, sort_keys=True) + "\n")
+    return row
+
+
+def _dir_total_bytes(path: Path) -> int:
+    total = 0
+    if not path.exists():
+        return 0
+    for child in path.rglob("*"):
+        if child.is_file():
+            try:
+                total += child.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def rotate_frame_directory(
+    dir_name: str,
+    *,
+    state_dir: Optional[Path] = None,
+    archive_dir: Optional[Path] = None,
+    rotation_ledger: Optional[Path] = None,
+    keep_files: int = 400,
+    min_bytes: int = 256 * 1024 * 1024,
+    dry_run: bool = False,
+    now: Optional[float] = None,
+) -> Dict[str, object]:
+    """Archive oldest files in a giant frame directory; keep recent tail by mtime."""
+    base = Path(state_dir) if state_dir is not None else _STATE
+    archive_base = Path(archive_dir) if archive_dir is not None else _ARCHIVE
+    audit = Path(rotation_ledger) if rotation_ledger is not None else _ROTATION_LEDGER
+    path = base / str(dir_name)
+    t = time.time() if now is None else float(now)
+    before_bytes = _dir_total_bytes(path)
+    row: Dict[str, object] = {
+        "event": "ledger_rotation",
+        "schema": "SIFTA_LEDGER_ROTATION_V1",
+        "module_version": _MODULE_VERSION,
+        "ledger_name": str(dir_name),
+        "dry_run": bool(dry_run),
+        "before_bytes": int(before_bytes),
+        "after_bytes": int(before_bytes),
+        "keep_last": int(keep_files),
+        "kept_lines": 0,
+        "archived_lines": 0,
+        "archive_path": "",
+        "archive_sha256": "",
+        "archive_bytes": 0,
+        "reason": "frame directory tail rotation",
+        "ts": t,
+    }
+    if before_bytes < int(min_bytes) or not path.exists():
+        row["reason"] = "skip: below min_bytes (frame directory tail rotation)"
+        return row
+    files = [p for p in path.rglob("*") if p.is_file()]
+    if len(files) <= int(keep_files):
+        row["reason"] = "skip: file count within keep_files (frame directory tail rotation)"
+        return row
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    keep = files[: int(keep_files)]
+    evict = files[int(keep_files) :]
+    if dry_run:
+        row["reason"] = f"dry_run: would archive {len(evict)} files, keep {len(keep)}"
+        return row
+    archive_base.mkdir(parents=True, exist_ok=True)
+    archive_root = archive_base / f"{dir_name}.{int(t)}"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archived_bytes = 0
+    for src in evict:
+        rel = src.relative_to(path)
+        dest = archive_root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(src, dest)
+            archived_bytes += dest.stat().st_size
+        except OSError:
+            continue
+    after_bytes = _dir_total_bytes(path)
+    row.update(
+        {
+            "after_bytes": int(after_bytes),
+            "kept_lines": int(len(keep)),
+            "archived_lines": int(len(evict)),
+            "archive_path": str(archive_root),
+            "archive_sha256": f"frame-dir:{dir_name}:{len(evict)}",
+            "archive_bytes": int(archived_bytes),
+            "reason": (
+                f"frame directory tail rotation; archived {len(evict)} files, "
+                f"kept {len(keep)} newest"
+            ),
+        }
     )
     assert_payload_keys("ledger_rotation.jsonl", row, strict=True)
     append_line_locked(audit, json.dumps(row, sort_keys=True) + "\n")
@@ -334,6 +474,17 @@ def rotate_default_ledgers(
             continue
         rows.append(
             rotate_ledger(policy, state_dir=state_dir, archive_dir=archive_dir, dry_run=dry_run)
+        )
+    for dir_name, cfg in GIANT_FRAME_DIRECTORIES.items():
+        rows.append(
+            rotate_frame_directory(
+                dir_name,
+                state_dir=state_dir,
+                archive_dir=archive_dir,
+                dry_run=dry_run,
+                keep_files=int(cfg.get("keep_files") or 400),
+                min_bytes=int(cfg.get("min_bytes") or (256 * 1024 * 1024)),
+            )
         )
     return rows
 

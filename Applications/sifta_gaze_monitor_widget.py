@@ -56,7 +56,7 @@ class GazeMonitorWidget(QWidget):
         super().__init__()
         self.setWindowTitle("SIFTA Gaze Monitor")
         self.resize(450, 300)
-        self.setStyleSheet(f"background-color: {_BG}; color: {_TEXT}; font-family: 'SF Mono', 'Menlo', monospace;")
+        self.setStyleSheet(f"background-color: {_BG}; color: {_TEXT}; font-family: 'Menlo', monospace;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)

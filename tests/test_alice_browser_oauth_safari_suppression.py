@@ -1,4 +1,4 @@
-"""r991 — YouTube co-watch in Alice Browser must not steal into Safari via r503 OAuth handoff."""
+"""r991/r1316 — Alice Browser must not steal web work into Safari."""
 
 import time
 
@@ -22,8 +22,8 @@ def test_suppress_youtube_watch_oauth_redirect():
     )
 
 
-def test_allow_unrelated_oauth_without_drop():
-    assert not should_suppress_oauth_safari_handoff(
+def test_suppress_unrelated_oauth_without_drop_by_alice_only_doctrine():
+    assert should_suppress_oauth_safari_handoff(
         "https://accounts.google.com/o/oauth2/auth",
         owner_drop_target="",
         suppress_until=0.0,

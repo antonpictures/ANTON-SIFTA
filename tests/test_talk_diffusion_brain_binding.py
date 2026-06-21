@@ -7,12 +7,15 @@ from pathlib import Path
 import pytest
 
 
-def test_talk_candidates_no_ar_fallback_for_diffusion_primary():
+def test_talk_candidates_keep_diffusion_first_with_receipted_local_fallback():
     from Applications.sifta_talk_to_alice_widget import _talk_ollama_model_candidates
 
     ladder = _talk_ollama_model_candidates("diffusion:llada-8b")
-    assert ladder == ["diffusion:llada-8b"]
-    assert "alice-m5-cortex-8b-6.3gb:latest" not in ladder
+    assert ladder[:3] == [
+        "diffusion:llada-8b",
+        "krishairnd/Gemma-4-Uncensored:latest",
+        "alice-m5-cortex-8b-6.3gb:latest",
+    ]
 
 
 def test_talk_candidates_still_falls_back_for_local_ar_primary():

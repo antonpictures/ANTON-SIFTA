@@ -32,6 +32,26 @@ MAGENTA= "\033[35m"
 BLUE   = "\033[34m"
 
 
+class AliceJournalViewer:
+    """Manifest-compatible Qt wrapper for the journal viewer surface.
+
+    This module started as a CLI reader, but `apps_manifest.json` also exposes
+    it as an in-OS widget. Keep the CLI path below intact and delegate the GUI
+    surface to the canonical Alice Journal widget so there is still one journal
+    organ and one owner-rhythm surface.
+    """
+
+    APP_NAME = "Alice Journal Viewer"
+
+    def __new__(cls, *args, **kwargs):
+        from Applications.sifta_alice_journal_widget import AliceJournalWidget
+
+        class _AliceJournalViewer(AliceJournalWidget):
+            APP_NAME = "Alice Journal Viewer"
+
+        return _AliceJournalViewer(*args, **kwargs)
+
+
 def _journal_label_from_ts(ts: float) -> str:
     import datetime
     return datetime.datetime.fromtimestamp(ts).strftime("%m-%d-%y_%H:%M")
@@ -174,4 +194,3 @@ if __name__ == "__main__":
         show_days()
     else:
         show_journal(hours=args.hours, tail=args.tail, show_all=args.show_all)
-

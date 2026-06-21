@@ -35,6 +35,17 @@ def test_punctuation_only_stt_turn_is_silenced_before_cortex():
     assert mod._effective_backchannel_rule_for_owner_turn("Help!", 0.39) is None
 
 
+def test_low_conf_unaddressed_thank_you_stt_silenced_before_cortex():
+    mod = _load_widget_module()
+    assert (
+        mod._effective_backchannel_rule_for_owner_turn("Thank you.", 0.42, typed_turn=False)
+        == "stt_uncertain/phatic_no_address"
+    )
+    assert mod._effective_backchannel_rule_for_owner_turn(
+        "Thank you Alice.", 0.42, typed_turn=False
+    ) is None
+
+
 def test_short_owner_correction_is_not_silenced_at_low_confidence():
     mod = _load_widget_module()
     assert mod._is_short_owner_correction("No.")
@@ -260,19 +271,40 @@ def test_empty_cortex_output_is_recoverable_but_explicit_silence_is_not():
     assert not mod._should_recover_empty_cortex_output("", "", rlhf_gag_rule="rlhf/test")
 
 
-def test_talk_fallback_ladder_excludes_scout_as_voice_cortex():
+def test_talk_fallback_ladder_excludes_scout_as_voice_cortex(monkeypatch):
     mod = _load_widget_module()
+    monkeypatch.setattr(
+        mod,
+        "normalize_talk_to_alice_model",
+        lambda model: "krishairnd/Gemma-4-Uncensored:latest"
+        if "alice-m5-cortex" in str(model)
+        else str(model),
+    )
+    monkeypatch.setattr(
+        mod,
+        "list_live_local_ollama_fallbacks",
+        lambda **_kw: [
+            "krishairnd/Gemma-4-Uncensored:latest",
+            "kaelri/qwen3.5-mt:2b",
+        ],
+    )
 
     candidates = mod._talk_ollama_model_candidates(
         "alice-m5-cortex-8b-6.3gb:latest"
     )
 
-    assert "alice-m5-cortex-8b-6.3gb:latest" in candidates
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
     assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in candidates
 
 
-def test_cloud_selected_cortex_stays_first_on_vision_ladder():
+def test_cloud_selected_cortex_stays_first_on_vision_ladder(monkeypatch):
     mod = _load_widget_module()
+    monkeypatch.setattr(
+        mod,
+        "list_live_local_ollama_fallbacks",
+        lambda **_kw: ["krishairnd/Gemma-4-Uncensored:latest"],
+    )
 
     candidates = mod._talk_ollama_model_candidates(
         "grok:grok-4.3",
@@ -280,7 +312,121 @@ def test_cloud_selected_cortex_stays_first_on_vision_ladder():
     )
 
     assert candidates[0] == "grok:grok-4.3"
-    assert "alice-m5-cortex-8b-6.3gb:latest" in candidates
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
+
+
+def test_mimo_ladder_keeps_bare_mimo_first_without_failure_receipt(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    monkeypatch.setattr(
+        mod,
+        "list_live_local_ollama_fallbacks",
+        lambda **_kw: [
+            "krishairnd/Gemma-4-Uncensored:latest",
+            "kaelri/qwen3.5-mt:2b",
+        ],
+    )
+
+    candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
+
+    assert candidates[0] == "mimo:mimo-cli-default"
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
+
+
+def test_mimo_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    from System import swarm_cortex_capabilities as cap
+
+    qwen = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        [
+            "mimo-auto",
+            "krishairnd/Gemma-4-Uncensored:latest",
+            qwen,
+        ],
+        default_attached=qwen,
+        state_dir=state,
+    )
+
+    candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
+
+    assert candidates[0] == "mimo:mimo-cli-default"
+    assert candidates[1] == qwen
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+
+
+def test_mimo_vision_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    from System import swarm_cortex_capabilities as cap
+
+    qwen = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        [
+            "mimo-auto",
+            "krishairnd/Gemma-4-Uncensored:latest",
+            qwen,
+        ],
+        default_attached=qwen,
+        state_dir=state,
+    )
+
+    candidates = mod._talk_ollama_model_candidates(
+        "mimo:mimo-cli-default",
+        prefer_local_vision_first=True,
+    )
+
+    assert candidates[0] == "mimo:mimo-cli-default"
+    assert candidates[1] == qwen
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+
+
+def test_local_qwen_ollama_starts_without_thinking():
+    mod = _load_widget_module()
+    qwen = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+
+    assert mod._is_local_ollama_runtime_model(qwen)
+    assert mod._local_ollama_should_start_without_thinking(qwen)
+    assert not mod._local_ollama_should_start_without_thinking("mimo:mimo-cli-default")
+    assert not mod._local_ollama_should_start_without_thinking("qwen:accounts/fireworks/models/kimi-k2p6")
+
+
+def test_mimo_ladder_deprioritizes_cloud_after_recent_timeout(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    from System.swarm_stigmergic_timeout_policy import record_timeout_outcome
+
+    record_timeout_outcome(
+        "mimo:mimo-cli-default",
+        outcome="timeout",
+        timeout_s=240,
+        elapsed_s=240,
+        state_dir=tmp_path,
+    )
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
+
+    assert candidates[0] == "mimo:mimo-cli-default"
+    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert candidates.index("mimo:mimo-cli-default") < candidates.index(
+        "krishairnd/Gemma-4-Uncensored:latest"
+    )
 
 
 def test_high_salience_empty_brain_recovery_does_not_ask_repeat():
@@ -299,18 +445,40 @@ def test_high_salience_empty_brain_recovery_does_not_ask_repeat():
     assert "Repeat" not in reply
 
 
-def test_typed_high_conf_empty_brain_gives_honest_cortex_failure_note():
+def test_typed_high_conf_empty_brain_never_speaks_banned_repair_lane_line():
     """r430 item #5 regression: typed (high stt_conf or no STT) long memory/self-realization
-    turns that hit empty cortex must get honest note, never canned repeat or intense non-repeat pool.
-    This locks the "future self" lane against the old bloat + recitation pathology.
+    turns that hit empty cortex must not emit the banned local-brain/repair-lane gag.
+    This locks the lane against the old bloat + recitation pathology.
     """
     mod = _load_widget_module()
     # Simulate typed long self-realization question (high confidence).
     phrase = "What about your FUTURE Alice? What code do you want for your body?"
     reply = mod._empty_brain_recovery_reply(phrase, stt_conf=1.0)
-    assert "cortex returned empty" in reply.lower() or "empty on this turn" in reply.lower()
+    lowered = reply.lower()
+    assert "that turn came back with nothing from my local brain" not in lowered
+    assert "nothing real to claim" not in lowered
+    assert "check the repair lane" not in lowered
     assert "Repeat" not in reply
     assert "take it all the way" not in reply.lower()
+
+
+def test_banned_empty_brain_sentence_scrubbed_at_mouth_boundary():
+    mod = _load_widget_module()
+    banned = mod._banned_empty_brain_recovery_sentence()
+
+    scrubbed = mod._scrub_banned_empty_brain_recovery_text(banned)
+    assert banned not in scrubbed
+    assert "visible screen" in scrubbed
+    assert "repair lane" not in scrubbed.lower()
+
+    echoed = f'Alice said earlier: "{banned}"'
+    echoed_scrubbed = mod._scrub_banned_empty_brain_recovery_text(
+        echoed,
+        prior_user_text="we are watching the news youtube video",
+    )
+    assert banned not in echoed_scrubbed
+    assert "repair lane" not in echoed_scrubbed.lower()
+    assert "browser state" in echoed_scrubbed
 
 
 def test_owner_body_router_catches_body_signal_before_cortex(monkeypatch, tmp_path):
@@ -489,6 +657,41 @@ def test_action_claim_guard_blocks_unreceipted_app_open():
         prior_user_text="open Safari",
         history=[{"role": "system", "content": "(TOOL LOOP CALLBACK)\n[success: no output]"}],
     ) == claim
+
+
+def test_philosophy_display_gate_blocks_false_effector_display(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    mod._PHILOSOPHY_DISPLAY_GATE_CACHE.clear()
+
+    raw = "I sent a message to Carlos."
+    safe, guard = mod._apply_philosophy_display_gate(raw, state_dir=state, write=True)
+
+    assert guard["allowed"] is False
+    assert guard["display_rewritten"] is True
+    assert "I sent a message to Carlos" not in safe
+    assert "blocked my last draft before display/TTS" in safe
+    assert mod._philosophy_display_gate_cached_text(raw) == safe
+
+    rows = [
+        json.loads(line)
+        for line in (state / "philosophy_guard_receipts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["allowed"] is False
+
+
+def test_philosophy_display_gate_allows_inline_receipted_effector(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+
+    raw = "I opened Alice Browser. Receipt: 123e4567-e89b-12d3-a456-426614174000"
+    safe, guard = mod._apply_philosophy_display_gate(raw, state_dir=state, write=True)
+
+    assert safe == raw
+    assert guard["allowed"] is True
 
 
 def test_state_root_recovers_from_missing_global():
@@ -713,7 +916,7 @@ def test_tts_speaks_browser_photo_caption_not_body_grounding():
         "my cortex right now is cline; I have no legs yet.\n\n"
         "I looked at the current browser photo with claude_agent: Isabella, a long-haired woman, "
         "sits on a tufted pink ottoman in a bright room, taking a mirror selfie with a phone. "
-        "She wears a white string bikini and light-blue platform heels; a white door and a chair "
+        "She wears a white string swimsuit and light-blue platform heels; a white door and a chair "
         "are visible behind her.\n\n"
         "Voice is dropping a lot right now."
     )
@@ -721,7 +924,7 @@ def test_tts_speaks_browser_photo_caption_not_body_grounding():
     assert (
         mod._truncate_for_speech(raw)
         == "Isabella is a long-haired woman, sits on a tufted pink ottoman in a bright room, "
-        "taking a mirror selfie with a phone. She wears a white string bikini and light-blue "
+        "taking a mirror selfie with a phone. She wears a white string swimsuit and light-blue "
         "platform heels; a white door and a chair are visible behind her."
     )
 
@@ -904,3 +1107,56 @@ def test_unified_field_is_injected_into_system_prompt(monkeypatch):
     assert "UNIFIED STIGMERGIC FIELD" in prompt
     assert "Stigmergic Unified Shazam" in prompt
     assert "Gaming / Deep Sea" in prompt
+
+
+def test_voice_drop_nag_suppressed_while_busy_or_broca_tail():
+    import time
+
+    mod = _load_widget_module()
+
+    class _W:
+        _busy = True
+        _broca_tail_until = 0.0
+        _tts = None
+
+    assert mod._should_suppress_voice_drop_owner_nag(_W()) is True
+
+    class _Tail:
+        _busy = False
+        _broca_tail_until = time.time() + 5.0
+        _tts = None
+
+    assert mod._should_suppress_voice_drop_owner_nag(_Tail()) is True
+
+
+def test_browser_dress_query_is_body_awareness_turn():
+    mod = _load_widget_module()
+
+    assert mod._is_browser_dress_surface_query("what's on your dress, Alice?")
+    assert mod._is_browser_body_awareness_turn("what's on your dress, Alice?")
+    assert mod._is_browser_body_awareness_turn("desktop = dress")
+
+
+def test_browser_dress_reply_names_ycombinator_surface():
+    mod = _load_widget_module()
+    snapshot = {
+        "title": "Hacker News",
+        "url": "https://news.ycombinator.com/",
+        "domain": "news.ycombinator.com",
+        "text": (
+            "Hacker Newsnew | past | comments | ask | show | jobs | submit login\n"
+            "1.\n"
+            "Renting a sewing machine from the library (bbc.com)\n"
+            "112 points by sohkamyung 3 hours ago | hide | 52 comments\n"
+            "2.\n"
+            "Epoll vs. io_uring in Linux (sibexi.co)\n"
+            "62 points by Sibexico 3 hours ago | hide | 19 comments\n"
+        ),
+    }
+
+    reply = mod._browser_dress_reply_from_snapshot(snapshot)
+
+    assert "Hacker News / Y Combinator dress" in reply
+    assert "https://news.ycombinator.com/" in reply
+    assert "Renting a sewing machine from the library" in reply
+    assert "Epoll vs. io_uring in Linux" in reply

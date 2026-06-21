@@ -8,18 +8,52 @@ from pathlib import Path
 
 _STATE = Path(__file__).resolve().parent.parent / ".sifta_state"
 _GENESIS_FILE = _STATE / "owner_genesis.json"
+_GENESIS_LOG = _STATE / "owner_genesis_history.jsonl"
 
 def owner_genesis_present() -> bool:
     return _GENESIS_FILE.exists()
 
 def _read_genesis() -> dict:
+    data: dict = {}
     if not owner_genesis_present():
-        return {}
+        return _read_genesis_history_fallback()
     try:
         data = json.loads(_GENESIS_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    if str(data.get("owner_name") or "").strip():
+        return data
+    fallback = _read_genesis_history_fallback()
+    return fallback or data
+
+
+def _read_genesis_history_fallback() -> dict:
+    """Recover the owner scar from the append-only history if current is degraded."""
+    try:
+        if not _GENESIS_LOG.exists():
+            return {}
+        lines = _GENESIS_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            if row.get("event") != "OWNER_GENESIS":
+                continue
+            if row.get("status") not in ("ACTIVE", None):
+                continue
+            if str(row.get("owner_name") or "").strip():
+                return row
     except Exception:
         return {}
+    return {}
 
 def _detect_silicon() -> str:
     """Fallback if genesis hasn't occurred."""
@@ -142,6 +176,25 @@ def owner_vocative_for_talk(default: str = "you") -> str:
     never bakes a particular human name into deterministic replies.
     """
     return str(owner_display_name(default) or default).strip() or default
+
+
+def owner_chat_turn_label(*, default: str = "You") -> str:
+    """Short label for Talk turn headers (TYPED/SPOKEN rows, not WORLD STT).
+
+    r1445: pre-genesis ``owner_provider_label()`` is ``AGI Provider`` — a role,
+    not a person; never render ``AGI``. r1451: genesis-verified owner uses the
+    first name from ``owner_name()`` (``Ioan George Anton`` → ``Ioan``).
+    """
+    name = owner_name().strip()
+    if name and name != "<unclaimed>":
+        return _display_case_name(name.split()[0])
+    display = str(owner_display_name(default) or default).strip()
+    if not display or display == owner_provider_label():
+        return default
+    first = display.split()[0]
+    if first.upper() == "AGI":
+        return default
+    return _display_case_name(first) or default
 
 def ai_default_name() -> str:
     gen = _read_genesis()

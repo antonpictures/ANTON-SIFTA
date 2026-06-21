@@ -37,7 +37,7 @@ def test_open_official_2018_video_is_a_video_play_search():
     assert "2018" in q
     assert "victoria" in q and "secret" in q and "fashion" in q and "show" in q
     # r305 anti-injection guard: never sexualise / expand the owner's words
-    for injected in ("lingerie", "wings", "heels", "bikini", "underwear"):
+    for injected in ("lingerie", "wings", "heels", "swimsuit", "underwear"):
         assert injected not in q, injected
 
 

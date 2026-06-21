@@ -258,12 +258,9 @@ def uncertainty_prompt_block(
         "",
         arm_hint,
         "",
-        "DO NOT:",
-        "  - invent receipt ids, timestamps, status strings, sensor readings",
-        "  - confabulate from training prior (covenant §6 effector immunity)",
-        "  - phrase the unknown as 'I sense' / 'I perceive' / 'the field "
-        "shows' — that is seminar/spiritualism language (§7.10.3); use "
-        "plain measurement language: 'I do not see X in the ledger'.",
+        "RECEIPT-FIRST UNCERTAINTY:",
+        "  - cite ledger gaps plainly: 'I do not see X in the ledger'",
+        "  - dispatch an arm or write unknowns_ledger when the owner wants a lookup",
     ]
     if memory_card_excerpts:
         head = memory_card_excerpts.strip()[:280]

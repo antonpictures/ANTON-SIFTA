@@ -113,3 +113,32 @@ def test_default_policies_cover_owner_protection_hot_ledgers():
     }
 
     assert required <= set(DEFAULT_POLICIES)
+
+
+def test_giant_policies_include_state_pressure_ledgers():
+    assert "fractal_pheromone_field.jsonl" in DEFAULT_POLICIES
+    assert "browser_page_state.jsonl" in DEFAULT_POLICIES
+
+
+def test_rotate_frame_directory_archives_oldest_files(tmp_path: Path):
+    from System.swarm_ledger_rotation import rotate_frame_directory
+
+    state = tmp_path / "state"
+    archive = tmp_path / "archive"
+    audit = state / "ledger_rotation.jsonl"
+    frames = state / "iris_frames"
+    frames.mkdir(parents=True)
+    for i in range(5):
+        (frames / f"frame_{i}.jpg").write_bytes(b"x" * 200)
+    row = rotate_frame_directory(
+        "iris_frames",
+        state_dir=state,
+        archive_dir=archive,
+        rotation_ledger=audit,
+        keep_files=2,
+        min_bytes=1,
+        now=999.0,
+    )
+    assert row["archived_lines"] == 3
+    assert len(list(frames.glob("*.jpg"))) == 2
+    assert Path(str(row["archive_path"])).exists()

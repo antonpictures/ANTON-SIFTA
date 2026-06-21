@@ -31,11 +31,6 @@ if str(_REPO) not in sys.path:
 _STATE = _REPO / ".sifta_state"
 _LEDGER = "sensory_attention_ledger.jsonl"
 
-_CLOSE_EYE_NAME = "MacBook Pro Camera"
-_CLOSE_EYE_INDEX = 1
-_ROOM_EYE_NAME = "USB Camera VID:1133 PID:2081"
-_ROOM_EYE_INDEX = 0
-
 _FRESH_WINDOW_S = 6.0
 _IDE_FRESH_WINDOW_S = 15.0
 _AUDIO_SPIKE_RMS = 0.075
@@ -316,19 +311,27 @@ def collect_world_state(
     )
 
 
-def default_sensor_registry() -> dict[str, SenseCandidate]:
+def default_sensor_registry(*, state_dir: Path | str = _STATE) -> dict[str, SenseCandidate]:
+    """Plug-and-play registry from live driver enumeration (r1230 George approval)."""
+    from System.swarm_eye_registry import plug_play_sensor_registry
+
+    reg = plug_play_sensor_registry(state_dir=state_dir)
+    owner = reg["close_owner_eye"]
+    world = reg["room_patrol_eye"]
+    owner_idx = owner.get("index")
+    world_idx = world.get("index")
     return {
         "close_owner_eye": SenseCandidate(
             role="close_owner_eye",
-            name=_CLOSE_EYE_NAME,
-            index=_CLOSE_EYE_INDEX,
+            name=str(owner.get("name") or ""),
+            index=int(owner_idx) if owner_idx is not None else -1,
             purpose="Near-field owner face, laptop desk, conversation focus.",
             priority=35,
         ),
         "room_patrol_eye": SenseCandidate(
             role="room_patrol_eye",
-            name=_ROOM_EYE_NAME,
-            index=_ROOM_EYE_INDEX,
+            name=str(world.get("name") or ""),
+            index=int(world_idx) if world_idx is not None else -1,
             purpose="Wide room patrol: motion, distance, owner search, unknown events.",
             priority=35,
         ),
@@ -506,7 +509,14 @@ def decide_attention(
     if _device_is_live(decision.target_name):
         return decision
 
-    # Chosen eye is absent. Try the other registered eye if it is live.
+    # Unplugged world eye: fall back to live owner embedded eye (plug-and-play).
+    if decision.target_role == "room_patrol_eye":
+        close = reg["close_owner_eye"]
+        if close.name and _device_is_live(close.name):
+            return _decision(close, world, decision.reason + "|world_eye_unplugged_fallback_owner")
+        return decision
+
+    # Chosen close eye is absent. Try the other registered eye if it is live.
     for cand in reg.values():
         if cand.name != decision.target_name and _device_is_live(cand.name):
             return _decision(cand, world, decision.reason + "|absent_eye_demote_to_live")
@@ -515,6 +525,21 @@ def decide_attention(
     return _decision(
         reg["close_owner_eye"], world, decision.reason + "|no_live_registered_eye"
     )
+
+
+def _room_eye_available(room_eye: SenseCandidate) -> bool:
+    return bool(room_eye.name) and _device_is_live(room_eye.name)
+
+
+def _decision_room_or_owner(
+    room_eye: SenseCandidate,
+    close_eye: SenseCandidate,
+    world: WorldState,
+    reason: str,
+) -> AttentionDecision:
+    if _room_eye_available(room_eye):
+        return _decision(room_eye, world, reason)
+    return _decision(close_eye, world, reason + "|no_live_world_eye")
 
 
 def _decide_attention_raw(
@@ -529,9 +554,10 @@ def _decide_attention_raw(
     room_eye = reg["room_patrol_eye"]
 
     if _owner_eye_lock_active(world):
-        if world.current_target_index == _ROOM_EYE_INDEX:
+        current_name = str(world.current_target_name or "")
+        if room_eye.name and current_name == room_eye.name:
             return _decision(room_eye, world, "owner_eye_lock_active")
-        if world.current_target_index == _CLOSE_EYE_INDEX:
+        if close_eye.name and current_name == close_eye.name:
             return _decision(close_eye, world, "owner_eye_lock_active")
 
     ide_fresh = _fresh(world.ide_ts, world.now, _IDE_FRESH_WINDOW_S)
@@ -540,7 +566,7 @@ def _decide_attention_raw(
     faces_fresh = _fresh(world.faces_ts, world.now)
 
     if ide_fresh and world.ide_x is not None and world.ide_x >= 1728:
-        return _decision(room_eye, world, "external_ide_focus_room_eye")
+        return _decision_room_or_owner(room_eye, close_eye, world, "external_ide_focus_room_eye")
 
     if faces_fresh and world.owner_visible:
         return _decision(close_eye, world, "owner_face_locked_close_eye")
@@ -563,7 +589,9 @@ def _decide_attention_raw(
             reasons.append("owner_lost")
         if unknown_face:
             reasons.append("unknown_face")
-        return _decision(room_eye, world, "room_patrol_" + "+".join(reasons))
+        return _decision_room_or_owner(
+            room_eye, close_eye, world, "room_patrol_" + "+".join(reasons)
+        )
 
     if ide_fresh and world.ide_x is not None and world.ide_x < 1728:
         return _decision(close_eye, world, "primary_ide_focus_close_eye")
@@ -575,12 +603,17 @@ def _decide_attention_raw(
         if preferred == "close_owner_eye" and close_drive >= room_drive + 0.12:
             return _decision(close_eye, world, "desire_field_close_owner_eye")
         if preferred == "room_patrol_eye" and room_drive >= close_drive + 0.12:
-            return _decision(room_eye, world, "desire_field_room_patrol_eye")
+            return _decision_room_or_owner(
+                room_eye, close_eye, world, "desire_field_room_patrol_eye"
+            )
 
     if world.current_target_name:
-        role = "room_patrol_eye" if world.current_target_index == _ROOM_EYE_INDEX else "close_owner_eye"
-        candidate = room_eye if role == "room_patrol_eye" else close_eye
-        return _decision(candidate, world, "hold_current_eye")
+        current_name = str(world.current_target_name)
+        if room_eye.name and current_name == room_eye.name:
+            return _decision(room_eye, world, "hold_current_eye")
+        if close_eye.name and current_name == close_eye.name:
+            return _decision(close_eye, world, "hold_current_eye")
+        return _decision(close_eye, world, "hold_current_eye|unknown_target_default_owner")
 
     return _decision(close_eye, world, "default_owner_survival_eye")
 

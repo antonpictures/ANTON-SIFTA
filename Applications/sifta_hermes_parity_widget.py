@@ -135,7 +135,7 @@ QLabel#HermesStatusChip {
     border: 1px solid rgba(168, 107, 255, 90);
     border-radius: 10px;
     padding: 3px 10px;
-    font-family: 'SF Mono';
+    font-family: 'Menlo';
     font-size: 11px;
     letter-spacing: 0.2px;
 }
@@ -157,7 +157,7 @@ QTextEdit#HermesChatLog, QListWidget#HermesReceipts, QListWidget#HermesSkillStat
     border: 1px solid rgba(140, 150, 200, 35);
     border-radius: 8px;
     padding: 4px;
-    font-family: 'SF Mono';
+    font-family: 'Menlo';
     font-size: 11px;
     selection-background-color: rgba(168, 107, 255, 80);
 }
@@ -170,7 +170,7 @@ QLineEdit {
     border: 1px solid rgba(140, 150, 200, 60);
     border-radius: 6px;
     padding: 6px 8px;
-    font-family: 'SF Mono';
+    font-family: 'Menlo';
     font-size: 11px;
     selection-background-color: rgba(168, 107, 255, 80);
 }
@@ -204,7 +204,7 @@ QPushButton#HermesCapPillSkillLearned {
     border: 1px solid rgba(140, 150, 200, 55);
     border-radius: 11px;
     padding: 3px 9px;
-    font-family: 'SF Mono';
+    font-family: 'Menlo';
     font-size: 10px;
     font-weight: 500;
     letter-spacing: 0.2px;
@@ -607,7 +607,7 @@ class SiftaHermesParityWidget(QWidget):
             from PyQt6.QtWidgets import QVBoxLayout, QLabel
             fail_layout = QVBoxLayout(self)
             err_label = QLabel(f"UI build failed: {type(e).__name__}: {e}")
-            err_label.setStyleSheet("color:#b42318;padding:24px;font-family:'SF Mono';")
+            err_label.setStyleSheet("color:#b42318;padding:24px;font-family:'Menlo';")
             err_label.setWordWrap(True)
             fail_layout.addWidget(err_label)
             return
@@ -772,7 +772,7 @@ class SiftaHermesParityWidget(QWidget):
         row.setSpacing(8)
         self._lbl_truth = QLabel("🐜  " + TRUTH_LABEL + " · doctor=CW47")
         self._lbl_truth.setStyleSheet(
-            "color:#565f89;font-family:'SF Mono';font-size:10px;letter-spacing:0.5px;"
+            "color:#565f89;font-family:'Menlo';font-size:10px;letter-spacing:0.5px;"
         )
         row.addWidget(self._lbl_truth)
         row.addStretch(1)

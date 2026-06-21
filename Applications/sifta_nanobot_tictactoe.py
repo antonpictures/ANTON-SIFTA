@@ -509,7 +509,7 @@ class _SwarmPanel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), _PANEL)
 
-        font = QFont("SF Mono", 9)
+        font = QFont("Menlo", 9)
         p.setFont(font)
         y = 12
 
@@ -604,7 +604,7 @@ class StigmergicNanobotTicTacToeWidget(QWidget):
         root.setSpacing(6)
 
         title = QLabel(APP_TITLE)
-        title.setFont(QFont("SF Mono", 13, QFont.Weight.Bold))
+        title.setFont(QFont("Menlo", 13, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT.name()}; background: transparent;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(title)
@@ -621,13 +621,13 @@ class StigmergicNanobotTicTacToeWidget(QWidget):
         root.addLayout(body, stretch=1)
 
         self._status_label = QLabel("Alice-X versus Nanobot-O: pheromone field ready.")
-        self._status_label.setFont(QFont("SF Mono", 10))
+        self._status_label.setFont(QFont("Menlo", 10))
         self._status_label.setStyleSheet(f"color: {_TEXT.name()}; background: transparent;")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self._status_label)
 
         self._score_label = QLabel("X: 0  |  O: 0  |  Draw: 0")
-        self._score_label.setFont(QFont("SF Mono", 9))
+        self._score_label.setFont(QFont("Menlo", 9))
         self._score_label.setStyleSheet(f"color: {_DIM.name()}; background: transparent;")
         self._score_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self._score_label)
@@ -637,7 +637,7 @@ class StigmergicNanobotTicTacToeWidget(QWidget):
         self._btn_auto = QPushButton("Auto ▶")
         self._btn_reset = QPushButton("New Game")
         for btn in (self._btn_step, self._btn_auto, self._btn_reset):
-            btn.setFont(QFont("SF Mono", 10))
+            btn.setFont(QFont("Menlo", 10))
             btn.setStyleSheet(
                 f"QPushButton {{ background: {_PANEL.name()}; color: {_TEXT.name()}; "
                 f"border: 1px solid {_PANEL_BORDER.name()}; border-radius: 6px; "

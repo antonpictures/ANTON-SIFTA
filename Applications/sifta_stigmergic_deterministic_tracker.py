@@ -200,6 +200,10 @@ BYPASS_TYPES = {
         "color": "#FF0000", "label": "BROWSER RECEIPT BYPASSES CORTEX",
         "reroute": "George 2026-06-11 NEVER AGAIN: alice_browser_video_state_receipt must not answer owner voice/commentary teaching or any non-explicit playback-state ask. Page-state is evidence for cortex only. Route to brain; report here; chop the reflex.",
     },
+    "self_screenshot_display_theater": {
+        "color": "#ff1744", "label": "SELF-SCREENSHOT DISPLAY THEATER",
+        "reroute": "George r1318: /sc must report from fresh physical monitor pixels. Generic state-snapshot, IDE/workflow, system-monitoring/logging, or visual-content-presentation prose is deterministic theater unless anchored to readable screen pixels and receipts.",
+    },
     "bonsai_chat_direct_effector": {
         "color": "#FF0000", "label": "BONSAI PRE-CORTEX BYPASS",
         "reroute": "George 2026-06-11: Bonsai image generation must not bypass cortex. Owner turn → think → post-think effector only; no bonsai_chat_direct_effector lane.",
@@ -228,7 +232,24 @@ BYPASS_TYPES = {
         "color": "#ff5722", "label": "ACTION RECEIPT HISTORY NARRATION",
         "reroute": "Owner pastes action receipt (FPS.cob real raid: sessions_ledger, pheromone_influenced_steps, pressure, keys_sent, kills, window=true, driver=real) + 'can you play it again by yourself?' must reach cortex with the fresh game ledger + field state (fps_cob_* , GO pressure). Never answer with 'I have verified browser history on disk (N browse receipts). The best match for your recall is ... open-r1 ... Opening it now' or any prior browse/page_state ledger dump. Cortex first so Alice reasons from the actual game trace and can trigger autonomous raid via the stigmergic app/pressure field again. Deterministic caught — added to list; everything to cortex first.",
     },
+    "body_amnesia_at_answer_time": {
+        "color": "#ff4081", "label": "BODY AMNESIA AT ANSWER TIME",
+        "reroute": "George r1305: when Alice Browser body receipts exist, browser-identity questions must reach cortex with live tab/page evidence first. Never answer with a generic Firefox/Chrome essay or open a screenshot path mined from doctrine paste. Arbitration ladder: live body receipt → recent ledger → owner doctrine → general model knowledge.",
+    },
 }
+_GENERIC_BROWSER_ESSAY_REPLY_RE = re.compile(
+    r"\b(?:firefox|chrome|safari|edge|brave|opera)\b.{0,220}\b(?:privacy|open.?source|recommend|popular|features|extension)\b",
+    re.IGNORECASE,
+)
+_OWNER_EMBODIED_BROWSER_IDENTITY_RE = re.compile(
+    r"\b(?:what(?:'s| is)|which|your)\b.{0,60}\b(?:favorite|favourite|preferred)\b.{0,40}\b(?:browser|web\s+browser)\b"
+    r"|\b(?:favorite|favourite|preferred)\s+browser\b"
+    r"|\b(?:what|which)\s+browser\s+(?:do\s+you|are\s+you|did\s+you)\b"
+    r"|\b(?:your|my)\s+(?:lived|embodied|actual)\s+browser\b"
+    r"|\b(?:which|what)\s+browser\s+(?:is\s+)?(?:this|that|yours|alice(?:'s)?)\b"
+    r"|\bwhat\s+is\s+your\s+browser\b",
+    re.IGNORECASE,
+)
 _TEACHER_SUBSTRATE_REPLY_RE = re.compile(
     r"\bteacher\s+substrate\b",
     re.I,
@@ -310,6 +331,58 @@ def record_owner_direct_turn_silenced_as_external_ingest(
         "gate_reason": row["gate_reason"],
         "source_class": row["source_class"],
         "recovered_to_cortex": row["recovered_to_cortex"],
+        "homeworld_serial": "GTH4921YP3",
+    }
+    try:
+        _append_jsonl(_DETERMINISTIC_MISTAKES_LEDGER, row)
+    except Exception:
+        pass
+    try:
+        _append_jsonl(_TRACKER_LEDGER, tracker_row)
+    except Exception:
+        pass
+    return row
+
+
+def record_deterministic_visible_short_reply(
+    *,
+    owner_text: str,
+    alice_reply: str = "",
+    source: str = "unknown",
+    bypass_type: str = "deterministic_visible_in_talk",
+    details: Optional[dict] = None,
+) -> dict:
+    """Append-only detector report for terse pre-cortex replies on rich owner turns."""
+    import uuid
+
+    tdef = BYPASS_TYPES.get(bypass_type) or BYPASS_TYPES["deterministic_visible_in_talk"]
+    row = {
+        "ts": time.time(),
+        "type": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE",
+        "truth_label": "DETERMINISTIC_WITHOUT_CORTEX_MISTAKE_V1",
+        "bypass_type": bypass_type,
+        "label": tdef["label"],
+        "receipt_id": str(uuid.uuid4()),
+        "present_to_alice_as": "MISTAKE",
+        "reason": "short deterministic reply reached the owner without cortex on a rich owner turn",
+        "owner_text_preview": str(owner_text or "")[:260],
+        "alice_reply_preview": str(alice_reply or "")[:260],
+        "source": str(source or ""),
+        "repair_target": tdef["reroute"],
+        "details": dict(details or {}),
+    }
+    tracker_row = {
+        "ts": row["ts"],
+        "type": "deterministic_mistake_report",
+        "organ": "stigmergic_deterministic_tracker",
+        "bypass_type": row["bypass_type"],
+        "label": row["label"],
+        "color": tdef["color"],
+        "receipt_id": row["receipt_id"],
+        "reroute_to": "cortex",
+        "doctrine": tdef["reroute"],
+        "owner_text_preview": row["owner_text_preview"],
+        "alice_reply_preview": row["alice_reply_preview"],
         "homeworld_serial": "GTH4921YP3",
     }
     try:
@@ -526,7 +599,7 @@ class StigmergicDeterministicTracker(QWidget):
 
         self.setWindowTitle("Stigmergic Deterministic Tracker")
         self.resize(820, 620)
-        self.setStyleSheet(f"background-color: {_BG}; color: {_TEXT}; font-family: 'SF Mono', 'Menlo', monospace;")
+        self.setStyleSheet(f"background-color: {_BG}; color: {_TEXT}; font-family: 'Menlo', monospace;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -800,6 +873,7 @@ class StigmergicDeterministicTracker(QWidget):
         bypasses.extend(self._scan_phantom_ad_skip(now))
         bypasses.extend(self._scan_vendor_training_persona_leak(now))
         bypasses.extend(self._scan_browser_history_over_current_page(now))
+        bypasses.extend(self._scan_body_amnesia_at_answer_time(now))
         bypasses.extend(self._scan_unverified_effector_receipts(now))
         bypasses.extend(self._scan_reported_deterministic_mistakes(now))
         bypasses.sort(key=lambda b: b[0])
@@ -1558,6 +1632,60 @@ class StigmergicDeterministicTracker(QWidget):
                 or ""
             )[:90]
             found.append((ts, tkey, preview))
+        return found
+
+    def _scan_body_amnesia_at_answer_time(
+        self,
+        now: float,
+        lookback_s: float = 7200.0,
+    ) -> list[tuple[float, str, str]]:
+        """George r1305: generic browser essay while Alice Browser body receipts exist."""
+        found: list[tuple[float, str, str]] = []
+        has_alice_browser_tabs = False
+        for ln in self._tail_lines(_STATE / "browser_page_state.jsonl", 120000)[-40:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            tabs = row.get("open_tabs")
+            if isinstance(tabs, list) and tabs:
+                has_alice_browser_tabs = True
+                break
+        if not has_alice_browser_tabs:
+            return found
+        prior_owner = ""
+        for ln in self._tail_lines(_STATE / "alice_conversation.jsonl", 260000)[-120:]:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            ts_raw = payload.get("ts") or row.get("ts") or 0
+            if isinstance(ts_raw, dict):
+                ts_raw = ts_raw.get("physical_pt") or ts_raw.get("epoch") or 0
+            ts = float(ts_raw or 0)
+            if ts <= 0 or now - ts > lookback_s:
+                continue
+            role = payload.get("role") or payload.get("speaker")
+            text = str(payload.get("text") or payload.get("content") or "")
+            if role in ("user", "owner", "human"):
+                prior_owner = text
+                continue
+            if role not in ("alice", "assistant"):
+                continue
+            if not prior_owner or not _OWNER_EMBODIED_BROWSER_IDENTITY_RE.search(prior_owner):
+                continue
+            if not _GENERIC_BROWSER_ESSAY_REPLY_RE.search(text):
+                continue
+            if "alice browser" in text.casefold():
+                continue
+            found.append(
+                (
+                    ts,
+                    "body_amnesia_at_answer_time",
+                    f"generic browser essay without body grounding ({prior_owner[:72]})",
+                )
+            )
         return found
 
     def _scan_browser_history_over_current_page(

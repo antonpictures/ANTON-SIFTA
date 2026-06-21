@@ -607,6 +607,112 @@ def test_prebrain_reflex_stands_down_for_grok_action_intent(tmp_path) -> None:
         assert (reply, model) == ("", "")
 
 
+def test_prebrain_temporal_memory_recall_runs_without_precortex_flag(tmp_path, monkeypatch) -> None:
+    from System import alice_body_diary_timeline_awareness as memory_module
+
+    fake_now = 1780000000.0
+    monkeypatch.setattr(memory_module, "query_body_diary_for_remember", lambda text: {
+        "facts": [
+            {
+                "source": "alice_conversation.jsonl",
+                "snippet": "Owner asked for outfit recap after 20:00.",
+                "matched_ts": fake_now,
+            }
+        ],
+        "diary_samples": [
+            {
+                "ts": fake_now,
+                "source": "alice_first_person_journal.jsonl",
+                "data": {"text": "owner asked us to remember clothing details"},
+            }
+        ],
+        "resolved_window": (fake_now - 600, fake_now + 600),
+    })
+    monkeypatch.setattr(memory_module, "load_memory_into_body", lambda topic="": {"instagram_links_found": [], "relevant_diary_entries": 0})
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    reply, model = talk._autonomic_prebrain_reflex(
+        "do you remember what happened two days ago",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert model == "temporal_episodic_memory_reflex_r1504"
+    assert "From my diary and ledger timeline" in reply
+
+
+def test_prebrain_body_journal_load_phrase_routes_to_memory_load_even_with_flag_off(tmp_path, monkeypatch) -> None:
+    from System import alice_body_diary_timeline_awareness as memory_module
+
+    monkeypatch.setattr(
+        memory_module,
+        "load_memory_into_body",
+        lambda topic="", time_spec="": {
+            "instagram_links_found": ["https://instagram.com/fashion-clothing"],
+            "relevant_diary_entries": 2,
+        },
+    )
+    monkeypatch.setattr(
+        memory_module,
+        "query_body_diary_for_remember",
+        lambda text: {
+            "facts": [],
+            "diary_samples": [],
+            "resolved_window": (0, 0),
+        },
+    )
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    reply, model = talk._autonomic_prebrain_reflex(
+        "ALICE BROWSER IS OPEN. PLS LOOK IN your alice journal in your body pls",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert model == "body_journal_load_reflex_r1508"
+    assert "Instagram links now resident" in reply
+
+
+def test_prebrain_load_query_with_used_you_before_phrase_prefers_memory_lane(tmp_path, monkeypatch) -> None:
+    from System import alice_body_diary_timeline_awareness as memory_module
+
+    called = {
+        "query": 0,
+        "load": 0,
+    }
+
+    def fake_query(_: str) -> dict:
+        called["query"] += 1
+        return {
+            "facts": [],
+            "diary_samples": [],
+            "resolved_window": (1, 2),
+        }
+
+    def fake_load(topic: str = "", time_spec: str = "") -> dict:
+        called["load"] += 1
+        assert topic
+        assert time_spec
+        return {"instagram_links_found": [], "relevant_diary_entries": 1}
+
+    monkeypatch.setattr(memory_module, "query_body_diary_for_remember", fake_query)
+    monkeypatch.setattr(memory_module, "load_memory_into_body", fake_load)
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    reply, model = talk._autonomic_prebrain_reflex(
+        "load in your body any instagram link ... and remember how i used you before",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert called["load"] >= 1
+    assert model == "body_journal_load_reflex_r1508"
+    assert "into body state" in reply.lower()
+
+
 def test_conversational_continuity_repair_refires_grok_without_payload_corruption(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(talk, "_STATE_DIR", tmp_path, raising=False)
     (tmp_path / "grok_delegation_requests.jsonl").write_text(
@@ -680,7 +786,7 @@ def test_compact_tool_contract_surfaces_read_file_for_local_pdf_path() -> None:
 
     assert "read_file" in block
     assert f"path={path}" in block
-    assert "Do not describe the file contents until the receipt-backed read_file result returns" in block
+    assert "File contents sort to that receipt: until it returns, the honest answer is the read is pending" in block
     assert len(block) < 2000
 
 
@@ -917,6 +1023,18 @@ def test_self_screenshot_contract_hides_browser_effectors() -> None:
     assert "/sc is an observation-only self-screenshot cortex turn" in block
 
 
+def test_self_camera_contract_disables_tools() -> None:
+    block = talk._compact_tool_contract_for_alice_prompt(
+        user_text="SELF-CAMERA CORTEX TURN (/sx): camera observation test.",
+    )
+    core_line = next(
+        (line for line in block.splitlines() if line.startswith("Tools are disabled for this turn.")),
+        None,
+    )
+    assert core_line is not None
+    assert "/sx is an observation-only self-camera cortex turn" in block
+
+
 def test_self_screenshot_guard_strips_browser_effector_tool_calls() -> None:
     raw = (
         "I can see the browser.\n"
@@ -940,3 +1058,58 @@ def test_self_screenshot_guard_strips_browser_effector_tool_calls() -> None:
     )
     assert unchanged == raw
     assert blocked2 == []
+
+
+def test_self_camera_guard_strips_all_tool_calls() -> None:
+    raw = (
+        "I can see the frame.\n"
+        "[TOOL_CALL: run_local_command | command=ls -la | cost_justification=inspect]\n"
+        "I can report this soon.\n"
+        "[TOOL_CALL: read_file | path=/tmp/test.txt | cost_justification=inspect]\n"
+    )
+    cleaned, blocked = talk._strip_self_screenshot_browser_effector_calls(
+        raw,
+        prior_user_text="SELF-CAMERA CORTEX TURN (/sx): Camera evidence scan.",
+    )
+    assert set(blocked) == {"run_local_command", "read_file"}
+    assert "[TOOL_CALL:" not in cleaned
+    assert parse_tool_calls(cleaned) == []
+    assert "No action tools are enabled in camera mode." in cleaned
+
+
+def test_self_camera_guard_rewrites_tool_payload_envelope() -> None:
+    raw = (
+        "I can read this frame.\n"
+        "{\"type\":\"tool\",\"tool\":\"grep\",\"callID\":\"call_abc123\",\"part\":{"
+        "\"type\":\"tool\",\"tool\":\"grep\",\"part\":{\"type\":\"tool\",\"input\":{\"query\":\"shirt\"}}}}\n"
+        "What do we see?"
+    )
+    cleaned, blocked = talk._strip_self_screenshot_browser_effector_calls(
+        raw,
+        prior_user_text="SELF-CAMERA CORTEX TURN (/sx): camera evidence now.",
+    )
+    assert blocked == ["grep"]
+    assert parse_tool_calls(cleaned) == []
+    assert "No action tools are enabled in camera mode." in cleaned
+
+
+def test_self_camera_guard_rewrites_tool_use_payload() -> None:
+    raw = (
+        '{"type":"tool_use","tool":"run_local_command","input":{"command":"ls"}}'
+    )
+    cleaned, blocked = talk._strip_self_screenshot_browser_effector_calls(
+        raw,
+        prior_user_text="SELF-CAMERA CORTEX TURN (/sx): camera evidence now.",
+    )
+    assert blocked == ["run_local_command"]
+    assert "No action tools are enabled in camera mode." in cleaned
+
+
+def test_strip_tool_hallucinations_removes_mimo_tool_use_envelope() -> None:
+    raw = (
+        '{"type":"tool_use","timestamp":1781984006330,"part":{"type":"tool","tool":"bash"}}\n'
+        "After thinking, I executed the real body action."
+    )
+    cleaned = talk._strip_tool_hallucinations(raw)
+    assert '"type":"tool_use"' not in cleaned
+    assert "After thinking" in cleaned

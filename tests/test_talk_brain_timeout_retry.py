@@ -145,6 +145,29 @@ def test_no_token_watchdog_covers_cloud_and_agent_cortexes(monkeypatch):
         assert talk._brain_no_token_watchdog_s(model=model) == 150.0
 
 
+def test_no_token_watchdog_aligns_mimo_with_cloud_timeout(monkeypatch, tmp_path):
+    from Applications import sifta_talk_to_alice_widget as talk
+    from System.swarm_stigmergic_timeout_policy import record_timeout_outcome
+
+    monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("SIFTA_MIMO_CORTEX_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("SIFTA_TEACHER_CLI_TIMEOUT_S", raising=False)
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    record_timeout_outcome(
+        "mimo:mimo-cli-default",
+        outcome="timeout",
+        timeout_s=120,
+        elapsed_s=120,
+        state_dir=tmp_path,
+    )
+
+    cloud_s = talk._cloud_brain_timeout_s(
+        model="mimo:mimo-cli-default",
+        state_dir=tmp_path,
+    )
+    assert talk._brain_no_token_watchdog_s(model="mimo:mimo-cli-default") == cloud_s
+
+
 def test_no_token_watchdog_env_override_is_clamped(monkeypatch):
     from Applications import sifta_talk_to_alice_widget as talk
 
@@ -153,6 +176,28 @@ def test_no_token_watchdog_env_override_is_clamped(monkeypatch):
 
     monkeypatch.setenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", "9000")
     assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 600.0
+
+
+def test_brain_worker_respects_local_first_candidate_order():
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    worker = talk._BrainWorker(
+        "mimo:mimo-cli-default",
+        [{"role": "user", "content": "Alice, can you hear me?"}],
+        model_candidates=[
+            "krishairnd/Gemma-4-Uncensored:latest",
+            "mimo:mimo-cli-default",
+            "alice-m5-cortex-8b-6.3gb:latest",
+        ],
+    )
+
+    assert worker.first_candidate_model() == "krishairnd/Gemma-4-Uncensored:latest"
+    assert worker._model == "krishairnd/Gemma-4-Uncensored:latest"
+    assert worker._model_candidates[:3] == [
+        "krishairnd/Gemma-4-Uncensored:latest",
+        "mimo:mimo-cli-default",
+        "alice-m5-cortex-8b-6.3gb:latest",
+    ]
 
 
 def test_ollama_failover_uses_next_model_when_primary_empty(monkeypatch):

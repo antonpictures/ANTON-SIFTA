@@ -15,22 +15,60 @@ Doctors inspect the ranked list before cutting.
 """
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import re
+import sys
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, TypedDict
 
-REPO = Path(__file__).resolve().parents[1]
+_REPO = Path(__file__).resolve().parents[1]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+REPO = _REPO
 STATE = REPO / ".sifta_state"
 OUT_JSON = STATE / "unwired_organs_report.json"
 OUT_MD = STATE / "unwired_organs_report.md"
 
-SCAN_ROOTS = ("System", "Applications", "Kernel", "Network", "tools")
-REFERENCE_ROOTS = ("System", "Applications", "Kernel", "Network", "tools", "tests", "Documents")
+SCAN_ROOTS = (
+    "System",
+    "Applications",
+    "Kernel",
+    "Network",
+    "tools",
+    "swarmrl",
+    "scripts",
+    "demo",
+    "sifta_effectors",
+    "Simulations",
+    "sifta_os_desktop.py",
+    "sifta_mcp_server.py",
+    "siftactl.py",
+    "reconcile_all.py",
+)
+REFERENCE_ROOTS = (
+    "System",
+    "Applications",
+    "Kernel",
+    "Network",
+    "tools",
+    "swarmrl",
+    "scripts",
+    "demo",
+    "sifta_effectors",
+    "Simulations",
+    "tests",
+    "Documents",
+    "sifta_os_desktop.py",
+    "sifta_mcp_server.py",
+    "siftactl.py",
+    "reconcile_all.py",
+)
 SKIP_PARTS = {"build", "dist", "__pycache__", ".venv", "venv", "node_modules"}
 
 ORGAN_STEM_RE = re.compile(
@@ -60,6 +98,8 @@ class ModuleInfo:
     doc_reference_files: list[str]
     status: str
     reason: str
+    triage_status: str = ""
+    triage_reason: str = ""
 
 
 def _skip(path: Path) -> bool:
@@ -76,6 +116,10 @@ def _python_files(roots: Iterable[str]) -> list[Path]:
         base = REPO / root
         if not base.exists():
             continue
+        if base.is_file():
+            if base.suffix == ".py" and not _skip(base):
+                out.append(base)
+            continue
         for path in base.rglob("*.py"):
             if _skip(path):
                 continue
@@ -88,6 +132,10 @@ def _reference_files() -> list[Path]:
     for root in REFERENCE_ROOTS:
         base = REPO / root
         if not base.exists():
+            continue
+        if base.is_file():
+            if base.suffix.lower() in {".py", ".md", ".txt", ".json", ".jsonl"} and not _skip(base):
+                files.append(base)
             continue
         for suffix in ("*.py", "*.md", "*.txt", "*.json", "*.jsonl"):
             for path in base.rglob(suffix):
@@ -311,13 +359,16 @@ def _md(report: dict) -> str:
         f"- Reference files scanned: `{report['reference_files_scanned']}`",
         f"- Organ-like candidates: `{report['candidate_count']}`",
         f"- By status: `{report['by_status']}`",
-        "",
-        "## Top Unwired Candidates",
-        "",
     ]
+    if "untriaged_unwired" in report:
+        lines.append(f"- **UNTRIAGED_UNWIRED:** `{report['untriaged_unwired']}`")
+        lines.append(f"- By triage status: `{report.get('by_triage_status', {})}`")
+        lines.append(f"- Triage ledger: `{report.get('triage_ledger', '')}`")
+    lines.extend(["", "## Top Unwired Candidates", ""])
     for row in [r for r in report["rows"] if r["status"] == "UNWIRED_CANDIDATE"][:80]:
+        triage = row.get("triage_status") or "UNTRIAGED"
         lines.append(
-            f"- score `{row['organ_score']}` `{row['file']}` "
+            f"- score `{row['organ_score']}` `{row['file']}` triage=`{triage}` "
             f"truth={row['truth_labels'][:2]} ledgers={row['ledgers'][:2]} "
             f"tests={row['test_reference_files'][:3]} docs={row['doc_reference_files'][:2]}"
         )
@@ -330,12 +381,39 @@ def _md(report: dict) -> str:
     lines.extend(["", "## Notes", ""])
     lines.append("- This is static text analysis. Dynamic app loading, subprocess entry points, or CLI-only organs can look unwired.")
     lines.append("- Treat `UNWIRED_CANDIDATE` as a work queue: inspect, then either wire, retire, or annotate as intentionally standalone.")
+    lines.append("- `UNTRIAGED_UNWIRED` must be `0` — run `python3 tools/find_unwired_organs.py --triage` to auto-classify.")
     lines.append("")
     return "\n".join(lines)
 
 
+def _apply_triage(report: dict) -> dict:
+    from System.swarm_unwired_organ_triage import merge_triage_into_report, triage_unwired_rows
+
+    triage_unwired_rows(report["rows"])
+    return merge_triage_into_report(report)
+
+
 def main() -> int:
+    ap = argparse.ArgumentParser(description="Unwired organ wiring census + triage (r1387).")
+    ap.add_argument(
+        "--triage",
+        action="store_true",
+        help="Auto-classify UNWIRED_CANDIDATE rows and write .sifta_state/unwired_organ_triage.jsonl",
+    )
+    args = ap.parse_args()
     report = scan()
+    if args.triage:
+        report = _apply_triage(report)
+    else:
+        try:
+            from System.swarm_unwired_organ_triage import merge_triage_into_report
+
+            report = merge_triage_into_report(report)
+        except Exception:
+            report["untriaged_unwired"] = sum(
+                1 for r in report["rows"] if r["status"] == "UNWIRED_CANDIDATE"
+            )
+            report["by_triage_status"] = {}
     STATE.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     OUT_MD.write_text(_md(report), encoding="utf-8")
@@ -343,6 +421,10 @@ def main() -> int:
     print("source python files scanned:", report["source_python_files_scanned"])
     print("reference files scanned:", report["reference_files_scanned"])
     print("by status:", report["by_status"])
+    if "untriaged_unwired" in report:
+        print("UNTRIAGED_UNWIRED:", report["untriaged_unwired"])
+        if report.get("by_triage_status"):
+            print("by triage status:", report["by_triage_status"])
     print(f"json -> {OUT_JSON.relative_to(REPO)}")
     print(f"markdown -> {OUT_MD.relative_to(REPO)}")
     return 0

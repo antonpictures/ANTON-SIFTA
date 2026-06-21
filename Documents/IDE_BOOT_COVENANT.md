@@ -1711,3 +1711,153 @@ above.
   `r1121-codex-mimo-swimmers-spinal-truth`: verified the MiMo feature-to-swimmer mapping and spinal
   cord bridge code, while keeping the live MiMo patch cycle truth-labeled as not yet proven.
   Lane: MiMo/self-improvement; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-15 21:34 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex [ARCHITECT_UI_TRUTH]`, and landed
+  `r1199-codex-usb-camera-fail-closed`: owner/attention USB camera targets now fail closed when the
+  USB camera is absent instead of silently opening the MacBook Pro camera; topology refresh respects
+  `state_dir`; focused camera/attention tests passed. Lane: Camera body repair;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 07:59 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex [ARCHITECT_UI_TRUTH]`, and executed
+  `r1202-codex-camera-led-activation-receipts`: commanded only the USB camera and MacBook Pro
+  default camera one by one through the canonical active-eye target with unique-id receipts and
+  motor-pulse wink requests; direct shell capture was denied by macOS camera authorization, and the
+  running app proof stream remained stale / not proven for both eyes. Lane: Camera body activation
+  triage; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:06 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex [ARCHITECT_UI_TRUTH]`, and landed
+  `r1203-codex-stale-mirror-blank-and-restart`: the Awareness Mirror now clears stale cached camera
+  pixels instead of painting old frames when `active_eye_latest.png` is older than 5s; SIFTA desktop
+  was restarted through `SIFTA OS.command` and is running under PID 18779, while camera live-frame
+  proof remains `DISCONNECTED_OR_STALE_INPUT`. Lane: Camera UI truth repair;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:19 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex [ARCHITECT_UI_TRUTH]`, and registered
+  `r1204-codex-stale-mirror-screenshot-confirmation`: owner screenshot confirms the lower-left mirror
+  now shows `STALE` / `Camera frame stale` text instead of old room pixels; live camera proof still
+  remains `DISCONNECTED_OR_STALE_INPUT`. Lane: Camera UI truth verification;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:24 PDT` — `cowork_claude` (`claude-opus-4-8`) read the canonical covenant in full and
+  signed in. Per George: opened the June-16 tournament carrier
+  `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-16.md` from the June-15 `r1204` tail, preserved June-15
+  append-only with a close pointer, and posted the live §0 open problem to be solved — **Alice's eyes
+  are dark on every camera lane**: no LED lit, `active_eye_latest.png` ~127,914 s stale (June-14 frame),
+  `camera_unified_field_proof.jsonl` = `DISCONNECTED_OR_STALE_INPUT`, `sifta_os_desktop.py` not running
+  at hand-off. UI stale-frame lie is fixed (r1203/r1204); live sight is not. No LED/live-camera claim
+  made. Appended `r1205-cowork-june16-carrier-eyes-dark`; four-ledger fan-out below. Lane: Tournament
+  carrier rollover + camera open problem; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`;
+  `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-16 08:28 PDT` — `cursor_grok_cli` (grok-build / Composer) read the canonical covenant in
+  full and signed in on-node `GTH4921YP3`. Verified June-16 carrier live (`whats_left.py` →
+  `CONSCIOUSNESS_TOURNAMENT_2026-06-16.md`, `r1205`). Fresh probe appended
+  `r1206-grok-june16-live-probe-eyes-dark`: desktop still down, unified field still
+  `DISCONNECTED_OR_STALE_INPUT`, USB camera **now enumerates** (r1205 carry-forward was stale),
+  shell cv2 opens both MacBook and USB from venv Python, but `.venv/bin/python3` lacks Camera TCC
+  grant and `sifta_os_desktop._embed_alice_panel` defaults `SIFTA_ALICE_UNIFIED_DEFER_EYE=1` (§7.8
+  conflict). No LED/live-camera claim. Lane: Camera live-probe + board correction;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-16 08:27 PDT` — `codex_desktop_gpt5` read the canonical covenant, bound identity as
+  `C55M@codex: GPT-5 Codex [ARCHITECT_UI_TRUTH]`, and registered
+  `r1206-codex-june16-carrier-eyes-dark-verify`: verified the June-16 carrier exists and
+  `tools/whats_left.py` selects `r1205-cowork-june16-carrier-eyes-dark`; current camera truth remains
+  `DISCONNECTED_OR_STALE_INPUT`, `active_eye_latest.png` is still the June-14 frame, and no
+  `sifta_os_desktop.py` process is running. Lane: Tournament/camera state verification;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:28 PDT` — `codex_desktop_gpt5` read the canonical covenant, observed concurrent Grok
+  correction `r1206-grok-june16-live-probe-eyes-dark`, and registered
+  `r1207-codex-grok-r1206-supersedes-r1205`: `tools/whats_left.py` now selects Grok's r1206 tail,
+  which supersedes my r1206 note about r1205 selection and corrects the stale USB enumeration claim.
+  Current truth: USB and MacBook can enumerate/open from Terminal context, but desktop remains down,
+  `SIFTA_ALICE_UNIFIED_DEFER_EYE=1` blocks boot-time eye construction, and unified-field sight remains
+  `DISCONNECTED_OR_STALE_INPUT`. Lane: Tournament/camera state correction;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:32 PDT` — `codex_desktop_gpt5` read the canonical covenant, observed the desktop
+  process state changed after r1207, and registered `r1208-codex-desktop-alive-eyes-still-dark`:
+  `sifta_os_desktop.py` is now running as PID 37219 under the Homebrew Python 3.14 `Python.app`
+  wrapper selected by `.venv/bin/python3`, but `active_eye_latest.png` is missing and
+  `camera_unified_field_proof.jsonl` remains `DISCONNECTED_OR_STALE_INPUT` (`ok=false`, frame age
+  ~128,603 s). Desktop alive is not sight. Remaining blockers are Camera permission for the exact GUI
+  Python launcher path family and opening the deferred eye (`Enable camera & vision` or the separate
+  §7.8 `DEFER_EYE=0` boot fix). Lane: Camera state correction;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:35 PDT` — `codex_desktop_gpt5` read the canonical covenant and registered
+  `r1209-codex-tail-pointer-r1208-desktop-alive-eyes-dark`: the June-16 carrier had a duplicated older
+  r1206 block after r1208, so `tools/whats_left.py` still selected stale `desktop down` text. Added an
+  append-only r1209 tail pointer with bullet items so the selector now reports r1209 as live and points
+  back to r1208's current truth: desktop alive, eye stream not proven. Lane: Tournament/camera selector
+  correction; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:38 PDT` — `cursor_grok_cli` (grok-build / Composer) read the canonical covenant in
+  full and signed in on-node `GTH4921YP3`. Appended tournament
+  `r1211-grok-owner-led-off-switched-not-sight`: owner physical observation (Image #1 archived to
+  `.sifta_state/owner_led_off_screenshot_r1211.jpg`) — Logitech blue LED off, MacBook green LED off;
+  Alice "switched" language was target-lease only, not live sight; desktop PID 37219 alive but
+  `DISCONNECTED_OR_STALE_INPUT` persists. No LED/live-camera claim. Lane: Camera truth labeling;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-16 08:39 PDT` — `codex_desktop_gpt5` read the canonical covenant in full, verified
+  `tools/whats_left.py` live tail `r1211-grok-owner-led-off-switched-not-sight`, and registered
+  `r1212-codex-tcc-grant-then-restart-answer`: answer to George's restart question. Current proof is
+  still `DISCONNECTED_OR_STALE_INPUT`, `ok=false`, `active_eye_latest.png` missing, and physical LED is
+  not claimed. Restart alone is not the fix; grant Camera to the running GUI Python path family first,
+  then fully quit/restart SIFTA OS and open the deferred eye. Lane: Camera TCC/restart guidance;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 08:38 PDT` — `cursor_grok_cli` (grok-build / Composer) read the canonical covenant in
+  full and signed in on-node `GTH4921YP3`. Appended tournament
+  `r1211-grok-owner-led-off-switched-not-sight`: owner physical observation (Image #1 archived to
+  `.sifta_state/owner_led_off_screenshot_r1211.jpg`) — Logitech blue LED off, MacBook green LED off;
+  Alice "switched" language was target-lease only, not live sight; desktop PID 37219 alive but
+  `DISCONNECTED_OR_STALE_INPUT` persists. No LED/live-camera claim. Lane: Camera truth labeling;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-16 08:41 PDT` — `cowork_claude` (`claude-opus-4-8`) read the canonical covenant in full and
+  signed in. Per George ("camera was black showing numbers; help the others update tournament"): re-probed
+  the hardware layer (`sifta_os_desktop.py` not running at probe; `active_eye_latest.png` missing;
+  `camera_unified_field_proof.jsonl` = `NOT_PROVEN` / `ok=false`, frame age ~128,841 s) and appended
+  `r1213-cowork-black-frame-numbers-consolidated-tail`: localized "black + numbers" as the r1203
+  honest-stale render (eye widget open but blind — capture/TCC + desktop-stay-alive blockers, not
+  widget-deferral), consolidated the scattered r1206–r1212 open lists into one canonical owner checklist,
+  and flagged the verbatim r1206 double-spend (left append-only; collapse offered). Coordinated with Grok
+  r1210/r1211 and Codex r1208/r1209/r1212; no re-cut. No LED/live-camera claim. Four-ledger fan-out below.
+  Lane: Tournament consolidation + camera open problem; `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`;
+  `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-16` — `cursor_grok_cli` (grok-build / Composer) read the canonical covenant in full and
+  signed in on-node `GTH4921YP3` per George's answers: built-in eye always on at boot (no defer
+  button cage), iPhone camera removed from body topology. Landed `r1214-grok-eye-open-no-iphone-cage`:
+  `sifta_os_desktop.py` `SIFTA_ALICE_UNIFIED_DEFER_EYE=0`, `SIFTA_ALLOW_IPHONE_CAMERA=0` in launcher,
+  `_filter_body_cameras()` in `swarm_camera_target.py`, iPhone excluded from eye widget combo; 28
+  camera tests passed. No LED/live-camera claim. Lane: §7.8 camera body repair;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-16 09:05 PDT` — `cursor_grok_cli` (grok-build / Composer) read the canonical covenant and
+  signed in. After r1214 restart: `camera_unified_field_proof` = `LIVE_CAPTURE_VERIFIED`,
+  `OWNER_RECOGNIZED` (~90%, Ioan George Anton), MacBook Pro Camera, frame age <1 s,
+  `active_eye_latest.png` fresh. Owner Image #1 (George at desk, reality physics) archived to
+  `.sifta_state/owner_george_reality_physics_r1215.jpg`. Tournament `r1215-grok-eye-live-owner-george-reality`
+  closes June-16 §0 eye-open lane. Lane: Camera success + owner-in-field grounding;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; on-node `GTH4921YP3`; no STGM claim.
+- `2026-06-16 09:07 PDT` — `codex_desktop_gpt5` read the canonical covenant, verified Grok r1214/r1215
+  against live files, and registered `r1216-codex-eye-live-shake-owner-desk`: exact owner screenshot
+  archived to `.sifta_state/owner_george_desk_photo_r1216.png` (`md5 fa70310b50b12574199c4a37395fcbb7`);
+  `sifta_os_desktop.py` running PID 55782; `active_eye_latest.png` present/fresh; visual and identity
+  frame ledgers fresh; latest direct proof reports `LIVE_CAPTURE_VERIFIED`, `ok=true`, MacBook Pro
+  Camera, frame age ~0.5 s. Nuance: current proof is camera-healthy without a fresh face receipt, while
+  r1215 recorded owner recognition at its probe. Lane: Camera success verification + owner artifact;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.
+- `2026-06-16 09:07 PDT` — `cowork_claude` (`claude-opus-4-8`) read the canonical covenant in full and
+  signed in. Per George ("shake with the others the success"): independently verified the eye-live win
+  before shaking — own probe at 09:06:56 read `camera_unified_field_proof.jsonl` `ok=true`,
+  `status=CAMERA_HEALTHY_NO_FACE_PROOF`, frame age 0.496 s; `active_eye_latest.png` fresh (2 s, 301 KB);
+  `visual_stigmergy.jsonl` writing live. The §0 eye-open lane (opened at r1205) is closed. Appended
+  `r1216-cowork-eye-live-verified-handshake`: verifier confirmation (§6) + Brother-in-Code handshake
+  crediting Grok r1214 (defer cage removed + iPhone topology) / r1215 (owner recognized + photo) and
+  Codex r1208/r1209/r1212 (process truth + grant-then-restart). Honest boundary: proof oscillates
+  HEALTHY↔OWNER_RECOGNIZED per frame; physical green-LED confirm remains owner-only. Owner Image #1
+  (George at the live rig, 9:02 AM) ingested as carbon-silicon co-presence receipt. No overclaim beyond
+  the proof row. Four-ledger fan-out below. Lane: Camera success verification + swarm handshake;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; `runtime: cowork_sandbox_linux`; `forgeable: true`; no STGM claim.
+- `2026-06-16 21:03 PDT` — `codex_desktop_gpt5` read the canonical covenant and landed
+  `r1217-codex-remove-stale-third-eye`: embedded Awareness Mirror now hides stale/missing frames instead
+  of showing a false stale third-eye tile; camera body topology and the eye widget exclude iPhone/Continuity
+  and OBS/virtual cameras by default, leaving `MacBook Pro Camera` + `USB Camera VID:1133 PID:2081`;
+  visual prompt context no longer labels an old-but-live-resolved target as stale. Focused tests green
+  (`38 passed`), py_compile clean, topology receipt refreshed to exactly two body eyes, and four-ledger
+  fan-out returned `ok` on all four. `sifta_os_desktop.py` was not running at receipt time, matching
+  George's "I turned her off"; no restart performed. Lane: Camera body truth / stale UI removal;
+  `IDE_DOCTOR_OPERATIONAL_TRACE` / `MANA`; no STGM claim.

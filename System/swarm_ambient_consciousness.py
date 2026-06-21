@@ -959,8 +959,20 @@ class AmbientConsciousnessOrgan:
                 if len(self._buf) > max_buf_samples:
                     self._buf = self._buf[-max_buf_samples:]
 
+        mic_device: int | None = None
+        try:
+            from System.audio_ingress import resolve_default_owner_microphone
+
+            mic_idx, mic_name = resolve_default_owner_microphone(sd)
+            if mic_idx >= 0:
+                mic_device = mic_idx
+                print(f"[ambient] default embedded mic: {mic_idx}:{mic_name}")
+        except Exception:
+            mic_device = None
+
         try:
             with sd.InputStream(
+                device=mic_device,
                 samplerate=_SAMPLE_RATE,
                 channels=_CHANNELS,
                 blocksize=chunk_samples,

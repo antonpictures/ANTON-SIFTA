@@ -109,7 +109,14 @@ def classify_user_turn_rich(
     conf = float(stt_conf or 0.0)
     modality_hint = (input_modality or "").strip().upper()
     is_typed = bool(typed_turn) or modality_hint in {"TYPED", "TEXT", "KEYBOARD"}
-    is_spoken = (typed_turn is False) or modality_hint in {"SPOKEN", "VOICE", "STT", "MIC"}
+    is_spoken = (typed_turn is False) or modality_hint in {
+        "SPOKEN",
+        "VOICE",
+        "STT",
+        "MIC",
+        "WORLD_STT",
+        "WORLD STT",
+    }
     explicit_typed = _explicit_hand_typed(s)
     explicit_paste = _explicit_paste_context(s)
     strong_paste_evidence = bool(
@@ -127,7 +134,30 @@ def classify_user_turn_rich(
     looks_bulk = bool(strong_paste_evidence or (len(s) >= long_paste_chars and not is_typed))
     url = _has_url(s)
 
+    is_world_stt = modality_hint in {"WORLD_STT", "WORLD STT"}
+
     if is_spoken or (conf > 0 and not is_typed):
+        if is_world_stt:
+            noise_risk = 0.92 if (conf and conf < 0.55) else (0.55 if conf >= 0.80 else 0.72)
+            return InputRealityClassification(
+                lane=InputRealityLane.SPOKEN_STT_NOISY_OR_AMBIENT,
+                modality="WORLD_STT",
+                owner_intent_weight=0.22,
+                owner_work_intensity=0.12,
+                transcription_noise_risk=noise_risk,
+                copy_quote_risk=0.18,
+                truth_label="EAR_INTENTIONAL_WORLD_LISTEN_V1",
+                meaning=(
+                    "intentional world acoustic ingress through STT (room, TV, anyone) — "
+                    "not assumed George and not typed owner commands"
+                ),
+                guidance=(
+                    "Treat as observed world sound for training receipt sort. "
+                    "Do not invent facts; speak from confirmed STGM receipts. "
+                    "Do not treat as an exact owner command without typed confirmation."
+                ),
+                evidence=(f"stt_conf={conf:.3f}", "world_stt_path", "ear_intentional_listen"),
+            )
         if conf and conf < 0.55:
             return InputRealityClassification(
                 lane=InputRealityLane.SPOKEN_STT_NOISY_OR_AMBIENT,

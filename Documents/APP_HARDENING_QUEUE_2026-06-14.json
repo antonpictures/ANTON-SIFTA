@@ -1042,19 +1042,6 @@
       "widget_class": "PhysicsObservatoryWidget"
     },
     {
-      "category": "Economy",
-      "class_found": true,
-      "entry_point": "Applications/sifta_seed_deal_evidence_crucible.py",
-      "exists": true,
-      "index": 80,
-      "issues": [],
-      "owner": "Cursor",
-      "priority": "P3",
-      "syntax_ok": true,
-      "title": "SIFTA Seed Deal Evidence Crucible",
-      "widget_class": "SeedDealEvidenceCrucible"
-    },
-    {
       "category": "Developer",
       "class_found": true,
       "entry_point": "Applications/sifta_skill_browser.py",

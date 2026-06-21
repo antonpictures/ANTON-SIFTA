@@ -34,6 +34,7 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER = "browser_page_state.jsonl"
+LATEST_STATE = "browser_page_state_latest.json"
 TRUTH_LABEL = "BROWSER_PAGE_STATE_V1"
 
 _SRC_DOM = "dom"
@@ -604,13 +605,27 @@ def article_readability_status(
 
 
 def _append(state_dir: Optional[Path | str], row: dict[str, Any]) -> None:
-    path = _state(state_dir) / LEDGER
+    base = _state(state_dir)
+    path = base / LEDGER
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    try:
+        (base / LATEST_STATE).write_text(
+            json.dumps(row, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
 
 def _last_row(state_dir: Optional[Path | str]) -> dict[str, Any]:
+    try:
+        row = json.loads((_state(state_dir) / LATEST_STATE).read_text(encoding="utf-8"))
+        if isinstance(row, dict):
+            return row
+    except Exception:
+        pass
     try:
         last = ""
         with (_state(state_dir) / LEDGER).open("r", encoding="utf-8") as fh:
@@ -763,6 +778,14 @@ def record_page_state(
 def _live_browser_url(state_dir: Optional[Path | str]) -> str:
     """The page the browser is on RIGHT NOW, from the freshest live trace."""
     base = _state(state_dir)
+    try:
+        from System.swarm_browser_context import latest_browser_context
+
+        u = latest_browser_context(state_dir=base).get("url")
+        if u:
+            return str(u)
+    except Exception:
+        pass
     try:
         last = ""
         with (base / "browser_context.jsonl").open("r", encoding="utf-8") as fh:
@@ -967,6 +990,54 @@ def page_state_block(
     return " ".join(parts)
 
 
+def browser_tabs_awareness_block(
+    *,
+    now: Optional[float] = None,
+    max_age_s: float = 3600.0,
+    state_dir: Optional[Path | str] = None,
+) -> str:
+    """Every-turn Alice Browser tab-strip receipt for cortex interoception."""
+    s = latest_page_state(now=now, max_age_s=max_age_s, state_dir=state_dir)
+    if not s:
+        return (
+            "ALICE BROWSER TABS: I have no tab-strip receipt yet. "
+            "Before I claim how many tabs are open, I must read my browser limb."
+        )
+    tabs = s.get("open_tabs") if isinstance(s.get("open_tabs"), list) else []
+    total = int(s.get("open_tabs_count") or len(tabs) or 0)
+    if not tabs:
+        active_url = str(s.get("url") or "").strip()
+        if active_url:
+            return (
+                f"ALICE BROWSER TABS: tab-strip empty on the latest receipt; "
+                f"active page only — {active_url}."
+            )
+        return "ALICE BROWSER TABS: tab-strip empty; I should refresh browser awareness before navigating."
+    labels: list[str] = []
+    for tab in tabs[:10]:
+        if not isinstance(tab, Mapping):
+            continue
+        try:
+            idx_label = str(int(tab.get("index", 0)) + 1)
+        except Exception:
+            idx_label = "?"
+        tab_title = str(tab.get("title") or tab.get("url") or "Untitled")[:80]
+        domain = str(tab.get("domain") or "")[:60]
+        suffix = f" ({domain})" if domain and domain not in tab_title else ""
+        prefix = "ACTIVE " if tab.get("active") else ""
+        labels.append(f"{prefix}#{idx_label}: {tab_title}{suffix}")
+    extra = total - len(labels)
+    more = f"; +{extra} more" if extra > 0 else ""
+    age = s.get("age_s")
+    stamp = f" (~{int(age)}s ago)" if age is not None else ""
+    return (
+        f"ALICE BROWSER TABS ({total} open{stamp}): "
+        + "; ".join(labels)
+        + more
+        + ". I must preserve existing tabs unless George asks to replace the current tab."
+    )
+
+
 def comments_for_summary(
     *, now: Optional[float] = None, max_age_s: float = 300.0,
     state_dir: Optional[Path | str] = None,
@@ -981,12 +1052,14 @@ def comments_for_summary(
 
 __all__ = [
     "TRUTH_LABEL",
+    "LATEST_STATE",
     "record_page_state",
     "latest_page_state",
     "has_readable_content",
     "article_text_from_state",
     "article_readability_status",
     "page_state_block",
+    "browser_tabs_awareness_block",
     "media_playback_error_from_state",
     "build_youtube_ad_state",
     "youtube_ad_state_from_state",

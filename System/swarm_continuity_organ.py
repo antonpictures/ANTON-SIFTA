@@ -138,7 +138,6 @@ HABITAT_BY_APP: Dict[str, str] = {
 
     # Effectors / network
     "WhatsApp Organ":                 "relational",
-    "Discord Swarm":                  "relational",
     "Network Control Center":         "introspective",
 
     # Settings + system

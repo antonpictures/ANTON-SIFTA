@@ -26,7 +26,7 @@ _LEADING_STATUS_RE = re.compile(
 _INTERNAL_NUMBERED_RE = re.compile(
     r"(?im)^\s*(?:\d{1,2}[.)]\s*)?"
     r"(?:"
-    r"analy[sz]e(?:\s+the)?\s+(?:context|input|request|statement)|"
+    r"analy[sz]e(?:\s+the)?\s+(?:user\s+)?(?:context|input|request|statement)|"
     r"understand(?:ing)?\s+(?:the\s+)?(?:context|input|request|statement)|"
     r"identify(?:ing)?\s+(?:the\s+)?(?:intent|topic|user|request)|"
     r"determin(?:e|ing)\s+(?:the\s+)?(?:appropriate|best|response|answer|tone)|"
@@ -37,6 +37,10 @@ _INTERNAL_NUMBERED_RE = re.compile(
     r"generat(?:e|ing)\s+(?:the\s+)?(?:response|answer|reply)|"
     r"compos(?:e|ing)\s+(?:the\s+)?(?:response|answer|reply)"
     r")\b.*$"
+)
+
+_THINKING_PROCESS_LEAD_RE = re.compile(
+    r"(?is)^\s*here(?:'s| is)\s+(?:a\s+|my\s+)?thinking\s+process\b"
 )
 
 _INTERNAL_PROSE_RE = re.compile(
@@ -153,6 +157,11 @@ def sanitize_reasoning_leak(text: str) -> ReasoningLeakResult:
     if status_stripped != out:
         out = status_stripped
         rules.append("reasoning_leak/status_line")
+
+    if _THINKING_PROCESS_LEAD_RE.match(out):
+        final_cut, cut = _cut_to_final_marker(out)
+        out = final_cut if cut else ""
+        rules.append("reasoning_leak/thinking_process_lead")
 
     final_cut, cut = _cut_to_final_marker(out)
     if cut:

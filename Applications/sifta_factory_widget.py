@@ -44,11 +44,28 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_hardening import record_app_hardening_event
 from System.regenerative_factory import (
     FactoryFloor, FactorySwimmer, CellType,
     spawn_factory_swimmers, step_factory, factory_telemetry,
     persist_ledger, credit_architect_factory_mint, COMPONENTS,
 )
+
+APP_HARDENING_ID = "queue-022:sifta_factory_widget"
+_HARDENING_EVENT_KEYS: set[tuple[str, str]] = set()
+
+
+def _record_factory_hardening(event: str, **details) -> None:
+    key = (event, str(details.get("error", ""))[:160])
+    if key in _HARDENING_EVENT_KEYS:
+        return
+    _HARDENING_EVENT_KEYS.add(key)
+    record_app_hardening_event(
+        APP_HARDENING_ID,
+        event,
+        truth_label="OBSERVED",
+        details=details,
+    )
 
 # ── Palette ──────────────────────────────────────────────────────
 BG = "#060a12"
@@ -340,16 +357,22 @@ class FactoryWidget(SiftaBaseWidget):
         self.set_status("Ready — Start Production")
 
     def _balance_pane_splitter(self) -> None:
-        from System.splitter_utils import balance_horizontal_splitter
+        try:
+            from System.splitter_utils import balance_horizontal_splitter
 
-        balance_horizontal_splitter(
-            self._pane_splitter,
-            self,
-            left_ratio=0.72,
-            min_right=260,
-            min_left=240,
-            max_right=340,
-        )
+            balance_horizontal_splitter(
+                self._pane_splitter,
+                self,
+                left_ratio=0.72,
+                min_right=260,
+                min_left=240,
+                max_right=340,
+            )
+        except Exception as exc:
+            _record_factory_hardening(
+                "factory_splitter_balance_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def _toggle(self):
         if self._running:
@@ -388,7 +411,16 @@ class FactoryWidget(SiftaBaseWidget):
         total_sim = float(telem["total_stgm"])
         delta = total_sim - self._quorum_credited_stgm
         if delta > 1e-9:
-            credited = credit_architect_factory_mint(delta, tick=telem["tick"])
+            try:
+                credited = credit_architect_factory_mint(delta, tick=telem["tick"])
+            except Exception as exc:
+                credited = None
+                _record_factory_hardening(
+                    "factory_mint_credit_failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                    tick=telem["tick"],
+                    delta=delta,
+                )
             if credited is None:
                 self._quorum_credited_stgm = total_sim
             elif credited > 0:
@@ -403,7 +435,14 @@ class FactoryWidget(SiftaBaseWidget):
         self._canvas.render_frame(telem)
 
         if self._floor.tick % 200 == 0:
-            persist_ledger(self._floor)
+            try:
+                persist_ledger(self._floor)
+            except Exception as exc:
+                _record_factory_hardening(
+                    "factory_ledger_persist_failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                    tick=self._floor.tick,
+                )
 
     def _log_msg(self, msg: str):
         t = time.strftime("%H:%M:%S")

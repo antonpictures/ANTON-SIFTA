@@ -64,6 +64,28 @@ def _norm(text: Any) -> str:
     return " ".join(str(text or "").replace("’", "'").strip().lower().split())
 
 
+def _clean_unique_id(value: Any) -> str:
+    """Return a stable camera unique ID string across Qt bytes / AVFoundation.
+
+    Older Qt paths sometimes wrote ``str(bytes_id)`` into receipts, producing
+    values like ``b'0x3121000046d0821'``. AVFoundation returns the clean
+    ``0x3121000046d0821`` string. Treating those as different identities makes
+    plug/unplug look like a stale duplicate eye. Normalize at the registry
+    boundary so roles stay stable across hotplug and framework paths.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return bytes(value).decode("utf-8", errors="replace").strip()
+        except Exception:
+            return str(value).strip()
+    text = str(value).strip()
+    if len(text) >= 3 and text[0:2] in {"b'", 'b"'} and text[-1:] in {"'", '"'}:
+        return text[2:-1].strip()
+    return text
+
+
 def _short_hash(text: str, n: int = 10) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:n]
 
@@ -76,7 +98,7 @@ def _vid_pid(name: str) -> tuple[str, str]:
 def normalize_device(device: Mapping[str, Any] | tuple[Any, Any] | tuple[Any, Any, Any], index: int = 0) -> dict[str, Any]:
     """Normalize camera device rows from Qt/AVFoundation/test fixtures."""
     if isinstance(device, Mapping):
-        uid = str(device.get("unique_id") or device.get("uid") or device.get("id") or "").strip()
+        uid = _clean_unique_id(device.get("unique_id") or device.get("uid") or device.get("id") or "")
         name = str(device.get("name") or device.get("desc") or device.get("description") or "").strip()
         idx_raw = device.get("index", index)
     elif isinstance(device, tuple):
@@ -85,7 +107,7 @@ def normalize_device(device: Mapping[str, Any] | tuple[Any, Any] | tuple[Any, An
         else:
             uid, name = device[0], device[1]
             idx_raw = index
-        uid = str(uid or "").strip()
+        uid = _clean_unique_id(uid)
         name = str(name or "").strip()
     else:
         uid, name, idx_raw = "", str(device or "").strip(), index
@@ -112,14 +134,12 @@ def classify_eye_role(device: Mapping[str, Any]) -> str:
     name = _norm(device.get("name") or device.get("name_key") or "")
     uid = _norm(device.get("unique_id") or "")
     hay = f"{name} {uid}"
+    if any(token in hay for token in ("iphone", "ipad", "continuity", "desk view")):
+        return AUX_ROLE
     if any(token in hay for token in ("macbook pro camera", "facetime", "built-in", "built in", "laptop", "internal")):
         return OWNER_ROLE
     if any(token in hay for token in ("logitech", "usb", "vid:1133", "external", "webcam", "fresco")):
         return WORLD_ROLE
-    if "desk view" in hay:
-        return AUX_ROLE
-    if "iphone" in hay or "continuity" in hay:
-        return AUX_ROLE
     return AUX_ROLE
 
 
@@ -137,7 +157,10 @@ def _previous_by_identity(snapshot: Mapping[str, Any]) -> dict[str, dict[str, An
     for eye in eyes:
         if not isinstance(eye, dict):
             continue
-        key = str((eye.get("device_identity") or {}).get("key") or "")
+        identity = eye.get("device_identity") or {}
+        key = _clean_unique_id(identity.get("key") or "")
+        if not key:
+            key = str(identity.get("name_key") or "")
         if key:
             out[key] = eye
     return out
@@ -199,16 +222,26 @@ def build_eye_registry(
     live = _live_devices(devices)
     eyes: list[dict[str, Any]] = []
     live_keys: set[str] = set()
+    live_eye_ids: set[str] = set()
     for dev in live:
         key = str(dev["device_identity_key"])
         live_keys.add(key)
         prior = previous_by_key.get(key, {})
-        role = str(prior.get("role") or classify_eye_role(dev))
-        eye_id = str(prior.get("eye_id") or eye_id_for_device(dev, role))
+        role = classify_eye_role(dev)
+        prior_role = str(prior.get("role") or "")
+        eye_id = (
+            str(prior.get("eye_id") or eye_id_for_device(dev, role))
+            if prior_role == role
+            else eye_id_for_device(dev, role)
+        )
+        live_eye_ids.add(eye_id)
         age = visual_age.get(eye_id)
+        always_expected = role == OWNER_ROLE
         eyes.append({
             "eye_id": eye_id,
             "role": role,
+            "always_expected": always_expected,
+            "fallback_priority": 0 if always_expected else (1 if role == WORLD_ROLE else 2),
             "health": "GREEN",
             "connection_state": "LIVE",
             "device_name": dev["name"],
@@ -231,8 +264,23 @@ def build_eye_registry(
         if key in live_keys:
             continue
         stale = dict(prior)
+        stale_eye_id = str(stale.get("eye_id") or "")
+        stale_role = str(stale.get("role") or "")
+        if stale_role == AUX_ROLE:
+            # Aux/video-continuity/virtual lanes are not body eyes for the
+            # two-eye owner/world topology. Do not keep old OBS/iPhone ghosts
+            # visible after they disappear; George asked to remove those for
+            # now while keeping MacBook owner eye + USB/Logitech world eye.
+            continue
+        if stale_eye_id in live_eye_ids:
+            # Same role is currently live under a cleaner/newer hardware
+            # identity. Keep the live row only; otherwise Alice sees duplicate
+            # owner_eye/world_eye rows after USB hotplug or Qt bytes drift.
+            continue
         stale["health"] = "STALE"
         stale["connection_state"] = "STALE_OR_DETACHED"
+        stale["always_expected"] = stale_role == OWNER_ROLE
+        stale["fallback_priority"] = 0 if stale["always_expected"] else (1 if stale.get("role") == WORLD_ROLE else 2)
         stale["current_index"] = None
         stale["index_observation_only"] = True
         stale["last_frame_age_s"] = visual_age.get(str(stale.get("eye_id") or ""), stale.get("last_frame_age_s"))
@@ -247,6 +295,7 @@ def build_eye_registry(
         "truth_label": TRUTH_LABEL,
         "schema": TRUTH_LABEL,
         "device_binding": "unique_id_or_vid_pid_name_never_index",
+        "owner_eye_policy": "Built-in MacBook/FaceTime is the always-expected owner eye; any USB/external camera is a plug-and-play world eye from live driver enumeration — never a hardcoded VID/PID shrine.",
         "eyes": eyes,
         "live_eye_count": sum(1 for e in eyes if e.get("connection_state") == "LIVE"),
         "stale_eye_count": sum(1 for e in eyes if e.get("connection_state") != "LIVE"),
@@ -312,6 +361,123 @@ def refresh_eye_registry(
     return snapshot
 
 
+def live_owner_eye_device(*, state_dir: Path | str | None = None) -> dict[str, Any]:
+    """Live built-in owner eye from driver enumeration (plug-and-play)."""
+    try:
+        from System.swarm_camera_target import (
+            is_builtin_owner_camera,
+            live_devices,
+            normalize_unique_id,
+            prefer_builtin_owner_eye,
+        )
+    except Exception:
+        live_devices = None  # type: ignore[assignment]
+        prefer_builtin_owner_eye = None  # type: ignore[assignment]
+        normalize_unique_id = lambda v: str(v or "").strip()  # type: ignore[assignment, misc]
+        is_builtin_owner_camera = lambda _n: False  # type: ignore[assignment, misc]
+
+    if live_devices is not None and prefer_builtin_owner_eye is not None:
+        live = live_devices()
+        owner_name = prefer_builtin_owner_eye([desc for _uid, desc in live])
+        if owner_name:
+            for i, (uid, desc) in enumerate(live):
+                if desc == owner_name:
+                    return {
+                        "name": desc,
+                        "unique_id": normalize_unique_id(uid) or None,
+                        "index": i,
+                        "role": OWNER_ROLE,
+                        "live": True,
+                    }
+        for i, (uid, desc) in enumerate(live):
+            if is_builtin_owner_camera(desc):
+                return {
+                    "name": desc,
+                    "unique_id": normalize_unique_id(uid) or None,
+                    "index": i,
+                    "role": OWNER_ROLE,
+                    "live": True,
+                }
+
+    eye = eye_for_role(OWNER_ROLE, state_dir=state_dir, include_stale=True)
+    identity = eye.get("device_identity") if isinstance(eye.get("device_identity"), dict) else {}
+    return {
+        "name": str(eye.get("device_name") or ""),
+        "unique_id": _clean_unique_id(identity.get("unique_id")) or None,
+        "index": eye.get("current_index"),
+        "role": OWNER_ROLE,
+        "live": eye.get("connection_state") == "LIVE",
+    }
+
+
+def live_world_eye_device(*, state_dir: Path | str | None = None) -> dict[str, Any]:
+    """First live external USB/world eye — any driver name, not one hardcoded VID."""
+    try:
+        from System.swarm_camera_target import (
+            is_builtin_owner_camera,
+            is_iphone_or_continuity,
+            is_virtual_or_loopback_camera,
+            live_devices,
+            normalize_unique_id,
+        )
+    except Exception:
+        return {"name": "", "unique_id": None, "index": None, "role": WORLD_ROLE, "live": False}
+
+    for i, (uid, desc) in enumerate(live_devices()):
+        if is_builtin_owner_camera(desc):
+            continue
+        if is_iphone_or_continuity(desc) or is_virtual_or_loopback_camera(desc):
+            continue
+        dev = normalize_device((uid, desc), index=i)
+        role = classify_eye_role(dev)
+        if role in {WORLD_ROLE, AUX_ROLE}:
+            return {
+                "name": desc,
+                "unique_id": normalize_unique_id(uid) or None,
+                "index": i,
+                "role": role,
+                "live": True,
+            }
+
+    # Unplugged world eyes remain in registry history only — not lease targets.
+    return {"name": "", "unique_id": None, "index": None, "role": WORLD_ROLE, "live": False}
+
+
+def plug_play_sensor_registry(*, state_dir: Path | str | None = None) -> dict[str, dict[str, Any]]:
+    """Attention-director inputs: owner embedded eye + first live external eye."""
+    return {
+        "close_owner_eye": live_owner_eye_device(state_dir=state_dir),
+        "room_patrol_eye": live_world_eye_device(state_dir=state_dir),
+    }
+
+
+def live_optic_device_names() -> list[str]:
+    """Colliculus saccade ring: live body cameras only, owner eye last."""
+    try:
+        from System.swarm_camera_target import (
+            is_builtin_owner_camera,
+            is_iphone_or_continuity,
+            is_virtual_or_loopback_camera,
+            live_devices,
+        )
+    except Exception:
+        return []
+
+    external: list[str] = []
+    owner: str | None = None
+    for _uid, desc in live_devices():
+        if is_iphone_or_continuity(desc) or is_virtual_or_loopback_camera(desc):
+            continue
+        if is_builtin_owner_camera(desc):
+            owner = desc
+        elif desc not in external:
+            external.append(desc)
+    out = external[:]
+    if owner and owner not in out:
+        out.append(owner)
+    return out
+
+
 def eye_for_role(role: str, *, state_dir: Path | str | None = None, include_stale: bool = False) -> dict[str, Any]:
     snapshot = read_eye_registry(state_dir=state_dir)
     eyes = snapshot.get("eyes") if isinstance(snapshot.get("eyes"), list) else []
@@ -359,7 +525,11 @@ __all__ = [
     "eye_for_role",
     "eye_id_for_device",
     "format_eye_registry",
+    "live_optic_device_names",
+    "live_owner_eye_device",
+    "live_world_eye_device",
     "normalize_device",
+    "plug_play_sensor_registry",
     "read_eye_registry",
     "refresh_eye_registry",
 ]

@@ -7,6 +7,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from System import swarm_browser_context as ctx
 from System import swarm_browser_page_state as ps
 
 
@@ -26,6 +27,30 @@ def test_record_and_read_structured_state(tmp_path):
     assert s["text_chars"] > 0 and s["images_count"] == 1 and s["links_count"] == 2
     assert s["headings"][0] == "lialinxo"
     assert ps.has_readable_content(s) is True
+
+
+def test_record_page_state_writes_latest_sidecar_and_uses_live_context_sidecar(tmp_path):
+    url = "https://example.com/current"
+    ctx.publish_browser_context(
+        url=url,
+        title="Current page",
+        source="focus",
+        state_dir=tmp_path,
+    )
+    ps.record_page_state(
+        url,
+        title="Current page",
+        text="current body",
+        now=1000.0,
+        state_dir=tmp_path,
+    )
+
+    state_dir = tmp_path / ".sifta_state"
+    assert (state_dir / ps.LATEST_STATE).exists()
+    state = ps.latest_page_state(now=999999.0, max_age_s=1.0, state_dir=state_dir)
+    assert state["url"] == url
+    assert state["is_current_page"] is True
+    assert state["fresh"] is True
 
 
 def test_article_text_sidecar_and_readability_status(tmp_path):
@@ -151,7 +176,7 @@ def test_current_page_is_fresh_even_when_old(tmp_path):
     # George 2026-05-30: a page you are STILL on is current, no matter the age.
     url = "https://www.instagram.com/p/C72nb9ztZtv/"
     _write_live_url(tmp_path, url)
-    ps.record_page_state(url, title="Instagram", text="I couldn't find my bikini",
+    ps.record_page_state(url, title="Instagram", text="I couldn't find my swimsuit",
                          headings=["kylinmilan"], now=1000.0, state_dir=tmp_path)
     s = ps.latest_page_state(now=1000.0 + 99999, max_age_s=120, state_dir=tmp_path)  # very old
     assert s["is_current_page"] is True

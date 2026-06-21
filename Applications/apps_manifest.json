@@ -967,6 +967,22 @@
     ],
     "icon": "⚕️"
   },
+  "Stigmergic Alzheimer Network Lab": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_stigmergic_alzheimer_sim.py",
+    "widget_class": "StigmergicAlzheimerNetworkLabWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "description": "Educational synthetic connectome diffusion lab for Alzheimer-like network propagation. Stigmergic deposits spread along weighted edges with clearance and vulnerable-region amplification. No PHI, no diagnosis, no treatment guidance.",
+    "truth_label": "STIGMERGIC_ALZHEIMER_NETWORK_SIM_V1",
+    "doctor": "Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ],
+    "icon": "A"
+  },
   "Autopoiesis Monitor": {
     "category": "Neuroscience",
     "entry_point": "Applications/sifta_agi_cognition_dashboard.py",
@@ -1496,21 +1512,6 @@
     "health_trace_path": ".sifta_state/app_health/hear/health_trace.jsonl",
     "icon": "👂"
   },
-  "SIFTA Seed Deal Evidence Crucible": {
-    "category": "Economy",
-    "entry_point": "Applications/sifta_seed_deal_evidence_crucible.py",
-    "widget_class": "SeedDealEvidenceCrucible",
-    "window_width": 1100,
-    "window_height": 780,
-    "signature": "CG55H_SEED_DEAL_CRUCIBLE_V1",
-    "doctor": "Codex Desktop GPT-5.5 high",
-    "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Receipt-true capital grounding surface for the 2026-05-18 SIFTA seed event. Shows capital, equity, commitments, physical grounding, and live milestone swimmers that scan local append-only receipts for on-track / at-risk / complete posterior status.",
-    "truth_label": "SIFTA_SEED_CRUCIBLE_V1",
-    "has_health_section": true,
-    "health_trace_path": ".sifta_state/app_health/seed_deal_crucible/health_trace.jsonl",
-    "icon": "💎"
-  },
   "Stigmergic Fractals": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_stigmergic_fractals_widget.py",
@@ -1691,6 +1692,17 @@
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Owner's window into the lysosome. Reads every residue/gag ledger, dedupes by the gagged phrase (the same residue repeats hundreds of times), and shows the unique set in one searchable table: count, phrase, the rule that caught it, source, last seen. Lets George verify the lysosome only eats corporate boilerplate and FLAG anything good that was gagged by mistake (writes a §1.D owner correction pheromone, append-only). Also lists the hardcoded filter dictionary (the corporate words the lysosome screens for). Read-only over history; the only write is the owner's explicit Mark-as-GOOD flag."
   },
+  "macOS Privacy Cache Scanner": {
+    "category": "Utilities",
+    "icon": "🔎",
+    "entry_point": "Applications/sifta_macos_privacy_cache_scanner.py",
+    "widget_class": "MacOSPrivacyCacheScannerApp",
+    "window_width": 1100,
+    "window_height": 720,
+    "doctor": "codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Metadata-only scanner for ~/Library/Caches. Classifies SIFTA cache, built-in Apple service stubs such as CloudKit/HomeKit/FamilyCircle/SafeBrowsing/Find My, and non-SIFTA delete candidates. Writes macos_privacy_cache_scan.jsonl receipts without reading private cache payloads."
+  },
   "Alice Self-Evaluation (her body map)": {
     "category": "Alice",
     "icon": "🪞",
@@ -1837,6 +1849,17 @@
     "doctor": "mimo_cli_cortex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Read-only viewer for Alice first-person journal entries and stigmergic schedule rows."
+  },
+  "Stigmergic Shared Experience Anchors": {
+    "category": "Memory",
+    "icon": "⚓",
+    "entry_point": "Applications/sifta_stigmergic_anchors_widget.py",
+    "widget_class": "StigmergicAnchorsWidget",
+    "window_width": 1000,
+    "window_height": 640,
+    "doctor": "cursor",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Lists real people/celebs/contacts from shared George+Alice experiences. Fiction personas (e.g. bare Joy from cooking thread) are REJECTED_FICTION; full names like Joy Behar promote to CONFIRMED. Scans alice_conversation.jsonl; ledger stigmergic_shared_experience_anchors.jsonl. r1370."
   },
   "Arena": {
     "category": "Cognition",

@@ -22,6 +22,14 @@ def _append(path, row):
 def _patch_camera_target(monkeypatch, tmp_path):
     monkeypatch.setattr(swarm_camera_target, "TARGET_JSON", tmp_path / "active_saccade_target.json")
     monkeypatch.setattr(swarm_camera_target, "TARGET_TXT_LEGACY", tmp_path / "active_saccade_target.txt")
+    monkeypatch.setattr(
+        swarm_camera_target,
+        "_live_devices",
+        lambda: [
+            ("mac-live", "MacBook Pro Camera"),
+            ("usb-live", "USB Camera VID:1133 PID:2081"),
+        ],
+    )
 
 
 def test_owner_face_selects_close_eye(tmp_path, monkeypatch):
@@ -57,7 +65,7 @@ def test_audio_motion_or_low_entropy_selects_room_eye_and_writes_ledger(tmp_path
     row = apply_attention_decision(decision, state_dir=tmp_path, write_hardware=True)
 
     assert decision.target_role == "room_patrol_eye"
-    assert decision.target_index == 0
+    assert decision.target_index == 1
     assert "audio_spike" in decision.reason
     assert row["camera_target"]["name"] == "USB Camera VID:1133 PID:2081"
     assert (tmp_path / "sensory_attention_ledger.jsonl").exists()

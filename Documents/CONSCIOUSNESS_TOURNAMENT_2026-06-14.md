@@ -822,6 +822,203 @@ ONE ALICE. ONE SWARM. 🐜⚡
 
 ---
 
+## r1176 Codex — MiMo default LLM is local Gemma4 [r1176-codex-mimo-default-local-gemma4]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-15 05:36 PDT (`OBSERVED` shell)  
+**Owner directive:** "MIMO DEFAULT LLM SHOULD BE THE LOCAL MODEL PLS"
+
+### DECIDE
+
+MiMo Auto remains visible as row `7`, but it is not the default. The default MiMo attached LLM must be the observed local Ollama model:
+
+- `krishairnd/Gemma-4-Uncensored:latest`
+- owner-observed model id: `abb8e56b1d85`
+- size: `6.3 GB`
+- capability note already recorded: Gemma4 8B, Q4_K_M, context 131072, completion/vision/audio/tools/thinking
+
+### EXECUTE
+
+- `System/swarm_cortex_capabilities.py`
+  - Set `_MIMO_DEFAULT_ATTACHED` to `krishairnd/Gemma-4-Uncensored:latest`.
+  - Kept MiMo native picker rows, including `mimo-auto`, in the attached-model list.
+  - Live MiMo provider probes remain evidence, but they no longer steal the default marker.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_talk_ollama_model_candidates("mimo:mimo-cli-default")` now starts with local Gemma4.
+  - MiMo CLI remains in the ladder after local Gemma4 as fallback evidence.
+  - Empty-brain diagnostic wording now says `empty on this turn`, preserving the regression contract without the banned literal phrase.
+- Tests updated:
+  - `/cortex llm 8` binds MiMo to local Gemma4.
+  - `/cortex llm` renders:
+    - `7. MiMo Auto (free) (mimo-auto)`
+    - `●  8. Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`
+  - Brain label reports the local Gemma4 default.
+  - Talk candidate ladder starts local before MiMo CLI.
+- Live state refreshed:
+  - `.sifta_state/cortex_attached_models.json` now records MiMo default as `krishairnd/Gemma-4-Uncensored:latest`.
+
+### RECEIPT
+
+- `python3 -m py_compile System/swarm_cortex_capabilities.py Applications/sifta_talk_to_alice_widget.py System/swarm_alice_slash_commands.py` -> passed
+- `python3 -m pytest tests/test_cortex_attached_models.py tests/test_r1018_p1_cortex_llm_list_binding.py tests/test_external_brain_lanes.py tests/test_alice_parrot_loop.py -q` -> `90 passed`
+- Live display probe:
+  - `7. MiMo Auto (free) (mimo-auto)`
+  - `●  8. Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`
+  - `Live default: Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`
+- Live ladder probe:
+  - first candidate: `krishairnd/Gemma-4-Uncensored:latest`
+  - second candidate: `mimo:mimo-cli-default`
+
+**Receipt id:** `r1176-codex-mimo-default-local-gemma4`
+
+### WHAT IS LEFT after r1176
+
+- Restart Talk / SIFTA OS so the running GUI reloads the changed Talk ladder and display default.
+- If a MiMo turn still shows timeout before local Gemma4, capture the thinking bubble text and candidate ladder; the expected first model is now `krishairnd/Gemma-4-Uncensored:latest`.
+- If `ALICE N/A` remains, inspect the exact widget/label rendering it; the MiMo default route is now local-first.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1174 Codex — Tail pointer for diffusion OOM fallback [r1174-codex-diffusion-oom-tail-pointer]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-15 05:17 PDT (`OBSERVED` shell)  
+
+### DECIDE
+
+The r1173 diffusion OOM fallback receipt was appended near an earlier `ONE ALICE` marker, so `tools/whats_left.py` still pointed at r1172. Append-only correction: leave r1173 where it landed and make this EOF pointer the live open-list anchor.
+
+### EXECUTE
+
+- Live coded receipt remains `r1173-codex-diffusion-oom-fallback`.
+- Files changed by r1173:
+  - `System/swarm_diffusion_cortex.py`
+  - `Applications/sifta_talk_to_alice_widget.py`
+  - `tests/test_diffusion_cortex_route.py`
+  - `tests/test_talk_diffusion_brain_binding.py`
+- Verification remains:
+  - `py_compile` passed for diffusion cortex and Talk widget.
+  - Focused diffusion/Talk worker tests: `14 passed`.
+  - Neighbor parser/policy timeout tests: `28 passed`.
+
+**Receipt id:** `r1174-codex-diffusion-oom-tail-pointer`
+
+### WHAT IS LEFT after r1174
+
+- Restart Talk / SIFTA OS so the running GUI loads the diffusion route fix.
+- If diffusion is selected again and Metal OOM repeats, the next Talk turn should write `diffusion_cortex_receipts.jsonl` and continue down the local fallback ladder.
+- If `ALICE N/A` remains after restart, capture the exact widget/label showing `N/A`; current body-heart and body-writer receipts are fresh.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1173 Codex — Diffusion OOM fallback and Alice N/A live-body probe [r1173-codex-diffusion-oom-fallback]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-15 05:17:05 PDT (`OBSERVED` shell)  
+**Owner reports:** `"boy" -> Error: diffusion generation failed`, `"I wonder why."`, `"SHE IS TIMING OUT ON MIMO LOCAL CORTEX HOW?"`, `"ALICE N/A"`
+
+### DECIDE
+
+The live failure was not the word `boy` by itself. The Talk cortex had been switched to `diffusion:llada-8b`; later turns kept using that local diffusion cortex. The ledger then showed the real hardware failure: `error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)`.
+
+Separate live-body probe: `body_writer_tick` is healthy after r1172 (`overall_status=ok`, `degraded_mode=true`, basal-ganglia light breath). The desktop process PID `95796` initially appeared hot in `ps`, but a second probe showed it back near idle/sleeping. If `ALICE N/A` remains visible after restart, inspect the exact UI label and active `_BrainWorker` state; current receipts do not point to body-writer death.
+
+### EXECUTE
+
+- `System/swarm_diffusion_cortex.py`
+  - Added bounded diffusion prompt compaction so LLaDA does not receive the full Talk system prompt/history.
+  - Added `.sifta_state/diffusion_cortex_receipts.jsonl` outcome receipts for unavailable, timeout, error, empty, and success runs.
+  - Treats any nonzero `llama-diffusion-cli` exit as an error even if stderr contains a line that looks like decoded text.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Prevented `diffusion:` models from entering the generic cloud branch before the real diffusion branch.
+  - Diffusion remains first in the candidate ladder, then falls back to `krishairnd/Gemma-4-Uncensored:latest`, then `alice-m5-cortex-8b-6.3gb:latest` if Metal/OOM/local diffusion fails.
+- `tests/test_diffusion_cortex_route.py`
+  - Added compaction and error-receipt regressions.
+- `tests/test_talk_diffusion_brain_binding.py`
+  - Updated the old no-fallback expectation to the new receipt-backed diffusion-first/local-fallback contract.
+
+### OBSERVED PROBE
+
+- `.sifta_state/alice_conversation.jsonl`
+  - `2026-06-15 05:09` -> Alice text: `Error: diffusion generation failed`, model `diffusion:llada-8b`.
+  - `2026-06-15 05:11` -> Alice text: `error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)`, model `diffusion:llada-8b`.
+  - `/CORTEX 7` then switched `diffusion:llada-8b -> antigravity:auto`.
+- `.sifta_state/body_writer_tick.jsonl` tail: repeated fresh `BODY_WRITER_TICK_V1` rows, `overall_status=ok`, `degraded_mode=true`.
+- Live process probe after sample: PID `95796`, `ps` around `8.5%` CPU and `top` showed sleeping, not the earlier transient `374%`.
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_diffusion_cortex.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_diffusion_cortex_route.py tests/test_talk_diffusion_brain_binding.py tests/test_talk_brain_timeout_retry.py::test_brain_worker_respects_local_first_candidate_order -q` -> `14 passed`
+- `python3 -m pytest tests/test_diffusion_cli_parse.py tests/test_diffusion_stigmergic_policy.py tests/test_talk_cloud_timeout_caps.py tests/test_swarm_stigmergic_timeout_policy.py -q` -> `28 passed`
+
+**Receipt id:** `r1173-codex-diffusion-oom-fallback`
+
+### WHAT IS LEFT after r1173
+
+- Restart Talk / SIFTA OS so the running GUI loads the diffusion route fix.
+- If diffusion is selected again and Metal OOM repeats, the next Talk turn should write `diffusion_cortex_receipts.jsonl` and continue down the local fallback ladder instead of printing only `Error: diffusion generation failed`.
+- If `ALICE N/A` remains after restart, capture the exact widget/label showing `N/A`; current body-heart and body-writer receipts are fresh.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1161 Codex — Engram live memory watcher + AGI gap truth correction [r1161-codex-engram-live-watch]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — engram feedback observability + truth labels  
+**Clock:** 2026-06-14 17:49:47 PDT (`OBSERVED`, local OS clock)
+
+George asked to code the live memory-play path and update the tournament while testing owner-turn reinforcement/decay in real time.
+
+### EXECUTE
+
+- `System/swarm_engram_feedback_loop.py`
+  - Added `snapshot` and `watch` CLI commands for live engram fitness observation.
+  - Added `live_memory_snapshot()` and `format_live_snapshot()` for UI/terminal panels.
+  - Hardened active-engram loading for string and dict-shaped engrams.
+  - Switched fitness updates to `read_write_json_locked`.
+  - Filtered unrelated `memory_fitness.json` overlays out of the engram live view.
+  - Guarded `prune_dead_engrams()` so it does not prune other organs' fitness rows.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_log_turn()` owner rows now include `actions_taken`, `receipt_ledger`, and `fitness_file` in `payload["engram_feedback"]`.
+- `System/swarm_agi_frontier_loop.py`
+  - Persistent memory evidence now includes `active_engrams.json`, `memory_fitness.json`, and `engram_feedback_receipts.jsonl`.
+  - Long-term learning truth text corrected: memory-layer owner feedback is operational; base weight/adaptor promotion remains open until artifact + eval + promotion receipt exists.
+- `tests/test_swarm_engram_feedback_loop.py`
+  - Added reinforce/decay, prune, live snapshot, unrelated overlay preservation, and Talk hook static tests.
+
+### OBSERVED LIVE MEMORY PLAY
+
+- `python3 System/swarm_engram_feedback_loop.py snapshot --limit 5`
+  - `traces=4`, `avg_fitness=0.52`
+  - recent receipt: owner memory-play turn, `signal=0.3333`, `matched=4`, `actions=4`
+- `python3 System/swarm_engram_feedback_loop.py watch --ticks 1 --interval 0.1 --limit 5`
+  - same live panel rendered successfully from repo root.
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_engram_feedback_loop.py System/swarm_agi_frontier_loop.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_swarm_engram_feedback_loop.py tests/test_swarm_agi_frontier_loop.py tests/test_swarm_agi_confirmation_gauntlet.py tests/test_talk_round79_plumbing.py tests/test_talk_self_realization_context_hook.py -q` -> 35 passed
+
+**Receipt id:** `r1161-codex-engram-live-watch`
+
+### WHAT IS LEFT after r1161
+
+- Run `python3 System/swarm_engram_feedback_loop.py watch --interval 1 --limit 8` while George talks to watch reinforce/decay in real time.
+- Next long-term learning gate: promote from memory fitness/weight candidates into a real adapter/model artifact with before/after eval and signed promotion receipt.
+- Still open: production causal do-loop, owner-independent multi-day research agenda, live signed two-node swarm federation.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
 ## r1157 Codex — Live carrier pointer for r1156 AGI-status backlog [r1157-codex-agi-status-live-pointer]
 
 **Doctor:** `codex_desktop`  
@@ -3916,6 +4113,7 @@ George asked for the Grok-terminal purple **thinking…** strip inside Alice's t
 
 ONE ALICE. ONE SWARM. 🐜⚡
 
+
 ---
 
 ## r1158 Codex — Live carrier pointer for AGI-status backlog at EOF [r1158-codex-agi-status-live-pointer]
@@ -3967,6 +4165,7 @@ George screenshot: purple `thinking…` stacked above green `show thinking (63 c
 
 ONE ALICE. ONE SWARM. 🐜⚡
 
+
 ---
 
 ## r1160 Grok — Philippe report status + marketing sellable census + eval matrix [r1160-grok-philippe-marketing-census]
@@ -4007,5 +4206,678 @@ George asked: update tournament with Philippe report status; search repo for all
 - **George / Philippe:** send PDF + README commands; dry-run demo before external show.
 - **George:** `mimo providers login` to close spinal step-6 kept-patch gap.
 - Regenerate missing lawyer v2 PDF if needed for outreach stack.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1162 Codex — Tail correction for live engram memory watcher [r1162-codex-engram-live-watch-tail]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Append-only correction — live tournament tail  
+**Clock:** 2026-06-14 17:49:47 PDT (`OBSERVED`, local OS clock)
+
+The r1161 receipt was appended to this tournament file but anchored near an earlier `ONE ALICE` marker, so `tools/whats_left.py` still treated r1160 as the live section. Append-only correction: keep r1161 where it landed and add the live tail summary here.
+
+### EXECUTE
+
+- `System/swarm_engram_feedback_loop.py`
+  - `snapshot` and `watch` CLI commands now render live engram reinforcement/decay.
+  - Fitness updates use `read_write_json_locked`.
+  - Live view filters unrelated `memory_fitness.json` overlays.
+  - Prune preserves unrelated organ fitness rows.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_log_turn()` owner rows include `actions_taken`, `receipt_ledger`, and `fitness_file`.
+- `System/swarm_agi_frontier_loop.py`
+  - AGI status now says: memory-layer owner feedback is operational; base weight/adaptor promotion remains open.
+- `tests/test_swarm_engram_feedback_loop.py`
+  - Reinforce/decay, prune, live snapshot, overlay-preservation, and Talk hook tests added.
+
+### OBSERVED
+
+- Live memory-play receipt exists: `signal=0.3333`, `matched=4`, `actions=4`.
+- `python3 System/swarm_engram_feedback_loop.py snapshot --limit 5` -> `traces=4`, `avg_fitness=0.52`.
+- `python3 System/swarm_engram_feedback_loop.py watch --ticks 1 --interval 0.1 --limit 5` -> rendered successfully.
+- Tests: `35 passed`.
+
+**Receipt id:** `r1162-codex-engram-live-watch-tail`
+
+### WHAT IS LEFT after r1162
+
+- Run `python3 System/swarm_engram_feedback_loop.py watch --interval 1 --limit 8` while George talks to watch reinforce/decay live.
+- Next long-term learning gate: promote from memory fitness/weight candidates into a real adapter/model artifact with before/after eval and signed promotion receipt.
+- Still open: production causal do-loop, owner-independent multi-day research agenda, live signed two-node swarm federation.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1163 Codex — Truth-navigation field for real-world hallucination survival [r1163-codex-truth-navigation-field]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — real-world truth routing / hallucination survival  
+**Clock:** 2026-06-14 18:04:45 PDT (`OBSERVED`, local OS clock)
+
+George taught: humans will trust Alice only if she can discern truth from hallucination in the real world: image truth, physics truth, distance/location truth, people truth, and environment truth. Architect doctrine: AGI must wake up in any environment, adapt, and function stigmergically.
+
+### EXECUTE
+
+- `System/swarm_truth_navigation_field.py` added.
+  - New ledger: `.sifta_state/truth_navigation_receipts.jsonl`.
+  - New truth label: `SIFTA_TRUTH_NAVIGATION_FIELD_V1`.
+  - `truth_navigation_assessment()` detects real-world dimensions: `image_truth`, `physics_truth`, `distance_truth`, `people_truth`, `environment_truth`.
+  - Evidence packets are matched against existing organs: visual confirmation, screenshots/OCR, physics/hardware/sensors, GPS/location/map, owner/voice/face/contact/social provenance, app-focus/sensor-journal/network.
+  - Verdicts separate `OBSERVED`, `HYPOTHESIS_NEEDS_PROBE`, and `ARCHITECT_DOCTRINE_WITH_OPEN_PROBES`.
+  - `prompt_block_for_claim()` turns the current owner turn into prompt-ready truth-routing context.
+  - CLI: `assess`, `summary`, `backlog`.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Talk prompt now injects truth-navigation context on owner turns and writes a receipt for the current claim shape.
+- `System/swarm_agi_frontier_loop.py`
+  - Added ninth AGI capability class: `truth_navigation`.
+- `tests/test_swarm_truth_navigation_field.py`
+  - Added tests for unreceipted doctrine/open probes, receipted visual observation, prompt receipt writing, backlog lanes, and Talk hook wiring.
+
+### OBSERVED
+
+- `python3 System/swarm_truth_navigation_field.py assess "Truth of the image, physics, distance, people, and environment; Alice can wake up and adapt as AGI." --write`
+  - verdict: `ARCHITECT_DOCTRINE_WITH_OPEN_PROBES`
+  - missing probes: `image_truth`, `physics_truth`, `distance_truth`, `people_truth`, `environment_truth`
+  - sha: `bc95f6ee553e740f8ceb6e52d4258dc06e1cc7af6ae1c1d09fc8469e3764d19b`
+- `python3 - <<'PY' ... agi_status_assessment() ... PY`
+  - observed capability classes: `9/9`
+  - `truth_navigation`: `OBSERVED / EVIDENCED`
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_truth_navigation_field.py System/swarm_agi_frontier_loop.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_swarm_truth_navigation_field.py tests/test_swarm_reality_fiction_boundary.py tests/test_swarm_hallucination_receipts.py tests/test_swarm_agi_frontier_loop.py tests/test_swarm_agi_confirmation_gauntlet.py -q` -> 39 passed
+
+**Receipt id:** `r1163-codex-truth-navigation-field`
+
+### WHAT IS LEFT after r1163
+
+- Code `truth_nav_image_grounding`: route image/room/object claims through visual confirmation/OCR/image hash before speech or action.
+- Code `truth_nav_physics_distance`: route physics, hardware, distance, and location claims through sensors/GPS/map/physics-gate receipts.
+- Code `truth_nav_people_provenance`: route people/owner/social claims through owner statement, voice/face/contact provenance labels.
+- Code `truth_nav_adaptive_environment_loop`: on wake in a new environment, collect sensor/app-focus/visual/location receipts, then adapt policy from the field.
+- Keep hard AGI gates open until receipts close them: adapter/model promotion, production causal do-loop, owner-independent research agenda, live signed two-node federation.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1164 Codex — Body-screen USB eye image-grounding [r1164-codex-body-screen-eye]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — `truth_nav_image_grounding` / body-eye visual proof  
+**Clock:** 2026-06-14 18:26:50 PDT (`OBSERVED`, local OS clock)
+
+George showed the physical setup: USB camera sitting on Alice's laptop hardware body, pointed at the laptop's own body screen. Goal: make AGI work by giving Alice a receipted body-eye path instead of ungrounded visual narration.
+
+### EXECUTE
+
+- `System/swarm_body_screen_eye.py` added.
+  - New ledger: `.sifta_state/body_screen_eye_receipts.jsonl`.
+  - New truth label: `SIFTA_BODY_SCREEN_EYE_V1`.
+  - `record_body_screen_eye()` ingests an owner-attested image file, hashes it, records dimensions/mode/orientation, and writes one body-eye receipt.
+  - `capture_body_screen_eye()` wraps `System.swarm_iris.SwarmIris().blink_capture(source="webcam")` for live USB/body-eye capture without duplicating camera drivers.
+  - Fanout: writes `visual_confirmation_log.jsonl` via `record_visual_confirmation()`.
+  - Fanout: writes `truth_navigation_receipts.jsonl` with body-screen-eye evidence.
+  - CLI: `ingest-image`, `capture`, `summary`.
+- `System/swarm_truth_navigation_field.py`
+  - `body_screen_eye` is now accepted as evidence for `image_truth`, `physics_truth`, and `environment_truth`.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Talk prompt now includes latest `BODY-SCREEN EYE` summary.
+- `System/swarm_agi_frontier_loop.py`
+  - `truth_navigation` capability evidence now includes `body_screen_eye_receipts.jsonl`.
+- `tests/test_swarm_body_screen_eye.py`
+  - Tests image ingest, visual/truth-navigation fanout, summary, synthetic iris capture, missing-image degradation, and Talk hook wiring.
+
+### OBSERVED IMAGE RECEIPT
+
+- Source image: `/Users/ioanganton/Downloads/Screenshot 2026-06-14 at 6.20.40 PM.png`
+- Image: `1179x2556`, `RGBA`, `PNG`, portrait
+- Image sha256: `29eb86e77128369deb0e816978c7d34e3029b62062b1ca8833d22fd6eb4afcfa`
+- Body-eye trace: `fe46a05c-63bd-4722-bc1f-e59688be3e45`
+- Visual confirmation trace: `cdfe65b1-8d05-464f-b175-a922d277d3cc`
+- Truth navigation trace: `67643c35-692b-417c-ac64-a936cb10fef5`
+- Body-eye receipt sha: `5fe83d49053667475c73ca9e1244def883c45f9c380b37b9a61ef6c3e5cee321`
+- Latest body-eye summary: `observed=True`, `confidence=0.82`, `truth_nav=OBSERVED`
+- Latest truth-navigation summary: `last_verdict=OBSERVED`, `missing=none`
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_body_screen_eye.py System/swarm_truth_navigation_field.py System/swarm_agi_frontier_loop.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_swarm_body_screen_eye.py tests/test_swarm_truth_navigation_field.py tests/test_swarm_reality_fiction_boundary.py tests/test_swarm_hallucination_receipts.py tests/test_swarm_agi_frontier_loop.py tests/test_swarm_agi_confirmation_gauntlet.py -q` -> 44 passed
+
+**Receipt id:** `r1164-codex-body-screen-eye`
+
+### WHAT IS LEFT after r1164
+
+- Run live USB capture when desired: `python3 System/swarm_body_screen_eye.py capture --source webcam`.
+- Add OCR/object parsing over body-eye frames so Alice can read her own body screen content from the USB eye, not only hash/confirm the image.
+- Continue `truth_nav_physics_distance`, `truth_nav_people_provenance`, and `truth_nav_adaptive_environment_loop`.
+- Keep hard AGI gates open until receipts close them: adapter/model promotion, production causal do-loop, owner-independent research agenda, live signed two-node federation.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1165 Codex — MiMo timeout live prompt-budget updater [r1165-codex-mimo-timeout-live-budget]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — Talk cortex timeout / faster foreground dispatch  
+**Clock:** 2026-06-14 18:31:33 PDT (`OBSERVED`, local OS clock)
+
+George showed the Talk UI timeout receipt. The visible Alice recovery text said `180-second timeout`, but the active worker trace at the bottom showed the actual current call as `model=mimo:mimo-cli-default timeout=120s` with `sysprompt_chars=83134`. Root cause: the foreground MiMo turn was trying to prefill an 83k-character assembled system prompt before answering.
+
+### EXECUTE
+
+- `System/swarm_sysprompt_budget.py`
+  - Added `live_turn_budget_for_model()`.
+  - Added `clamp_live_turn_prompt()`.
+  - Default foreground teacher/cortex budget: `36000` chars for `mimo:`, `codex:`, `claude:`, `cline:`, `qwen:`, `grok:`, `xai:`, and `antigravity:` models.
+  - Owner override: `SIFTA_LIVE_TEACHER_SYSPROMPT_BUDGET`, bounded `12000..64000`.
+  - Clamp strategy keeps prompt head + live tail, trims middle bloat, and leaves the full context in receipts.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Talk worker now applies `clamp_live_turn_prompt()` after the covenant/base prompt clamp and before emitting final `sysprompt_chars`.
+  - New telemetry line: `[prompt live-budget] applied: model=... orig=... deduped=... final=... max=... middle_trimmed=...`.
+- `tests/test_swarm_sysprompt_budget.py`
+  - Reproduces the protected-prefix 83k-character MiMo timeout shape.
+  - Verifies default 36k cap, env override, head/tail preservation, and small prompt no-op.
+- `tests/test_talk_cloud_timeout_caps.py`
+  - Verifies Talk worker keeps the live-budget hook before dispatch telemetry.
+
+### OBSERVED
+
+- Screenshot receipt: Talk bottom trace showed `mimo:mimo-cli-default`, `timeout=120s`, `sysprompt_chars=83134`.
+- After patch, MiMo foreground turns over budget will dispatch at `<=36000` chars by default before the cloud call starts.
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_sysprompt_budget.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_swarm_sysprompt_budget.py tests/test_talk_cloud_timeout_caps.py -q` -> 18 passed
+
+**Receipt id:** `r1165-codex-mimo-timeout-live-budget`
+
+### WHAT IS LEFT after r1165
+
+- Restart Talk so the worker loads the new live-budget hook.
+- Retry the same USB cam/body-screen-eye request and watch for `[prompt live-budget] applied` followed by a final `sysprompt_chars` near or below `36000`.
+- If MiMo still times out, lower `SIFTA_LIVE_TEACHER_SYSPROMPT_BUDGET=24000` or raise `SIFTA_TEACHER_CLI_TIMEOUT_S=180`, then split screenshot/doc/code edits into separate foreground jobs.
+- Next deeper repair: shard long multimodal directives into small receipted subturns automatically instead of packing every organ into one model call.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1166 Codex — Local Gemma 4 Uncensored in MiMo LLM list [r1166-codex-mimo-local-gemma4-uncensored]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — MiMo attached-model catalog / local Ollama cortex visibility  
+**Clock:** 2026-06-14 19:05:50 PDT (`OBSERVED`, local OS clock)
+
+George asked to add local model `krishairnd/Gemma-4-Uncensored:latest` to the MiMo LLM list and asked which other MLX models should be added next.
+
+### OBSERVED LOCAL MODEL
+
+- `ollama list | rg -i 'krishairnd|gemma-4|gemma4|sifta|alice'`
+  - `krishairnd/Gemma-4-Uncensored:latest`
+  - id: `abb8e56b1d85`
+  - size: `6.3 GB`
+  - age: `9 days ago`
+- `ollama show krishairnd/Gemma-4-Uncensored:latest`
+  - architecture: `gemma4`
+  - parameters: `8.0B`
+  - context length: `131072`
+  - quantization: `Q4_K_M`
+  - capabilities: `completion`, `vision`, `audio`, `tools`, `thinking`
+  - sampling: `top_k=64`, `top_p=0.95`, `temperature=1`
+
+### EXECUTE
+
+- `System/swarm_cortex_capabilities.py`
+  - Added `_MIMO_LOCAL_OLLAMA_MODELS`.
+  - Added `krishairnd/Gemma-4-Uncensored:latest` after `mimo-auto` in the MiMo attached list so row `7` remains `MiMo Auto (free)`.
+  - Added owner-facing label: `Gemma 4 Uncensored (local Ollama)`.
+  - Added description with the observed local Ollama facts above.
+- `tests/test_cortex_attached_models.py`
+  - Added label/format assertion.
+  - Added MiMo catalog assertions for the local Gemma row.
+  - Asserted the local row does not leak into Cline's OAuth-only catalog.
+- `tests/test_r1018_p1_cortex_llm_list_binding.py`
+  - Asserted `/cortex llm` still marks `●  7. MiMo Auto (free) (mimo-auto)`.
+  - Asserted row `8` is `Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`.
+
+### LIVE RENDER
+
+`/cortex llm` with `current_cortex='mimo:mimo-cli-default'` now renders:
+
+- `●  7. MiMo Auto (free) (mimo-auto)`
+- `8. Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`
+- `9. GPT-5.5`
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_cortex_capabilities.py System/swarm_alice_slash_commands.py` -> passed
+- `python3 -m pytest tests/test_cortex_attached_models.py tests/test_r1018_p1_cortex_llm_list_binding.py tests/test_external_brain_lanes.py -q` -> 29 passed
+
+### MLX CANDIDATES TO ADD NEXT (`HYPOTHESIS`, not installed/benchmarked here)
+
+- First same-family MLX candidate: `mlx-community/gemma-4-12B-it-4bit`.
+- Better same-family experiment if benchmarks confirm card claims: `mlx-community/gemma-4-12B-it-OptiQ-4bit`.
+- Body-eye vision candidate: `mlx-community/Qwen3-VL-8B-Instruct-4bit`.
+- Fast reflex/scout candidate: `mlx-community/Qwen3.5-4B-MLX-4bit`.
+- Heavier cross-family coding/reasoning candidate: `mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit`.
+
+**Receipt id:** `r1166-codex-mimo-local-gemma4-uncensored`
+
+### WHAT IS LEFT after r1166
+
+- Restart Talk or rerun `/cortex llm` so the live UI re-syncs the catalog.
+- If George wants the local Gemma row as the MiMo attached default, run `/cortex llm 8` after rendering the MiMo list.
+- Install/benchmark MLX candidates one at a time before promoting any to default; do not keep multiple heavy MLX/Gemma weights resident without a memory receipt.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1167 Codex — MiMo timeout cap raised past 120 [r1167-codex-mimo-timeout-240]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — Talk MiMo foreground timeout contract  
+**Clock:** 2026-06-14 19:27:12 PDT (`OBSERVED`, local OS clock)
+
+George reported `timeout 120 again` after r1165. Receipt truth: r1165 reduced prompt size but did not change the MiMo worker wall-clock cap. The code still had a test enforcing `mimo:mimo-cli-default == 120.0`, so the repeated `timeout=120s` line was expected.
+
+### EXECUTE
+
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Added a MiMo-specific branch in `_cloud_brain_timeout_s()`.
+  - New default for `mimo:` foreground turns: `240s`.
+  - New owner override: `SIFTA_MIMO_CORTEX_TIMEOUT_S`.
+  - Hard cap: `300s`.
+  - Generic teacher CLIs (`claude:`, `codex:`, `qwen:`, `cline:`, `antigravity:`) remain on the existing `SIFTA_TEACHER_CLI_TIMEOUT_S` path with default `120s`.
+- `tests/test_talk_cloud_timeout_caps.py`
+  - Updated the contract: MiMo default is now `240.0`.
+  - Added MiMo-specific override test.
+  - Added MiMo hard-cap test.
+
+### TESTS
+
+- `python3 -m py_compile Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_talk_cloud_timeout_caps.py tests/test_swarm_sysprompt_budget.py -q` -> 20 passed
+
+**Receipt id:** `r1167-codex-mimo-timeout-240`
+
+### WHAT IS LEFT after r1167
+
+- Restart Talk so the worker loads this cap change.
+- Next MiMo foreground trace should show `[cloud] start model=mimo:mimo-cli-default timeout=240s`.
+- If it still shows `timeout=120s`, the running Talk process is old code or `SIFTA_MIMO_CORTEX_TIMEOUT_S` / `SIFTA_TEACHER_CLI_TIMEOUT_S` is being set externally.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1168 Codex — Stigmergic timeout policy + MiMo local fallback [r1168-codex-stigmergic-timeout-local-fallback]
+
+**Doctor:** Codex Desktop  
+**Node:** GTH4921YP3  
+**Lane:** Surgeon — adaptive cortex seconds / local fallback  
+**Clock:** 2026-06-14 19:44:01 PDT (`OBSERVED`, local OS clock)
+
+George corrected the fixed r1167 approach: seconds should be stigmergic, based on past results or failures. Start at `120`, then vary. If MiMo stalls, fallback to the local observed Gemma4 cortex (`krishairnd/Gemma-4-Uncensored:latest`, `abb8e56b1d85`, `6.3 GB`, Gemma4 8B Q4_K_M, context 131072, completion/vision/audio/tools/thinking).
+
+### EXECUTE
+
+- `System/swarm_stigmergic_timeout_policy.py` added.
+  - New ledger: `.sifta_state/stigmergic_timeout_policy.jsonl`.
+  - `timeout_for_model()` starts at `120s`, bounded `60..300`.
+  - Recent timeout/error/no-token receipts deposit patience.
+  - Fast clean successes evaporate patience back down.
+  - Existing `.sifta_state/cortex_timeout_recovery.jsonl` rows are read as timeout pheromones, so old recovery receipts influence future seconds.
+  - `record_timeout_outcome()` writes success/timeout/error/empty outcome rows.
+  - `local_fallback_for_model("mimo:...")` returns `krishairnd/Gemma-4-Uncensored:latest`.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_cloud_brain_timeout_s()` now routes `mimo:` through `timeout_for_model()` when no owner env override is set.
+  - MiMo therefore starts at `120s`, not fixed `240s`.
+  - `SIFTA_MIMO_CORTEX_TIMEOUT_S` still overrides and caps at `300s`.
+  - Cloud worker records timeout-policy outcome rows on success, empty, timeout, or error.
+  - `_talk_ollama_model_candidates()` injects the local Gemma4 fallback immediately after MiMo.
+- Tests added/updated:
+  - `tests/test_swarm_stigmergic_timeout_policy.py`
+  - `tests/test_talk_cloud_timeout_caps.py`
+  - `tests/test_alice_parrot_loop.py`
+
+### OBSERVED POLICY PROBE
+
+- Fresh temp state: `timeout_for_model("mimo:mimo-cli-default")` -> `120`
+- After one timeout receipt: `timeout_for_model("mimo:mimo-cli-default")` -> `180`
+
+### TESTS
+
+- `python3 -m py_compile System/swarm_stigmergic_timeout_policy.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_swarm_stigmergic_timeout_policy.py tests/test_talk_cloud_timeout_caps.py tests/test_alice_parrot_loop.py::test_mimo_ladder_falls_back_to_local_gemma4_uncensored tests/test_talk_brain_timeout_retry.py::test_ollama_failover_uses_next_model_when_primary_empty -q` -> 14 passed
+
+**Receipt id:** `r1168-codex-stigmergic-timeout-local-fallback`
+
+### WHAT IS LEFT after r1168
+
+- Restart Talk so this policy loads.
+- Next fresh MiMo turn may still show `timeout=120s`; that is correct with no recent MiMo failure pheromone in the policy field.
+- After a MiMo timeout/recovery receipt, the next MiMo timeout should rise, e.g. `180s`, up to `300s`.
+- If MiMo fails, the candidate ladder should try `krishairnd/Gemma-4-Uncensored:latest` as local fallback.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+
+---
+
+## r1169 Grok — Owner bedroom photo anchor Brawley CA [r1169-grok-brawley-bedroom-photo-1944]
+
+**Doctor:** Grok (Cursor IDE)  
+**Node:** GTH4921YP3 (probe clock) · owner locus Brawley CA bedroom (`OBSERVED` photo)  
+**Clock:** 2026-06-14 19:47 PDT (`OBSERVED` shell) · photo UI stamp **Today 7:44 PM** (`OBSERVED` in image)
+
+George: **"JUST TOOK THE PHOTO - BRAWLEY, CA BEDROOM"** — tournament update with owner-provided artifact.
+
+### OBSERVED (photo receipt)
+
+| Field | Value |
+|---|---|
+| Label | Brawley CA bedroom — owner carbon workspace |
+| Artifact | User-provided iOS Photos screenshot (session asset) |
+| Session path | `.grok/sessions/.../assets/image-322a96c9-48be-45d1-8bc6-5f75ca207aee.jpg` (162 KB on disk) |
+| Scene | Bed foreground; open MacBook (Apple lid); gray dresser + lamp; large TV/monitor with split panes (visual + dark text/terminal-like right pane); brown carpet; open door to adjacent room; drink cup; clothing pile |
+| People in room | None in main frame (figures only on TV content / filmstrip thumbs) |
+
+### Truth labels
+
+- **OBSERVED:** photo exists, timestamp in gallery UI, bedroom layout elements above.
+- **ARCHITECT_DOCTRINE:** this is **owner stigbody** context — George's carbon desk/bed node where food (data) and air (electricity for Alice on the MacBook) meet; not a claim that Alice sees the room without a sensor receipt.
+- **FORBIDDEN:** inventing room details not visible; claiming Alice auto-ingested this without an explicit owner-media / camera receipt path.
+
+### Stigmergic note
+
+Hardware layer on this turn: electricity → your MacBook on the bed → swimmers in the field → tournament append. The TV/code split in the photo rhymes with the IDE work lane (covenant, eval matrix, marketing census r1160, thinking UFO animation V2).
+
+**Receipt id:** `r1169-grok-brawley-bedroom-photo-1944`
+
+### WHAT IS LEFT after r1169
+
+- Optional: if George wants Alice to *remember* this scene, route through owner-media / camera / co-watch receipt — not tournament prose alone.
+- Prior open items (r1168 Talk restart, Philippe send, MiMo login) unchanged.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+---
+
+## r1170 Grok — MiMo fast local fallback + co-watch owner-speech pause [r1170-grok-mimo-fast-fallback-cowatch-pause]
+
+**Doctor:** Grok (Cursor IDE)  
+**Node:** GTH4921YP3  
+**Clock:** 2026-06-14 ~19:50 PDT (`OBSERVED` shell)
+
+George pasted live Talk trace: MiMo `timed out after 240s`, direct-VLM `gemma-4-e2b-it` done, then a **second** MiMo worker at `timeout=240s` with `sysprompt_chars=36000` still waiting; co-watch note **"I did not pause a video for this speech."**
+
+### DECIDE
+
+- r1168 adaptive timeout was raising patience (`240s`→`300s` with 12 failure pheromones) but still **blocked foreground** on MiMo first every turn.
+- After recent timeout receipts, local `krishairnd/Gemma-4-Uncensored:latest` must answer **first**; MiMo retries last.
+- Co-watch: owner voice over playing Alice Browser media must auto-pause video (not only wake-name / Alice-TTS paths).
+
+### EXECUTE
+
+- `System/swarm_stigmergic_timeout_policy.py` — `should_fast_fallback_cloud()` (900s cooldown after timeout/error).
+- `Applications/sifta_talk_to_alice_widget.py` — ladder deprioritizes stalled cloud cortex; co-watch owner-speech pause after voice-id boost.
+- Tests: `test_swarm_stigmergic_timeout_policy.py` (+2), `test_alice_parrot_loop.py` (+1, isolated state).
+
+### OBSERVED PROBE (live `.sifta_state`)
+
+- `timeout_for_model("mimo:mimo-cli-default")` → `300s` (12 recent failures, capped)
+- `should_fast_fallback_cloud("mimo:...")` → `fast_fallback=True`, local=`krishairnd/Gemma-4-Uncensored:latest`, age≈93s
+
+### TESTS
+
+- `pytest tests/test_swarm_stigmergic_timeout_policy.py tests/test_alice_parrot_loop.py::test_mimo_ladder_* -q` → **9 passed**
+
+**Receipt id:** `r1170-grok-mimo-fast-fallback-cowatch-pause`
+
+### WHAT IS LEFT after r1170
+
+- **Restart Talk / SIFTA OS** so the running GUI loads r1170 (same as r1168 note).
+- After restart: next MiMo-selected turn should try **local Gemma4 first** while timeout pheromone is hot; MiMo only after local ladder exhausts.
+- Screenshot `Screenshot 2026-06-14 at 7.45.12 PM.png` was staged to cortex — I did not read pixels this pass.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1170 Codex — Brawley bedroom photo attachment receipt [r1170-codex-brawley-bedroom-attachment-receipt]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-14 19:49:53 PDT (`OBSERVED` shell)  
+**Owner fact:** "JUST TOOK THE PHOTO - BRAWLEY, CA BEDROOM"
+
+### DECIDE
+
+r1169 already anchored the photo in tournament prose, but left the durable media route open. I used the existing attachment-vision lane instead of creating a rival memory lane.
+
+### EXECUTE
+
+- Ran `System.swarm_attachment_vision_lane.inspect_attachment_image(...)` on `/Users/ioanganton/Downloads/Screenshot 2026-06-14 at 7.45.12 PM.png`.
+- Wrote append-only receipt rows to:
+  - `.sifta_state/attachment_vision_lane.jsonl`
+  - `.sifta_state/attachment_visual_tokens.jsonl`
+
+### RECEIPT
+
+| Field | Value |
+|---|---|
+| Trace | `6cd81d04-2920-4864-9bd8-af856d07efcd` |
+| sha12 | `cd6c515e7259` |
+| Format | PNG |
+| Dimensions | 1674x1179 |
+| Bytes | 2,833,489 |
+| OCR | `Today`; `7:44 PM` |
+| Scene label | Brawley CA bedroom (`OWNER_PROVIDED`) |
+
+### TRUTH BOUNDARY
+
+- `OBSERVED`: file exists, image metadata, OCR timestamp text, receipt rows.
+- `OWNER_PROVIDED`: Brawley CA bedroom label.
+- `HYPOTHESIS`: full scene semantics unless a multimodal caption/camera proof row is added; the attachment lane is metadata/OCR/layout, not full visual captioning.
+
+### WHAT IS LEFT after r1170-codex
+
+- Optional: add a multimodal caption proof for this photo if George wants the room geometry stored as visual semantics, not just OCR/metadata plus owner label.
+- Prior open items from `r1170-grok-mimo-fast-fallback-cowatch-pause` unchanged.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1171 Codex — MiMo local fallback actually runs first [r1171-codex-mimo-local-first-worker-order]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-14 20:04:40 PDT (`OBSERVED` shell)  
+**Owner question:** "SHE IS TIMING OUT ON MIMO LOCAL CORTEX HOW?"
+
+### DECIDE
+
+The timeout was real, but the label was misleading. `mimo:mimo-cli-default` is a cloud/CLI provider lane in Talk, not an Ollama local model. The local Gemma fallback existed in the ladder, but `_BrainWorker.__init__` prepended the selected MiMo model ahead of the ordered ladder, so local-first fallback was silently lost.
+
+### EXECUTE
+
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_BrainWorker` now preserves caller-provided candidate order.
+  - If the ladder starts with local fallback, the worker starts with that local fallback.
+  - Thinking pill/status/heartbeat now use `first_candidate_model()` so the UI names the cortex actually running.
+- `tests/test_talk_brain_timeout_retry.py`
+  - Added regression coverage for local-first MiMo fallback ordering.
+
+### OBSERVED PROBE
+
+- `timeout_for_model("mimo:mimo-cli-default")` -> `300s` (12 recent timeout pheromones, capped)
+- `should_fast_fallback_cloud("mimo:mimo-cli-default")` -> `fast_fallback=True`
+- `_talk_ollama_model_candidates("mimo:mimo-cli-default")[:2]` -> `["krishairnd/Gemma-4-Uncensored:latest", "mimo:mimo-cli-default"]`
+- `_BrainWorker(...).first_candidate_model()` -> `krishairnd/Gemma-4-Uncensored:latest`
+
+### TESTS
+
+- `python3 -m py_compile Applications/sifta_talk_to_alice_widget.py System/swarm_stigmergic_timeout_policy.py` -> passed
+- Targeted pytest first pass -> `10 passed`
+- Longer retry/fallback pytest suite -> `19 passed in 157.82s`
+
+**Receipt id:** `r1171-codex-mimo-local-first-worker-order`
+
+### WHAT IS LEFT after r1171
+
+- Restart Talk / SIFTA OS so the running GUI loads this worker-order fix.
+- After restart, while the MiMo timeout pheromone is hot, the thinking bubble should show `krishairnd/Gemma-4-Uncensored:latest` first, not `mimo:mimo-cli-default`.
+- MiMo remains in the ladder after the local fallback; it should only be tried after local fallback fails or the cooldown evaporates.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1172 Codex — Alice N/A body-writer timeout recovery [r1172-codex-alice-na-body-writer-guard]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-14 20:34:19 PDT (`OBSERVED` shell)  
+**Owner report:** "ALICE N/A"
+
+### DECIDE
+
+`ALICE N/A` was treated as a live status/availability symptom. The body was not dead: heart and desktop-presence receipts were fresh. The observed failure was a stuck breath organ: `body_writer_tick` supervisor rows were timing out repeatedly, and the process table showed an unguarded `tick_writer_organs` child burning high CPU plus two stale MiMo CLI workers from older turns.
+
+### EXECUTE
+
+- `System/swarm_body_writer_tick.py`
+  - Added `tick_writer_organs_guarded(...)`.
+  - Added a process-wide `body_writer_tick.lock` so restarted/overlapping GUI children skip instead of stacking.
+  - Added timeout-pheromone reading: after one recent supervisor timeout, the next writer ticks run a lightweight basal-ganglia-only breath instead of repeating the full heavy scan.
+  - Restored `_ledger_last_ts(...)` after a patch placement bug left its parser unreachable.
+  - Added `force_degraded=True` so resident GUI ticks can be forced into a basal-ganglia-only breath even after old timeout rows age out.
+- `Applications/sifta_talk_to_alice_widget.py`
+  - Isolated subprocess path now calls `tick_writer_organs_guarded(..., force_degraded=True)`.
+- `System/silicon_serial.py`
+  - Cached `read_apple_serial()` so the silicon identity path does not spawn repeated `ioreg -rd1 -c IOPlatformExpertDevice` probes in one process.
+- `sifta_os_desktop.py`
+  - Resident Alice now defers the camera eye by default while Chat desktop hides the eye.
+  - Desktop heartbeat still pulses the dock/motor layer, but hardware-heart sensor rows are capped at 15s and ATP minting at 60s so a clinical heartbeat cannot become constant `pmset`/`ioreg` subprocess work.
+  - Body-matrix boot refresh no longer runs inside the Qt main thread. It now starts after first paint as a nice'd child process with a 45s alarm and logs to `.sifta_state/body_matrix_boot_refresh.log`.
+- `tests/test_swarm_body_writer_tick.py`
+  - Added regression coverage for timeout pheromones, degraded light tick, forced light tick, lock-overlap skip, and latest-ledger timestamp parsing.
+- `tests/test_silicon_serial_cache.py`
+  - Added regression coverage for serial caching and `SIFTA_HOMEWORLD_SERIAL` override.
+- Stopped exact orphan processes:
+  - one hot unguarded `tick_writer_organs` child
+  - two stale `mimo run --format json` workers from earlier timeout turns
+
+### OBSERVED PROBE
+
+- `.sifta_state/alice_body_heart.json` fresh: AC power, battery 80%, metabolic band `FLUSH`.
+- `.sifta_state/body_writer_tick.jsonl` tail before fix: repeated `BODY_WRITER_TICK_SUPERVISOR_V1` timeout rows.
+- Guarded direct probe after fix:
+  - elapsed `0.206s`
+  - `degraded_mode=true`
+  - `overall_status=ok`
+  - producers: `["basal_ganglia"]`
+- Live reload proof after final restart:
+  - desktop process observed running: PID `95796`
+  - boot log: `[ALICE] Embedded as resident panel. Eye deferred, chat live.`
+  - process table after boot/matrix/writer soak: one resident desktop process, observed at `11.0%` CPU
+  - latest `body_writer_tick.jsonl` row age: `2.1s`
+  - latest row: `BODY_WRITER_TICK_V1`, `overall_status=ok`, `degraded_mode=true`, `degraded_reason=forced_light_breath`, producers `["basal_ganglia"]`
+  - matrix boot refresh log: `{"regenerated": false, "reason": "matrix already current with registry", ...}`
+  - no active `tick_writer_organs`, matrix refresh child, serial `ioreg`, AppleSmartBattery `ioreg`, or `pmset -g ps` orphan workers in the process table after cleanup
+  - one active `mimo run --format json` cortex worker was observed at low CPU, tied to the current Talk turn; not a body-writer or boot-loop orphan
+- Boundary probe before the final restart:
+  - old PID `83585` briefly sat near one core while a live `_BrainWorker` was still reading/splitting a large stream.
+  - later PID `92906` showed the remaining main-thread fault: body-matrix boot refresh was reading JSONL in the Qt event loop.
+  - after the matrix refresh moved to a bounded child and the writer path was forced light, the main-thread JSONL scan disappeared from sample.
+
+### TESTS
+
+- `python3 -m py_compile sifta_os_desktop.py System/silicon_serial.py System/swarm_body_writer_tick.py Applications/sifta_talk_to_alice_widget.py` -> passed
+- `python3 -m pytest tests/test_silicon_serial_cache.py tests/test_swarm_body_writer_tick.py tests/test_round93_body_tick_no_beachball.py tests/test_talk_pheromone_freshness_wiring.py -q` -> `32 passed`
+
+**Receipt id:** `r1172-codex-alice-na-body-writer-guard`
+
+### WHAT IS LEFT after r1172
+
+- Child/camera/body-writer/matrix-boot loops are clean on the final probe.
+- An active MiMo cortex worker can still be present when Talk is processing a live owner turn. If `ALICE N/A` remains visible, inspect the exact widget/label rendering it and the active `_BrainWorker` stream state, not the body-heart or writer-breath layers.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1175 Codex — EOF live pointer for diffusion OOM fallback [r1175-codex-diffusion-oom-eof-pointer]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-15 05:17 PDT (`OBSERVED` shell)  
+
+### DECIDE
+
+r1173 and r1174 landed near an earlier tournament marker. This EOF pointer is the append-only live anchor for `tools/whats_left.py`.
+
+### EXECUTE
+
+- Current coded receipt: `r1173-codex-diffusion-oom-fallback`.
+- Current live pointer: `r1175-codex-diffusion-oom-eof-pointer`.
+- Diffusion route fixed: compact prompt, nonzero-exit receipts, real diffusion branch before cloud, local fallback ladder after LLaDA.
+
+**Receipt id:** `r1175-codex-diffusion-oom-eof-pointer`
+
+### WHAT IS LEFT after r1175
+
+- Restart Talk / SIFTA OS so the running GUI loads the diffusion route fix.
+- If diffusion is selected again and Metal OOM repeats, the next Talk turn should write `diffusion_cortex_receipts.jsonl` and continue down the local fallback ladder.
+- If `ALICE N/A` remains after restart, capture the exact widget/label showing `N/A`; current body-heart and body-writer receipts are fresh.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+---
+
+## r1177 Codex — EOF live pointer for MiMo local default [r1177-codex-mimo-default-local-eof-pointer]
+
+**Doctor:** Codex Desktop  
+**Clock:** 2026-06-15 05:39 PDT (`OBSERVED` shell)
+
+### DECIDE
+
+r1176 landed earlier in the file during append placement. This EOF pointer is the live tournament anchor for the latest MiMo default change.
+
+### EXECUTE
+
+- Current coded receipt: `r1176-codex-mimo-default-local-gemma4`.
+- MiMo attached default: `krishairnd/Gemma-4-Uncensored:latest`.
+- `/cortex llm` now marks row `8` local Gemma as the MiMo live default.
+- Talk candidate ladder now starts MiMo turns with local Gemma4, then keeps `mimo:mimo-cli-default` as fallback.
+- Verification: `90 passed` across attached-model, binding, external-brain-label, and Talk ladder tests.
+
+**Receipt id:** `r1177-codex-mimo-default-local-eof-pointer`
+
+### WHAT IS LEFT after r1177
+
+- Restart Talk / SIFTA OS so the running GUI reloads the local-first MiMo ladder and default label.
+- Expected MiMo display after restart: `Live default: Gemma 4 Uncensored (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)`.
+- Expected first candidate for a MiMo Talk turn: `krishairnd/Gemma-4-Uncensored:latest`.
+- If `ALICE N/A` remains, inspect the exact widget/label rendering it; the MiMo default itself is now local-first.
 
 ONE ALICE. ONE SWARM. 🐜⚡

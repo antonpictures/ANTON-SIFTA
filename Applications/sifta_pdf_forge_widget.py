@@ -10,7 +10,7 @@ from __future__ import annotations
 """SIFTA Pdf Forge Widget — stigmergic organ for Alice body."""
 
 import sys
-import webbrowser
+import time
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -23,6 +23,21 @@ from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout
 from System.sifta_base_widget import SiftaBaseWidget
 
 _HTML = _REPO / "Utilities" / "PDF_Forge" / "PDF_Forge.html"
+
+
+def _route_url_to_alice_browser(url: str) -> bool:
+    try:
+        state = _REPO / ".sifta_state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "alice_browser_open_url.txt").write_text(str(url), encoding="utf-8")
+        (state / "alice_browser_open_url_new_tab.flag").write_text("1\n", encoding="utf-8")
+        (state / "alice_browser_alice_only.flag").write_text(
+            f"{time.time()}\n{url}\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -59,7 +74,7 @@ class PdfForgeWidget(SiftaBaseWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
         btn = QPushButton("Open PDF Forge in Browser")
-        btn.clicked.connect(lambda: webbrowser.open(url.toString()))
+        btn.clicked.connect(lambda: _route_url_to_alice_browser(url.toString()))
         layout.addWidget(btn)
         self._status.setText("Browser fallback — double-click Open PDF Forge.command also works")
 

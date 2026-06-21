@@ -26,7 +26,6 @@ import urllib.request
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 _OLLAMA_HOST = "http://localhost:11434"
-_DEFAULT_MODEL = "alice-m5-cortex-8b-6.3gb:latest"  # primary local Alice cortex on this M5
 
 
 def is_available() -> bool:
@@ -89,7 +88,12 @@ def stream_chat(
     # Strip "ollama:" prefix if present
     bare_model = model.split(":", 1)[1] if model.startswith("ollama:") else model
     if not bare_model:
-        bare_model = _DEFAULT_MODEL
+        try:
+            from System.sifta_inference_defaults import resolve_live_local_ollama_default
+
+            bare_model = resolve_live_local_ollama_default()
+        except Exception:
+            bare_model = "alice-m5-cortex-8b-6.3gb:latest"
 
     payload = {
         "model": bare_model,
@@ -142,10 +146,15 @@ def stream_chat(
 
 # Convenience for sifta_app.py selection logic
 def get_default_model() -> str:
+    try:
+        from System.sifta_inference_defaults import resolve_live_local_ollama_default
+
+        live = resolve_live_local_ollama_default()
+        if live:
+            return f"ollama:{live}"
+    except Exception:
+        pass
     models = available_models()
     if models:
-        preferred = f"ollama:{_DEFAULT_MODEL}"
-        if preferred in models:
-            return preferred
         return models[0]
-    return f"ollama:{_DEFAULT_MODEL}"
+    return "ollama:alice-m5-cortex-8b-6.3gb:latest"

@@ -42,19 +42,41 @@ except Exception:  # pragma: no cover
     _write_camera_target = None  # type: ignore[assignment]
 
 
-# Camera index → label table used when we only know the integer index.
-# Mirrors the AVFoundation enumeration that swarm_iris discovers.
-_INDEX_TO_NAME = {
-    0: "USB Camera VID:1133 PID:2081",
-    1: "MacBook Pro Camera",
-    2: "OBS Virtual Camera",
-    3: "iPhone Camera",
-    4: "Ioan's iPhone Camera",
-}
+def _live_camera_ring() -> list[tuple[int, str]]:
+    """Plug-and-play camera ring from live enumeration (r1230)."""
+    try:
+        from System.swarm_camera_target import (
+            is_iphone_or_continuity,
+            is_virtual_or_loopback_camera,
+            live_devices,
+        )
+    except Exception:
+        return []
 
-# Alice M5 AVFoundation real-camera ring. OBS/Desk View are intentionally
-# skipped here; they are virtual surfaces, not physical eyes to saccade into.
-_CAMERA_INDICES = [1, 0, 3, 4]
+    ring: list[tuple[int, str]] = []
+    for i, (_uid, desc) in enumerate(live_devices()):
+        if is_iphone_or_continuity(desc) or is_virtual_or_loopback_camera(desc):
+            continue
+        ring.append((i, desc))
+    return ring
+
+
+def _camera_indices() -> list[int]:
+    ring = _live_camera_ring()
+    return [i for i, _desc in ring] if ring else [0]
+
+
+def _name_for_camera_index(idx: int):
+    for i, desc in _live_camera_ring():
+        if i == int(idx):
+            return desc
+    try:
+        from System.swarm_camera_target import name_for_index
+
+        return name_for_index(int(idx))
+    except Exception:
+        return None
+
 
 def _read_last_rms() -> float:
     if not _AUDIO_LOG.exists():
@@ -171,14 +193,15 @@ from System.swarm_entorhinal_cortex import SwarmEntorhinalCortex
 
 def _camera_idx_to_angle(idx: int) -> float:
     """
-    Map a camera index in _CAMERA_INDICES to its sector centre on the ring
+    Map a camera index in the live ring to its sector centre on the ring
     [-π, π). The ring is equally partitioned across all cameras, so saccade
     selection is symmetric and generalises to any number of cameras.
     """
-    if idx not in _CAMERA_INDICES:
+    ring = _camera_indices()
+    if idx not in ring:
         return 0.0
-    pos = _CAMERA_INDICES.index(idx)
-    n = len(_CAMERA_INDICES)
+    pos = ring.index(idx)
+    n = len(ring)
     return -math.pi + (pos + 0.5) * (2.0 * math.pi / n)
 
 
@@ -188,12 +211,13 @@ def _angle_to_camera_idx(theta: float) -> int:
     Inverse of _camera_idx_to_angle. Used by the saccade selector so the
     cognitive map decides which physical camera to wake up.
     """
-    n = len(_CAMERA_INDICES)
+    ring = _camera_indices()
+    n = len(ring)
     # Wrap to [-π, π)
     theta = ((float(theta) + math.pi) % (2.0 * math.pi)) - math.pi
     pos = int(((theta + math.pi) / (2.0 * math.pi)) * n)
     pos = max(0, min(n - 1, pos))
-    return _CAMERA_INDICES[pos]
+    return ring[pos]
 
 
 class SwarmMultisensoryColliculus:
@@ -333,11 +357,9 @@ class SwarmMultisensoryColliculus:
         if cann_idx == prev_idx:
             # Cognitive map says "stay" — but Kalman uncertainty is too high
             # to stay. Fall back to round-robin to force exploration.
-            idx_pos = (
-                _CAMERA_INDICES.index(prev_idx)
-                if prev_idx in _CAMERA_INDICES else 0
-            )
-            next_idx = _CAMERA_INDICES[(idx_pos + 1) % len(_CAMERA_INDICES)]
+            ring = _camera_indices()
+            idx_pos = ring.index(prev_idx) if prev_idx in ring else 0
+            next_idx = ring[(idx_pos + 1) % len(ring)]
             cann_chose = False
         else:
             next_idx = cann_idx
@@ -347,7 +369,7 @@ class SwarmMultisensoryColliculus:
         if _write_camera_target is not None:
             try:
                 _write_camera_target(
-                    name=_INDEX_TO_NAME.get(int(next_idx)),
+                    name=_name_for_camera_index(int(next_idx)),
                     index=int(next_idx),
                     writer="swarm_multisensory_colliculus",
                     priority=20,
@@ -482,9 +504,9 @@ def proof_of_property() -> Dict[str, bool]:
         for _ in range(60):
             c2.cortex.integrate_neural_field(I_cam3, velocity=0.0, dt=1.0)
         bump_center = float(c2.cortex.get_bump_center())
-        round_robin_next = _CAMERA_INDICES[
-            (_CAMERA_INDICES.index(1) + 1) % len(_CAMERA_INDICES)
-        ]  # would be 2
+        ring = _camera_indices()
+        anchor = 1 if 1 in ring else ring[0]
+        round_robin_next = ring[(ring.index(anchor) + 1) % len(ring)]
         c2._saccade(uncertainty=999.0, sector=None)
         results["cann_drives_saccade"] = bool(
             c2.current_cam_idx == 3 and c2.current_cam_idx != round_robin_next

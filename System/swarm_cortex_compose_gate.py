@@ -26,12 +26,12 @@ from System.swarm_hallucination_receipts import (
 )
 
 _THINKING_LEAK_RE = re.compile(
-    r"(Here(?:'s| is) (?:a |my )?thinking process|MY COGNITIVE FRAMEWORK|thinking process that leads to the suggested response)",
+    r"\b(Here(?:'s| is) (?:a |my )?thinking process|MY COGNITIVE FRAMEWORK|thinking process that leads to the suggested response)\b",
     re.IGNORECASE,
 )
 
 _FABRICATED_CLAIM_RE = re.compile(
-    r"(SEARCH COMPLETE|back button patched|history stored in `?Alice_Memory_Core`?|Receipt:\s*[0-9a-f]{8,})",
+    r"\b(SEARCH COMPLETE|back button patched|history stored in `?Alice_Memory_Core`?|Receipt:\s*[0-9a-f]{8,})\b",
     re.IGNORECASE,
 )
 
@@ -79,7 +79,17 @@ def apply_cortex_compose_gate(
 
     # 2. Fabricated action / receipt claims (the exact r602 counterfeit wound pattern)
     evidence_lower = (evidence_text or trail_block or "").lower()
-    has_receipt_evidence = "receipt" in evidence_lower or "ledger" in evidence_lower or "observed" in evidence_lower
+    negated_receipt = bool(
+        re.search(
+            r"\b(?:no|not|without|missing|absent)\b.{0,40}\b(?:receipt|ledger|observed)\b"
+            r"|\b(?:receipt|ledger|observed)\b.{0,40}\b(?:missing|absent|not\s+found)\b",
+            evidence_lower,
+        )
+    )
+    has_receipt_evidence = (
+        ("receipt" in evidence_lower or "ledger" in evidence_lower or "observed" in evidence_lower)
+        and not negated_receipt
+    )
     if _FABRICATED_CLAIM_RE.search(text) and not has_receipt_evidence:
         # No strong receipt evidence in the supplied context -> counterfeit
         reason = "fabricated_action_claim_without_ledger_receipt"

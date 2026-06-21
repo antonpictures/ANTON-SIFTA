@@ -27,6 +27,7 @@ REPO = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO / ".sifta_state"
 TRUTH_LABEL = "MIMO_STIGMERGIC_ADAPTER_V1"
 DOCTOR = "mimo_stigmergic_adapter"
+DEFAULT_MIMO_CLI_MODEL = "mimo/mimo-auto"
 
 PHEROMONE_LEDGER = "mimo_stigmergic_pheromones.jsonl"
 TRACE_LEDGER = "mimo_stigmergic_traces.jsonl"
@@ -289,7 +290,8 @@ def mimo_stigmergic_call(
     *,
     driving_organ: str = "unknown",
     intent: str = "",
-    model: str = "mimo-v2.5-pro",
+    model: str = DEFAULT_MIMO_CLI_MODEL,
+    cli_path: str | None = None,
     state_dir: Path | str | None = None,
     timeout_s: int = 180,
 ) -> MimoCallReceipt:
@@ -317,7 +319,7 @@ def mimo_stigmergic_call(
     input_digest = hashlib.sha256(full_prompt.encode()).hexdigest()[:16]
 
     # 2. CALL MIMO CLI
-    cli = shutil.which("mimo")
+    cli = str(cli_path or "").strip() or shutil.which("mimo")
     if not cli:
         receipt = MimoCallReceipt(
             call_id=call_id,
@@ -344,8 +346,10 @@ def mimo_stigmergic_call(
         cli, "run", "--format", "json",
         "--dir", str(REPO),
         "--dangerously-skip-permissions",
-        full_prompt,
     ]
+    if str(model or "").strip():
+        cmd.extend(["-m", str(model).strip()])
+    cmd.append(full_prompt)
 
     try:
         proc = subprocess.run(

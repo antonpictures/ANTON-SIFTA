@@ -31,10 +31,6 @@ _ATTENTION_STATUS = "sensory_attention_status.json"
 _GAZE_LEDGER = "gaze_interest_monitor.jsonl"
 _FACE_LEDGER = "face_detection_events.jsonl"
 
-_ROOM_EYE_NAME = "USB Camera VID:1133 PID:2081"
-_CLOSE_EYE_NAME = "MacBook Pro Camera"
-
-
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text("utf-8"))
@@ -84,14 +80,20 @@ def _coerce_float(value: Any, default: float = 0.0) -> float:
 
 def _role_for_eye(name: str, index: Any, active_sense: str = "") -> str:
     text = f"{name} {active_sense}".casefold()
-    try:
-        idx = int(index)
-    except Exception:
-        idx = None
-    if "room_patrol_eye" in text or _ROOM_EYE_NAME.casefold() in text or idx == 0:
+    if "room_patrol_eye" in text or "room_patrol" in text:
         return "room_patrol_eye"
-    if "close_owner_eye" in text or _CLOSE_EYE_NAME.casefold() in text or idx == 1:
+    if "close_owner_eye" in text or "close_owner" in text:
         return "close_owner_eye"
+    try:
+        from System.swarm_camera_target import is_builtin_owner_camera
+
+        if is_builtin_owner_camera(name):
+            return "close_owner_eye"
+    except Exception:
+        if "macbook" in text or "facetime" in text or "built-in" in text:
+            return "close_owner_eye"
+    if str(name or "").strip():
+        return "room_patrol_eye"
     return active_sense or "unknown_eye"
 
 

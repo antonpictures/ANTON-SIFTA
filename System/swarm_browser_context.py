@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlparse
@@ -28,6 +29,7 @@ STATE_DIR = REPO_ROOT / ".sifta_state"
 
 TRUTH_LABEL = "BROWSER_CONTEXT_V1"
 BROWSER_PAGE_DIARY_TRUTH_LABEL = "BROWSER_PAGE_DIARY_V1"
+LATEST_CONTEXT = "browser_context_latest.json"
 _PAGE_DIARY_LATEST = "browser_page_diary_latest.json"
 _EPISODIC_DIARY = "episodic_diary.jsonl"
 
@@ -65,6 +67,14 @@ def publish_browser_context(
     }
 
     try:
+        (base / LATEST_CONTEXT).write_text(
+            json.dumps(row, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+    try:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
@@ -82,6 +92,28 @@ def publish_browser_context(
         pass
 
     return row
+
+
+def latest_browser_context(state_dir: Optional[Path | str] = None) -> dict[str, Any]:
+    """Return the current browser context without scanning the whole JSONL ledger."""
+    base = _state_dir(state_dir)
+    try:
+        row = json.loads((base / LATEST_CONTEXT).read_text(encoding="utf-8"))
+        if isinstance(row, dict):
+            return row
+    except Exception:
+        pass
+    path = base / "browser_context.jsonl"
+    if not path.exists():
+        return {}
+    try:
+        for line in reversed(_tail_lines(path, max_lines=5, max_bytes=256_000)):
+            if line.strip():
+                row = json.loads(line)
+                return row if isinstance(row, dict) else {}
+    except Exception:
+        pass
+    return {}
 
 
 def _domain(url: str) -> str:
@@ -470,18 +502,8 @@ def get_current_browser_context_block(state_dir: Optional[Path | str] = None) ->
      The limb sees [media status / page summary]."
     """
     base = _state_dir(state_dir)
-    path = base / "browser_context.jsonl"
-
-    if not path.exists():
-        return ""
-
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if not lines:
-            return ""
-        last = json.loads(lines[-1])
-    except Exception:
+    last = latest_browser_context(state_dir=base)
+    if not last:
         return ""
 
     url = last.get("url", "")
@@ -1086,8 +1108,34 @@ _BROWSER_HISTORY_RECALL_RE = re.compile(
     r"|\bvisited\s+together\b"
     r"|\b(?:we|i)\s+visited\b.{0,80}\b(?:alice\s+browser|browser|instagram)\b"
     r"|\blatest\s+(?:instagram\s+)?link\b.{0,80}\bvisited\b"
-    r"|\bnot\s+a\s+video\b.{0,40}\b(?:photo|picture|image)\b",
+    r"|\bnot\s+a\s+video\b.{0,40}\b(?:photo|picture|image)\b"
+    r"|\b(?:what|which).{0,50}\b(?:brows(?:e|ing)|visited|watch(?:ed|ing))\b.{0,80}\b(?:yesterday|today)\b"
+    r"|\b(?:yesterday|today)\b.{0,80}\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
+    r"|\bbrows(?:e|ing)\s+yesterday\b",
 )
+
+_BROWSE_TIME_RECALL_RE = re.compile(
+    r"(?is)"
+    r"\b(?:what|which).{0,50}\b(?:brows(?:e|ing)|visited|watch(?:ed|ing))\b"
+    r"|\b(?:yesterday|today)\b.{0,80}\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
+    r"|\bbrows(?:e|ing)\s+yesterday\b",
+    re.IGNORECASE,
+)
+
+_HOUR_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
 
 
 def _owner_turn_outranks_browser_lanes(owner_text: str) -> bool:
@@ -1120,7 +1168,132 @@ def _has_watched_recall_intent(owner_text: str) -> bool:
         return True
     if _PODCAST_CO_WATCH_RECALL_RE.search(owner_text or ""):
         return True
+    if _BROWSE_TIME_RECALL_RE.search(owner_text or ""):
+        return True
     return bool(_BROWSER_HISTORY_RECALL_RE.search(owner_text or ""))
+
+
+def _parse_browse_recall_hour(owner_text: str) -> Optional[int]:
+    """Extract local hour 0-23 from owner text like '7am' or 'at 7'."""
+    text = " ".join((owner_text or "").lower().split())
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text)
+    if m:
+        hour = int(m.group(1)) % 12
+        if (m.group(3) or "").startswith("p"):
+            hour += 12
+        return hour
+    m = re.search(r"\bat\s+(\d{1,2})\b", text)
+    if m:
+        hour = int(m.group(1))
+        if 1 <= hour <= 12 and "pm" in text and hour < 12:
+            hour += 12
+        return hour
+    for word, value in _HOUR_WORDS.items():
+        if re.search(rf"\b{word}\b", text):
+            hour = value % 12
+            if "pm" in text and hour < 12:
+                hour += 12
+            return hour
+    return None
+
+
+def browse_receipts_near_local_time(
+    owner_text: str,
+    *,
+    state_dir: Optional[Path | str] = None,
+    now: Optional[float] = None,
+    window_minutes: float = 45.0,
+    max_rows: int = 6,
+) -> list[dict[str, Any]]:
+    """Rows from browse ledgers near a named local day/hour (e.g. yesterday 7am)."""
+    if not _BROWSE_TIME_RECALL_RE.search(owner_text or ""):
+        return []
+    t_now = float(now if now is not None else time.time())
+    local_now = datetime.fromtimestamp(t_now)
+    text = " ".join((owner_text or "").lower().split())
+    day = local_now.date()
+    if "yesterday" in text:
+        day = day - timedelta(days=1)
+    hour = _parse_browse_recall_hour(owner_text)
+    if hour is None:
+        hour = 7
+    target = datetime(day.year, day.month, day.day, hour, 0, 0)
+    target_ts = target.timestamp()
+    half = max(900.0, float(window_minutes) * 60.0)
+    start_ts = target_ts - half
+    end_ts = target_ts + half
+    base = _state_dir(state_dir)
+    rows: list[dict[str, Any]] = []
+    for name in ("browser_context.jsonl", "alice_browse_history.jsonl", "browser_page_state.jsonl"):
+        path = base / name
+        if not path.exists():
+            continue
+        for row in _history_rows_from(path, max_scan_lines=12000):
+            try:
+                ts = float(row.get("ts") or 0.0)
+            except Exception:
+                continue
+            if ts < start_ts or ts > end_ts:
+                continue
+            url = str(row.get("url") or "").strip()
+            if not url or _is_direct_asset_url(url):
+                continue
+            rows.append(
+                {
+                    "ts": ts,
+                    "url": url,
+                    "title": str(row.get("title") or "").strip() or "(untitled)",
+                    "source": name,
+                }
+            )
+    rows.sort(key=lambda r: float(r.get("ts") or 0.0))
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        key = str(row.get("url") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped[: max(1, int(max_rows))]
+
+
+def browse_time_recall_fast_reply(
+    owner_text: str,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, str]:
+    """Receipt-backed answer for 'what was browsing yesterday at 7am?' — no hypotheses."""
+    if _owner_turn_outranks_browser_lanes(owner_text or ""):
+        return {}
+    if not _BROWSE_TIME_RECALL_RE.search(owner_text or ""):
+        return {}
+    matches = browse_receipts_near_local_time(owner_text, state_dir=state_dir)
+    hour = _parse_browse_recall_hour(owner_text) or 7
+    day_word = "yesterday" if "yesterday" in (owner_text or "").casefold() else "today"
+    if not matches:
+        return {
+            "reply": (
+                f"OBSERVED: I searched my browser ledgers for {day_word} around {hour:02d}:00 local "
+                "and found no browse receipt in that window. I will not guess — name another "
+                "anchor (site, title word, or exact minute) and I can widen the search."
+            ),
+            "open_url": "",
+        }
+    lines = [
+        f"OBSERVED browse receipts near {day_word} ~{hour:02d}:00 local (from my body ledgers):"
+    ]
+    open_url = ""
+    for row in matches[:5]:
+        try:
+            clock = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(row.get("ts") or 0.0)))
+        except Exception:
+            clock = "?"
+        title = str(row.get("title") or "(untitled)")[:90]
+        url = str(row.get("url") or "")
+        lines.append(f"- {clock} | {title} | {url}")
+        if not open_url and url:
+            open_url = url
+    return {"reply": "\n".join(lines), "open_url": ""}
 
 
 def _co_watch_memory_matches(
@@ -1205,6 +1378,9 @@ def watched_memory_fast_reply(
         return explicit
     if not _has_watched_recall_intent(owner_text or ""):
         return {}
+    time_reply = browse_time_recall_fast_reply(owner_text, state_dir=state_dir)
+    if time_reply.get("reply"):
+        return time_reply
     base = _state_dir(state_dir)
     terms = _recall_terms_from_text(owner_text or "")
     podcast_recall = bool(_PODCAST_CO_WATCH_RECALL_RE.search(owner_text or "")) or any(
@@ -1292,13 +1468,17 @@ def watched_memory_fast_reply(
 __all__ = [
     "TRUTH_LABEL",
     "BROWSER_PAGE_DIARY_TRUTH_LABEL",
+    "LATEST_CONTEXT",
     "publish_browser_context",
+    "latest_browser_context",
     "record_browser_page_diary",
     "linked_parent_pages_for_asset_url",
     "recent_browsing_history",
     "recent_browsing_history_block",
     "search_watched_history",
     "watched_memory_recall_block",
+    "browse_receipts_near_local_time",
+    "browse_time_recall_fast_reply",
     "watched_memory_fast_reply",
     "explicit_owner_url_open_fast_reply",
     "owner_youtube_recall_open_fast_reply",

@@ -70,6 +70,39 @@ def test_stage_stream_prefix_holds_bracketed_status_theater():
     assert mod._stage_stream_prefix_decision("**Interpretation:** The user is expressing") == "hold"
 
 
+def test_stage_stream_prefix_holds_thinking_process_scaffold():
+    mod = _load_widget_module()
+
+    assert mod._stage_stream_prefix_decision("Here's a thinking process for generating that response:") == "hold"
+    assert mod._stage_stream_prefix_decision("1. Analyze the User Input: The user is correcting STT.") == "hold"
+    assert mod._stage_stream_prefix_decision("Determine Tone & Persona: be apologetic.") == "hold"
+
+
+def test_thinking_panel_withholds_split_thinking_process_scaffold():
+    mod = _load_widget_module()
+
+    class Dummy:
+        _thinking_panel_reasoning_prefix_carry = ""
+        _thinking_panel_reasoning_leak_suppressed = False
+        _thinking_panel_reasoning_notice_sent = False
+
+    dummy = Dummy()
+    first = mod.TalkToAliceWidget._sanitize_thinking_panel_piece(dummy, "Here")
+    second = mod.TalkToAliceWidget._sanitize_thinking_panel_piece(
+        dummy,
+        "'s a thinking process for generating that response:\n\n1. Analyze the User Input.",
+    )
+    third = mod.TalkToAliceWidget._sanitize_thinking_panel_piece(
+        dummy,
+        "2. Determine Tone & Persona: be apologetic.",
+    )
+
+    assert first == ""
+    assert "withheld" in second
+    assert "thinking process" not in second.lower()
+    assert third == ""
+
+
 def test_first_person_alice_rule_is_in_runtime_prompt():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True, user_text="Alice, the system is you.")

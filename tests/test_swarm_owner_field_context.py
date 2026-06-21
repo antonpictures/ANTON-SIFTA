@@ -85,9 +85,5 @@ def test_owner_field_prompt_surfaces_readback_rule(tmp_path):
     assert "do not invent" in prompt.lower()
 
 
-def test_runtime_contract_names_owner_unified_field_rule():
-    contract = runtime_quarantine_contract()
-
-    assert "Owner unified field" in contract
-    assert "desktop presence" in contract
-    assert "Unknown gaps remain unknown" in contract
+def test_runtime_contract_retired_from_sysprompt_r1401():
+    assert runtime_quarantine_contract() == ""

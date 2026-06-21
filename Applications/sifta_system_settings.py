@@ -148,6 +148,8 @@ def _looks_remote_model_name(name: str) -> bool:
         or n.startswith("qwen-")
         or n.startswith("cline:")
         or n.startswith("cline-")
+        or n.startswith("mimo:")
+        or n.startswith("mimo-")
     )
 
 
@@ -2346,6 +2348,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
             elif _looks_remote_model_name(tag) and tag.lower().startswith("cline"):
                 # Round 89 — Cline open-source CLI cortex (Apache 2.0, multi-provider).
                 display = f"{tag}  ·  Cline OAuth teacher (open-source)  ·  ☁ cloud"
+            elif _looks_remote_model_name(tag) and tag.lower().startswith("mimo"):
+                display = f"{tag}  ·  MiMo CLI teacher  ·  ☁ cloud"
             elif tag.lower().startswith("mlx-vlm:"):
                 if "gemma-4-12b-it-8bit-mlx" in tag.lower():
                     display = f"{tag}  ·  MLX local Gemma 4 12B original/censored test  ·  8-bit safetensors"
@@ -2394,6 +2398,35 @@ class SystemSettingsWidget(SiftaBaseWidget):
         picker_row.addWidget(cycle_btn)
 
         root.addLayout(picker_row)
+
+        llm_row = QHBoxLayout()
+        llm_row.setSpacing(8)
+        llm_label = QLabel("LLM")
+        llm_label.setStyleSheet(
+            "color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;"
+        )
+        llm_row.addWidget(llm_label)
+        self._attached_llm_combo = QComboBox()
+        self._attached_llm_combo.setObjectName("AliceCortexAttachedLLMPicker")
+        self._attached_llm_combo.setEditable(False)
+        self._attached_llm_combo.setStyleSheet(
+            "QComboBox { background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
+            "border: 1px solid rgb(0, 150, 200); border-radius: 8px; "
+            "padding: 6px 10px; font-size: 12px; font-family: Menlo; }"
+            "QComboBox::drop-down { border: none; width: 18px; }"
+            "QComboBox QAbstractItemView { background: rgb(0, 22, 36); "
+            "color: rgb(0, 220, 255); selection-background-color: rgb(0, 60, 90); }"
+            "QComboBox:disabled { color: rgb(90, 100, 120); }"
+        )
+        self._attached_llm_combo.currentIndexChanged.connect(self._on_attached_llm_picker_changed)
+        llm_row.addWidget(self._attached_llm_combo, stretch=1)
+        self._attached_llm_status = QLabel("")
+        self._attached_llm_status.setStyleSheet(
+            "color: rgb(100, 120, 150); font-size: 10px; font-family: Menlo;"
+        )
+        llm_row.addWidget(self._attached_llm_status)
+        root.addLayout(llm_row)
+        self._refresh_attached_llm_picker()
 
         inventory_heading = QLabel("📦  Installed model bodies  ·  MLX / GGUF / server runtimes")
         inventory_heading.setStyleSheet(
@@ -2730,6 +2763,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             except Exception:
                 pass
         self._refresh_cortex_auth_indicator()
+        self._refresh_attached_llm_picker()
 
     def _selected_cortex_tag(self) -> str:
         try:
@@ -2741,6 +2775,82 @@ class SystemSettingsWidget(SiftaBaseWidget):
         except Exception:
             pass
         return str(get_default_ollama_model() or "")
+
+    def _refresh_attached_llm_picker(self) -> None:
+        """Repopulate the cortex-scoped attached LLM dropdown (r1233)."""
+        if not hasattr(self, "_attached_llm_combo"):
+            return
+        try:
+            from System.swarm_cortex_capabilities import (
+                active_attached_model_for_cortex,
+                attached_models_for_cortex,
+                format_attached_model,
+                resolve_attached_models_cortex_id,
+            )
+        except Exception:
+            return
+
+        combo = self._attached_llm_combo
+        status = getattr(self, "_attached_llm_status", None)
+        cortex_tag = self._selected_cortex_tag()
+        cid = resolve_attached_models_cortex_id(cortex_tag, state_dir=STATE)
+        rec = attached_models_for_cortex(cid, state_dir=STATE)
+        models = [str(m) for m in (rec.get("attached_models") or []) if str(m).strip()]
+        active = active_attached_model_for_cortex(cortex_tag, state_dir=STATE)
+
+        combo.blockSignals(True)
+        combo.clear()
+        if not models:
+            combo.addItem("(provider default — cortex tag is the model)", userData="")
+            combo.setEnabled(False)
+            if status is not None:
+                status.setText("no attached LLM list for this cortex")
+        else:
+            combo.setEnabled(True)
+            active_idx = 0
+            for i, mid in enumerate(models):
+                label = format_attached_model(mid)
+                combo.addItem(label, userData=mid)
+                if mid == active:
+                    active_idx = i
+            combo.setCurrentIndex(active_idx)
+            if status is not None:
+                status.setText(
+                    f"ledger default: {format_attached_model(active) if active else '(unset)'}"
+                )
+        combo.blockSignals(False)
+
+    def _on_attached_llm_picker_changed(self, idx: int) -> None:
+        """Persist attached/default LLM for the currently selected cortex only."""
+        if not hasattr(self, "_attached_llm_combo"):
+            return
+        try:
+            model_id = self._attached_llm_combo.itemData(idx)
+        except Exception:
+            return
+        if not model_id:
+            return
+        try:
+            from System.swarm_cortex_capabilities import (
+                format_attached_model,
+                persist_attached_llm_default,
+            )
+        except Exception:
+            return
+        cortex_tag = self._selected_cortex_tag()
+        receipt = persist_attached_llm_default(
+            cortex_tag,
+            str(model_id),
+            state_dir=STATE,
+            source="system_settings_attached_llm_picker",
+        )
+        if not receipt.get("ok"):
+            self._refresh_attached_llm_picker()
+            return
+        if hasattr(self, "_attached_llm_status"):
+            self._attached_llm_status.setText(
+                f"set: {format_attached_model(str(receipt.get('to_default') or model_id))}"
+            )
 
     def _last_cortex_completion_timestamp(self) -> float | None:
         path = STATE / "work_receipts.jsonl"
@@ -3258,6 +3368,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         self._populate_model_inventory(str(snap["default_ollama_model"]))
         self._refresh_cortex_auth_indicator()
+        self._refresh_attached_llm_picker()
 
         # Privacy
         self.storage_state_card.set_metric(f"{snap['state_mb']:.1f} MB", "target ceiling is 50 MB")

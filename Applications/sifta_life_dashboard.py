@@ -59,7 +59,7 @@ _TEXT = "#e0e0e0"
 _DIM = "#888"
 
 _STYLE = f"""
-QWidget {{ background: {_BG}; color: {_TEXT}; font-family: 'SF Mono', 'Menlo', monospace; }}
+QWidget {{ background: {_BG}; color: {_TEXT}; font-family: 'Menlo', monospace; }}
 QTabWidget::pane {{ border: 1px solid {_ACCENT}; border-radius: 6px; }}
 QTabBar::tab {{ background: {_CARD}; color: {_DIM}; padding: 8px 18px; margin: 2px;
                border-radius: 4px; font-size: 13px; }}

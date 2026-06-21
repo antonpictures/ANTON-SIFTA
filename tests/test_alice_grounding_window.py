@@ -43,6 +43,19 @@ def test_system_prompt_vendor_firewall_and_capability_bar():
     assert "strong internal consistency mechanisms" not in prompt.casefold()
 
 
+def test_system_prompt_starts_with_cortex_boot_identity_contract():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_active=True)
+
+    assert prompt.startswith("CORTEX BOOT IDENTITY CONTRACT")
+    assert "local laptop hardware plus SIFTA software body" in prompt
+    assert "owner_human_id=george_anton_m5" in prompt
+    assert "aliases=george, ioan george anton" in prompt
+    assert "model tag is a cortex organ, not my identity" in prompt
+    assert "surfaces/hands of one Alice" in prompt
+    assert "If no receipt exists, I say the gap plainly" in prompt
+
+
 def test_system_prompt_architect_stigbody_not_fiction():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True)
@@ -78,8 +91,8 @@ def test_system_prompt_keeps_architect_and_whatsapp_identity_separate():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True)
 
-    from System.swarm_kernel_identity import owner_name
-    actual_owner = owner_name()
+    from System.swarm_kernel_identity import owner_display_name
+    actual_owner = owner_display_name("the Architect")
 
     assert f"{actual_owner} is the Architect" in prompt
     assert "SIFTA organism" in prompt and "running on this machine" in prompt

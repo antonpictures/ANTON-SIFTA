@@ -28,8 +28,17 @@ if str(_REPO) not in sys.path:
 from System.swarm_camera_target import write_target, read_target
 
 _LEDGER = _REPO / ".sifta_state" / "ide_screen_swimmers.jsonl"
-_MACBOOK_CAMERA = "MacBook Pro Camera"
-_LOGITECH_CAMERA = "USB Camera VID:1133 PID:2081"
+def _owner_camera_name() -> str:
+    from System.swarm_eye_registry import live_owner_eye_device
+
+    return str(live_owner_eye_device().get("name") or "MacBook Pro Camera")
+
+
+def _world_camera_name() -> str:
+    from System.swarm_eye_registry import live_owner_eye_device, live_world_eye_device
+
+    world = live_world_eye_device()
+    return str(world.get("name") or _owner_camera_name())
 
 def get_latest_ide_state() -> Optional[dict]:
     if not _LEDGER.exists():
@@ -52,8 +61,8 @@ def determine_camera_for_x(x: int) -> str:
     Assuming x >= 1728 is the external Ultrawide screen.
     """
     if x < 1728:
-        return _MACBOOK_CAMERA
-    return _LOGITECH_CAMERA
+        return _owner_camera_name()
+    return _world_camera_name()
 
 def main():
     print("[*] SIFTA IDE Gaze Tracker Online.")

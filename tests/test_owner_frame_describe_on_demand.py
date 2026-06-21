@@ -19,6 +19,7 @@ def test_is_owner_visual_describe_query_detects_clothes_and_colors():
     assert _is_owner_visual_describe_query("what can you see now")
     assert not _is_owner_visual_describe_query("can you see me")
     assert not _is_can_you_see_me_query("describe my clothes")
+    assert not _is_can_you_see_me_query("CAN U SEE ATTACHED BUTTON ON CURRENT PAGE?")
 
 
 def test_describe_owner_frame_on_demand_writes_receipt(tmp_path: Path):

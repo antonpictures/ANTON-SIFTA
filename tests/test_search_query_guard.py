@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests: context-aware search guard (SIFTA r234).
 
-George 2026-05-31: "Where can I buy this type of bikini? Can you search on Google?" produced
-a literal q=on+Google search. The real target ('this type of bikini') lives in the conversation
+George 2026-05-31: "Where can I buy this type of swimsuit? Can you search on Google?" produced
+a literal q=on+Google search. The real target ('this type of swimsuit') lives in the conversation
 (the photo Alice just described), so a deterministic literal search is wrong — such queries must
 route to the cortex, which composes the real query from context. This pins the guard. The helper
 is PyQt-free, so it's extracted and exec'd without importing the Qt widget."""
@@ -25,6 +25,8 @@ for _n in _mod.body:
             "_CONTEXTUAL_BROWSER_SEARCH_RE",
             "_OWNER_META_ROUTING_CORRECTION_RE",
             "_SEARCH_AUDIT_OR_CORRECTION_RE",
+            "_OWNER_DETERMINISTIC_DETECTOR_DIRECTIVE_RE",
+            "_OWNER_BROWSER_BUTTON_VISIBILITY_RE",
         )
         for t in _n.targets
     ):
@@ -34,7 +36,9 @@ for _n in _mod.body:
         "_is_contextual_browser_search_request",
         "_is_owner_meta_routing_correction",
         "_is_search_audit_or_routing_correction",
+        "_is_owner_deterministic_detector_directive",
         "_is_contextual_browser_search_effector_request",
+        "_is_owner_browser_button_visibility_correction",
     ):
         exec(ast.get_source_segment(_SRC, _n), _NS)
 guard = _NS["_search_query_is_contextual_or_junk"]
@@ -45,14 +49,14 @@ contextual_search_effector = _NS["_is_contextual_browser_search_effector_request
 
 @pytest.mark.parametrize("q", [
     "on Google", "on", "google", "", "it", "this", "that one",
-    "this type of bikini", "that dress", "these shoes", "json", '{"query":"ceramic vase"}',
+    "this type of swimsuit", "that dress", "these shoes", "json", '{"query":"ceramic vase"}',
 ])
 def test_junk_or_contextual_routes_to_cortex(q):
     assert guard(q) is True
 
 
 @pytest.mark.parametrize("q", [
-    "pink and black checkered bikini", "blue running shoes",
+    "pink and black checkered swimsuit", "blue running shoes",
     "kylin milan swimwear", "best espresso machine 2026",
 ])
 def test_concrete_query_fires_literal_search(q):
@@ -70,7 +74,7 @@ def test_cowatch_learning_find_out_is_not_browser_search_effector():
 
 
 def test_explicit_contextual_buy_or_search_remains_effector():
-    assert contextual_search_effector("Where can I buy this type of bikini? Can you search on Google?")
+    assert contextual_search_effector("Where can I buy this type of swimsuit? Can you search on Google?")
     assert contextual_search_effector("search for these shoes on the web")
 
 
@@ -82,6 +86,38 @@ def test_meta_routing_correction_is_not_contextual_search_effector():
 
     assert contextual_search(text)
     assert meta_routing_correction(text)
+    assert not contextual_search_effector(text)
+
+
+def test_deterministic_detector_phrase_is_not_contextual_search_effector():
+    text = (
+        "THAT WAS DETERMINISTIC ANSWER, UNACCEPTABLE. "
+        "SEND IT TO DETERMINISTIC DETECTOR APP IN YOUR BODY"
+    )
+
+    assert guard(text)
+    assert not contextual_search_effector(text)
+
+
+def test_nav_button_visibility_correction_is_not_google_search_effector():
+    """r1475: x.com nav label SEARCH must not fire contextual Google search."""
+    button_visibility = _NS["_is_owner_browser_button_visibility_correction"]
+    text = (
+        "YOU PRINTED TOO MUCH TEXT, YOU DONT SEE RETRY BUTON ANYWHERE? -- "
+        "I SEE: RETY, HOME, SEARCH, NOTIFICATIONS, FOLLOW,.... "
+        "YOU DONT SEE THESE BUTTONS?"
+    )
+
+    assert button_visibility(text)
+    assert contextual_search(text)
+    assert not contextual_search_effector(text)
+
+
+def test_retry_too_much_text_is_button_visibility_not_search():
+    button_visibility = _NS["_is_owner_browser_button_visibility_correction"]
+    text = "I DID NOT SEE THE RETRY -- IT WAS SO MUCH TEXT"
+
+    assert button_visibility(text)
     assert not contextual_search_effector(text)
 
 

@@ -19,7 +19,17 @@ from System import swarm_ollama_vision_arm as ov
 from System import swarm_cortex_capabilities as cc
 
 
-def test_gemma4_preferred_over_other_vision_models():
+def test_krishna_preferred_over_other_vision_models():
+    inst = [
+        "llava:13b",
+        "krishairnd/Gemma-4-Uncensored:latest",
+        "sifta-gemma4-alice:latest",
+        "deepseek-v3:latest",
+    ]
+    assert ov.pick_local_vision_model(installed=inst) == "krishairnd/Gemma-4-Uncensored:latest"
+
+
+def test_gemma4_preferred_when_krishna_absent():
     inst = ["llava:13b", "sifta-gemma4-alice:latest", "deepseek-v3:latest"]
     assert ov.pick_local_vision_model(installed=inst) == "sifta-gemma4-alice:latest"
 

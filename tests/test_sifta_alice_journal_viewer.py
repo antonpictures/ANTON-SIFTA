@@ -44,3 +44,10 @@ def test_journal_viewer_prints_compact_local_journal_label(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "05-11-26_14:24 | turn" in out
     assert "George asked me to keep better journal dates." in out
+
+
+def test_journal_viewer_exports_manifest_widget_class():
+    viewer = _load_viewer_module()
+    widget_class = getattr(viewer, "AliceJournalViewer")
+
+    assert widget_class.APP_NAME == "Alice Journal Viewer"

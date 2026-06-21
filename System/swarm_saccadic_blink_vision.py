@@ -887,45 +887,72 @@ def _resolve_owner_frame_path(state: Path) -> tuple[Path | None, float | None]:
 def _owner_describe_prompt(owner_text: str = "") -> str:
     _ = owner_text  # reserved for future owner-specific focus
     return (
-        "Describe what the owner is wearing and the visible colors in this MacBook "
-        "camera frame. Name shirt/top color, visible clothing, and the scene behind "
-        "them. Be specific and brief. Only describe what is visible."
+        "PHYSICAL ANCHOR + NO THEATER (STRICT): This is a fresh camera frame of the physical person in front of the computer. "
+        "Real person visible = physical-world anchor. Describe ONLY what is unambiguously visible in the pixels. "
+        "First sentence MUST be: 'The person in this frame is wearing [exact visible color(s)] [exact garment, e.g. orange one-piece swimsuit or pink top and skirt].' "
+        "Name dominant colors exactly (orange, black, blush pink, etc.). If glare, lighting, or angle makes it unclear, say 'color not clearly visible'. "
+        "Do not invent outfits, continue previous descriptions, or use poetic language. Be literal and brief. Only pixels."
     )
 
 
 def _run_owner_frame_vlm(frame: Path, *, owner_text: str = "") -> dict[str, Any]:
-    """Run local VLM on an owner frame. Pacino guard does not apply to owner_eye."""
+    """Run local vision on an owner frame. Pacino guard does not apply to owner_eye."""
     prompt = _owner_describe_prompt(owner_text)
+    mlx_err = ""
     try:
-        from System.swarm_mlx_vlm_brain import describe_image
+        from System.swarm_ollama_vision_arm import describe_image_local, pick_local_vision_model
 
-        text = str(
-            describe_image(
+        model = pick_local_vision_model()
+        if model:
+            arm_result = describe_image_local(
                 str(frame),
-                prompt=prompt,
-                max_tokens=220,
-                timeout_s=int(os.environ.get("SIFTA_OWNER_DESCRIBE_TIMEOUT_S", "120") or "120"),
+                prompt,
+                model=model,
+                timeout_s=float(os.environ.get("SIFTA_OWNER_DESCRIBE_TIMEOUT_S", "120") or "120"),
             )
-            or ""
-        ).strip()
-        if text and not text.startswith("["):
-            return {
-                "status": "ok",
-                "source": "local_vlm:mlx_vlm_brain",
-                "eye_role": "owner_eye",
-                "description": text[:800],
-            }
-        if text:
-            return {
-                "status": "unavailable",
-                "source": "local_vlm:mlx_vlm_brain",
-                "eye_role": "owner_eye",
-                "description": text[:800],
-            }
+            text = str(getattr(arm_result, "output", "") or "").strip()
+            if getattr(arm_result, "ok", False) and text:
+                return {
+                    "status": "ok",
+                    "source": f"local_vlm:ollama_vision_agent:{getattr(arm_result, 'model', model)}",
+                    "eye_role": "owner_eye",
+                    "description": text[:800],
+                }
     except Exception as exc:
         mlx_err = f"{type(exc).__name__}: {exc}"
-    else:
-        mlx_err = ""
+
+    force_mlx = str(os.environ.get("SIFTA_FORCE_OSMQWOPUS_BROWSER_DESCRIBE", "0") or "0").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if force_mlx:
+        try:
+            from System.swarm_mlx_vlm_brain import describe_image
+
+            text = str(
+                describe_image(
+                    str(frame),
+                    prompt=prompt,
+                    max_tokens=220,
+                    timeout_s=int(os.environ.get("SIFTA_OWNER_DESCRIBE_TIMEOUT_S", "120") or "120"),
+                )
+                or ""
+            ).strip()
+            if text and not text.startswith("["):
+                return {
+                    "status": "ok",
+                    "source": "local_vlm:mlx_vlm_brain",
+                    "eye_role": "owner_eye",
+                    "description": text[:800],
+                }
+            if text:
+                return {
+                    "status": "unavailable",
+                    "source": "local_vlm:mlx_vlm_brain",
+                    "eye_role": "owner_eye",
+                    "description": text[:800],
+                }
+        except Exception as exc:
+            mlx_err = mlx_err or f"{type(exc).__name__}: {exc}"
 
     try:
         from System.swarm_cosmos_reason1 import probe_and_infer

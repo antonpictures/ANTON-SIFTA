@@ -166,6 +166,16 @@ def mark_owner_activity(source: str) -> OwnerHeartbeatSnapshot:
         _record_owner_return_gap(previous_gap)
     _current_last_activity_ts = now
     _current_last_activity_source = source
+    try:
+        from System.swarm_keyboard_mic_guard import (
+            is_keyboard_source_activity,
+            note_owner_keyboard_activity,
+        )
+
+        if is_keyboard_source_activity(source):
+            note_owner_keyboard_activity(now)
+    except Exception:
+        pass
 
     new_mode = _compute_mode(now)
     _current_mode = new_mode

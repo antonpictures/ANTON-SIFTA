@@ -31,6 +31,9 @@ AUDIO_INGRESS_LOG_NAME = "audio_ingress_log.jsonl"
 ACOUSTIC_FINGERPRINTS_LOG_NAME = "acoustic_fingerprints.jsonl"
 SENSOR_LANE_JOURNAL_NAME = "sensor_lane_journal.jsonl"
 SENSOR_LANE_DEDUPE_NAME = "sensor_lane_dedupe.json"
+JOURNAL_DEFINITION_STATE_NAME = "journal_defecation_dedupe.json"
+JOURNAL_DEFINITION_CONSOLIDATED_NAME = "alice_journal_consolidated.jsonl"
+JOURNAL_DEFINITION_RECEIPTS_NAME = "journal_defecation_receipts.jsonl"
 
 ALICE_JOURNAL_DIR_NAME = "alice_journal"
 OWNER_SCHEDULE_DIR_NAME = "owner_schedule"
@@ -48,7 +51,7 @@ CODING_APPS = {
     "PyCharm",
 }
 
-PHONE_APPS = {"FaceTime", "Phone", "WhatsApp", "Messages", "Signal", "Telegram"}
+PHONE_APPS = {"FaceTime", "Phone", "WhatsApp", "Messages", "Signal"}
 TALK_MARKERS = ("talk to alice", "sifta python gui os", "alice widget")
 AUDIO_FRESH_S = 120.0
 VOICE_FRESH_S = 300.0
@@ -205,6 +208,50 @@ def _load_sensor_dedupe(path: Path) -> dict[str, Any]:
 def _write_sensor_dedupe(path: Path, data: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(dict(data), sort_keys=True), encoding="utf-8")
+
+
+def _load_defecation_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"seen": {}}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"seen": {}}
+    if isinstance(raw, dict) and isinstance(raw.get("seen"), dict):
+        return {"seen": raw.get("seen", {})}
+    return {"seen": {}}
+
+
+def _write_defecation_state(path: Path, state: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(state), sort_keys=True, ensure_ascii=False), encoding="utf-8")
+
+
+def _prune_defecation_state(state: dict[str, Any], *, cutoff_ts: float) -> None:
+    seen = state.get("seen")
+    if not isinstance(seen, dict):
+        state["seen"] = {}
+        return
+    stale = []
+    for signature, meta in list(seen.items()):
+        if not isinstance(meta, Mapping):
+            stale.append(signature)
+            continue
+        emitted_ts = float(meta.get("emitted_ts") or 0.0)
+        if emitted_ts < cutoff_ts:
+            stale.append(signature)
+    for signature in stale:
+        seen.pop(signature, None)
+
+
+def _journal_defecation_row_id(row: Mapping[str, Any]) -> str:
+    return _stable_id(
+        {
+            "ts": float(row.get("ts") or 0.0),
+            "source": str(row.get("source") or "unknown"),
+            "line": str(row.get("line") or ""),
+        }
+    )
 
 
 def _sensor_row_id(lane: str, ledger: str, row: Mapping[str, Any]) -> str:
@@ -1033,6 +1080,146 @@ def format_recent_sensor_lanes_for_prompt(*, state_dir: Path | str | None = None
     return "\n".join(lines)
 
 
+def journal_defecation_once(
+    *,
+    state_dir: Path | str | None = None,
+    window_hours: float = 24.0,
+) -> dict[str, Any]:
+    """STGM journal metabolism / elimination (defecation of dups).
+
+    Groups same-type rows (by source + base line) in the recent Alice Journal
+    timeline, concatenates each duplicate group into one evidence row, and writes
+    a receipt when new groups are produced. Idempotent against repeated calls by
+    deduping emitted signatures on disk.
+    """
+    from collections import defaultdict
+    state = _state_dir(state_dir)
+    journal_path = state / "alice_first_person_journal.jsonl"
+    cons_path = state / JOURNAL_DEFINITION_CONSOLIDATED_NAME
+    rec_path = state / JOURNAL_DEFINITION_RECEIPTS_NAME
+    dedupe_path = state / JOURNAL_DEFINITION_STATE_NAME
+
+    if not journal_path.exists():
+        return {"action": "no_journal", "consolidated_groups": 0, "dups_handled": 0, "receipt": None}
+
+    entries = []
+    try:
+        for line in journal_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip(): continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                entries.append(row)
+    except Exception:
+        return {"action": "read_failed", "consolidated_groups": 0, "dups_handled": 0, "receipt": None}
+
+    now = time.time()
+    cutoff = now - (window_hours * 3600)
+    recent = [e for e in entries if float(e.get("ts", 0)) >= cutoff]
+
+    # Dedup across repeated auto-runs and reboots.
+    # A signature is tied to the exact duplicate group (source + base text + row ids),
+    # so only genuinely new groups are written again.
+    dedupe_state = _load_defecation_state(dedupe_path)
+    seen = dedupe_state.get("seen")
+    if not isinstance(seen, dict):
+        seen = {}
+        dedupe_state["seen"] = seen
+
+    groups: dict[str, list] = defaultdict(list)
+    for e in recent:
+        src = str(e.get("source") or "unknown")
+        line = str(e.get("line") or "")
+        base = line.split(" source=")[0][:80] if " source=" in line else line[:80]
+        key = f"{src}|{base}"
+        groups[key].append(e)
+
+    emitted: list[dict[str, Any]] = []
+    suppressed = 0
+    duplicate_group_counts: list[int] = []
+    for key, group in groups.items():
+        if len(group) <= 1: continue
+        duplicate_group_counts.append(len(group))
+        group = sorted(group, key=lambda row: float(row.get("ts") or 0.0))
+        times = [float(row.get("ts", 0.0) or 0.0) for row in group]
+        min_t, max_t = times[0], times[-1]
+        row_ids = [_journal_defecation_row_id(e) for e in group]
+        signature = _stable_id({"group_key": key, "rows": row_ids})
+        if signature in seen:
+            suppressed += 1
+            continue
+        lines = [str(e.get("line") or str(e)[:100]) for e in group]
+        concat = {
+            "ts": now,
+            "truth_label": "JOURNAL_DEFECATION_V1",
+            "kind": "CONCATENATED_DUPLICATE",
+            "group_key": key,
+            "time_min": min_t,
+            "time_max": max_t,
+            "count": len(group),
+            "concatenated": " || ".join(lines[:10]),
+            "original_count": len(group),
+            "source": "journal_defecation_once",
+            "row_ids": row_ids,
+        }
+        emitted.append(concat)
+        seen[signature] = {
+            "emitted_ts": now,
+            "group_key": key,
+            "count": len(group),
+            "time_min": min_t,
+            "time_max": max_t,
+        }
+
+    # Keep only recent dedupe signatures so this file stays bounded.
+    retention = max(3600.0 * 24, float(window_hours) * 3600 * 3)
+    _prune_defecation_state(dedupe_state, cutoff_ts=now - retention)
+
+    receipt: dict[str, Any] | None = None
+    total_dup_rows = sum(duplicate_group_counts)
+    total_dups_in_window = max(0, total_dup_rows - len(duplicate_group_counts))
+    dups_handled = sum(c.get("count", 0) - 1 for c in emitted)
+    if emitted:
+        for c in emitted:
+            try:
+                append_line_locked(cons_path, c)
+            except Exception:
+                with cons_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(c, ensure_ascii=False) + "\n")
+
+        receipt = {
+            "ts": now,
+            "truth_label": "JOURNAL_STGM_DEFECATION",
+            "operation": "journal_defecation",
+            "ok": True,
+            "groups_eliminated": len(emitted),
+            "dups_handled": dups_handled,
+            "window_hours": window_hours,
+            "window_start_ts": cutoff,
+        }
+        receipt["receipt_hash"] = _stable_id(receipt)
+        try:
+            with rec_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(receipt, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    try:
+        _write_defecation_state(dedupe_path, dedupe_state)
+    except Exception:
+        pass
+
+    # This is intentionally explicit to keep result fields stable across callers.
+    return {
+        "action": "journal_defecation",
+        "consolidated_groups": len(emitted),
+        "dups_handled": dups_handled,
+        "dups_eliminated": sum(c.get("count", 0) - 1 for c in emitted),
+        "suppressed_existing_groups": suppressed,
+        "total_dups_in_window": total_dups_in_window,
+        "receipt": receipt,
+    }
+
+
 __all__ = [
     "ACTIVE_OWNER_ACTIVITY_NAME",
     "OWNER_ACTIVITY_LOG_NAME",
@@ -1048,6 +1235,7 @@ __all__ = [
     "format_current_activity_for_prompt",
     "format_recent_sensor_lanes_for_prompt",
     "read_active_owner_activity",
+    "journal_defecation_once",
 ]
 
 

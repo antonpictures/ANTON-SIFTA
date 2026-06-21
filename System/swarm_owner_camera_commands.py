@@ -66,10 +66,79 @@ _SELF_ACTION_RE = re.compile(
     r")\s+(?:switch|change|move|route|turn|look|focus|use|select|activate|open|increase|decrease|raise|lower)\b",
     re.IGNORECASE,
 )
+_EMBODIMENT_CAMERA_TEACHING_RE = re.compile(
+    r"\bpointed\s+at\b"
+    r"|\bpointing\s+at\b"
+    r"|\bsee\s+for\s+yourself\b"
+    r"|\bso\s+you\s+can\s+see\b"
+    r"|\byour\s+screen\s+body\b"
+    r"|\bscreen\s+body\b",
+    re.IGNORECASE,
+)
+_DIRECT_CAMERA_COMMAND_RE = re.compile(
+    r"^\s*(?:switch|change|use|select|activate|move|route|turn|focus)\s+(?:to\s+)?(?:the\s+)?"
+    r"(?:usb|logitech|side|external|macbook|front|iphone|obs|camera|eye)\b",
+    re.IGNORECASE,
+)
+
+
+def is_embodiment_camera_teaching_turn(text: str) -> bool:
+    """Owner is teaching embodiment/vision — not issuing a short camera switch command."""
+    clean = " ".join(str(text or "").replace("’", "'").split())
+    if not clean:
+        return False
+    if _DIRECT_CAMERA_COMMAND_RE.search(clean):
+        return False
+    if _EMBODIMENT_CAMERA_TEACHING_RE.search(clean):
+        return True
+    if len(clean.split()) >= 14 and re.search(
+        r"\b(?:beautiful|good\s+job|deterministic|unacceptable|see\s+for\s+yourself)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        return bool(_CAMERA_WORD_RE.search(clean))
+    return False
+
+
+def _owner_eye_target() -> dict[str, Any]:
+    from System.swarm_eye_registry import live_owner_eye_device
+
+    eye = live_owner_eye_device()
+    return {
+        "name": str(eye.get("name") or ""),
+        "index": eye.get("index"),
+        "unique_id": eye.get("unique_id"),
+        "role": "front_camera",
+    }
+
+
+def _world_eye_target() -> dict[str, Any] | None:
+    from System.swarm_eye_registry import live_world_eye_device
+
+    eye = live_world_eye_device()
+    if not eye.get("name"):
+        return None
+    return {
+        "name": str(eye.get("name")),
+        "index": eye.get("index"),
+        "unique_id": eye.get("unique_id"),
+        "role": "side_camera",
+    }
+
+
+def _is_owner_eye_name(name: str) -> bool:
+    try:
+        from System.swarm_camera_target import is_builtin_owner_camera
+
+        return bool(is_builtin_owner_camera(name))
+    except Exception:
+        return "macbook" in str(name or "").casefold() or "facetime" in str(name or "").casefold()
 
 
 def _target_from_text(text: str, *, current: dict[str, Any] | None = None) -> dict[str, Any] | None:
     clean = " ".join(str(text or "").replace("’", "'").split()).casefold()
+    if is_embodiment_camera_teaching_turn(text):
+        return None
     if _SELF_ACTION_RE.search(clean):
         return None
     # r522: "I'm going to use a USB cord" is owner self-narration about a cable,
@@ -80,17 +149,9 @@ def _target_from_text(text: str, *, current: dict[str, Any] | None = None) -> di
     if not _SWITCH_RE.search(clean):
         return None
     if re.search(r"\b(?:front|macbook|built[- ]?in|close)\b", clean):
-        return {
-            "name": "MacBook Pro Camera",
-            "index": 1,
-            "role": "front_camera",
-        }
+        return _owner_eye_target()
     if re.search(r"\b(?:side|usb|logitech|room|external)\b", clean):
-        return {
-            "name": "USB Camera VID:1133 PID:2081",
-            "index": 0,
-            "role": "side_camera",
-        }
+        return _world_eye_target()
     if re.search(r"\biphone\b", clean):
         return {
             "name": "iPhone Camera",
@@ -107,21 +168,16 @@ def _target_from_text(text: str, *, current: dict[str, Any] | None = None) -> di
     # target receipt. Toggle the two physical eyes the owner is testing now.
     if re.search(r"\b(?:switch|change|toggle|cycle)\b", clean) and re.search(r"\b(?:camera|eye)\b", clean):
         current = current or {}
-        current_name = " ".join(str(current.get("name") or "").casefold().split())
-        current_index = current.get("index")
-        if current_index == 1 or "macbook" in current_name:
-            return {
-                "name": "USB Camera VID:1133 PID:2081",
-                "index": 0,
-                "role": "side_camera",
-                "toggle_from": current.get("name") or current_index,
-            }
-        return {
-            "name": "MacBook Pro Camera",
-            "index": 1,
-            "role": "front_camera",
-            "toggle_from": current.get("name") or current_index,
-        }
+        current_name = str(current.get("name") or "")
+        if _is_owner_eye_name(current_name):
+            world = _world_eye_target()
+            if world is None:
+                return None
+            world["toggle_from"] = current.get("name") or current.get("index")
+            return world
+        owner = _owner_eye_target()
+        owner["toggle_from"] = current.get("name") or current.get("index")
+        return owner
     return None
 
 
@@ -169,12 +225,18 @@ def handle_owner_camera_command(
 
         written = write_target(
             name=target["name"],
-            index=target["index"],
+            index=target.get("index"),
+            unique_id=target.get("unique_id"),
             writer="owner_camera_command",
             priority=_OWNER_CAMERA_LOCK_PRIORITY,
             lease_s=_OWNER_CAMERA_LOCK_LEASE_S,
             respect_lease=True,
         )
+        if written:
+            target = dict(target)
+            for key in ("name", "index", "unique_id"):
+                if written.get(key) is not None:
+                    target[key] = written.get(key)
 
     acuity_written: dict[str, Any] | None = None
     if acuity_direction:

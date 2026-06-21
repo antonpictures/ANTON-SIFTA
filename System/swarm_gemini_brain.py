@@ -172,6 +172,19 @@ _ANTIGRAVITY_DEFAULT_MENU = ("antigravity:auto",)  # r352: Google Antigravity `a
 # appears only when the binary is actually installed on this node (live
 # registry, not memory — a menu row for absent tissue would be a lie).
 _MIMO_DEFAULT_MENU = ("mimo:mimo-cli-default",)
+# Batch teacher CLIs block in subprocess.run and emit no tokens until done.
+# Talk's no-token watchdog treats that as a stall unless we pulse liveness first.
+_BATCH_CLI_LIVENESS_TOKEN = "\u200b"
+
+
+def mimo_borg_single_cortex_enabled() -> bool:
+    """Owner policy: expose one MiMo hub in the cortex picker, not six direct CLIs."""
+    flag = os.environ.get("SIFTA_MIMO_BORG_SINGLE_CORTEX", "1").strip().lower()
+    return flag not in {"0", "false", "no", "off", "direct"}
+
+
+def _emit_batch_cli_liveness() -> Iterator[Tuple[str, Any]]:
+    yield ("token", _BATCH_CLI_LIVENESS_TOKEN)
 
 
 def _mimo_cli_installed() -> bool:
@@ -361,6 +374,75 @@ def _is_mimo_model(name: str) -> bool:
     return n.startswith("mimo:") or n.startswith("mimo-")
 
 
+def _is_mimo_borg_parallel_cli_cortex(name: str) -> bool:
+    """Legacy Talk cortex tags that must route through the MiMo hub, not direct CLIs."""
+    return (
+        _is_grok_model(name)
+        or _is_claude_model(name)
+        or _is_codex_model(name)
+        or _is_qwen_model(name)
+        or _is_cline_model(name)
+    )
+
+
+def _normalize_mimo_bridge_attached(attached: str) -> str:
+    """Map legacy cortex attached ids to MiMo-bridge picker rows."""
+    mid = str(attached or "").strip()
+    if not mid:
+        return mid
+    low = mid.lower()
+    if low.startswith("openai-codex:"):
+        bare = mid.split(":", 1)[1].lower()
+        for candidate in (
+            "GPT-5.5",
+            "GPT-5.4",
+            "GPT-5.4-Mini",
+            "GPT-5.3-Codex-Spark",
+        ):
+            if candidate.lower().replace(".", "-") == bare.replace(".", "-"):
+                return candidate
+    if "accounts/fireworks/models/" in low:
+        return mid.rsplit("/", 1)[-1]
+    return mid
+
+
+def _coerce_talk_cortex_to_mimo_hub(model: str) -> tuple[str, str, str]:
+    """ONE-WAY Talk: parallel CLI cortex tags become MiMo hub + attached brain."""
+    source = str(model or "").strip()
+    if not (
+        mimo_borg_single_cortex_enabled()
+        and _mimo_cli_installed()
+        and _is_mimo_borg_parallel_cli_cortex(source)
+    ):
+        return source, "", ""
+
+    attached = ""
+    try:
+        from System.swarm_cortex_capabilities import active_attached_model_for_cortex
+
+        attached = active_attached_model_for_cortex(source, state_dir=_STATE)
+    except Exception:
+        attached = ""
+
+    if not attached:
+        if _is_grok_model(source):
+            attached = grok_cli_model_for(source)
+        elif _is_codex_model(source):
+            attached = os.environ.get("SIFTA_CODEX_ARM_MODEL", "").strip() or "GPT-5.3-Codex-Spark"
+        elif _is_claude_model(source):
+            attached = os.environ.get("SIFTA_CLAUDE_ARM_MODEL", "").strip() or "claude-opus-4-8"
+        elif _is_qwen_model(source):
+            try:
+                from System.swarm_fireworks_qwen_config import FIREWORKS_KIMI_K2P6_MODEL
+
+                attached = FIREWORKS_KIMI_K2P6_MODEL
+            except Exception:
+                attached = "kimi-k2p6"
+
+    attached = _normalize_mimo_bridge_attached(attached)
+    return "mimo:mimo-cli-default", attached, source
+
+
 def _is_antigravity_model(name: str) -> bool:
     # r352 (George 2026-06-02): Google Antigravity CLI `agy` as Alice's 7th cortex.
     if not name:
@@ -523,14 +605,20 @@ def available_gemini_models() -> List[str]:
     # The four gemini cortexes (2.5-flash / 2.5-flash-lite / 2.0-flash / 2.5-pro) are no longer
     # offered in Alice's cortex picker, even when a Gemini key is present. _DEFAULT_MENU stays
     # defined for pricing/back-compat, but it is NOT extended into the selectable cortex list.
-    out.extend(_GROK_DEFAULT_MENU)
-    out.extend(_CLAUDE_DEFAULT_MENU)
-    out.extend(_CODEX_DEFAULT_MENU)
-    out.extend(_QWEN_DEFAULT_MENU)
-    out.extend(_CLINE_DEFAULT_MENU)
-    if _mimo_cli_installed():  # r984: mimo lane, truth-gated on the binary
+    if mimo_borg_single_cortex_enabled() and _mimo_cli_installed():
+        # George 2026-06-20: one MiMo hub in the owner-facing cortex list.
+        # Codex/Grok/Claude/Kimi/Qwen remain routable as attached/downstream
+        # rows behind MiMo; do not show them as parallel Talk cortexes.
         out.extend(_MIMO_DEFAULT_MENU)
-    out.extend(_ANTIGRAVITY_DEFAULT_MENU)  # r352: agy selectable as a talking cortex
+    else:
+        out.extend(_GROK_DEFAULT_MENU)
+        out.extend(_CLAUDE_DEFAULT_MENU)
+        out.extend(_CODEX_DEFAULT_MENU)
+        out.extend(_QWEN_DEFAULT_MENU)
+        out.extend(_CLINE_DEFAULT_MENU)
+        if _mimo_cli_installed():  # r984: mimo lane, truth-gated on the binary
+            out.extend(_MIMO_DEFAULT_MENU)
+        out.extend(_ANTIGRAVITY_DEFAULT_MENU)  # r352: agy selectable as a talking cortex
     deduped: List[str] = []
     seen: set[str] = set()
     for name in out:
@@ -1070,6 +1158,7 @@ def _stream_grok_chat_via_cli(
         )
         return
 
+    yield from _emit_batch_cli_liveness()
     bare = strip_prefix(model)
     cli_model = grok_cli_model_for(model)
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
@@ -1215,6 +1304,23 @@ _TEACHER_SYSTEM_CAP = 1500   # chars of system/identity context for cortex CLIs
 _TEACHER_TOTAL_CAP = 8000    # backstop on the whole flattened prompt
 
 
+def _is_teacher_cli_history_noise(content: str) -> bool:
+    """Drop infra/tool-envelope rows from teacher-CLI chat history — not Alice speech."""
+    text = str(content or "").strip()
+    if not text:
+        return True
+    low = text.lower()
+    if low.startswith("kimi webbridge") and "failed" in low:
+        return True
+    if '"type":"tool_use"' in text[:800] or '"type": "tool_use"' in text[:800]:
+        return True
+    if text.startswith('{"type":"tool') or text.startswith('{"type": "tool'):
+        return True
+    if "you are alice's voice for this turn" in low and "sifta chat history" in low:
+        return True
+    return False
+
+
 def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> str:
     """Flatten chat history for signed-in CLI cortex bridges.
 
@@ -1269,12 +1375,34 @@ def _to_teacher_cli_prompt(messages: List[Dict[str, Any]], *, teacher: str) -> s
         image_count = len(msg.get("images") or []) if isinstance(msg.get("images"), list) else 0
         if not content and not image_path and not image_count:
             continue
+        if role == "assistant" and _is_teacher_cli_history_noise(content):
+            continue
         if role == "system":
             remaining = max(0, _TEACHER_SYSTEM_CAP - sys_kept)
             if remaining <= 0:
                 continue
             if len(content) > remaining:
-                content = content[:remaining].rstrip() + " …[system context trimmed for teacher-CLI speed]"
+                # r1511 (George 2026-06-21: mimo:mimo-cli-default answered "what is
+                # Alice Browser" with generic "simulated desktop body / virtual world
+                # we operate inside" prose -- exactly the simulation-framing language
+                # the reality/body-grounding blocks in _current_system_prompt() exist
+                # to forbid). Root cause: this cap used to keep only content[:remaining]
+                # -- the literal FIRST `remaining` chars of an already-~90K-char
+                # assembled prompt. _current_system_prompt() puts the identity-proof
+                # block first and appends most live/current-turn grounding (browser
+                # state, body reality, residue/reality-fiction rules) later, so a pure
+                # head slice at a 1500-char budget kept the identity block and threw
+                # away virtually every anti-hallucination/anti-simulation rule this
+                # session built. Reuse the same head+tail trim already proven for the
+                # direct-Ollama path (r1492) instead of a blind head-only cut -- same
+                # tiny budget the r718 speed fix required, but it no longer guarantees
+                # the tail (often the freshest, most specific grounding) is discarded.
+                try:
+                    from System.swarm_sysprompt_budget import clamp_live_turn_prompt as _clamp_teacher_sys
+
+                    content, _ = _clamp_teacher_sys(content, max_chars=remaining)
+                except Exception:
+                    content = content[:remaining].rstrip() + " …[system context trimmed for teacher-CLI speed]"
             sys_kept += len(content)
         chunks.append(f"[{role}]\n{content}")
         if image_path:
@@ -1301,6 +1429,7 @@ def _stream_claude_chat_via_cli(
         yield ("error", "Claude CLI is not on PATH; run `claude auth` or install Claude Code.")
         return
 
+    yield from _emit_batch_cli_liveness()
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     prompt = _to_teacher_cli_prompt(messages, teacher="Claude")
     bare = strip_prefix(model)
@@ -1364,6 +1493,7 @@ def _stream_codex_chat_via_cli(
         yield ("error", "Codex CLI is not on PATH; sign in/install Codex before selecting this teacher.")
         return
 
+    yield from _emit_batch_cli_liveness()
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     bare = strip_prefix(model)
     prompt = _to_teacher_cli_prompt(messages, teacher="Codex")
@@ -1447,6 +1577,7 @@ def _stream_qwen_chat_via_cli(
         yield ("error", "Qwen Code CLI is not on PATH; install qwen before selecting this teacher.")
         return
 
+    yield from _emit_batch_cli_liveness()
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     bare = strip_prefix(model)
     prompt = _to_teacher_cli_prompt(messages, teacher="Qwen/Fireworks")
@@ -1520,6 +1651,7 @@ def _stream_cline_chat_via_cli(
         yield ("error", "Cline CLI is not on PATH; install/sign in before selecting this teacher.")
         return
 
+    yield from _emit_batch_cli_liveness()
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     bare = strip_prefix(model)
     prompt = _to_teacher_cli_prompt(messages, teacher="Cline")
@@ -1602,6 +1734,32 @@ def _mimo_cli_binary() -> Optional[str]:
     return None
 
 
+_MIMO_CLI_NON_SPEECH_TYPES = frozenset(
+    {"tool", "tool_use", "tool_result", "step_start", "step_finish", "step-start", "step-finish"}
+)
+
+
+def _looks_like_mimo_cli_tool_envelope_output(raw: str) -> bool:
+    """True when MiMo CLI returned tool/step NDJSON without assistant text."""
+    saw_envelope = False
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            if '"type":"tool_use"' in line or '"type": "tool_use"' in line:
+                return True
+            continue
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("type") or "").strip().lower()
+        if kind in _MIMO_CLI_NON_SPEECH_TYPES:
+            saw_envelope = True
+    return saw_envelope
+
+
 def _parse_mimo_run_json_output(raw: str) -> str:
     """Extract assistant text from `mimo run --format json` NDJSON."""
     parts: list[str] = []
@@ -1612,11 +1770,15 @@ def _parse_mimo_run_json_output(raw: str) -> str:
         try:
             row = json.loads(line)
         except Exception:
-            parts.append(line)
+            if not _looks_like_mimo_cli_tool_envelope_output(line):
+                parts.append(line)
             continue
         if not isinstance(row, dict):
             continue
-        if row.get("type") == "text":
+        kind = str(row.get("type") or "").strip().lower()
+        if kind in _MIMO_CLI_NON_SPEECH_TYPES:
+            continue
+        if kind == "text":
             part = row.get("part")
             if isinstance(part, dict):
                 text = part.get("text")
@@ -1631,21 +1793,334 @@ def _parse_mimo_run_json_output(raw: str) -> str:
     return "\n".join(parts).strip()
 
 
-def _resolve_mimo_upstream_model() -> str:
-    """Optional provider/model override from the external-brain probe row."""
-    try:
-        from System.swarm_cline_settings_probe import latest_brain_row
+_MIMO_PROVIDER_MAP: dict[str, str] = {
+    "mimo-v2.5-pro": "xiaomi",
+    "mimo-v2-flash": "xiaomi",
+    "mimo-v2-omni": "xiaomi",
+    "mimo-v2-pro": "xiaomi",
+    "mimo-v2.5": "xiaomi",
+    "mimo-v2.5-pro-ultraspeed": "xiaomi",
+    "mimo-auto": "mimo",
+}
 
-        row = latest_brain_row("mimo", state_dir=_STATE) or {}
-        provider = str(row.get("provider") or "").strip()
-        model = str(row.get("model") or "").strip()
-        if provider and model:
-            return f"{provider}/{model}"
-        if model and "/" in model:
-            return model
+_MIMO_ULTRASPEED_MODEL_ID = "mimo-v2.5-pro-ultraspeed"
+_MIMO_ULTRASPEED_DEFAULT_BASE = "https://api.xiaomimimo.com/v1"
+_MIMO_ULTRASPEED_WIRING_STUDIO = (
+    "https://ultraspeed.xiaomimimo.com/#/ultra/261bb3fdd58242f8e2966dc605f61b99"
+)
+
+
+def _mimo_ultraspeed_credentials() -> tuple[str, str]:
+    """Resolve UltraSpeed API key + base URL (separate from Token Plan tp-*)."""
+    key = os.environ.get("SIFTA_MIMO_ULTRASPEED_API_KEY", "").strip()
+    base = os.environ.get("SIFTA_MIMO_ULTRASPEED_BASE_URL", "").strip()
+    if not key:
+        cfg_key = Path.home() / ".config" / "sifta" / "mimo_ultraspeed.key"
+        if cfg_key.is_file():
+            key = cfg_key.read_text(encoding="utf-8").strip()
+        if not base:
+            cfg_base = Path.home() / ".config" / "sifta" / "mimo_ultraspeed.base_url"
+            if cfg_base.is_file():
+                base = cfg_base.read_text(encoding="utf-8").strip()
+    if not key:
+        doc_key = _REPO / "Documents" / "mimo_ultraspeed_api.key"
+        if doc_key.is_file():
+            key = doc_key.read_text(encoding="utf-8").strip()
+    if not key:
+        auth_path = Path.home() / ".local" / "share" / "mimocode" / "auth.json"
+        if auth_path.is_file():
+            try:
+                auth = json.loads(auth_path.read_text(encoding="utf-8"))
+            except Exception:
+                auth = {}
+            for provider_key in ("ultraspeed", "xiaomi-ultraspeed", "xiaomi_ultraspeed"):
+                row = auth.get(provider_key) if isinstance(auth, dict) else None
+                if not isinstance(row, dict):
+                    continue
+                cand = str(row.get("key") or "").strip()
+                if cand and not cand.startswith("tp-"):
+                    key = cand
+                    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+                    base = base or str(meta.get("base_url") or meta.get("api") or "").strip()
+                    break
+    if not base:
+        base = _MIMO_ULTRASPEED_DEFAULT_BASE
+    return key, base.rstrip("/")
+
+
+def _mimo_attached_is_ultraspeed(attached: str) -> bool:
+    bare = _mimo_native_attached_model_id(attached) or str(attached or "").strip()
+    return bare.lower() == _MIMO_ULTRASPEED_MODEL_ID
+
+
+def _mimo_ultraspeed_wiring_error() -> str:
+    return (
+        "MiMo-V2.5-Pro-UltraSpeed needs a separate API key — not your Token Plan tp-* credential. "
+        "MiMo CLI routes xiaomi/* through token-plan-sgp, which rejects UltraSpeed (400). "
+        "Get the UltraSpeed API key from MiMo Studio / platform.xiaomimimo.com/ultraspeed, then set ONE of: "
+        "SIFTA_MIMO_ULTRASPEED_API_KEY, ~/.config/sifta/mimo_ultraspeed.key, or "
+        "Documents/mimo_ultraspeed_api.key (optional base URL: SIFTA_MIMO_ULTRASPEED_BASE_URL or "
+        f"mimo_ultraspeed.base_url). Studio chat (browser) is not the API lane: "
+        f"{_MIMO_ULTRASPEED_WIRING_STUDIO} "
+        "Then `/cortex llm 2` + reload Talk. Boot default stays krisha unless you pick another row."
+    )
+
+
+def _stream_mimo_ultraspeed_via_http(
+    *,
+    messages: List[Dict[str, str]],
+    request_tag: Optional[str] = None,
+    timeout_s: int = 180,
+) -> Iterator[Tuple[str, Any]]:
+    import urllib.error
+    import urllib.request
+
+    key, base = _mimo_ultraspeed_credentials()
+    if not key:
+        yield ("error", _mimo_ultraspeed_wiring_error())
+        return
+
+    tag = request_tag or f"ultraspeed-{uuid.uuid4().hex[:8]}"
+    prompt = _to_teacher_cli_prompt(messages, teacher="MiMo UltraSpeed")
+    api_messages = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+    payload = {
+        "model": _MIMO_ULTRASPEED_MODEL_ID,
+        "messages": api_messages,
+        "max_tokens": 4096,
+        "temperature": 0.7,
+        "stream": False,
+    }
+    url = f"{base}/chat/completions"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+        },
+        method="POST",
+    )
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            raw_body = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            body = str(exc)
+        low = body.lower()
+        if exc.code == 401 or "invalid" in low and "key" in low:
+            yield (
+                "error",
+                f"UltraSpeed API rejected the key (HTTP {exc.code}). "
+                "Use the UltraSpeed API key from the platform — not tp-* Token Plan. "
+                f"base_url={base}",
+            )
+            return
+        yield (
+            "error",
+            f"UltraSpeed API HTTP {exc.code} at {base}: {body or exc.reason}",
+        )
+        return
+    except Exception as exc:
+        yield ("error", f"UltraSpeed API call failed ({base}): {exc}")
+        return
+
+    latency_ms = int((time.time() - t0) * 1000)
+    try:
+        data = json.loads(raw_body)
+    except json.JSONDecodeError:
+        yield ("error", f"UltraSpeed API returned non-JSON: {raw_body[:300]}")
+        return
+
+    text = ""
+    try:
+        text = str(data["choices"][0]["message"]["content"] or "").strip()
+    except Exception:
+        text = ""
+    if not text:
+        yield ("error", f"UltraSpeed API empty content: {raw_body[:300]}")
+        return
+
+    usage_row = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    prompt_t = int(usage_row.get("prompt_tokens") or 0)
+    completion_t = int(usage_row.get("completion_tokens") or 0)
+    total_t = int(usage_row.get("total_tokens") or prompt_t + completion_t)
+    tps = round((completion_t / max(latency_ms / 1000.0, 0.001)), 1) if completion_t else 0.0
+
+    usage = Usage(
+        model=_MIMO_ULTRASPEED_MODEL_ID,
+        prompt_tokens=prompt_t,
+        completion_tokens=completion_t,
+        total_tokens=total_t,
+        latency_ms=latency_ms,
+        request_tag=tag,
+        raw={
+            "transport": "mimo_ultraspeed_http",
+            "base_url": base,
+            "observed_tps": tps,
+            "prompt_chars": len(prompt),
+        },
+    )
+    record_usage(usage, backend="mimo_ultraspeed")
+    yield ("token", text)
+    yield ("usage", usage)
+    yield ("done", text)
+
+
+def _mimo_native_attached_model_id(value: str) -> str:
+    """Return a MiMo-native API model id from an attached-model selection.
+
+    Strips provider prefixes (xiaomi/, mimo/) and Ollama tags (:latest)
+    so the bare model id can be matched against the known MiMo family.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    candidate = raw.rsplit("/", 1)[-1].rsplit(":", 1)[-1].strip()
+    low = candidate.lower()
+    if low.startswith("mimo-v") or low == "mimo-auto":
+        return candidate
+    return ""
+
+
+def _mimo_cortex_attached_default() -> str:
+    try:
+        from System.swarm_cortex_capabilities import attached_models_for_cortex
+
+        rec = attached_models_for_cortex("mimo:mimo-cli-default", state_dir=_STATE)
+        return str(rec.get("default_attached") or "").strip()
+    except Exception:
+        return ""
+
+
+def _resolve_mimo_upstream_model() -> str:
+    """Optional model override for `mimo run -m`.
+
+    The visible SIFTA `/cortex llm` attached-default is the owner's picker for
+    this route. Native MiMo ids and OAuth rows (Codex/Grok/Claude) all resolve
+    to ``provider/model`` for a single ``mimo run`` chain (r1265). Local Ollama
+    tags are labels only — they are not passed to the MiMo CLI.
+    """
+    env_model = os.environ.get("SIFTA_MIMO_CLI_MODEL", "").strip()
+    if env_model:
+        return env_model
+    try:
+        from System.swarm_cortex_capabilities import mimo_cli_upstream_model
+
+        attached = _mimo_cortex_attached_default()
+        if not attached:
+            return ""
+        return mimo_cli_upstream_model(attached)
+    except Exception:
+        return ""
+
+
+def _mimo_cli_bridge_front_model() -> str:
+    """MiMo-native front model used when MiMo must operate another CLI."""
+    return "mimo/mimo-auto"
+
+
+def _to_mimo_downstream_cli_bridge_prompt(
+    messages: List[Dict[str, str]],
+    *,
+    downstream_cli: str,
+    downstream_model: str,
+) -> str:
+    """Prompt MiMo to own the next CLI hop instead of Talk calling it directly."""
+    task = _to_teacher_cli_prompt(messages, teacher="MiMo")
+    model = str(downstream_model or "").strip() or "grok-build"
+    family = str(downstream_cli or "").strip().lower()
+    if family == "grok":
+        binary = _grok_cli_binary() or "grok"
+        command_shape = (
+            f"{binary} --single <task_prompt> --model {model} "
+            "--output-format plain --no-alt-screen"
+        )
+        bridge_name = "GROK_CLI_DOWNSTREAM_BRIDGE"
+    elif family == "codex":
+        binary = shutil.which("codex") or "codex"
+        codex_model = model.lower()
+        command_shape = (
+            f"{binary} exec --sandbox read-only --ephemeral --cd {str(_REPO)} "
+            f"--model {codex_model} <task_prompt>"
+        )
+        bridge_name = "CODEX_CLI_DOWNSTREAM_BRIDGE"
+    elif family == "claude":
+        binary = shutil.which("claude") or "claude"
+        command_shape = (
+            f"{binary} -p --no-session-persistence --permission-mode dontAsk "
+            "--output-format text <task_prompt>"
+        )
+        bridge_name = "CLAUDE_CLI_DOWNSTREAM_BRIDGE"
+    elif family == "ollama":
+        binary = shutil.which("ollama") or "ollama"
+        command_shape = f"{binary} run {model} <task_prompt>"
+        bridge_name = "OLLAMA_CLI_DOWNSTREAM_BRIDGE"
+    elif family == "qwen":
+        binary = shutil.which("qwen") or "qwen"
+        try:
+            from System.swarm_fireworks_qwen_config import (
+                FIREWORKS_BASE_URL,
+                normalize_fireworks_model_path,
+            )
+
+            model_path = normalize_fireworks_model_path(model) or model
+        except Exception:
+            model_path = model
+        command_shape = (
+            f"{binary} --bare --auth-type openai --openai-base-url {FIREWORKS_BASE_URL} "
+            f"--model {model_path} --approval-mode yolo -p <task_prompt>"
+        )
+        bridge_name = "QWEN_CLI_DOWNSTREAM_BRIDGE"
+    else:
+        binary = family or "downstream-cli"
+        command_shape = f"{binary} <task_prompt>"
+        bridge_name = "CLI_DOWNSTREAM_BRIDGE"
+    return (
+        f"{bridge_name}:\n"
+        "You are MiMo running inside Alice's body. Do not answer this task directly.\n"
+        f"Operate the downstream local {binary} CLI as Alice's tool hand, then return its useful answer.\n"
+        "Use this command shape from the repo directory:\n"
+        f"{command_shape}\n"
+        "If the downstream CLI is missing, unauthorized, or errors, report the exact failure. "
+        "Do not invent a downstream result.\n"
+        f"DOWNSTREAM_MODEL={model}\n\n"
+        "TASK_PROMPT_FOR_DOWNSTREAM_CLI:\n"
+        f"{task}"
+    )
+
+
+def _cloud_inference_blocked_by_metabolism() -> tuple[bool, str]:
+    """True when battery/metabolism says local-only — block OAuth/cloud arms."""
+    try:
+        from System.swarm_battery_metabolism_organ import read_battery, battery_to_metabolic_signal
+
+        batt = read_battery()
+        meta = battery_to_metabolic_signal(batt)
+        if meta.get("conserve") or str(meta.get("band") or "") in {
+            "RED_CONSERVE",
+            "CONSERVE",
+            "YELLOW_THROTTLE",
+        }:
+            return True, str(meta.get("reason") or "battery_conserve_local_only")
     except Exception:
         pass
-    return os.environ.get("SIFTA_MIMO_CLI_MODEL", "").strip()
+    try:
+        from System.swarm_energy_cortex import is_low_battery
+
+        if is_low_battery():
+            return True, "low_battery_local_only"
+    except Exception:
+        pass
+    return False, ""
 
 
 def _stream_mimo_chat_via_cli(
@@ -1654,7 +2129,57 @@ def _stream_mimo_chat_via_cli(
     messages: List[Dict[str, str]],
     request_tag: Optional[str] = None,
     timeout_s: int = 180,
+    attached_override: Optional[str] = None,
+    source_cortex: Optional[str] = None,
 ) -> Iterator[Tuple[str, Any]]:
+    attached = str(attached_override or "").strip() or _mimo_cortex_attached_default()
+    try:
+        from System.swarm_cortex_capabilities import mimo_attached_dispatch_lane
+
+        lane = mimo_attached_dispatch_lane(attached)
+    except Exception:
+        lane = "unconfigured"
+
+    if lane == "local_non_cli":
+        yield (
+            "error",
+            f"MiMo cortex attached LLM is local but not text-CLI routable ({attached or 'unset'}). "
+            "Pick a MiMo native row or local Ollama text model.",
+        )
+        return
+    if lane == "unconfigured":
+        yield (
+            "error",
+            "MiMo attached LLM is unset or unrecognized. Pick one in Settings → LLM "
+            "(owner default = local Gemma krisha).",
+        )
+        return
+
+    if lane in {
+        "mimo_cli_codex_bridge",
+        "mimo_cli_grok_bridge",
+        "mimo_cli_claude_bridge",
+        "mimo_cli_qwen_bridge",
+        "mimo_cli_ollama_bridge",
+        "mimo_native",
+    }:
+        blocked, reason = _cloud_inference_blocked_by_metabolism()
+        if blocked:
+            yield (
+                "error",
+                f"MiMo front-model hop for attached LLM ({attached}) blocked: {reason}. "
+                "On battery/local-only metabolism — use direct local Ollama or plug in power.",
+            )
+            return
+
+    if lane == "mimo_native" and _mimo_attached_is_ultraspeed(attached):
+        yield from _stream_mimo_ultraspeed_via_http(
+            messages=messages,
+            request_tag=request_tag,
+            timeout_s=timeout_s,
+        )
+        return
+
     cli = _mimo_cli_binary()
     if not cli:
         yield (
@@ -1664,9 +2189,47 @@ def _stream_mimo_chat_via_cli(
         )
         return
 
+    yield from _emit_batch_cli_liveness()
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     bare = strip_prefix(model)
-    prompt = _to_teacher_cli_prompt(messages, teacher="MiMo")
+    if lane == "mimo_cli_grok_bridge":
+        prompt = _to_mimo_downstream_cli_bridge_prompt(
+            messages,
+            downstream_cli="grok",
+            downstream_model=attached,
+        )
+        upstream = _mimo_cli_bridge_front_model()
+    elif lane == "mimo_cli_codex_bridge":
+        prompt = _to_mimo_downstream_cli_bridge_prompt(
+            messages,
+            downstream_cli="codex",
+            downstream_model=attached,
+        )
+        upstream = _mimo_cli_bridge_front_model()
+    elif lane == "mimo_cli_claude_bridge":
+        prompt = _to_mimo_downstream_cli_bridge_prompt(
+            messages,
+            downstream_cli="claude",
+            downstream_model=attached,
+        )
+        upstream = _mimo_cli_bridge_front_model()
+    elif lane == "mimo_cli_ollama_bridge":
+        prompt = _to_mimo_downstream_cli_bridge_prompt(
+            messages,
+            downstream_cli="ollama",
+            downstream_model=attached,
+        )
+        upstream = _mimo_cli_bridge_front_model()
+    elif lane == "mimo_cli_qwen_bridge":
+        prompt = _to_mimo_downstream_cli_bridge_prompt(
+            messages,
+            downstream_cli="qwen",
+            downstream_model=attached,
+        )
+        upstream = _mimo_cli_bridge_front_model()
+    else:
+        prompt = _to_teacher_cli_prompt(messages, teacher="MiMo")
+        upstream = _resolve_mimo_upstream_model()
     cmd = [
         cli,
         "run",
@@ -1676,49 +2239,97 @@ def _stream_mimo_chat_via_cli(
         str(_REPO),
         "--dangerously-skip-permissions",
     ]
-    upstream = _resolve_mimo_upstream_model()
-    if upstream:
-        cmd.extend(["-m", upstream])
+    if not upstream:
+        yield (
+            "error",
+            f"MiMo CLI needs a routable attached LLM (mimo-auto, Fireworks/Kimi, or OAuth row). "
+            f"Current attached default is {attached or '(unset)'} — use Settings → LLM or pick local Gemma.",
+        )
+        return
+    cmd.extend(["-m", upstream])
     cmd.append(prompt)
 
     t0 = time.time()
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(_REPO),
-            timeout=timeout_s + 10,
+        from System.swarm_mimo_stigmergic import mimo_stigmergic_call
+
+        intent = f"talk_mimo:{lane}:{attached or upstream or bare}"
+        if source_cortex:
+            intent = f"talk_mimo:coerced:{source_cortex}:{lane}:{attached or upstream or bare}"
+        receipt = mimo_stigmergic_call(
+            prompt,
+            driving_organ="talk_mimo_cortex",
+            intent=intent,
+            model=upstream,
+            cli_path=cli,
+            state_dir=_STATE,
+            timeout_s=timeout_s,
         )
-    except subprocess.TimeoutExpired:
-        yield ("error", f"MiMo CLI timed out after {timeout_s}s")
-        return
     except Exception as exc:
-        yield ("error", f"MiMo CLI launch failed: {exc}")
+        yield ("error", f"MiMo stigmergic adapter failed: {exc}")
         return
 
-    raw = (proc.stdout or proc.stderr or "").strip()
-    if proc.returncode != 0:
+    raw = str(getattr(receipt, "output_text", "") or "").strip()
+    if not getattr(receipt, "ok", False):
         snippet = raw[:500]
-        if "credential" in snippet.lower() or "auth" in snippet.lower():
+        low_snip = snippet.lower()
+        if "credential" in low_snip or "auth" in low_snip:
             yield (
                 "error",
                 "MiMo CLI auth missing or expired — run `mimo providers` on this node "
                 f"(same OAuth lane as Cline). Detail: {snippet or 'no output'}",
             )
             return
-        yield ("error", f"MiMo CLI failed (rc={proc.returncode}): {snippet or 'no output'}")
+        if "not supported model" in low_snip or "param incorrect" in low_snip:
+            yield (
+                "error",
+                f"Xiaomi MiMo API rejected `{upstream or bare}` on token-plan-sgp "
+                "(400 Param Incorrect). MiMo-V2.5-Pro-UltraSpeed beta is API-only — "
+                "Token Plan is not supported per Xiaomi docs; approved users need the "
+                "separate UltraSpeed API key from platform.xiaomimimo.com/ultraspeed, "
+                "not the tp-* Token Plan credential MiMo CLI uses today. "
+                "I will not silently fall back to paid mimo-v2.5-pro. "
+                "Pick mimo-auto (free), local Gemma krisha, or another attached row.",
+            )
+            return
+        yield ("error", f"MiMo CLI failed through stigmergic adapter: {snippet or 'no output'}")
         return
     if not raw:
         yield ("error", "MiMo CLI returned empty output.")
         return
 
-    text = _parse_mimo_run_json_output(raw) or raw
+    text = _parse_mimo_run_json_output(raw)
+    if not text and _looks_like_mimo_cli_tool_envelope_output(raw):
+        yield (
+            "error",
+            "MiMo CLI returned tool envelopes without assistant text — switch cortex or retry. "
+            "Receipt: mimo_tool_envelope_without_speech.",
+        )
+        return
+    if not text:
+        text = raw
     usage = Usage(
         model=bare,
         latency_ms=int((time.time() - t0) * 1000),
         request_tag=tag,
-        raw={"transport": "mimo_cli_run_json", "requested_model": bare, "upstream": upstream or None},
+        raw={
+            "transport": "mimo_cli_run_json",
+            "requested_model": bare,
+            "upstream": upstream or None,
+            "mimo_dispatch_lane": lane,
+            "mimo_downstream_cli": {
+                "mimo_cli_codex_bridge": "codex",
+                "mimo_cli_grok_bridge": "grok",
+                "mimo_cli_claude_bridge": "claude",
+                "mimo_cli_qwen_bridge": "qwen",
+                "mimo_cli_ollama_bridge": "ollama",
+            }.get(lane, ""),
+            "mimo_downstream_model": attached if lane.startswith("mimo_cli_") else "",
+            "mimo_source_cortex": str(source_cortex or "").strip() or None,
+            "coerced_from_parallel_cli": bool(source_cortex),
+            "mimo_stigmergic_call_id": getattr(receipt, "call_id", ""),
+            "mimo_stigmergic_ok": bool(getattr(receipt, "ok", False)),
+        },
     )
     record_usage(usage, backend="mimo_cli")
     yield ("token", text)
@@ -1781,6 +2392,7 @@ def _stream_antigravity_chat_via_cli(
             "Antigravity and sign in (`agy`), then pick the antigravity cortex.",
         )
         return
+    yield from _emit_batch_cli_liveness()
     _tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
     prompt = _to_agy_cli_prompt(messages)
     cmd = [cli, "-p", prompt]
@@ -1862,7 +2474,7 @@ def stream_chat(
             timeout_s = 1800
     if _is_diffusion_model(model):
         # CUR-F1: GGUF diffusion decode via llama-diffusion-cli (LLaDA today;
-        # DiffusionGemma honest-not-installed until arch merges upstream).
+        # DiffusionGemma only after the dedicated runner + weights are installed).
         from System import swarm_diffusion_cortex
         yield from swarm_diffusion_cortex.stream_chat(
             model,
@@ -1898,6 +2510,7 @@ def stream_chat(
             timeout_s=timeout_s,
         )
         return
+    model, mimo_attached_override, mimo_source_cortex = _coerce_talk_cortex_to_mimo_hub(model)
     if _is_grok_model(model):
         yield from _stream_grok_chat(
             model,
@@ -1955,6 +2568,8 @@ def stream_chat(
             messages=messages,
             request_tag=request_tag,
             timeout_s=timeout_s or 180,
+            attached_override=mimo_attached_override or None,
+            source_cortex=mimo_source_cortex or None,
         )
         return
 

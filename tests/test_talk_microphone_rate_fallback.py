@@ -100,6 +100,29 @@ def test_listener_can_force_16khz_probe_before_native_rate(monkeypatch):
         listener.stop()
 
 
+def test_input_device_candidates_default_embedded_macbook_first(monkeypatch):
+    class FakeSd:
+        default = types.SimpleNamespace(device=(8, None))
+
+        @staticmethod
+        def query_devices():
+            return [
+                {"name": "iPhone Microphone", "max_input_channels": 1, "default_samplerate": 48000.0},
+                {"name": "MacBook Pro Microphone", "max_input_channels": 1, "default_samplerate": 48000.0},
+                {"name": "DELL PROFESSIONAL SOUND BAR AE515", "max_input_channels": 2, "default_samplerate": 48000.0},
+                {"name": "Unknown USB Audio Device", "max_input_channels": 2, "default_samplerate": 16000.0},
+            ]
+
+    candidates = talk._input_device_candidates(FakeSd())
+    labels = [label for _, label in candidates]
+
+    assert labels[0].startswith("default embedded 1:MacBook Pro Microphone")
+    assert any("iPhone Microphone" in label for label in labels)
+    assert any("DELL" in label for label in labels)
+    assert labels[-1] == "input 0:iPhone Microphone"
+    assert "system default" not in labels
+
+
 def test_native_rate_audio_blocks_downsample_to_alice_audio_rate():
     block = np.linspace(-0.5, 0.5, 480, dtype=np.float32)
 

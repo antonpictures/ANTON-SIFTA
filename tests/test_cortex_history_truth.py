@@ -80,6 +80,22 @@ def test_cortex_history_empty_ledger_is_honest(tmp_path):
     assert "no receipted thinking turns" in res["reply"]
 
 
+def test_model_command_compact_truth_from_ledger(tmp_path):
+    state = tmp_path / "state"
+    _seed_ledger(state)
+    res = handle_slash_command(
+        "/model",
+        state_dir=state,
+        current_cortex="alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+    )
+    reply = res["reply"]
+    assert res["handled"] is True
+    assert "Model truth" in reply
+    assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in reply
+    assert "Last receipted thinking brain: alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in reply
+    assert "/cortex llm" in reply
+
+
 def test_mimo_single_tag_everywhere():
     from System.sifta_inference_defaults import CANONICAL_CLOUD_MIMO
     from System.swarm_gemini_brain import _MIMO_DEFAULT_MENU

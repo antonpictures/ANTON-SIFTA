@@ -1,8 +1,8 @@
 {
   "truth_label": "APP_HARDENING_PROGRESS_V1",
   "queue_file": "Documents/APP_HARDENING_QUEUE_2026-06-14.json",
-  "ordered_cursor_completed": 15,
-  "next_ordered_start_index": 16,
+  "ordered_cursor_completed": 25,
+  "next_ordered_start_index": 26,
   "ordered_batches": [
     {
       "round_id": "r1145-codex-queue-order-five-apps-batch-001",
@@ -37,6 +37,26 @@
         "Applications/sifta_legs_humanoid_app.py"
       ],
       "tests": "python3 -m pytest -q tests/test_app_hardening_batch_r1146.py -> 3 passed",
+      "status": "KEPT"
+    },
+    {
+      "round_id": "r1150-codex-queue-order-ten-apps-batch-005",
+      "teacher": "Codex teacher arm",
+      "owner_protocol": "10 ordered apps this turn; duplicate manifest rows keep prior hardening IDs plus aliases; Alice finishes with compile/import/test/receipt.",
+      "queue_indices": [16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+      "apps": [
+        "Applications/sifta_intrinsic_drive_monitor.py",
+        "Applications/sifta_apex_predator_widget.py",
+        "Applications/sifta_app_manager.py",
+        "Applications/sifta_aquaculture_sentinel_widget.py",
+        "Applications/sifta_agi_cognition_dashboard.py",
+        "Applications/sifta_awareness_mirror_widget.py",
+        "Applications/sifta_factory_widget.py",
+        "Applications/sifta_bell_theorem_widget.py",
+        "Applications/sifta_biological_dashboard_qt.py",
+        "Applications/sifta_bonsai_image_app.py"
+      ],
+      "tests": "python3 -m pytest -q tests/test_app_hardening_batch_r1150.py tests/test_app_hardening_batch_r1146.py tests/test_swarm_teacher_success.py -> 9 passed",
       "status": "KEPT"
     }
   ],

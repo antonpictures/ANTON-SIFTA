@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -52,6 +53,18 @@ def available_cortex_tags() -> List[str]:
     """The merged live cortex list — same sources as the r639/r669 switch lane
     and the Settings picker: cloud arms + local ollama/mlx with canonical
     fallback. Never hardcoded."""
+    try:
+        from System.swarm_gemini_brain import (
+            _mimo_cli_installed,
+            mimo_borg_single_cortex_enabled,
+        )
+
+        if mimo_borg_single_cortex_enabled() and _mimo_cli_installed():
+            # George 2026-06-20: /cortex shows ONE hub only — not parallel Grok/
+            # Claude/Codex/Qwen/Cline/local rows. Attached brains live under /cortex llm.
+            return ["mimo:mimo-cli-default"]
+    except Exception:
+        pass
     tags: List[str] = []
     try:
         from System.swarm_gemini_brain import available_gemini_models
@@ -194,6 +207,91 @@ def cortex_selection_mismatches(state_dir: Path | str, *, n: int = 6) -> List[Di
     return out
 
 
+def format_model_status_reply(
+    *,
+    state_dir: Path | str,
+    current_cortex: str = "",
+) -> str:
+    """Ledger-grounded model truth — selected cortex, bound LLM, last thinking brain.
+
+    r1481: George typed /MODEL during the MiMo cascade; narrative answers lied
+    while the ledger and attached-default rows told the truth.
+    """
+    import os
+
+    selected = str(current_cortex or "").strip()
+    lines = ["Model truth (ledger + registry, not narrative):"]
+    lines.append(f"  Selected Talk cortex: {selected or '(unknown)'}")
+
+    bound = ""
+    bound_label = ""
+    try:
+        from System.swarm_cortex_capabilities import (
+            attached_model_matches_active,
+            attached_models_for_cortex,
+            format_attached_model,
+            sync_cortex_attached_models_catalog,
+        )
+
+        sync_cortex_attached_models_catalog(state_dir=Path(state_dir))
+        if selected:
+            rec = attached_models_for_cortex(selected, state_dir=Path(state_dir))
+            bound = str(rec.get("default_attached") or "").strip()
+            if bound:
+                bound_label = format_attached_model(bound)
+    except Exception:
+        pass
+
+    sel_low = selected.lower()
+    env_pin = ""
+    if sel_low.startswith("grok"):
+        env_pin = str(os.environ.get("SIFTA_GROK_CLI_MODEL", "")).strip()
+    elif sel_low.startswith("claude"):
+        env_pin = str(os.environ.get("SIFTA_CLAUDE_ARM_MODEL", "")).strip()
+    elif sel_low.startswith("qwen"):
+        try:
+            from System.swarm_fireworks_qwen_config import FIREWORKS_MODEL_PIN_ENV, normalize_fireworks_model_path
+
+            env_pin = normalize_fireworks_model_path(
+                str(os.environ.get(FIREWORKS_MODEL_PIN_ENV, "")).strip()
+            )
+        except Exception:
+            env_pin = str(os.environ.get("SIFTA_FIREWORKS_MODEL", "")).strip()
+    elif sel_low.startswith("mimo"):
+        env_pin = str(os.environ.get("SIFTA_MIMO_CLI_MODEL", "")).strip()
+
+    if env_pin:
+        lines.append(f"  Env pin: {env_pin}")
+    if bound:
+        lines.append(f"  Bound attached LLM: {bound_label or bound}")
+    elif not env_pin:
+        lines.append("  Bound attached LLM: (none recorded for this cortex)")
+
+    turns = last_thinking_models(Path(state_dir), n=1)
+    if turns:
+        last = turns[-1]
+        lines.append(
+            f"  Last receipted thinking brain: {last.get('model', '?')} "
+            f"({last.get('when', '?')})"
+        )
+        lines.append(f"    head: \"{last.get('text_head', '')}\"")
+    else:
+        lines.append("  Last receipted thinking brain: (no alice turns in ledger)")
+
+    mismatches = cortex_selection_mismatches(Path(state_dir), n=1)
+    if mismatches:
+        m = mismatches[-1]
+        lines.append(
+            "  CORTEX_SELECTION_MISMATCH: selected="
+            f"{m.get('selected', '?')} but {m.get('actual_model', '?')} thought "
+            f"({m.get('when', '?')})"
+        )
+
+    lines.append("")
+    lines.append("Deeper: /cortex llm (list/pin attached LLMs) · /cortex history (last N turns)")
+    return "\n".join(lines)
+
+
 def registered_slash_commands() -> List[Dict[str, str]]:
     """Single registry — owner palette, tests, and cortex prompt all read this."""
     return [
@@ -219,6 +317,11 @@ def registered_slash_commands() -> List[Dict[str, str]]:
                 "/cortex llm — render numbered lists (ledger-strict); bare N binds the last list shown; "
                 "/cortex llm cline N and /cortex pin claude N are canonical; spoken mutations echo Confirm?"
             ),
+        },
+        {
+            "cmd": "/model",
+            "summary": "compact model truth — selected cortex, bound LLM, last thinking brain (ledger rows)",
+            "detail": "alias for the r985 truth lane; use /cortex llm to switch attached LLMs",
         },
         {
             "cmd": "/grok",
@@ -271,6 +374,11 @@ def registered_slash_commands() -> List[Dict[str, str]]:
             "cmd": "/sc",
             "summary": "Self-Screenshot Cortex Turn — capture SIFTA OS body → cortex",
             "detail": "NOT TikTok scroll-down or other slang; Talk owns Qt capture",
+        },
+        {
+            "cmd": "/sx",
+            "summary": "Self-Camera Cortex Turn — capture body eye → cortex",
+            "detail": "/sx and /sx1 use the main camera; /sx2, /sx3 select next live body eyes",
         },
         {
             "cmd": "/p",
@@ -898,6 +1006,106 @@ def _apply_claude_arm_pin(
     return out
 
 
+def _apply_upstream_attached_default(
+    out: Dict[str, Any],
+    target: str,
+    *,
+    state_dir: Path,
+    owner_text: str,
+    current_cortex: str,
+    namespace: str,
+    binding: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    from System.swarm_cortex_capabilities import (
+        attached_models_for_cortex,
+        format_attached_model,
+        record_attached_models,
+    )
+    from System.swarm_cortex_llm_list_binding import (
+        NAMESPACE_CODEX,
+        NAMESPACE_MIMO,
+        write_binding_receipt,
+    )
+
+    configs = {
+        NAMESPACE_CODEX: {
+            "family": "Codex",
+            "prefix": "codex",
+            "fallback": "codex:gpt-5.5",
+            "source": "owner_local_codex_default_/cortex_llm",
+            "receipt_action": "codex_local_default_set",
+            "diary_prefix": "codex-attached-llm",
+        },
+        NAMESPACE_MIMO: {
+            "family": "MiMo",
+            "prefix": "mimo",
+            "fallback": "mimo:mimo-cli-default",
+            "source": "owner_local_mimo_default_/cortex_llm",
+            "receipt_action": "mimo_local_default_set",
+            "diary_prefix": "mimo-attached-llm",
+        },
+    }
+    cfg = configs.get(namespace)
+    if not cfg:
+        out["error"] = "unsupported_attached_default_namespace"
+        out["reply"] = f"Namespace {namespace!r} has no local attached-default writer."
+        return out
+
+    selected = str(current_cortex or "").strip()
+    row = (binding or {}).get("list_row") if isinstance(binding, dict) else {}
+    row = row if isinstance(row, dict) else {}
+    cortex_id = str(row.get("selected_cortex") or selected or cfg["fallback"]).strip()
+    if not cortex_id.lower().startswith(str(cfg["prefix"])):
+        cortex_id = str(cfg["fallback"])
+
+    existing = attached_models_for_cortex(cortex_id, state_dir=state_dir)
+    models = [str(m) for m in (row.get("items") or existing.get("attached_models") or []) if str(m).strip()]
+    if target and target not in models:
+        models.append(target)
+
+    before = str(existing.get("default_attached") or "").strip()
+    record_attached_models(
+        cortex_id,
+        models,
+        default_attached=target,
+        source=str(cfg["source"]),
+        routes_any_provider=bool(existing.get("routes_any_provider", False)),
+        picker_is_upstream=True,
+        live=False,
+        state_dir=state_dir,
+    )
+    out["switched"] = before != target
+    out["from_tag"] = before
+    out["to_tag"] = target
+    out["diary_ok"] = _write_switch_diary_row(
+        state_dir=Path(state_dir),
+        from_tag=f"{cfg['diary_prefix']}:{before or '(unset)'}",
+        to_tag=f"{cfg['diary_prefix']}:{target or '(unset)'}",
+        owner_text=owner_text,
+    )
+    write_binding_receipt(
+        action=str(cfg["receipt_action"]),
+        payload={
+            "binding": binding or {},
+            "cortex_id": cortex_id,
+            "namespace": namespace,
+            "from_default": before,
+            "to_default": target,
+            "owner_text_preview": owner_text[:120],
+            "claude_arm_touched": False,
+        },
+        state_dir=state_dir,
+    )
+    diary_note = "diary updated" if out["diary_ok"] else "diary write FAILED - receipt it"
+    status = "already " if before == target else ""
+    out["reply"] = (
+        f"{cfg['family']} attached LLM default {status}set locally: "
+        f"{format_attached_model(before) if before else '(unset)'} -> {format_attached_model(target)} "
+        f"({diary_note}). I did not mutate upstream hidden picker state. Claude arm untouched."
+    )
+    return out
+
+
 def _refuse_stale_or_ambiguous_llm(
     out: Dict[str, Any],
     *,
@@ -962,8 +1170,10 @@ def _handle_cortex_llm_mutation(
 
     from System.swarm_cortex_llm_list_binding import (
         NAMESPACE_CLAUDE,
+        NAMESPACE_CODEX,
         NAMESPACE_DIRECT,
         NAMESPACE_GROK,
+        NAMESPACE_MIMO,
         NAMESPACE_QWEN,
         UPSTREAM_NAMESPACES,
         clear_pending_binding,
@@ -993,6 +1203,16 @@ def _handle_cortex_llm_mutation(
         clear_pending_binding(state_dir=state_dir)
         ns = str(pending.get("namespace") or "")
         model_id = str(pending.get("model_id") or "")
+        if ns in (NAMESPACE_CODEX, NAMESPACE_MIMO):
+            return _apply_upstream_attached_default(
+                out,
+                model_id,
+                state_dir=state_dir,
+                owner_text=owner_text,
+                current_cortex=selected,
+                namespace=ns,
+                binding=pending,
+            )
         if ns in UPSTREAM_NAMESPACES:
             out["error"] = "upstream_not_mutable"
             out["reply"] = (
@@ -1054,6 +1274,54 @@ def _handle_cortex_llm_mutation(
                 owner_text=owner_text,
                 binding=binding,
             )
+        if selected.lower().startswith("mimo"):
+            try:
+                from System.swarm_cortex_capabilities import attached_models_for_cortex
+
+                _mimo_rec = attached_models_for_cortex(
+                    selected or "mimo:mimo-cli-default",
+                    state_dir=Path(state_dir),
+                )
+                _mimo_models = [
+                    str(m)
+                    for m in (_mimo_rec.get("attached_models") or [])
+                    if str(m or "").strip()
+                ]
+            except Exception:
+                _mimo_models = []
+            if parsed.model_id not in _mimo_models:
+                if parsed.model_id.lower().startswith(("mimo-v", "mimo-auto")):
+                    out["error"] = "mimo_model_not_in_keep_list"
+                    out["reply"] = (
+                        f"{parsed.model_id!r} is not in the current MiMo attached LLM keep-list. "
+                        "Run /cortex llm and choose one of the rendered rows."
+                    )
+                    return out
+                # Fall through to the generic unknown-model reply below.
+            else:
+                binding = {
+                    "namespace": NAMESPACE_MIMO,
+                    "model_id": parsed.model_id,
+                    "index": 0,
+                    "list_row": {
+                        "selected_cortex": selected or "mimo:mimo-cli-default",
+                        "items": _mimo_models,
+                    },
+                }
+                if ingress_kind == "spoken":
+                    save_pending_binding(binding, state_dir=state_dir)
+                    out["pending_confirmation"] = True
+                    out["reply"] = mutation_echo(binding, format_model=str) + " Say confirm to apply."
+                    return out
+                return _apply_upstream_attached_default(
+                    out,
+                    parsed.model_id,
+                    state_dir=state_dir,
+                    owner_text=owner_text,
+                    current_cortex=selected,
+                    namespace=NAMESPACE_MIMO,
+                    binding=binding,
+                )
         out["error"] = "unknown_model_id"
         out["reply"] = (
             f"I do not recognize model-id {parsed.model_id!r} on a steerable pin list. "
@@ -1102,6 +1370,29 @@ def _handle_cortex_llm_mutation(
             f"This cortex already uses {model_id} as its only LLM — no sub-model pin. "
             "Switch brains with /cortex <n> on the main picker list."
         )
+        return out
+
+    if ns in (NAMESPACE_CODEX, NAMESPACE_MIMO):
+        try:
+            from System.swarm_cortex_capabilities import format_attached_model as _format_upstream_model
+        except Exception:
+            _format_upstream_model = str  # type: ignore[assignment]
+        echo = mutation_echo(binding, format_model=_format_upstream_model)
+        if ingress_kind == "spoken":
+            save_pending_binding(binding, state_dir=state_dir)
+            out["pending_confirmation"] = True
+            out["reply"] = echo + " Say confirm to apply."
+            return out
+        out = _apply_upstream_attached_default(
+            out,
+            model_id,
+            state_dir=state_dir,
+            owner_text=owner_text,
+            current_cortex=selected,
+            namespace=ns,
+            binding=binding,
+        )
+        out["reply"] = echo + "\n" + str(out.get("reply") or "")
         return out
 
     if ns in UPSTREAM_NAMESPACES:
@@ -1239,8 +1530,9 @@ def _handle_cortex_llm(
         except Exception as exc:
             lines.append(f"Underlying provider for my {_lane_title} cortex: probe failed ({type(exc).__name__})")
         lines.append(
-            f"{_lane_title} supports its own upstream provider/model picker — any mainstream "
-            f"LLM provider API. Change it inside {_lane_title}, then run /cortex llm again; "
+            f"{_lane_title} supports its own upstream provider/model picker — CLI/OAuth/local "
+            "models, or the one owner-approved paid provider already configured. Do not assume "
+            f"an OpenAI API key. Change it inside {_lane_title}, then run /cortex llm again; "
             "I will probe and receipt what I can see."
         )
         lines.append(
@@ -1501,10 +1793,13 @@ def handle_slash_command(
     cmd = parts[0].lower().rstrip(":,")
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    # `/sc` and `/p` are implemented by the Talk widget because they need the
-    # live Qt body: SIFTA OS screenshot capture and Alice Browser DOM inventory.
+    # `/sc`, `/sx`, and `/p` are implemented by the Talk widget because they need the
+    # live Qt body: SIFTA OS/camera capture and Alice Browser DOM inventory.
     # Do not consume it as a palette/process reply.
-    if cmd in ("/sc", "/screenshot", "/p", "/page", "/pagebuttons", "/page-buttons"):
+    if (
+        cmd in ("/sc", "/screenshot", "/sx", "/p", "/page", "/pagebuttons", "/page-buttons")
+        or re.match(r"^/sx[1-9]$", cmd)
+    ):
         out["handled"] = False
         return out
 
@@ -1531,6 +1826,13 @@ def handle_slash_command(
             state_dir=Path(state_dir),
             owner_text=clean,
         )
+
+    if cmd in ("/model", "/models"):
+        out["reply"] = format_model_status_reply(
+            state_dir=Path(state_dir),
+            current_cortex=current_cortex,
+        )
+        return out
 
     if cmd == "/heart":
         try:

@@ -66,7 +66,7 @@ def _fmt_age(ts: Any, *, now: Optional[float] = None) -> tuple[float, str]:
 
 def _camera_target_line() -> str:
     try:
-        from System.swarm_camera_target import read_target
+        from System.swarm_camera_target import read_target, resolve_index
 
         rec = read_target()
     except Exception as exc:
@@ -77,8 +77,18 @@ def _camera_target_line() -> str:
     idx = rec.get("index")
     writer = rec.get("writer") or "unknown"
     age, age_text = _fmt_age(rec.get("ts"))
-    stale = " stale=true" if age > 120 else ""
-    return f"- active_eye={name} idx={idx if idx is not None else '?'} writer={writer} age={age_text}{stale}"
+    resolved = resolve_index(rec)
+    idx_text = idx if idx is not None else "?"
+    if resolved < 0:
+        return (
+            f"- active_eye={name} idx={idx_text} writer={writer} "
+            f"target_age={age_text} route_live=false stale=true"
+        )
+    resolved_text = "" if idx is not None and int(idx) == int(resolved) else f" resolved_idx={resolved}"
+    return (
+        f"- active_eye={name} idx={idx_text}{resolved_text} writer={writer} "
+        f"target_age={age_text} route_live=true"
+    )
 
 
 def _visual_line(max_age_s: float) -> str:

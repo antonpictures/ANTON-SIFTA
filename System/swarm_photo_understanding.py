@@ -246,7 +246,7 @@ def resolve_scene_query(owner_text: str, scene: dict[str, Any], description: str
     if description:
         clothing_hit = resolve_wardrobe_piece_query(owner_text, description)
         if clothing_hit.get("query") and re.search(
-                r"\b(?:wear|wearing|outfit|leg|legs|top|bottom|bottoms|shoe|shoes|heel|dress|bikini|"
+                r"\b(?:wear|wearing|outfit|leg|legs|top|bottom|bottoms|shoe|shoes|heel|dress|swimsuit|"
                 r"warmer|warmers|jacket|hat|glasses|garment|clothing|piece)\b", owner):
             return {**clothing_hit, "kind": "clothing"}
     # objects / background

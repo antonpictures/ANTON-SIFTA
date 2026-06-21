@@ -332,3 +332,122 @@ def test_real_ledger_isolation(tmp_path: Path):
     after = {str(p): (p.stat().st_size if p.exists() else 0) for p in watched}
     for k in before:
         assert before[k] == after[k], f"body_writer_tick mutated {k}"
+
+
+def test_recent_timeout_pheromones_trigger_degraded_tick(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    path = state / bwt.TICK_LEDGER
+    rows = [
+        {
+            "ts": 1.0 + i,
+            "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
+            "overall_status": "all_failed",
+            "producer_count": 1,
+            "ok_count": 0,
+            "fail_count": 1,
+            "producers": [{"producer": "body_writer_supervisor", "status": "timeout"}],
+        }
+        for i in range(3)
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    assert bwt.recent_supervisor_timeout_count(state) == 3
+    assert bwt.should_run_degraded_tick(state, timeout_threshold=3)
+
+
+def test_ledger_last_ts_reads_latest_jsonl_row(tmp_path: Path):
+    path = tmp_path / "sample.jsonl"
+    path.write_text(
+        json.dumps({"ts": 10.0}) + "\n" + json.dumps({"ts": 42.5}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert bwt._ledger_last_ts(path) == pytest.approx(42.5)
+
+
+def test_guarded_tick_runs_light_after_repeated_timeouts(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    path = state / bwt.TICK_LEDGER
+    path.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "ts": float(i),
+                    "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
+                    "overall_status": "all_failed",
+                    "producer_count": 1,
+                    "ok_count": 0,
+                    "fail_count": 1,
+                    "producers": [{"producer": "body_writer_supervisor", "status": "timeout"}],
+                }
+            )
+            for i in range(4)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    selection_path = state / "basal_ganglia_selections.jsonl"
+
+    def _select_action(*_args, **_kwargs):
+        selection_path.write_text("{}\n", encoding="utf-8")
+        return "rest_idle", 0.1
+
+    fake_bg_module = MagicMock(
+        select_action=MagicMock(side_effect=_select_action),
+        selection_log_path=MagicMock(return_value=selection_path),
+    )
+    with patch.dict(
+        "sys.modules",
+        {"System.swarm_basal_ganglia_action_selector": fake_bg_module},
+    ):
+        row = bwt.tick_writer_organs_guarded(state_dir=state)
+
+    assert row["degraded_mode"] is True
+    assert row["degraded_reason"] == "recent_supervisor_timeouts"
+    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia"]
+    fake_bg_module.select_action.assert_called_once()
+
+
+def test_guarded_tick_force_degraded_runs_light_without_timeout_pheromone(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    selection_path = state / "basal_ganglia_selections.jsonl"
+
+    def _select_action(*_args, **_kwargs):
+        selection_path.write_text("{}\n", encoding="utf-8")
+        return "rest_idle", 0.1
+
+    fake_bg_module = MagicMock(
+        select_action=MagicMock(side_effect=_select_action),
+        selection_log_path=MagicMock(return_value=selection_path),
+    )
+    with patch.dict(
+        "sys.modules",
+        {"System.swarm_basal_ganglia_action_selector": fake_bg_module},
+    ):
+        row = bwt.tick_writer_organs_guarded(state_dir=state, force_degraded=True)
+
+    assert row["degraded_mode"] is True
+    assert row["degraded_reason"] == "forced_light_breath"
+    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia"]
+    fake_bg_module.select_action.assert_called_once()
+
+
+def test_guarded_tick_skips_when_lock_is_held(tmp_path: Path):
+    if not getattr(bwt, "_HAVE_TICK_FLOCK", False):
+        pytest.skip("fcntl flock unavailable on this platform")
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    lock_path = state / bwt.TICK_LOCK
+    with lock_path.open("w", encoding="utf-8") as handle:
+        bwt.fcntl.flock(handle.fileno(), bwt.fcntl.LOCK_EX | bwt.fcntl.LOCK_NB)
+        try:
+            row = bwt.tick_writer_organs_guarded(state_dir=state)
+        finally:
+            bwt.fcntl.flock(handle.fileno(), bwt.fcntl.LOCK_UN)
+
+    assert row["overall_status"] == "skipped"
+    assert row["fail_count"] == 0
+    assert row["producers"][0]["status"] == "skipped_overlap"

@@ -463,6 +463,14 @@ def _fetch_browser_context(state_dir: Path) -> str:
     except Exception:
         pass
     try:
+        from System.swarm_browser_page_state import browser_tabs_awareness_block
+
+        tabs_block = browser_tabs_awareness_block(state_dir=state_dir).strip()
+        if tabs_block:
+            blocks.append(tabs_block)
+    except Exception:
+        pass
+    try:
         from System.swarm_browser_context import get_current_browser_context_block
         context = get_current_browser_context_block(state_dir=state_dir).strip()
         if context:
@@ -537,10 +545,18 @@ def _fetch_vision_arms_awareness(state_dir: Path, user_text: str = "") -> str:
     lines = [block] if block else []
     lines.append(
         "BROWSER SCREENSHOT RULE: if Alice Browser is visible, describe the "
-        "web-page contents from fresh page-state / inner-viewport receipts "
-        "(URL, title, DOM text, headings, links, images, timestamp/hash). "
-        "Use the desktop screenshot only as outer-window evidence unless it "
-        "clearly shows readable page pixels."
+        "web-page contents from fresh inner-viewport / physical-screen pixels first, "
+        "then fresh page-state receipts (URL, title, DOM text, headings, links, images, "
+        "timestamp/hash). Readable monitor pixels are hard body evidence and outrank "
+        "DOM text, page-context summaries, memory, and prior visual guesses. Use the "
+        "desktop screenshot as outer-window evidence only when the page pixels are not "
+        "readable; when they are readable, describe the page/photo actually shown."
+    )
+    lines.append(
+        "PHYSICAL DISPLAY ANCHOR: real people or objects visible on Alice's hard screen "
+        "are physical-world anchors displayed through her body surface. Do not confuse "
+        "the visible subject with George's identity, and do not replace the visible pixels "
+        "with stale remembered content."
     )
     lines.append(
         "FAILOVER RULE: do not assume one provider is the only eye. If one image "

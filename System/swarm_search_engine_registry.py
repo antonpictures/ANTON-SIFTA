@@ -90,6 +90,12 @@ _ENGINES: Dict[str, Dict[str, Any]] = {
         "images": "https://www.perplexity.ai/search?q={q}",
         "aliases": ["perplexity", "perplexity ai", "complexity"],
     },
+    "duckai": {
+        "name": "Duck.ai", "home": "https://duck.ai",
+        "web": "https://duck.ai/chat?q={q}",
+        "images": "https://duck.ai/chat?q={q}",
+        "aliases": ["duck.ai", "duck ai", "duckai"],
+    },
 }
 
 # spoken/typed switch phrasings

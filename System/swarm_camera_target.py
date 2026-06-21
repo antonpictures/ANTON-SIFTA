@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -77,8 +78,6 @@ DEVICE_EVENTS_JSONL: Path = _STATE / "device_events.jsonl"
 # 2026-04-23 camera split-brain surgery. These are fallbacks only; live Qt
 # device ids/names still win when available.
 _INDEX_TO_NAME = {
-    0: "USB Camera VID:1133 PID:2081",
-    1: "MacBook Pro Camera",
     2: "OBS Virtual Camera",
     3: "iPhone Camera",
     4: "Ioan's iPhone Camera",
@@ -87,11 +86,6 @@ _INDEX_TO_NAME = {
 }
 
 _NAME_TO_INDEX = {
-    "usb camera vid:1133 pid:2081": 0,
-    "logitech": 0,
-    "macbook pro camera": 1,
-    "facetime hd camera": 1,
-    "built-in camera": 1,
     "obs virtual camera": 2,
     "iphone camera": 3,
     "iphone 15 camera": 3,
@@ -115,10 +109,15 @@ import re as _re
 
 _IPHONE_CONTINUITY_RE = _re.compile(r"(iphone|ipad|continuity|desk\s*view)", _re.IGNORECASE)
 _BUILTIN_OWNER_RE = _re.compile(r"(macbook\s*pro\s*camera|facetime|built[\s-]*in)", _re.IGNORECASE)
+_VIRTUAL_CAMERA_RE = _re.compile(r"(obs|virtual|screen\s*capture|passthrough)", _re.IGNORECASE)
 _OWNER_IPHONE_ALLOWED_WRITERS = {
     "owner_camera_command",
     "what_alice_sees_widget",
     "sifta_what_alice_sees_widget",
+}
+_OWNER_LOCKED_CAMERA_WRITERS = _OWNER_IPHONE_ALLOWED_WRITERS | {
+    "spinal_reflex_camera_switch",
+    "swarm_sensor_attention_director",
 }
 
 
@@ -136,6 +135,55 @@ def is_builtin_owner_camera(name: Optional[str]) -> bool:
     if not name:
         return False
     return bool(_BUILTIN_OWNER_RE.search(str(name))) and not is_iphone_or_continuity(name)
+
+
+def is_virtual_or_loopback_camera(name: Optional[str]) -> bool:
+    """True for OBS/virtual/loopback camera endpoints.
+
+    These can be useful as deliberate tooling, but they are not physical body
+    eyes. By default they stay out of Alice's body topology so stale/virtual
+    feeds cannot be treated like owner-visible camera hardware.
+    """
+    if not name:
+        return False
+    return bool(_VIRTUAL_CAMERA_RE.search(str(name)))
+
+
+_USB_LOGITECH_BODY_RE = _re.compile(r"usb\s*camera\s*vid:1133\s*pid:2081", _re.IGNORECASE)
+_NOISE_CAMERA_NAME_RE = _re.compile(
+    r"^(camera|model\s*id:|uvc\s*camera\s*vendorid_\d+\s*productid_\d+)\s*:?\s*",
+    _re.IGNORECASE,
+)
+
+
+def _is_noise_camera_name(name: Optional[str]) -> bool:
+    """Drop generic Qt/system_profiler aliases that duplicate real body eyes."""
+    if not name:
+        return True
+    norm = _norm_name(str(name))
+    if not norm or norm == "camera":
+        return True
+    if norm.startswith("model id:"):
+        return True
+    if "uvc camera vendorid_" in norm and "productid_" in norm:
+        return True
+    return bool(_NOISE_CAMERA_NAME_RE.match(norm))
+
+
+def is_allowed_owner_body_camera(name: Optional[str]) -> bool:
+    """Strict allowlist: only George's two physical body eyes.
+
+    Owner eye: built-in MacBook / FaceTime camera.
+    World eye: ``USB Camera VID:1133 PID:2081`` (Logitech on this node).
+    Everything else — OBS, iPhone/Continuity, generic ``Camera:``, duplicate
+    ``Model ID:`` rows — stays out of topology and UI combos.
+    """
+    if not name or _is_noise_camera_name(name):
+        return False
+    text = str(name).strip()
+    if is_builtin_owner_camera(text):
+        return True
+    return bool(_USB_LOGITECH_BODY_RE.search(_norm_name(text)))
 
 
 def live_camera_allowed() -> bool:
@@ -190,24 +238,68 @@ def _norm_name(text: str) -> str:
     return " ".join(str(text).replace("’", "'").strip().lower().split())
 
 
+def normalize_unique_id(value: Any) -> str:
+    """Normalize Qt/AVFoundation camera IDs across bytes and bytes-repr strings."""
+    if value is None:
+        return ""
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return bytes(value).decode("utf-8", errors="replace").strip()
+        except Exception:
+            return str(value).strip()
+    text = str(value).strip()
+    if len(text) >= 3 and text[:2] in {"b'", 'b"'} and text[-1:] in {"'", '"'}:
+        return text[2:-1].strip()
+    return text
+
+
 def name_for_index(index: Optional[int]) -> Optional[str]:
     if index is None:
         return None
     try:
-        return _INDEX_TO_NAME.get(int(index))
+        idx = int(index)
     except Exception:
         return None
+    live = _live_devices()
+    if live and 0 <= idx < len(live):
+        return live[idx][1]
+    frozen = _INDEX_TO_NAME.get(idx)
+    if frozen:
+        return frozen
+    # Legacy bare-integer heal when enumeration is unavailable in headless tests.
+    if idx == 1:
+        return "MacBook Pro Camera"
+    return None
+
+
+def _legacy_name_for_index(index: int) -> Optional[str]:
+    """Interpret old bare-index target rows without live enumeration drift."""
+    if index == 1:
+        return "MacBook Pro Camera"
+    return _INDEX_TO_NAME.get(index)
 
 
 def index_for_name(name: Optional[str]) -> Optional[int]:
     if not name:
         return None
+    live = _live_devices()
     norm = _norm_name(name)
+    for i, (_uid, desc) in enumerate(live):
+        if desc == name or _norm_name(desc) == norm:
+            return i
     if norm in _NAME_TO_INDEX:
         return _NAME_TO_INDEX[norm]
     for key, idx in _NAME_TO_INDEX.items():
         if key in norm or norm in key:
             return idx
+    for token in ("usb", "logitech", "external", "webcam", "macbook", "facetime", "built-in"):
+        if token in norm:
+            for i, (_uid, desc) in enumerate(live):
+                desc_norm = _norm_name(desc)
+                if token in desc_norm or desc_norm in norm:
+                    return i
+            if token in ("macbook", "facetime", "built-in") and not live:
+                return 1
     return None
 
 
@@ -266,6 +358,9 @@ def parse_legacy_text(raw: str, *, writer: str = "legacy_txt") -> Optional[Dict[
             text = value.strip()
     idx = _coerce_int(text)
     if idx is not None:
+        legacy_name = _legacy_name_for_index(idx)
+        if legacy_name:
+            return _normalize(name=legacy_name, index=idx, writer=f"{writer}_int")
         return _normalize(index=idx, writer=f"{writer}_int")
     return _normalize(name=text, writer=f"{writer}_name")
 
@@ -298,11 +393,12 @@ def _normalize(
 ) -> Dict[str, Any]:
     idx = _coerce_int(index)
     clean_name = (name or "").strip() or None
+    clean_uid = normalize_unique_id(unique_id)
 
     # Name/unique-id are the stable identity. If a UI writes its combobox
     # position as "index", correct it from the camera name whenever we can.
     mapped_from_name = index_for_name(clean_name)
-    if mapped_from_name is not None:
+    if mapped_from_name is not None and not clean_uid:
         idx = mapped_from_name
     elif clean_name is None:
         clean_name = name_for_index(idx)
@@ -310,7 +406,7 @@ def _normalize(
     return {
         "name": clean_name,
         "index": idx,
-        "unique_id": (unique_id or "").strip() or None,
+        "unique_id": clean_uid or None,
         "ts": float(ts) if ts is not None else time.time(),
         "writer": writer or "unknown",
         "priority": _coerce_priority(priority),
@@ -360,6 +456,22 @@ def write_target(
         current = read_target()
         if _active_lease_blocks(current, writer=writer, priority=priority_i, now=now):
             return current  # type: ignore[return-value]
+    unique_id = normalize_unique_id(unique_id)
+    live = _live_devices()
+    if unique_id:
+        live_idx = _index_for_unique_id(unique_id, live)
+        if live_idx >= 0:
+            live_uid, live_name = live[live_idx]
+            name = live_name or name
+            index = live_idx
+            unique_id = normalize_unique_id(live_uid) or unique_id
+    if name:
+        match = _live_device_for_name(str(name), live)
+        if match:
+            live_idx, live_uid, live_name = match
+            name = live_name
+            index = live_idx
+            unique_id = normalize_unique_id(live_uid) or unique_id
     lease_until = None
     if lease_s is not None:
         try:
@@ -453,6 +565,33 @@ def read_target() -> Optional[Dict[str, Any]]:
     return _heal_legacy_into_json()
 
 
+def _read_target_from_paths(json_path: Path, txt_path: Path) -> Optional[Dict[str, Any]]:
+    """Read a target from explicit paths without touching module globals."""
+    if json_path.exists():
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return _normalize(
+                    name=data.get("name"),
+                    index=data.get("index"),
+                    unique_id=data.get("unique_id"),
+                    writer=data.get("writer", "unknown"),
+                    ts=data.get("ts"),
+                    priority=data.get("priority", 0),
+                    lease_until=data.get("lease_until"),
+                )
+        except Exception:
+            pass
+    if txt_path.exists():
+        try:
+            raw = txt_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            raw = ""
+        if raw:
+            return parse_legacy_text(raw, writer="legacy_txt")
+    return None
+
+
 # ── resolution helpers ──────────────────────────────────────────────────
 def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
     """Return the integer camera index implied by the current target,
@@ -486,6 +625,8 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
             return idx
         # The named device is NOT in the live list.
         if live:
+            if _target_requires_exact_live_device(rec):
+                return -1
             # We CAN enumerate devices and the named one simply isn't here
             # (e.g. the Logitech was unplugged). Fall back to the built-in
             # instead of pointing at whatever renumbered into its old slot.
@@ -500,6 +641,8 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
         # on read failure, which is the backstop for a dead index here.
 
     if uid and live:
+        if _target_requires_exact_live_device(rec):
+            return -1
         return _preferred_live_index(live)
 
     # 3) raw index as last resort — only meaningful when we still have no
@@ -518,6 +661,9 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
 def _qt_live_devices() -> List[Tuple[str, str]]:
     """Return Qt camera devices when a Qt context is already usable."""
     try:
+        from PyQt6.QtCore import QCoreApplication  # type: ignore
+        if QCoreApplication.instance() is None:
+            return []
         from PyQt6.QtMultimedia import QMediaDevices  # type: ignore
     except Exception:
         return []
@@ -548,6 +694,72 @@ def _avfoundation_live_devices() -> List[Tuple[str, str]]:
         return []
 
 
+def _system_profiler_live_devices() -> List[Tuple[str, str]]:
+    """Return macOS camera devices from system_profiler without opening cameras.
+
+    Background doctor shells do not always have PyObjC/AVFoundation available.
+    `system_profiler SPCameraDataType -json` still reports the hardware
+    topology, including stable unique IDs, and does not activate camera LEDs.
+    """
+    try:
+        proc = subprocess.run(
+            ["system_profiler", "SPCameraDataType", "-json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except Exception:
+        return []
+    rows = payload.get("SPCameraDataType") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    out: List[Tuple[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("_name") or "").strip()
+        if not name:
+            continue
+        uid = normalize_unique_id(row.get("spcamera_unique-id") or name)
+        if is_allowed_owner_body_camera(name):
+            out.append((uid, name))
+    return out
+
+
+def _iphone_camera_excluded() -> bool:
+    """Architect 2026-06-16: iPhone/Continuity out of body topology until re-enabled."""
+    flag = os.environ.get("SIFTA_ALLOW_IPHONE_CAMERA", "").strip().lower()
+    return flag not in ("1", "true", "yes", "on")
+
+
+def _virtual_camera_excluded() -> bool:
+    """Virtual/OBS cameras are not body eyes unless explicitly re-enabled."""
+    flag = os.environ.get("SIFTA_ALLOW_VIRTUAL_CAMERA", "").strip().lower()
+    return flag not in ("1", "true", "yes", "on")
+
+
+def _filter_body_cameras(devices: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """Keep only the two allowed owner body cameras (allowlist, not blocklist)."""
+    out: List[Tuple[str, str]] = []
+    seen_names: set[str] = set()
+    for uid, desc in devices:
+        if not is_allowed_owner_body_camera(desc):
+            continue
+        name_key = _norm_name(desc)
+        if name_key in seen_names:
+            continue
+        seen_names.add(name_key)
+        out.append((uid, desc))
+    return out
+
+
 def _live_devices() -> List[Tuple[str, str]]:
     """Return [(unique_id, description), ...] in current live device order.
 
@@ -556,14 +768,16 @@ def _live_devices() -> List[Tuple[str, str]]:
     uniqueID is stable across USB hot-plug.
     """
     qt = _qt_live_devices()
-    if qt:
-        return qt
-    return _avfoundation_live_devices()
+    raw = qt if qt else (_avfoundation_live_devices() or _system_profiler_live_devices())
+    return _filter_body_cameras(raw)
 
 
 def _index_for_unique_id(uid: str, devices: Optional[List[Tuple[str, str]]] = None) -> int:
+    wanted = normalize_unique_id(uid)
+    if not wanted:
+        return -1
     for i, (did, _desc) in enumerate(devices if devices is not None else _live_devices()):
-        if did == uid:
+        if normalize_unique_id(did) == wanted:
             return i
     return -1
 
@@ -578,6 +792,22 @@ def _index_for_name(name: str, devices: Optional[List[Tuple[str, str]]] = None) 
     return -1
 
 
+def _live_device_for_name(
+    name: Optional[str],
+    devices: Optional[List[Tuple[str, str]]] = None,
+) -> Optional[Tuple[int, str, str]]:
+    """Return the live ``(index, unique_id, description)`` for a target name."""
+    if not name:
+        return None
+    wanted_alias = index_for_name(name)
+    for i, (uid, desc) in enumerate(devices if devices is not None else _live_devices()):
+        if desc == name:
+            return i, normalize_unique_id(uid), desc
+        if wanted_alias is not None and index_for_name(desc) == wanted_alias:
+            return i, normalize_unique_id(uid), desc
+    return None
+
+
 def _looks_like_hardware_camera_name(name: str) -> bool:
     norm = _norm_name(name)
     markers = (
@@ -585,6 +815,20 @@ def _looks_like_hardware_camera_name(name: str) -> bool:
         "iphone", "obs", "desk view",
     )
     return any(m in norm for m in markers)
+
+
+def _target_requires_exact_live_device(target: Dict[str, Any]) -> bool:
+    """True when an owner-facing selector chose a concrete camera.
+
+    Those targets must fail closed if the named/unique hardware is absent.
+    Otherwise a stale USB target can silently open the MacBook camera after
+    AVFoundation renumbers index 0.
+    """
+    writer = str(target.get("writer") or "")
+    if writer not in _OWNER_LOCKED_CAMERA_WRITERS:
+        return False
+    name = str(target.get("name") or "")
+    return bool(target.get("unique_id") or (name and _looks_like_hardware_camera_name(name)))
 
 
 def _preferred_live_index(devices: Optional[List[Tuple[str, str]]] = None) -> int:
@@ -630,16 +874,57 @@ def unique_id_for_name(name: Optional[str]) -> Optional[str]:
     the target as stale rather than re-pinning a dead integer)."""
     if not name:
         return None
+    match = _live_device_for_name(name)
+    return normalize_unique_id(match[1]) or None if match else None
+
+
+def refresh_active_target_from_live(
+    *,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Stamp the active target with live uniqueID/current index if available.
+
+    This does not switch cameras. It only heals stale observation fields such
+    as ``index`` after USB hotplug. The active target's writer/priority/lease
+    are preserved; the live device identity is added so future resolution is
+    uniqueID-first.
+    """
+    if state_dir is None:
+        target_json = TARGET_JSON
+        target_txt = TARGET_TXT_LEGACY
+        rec = read_target()
+    else:
+        state = Path(state_dir)
+        target_json = state / TARGET_JSON.name
+        target_txt = state / TARGET_TXT_LEGACY.name
+        rec = _read_target_from_paths(target_json, target_txt)
+    if not rec or not rec.get("name"):
+        return {"changed": False, "reason": "no_active_named_target"}
     live = _live_devices()
-    if not live:
-        return None
-    wanted_alias = index_for_name(name)
-    for uid, desc in live:
-        if desc == name:
-            return uid or None
-        if wanted_alias is not None and index_for_name(desc) == wanted_alias:
-            return uid or None
-    return None
+    match = _live_device_for_name(str(rec.get("name") or ""), live)
+    if not match:
+        return {"changed": False, "reason": "active_target_not_live", "target": rec}
+    idx, uid, desc = match
+    changed = rec.get("index") != idx or (uid and rec.get("unique_id") != uid) or rec.get("name") != desc
+    if not changed:
+        return {"changed": False, "reason": "target_already_fresh", "target": rec}
+    healed = dict(rec)
+    healed["name"] = desc
+    healed["index"] = idx
+    healed["unique_id"] = uid or healed.get("unique_id")
+    healed["ts"] = float(now if now is not None else time.time())
+    healed["refreshed_by"] = "swarm_camera_target.refresh_active_target_from_live"
+    if healed.get("index") is not None:
+        try:
+            _atomic_write_text(target_txt, f"{int(healed['index'])}\n")
+        except Exception:
+            pass
+    try:
+        _atomic_write_text(target_json, json.dumps(healed) + "\n")
+    except Exception:
+        pass
+    return {"changed": True, "target": healed}
 
 
 def is_device_present(*, name: Optional[str] = None, unique_id: Optional[str] = None) -> bool:
@@ -652,8 +937,9 @@ def is_device_present(*, name: Optional[str] = None, unique_id: Optional[str] = 
     if not live:
         return True
     if unique_id:
+        wanted_uid = normalize_unique_id(unique_id)
         for uid, _desc in live:
-            if uid == unique_id:
+            if normalize_unique_id(uid) == wanted_uid:
                 return True
     if name:
         wanted_alias = index_for_name(name)
@@ -666,13 +952,13 @@ def is_device_present(*, name: Optional[str] = None, unique_id: Optional[str] = 
 
 
 def _device_key(uid: str, desc: str) -> str:
-    return uid or f"name:{_norm_name(desc)}"
+    return normalize_unique_id(uid) or f"name:{_norm_name(desc)}"
 
 
 def _topology_snapshot(now: Optional[float] = None) -> Dict[str, Any]:
     ts = time.time() if now is None else float(now)
     devices = [
-        {"index": i, "unique_id": uid, "name": desc}
+        {"index": i, "unique_id": normalize_unique_id(uid), "name": desc}
         for i, (uid, desc) in enumerate(_live_devices())
     ]
     return {
@@ -730,6 +1016,13 @@ def probe_camera_topology(
     if write_receipt:
         sd.mkdir(parents=True, exist_ok=True)
         try:
+            snapshot["active_target_refresh"] = refresh_active_target_from_live(
+                state_dir=sd,
+                now=snapshot["ts"],
+            )
+        except Exception as exc:
+            snapshot["active_target_refresh"] = {"changed": False, "error": type(exc).__name__}
+        try:
             _atomic_write_text(latest_path, json.dumps(snapshot, sort_keys=True) + "\n")
         except Exception:
             pass
@@ -781,6 +1074,17 @@ def prompt_line() -> str:
     idx = rec.get("index")
     writer = rec.get("writer") or "unknown"
     idx_str = f"idx {idx}" if idx is not None else "idx ?"
+    resolved = resolve_index(rec)
+    if resolved < 0 and name != "(unnamed)":
+        return (
+            f"current eye target: {name} (not live/unresolved, recorded {idx_str}, "
+            f"writer={writer})"
+        )
+    if resolved >= 0 and idx is not None and int(idx) != int(resolved):
+        return (
+            f"current eye: {name} (resolved idx {resolved}, recorded {idx}, "
+            f"writer={writer})"
+        )
     return f"current eye: {name} ({idx_str}, writer={writer})"
 
 

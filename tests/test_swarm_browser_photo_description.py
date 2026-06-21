@@ -26,7 +26,7 @@ def test_record_and_read_description(tmp_path):
 def test_url_filter_never_falls_back_to_other_page(tmp_path):
     pd.record_photo_description(
         "https://www.instagram.com/p/OLD/",
-        description="old page: white cowboy hat and lace bikini",
+        description="old page: white cowboy hat and lace swimsuit",
         arm="claude_agent",
         now=1000.0,
         state_dir=tmp_path,
@@ -48,7 +48,7 @@ def test_same_url_anchor_returns_prior_description_after_failed_scan(tmp_path):
     url = "https://www.instagram.com/p/CbVbizsJzKi/"
     pd.record_photo_description(
         url,
-        description="colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers",
+        description="colorful floral swim top, green swim bottoms, fuzzy green leg warmers",
         arm="claude_agent",
         now=1000.0,
         state_dir=tmp_path,
@@ -65,7 +65,7 @@ def test_same_url_anchor_returns_prior_description_after_failed_scan(tmp_path):
     anchor = pd.latest_same_url_photo_description(url=url, now=1006.0, state_dir=tmp_path)
 
     assert anchor["same_url_anchor"] is True
-    assert "green bikini bottoms" in anchor["description"]
+    assert "green swim bottoms" in anchor["description"]
 
 
 def test_empty_is_honest_no_invention(tmp_path):
@@ -238,7 +238,7 @@ def test_extract_codex_cli_speaker_marker_final_answer_from_image_run():
         "\x1b[35m\x1b[3mcodex\x1b[0m\x1b[0m\n"
         "I’ve read the covenant and am now inspecting the browser viewport pixels from the provided path.\n"
         "\x1b[35m\x1b[3mcodex\x1b[0m\x1b[0m\n"
-        "Four women pose outdoors around a silver light stand, wearing colorful bikini-style swimwear and barefoot on artificial turf. "
+        "Four women pose outdoors around a silver light stand, wearing colorful swim-style swimwear and barefoot on artificial turf. "
         "The setting is a sunny modern patio with glass doors, chairs, and hard shadows visible.\n"
         "\x1b[2mtokens used\x1b[0m\n"
         "23,066\n"
@@ -259,7 +259,7 @@ def test_non_visual_arm_reply_is_not_counted_as_sight():
     )
     assert pd.looks_like_non_visual_arm_reply(reply)
     assert not pd.looks_like_non_visual_arm_reply(
-        "A woman in a brown-and-white bikini poses outdoors near a bright beach."
+        "A woman in a brown-and-white swimsuit poses outdoors near a bright beach."
     )
 
 

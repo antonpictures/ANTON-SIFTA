@@ -58,7 +58,7 @@ _STYLE = f"""
 QWidget {{
     background: {_BG};
     color: {_TEXT};
-    font-family: "SF Mono", "Menlo", monospace;
+    font-family: "Menlo", monospace;
 }}
 QFrame#Panel {{
     background: {_PANEL};
@@ -207,7 +207,7 @@ class MediaShazamApp(QWidget):
         header.addWidget(btn_help)
 
         self.scene_badge = QLabel("● SCENE")
-        self.scene_badge.setFont(QFont("SF Mono", 10, QFont.Weight.Bold))
+        self.scene_badge.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
         self.scene_badge.setStyleSheet(f"color: {_DIM}; margin-left: 8px;")
         header.addWidget(self.scene_badge)
         root.addLayout(header)
@@ -426,7 +426,7 @@ class MediaShazamApp(QWidget):
         dlg = QDialog(self)
         dlg.setWindowTitle("Help — SIFTA Media Shazam")
         dlg.resize(560, 420)
-        dlg.setStyleSheet(f"background: {_BG}; color: {_TEXT}; font-family: 'SF Mono', monospace; font-size: 12px;")
+        dlg.setStyleSheet(f"background: {_BG}; color: {_TEXT}; font-family: 'Menlo', monospace; font-size: 12px;")
         layout = QVBoxLayout(dlg)
         body = QTextEdit()
         body.setReadOnly(True)

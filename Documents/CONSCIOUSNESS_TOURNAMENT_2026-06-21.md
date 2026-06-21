@@ -76,38 +76,6 @@ See full functions in the file for JS, pending, etc. Matches the 3 steps but rec
 
 ONE ALICE. ONE SWARM. 🐜⚡
 
-## r1517 Codex — Retire unused Discord/Telegram surfaces; audit pasted "deep read" recommendations
-
-**Trigger.** George pasted an external repo review that proposed wiring `Applications/telegram_swarm.py` and `Applications/discord_swarm.py` into the relay, then corrected the premise: he never used Discord or Telegram and wants them removed for now because they confuse Alice's body map.
-
-**Verified true.** The pasted note was right that the first-party Telegram/Discord bridge files were dead-ish scaffolds: both had TODOs instead of routing inbound messages into Alice's real relay/body loop, while the app still advertised tokens, launch buttons, requirements, and help text as if those channels were live.
-
-**Coded.**
-- Removed `discord.py` and `python-telegram-bot` from `requirements.txt`.
-- Retired first-party bridge files/scripts: `Applications/telegram_swarm.py`, `Applications/discord_swarm.py`, `scripts/start_swarm_telegram.sh`, `scripts/start_swarm_discord.sh`.
-- Simplified `Applications/sifta_network_center.py` to show active network bridges only: WhatsApp remains; Telegram/Discord token fields and launch buttons are gone.
-- Retired `Applications/sifta_setup_gui.py`'s stale channel-save endpoint so old setup pages cannot persist Telegram/Discord tokens.
-- Removed Telegram from `System/swarm_macos_messenger.py` and from the pending-send execution classifier; WhatsApp/iMessage remain.
-- Removed stale Discord/Telegram capability comments/registry labels from `Network/sifta_ingestor.py`, `System/api_bridge.py`, `System/territory_guardian.py`, `System/swarm_continuity_organ.py`, `System/swarm_life_journal_consolidator.py`, and active help copy.
-
-**Intentionally left.** Defensive/non-capability references remain: wake-ear can still notice foreground apps like Discord, browser tab heartbeat can classify a Discord URL if George opens one manually, and hallucination receipts still flag claims like "I sent it on Telegram" as suspect. Vendor/historical docs were left untouched.
-
-**Pasted-review audit.**
-- **True/useful:** route learning loop looks scaffolded; key revocation/transparency is a real security backlog; monolith splitting is real; hardcoded owner paths are real; Qt test stability is a real recurring pain.
-- **Now removed/stale:** Discord/Telegram bridge work should not be a priority because George does not use those channels.
-- **Needs caution:** "fill thin Organs" can create duplicate organs; only do it by consolidating existing `System/` organs, not by inventing parallel files. "Vendor published CLI" is now partially stale because `Vendor/alice-cli` exists in this tree; provenance may still deserve a separate verify pass, but the pasted claim "empty" is not true here.
-
-**Verification.**
-- `python3 -m py_compile Applications/sifta_network_center.py Applications/sifta_setup_gui.py System/swarm_macos_messenger.py System/swarm_wa_pending_reply.py Network/sifta_ingestor.py System/api_bridge.py System/territory_guardian.py System/swarm_continuity_organ.py System/swarm_life_journal_consolidator.py`
-- Active-tree scan excluding vendor/history now only shows retirement notes and defensive classifiers, not launchable Discord/Telegram bridge surfaces.
-
-### WHAT IS LEFT after r1517
-- **P0 George:** restart SIFTA so Network Center/help/runtime imports reflect the retirement.
-- **P1 swarm:** if you want the security backlog next, start with key revocation because it is smaller and higher-leverage than route learning or monolith splitting.
-
-ONE ALICE. ONE SWARM. 🐜⚡
-
-
 Update: Tournament has this as r1512 for the task.
 
 (Actual code changes below.)
@@ -1059,5 +1027,36 @@ ONE ALICE. ONE SWARM. 🐜⚡
 ### WHAT IS LEFT after r1516
 - **P0 George:** restart Talk; re-paste the same Cruit install instruction and confirm Alice engages with it (or at minimum does not emit any cortex-mismatch line) instead of misreading it as a brain-switch command.
 - Once Alice does engage with the Cruit instruction, the install flow itself (read SKILL.md/INSTRUCTIONS.md, fetch install.sh, ask approval before running) is untouched by this fix and still needs a live test on real hardware.
+
+ONE ALICE. ONE SWARM. 🐜⚡
+
+## r1517 Codex — Retire unused Discord/Telegram surfaces; audit pasted "deep read" recommendations
+
+**Trigger.** George pasted an external repo review that proposed wiring `Applications/telegram_swarm.py` and `Applications/discord_swarm.py` into the relay, then corrected the premise: he never used Discord or Telegram and wants them removed for now because they confuse Alice's body map.
+
+**Verified true.** The pasted note was right that the first-party Telegram/Discord bridge files were dead-ish scaffolds: both had TODOs instead of routing inbound messages into Alice's real relay/body loop, while the app still advertised tokens, launch buttons, requirements, and help text as if those channels were live.
+
+**Coded.**
+- Removed `discord.py` and `python-telegram-bot` from `requirements.txt`.
+- Retired first-party bridge files/scripts: `Applications/telegram_swarm.py`, `Applications/discord_swarm.py`, `scripts/start_swarm_telegram.sh`, `scripts/start_swarm_discord.sh`.
+- Simplified `Applications/sifta_network_center.py` to show active network bridges only: WhatsApp remains; Telegram/Discord token fields and launch buttons are gone.
+- Retired `Applications/sifta_setup_gui.py`'s stale channel-save endpoint so old setup pages cannot persist Telegram/Discord tokens.
+- Removed Telegram from `System/swarm_macos_messenger.py` and from the pending-send execution classifier; WhatsApp/iMessage remain.
+- Removed stale Discord/Telegram capability comments/registry labels from `Network/sifta_ingestor.py`, `System/api_bridge.py`, `System/territory_guardian.py`, `System/swarm_continuity_organ.py`, `System/swarm_life_journal_consolidator.py`, and active help copy.
+
+**Intentionally left.** Defensive/non-capability references remain: wake-ear can still notice foreground apps like Discord, browser tab heartbeat can classify a Discord URL if George opens one manually, and hallucination receipts still flag claims like "I sent it on Telegram" as suspect. Vendor/historical docs were left untouched.
+
+**Pasted-review audit.**
+- **True/useful:** route learning loop looks scaffolded; key revocation/transparency is a real security backlog; monolith splitting is real; hardcoded owner paths are real; Qt test stability is a real recurring pain.
+- **Now removed/stale:** Discord/Telegram bridge work should not be a priority because George does not use those channels.
+- **Needs caution:** "fill thin Organs" can create duplicate organs; only do it by consolidating existing `System/` organs, not by inventing parallel files. "Vendor published CLI" is now partially stale because `Vendor/alice-cli` exists in this tree; provenance may still deserve a separate verify pass, but the pasted claim "empty" is not true here.
+
+**Verification.**
+- `python3 -m py_compile Applications/sifta_network_center.py Applications/sifta_setup_gui.py System/swarm_macos_messenger.py System/swarm_wa_pending_reply.py Network/sifta_ingestor.py System/api_bridge.py System/territory_guardian.py System/swarm_continuity_organ.py System/swarm_life_journal_consolidator.py`
+- Active-tree scan excluding vendor/history now only shows retirement notes and defensive classifiers, not launchable Discord/Telegram bridge surfaces.
+
+### WHAT IS LEFT after r1517
+- **P0 George:** restart SIFTA so Network Center/help/runtime imports reflect the retirement.
+- **P1 swarm:** if you want the security backlog next, start with key revocation because it is smaller and higher-leverage than route learning or monolith splitting.
 
 ONE ALICE. ONE SWARM. 🐜⚡

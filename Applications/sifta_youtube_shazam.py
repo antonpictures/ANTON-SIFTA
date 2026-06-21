@@ -129,7 +129,7 @@ class SiftaYoutubeShazam(QWidget):
         self.resize(560, 380)
         self.setStyleSheet("""
             QWidget { background-color: #0b0c10; color: #c5c6c7; font-family: 'SF Pro Display', 'Helvetica Neue', sans-serif; }
-            QTextEdit { background-color: #1f2833; border: 1px solid #2e3c4e; border-radius: 6px; padding: 6px; color: #a8b2bf; font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px; }
+            QTextEdit { background-color: #1f2833; border: 1px solid #2e3c4e; border-radius: 6px; padding: 6px; color: #a8b2bf; font-family: 'Menlo', monospace; font-size: 11px; }
         """)
 
         layout = QVBoxLayout(self)
@@ -145,7 +145,7 @@ class SiftaYoutubeShazam(QWidget):
         h_row.addStretch()
 
         self.scene_badge = QLabel("● LISTENING")
-        self.scene_badge.setFont(QFont("SF Mono", 11, QFont.Weight.Bold))
+        self.scene_badge.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
         self.scene_badge.setStyleSheet("color: #5c6370;")
         h_row.addWidget(self.scene_badge)
         layout.addLayout(h_row)
@@ -171,7 +171,7 @@ class SiftaYoutubeShazam(QWidget):
 
         # ── Receipt status ───────────────────────────────────────────────────
         self.receipt_label = QLabel("")
-        self.receipt_label.setFont(QFont("SF Mono", 9))
+        self.receipt_label.setFont(QFont("Menlo", 9))
         self.receipt_label.setStyleSheet("color: #3d5a6e;")
         layout.addWidget(self.receipt_label)
 

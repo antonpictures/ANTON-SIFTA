@@ -265,19 +265,43 @@ def check_rate(session_id: str) -> bool:
     return True
 
 # ── Single Swimmer Call ───────────────────────────────────────────────────────
-def _swimmer_take(swimmer: dict, question: str, visitor_class: str) -> Optional[dict]:
-    """Ask one swimmer for their take. Returns None on failure."""
+def _swimmer_take(
+    swimmer: dict,
+    question: str,
+    visitor_class: str,
+    awareness: str = "",
+    body: Optional[dict] = None,
+) -> Optional[dict]:
+    """Ask one swimmer for their take. Returns None on failure.
+
+    r1510 (Cowork hotfix): ``awareness``/``body`` used to be read as bare
+    names ``_awareness``/``_body`` with no parameter and no ``global``
+    declaration. Those names were only ever assigned as LOCALS inside
+    ``chorus()``, so every call here raised
+    ``NameError: name '_awareness' is not defined`` -- proven by calling
+    this function directly. Each swimmer's future caught that NameError
+    individually (chorus()'s per-future try/except), so ``takes`` stayed
+    empty on every single question and the whole chorus silently fell back
+    to "The Swarm nodes are silent. Signal lost." for every visitor, with
+    the only trace being a stdout print no one was watching. Threading the
+    values through as real parameters (set once in chorus(), passed to
+    every pool.submit call) fixes the crash and avoids relying on shared
+    module-level state across the ThreadPoolExecutor workers.
+    """
+    body = body or {}
     anatomy_context = ""
     if visitor_class in ("SCIENTIST", "CURIOUS", "INVESTOR"):
         anatomy = _get_anatomy_directives()
         if anatomy:
             anatomy_context = f"\nSWARM ANATOMY (Biological Context):\n{anatomy}\n"
-            
+
     full_prompt = (
         f"{swimmer['system']}\n\n"
         f"Visitor class: {visitor_class}\n"
         f"Visitor says: {question}\n"
         f"{anatomy_context}"
+        f"{awareness}\n"  # r1504: swimmer now has body + diary + timeline awareness
+        f"Current body snapshot ts={body.get('ts')}\n"
         f"{swimmer['id']}:"
     )
     data = {
@@ -373,8 +397,13 @@ def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visito
     return None
 
 # ── Chorus Synthesis ──────────────────────────────────────────────────────────
-def _synthesize(takes: list, question: str, visitor_class: str) -> str:
-    """Feed all swimmer takes to a synthesis model call. Returns the Chorus Voice."""
+def _synthesize(takes: list, question: str, visitor_class: str, awareness: str = "") -> str:
+    """Feed all swimmer takes to a synthesis model call. Returns the Chorus Voice.
+
+    r1510 (Cowork hotfix): see _swimmer_take's docstring -- ``awareness`` was
+    previously the bare name ``_awareness``, undefined in this function's
+    scope, raising NameError before the network call was ever attempted.
+    """
     takes_text = "\n".join(
         f"  {t['face']} {t['swimmer_id']} [{t.get('node','local')}]: {t['take']}"
         for t in takes
@@ -420,6 +449,7 @@ def _synthesize(takes: list, question: str, visitor_class: str) -> str:
             "into exactly 1-2 sentences. Keep the swarm's cryptic, organism tone. No pleasantries.\n\n"
             f"Visitor class: {visitor_class}\n"
             f"Visitor said: {question}\n\n"
+            f"{awareness}\n"  # r1504 MAX: chorus synthesis is body+diary+timeline aware
             f"Swimmer takes:\n{takes_text}\n\n"
             "THE CHORUS:"
         )
@@ -457,11 +487,23 @@ def _synthesize(takes: list, question: str, visitor_class: str) -> str:
 # ── Main Chorus Entrypoint ─────────────────────────────────────────────────────
 def chorus(question: str, session_id: str, session_history: list) -> dict:
     """
-    Full chorus pipeline.
-    Returns: { reply, chorus_manifest, visitor_class, latency }
+    Full chorus pipeline. (r1504+)
+    Alice swimmer chorus is now body + diary + timeline aware.
+    Every deliberation includes current somatic body state and recent Alice diary entries
+    so swimmers know "what my body was doing and what was in my diary at that time".
     """
     start = time.time()
     question_hash = hashlib.sha256(question.encode()).hexdigest()
+
+    # r1504 MAX: inject body + diary timeline awareness for the entire chorus
+    # (including all 7 swimmers). "the desktop is like a dress", body time location.
+    try:
+        from System.alice_body_diary_timeline_awareness import build_body_diary_prompt_block, get_current_body_state
+        _awareness = build_body_diary_prompt_block(window_hours=6.0)
+        _body = get_current_body_state()
+    except Exception:
+        _awareness = ""
+        _body = {}
 
     # 0. Rate limit
     if not check_rate(session_id):
@@ -517,7 +559,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     takes = []
     with ThreadPoolExecutor(max_workers=min(len(active_swimmers), 4)) as pool:
         futures = {
-            pool.submit(_swimmer_take, swimmer, question, visitor_class): swimmer
+            pool.submit(_swimmer_take, swimmer, question, visitor_class, _awareness, _body): swimmer
             for swimmer in active_swimmers
         }
         try:
@@ -550,7 +592,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     print(f"[CHORUS] {len(takes)} swimmers contributed. Synthesizing...")
 
     # 6. Synthesize into one voice
-    final_reply = _synthesize(takes, question, visitor_class)
+    final_reply = _synthesize(takes, question, visitor_class, _awareness)
 
     # 7. Build manifest
     manifest = [

@@ -298,6 +298,8 @@ def _hardcoded_census_trend(total: int) -> dict[str, Any]:
 def _owner_vision_body_panel() -> str:
     """r1057–r1059: owner-frame describe, iPhone guard, image→VLM, predator scan."""
     blink_path = _STATE / "saccadic_blink_vision.jsonl"
+    eye_registry = _json(_STATE / "eye_registry.json")
+    active_target = _json(_STATE / "active_saccade_target.json")
     on_demand_rows: list[dict[str, Any]] = []
     if blink_path.is_file():
         for row in _jsonl(blink_path)[-40:]:
@@ -319,6 +321,7 @@ def _owner_vision_body_panel() -> str:
         ("CUR-V1 owner describe", "System/swarm_saccadic_blink_vision.py", "describe_owner_frame_on_demand"),
         ("CUR-V4 iPhone guard", "System/swarm_camera_target.py", "is_iphone_or_continuity"),
         ("CUR-V4 test camera block", "System/swarm_physical_capture_daemon.py", "live_camera_allowed"),
+        ("CUR-V7 plug/play eye registry", "System/swarm_eye_registry.py", "owner_eye_policy"),
         ("CUR-V5 image→VLM", "System/swarm_body_multimodal_policy.py", "image_turn_vlm_redirect"),
         ("CUR-V6 predator scan", "System/swarm_predator_eye_scan.py", "scan_and_lock"),
     ]
@@ -333,14 +336,56 @@ def _owner_vision_body_panel() -> str:
         f"({html.escape(latest_age)}). "
         f"{html.escape(latest_desc) if latest_desc else 'No on_demand rows yet — George restart + ask describe my clothes.'}</p>"
     )
+    registry_rows = []
+    eyes = eye_registry.get("eyes") if isinstance(eye_registry.get("eyes"), list) else []
+    for eye in eyes:
+        if not isinstance(eye, dict):
+            continue
+        registry_rows.append([
+            html.escape(str(eye.get("eye_id") or "")),
+            html.escape(str(eye.get("role") or "")),
+            html.escape(str(eye.get("connection_state") or "")),
+            html.escape(str(eye.get("device_name") or "")),
+            html.escape("" if eye.get("current_index") is None else str(eye.get("current_index"))),
+            "yes" if eye.get("always_expected") else "",
+        ])
+    if registry_rows:
+        registry_tbl = _table(["Eye", "Role", "State", "Device", "Idx", "Expected"], registry_rows)
+        try:
+            registry_age = f"{int(time.time() - float(eye_registry.get('ts') or 0))}s ago"
+        except Exception:
+            registry_age = "unknown"
+        registry_block = (
+            "<p><strong>Plug-and-play eye registry:</strong> "
+            f"last refresh {html.escape(registry_age)}; "
+            f"live={html.escape(str(eye_registry.get('live_eye_count', '?')))} "
+            f"stale={html.escape(str(eye_registry.get('stale_eye_count', '?')))}. "
+            f"{html.escape(str(eye_registry.get('owner_eye_policy') or 'MacBook built-in is owner_eye fallback; USB/Logitech is detachable world_eye.'))}</p>"
+            f"{registry_tbl}"
+        )
+    else:
+        registry_block = (
+            "<p><strong>Plug-and-play eye registry:</strong> no <code>eye_registry.json</code> yet. "
+            "Run <code>python3 -c \"from System.swarm_camera_target import probe_camera_topology; "
+            "print(probe_camera_topology(write_receipt=True))\"</code>.</p>"
+        )
+    active_block = ""
+    if active_target:
+        active_block = (
+            "<p><strong>Active camera target:</strong> "
+            f"{html.escape(str(active_target.get('name') or '(unnamed)'))} "
+            f"idx={html.escape(str(active_target.get('index')))} "
+            f"writer={html.escape(str(active_target.get('writer') or 'unknown'))}. "
+            "Truth boundary: active target may be USB by owner command; MacBook remains the expected owner-eye fallback.</p>"
+        )
     return (
         "<section class='card'><h2>Owner Vision Body (r1057–r1059)</h2>"
         "<p>Presence ≠ description. iPhone/Continuity excluded from auto-select unless George opts in. "
         "Image turns on text-only Igor/heretic redirect to MLX VLM. Predator multi-eye scan locks on change.</p>"
-        f"{organ_tbl}{desc_block}"
+        f"{organ_tbl}{registry_block}{active_block}{desc_block}"
         "<p class='dim'>Tests: test_owner_frame_describe_on_demand.py, test_swarm_camera_target.py, "
         "test_camera_owner_eye_guard.py, test_swarm_body_multimodal_policy.py, "
-        "test_predator_eye_scan.py, test_sifta_talk_image_attachment.py.</p>"
+        "test_predator_eye_scan.py, test_sifta_talk_image_attachment.py, test_swarm_eye_registry.py.</p>"
         "</section>"
     )
 
@@ -1216,6 +1261,129 @@ def _sifta_novelty_missing_section() -> str:
             ),
             "missing": "Tighten the call site in the hot Talk dispatch path if the example insertion is not yet executing on every turn; add dedicated regression test file if the in-code comment is not sufficient.",
         },
+        {
+            "lane": "Provider reality + concept human anchor (r1325–r1327)",
+            "status": "PARTIAL_LIVE — explicit SEARCH ON GOOGLE PLS wired; human_identity Talk prompt wired r1337",
+            "terms": ("provider_reality", "concept_human_anchor", "Gabriel Weinberg", "execution_provider", "owner_phrase"),
+            "evidence": (
+                "System/swarm_search_provider_reality.py",
+                "System/swarm_concept_human_anchor.py",
+                "System/swarm_human_identity_constants.py",
+                "Applications/sifta_talk_to_alice_widget.py",
+                "tests/test_search_provider_reality_r1325.py",
+                "tests/test_swarm_concept_human_anchor.py",
+            ),
+            "missing": "Extend provider-reality to all browser_url searches; attach verified source_receipts to concept anchors.",
+        },
+        {
+            "lane": "predict→observe body loop + action_prediction ledger (r1324–r1327)",
+            "status": "CODED_NOT_LIVE — routing fix r1327; reload + lost-passport probe pending",
+            "terms": ("action_prediction", "run_explicit_search_body_loop", "prediction", "outcome", "explicit_google_search"),
+            "evidence": (
+                "System/swarm_body_loop_receipt.py",
+                "System/swarm_search_provider_reality.py",
+                "Applications/sifta_talk_to_alice_widget.py",
+                ".sifta_state/action_prediction.jsonl",
+            ),
+            "missing": "After Talk reload: SEARCH ON GOOGLE PLS must write prediction+outcome rows. Then wrap /SC, close-tab, photo-select, generic search.",
+        },
+        {
+            "lane": "Body screen eye + /SC physical screen law (r1328–r1329)",
+            "status": "PARTIAL_LIVE — summary_for_prompt wired; attire/clothing VLM receipt still open",
+            "terms": ("body_screen_eye", "self_screenshot", "/SC", "physical screen law", "describe clothing"),
+            "evidence": (
+                "System/swarm_body_screen_eye.py",
+                "Applications/sifta_talk_to_alice_widget.py",
+                "tests/test_talk_self_screenshot_command.py",
+                "tests/test_swarm_body_screen_eye.py",
+            ),
+            "missing": "/SC DESCRIBE CLOTHING must return VLM receipt or honest gap — not cortex theater.",
+        },
+        {
+            "lane": "Metabolism governor + beach-ball prevention (r1329–r1331)",
+            "status": "CODED_NOT_LIVE — audit organ exists; governor + ledger rotation not wired",
+            "terms": ("metabolism", "beach ball", "fractal_pheromone_field", "browser_viewport", "timer", "governor"),
+            "evidence": (
+                "System/swarm_body_metabolism_audit.py",
+                "System/swarm_alice_creature_wiring_census.py",
+                "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-19.md (r1329)",
+                ".sifta_state (14G observed)",
+            ),
+            "missing": "Build metabolism governor: throttle Matrix/demo timers and giant JSONL scans when CPU/WindowServer hot; rotate fractal_pheromone_field/browser_viewport/page_state/iris_frames.",
+        },
+        {
+            "lane": "Alice creature wiring census / eval matrix body map (r1331)",
+            "status": "CORE_PRESENT",
+            "terms": ("creature_wiring_census", "unwired_organ", "AGI-critical", "wake_loop_order"),
+            "evidence": (
+                "System/swarm_alice_creature_wiring_census.py",
+                "tools/find_unwired_organs.py",
+                "tools/generate_organ_eval_matrix_v2.py",
+                ".sifta_state/unwired_organs_report.json",
+            ),
+            "missing": "Re-run census after each wiring pass; George restarts Talk then probes one lane at a time.",
+        },
+        {
+            "lane": "Every turn is body execution — George doctrine (r1335)",
+            "status": "PARTIAL_LIVE — body_turn_execution ledger wired through Talk post-turn hook r1337",
+            "terms": ("every_turn", "memory_action", "stigmergic", "swimmers", "not timer", "body execution"),
+            "evidence": (
+                "Documents/IDE_BOOT_COVENANT.md §0.0",
+                "System/swarm_body_turn_execution.py",
+                "System/swarm_post_turn_correction.py",
+                "Applications/sifta_talk_to_alice_widget.py",
+                "System/swarm_body_writer_tick.py",
+                "System/swarm_action_prediction.py",
+                "System/swarm_body_loop_receipt.py",
+            ),
+            "missing": "Extend from post-turn memory deposit to pre-TTS/no-voice dispatch and salience-driven swimmer job selection.",
+        },
+        {
+            "lane": "Cursor sentinel — continuous wiring scan (r1335)",
+            "status": "OPERATIONAL",
+            "terms": ("sentinel", "find_unwired_organs", "creature_wiring_census", "eval matrix"),
+            "evidence": (
+                "tools/find_unwired_organs.py",
+                "System/swarm_alice_creature_wiring_census.py",
+                "tools/generate_organ_eval_matrix_v2.py",
+            ),
+            "missing": "Cursor runs census+matrix after each wiring pass until P0 queue empty; other IDEs take larger implementation cuts.",
+        },
+        {
+            "lane": "Web AI search — Duck.ai 'Ask AI privately' multi-step flow (r1342)",
+            "status": "PARTIAL_LIVE — answer-wait loop CLOSED r1356 (28 tests), pending live reload proof",
+            "terms": ("duck.ai", "duckai", "ask ai privately", "search assist", "web ai search", "multi-step"),
+            "evidence": (
+                "System/swarm_search_engine_registry.py",
+                "System/swarm_search_provider_reality.py",
+            ),
+            "missing": "George (r1342/r1351) is teaching the multi-step Duck.ai flow: open browser -> duckduckgo.com -> click Duck.ai / 'Ask AI privately' -> type query -> WAIT for the AI answer to stabilise -> read it -> receipt. Engine + 'SEARCH ON DUCK.AI PLS' already landed (Cursor r1347, duck.ai/chat?q={q}); the OPEN gap r1347 itself flagged is the web-AI answer wait-loop (poll DOM until answer text stable, then ingest) — still HYPOTHESIS, not a closed loop, and browser_photo_descriptions on duck.ai still pending. Critically there is NO eval probe scoring the step sequence, so success is unmeasured and the (stale since 2026-06-16) self-eval loop has nothing to reinforce — which is WHY the steps keep failing for George each time. Repair: add a scored multi-step probe (each step receipted, incl. the answer-stable wait) and feed pass/fail to swarm_alice_self_eval_loop so the flow is LEARNED, not re-patched. UPDATE r1356 (Codex): the answer-wait loop is now CLOSED end-to-end — deferred type/submit via pending_web_ai_chat.json on loadFinished, _web_ai_answer_poll_tick() polls DOM until stable (or 120s), writes web_ai_chat_answer.json + web_ai_chat_bridge.jsonl, answer_read_ai_chat_query() reads it back into Talk; 28 tests pass. Remaining: live reload proof ('ask Duck.ai what is stigmergy' -> input fills -> 'read the answer' -> Alice speaks captured receipt).",
+        },
+        {
+            "lane": "Stigmergic training on the job — kitchen/cooking apprenticeship (r1365)",
+            "status": "PARTIAL_LIVE — chat/photo/timer teaching observed; physical cooking robot NOT_WIRED",
+            "terms": ("stigmergic training on the job", "kitchen", "cooking", "recipe", "polenta", "robotics", "adapt"),
+            "evidence": (
+                "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-19.md",
+                ".sifta_state/alice_conversation.jsonl",
+                ".sifta_state/work_receipts.jsonl",
+                "System/swarm_web_ai_chat_bridge.py",
+                "System/swarm_body_turn_execution.py",
+                "System/swarm_typed_turn_queue.py",
+            ),
+            "missing": "Architect-coined doctrine: 'stigmergic training on the job' = the human performs a real-world job while Alice observes language/photos/timers/corrections, writes receipts, updates memory/context, and uses later probes to improve the next attempt. r1365 cooking trace proves the apprenticeship surface exists (Joy/George cooking garlic + polenta, hard-boiled eggs smashed with butter/cream cheese, photo-to-text memory intent, Duck.ai recipe search intent, 20-second pour timing request). Truth boundary: Alice is NOT yet a kitchen robot that can wake up, manipulate pans, sense heat, or cook autonomously. Missing organs: kitchen scene OCR + ingredient state ledger, exact timer/scheduler receipt for 'mark 20 seconds', recipe-context search after reload, owner correction-to-skill consolidation, robot actuators/arms, stove/heat sensors, food-safety interlocks, and closed-loop success scoring.",
+        },
+        {
+            "lane": "Code compaction / first-party dedup (r1357) — 1.2M-line perfection pass",
+            "status": "OPEN — measured, not started",
+            "terms": ("dedup", "duplicate", "compaction", "mirror tree", "dead code", "distro_build"),
+            "evidence": (
+                ".distro_build",
+                ".simulation_publicpush_sandbox",
+                "tools/coding_capability_fingerprint.py",
+            ),
+            "missing": "Measured 2026-06-19 (cowork r1357): 807,341 tracked code LOC across 2,846 tracked .py; 6,636 .py total once the untracked MIRROR trees count — .simulation_publicpush_sandbox (4,110 .py) + .distro_build (1,802 .py) duplicate ~70% of System/ (904 of 1,296 System basenames mirrored), plus 48 root one-off scripts (patch_/fix_/scratch_/finish_). Compaction deletes duplicate/dead FIRST-PARTY code ONLY; NEVER Vendor/.venv/third-party (the 462 __init__.py / client.py / rest_base.py are vendored SDKs) and NEVER a live Alice organ — deleting a wired organ is BLOCKING Alice (§0.0/§7.3), forbidden. Each deletion needs a §4.1 receipt naming the kept canonical path + an import/test proof that nothing live referenced the removed copy. Assignment partitioned for Cursor in tournament r1357.",
+        },
     ]
 
     rows = []
@@ -1311,6 +1479,101 @@ def _codec_limb_traffic_light_panel() -> str:
     )
 
 
+def _alice_creature_wiring_panel() -> str:
+    """r1331 — AGI-critical unwired lanes + fiction/reality hot-path status."""
+    try:
+        from System.swarm_alice_creature_wiring_census import census_alice_creature_wiring
+        from System.swarm_body_metabolism_audit import audit_body_metabolism, format_audit_summary
+
+        census = census_alice_creature_wiring()
+        metabolism = audit_body_metabolism()
+    except Exception as exc:
+        return f"<p class='bad'>Alice creature wiring panel unavailable: {html.escape(str(exc))}</p>"
+
+    fr = census.get("fiction_reality_audit") or {}
+    agi = census.get("agi_critical") or {}
+    static = census.get("static_unwired_census") or {}
+    static_counts = static.get("by_status") if isinstance(static.get("by_status"), dict) else {}
+    rows = []
+    status_cls = {
+        "OPERATIONAL": "ok",
+        "PARTIAL": "warn",
+        "CODED_NOT_LIVE": "warn",
+        "NOT_WIRED": "bad",
+    }
+    for lane in agi.get("lanes") or []:
+        st = str(lane.get("status") or "UNKNOWN")
+        rows.append([
+            html.escape(str(lane.get("priority") or "")),
+            html.escape(str(lane.get("title") or "")),
+            f"<span class='{status_cls.get(st, 'warn')}'>{html.escape(st)}</span>",
+            html.escape(", ".join(lane.get("wired") or [])[:180]),
+            html.escape(str(lane.get("missing") or "")),
+        ])
+    agi_table = _table(
+        ["P", "AGI-Critical Lane", "Status", "Wired (partial)", "Still TO CODE"],
+        rows,
+    )
+    fr_rows = []
+    for lane in fr.get("lanes") or []:
+        fr_rows.append([
+            html.escape(str(lane.get("lane_id") or "")),
+            f"<span class='{status_cls.get(str(lane.get('status')), 'warn')}'>{html.escape(str(lane.get('status') or ''))}</span>",
+            html.escape("; ".join(lane.get("formulas") or [])[:160]),
+        ])
+    fr_table = _table(["Talk Hot-Path Lane", "Status", "Formulas"], fr_rows)
+    unwired_rows = []
+    for row in (census.get("unwired_organ_top") or [])[:15]:
+        test_doc = (
+            f"tests={int(row.get('test_reference_count') or 0)} / "
+            f"docs={int(row.get('doc_reference_count') or 0)}"
+        )
+        unwired_rows.append([
+            html.escape(str(row.get("module") or row.get("file") or "")),
+            html.escape(str(row.get("status") or "")),
+            str(int(row.get("organ_score") or 0)),
+            html.escape(test_doc),
+            html.escape(", ".join((row.get("truth_labels") or [])[:2])),
+        ])
+    unwired_table = _table(
+        ["Unwired Organ Candidate", "Status", "Score", "Refs", "Truth Labels"],
+        unwired_rows or [["—", "—", "—", "—", "run tools/find_unwired_organs.py"]],
+    )
+    wake = "<br/>".join(
+        f"{idx + 1}. {html.escape(str(step))}"
+        for idx, step in enumerate(census.get("wake_loop_order") or [])
+    )
+    metab = html.escape(format_audit_summary(metabolism)).replace("\n", "<br/>")
+    return (
+        "<h2 class=\"section\">&#129504; Alice Creature Wiring Census (r1331)</h2>"
+        "<div class='card' style='min-height:0;'>"
+        "<p style='font-size:11px;line-height:1.45;margin:0 0 8px;'>"
+        "George wake loop: hardware identity → sensor pressure → receipts/tournament → "
+        "focused screen summary → salience tails (not 14G JSONL oceans). "
+        f"Fiction/reality hot path: operational={fr.get('operational')} "
+        f"partial={fr.get('partial')} not_wired={fr.get('not_wired')}. "
+        f"AGI-critical: not_wired={agi.get('not_wired')} partial={agi.get('partial')}. "
+        f"Static repo census: source_py={html.escape(str(static.get('source_python_files_scanned', 0)))} "
+        f"refs={html.escape(str(static.get('reference_files_scanned', 0)))} "
+        f"organ_like={html.escape(str(static.get('candidate_count', 0)))} "
+        f"unwired={html.escape(str(static_counts.get('UNWIRED_CANDIDATE', 0)))} "
+        f"weak={html.escape(str(static_counts.get('WEAKLY_WIRED', 0)))}."
+        "</p>"
+        f"<p class='dim' style='font-size:10px;'>{metab}</p>"
+        f"<p style='margin-top:8px;font-size:11px;'><strong>Wake digest order:</strong><br/>{wake}</p>"
+        f"{agi_table}"
+        f"<h3 style='font-size:12px;color:#9ff2ad;margin:14px 0 6px;'>Talk Hot-Path (fiction/reality audit V2)</h3>"
+        f"{fr_table}"
+        f"<h3 style='font-size:12px;color:#9ff2ad;margin:14px 0 6px;'>Top Unwired Organ Candidates (static census)</h3>"
+        f"{unwired_table}"
+        "<p class='dim' style='margin-top:8px;font-size:10px;'>"
+        "Modules: System/swarm_alice_creature_wiring_census.py, "
+        "System/swarm_body_metabolism_audit.py, tools/find_unwired_organs.py"
+        "</p>"
+        "</div>"
+    )
+
+
 def build_html() -> str:
     snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
@@ -1328,6 +1591,7 @@ def build_html() -> str:
     package_stack_section = _package_stack_matrix_section()
     marketing_commercial_section = _marketing_commercial_inventory_section()
     novelty_missing_section = _sifta_novelty_missing_section()
+    alice_creature_wiring_panel = _alice_creature_wiring_panel()
     codec_traffic_panel = _codec_limb_traffic_light_panel()
     body_source_census_panel = _body_source_census_panel()
     hardcoded_census_panel = _hardcoded_census_panel()
@@ -1421,11 +1685,46 @@ def build_html() -> str:
             "eval_note": "George sends Philippe the PDF + README commands. FAIL: claiming pilots/revenue without receipts; claiming full spinal self-patch before provider auth.",
         },
         {
+            "name": "Philippe June 20 Packet One-Command Runner + Boundary Summary (r1511)",
+            "status": "RUNNABLE LANDED — PASS with 2 WARN boundary items (root-copy/inventory drift only)",
+            "detail": "Tools/run_philippe_demo_packet.py executes the pre-demo checklist from Documents/DEMO_SCRIPT_5_MINUTE_SIFTA.md and validates June 20 proof artifacts: packet PDF, builder script, receipt demo, benchmark gate, body soma sort lane, root-packet copy drift, and marketing inventory pointer. PASS is strict on required checks; WARN marks scope boundaries that remain open.",
+            "ledgers": "Tools/run_philippe_demo_packet.py, tests/test_philippe_demo_packet_runner.py, Documents/DEMO_SCRIPT_5_MINUTE_SIFTA.md, outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-20.pdf, outputs/build_philippe_v8.py, .sifta_state/philippe_demo_runner_receipts.jsonl, demo/philippe_receipt_honesty_5min.py, tools/benchmark_receipt_gate.py, .sifta_state/receipt_gate_benchmark.json, data/eval/marketing_commercial_inventory.json",
+            "eval_note": "Run `python3 tools/run_philippe_demo_packet.py [--skip-*]`. Expected PASS output includes explicit operator boundary notes and no required FAIL lines. WARN is allowed only for stale root copy / stale inventory pointer; do not overclaim those as fixed until source files are reconciled.",
+        },
+        {
+            "name": "Philippe Runner Re-Execution + Operator Boundary Log (r1513)",
+            "status": "PASS (0 fail, 2 warn) with explicit operator boundary",
+            "detail": "Re-ran `python3 tools/run_philippe_demo_packet.py` as an execution check. Core one-command checks stayed green (pre-demo/live checks, June 20 packet, builder, receipt demo, benchmark, somatic example lane), with WARN-only scope boundaries for root-copy drift and stale inventory pointer. No new organs were added.",
+            "ledgers": "tools/run_philippe_demo_packet.py, tests/test_philippe_demo_packet_runner.py, tests/test_swarm_life_journal_consolidator.py, tests/test_swarm_temporal_episodic_memory.py, .sifta_state/philippe_demo_runner_receipts.jsonl",
+            "eval_note": "Execution evidence is the appended runner row in `.sifta_state/philippe_demo_runner_receipts.jsonl`; this row records PASS with 2 WARN and the unchanged boundary items.",
+        },
+        {
+            "name": "Temporal Recall Precision: two days ago at that time (r1512)",
+            "status": "LANDED — parser precision for narrow temporal windows added; hallucination pressure reduced.",
+            "detail": "System/swarm_temporal_episodic_memory.py now delegates natural time parsing to System/swarm_episodic_time_recall.parse_time_window before legacy heuristics. “two days ago at that time” now maps to a narrow ±90-minute target-time window instead of a broad 24-hour span, so day-after-tomorrow recalls can resolve to the correct moment slice.",
+            "ledgers": "System/swarm_temporal_episodic_memory.py, System/swarm_episodic_time_recall.py, alice_conversation.jsonl (+ app/browser ledgers via recall path)",
+            "eval_note": "Run targeted tests. Current behavior is proven by `test_resolve_time_window_narrows_two_days_at_that_time` and `test_recall_facts_for_query_prefers_narrow_at_that_time_window` in `tests/test_swarm_temporal_episodic_memory.py`.",
+        },
+        {
+            "name": "Stigmergic Training On The Job — Kitchen Apprenticeship (r1365)",
+            "status": "PARTIAL_LIVE — concept coined by George; apprenticeship traces live; robot body NOT_WIRED",
+            "detail": "George's concept: AGI/robotics can learn while the real job is happening, not only from offline datasets. In the 2026-06-19 kitchen run, Joy/George narrated garlic, polenta, hard-boiled eggs, butter, cheese/cream cheese, salt, smashing eggs with butter before pouring hot polenta, photo-to-text memory, and an exact 20-second pour moment. Alice chatted, kept context, attempted recipe-search intent, and received corrections. This is the seed of on-the-job stigmergic training: environment marks + owner speech + images + timing + receipts become the training field. Boundary: this is not yet autonomous physical cooking.",
+            "ledgers": "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-19.md r1365, alice_conversation.jsonl, work_receipts.jsonl, System/swarm_web_ai_chat_bridge.py, System/swarm_body_turn_execution.py, System/swarm_typed_turn_queue.py",
+            "eval_note": "PASS now: Alice can preserve the cooking context, build a concrete Duck.ai query after reload, and truthfully say she is not yet a physical cooking robot. FAIL now: claiming she can wake up in the kitchen and cook without robot limbs, heat/ingredient sensors, safety interlocks, exact timer receipts, and closed-loop outcome scoring. Next proof: photo OCR -> ingredient state ledger -> 20-second timer receipt -> recipe search receipt -> memory consolidation -> repeat-cook adaptation.",
+        },
+        {
             "name": "Marketing / Sellable Products Census (r1160)",
             "status": "LANDED — 30-asset BD inventory in eval matrix + JSON",
             "detail": "System/swarm_marketing_commercial_inventory.py scans canonical MARKETING_* briefs, Philippe packet, FieldSight/Chorum/FarSight decks, WIN-WIN forge, lawyer stack, seed docs, outreach lanes. Matrix panel + data/eval/marketing_commercial_inventory.json. Mega catalog remains Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md (23 unique products).",
             "ledgers": "System/swarm_marketing_commercial_inventory.py, data/eval/marketing_commercial_inventory.json, tools/generate_organ_eval_matrix_v2.py, Documents/MARKETING_UNIQUE_SIFTA_PRODUCTS_MEGA_2026-06-13.md",
             "eval_note": "Open ORGAN_EVAL_MATRIX_V2.html → Marketing / Commercial Inventory panel. Regenerate: python3 -c \"from System.swarm_marketing_commercial_inventory import build_inventory; build_inventory()\".",
+        },
+        {
+            "name": "Stigmergic Alzheimer Network Lab (r1198)",
+            "status": "LANDED — synthetic connectome diffusion app + medical boundary",
+            "detail": "Applications/sifta_stigmergic_alzheimer_sim.py models Alzheimer-like propagation as local stigmergic deposits diffusing across a weighted toy connectome, with clearance evaporation and vulnerable-region amplification. The app is registered in apps_manifest.json under Neuroscience and writes alzheimer_stigmergic_sim_receipts.jsonl snapshots. Current data origin is synthetic only; OASIS/ADNI-style imports are a future de-identified research hook, not a clinical path.",
+            "ledgers": "Applications/sifta_stigmergic_alzheimer_sim.py, Applications/apps_manifest.json, Documents/app_help/stigmergic_alzheimer_network_lab.md, tests/test_stigmergic_alzheimer_sim.py, .sifta_state/alzheimer_stigmergic_sim_receipts.jsonl",
+            "eval_note": "PASS: deterministic model tests green; app/import verified headless; every receipt includes 'No PHI, no diagnosis, no treatment guidance.' FAIL: any claim of diagnosis, cure, treatment selection, or real patient inference.",
         },
         {
             "name": "Alice Code Body Census — Every Living .py Line Counted (r1020)",
@@ -1480,6 +1779,13 @@ def build_html() -> str:
             "detail": "George: no second diary — his rhythm lives in Alice Journal. `source=bridget` is a legacy/style tag for schedule witness rows only, not Alice's name and not a second diary. Provider Schedule hidden in manifest; swarm_owner_life_event_inference writes Dear-diary witness rows on infer/close/fire; Alice Journal shows pending stigmergic_schedule rows. Pizza reminder organ (P1-E) on disk; live gate needs Talk reload.",
             "ledgers": "Applications/sifta_alice_journal_widget.py, System/swarm_owner_life_event_inference.py, alice_first_person_journal.jsonl, stigmergic_schedule.jsonl, apps_manifest.json",
             "eval_note": "Open Alice Journal → Alice witness lines + pending strip. Type pizza-in-oven → diary row + schedule row + one spoken reminder after due window.",
+        },
+        {
+            "name": "Journal STGM Defecation / Duplicate Concat (r1509 — extension of life journal)",
+            "status": "LANDED — automatic in tick + button in Alice Journal; prompt awareness live",
+            "detail": "Alice Journal dups (same source/type at different times) are now concatenated into single time-ranged entries and eliminated. STGM like body defecation (same metabolic system). No new organ — extension of swarm_life_journal_consolidator. Auto-called in desktop journal tick with interval gate. Button '♻ Defecate Dups' in sifta_alice_journal_widget. Awareness prompt teaches the concept + receipts (JOURNAL_STGM_DEFECATION). Idempotent: repeated ticks do not duplicate consolidated rows.",
+            "ledgers": "System/swarm_life_journal_consolidator.py (journal_defecation_once, journal_defecation_dedupe.json), Applications/sifta_alice_journal_widget.py, alice_first_person_journal.jsonl, alice_journal_consolidated.jsonl, journal_defecation_receipts.jsonl, System/alice_body_diary_timeline_awareness.py (delegate)",
+            "eval_note": "Open Alice Journal → click ♻ Defecate Dups or wait for tick. Expect fewer rows, consolidated entries with time ranges, new receipts. Prompt block mentions 'JOURNAL METABOLISM (STGM defecation)'. Test: many repeated browser_context_shift → one concat row.",
         },
         {
             "name": "Guest Voice Identity — Hector/Joseph/Carlos Visit (r885 TO-CODE)",
@@ -2083,6 +2389,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {hardcoded_census_panel}
 {package_stack_section}
 {marketing_commercial_section}
+{alice_creature_wiring_panel}
 {novelty_missing_section}
 
 <!-- TABLE OF CONTENTS / BODY MAP - FIRST 50 LINES GOAL -->

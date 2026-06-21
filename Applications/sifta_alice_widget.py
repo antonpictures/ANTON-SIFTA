@@ -498,6 +498,50 @@ class AliceWidget(QWidget):
                 "hide raw" if self._raw_video_visible else "show raw"
             )
 
+    def ensure_talk_visible(self, *, reason: str = "layout_repair") -> None:
+        """Reassert the Talk layer after boot or desktop-mode changes."""
+        try:
+            self.setVisible(True)
+            self.show()
+        except Exception:
+            pass
+        try:
+            if self._overlay is not None:
+                self._overlay.setVisible(True)
+                self._overlay.show()
+            if self._overlay_on and self._overlay_layout is not None:
+                self._overlay_layout.setCurrentWidget(self._talk)
+        except Exception:
+            pass
+        try:
+            self._talk.setVisible(True)
+            self._talk.show()
+            self._talk.raise_()
+        except Exception:
+            pass
+        for attr in (
+            "_chat",
+            "_thinking_header_btn",
+            "_text_input",
+            "_attach_btn",
+            "_send_btn",
+            "_status_pill",
+            "_level",
+        ):
+            try:
+                widget = getattr(self._talk, attr, None)
+                if widget is not None:
+                    widget.setVisible(True)
+                    widget.show()
+            except Exception:
+                pass
+        try:
+            self.updateGeometry()
+            self.update()
+        except Exception:
+            pass
+        _record_alice_widget_hardening("talk_visibility_reasserted", reason=reason)
+
     # ── Chrome dedup ──────────────────────────────────────────────────
     def _dedupe_inner_chrome(self) -> None:
         """

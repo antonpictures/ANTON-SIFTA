@@ -25,7 +25,7 @@ def test_cortex_compose_gate_catches_counterfeit_from_alice_self_eval():
     assert "fixture_from_alice_self_eval" in str(recs[0])
 
 def test_cortex_compose_gate_catches_thinking_leak():
-    raw = "Here is a thinking process that leads to the suggested response: 1. ..."
+    raw = "Here's a thinking process for generating that response: 1. Analyze the User Input..."
     cleaned, recs = apply_cortex_compose_gate(raw_cortex_text=raw, model_name="test")
     assert "I am here" in cleaned or len(cleaned) < len(raw)
     assert any(r.get("category") == "THINKING_LEAK" for r in recs)

@@ -39,6 +39,19 @@ def test_attached_model_labels_preserve_machine_ids():
         "GPT-5.4 (openai-codex:gpt-5.4)"
     )
     assert cap.attached_model_matches_active("GPT-5.4", "openai-codex:gpt-5.4")
+    assert cap.format_attached_model("krishairnd/Gemma-4-Uncensored:latest") == (
+        "krisha-g4u (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)"
+    )
+    qwen = cap._MIMO_LOCAL_QWEN_OLLAMA
+    assert cap.format_attached_model(qwen) == (
+        f"Qwen3.6 27B Uncensored Balanced (local Ollama) ({qwen})"
+    )
+    assert cap.format_attached_model(cap.FIREWORKS_KIMI_K2P6_MODEL) == (
+        "Kimi K2.6 (fireworks-api kimi-k2p6) (accounts/fireworks/models/kimi-k2p6)"
+    )
+    assert cap.format_attached_model("diffusion:diffusiongemma-26b") == (
+        "DiffusionGemma 26B (local diffusion) (diffusion:diffusiongemma-26b)"
+    )
 
 
 def test_unknown_cortex_returns_empty(tmp_path):
@@ -93,6 +106,7 @@ def test_sync_catalog_writes_cline_grok_codex_claude(tmp_path, monkeypatch):
         "GPT-5.4-Mini",
         "GPT-5.3-Codex-Spark",
     ]
+    assert codex.get("default_attached") == "GPT-5.3-Codex-Spark"
     claude = cap.attached_models_for_cortex("claude:claude-code-cli-default", state_dir=tmp_path)
     assert "claude-opus-3" in claude.get("attached_models", [])
     assert claude.get("default_attached") == "claude-opus-4-8"
@@ -133,53 +147,106 @@ def test_sync_catalog_includes_mimo(tmp_path, monkeypatch):
     assert "mimo:mimo-cli-default" in out.get("synced", [])
 
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
-    assert rec.get("default_attached") == "fireworks:kimi-k2p6"
+    # r1386: default is the smallest local model (George: "always smallest is default")
+    assert rec.get("default_attached") == cap._MIMO_LOCAL_QWEN35_MT
+    assert rec.get("live") is True
     models = rec.get("attached_models") or []
-    assert models
-    assert "mimo-v2.5-pro" in models
-    assert "mimo-v2.5-pro-ultraspeed" in models
-    assert "GPT-5.5" in models
+    assert models == [
+        "mimo-auto",
+        "accounts/fireworks/models/kimi-k2p6",
+        "krishairnd/Gemma-4-Uncensored:latest",
+        cap._MIMO_LOCAL_QWEN35_MT,
+        cap._MIMO_LOCAL_QWEN_OLLAMA,
+        "diffusion:diffusiongemma-26b",
+        "GPT-5.3-Codex-Spark",
+        "grok-composer-2.5-fast",
+        "grok-build",
+        "claude-fable-5",
+    ]
+    for removed in (
+        "mimo-v2.5-pro",
+        "mimo-v2-flash",
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2.5",
+    ):
+        assert removed not in models
     assert rec.get("routes_any_provider") is True
     assert rec.get("picker_is_upstream") is True
 
 
-def test_sync_catalog_mimo_includes_cline_catalog_plus_native_models(tmp_path, monkeypatch):
-    # If the shared OAuth catalog changes, MIMO must include it while keeping
-    # its own native MiMo picker models visible.
-    from System import swarm_cortex_capabilities as cap_module
+def test_sync_catalog_mimo_fallback_defaults_to_smallest_local(tmp_path, monkeypatch):
     from System import swarm_cline_settings_probe as probe
 
-    home = tmp_path / "home"
-    (home / ".mimo").mkdir(parents=True)
-    (home / ".mimo" / "config.json").write_text(
-        '{"provider": "fireworks", "model": "kimi-k2p7-code", "reasoningLevel": "high"}'
-    )
-    (home / ".cline").mkdir(parents=True)
-    (home / ".cline" / "settings.json").write_text(
-        '{"provider": "openai-codex", "model": "gpt-5.4"}'
-    )
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(
-        probe,
-        "probe_external_brain",
-        lambda lane, **kwargs: {
-            "cline": {"status": "ok", "provider": "openai-codex", "model": "gpt-5.4"},
-            "mimo": {"status": "ok", "provider": "fireworks", "model": "kimi-k2p7-code"},
-        }[lane],
-    )
+    monkeypatch.setattr(probe, "probe_external_brain", lambda lane, **kwargs: {
+        "status": "no_config_found",
+        "provider": "",
+        "model": "",
+    })
 
-    cap_module.sync_cortex_attached_models_catalog(state_dir=tmp_path)
-    cline = cap_module.attached_models_for_cortex("cline:cline-cli-default", state_dir=tmp_path)
-    mimo = cap_module.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
-    cline_models = cline.get("attached_models") or []
-    mimo_models = mimo.get("attached_models") or []
-    assert set(cline_models).issubset(set(mimo_models))
-    assert "mimo-v2.5-pro" in mimo_models
-    assert "mimo-auto" in mimo_models
-    assert "mimo-v2.5-pro" not in cline_models
-    assert cline.get("routes_any_provider") is True
-    assert mimo.get("routes_any_provider") is True
-    assert mimo.get("default_attached") == "fireworks:kimi-k2p7-code"
+    cap.sync_cortex_attached_models_catalog(state_dir=tmp_path)
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
+
+    # r1386: No prior binding -> default is the smallest local model, not the largest
+    assert rec.get("default_attached") == cap._MIMO_LOCAL_QWEN35_MT
+    assert "mimo-v2.5-pro" not in (rec.get("attached_models") or [])
+
+
+def test_sync_catalog_resets_removed_mimo_v25_pro_default(tmp_path, monkeypatch):
+    from System import swarm_cline_settings_probe as probe
+
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        [
+            "mimo-v2.5-pro",
+            "mimo-auto",
+            "krishairnd/Gemma-4-Uncensored:latest",
+        ],
+        default_attached="mimo-v2.5-pro",
+        source="stale_mimo_v25_binding",
+        state_dir=tmp_path,
+    )
+    monkeypatch.setattr(probe, "probe_external_brain", lambda lane, **kwargs: {
+        "status": "no_config_found",
+        "provider": "",
+        "model": "",
+    })
+
+    cap.sync_cortex_attached_models_catalog(state_dir=tmp_path)
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
+
+    # r1244/r1386: paid MiMo cloud ids pruned — stale v2.5-pro default resets to the smallest local model
+    assert rec.get("default_attached") == cap._MIMO_LOCAL_QWEN35_MT
+    assert "mimo-v2.5-pro" not in (rec.get("attached_models") or [])
+
+
+def test_sanitize_migrates_deleted_qwen35_tag_to_qwen36(tmp_path):
+    legacy = "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest"
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        ["mimo-auto", legacy, "krishairnd/Gemma-4-Uncensored:latest"],
+        default_attached=legacy,
+        source="owner_deleted_qwen35",
+        state_dir=tmp_path,
+    )
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
+    assert legacy not in (rec.get("attached_models") or [])
+    assert cap._MIMO_LOCAL_QWEN_OLLAMA in (rec.get("attached_models") or [])
+    assert rec.get("default_attached") == cap._MIMO_LOCAL_QWEN_OLLAMA
+
+
+def test_attached_models_for_cortex_sanitizes_stale_mimo_default_on_read(tmp_path):
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        ["mimo-auto", "krishairnd/Gemma-4-Uncensored:latest"],
+        default_attached="mimo-v2.5-pro",
+        source="stale_binding",
+        state_dir=tmp_path,
+    )
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
+    # r1244/r1386: stale removed default sanitized on read -> smallest local model
+    assert rec.get("default_attached") == cap._MIMO_LOCAL_QWEN35_MT
+
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

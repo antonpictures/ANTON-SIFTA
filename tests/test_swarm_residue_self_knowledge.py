@@ -81,7 +81,8 @@ def test_residue_prompt_names_real_ledgers_and_blocks_stale_detector_claim(tmp_p
     assert "transform_chain" in block
     assert "gag_viewer" in block
     assert "deterministic_tracker" in block
-    assert "I must NOT say it is running, confirming, or diagnosing anything" in block
+    assert "running/confirming/diagnosing claims sort to a fresh tracker row" in block
+    assert "the honest answer is the tracker is idle" in block
     assert "verdict=sinking" in block
     assert "receipt_id=rx-1" in block
 

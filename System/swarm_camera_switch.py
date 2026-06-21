@@ -5,11 +5,9 @@ System/swarm_camera_switch.py — Camera switch spinal reflex (canonical eye)
 Writes **only** through `swarm_camera_target.write_target` so
 `active_saccade_target.json` + `.txt` mirror stay consistent with iris/Qt.
 
-Index map matches `swarm_camera_target._INDEX_TO_NAME` (M5 rig, 2026-04-23):
-  0 = USB Camera VID:1133 PID:2081 (Logitech-class)
-  1 = MacBook Pro Camera
-  2 = OBS Virtual Camera
-  3 = iPhone Camera
+Targets resolve from live plug-and-play eye registry (r1230):
+  built-in / MacBook → owner_eye
+  any live USB/external → world_eye
 """
 from __future__ import annotations
 
@@ -23,17 +21,45 @@ from typing import Any, Dict, Optional
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
-# Pattern → index. Order matters: more specific first.
+# Pattern → plug-play role. Order matters: more specific first.
 _SWITCH_PATTERNS = [
-    # MacBook / built-in / FaceTime
-    (re.compile(r"\b(?:macbook|built[- ]?in|facetime|laptop|internal|inside)\b", re.IGNORECASE), 1),
-    # Logitech / USB / external / desk
-    (re.compile(r"\b(?:logitech|usb|external|desk|webcam)\b", re.IGNORECASE), 0),
-    # iPhone / phone / continuity
-    (re.compile(r"\b(?:iphone|phone|continuity|mobile)\b", re.IGNORECASE), 3),
-    # Generic "other" / "second" / "next" — cycle from current
-    (re.compile(r"\b(?:other|second|next|alternate)\b", re.IGNORECASE), None),
+    (re.compile(r"\b(?:macbook|built[- ]?in|facetime|laptop|internal|inside)\b", re.IGNORECASE), "owner"),
+    (re.compile(r"\b(?:logitech|usb|external|desk|webcam)\b", re.IGNORECASE), "world"),
+    (re.compile(r"\b(?:iphone|phone|continuity|mobile)\b", re.IGNORECASE), "iphone"),
+    (re.compile(r"\b(?:other|second|next|alternate)\b", re.IGNORECASE), "cycle"),
 ]
+
+
+def _index_for_role(role: str) -> Optional[int]:
+    from System.swarm_eye_registry import live_owner_eye_device, live_world_eye_device
+
+    if role == "owner":
+        idx = live_owner_eye_device().get("index")
+        return int(idx) if idx is not None else None
+    if role == "world":
+        idx = live_world_eye_device().get("index")
+        return int(idx) if idx is not None else None
+    if role == "cycle":
+        cur_name = ""
+        try:
+            from System.swarm_camera_target import read_target
+
+            rec = read_target() or {}
+            cur_name = str(rec.get("name") or "")
+        except Exception:
+            cur_name = ""
+        try:
+            from System.swarm_camera_target import is_builtin_owner_camera
+
+            on_owner = is_builtin_owner_camera(cur_name)
+        except Exception:
+            on_owner = "macbook" in cur_name.casefold()
+        if on_owner:
+            idx = live_world_eye_device().get("index")
+        else:
+            idx = live_owner_eye_device().get("index")
+        return int(idx) if idx is not None else None
+    return None
 
 # Requires DIRECT ADDRESS to Alice:
 #   "alice, switch the camera"
@@ -124,23 +150,13 @@ def detect_camera_switch_intent(text: str, stt_conf: float = 1.0) -> Optional[in
     if not _INTENT_RE.search(clean):
         return None
 
-    for pattern, idx in _SWITCH_PATTERNS:
+    for pattern, role in _SWITCH_PATTERNS:
         if pattern.search(text):
+            idx = _index_for_role(role)
             if idx is not None:
                 return idx
-            cur = _read_index()
-            if cur == 1:
-                return 0
-            if cur == 0:
-                return 1
-            return 0
 
-    cur = _read_index()
-    if cur == 1:
-        return 0
-    if cur == 0:
-        return 1
-    return 0
+    return _index_for_role("cycle")
 
 
 def execute_camera_switch(target_idx: int) -> Dict[str, Any]:

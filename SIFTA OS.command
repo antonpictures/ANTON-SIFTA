@@ -39,6 +39,10 @@ unset SIFTA_DESKTOP_PHOTONS
 # Revert to old metronome with SIFTA_EYE_DELTA_ENABLE=0 if needed.
 export SIFTA_EYE_DELTA_ENABLE="${SIFTA_EYE_DELTA_ENABLE:-1}"
 
+# Architect 2026-06-16: iPhone/Continuity camera out of body topology until
+# explicitly re-enabled. Built-in + USB plug-and-play only.
+export SIFTA_ALLOW_IPHONE_CAMERA="${SIFTA_ALLOW_IPHONE_CAMERA:-0}"
+
 # §9.C — bounded JSONL compaction with hourly summaries.
 # Default ON now that the compactor + burn loop are landed; revert with =0.
 export SIFTA_LEDGER_COMPACT_ENABLE="${SIFTA_LEDGER_COMPACT_ENABLE:-1}"
@@ -58,11 +62,20 @@ export SIFTA_MATRIX_ENABLE_AGENT_CLI="${SIFTA_MATRIX_ENABLE_AGENT_CLI:-0}"
 # return to the CLI default.
 export SIFTA_CLAUDE_ARM_MODEL="${SIFTA_CLAUDE_ARM_MODEL:-claude-fable-5}"
 
-if [ -x ".venv/bin/python3" ]; then
-  PYTHON_BIN=".venv/bin/python3"
+# r1352: Python 3.14 + Qt WebEngine SIGABRT on CrBrowserMain (live crash 2026-06-19).
+# Prefer the first interpreter that can import WebEngine — usually /usr/local/bin/python3 (3.13).
+if [ -n "${SIFTA_PYTHON_BIN:-}" ] && [ -x "$SIFTA_PYTHON_BIN" ]; then
+  PYTHON_BIN="$SIFTA_PYTHON_BIN"
 else
-  PYTHON_BIN="python3"
+  PYTHON_BIN=""
+  for candidate in /usr/local/bin/python3 .venv/bin/python3 python3; do
+    if [ -x "$candidate" ] && "$candidate" -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" 2>/dev/null; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
 fi
 
-echo "Booting BeeSon v8.0 from $REPO_DIR"
+echo "Booting BeeSon v8.0 from $REPO_DIR (python=$PYTHON_BIN)"
 exec "$PYTHON_BIN" sifta_os_desktop.py

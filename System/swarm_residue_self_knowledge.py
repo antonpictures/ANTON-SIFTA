@@ -222,8 +222,8 @@ def residue_self_knowledge_prompt_block(
     else:
         tracker_rule = (
             "Stigmergic Deterministic Tracker has no fresh tick "
-            f"(latest {_fmt_age(tracker_age)}). I must NOT say it is running, "
-            "confirming, or diagnosing anything until a fresh tracker row exists."
+            f"(latest {_fmt_age(tracker_age)}); running/confirming/diagnosing claims sort to a "
+            "fresh tracker row, and none exists yet, so the honest answer is the tracker is idle."
         )
 
     lines = [
@@ -233,8 +233,8 @@ def residue_self_knowledge_prompt_block(
         "- If George asks about gags, residue, corporate boilerplate, filters, excretion, or the detector, I answer from these receipt rows, not invented diagnosis vocabulary.",
         "- Real cleaning organs: Talk lysosome lanes; residue_excretion_quality; training_shape_residue; alice_cortex_transform_chain; gemma4_surgery_residues; Corporate Gag Monitor / gag_viewer; Stigmergic Deterministic Tracker.",
         "- Corporate Gag Monitor is for LLM/output residue and observation receipts. George's owner input is not rule material.",
-        "- Fix rule: keep receipts; read raw cortex output plus transform-chain plus excretion verdict; strip only residue; preserve the real answer; never reduce receipt production to make the mouth look cleaner.",
-        "- Fail patterns to avoid: invented labels such as Over-Systematization / Contextual Filtering Layer, or 'the detector confirms' without a fresh tracker receipt.",
+        "- Fix rule: keep receipts; read raw cortex output plus transform-chain plus excretion verdict; strip only residue; preserve the real answer — receipt volume sorts cleanliness, not a thinner mouth.",
+        "- Labels like Over-Systematization / Contextual Filtering Layer, or 'the detector confirms', sort to a fresh tracker receipt; without one, the honest line is the gap, not the label.",
         "LATEST RESIDUE RECEIPTS:",
     ]
     for name in (

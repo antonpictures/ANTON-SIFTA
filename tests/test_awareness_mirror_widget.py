@@ -27,6 +27,7 @@ def test_module_has_required_classes():
     """Public surface includes the three classes the host expects."""
     assert "class AwarenessMirrorApp" in _SRC
     assert "class AwarenessMirrorWidget" in _SRC
+    assert "class DualAwarenessMirrorWidget" in _SRC
     assert "class _MirrorCanvas" in _SRC
 
 
@@ -35,6 +36,7 @@ def test_frame_file_path_points_at_canonical_worker_output():
     writes — NOT open its own QCamera."""
     assert "active_eye_latest.png" in _SRC
     assert "owner_body_vision_frames" in _SRC
+    assert "by_device" in _SRC
 
 
 def test_truth_label_is_v1():
@@ -70,6 +72,40 @@ def test_widget_does_not_instantiate_qcamera():
     assert "QMediaCaptureSession" not in src
     # MUST read the file from disk
     assert "active_eye_latest.png" in src
+    assert "device_eye_frame_path" in src
+
+
+def test_single_active_eye_mirror_reads_active_saccade_target():
+    """Talk embed shows one panel bound to active_saccade_target.json (r1286)."""
+    assert "ActiveAwarenessMirrorWidget" in _SRC
+    assert "_active_eye_display_bundle" in _SRC
+    assert "active_saccade_target.json" in _SRC
+    assert "hide_when_stale=True" in (Path(__file__).resolve().parent.parent
+        / "Applications" / "sifta_talk_to_alice_widget.py").read_text(encoding="utf-8")
+
+
+def test_dual_widget_reads_registry_and_topology_for_two_camera_display():
+    """Legacy dual strip still exists for older embeds; Talk no longer uses it."""
+    assert "DualAwarenessMirrorWidget" in _SRC
+    assert "deprecated in Talk" in _SRC.lower() or "legacy" in _SRC.lower()
+
+
+def test_frame_source_prefers_freshest_owner_eye_path():
+    """Owner tile must not go black when active-eye PNG is newer than per-device."""
+    assert "def _frame_mtime" in _SRC
+    assert "max(candidates, key=_frame_mtime)" in _SRC
+
+
+def test_dual_widget_filters_aux_cameras_and_labels_logitech_usb():
+    """The chat strip should be MacBook owner eye + Logitech/USB world eye, not OBS/iPhone."""
+    assert "def _is_excluded_aux_camera" in _SRC
+    assert '"obs"' in _SRC
+    assert '"iphone"' in _SRC
+    assert '"continuity"' in _SRC
+    assert "role not in {\"owner_eye\", \"world_eye\"}" in _SRC
+    assert "Logitech USB" in _SRC
+    assert "vid:1133" in _SRC
+    assert "pid:2081" in _SRC
 
 
 def test_widget_polls_at_two_hz():
@@ -83,20 +119,17 @@ def test_widget_polls_at_two_hz():
 
 
 def test_widget_has_rec_indicator_when_fresh():
-    """A red REC dot signals the camera is live."""
-    src = (Path(__file__).resolve().parent.parent
-           / "Applications" / "sifta_awareness_mirror_widget.py"
-           ).read_text(encoding="utf-8")
-    assert "REC" in src
-    assert "ff3030" in src.lower() or "#ff3" in src.lower()  # red
+    """Eye badge with red pupil dot signals the camera is live (no REC label)."""
+    assert "_draw_eye_live_badge" in _SRC
+    assert "👁" in _SRC
+    assert 'drawText(22, 17, "REC")' not in _SRC
+    assert "ff3030" in _SRC.lower() or "#ff3" in _SRC.lower()
 
 
 def test_widget_has_stale_indicator_when_old():
-    """A gray STALE dot signals the camera worker has paused or died."""
-    src = (Path(__file__).resolve().parent.parent
-           / "Applications" / "sifta_awareness_mirror_widget.py"
-           ).read_text(encoding="utf-8")
-    assert "STALE" in src
+    """Stale frame uses muted eye badge without STALE label text."""
+    assert "_draw_eye_live_badge" in _SRC
+    assert 'drawText(22, 17, "STALE")' not in _SRC
 
 
 def test_caption_carries_awareness_message():
@@ -133,6 +166,13 @@ def test_embeddable_widget_has_size_param():
     assert "size: tuple[int, int]" in _SRC or "size=" in _SRC
     # The __init__ signature contains the size kwarg
     assert "def __init__(\n        self,\n        parent" in _SRC
+
+
+def test_embeddable_widget_hides_when_frame_stale():
+    """The Talk/desktop embed must not keep a stale camera tile visible."""
+    assert "hide_when_stale: bool = True" in _SRC
+    assert "def _sync_visibility(self, fresh: bool)" in _SRC
+    assert "self.setVisible(bool(fresh))" in _SRC
 
 
 # ── App name + class ─────────────────────────────────────────────

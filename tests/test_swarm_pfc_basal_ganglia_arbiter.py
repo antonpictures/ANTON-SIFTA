@@ -93,14 +93,15 @@ def test_select_action_consumes_event_133_world_model(tmp_path):
 
 # ============================================================
 # PART 2: Biological Steering (§10.14.28)
-# DAM Stage 2 blocks, TME Escape drops threshold, NA>0.8 drives exploration
+# DAM Stage 2 soft-steers, TME Escape drops threshold, NA>0.8 drives exploration
 # ============================================================
 
-def test_biological_steering_dam_stage2_blocks_new_gates(tmp_path):
-    """DAM Stage 2 blocks options that suggest new gates, increases risk aversion."""
+def test_biological_steering_dam_stage2_soft_steers_new_gates(tmp_path):
+    """DAM Stage 2 keeps options visible but increases risk aversion."""
     arbiter = PFCBasalGangliaArbiter(root=tmp_path)
     
-    # "explore_raw" should be blocked because it suggests a new gate
+    # r170 Architect directive removed hard block_new_gates. "explore_raw"
+    # remains visible, but DAM Stage 2 should penalize risky exploration.
     options = ["safe_routine", "explore_raw"]
     arbiter._save_option("safe_routine", {"q_value": 0.8, "uncertainty": 0.1, "risk": 0.1, "cost": 0.1})
     arbiter._save_option("explore_raw", {"q_value": 0.9, "uncertainty": 0.5, "risk": 0.5, "cost": 0.1})
@@ -123,8 +124,12 @@ def test_biological_steering_dam_stage2_blocks_new_gates(tmp_path):
     )
     
     assert "explore_raw" in selection["all_details"]
-    assert "explore_raw" not in selection_inflamed["all_details"], "explore_raw should be blocked"
+    assert "explore_raw" in selection_inflamed["all_details"], "explore_raw should remain visible, not hard-blocked"
     assert selection_inflamed["biological_steering"]["risk_weight"] == 2.0
+    assert (
+        selection_inflamed["all_details"]["explore_raw"]["computed_score"]
+        < selection["all_details"]["explore_raw"]["computed_score"]
+    ), "DAM Stage 2 should soft-penalize risky exploration"
 
 
 def test_biological_steering_tme_escape_desperation(tmp_path):
@@ -201,4 +206,3 @@ def test_biological_steering_calm_owner_alignment(tmp_path):
     
     assert score_calm > score_normal, "Calm/aligned owner state should boost owner signal weight"
     assert sel_calm["biological_steering"]["owner_weight"] > sel_normal["biological_steering"]["owner_weight"]
-

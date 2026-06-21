@@ -15,12 +15,12 @@ from System import swarm_wardrobe_pieces as wp
 
 
 def test_extracts_per_garment_pieces_with_queries():
-    desc = "colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers, and heels"
+    desc = "colorful floral swim top, green swim bottoms, fuzzy green leg warmers, and heels"
     pieces = {p["piece"]: p["query"] for p in wp.extract_wardrobe_pieces(desc)}
     assert "leg warmers" in pieces
     assert "green" in pieces["leg warmers"] and "fuzzy" in pieces["leg warmers"]
     assert "faux fur" in pieces["leg warmers"] and "boot covers" in pieces["leg warmers"]
-    assert "bikini top" in pieces and "bikini bottoms" in pieces and "heels" in pieces
+    assert "swim top" in pieces and "swim bottoms" in pieces and "heels" in pieces
 
 
 def test_multiword_garments_win_over_substrings():
@@ -42,7 +42,7 @@ def test_block_is_first_person_and_shoppable():
 
 
 def test_resolves_vague_green_puffy_leg_things_to_leg_warmers():
-    desc = "colorful floral bikini top, green bikini bottoms, fuzzy green leg warmers, and heels"
+    desc = "colorful floral swim top, green swim bottoms, fuzzy green leg warmers, and heels"
     resolved = wp.resolve_wardrobe_piece_query("search for the green puffy leg wardrobe things", desc)
     assert resolved["source"] == "wardrobe_piece_resolver"
     assert resolved["display_name"] == "fuzzy/faux-fur leg warmers or boot covers"

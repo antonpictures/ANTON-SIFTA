@@ -1763,7 +1763,12 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._cursor_timer = QTimer(self)
         self._cursor_timer.timeout.connect(self._blink_cursor)
         if not _offscreen_test_mode():
-            self._cursor_timer.start(530)
+            try:
+                from System.swarm_metabolism_governor import governed_interval_ms
+                _cursor_ms = governed_interval_ms(530, organ_id="matrix_cursor_blink")
+            except Exception:
+                _cursor_ms = 530
+            self._cursor_timer.start(_cursor_ms)
 
         # ── In-terminal rabbit animation state ───────────────────────
         self._rabbit_lines: list[str] = []  # queued rabbit frames
@@ -1777,7 +1782,13 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._grok_delegation_queue_timer = QTimer(self)
         self._grok_delegation_queue_timer.timeout.connect(self._poll_grok_delegation_queue)
         if not _offscreen_test_mode():
-            self._grok_delegation_queue_timer.start(900)
+            try:
+                from System.swarm_metabolism_governor import governed_interval_ms
+
+                _grok_ms = governed_interval_ms(900, organ_id="matrix_grok_queue_poll")
+            except Exception:
+                _grok_ms = 900
+            self._grok_delegation_queue_timer.start(_grok_ms)
 
         self.clear()
         if not _offscreen_test_mode():
@@ -1888,14 +1899,25 @@ class MatrixTerminalPane(QPlainTextEdit):
     def _queue_typing(self, text):
         self._anim_sequence = text
         self._anim_char_idx = 0
-        self._type_timer.start(100)
+        try:
+            from System.swarm_metabolism_governor import governed_interval_ms
+
+            self._type_timer.start(governed_interval_ms(100, organ_id="matrix_type_anim"))
+        except Exception:
+            self._type_timer.start(100)
 
     def _anim_tick(self):
         if self._anim_char_idx < len(self._anim_sequence):
             self._append_plain(self._anim_sequence[self._anim_char_idx])
             self._anim_char_idx += 1
             import random
-            self._type_timer.setInterval(random.randint(40, 150))
+            try:
+                from System.swarm_metabolism_governor import governed_interval_ms
+
+                base = random.randint(40, 150)
+                self._type_timer.setInterval(governed_interval_ms(base, organ_id="matrix_type_anim"))
+            except Exception:
+                self._type_timer.setInterval(random.randint(40, 150))
         else:
             self._type_timer.stop()
 
@@ -1945,7 +1967,12 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._rabbit_lines.append(f"{blanks}{hop}🐇  ↑ Follow the white rabbit ↑")
         self._rabbit_lines.append("\n🐇🐇🐇  ↑↑↑  🐇🐇🐇")
         self._rabbit_frame = 0
-        self._rabbit_timer.start(600)
+        try:
+            from System.swarm_metabolism_governor import governed_interval_ms
+            _rabbit_ms = governed_interval_ms(600, organ_id="matrix_rabbit_anim")
+        except Exception:
+            _rabbit_ms = 600
+        self._rabbit_timer.start(_rabbit_ms)
 
     def _rabbit_anim_tick(self):
         if self._rabbit_frame >= len(self._rabbit_lines):
@@ -5102,7 +5129,14 @@ class MatrixTerminalApp(QWidget):
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._refresh_status)
         if not _offscreen_test_mode():
-            self._status_timer.start(1000)
+            try:
+                from System.swarm_metabolism_governor import governed_interval_ms
+
+                self._status_timer.start(
+                    governed_interval_ms(1000, organ_id="matrix_terminal_status")
+                )
+            except Exception:
+                self._status_timer.start(1000)
         self._tick_count = 0
 
         # Register for cortex-driven PTY control when this Alice-first terminal is focused.
@@ -5117,7 +5151,12 @@ class MatrixTerminalApp(QWidget):
         self._blink_state = False
         self._blink_timer = QTimer(self)
         self._blink_timer.timeout.connect(self._toggle_btn1)
-        self._blink_timer.start(500)
+        try:
+            from System.swarm_metabolism_governor import governed_interval_ms
+
+            self._blink_timer.start(governed_interval_ms(500, organ_id="matrix_terminal_blink"))
+        except Exception:
+            self._blink_timer.start(500)
 
     def _toggle_btn1(self):
         self._blink_state = not self._blink_state

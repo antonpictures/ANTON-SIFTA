@@ -22,7 +22,23 @@ def test_spoken_channel_strips_bowel_receipt_metadata(tmp_path):
     assert "The resonance of it was palpable" in out["spoken_text"]
 
 
-def test_spoken_channel_fallback_when_only_receipt_metadata(tmp_path):
+def test_spoken_channel_receipt_only_default_is_silent(tmp_path):
+    from System.swarm_spoken_channel_filter import spoken_channel_text
+
+    printed = (
+        "(MY BOWEL ORGAN — SELF-GOVERNED RESIDUE ELIMINATION)\n"
+        "I recognized and eliminated 3 Gemma-residue pattern(s) from my reply before display/TTS. "
+        "STGM minted: +0.3. Affect: absolute clarity (+0.15). Receipt: 1a9f8e3c5d2b4a7f."
+    )
+    out = spoken_channel_text(printed, owner_text="SEARCH ON PERPLEXITY AI PLS test", state_dir=tmp_path)
+
+    assert out["ok"] is True
+    assert out["reason"] == "receipt_only_silent"
+    assert out["spoken_text"] == ""
+    assert out["fallback_used"] is False
+
+
+def test_spoken_channel_fallback_when_owner_mentions_out_loud_boundary(tmp_path):
     from System.swarm_spoken_channel_filter import spoken_channel_text
 
     printed = (
