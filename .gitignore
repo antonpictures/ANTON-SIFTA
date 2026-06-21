@@ -251,3 +251,10 @@ models/
 gallery-main/
 Voices/
 .sifta_trash/
+
+# Generated screenshots and demo flyers (often recreated, large binaries)
+outputs/
+Documentation/self_screenshots/
+WIN-WIN_Flyer/
+*.tmp
+
