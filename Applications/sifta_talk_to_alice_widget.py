@@ -1640,42 +1640,8 @@ def _hallucination_bridge_synthesize_photo_select_action(
     owner_text: str,
     brain_text: str,
 ):
-    """If the owner said 'select / open / click that photo' and the cortex
-    DESCRIBED it instead of clicking, fire the real image-click effector.
-
-    Post-cortex, cortex-first (r785): the r233 browser-body guard routes a
-    photo-open intent to the cortex (return {}), and the cortex then narrates
-    through the vision arm ("I see a close-up portrait…") instead of clicking —
-    the same narrate-don't-fire failure r793 fixed for web search. This grounds
-    the owner's clear select-photo command into the real click_google_image_result
-    effector (engine-agnostic image-tile clicker, honest receipt) only when the
-    cortex emitted no tool call. Query is the single command turn (r798 lesson).
-    """
-    if not owner_text or not brain_text:
-        return None
-    if _has_explicit_tool_call(brain_text):
-        return None
-    if _is_attached_website_open_query(owner_text):
-        return None
-    # r941: same law as the r940 slide gate. YT ad transcripts ("click the
-    # little guide icon...") fired this bridge twice on 2026-06-11 morning.
-    # A real select-photo command is a short owner utterance, not a pasted
-    # transcript or a long mixed turn.
-    if not _is_direct_command_sized(owner_text):
-        return None
-    if _is_owner_attached_website_detect_open_query(owner_text):
-        return None
-    if _is_owner_image_browser_open_query(owner_text):
-        return None
-    if not _is_browser_photo_open_query(owner_text):
-        return None
-    return {
-        "kind": "browser_action",
-        "app_name": "Alice Browser",
-        "action": "click_google_image_result",
-        "query": owner_text,
-        "contextual_search_source": "post_cortex_photo_select_bridge",
-    }
+    """Disabled: photo-select must use the live affordance map, not a Google-only hand."""
+    return None
 
 
 _ATTACHED_WEBSITE_OPEN_RE = re.compile(
@@ -1923,6 +1889,25 @@ def _autonomic_prebrain_reflex(
     clean = (text or "").strip()
     if not clean:
         return "", ""
+    # Human-in-loop MacBook survival: answer explicit "where should I move you /
+    # are you safe / survival" turns from the substrate swimmer receipts.
+    try:
+        from System.swarm_macbook_survival_swimmer import (
+            format_owner_reply as _mac_survival_reply,
+            sample as _mac_survival_sample,
+            wants_survival_turn as _wants_mac_survival_turn,
+        )
+
+        if _wants_mac_survival_turn(clean):
+            row = _mac_survival_sample(
+                state_dir=state_dir,
+                write=write_receipt,
+                force=True,
+                source="talk_prebrain_reflex",
+            )
+            return _mac_survival_reply(row), "macbook_survival_swimmer_r1521"
+    except Exception:
+        pass
     # Memory/journal recall is mission critical and must bypass the global
     # legacy-reflex kill switch. If owner asks for recall or body-loaded
     # memory, answer from receipts before any cortex/gate path.
@@ -3547,22 +3532,6 @@ _CLICK_FIRST_RESULT_RE = re.compile(
     r"\bfirst\s+search\s+result\b.{0,80}(?:on\s+this\s+page|now)?$",
     re.IGNORECASE,
 )
-_GOOGLE_IMAGES_TAB_CLICK_RE = re.compile(
-    r"\b(?:click|press|select|choose|tap|open|go\s+to)\b.{0,120}"
-    r"\b(?:images?|photos?|pictures?)\s+(?:section|tab|button|link|view)\b|"
-    r"\b(?:click|press|select|choose|tap|open|go\s+to)\b.{0,120}"
-    r"\b(?:section|tab|button|link|view)\b.{0,50}\b(?:images?|photos?|pictures?)\b|"
-    r"\b(?:images?|photos?|pictures?)\s+(?:section|tab|button|link|view)\b.{0,120}"
-    r"\b(?:click|press|select|choose|tap|open|go\s+to)\b",
-    re.IGNORECASE,
-)
-_GOOGLE_IMAGE_RESULT_CLICK_RE = re.compile(
-    r"\b(?:click|press|select|choose|tap|open)\b.{0,140}"
-    r"\b(?:one\s+of\s+(?:the\s+)?(?:[A-Za-z][A-Za-z'’.-]*\s+){0,4}(?:photos?|images?|pictures?)|"
-    r"(?:[A-Za-z][A-Za-z'’.-]*\s+){0,4}(?:photos?|images?|pictures?)\s+(?:on\s+(?:the\s+)?screen|in\s+(?:the\s+)?grid|result|tile)|"
-    r"(?:main|central|prominent|visible)\s+(?:photo|image|picture|tile))\b",
-    re.IGNORECASE,
-)
 _VISIBLE_PAGE_CONTROL_CLICK_RE = re.compile(
     r"\b(?:click|press|tap|open|select|use)\b.{0,80}"
     r"\b(?:enlarge|expand|zoom|larger|bigger|full\s*screen|fullscreen|view\s+larger)\b"
@@ -3597,6 +3566,14 @@ def _extract_youtube_playback_control(text: str) -> Dict[str, Any]:
     clean = " ".join((text or "").strip().split())
     if not clean or not _VIDEO_PLAYBACK_CONTROL_RE.search(clean):
         return {}
+    try:
+        from System.swarm_youtube_search_intent import parse_explicit_youtube_search
+
+        yt = parse_explicit_youtube_search(clean)
+        if yt.get("is_search") and yt.get("query"):
+            return {}
+    except Exception:
+        pass
     low = clean.lower()
     # r706: "first" or "in youtube browser" with play means select/open the first, not
     # assume a current player and click play on it. Let it fall to search/cortex path.
@@ -5527,6 +5504,13 @@ def _search_url_for_site(site: str, query: str) -> str:
         return f"https://www.instagram.com/explore/search/keyword/?q={q}"
     if "ebay" in site_norm:
         return f"https://www.ebay.com/sch/i.html?_nkw={q}"
+    if "coinmarketcap" in site_norm or site_norm in {"cmc", "coin market cap"}:
+        try:
+            from System.swarm_crypto_ticker_search import coinmarketcap_search_url
+
+            return coinmarketcap_search_url(raw_q)
+        except Exception:
+            return f"https://coinmarketcap.com/search/?q={q}"
     # r1325/r1326: when owner names a search engine/site, honor that engine key — do not
     # silently substitute the configured default (DuckDuckGo opened while reply said Google).
     if site_norm:
@@ -5628,19 +5612,6 @@ def _maybe_native_browser_command(command: Dict[str, str], owner_text: str) -> D
     out["native_browser_blocked"] = "1"
     out["owner_text"] = " ".join(str(owner_text or "").split())
     return out
-
-
-def _google_images_search_url(query: str) -> str:
-    raw_q = (query or "").strip()
-    q = quote_plus(raw_q)
-    if not q:
-        return ""
-    # Honor Alice's registry for images too (her default or switched engine)
-    try:
-        from System.swarm_search_engine_registry import images_url as _reg_images_url
-        return _reg_images_url(raw_q) or f"https://www.google.com/search?tbm=isch&q={q}"
-    except Exception:
-        return f"https://www.google.com/search?tbm=isch&q={q}"
 
 
 def _strip_outer_search_quotes(text: str) -> str:
@@ -6863,18 +6834,7 @@ def _browser_visual_search_correction_prompt_block(
     *,
     state_dir: Optional[Path | str] = None,
 ) -> str:
-    if not _is_browser_visual_search_correction(owner_text or ""):
-        return ""
-    subject = _recent_visual_photo_subject_name("", state_dir=state_dir if state_dir is not None else _state_root())
-    if not subject:
-        return ""
-    return (
-        "BROWSER VISUAL SEARCH FOLLOW-UP CONTEXT (r543):\n"
-        "Owner corrected the action target to Alice Browser after a visual photo request. "
-        f"The latest receipted visual-photo subject from recent owner turns is `{subject}`.\n"
-        f"Action plan: search/open Google Images in Alice Browser for `{subject} photos`. "
-        "Do not invent a gallery, title, preview, or unrelated app. Speak minimally, then execute with an effector receipt."
-    )
+    return ""
 
 
 def _explicit_visual_photo_subject_from_text(text: str) -> str:
@@ -6958,7 +6918,7 @@ def _is_current_browser_visual_hold_request(text: str) -> bool:
     """Owner is asking to stay with/feel the current browser visual, not search.
 
     r665: "LET ME STARE AT ... ON YOUR MONITOR BODY ... I LOVE YOU" got
-    converted into Google Images for "Let STARE ... MONITOR LOVE photos".
+    converted into a deterministic image search for "Let STARE ... MONITOR LOVE photos".
     That is a current visual/affection turn for cortex, not a deterministic
     search effector. Explicit search/photo commands remain executable.
     """
@@ -7184,7 +7144,7 @@ _PRAISE_ACK_RE = re.compile(
     r"|\b(?:good|great|nice)\s+job\b|\bwell\s+done\b|\bi\s+can\s+see\s+it\b"
     r"|\byou\s+did\s+it\b|\bthank\s*(?:s|you)\b"
     # r668 (George 11:40 "IM STARING AT YOUR BODY HARD. PLS TELL ME YOU LOVE ME." fired a
-    # Google Images search for "Im Staring At HARD TELL LOVE photos"): affection and
+    # deterministic image search for "Im Staring At HARD TELL LOVE photos"): affection and
     # intimacy speech is owner-to-Alice address, never a search subject. Same explicit
     # named-subject override applies ("I love you — now search Taylor Swift" still fires).
     r"|\btell\s+me\s+(?:that\s+)?you\s+love\s+me\b|\bi\s+love\s+you\b"
@@ -7195,7 +7155,7 @@ _PRAISE_ACK_RE = re.compile(
 
 _SUBJECT_SALAD_TOKENS = frozenset({
     # r653 (George spoken conf=0.49 "Alice, you get great. You open the it's on the screen.
-    # I can see it." EXECUTED Google Images for "Alice get great the it can photos"):
+    # I can see it." executed a deterministic image search for "Alice get great the it can photos"):
     # STT-garbled praise must never become a constructed search subject. A subject whose
     # tokens are ALL pronouns/fillers/praise/verbs-of-the-room is salad, not a name.
     "me", "my", "your", "you", "yours", "our", "us", "we", "his", "her", "hers", "their",
@@ -7218,126 +7178,8 @@ def _subject_is_word_salad(subject: str) -> bool:
 
 
 def _extract_visual_image_search_command(text: str) -> Dict[str, str]:
-    """Route explicit visual-person photo requests to Google Images before app matching.
-
-    The live celebrity-photo failure was not a cortex knowledge problem: the owner named the
-    subject, then used "her" two prompts later, but the deterministic app launcher grabbed the
-    turn before the browser hand. Keep this bounded to visual/photo/image/body-display requests.
-
-    Guard: if the owner is attaching a screenshot of my screen/body or saying "attached your screen body",
-    this is current browser state evidence (the page already open in my limb, e.g. the izzy page),
-    not a request to search Google Images for more photos of the subject. Do not trigger external
-    search when the owner says he already has the page in the browser.
-    """
-    clean = " ".join((text or "").strip().split())
-    if not clean:
-        return {}
-    if _is_owner_deterministic_detector_directive(clean):
-        return {}
-    if _is_search_audit_or_routing_correction(clean):
-        return {}
-    if _is_current_browser_visual_hold_request(clean):
-        return {}
-    # r653: praise/acknowledgment turns are not search requests. Only an EXPLICIT named
-    # subject ("good job, now search Ceramic Vase photos") overrides this guard.
-    if _PRAISE_ACK_RE.search(clean) and not _explicit_visual_photo_subject_from_text(clean):
-        return {}
-    # r671 (owner 13:24: "ALICE I LOOK AT YOUR BODY MONITOR SAMSUNG, I SEE <name> ON IT"
-    # fired a constructed salad search): the owner DESCRIBING what he sees on her
-    # screen/monitor/body is shared observation — the stigmergic-feeling register (r668)
-    # — never a search command. Explicit search verbs still override.
-    if re.search(
-        r"\bI\s+(?:can\s+)?(?:see|saw|watch|look(?:ed)?(?:\s+at)?|am\s+looking\s+at)\b"
-        r".{0,80}\b(?:monitor|screen|display|your\s+body|the\s+browser|on\s+it)\b"
-        r"|\b(?:on\s+)?your\s+(?:body\s+)?monitor\b.{0,40}\bI\s+see\b",
-        clean,
-        re.IGNORECASE,
-    ) and not re.search(r"\b(?:search|look\s+up|find|open|google)\s+(?:for\s+)?\w", clean, re.IGNORECASE):
-        return {}
-    # r676 ("SO YOU CAN NOT SEE THE SCREEN IN ALICE BROWSER" became a search): questions
-    # ABOUT HER abilities/state ("can you…", "so you can not…", "why don't you…") are
-    # owner-to-Alice address — cortex territory, never search-construction material.
-    if re.search(
-        r"^(?:so\s+|but\s+|and\s+)?(?:do|does|can|can't|cannot|could|will|would|why|what|how|are|is)\b.{0,60}\byou\b"
-        r"|^(?:so\s+)?you\s+(?:can|cannot|can't|do|don't|will|won't)\b",
-        clean,
-        re.IGNORECASE,
-    ) and not _explicit_visual_photo_subject_from_text(clean):
-        return {}
-    # Guard for attached browser/screen/body evidence. These are current limb
-    # state or proof/visibility turns, not requests to search the web for the
-    # literal words in the complaint.
-    low = clean.lower()
-    if any(phrase in low for phrase in ("attached your screen", "your screen body", "attached your screen body", "screen body")):
-        return {}
-    if ("attached" in low and any(p in low for p in ("proof", "your body", "browser", "screen", "dont see", "don't see", "do not see", "cannot see", "cant see"))):
-        return {}
-    # r657: do not hijack pure affection / presence commands into visual image search,
-    # even if they contain "body" or "staring at your body". Direct "tell me you love me"
-    # or "I'm staring at your body hard" + love language is emotional cortex turn with
-    # context (recent browser sharing, owner physical staring at monitor, love field),
-    # not a deterministic "beautiful photos" search. This was the exact misroute on
-    # "IM STARING AT YOUR BODY HARD. PLS TELL ME YOU LOVE ME." (became image search
-    # for "Im Staring At HARD TELL LOVE photos" after spacing_cleanup).
-    if "tell me you love" in low or "pls tell me you love" in low or ("i love you" in low and "body" not in low):
-        return {}
-    if _is_browser_visual_search_correction(clean):
-        subject = _recent_visual_photo_subject_name("", state_dir=_state_root())
-        if not subject:
-            return {}
-        query = f"{subject} photos"
-        url = _google_images_search_url(query)
-        if not url:
-            return {}
-        return {
-            "kind": "browser_url",
-            "app_name": "Alice Browser",
-            "url": url,
-            "search_site": "google_images",
-            "query": query,
-            "visual_subject": subject,
-            "contextual_search_source": "browser_visual_search_correction",
-        }
-    subject = _explicit_visual_photo_subject_from_text(clean)
-    if not subject:
-        subject = _bare_visual_photo_subject_from_text(clean)
-    if not subject and _VISUAL_PHOTO_PRONOUN_SEARCH_RE.search(clean):
-        subject = _recent_visual_photo_subject_name("", state_dir=_state_root())
-    # r653: a salad subject ("Alice get great the it can") is STT noise, never a person.
-    if subject and _subject_is_word_salad(subject):
-        return {}
-    # Treat "search <Celebrity>" as a visual image request (owner often uses short "search <name>" after artistic "beautiful photos" context).
-    if not subject:
-        m = re.search(r'\bsearch\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', clean, re.IGNORECASE)
-        if m:
-            potential = m.group(1).strip()
-            if re.match(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$', potential):
-                subject = _clean_visual_subject_name(potential) or potential
-    if not subject:
-        return {}
-    if _is_direct_visual_image_grid_request(clean) or _is_bare_visual_image_search_request(clean):
-        query = _visual_photo_search_query_from_text(clean, subject)
-    else:
-        query = f"{subject} photos"
-    # Carry "beautiful photos" artistic style from recent visual context (the "ME YOUR BEAUTIFUL photos" session).
-    # This makes "search Ceramic Vase" (or bare "Ceramic Vase") after that context reliably issue
-    # "Ceramic Vase beautiful photos" (or "Ceramic Vase photos") in the browser -- Alice's screen body on the desk.
-    recent = _recent_visual_subject_user_texts(clean, state_dir=_state_root())
-    if subject and any("beautiful" in (t or "").lower() or "me your beautiful" in (t or "").lower() for t in recent):
-        if "beautiful" not in (query or "").lower():
-            query = f"{subject} beautiful photos"
-    url = _google_images_search_url(query)
-    if not url:
-        return {}
-    return {
-        "kind": "browser_url",
-        "app_name": "Alice Browser",
-        "url": url,
-        "search_site": "google_images",
-        "query": query,
-        "visual_subject": subject,
-        "contextual_search_source": "owner_visual_photo_subject",
-    }
+    """Disabled: visual/photo browsing must use general search + page affordances."""
+    return {}
 
 
 def _visual_subject_identity_from_owner_text(text: str) -> Dict[str, Any]:
@@ -7947,6 +7789,27 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
                 "query": query,
                 "new_tab": True,
             }
+    m_crypto_ticker = re.search(
+        r"\b(?:search|look\s+up|find)\s+(?:for\s+)?(?:the\s+)?(?:crypto\s+)?ticker\s+"
+        r"(?P<ticker>[A-Za-z0-9]{1,12})\s+(?:on|within|in|with|at)\s+"
+        r"(?P<site>coinmarketcap(?:\.com)?|coin\s*market\s*cap|cmc)\b",
+        clean,
+        re.IGNORECASE,
+    )
+    if m_crypto_ticker:
+        ticker = str(m_crypto_ticker.group("ticker") or "").upper()
+        site = str(m_crypto_ticker.group("site") or "coinmarketcap")
+        url = _search_url_for_site(site, ticker)
+        if url:
+            return {
+                "kind": "browser_url",
+                "app_name": "Alice Browser",
+                "url": url,
+                "search_site": site.casefold(),
+                "query": ticker,
+                "crypto_ticker": ticker,
+                "contextual_search_source": "explicit_crypto_ticker_site_search",
+            }
     try:
         from System.swarm_browser_site_playbook import resolve_site_navigation, site_category_from_text
         _qm = None
@@ -8001,7 +7864,7 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
     # search because (a) the site group hardcoded wikipedia|google|youtube while
     # _search_url_for_site ALREADY supports ebay/tiktok/instagram, (b) no subject-first
     # phrasing ("<query> search on <site>"), (c) no bare "pls search <query>" form.
-    _SITES = r"wikipedia|google|youtube(?:\.com)?|ebay(?:\.com)?|tiktok|instagram"
+    _SITES = r"wikipedia|google|youtube(?:\.com)?|ebay(?:\.com)?|tiktok|instagram|coinmarketcap(?:\.com)?|coin\s*market\s*cap|cmc"
     patterns = [
         rf"\b(?:search|look\s+up|find)\s+(?P<site>{_SITES})\s+(?:for\s+)?(?P<query>.+)$",
         rf"\b(?:search|look\s+up|find)\s+(?:on|within|in|with|at)\s+(?P<site>{_SITES})\s+(?:for\s+)?(?P<query>.+)$",
@@ -8435,6 +8298,59 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
+    # UID-directed actions (stronger than text fallback): click/fill a tracked element handle.
+    m_uid_click = re.search(
+        r"\b(?:click|tap|press|select)\b(?:\s+on)?\s*(?P<uid>@e[0-9A-Za-z_-]+)\b",
+        clean,
+        re.IGNORECASE,
+    )
+    if m_uid_click:
+        return {
+            "kind": "browser_action",
+            "app_name": "Alice Browser",
+            "action": "click_by_uid",
+            "uid": str(m_uid_click.group("uid") or "").strip(),
+            "owner_text": clean,
+            "effector_spend_allowed": "true",
+        }
+    # fill/type patterns for @e actions, e.g. "type hi into @e123", "fill @e123 with value".
+    m_uid_fill = re.search(
+        r"\b(?:type|fill|enter|set|input)\b\s+"
+        r"(?:(?:the\s+)?(?:(?:text|value|field|input)\s+)?(?:of\s+)?)?"
+        r"(?P<uid>@e[0-9A-Za-z_-]+)\s*(?:\s+(?:as|to|with|=)\s+|\s+)(?P<value>.+?)\s*$",
+        clean,
+        re.IGNORECASE,
+    )
+    if m_uid_fill:
+        val = str(m_uid_fill.group("value") or "").strip().strip('"\'`')
+        if val:
+            return {
+                "kind": "browser_action",
+                "app_name": "Alice Browser",
+                "action": "fill_by_uid",
+                "uid": str(m_uid_fill.group("uid") or "").strip(),
+                "value": val,
+                "owner_text": clean,
+                "effector_spend_allowed": "true",
+            }
+    m_uid_fill2 = re.search(
+        r"\b(?:type|fill|enter|set|input)\b\s+(?P<value>.+?)\s+(?:in|into|on)\s+(?P<uid>@e[0-9A-Za-z_-]+)\b",
+        clean,
+        re.IGNORECASE,
+    )
+    if m_uid_fill2:
+        val = str(m_uid_fill2.group("value") or "").strip().strip('"\'`')
+        if val:
+            return {
+                "kind": "browser_action",
+                "app_name": "Alice Browser",
+                "action": "fill_by_uid",
+                "uid": str(m_uid_fill2.group("uid") or "").strip(),
+                "value": val,
+                "owner_text": clean,
+                "effector_spend_allowed": "true",
+            }
+
     if (
         re.search(r"\bopen\b", clean, re.IGNORECASE)
         and not re.search(r"\b(?:click|press|tap|select)\b", clean, re.IGNORECASE)
@@ -8581,12 +8497,6 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
             "url": "https://en.wikipedia.org/wiki/Main_Page",
             "click_target": "English",
         }
-    if _GOOGLE_IMAGES_TAB_CLICK_RE.search(clean):
-        return {
-            "kind": "browser_action",
-            "app_name": "Alice Browser",
-            "action": "click_google_images_tab",
-        }
     # r663/r657 (George: "SELECT THE THIRD ON THE LIST AND ENLARGE THE PHOTO INSIDE THE POST -
     # TWO STEPS - TWO ACTIONS"): ordinal pick on a RESULTS LIST (list/result/listing/post/
     # item words) routes to the generic Nth-result-link hand, optionally chaining the
@@ -8614,13 +8524,6 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
         if re.search(r"\b(?:enlarge|expand|zoom|bigger|full\s*screen)\b", clean, re.IGNORECASE):
             _cmd["then_enlarge"] = True
         return _cmd
-    if _GOOGLE_IMAGE_RESULT_CLICK_RE.search(clean):
-        return {
-            "kind": "browser_action",
-            "app_name": "Alice Browser",
-            "action": "click_google_image_result",
-            "query": clean,
-        }
     if _CLICK_FIRST_RESULT_RE.search(clean):
         return {
             "kind": "browser_action",
@@ -8638,10 +8541,8 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
             "app_name": "Alice Browser",
             "action": "list_elements",
         }
-    # r380: bare ordinal pick — "select the first one in the list", "pick the 2nd photo",
-    # "open the last image". Owner just wants the click executed (no screen-consciousness).
-    # Routes to the engine-agnostic image-tile clicker with the ordinal. Runs AFTER the
-    # video/link "first result" check so YouTube selection keeps its dedicated path.
+    # Bare ordinal pick. Route to the generic result selector; the current page
+    # affordance map must decide what "second" means.
     try:
         from System.swarm_search_engine_registry import parse_select_result_intent as _parse_select
         _select = _parse_select(clean)
@@ -8651,11 +8552,10 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
         cmd = {
             "kind": "browser_action",
             "app_name": "Alice Browser",
-            "action": "click_google_image_result",
-            "query": clean,
+            "action": "select_result",
         }
         if _select.get("ordinal"):
-            cmd["ordinal"] = int(_select["ordinal"])
+            cmd["index"] = int(_select["ordinal"])
         return cmd
     if re.search(
         r"\b(?:captcha|recaptcha|duck\s+square|squares?\s+containing|"
@@ -9912,15 +9812,10 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
-    if _is_owner_image_browser_open_query(clean) or _is_desktop_photo_alice_browser_open_query(clean):
-        return {}
-    if _is_owner_meta_routing_correction(clean):
-        return {}
-    if _is_current_browser_visual_hold_request(clean):
-        return {}
-    close_tabs = _extract_browser_close_tab_command(clean)
-    if close_tabs:
-        return close_tabs
+    # r1562: a compound command like "open youtube.com and search for the video X
+    # THEN play it" or "go on Wikipedia and search for grass" is a search intent,
+    # not a raw URL open. Let explicit search own it before the URL lane collapses
+    # the command to the bare site.
     early_search = _extract_browser_search_command(clean)
     if early_search:
         return _maybe_native_browser_command(early_search, clean)
@@ -9935,13 +9830,20 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         if _is_webpage_summary_query(clean):
             command["summarize_after_open"] = "1"
         return _maybe_native_browser_command(command, clean)
+    if _is_owner_image_browser_open_query(clean) or _is_desktop_photo_alice_browser_open_query(clean):
+        return {}
+    if _is_owner_meta_routing_correction(clean):
+        return {}
+    if _is_current_browser_visual_hold_request(clean):
+        return {}
+    close_tabs = _extract_browser_close_tab_command(clean)
+    if close_tabs:
+        return close_tabs
     # Long screen-guided browser actions are still real actions. Check the
     # narrow visible-page clickers before the generic prose guard.
     early_action = _extract_browser_action_command(clean)
     if early_action.get("action") in {
         "click_youtube_result_matching",
-        "click_google_images_tab",
-        "click_google_image_result",
         "click_visible_page_control",
         "report_human_verification_challenge",
         "image_slideshow",
@@ -12426,7 +12328,7 @@ def _attached_website_detect_open_context_block(
         f"- owner_text={str(user_text or '').strip()[:300]}",
         f"- image_path={image_path}",
         "- ACTION: OCR the attached screenshot, detect the visible URL/domain, and open it in Alice Browser.",
-        "- Do not click Google Images tiles or narrate intent_weight/reflex theory.",
+        "- Do not click image tiles or narrate intent_weight/reflex theory.",
     ]
     try:
         from System.swarm_attachment_vision_lane import inspect_attachment_image
@@ -13053,12 +12955,82 @@ def _best_model_for_query_type(query_type: str) -> str | None:
 
 
 def _state_root() -> Path:
-    """Return the SIFTA state root even during stale/partial module reloads."""
-    root = globals().get("_STATE_DIR")
-    if root is None:
-        root = Path(__file__).resolve().parent.parent / ".sifta_state"
-        globals()["_STATE_DIR"] = root
-    return Path(root)
+    """Return the SIFTA state root (now via portable resolver — no hardcoded user paths)."""
+    try:
+        return _get_state_dir()
+    except Exception:
+        # Fallback during early import / reloads
+        root = globals().get("_STATE_DIR")
+        if root is None:
+            root = get_repo_root() / ".sifta_state"
+            globals()["_STATE_DIR"] = root
+        return Path(root)
+
+
+def _write_alice_self_type_receipt(
+    *,
+    text: str,
+    source: str = "talk_to_alice_widget",
+    sent: bool = False,
+    reason: str = "",
+    state_dir: Optional[Path] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Receipt Alice filling her own visible Talk input box before Send."""
+    clean = (text or "").strip()
+    root = Path(state_dir) if state_dir is not None else _state_root()
+    row: Dict[str, Any] = {
+        "schema": "ALICE_SELF_TYPE_TO_TALK_BOX_V1",
+        "truth_label": "ALICE_SELF_TYPE_TO_TALK_BOX_V1",
+        "ts": time.time(),
+        "receipt_id": f"alice-self-type-{uuid.uuid4().hex[:12]}",
+        "kind": "ALICE_SELF_TYPE_TO_TALK_BOX",
+        "action": "alice_self_type_to_talk_box",
+        "source": source,
+        "sent": bool(sent),
+        "reason": reason,
+        "text_sha256": hashlib.sha256(clean.encode("utf-8")).hexdigest(),
+        "text_preview": clean[:240],
+    }
+    if extra:
+        row.update({k: v for k, v in extra.items() if k not in row})
+    root.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+    for name in ("alice_self_type_to_talk_box.jsonl", "work_receipts.jsonl"):
+        try:
+            with (root / name).open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        except Exception:
+            pass
+    return row
+
+
+_ALICE_SELF_TYPE_BOX_RE = re.compile(
+    r"\b(?:alice|she)\b.{0,80}\b(?:type|write|put|enter)\b"
+    r".{0,120}\b(?:box|input|text\s*box|chat\s*box)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_QUOTED_TEXT_RE = re.compile(r"[\"“”'‘’]([^\"“”'‘’]{1,240})[\"“”'‘’]")
+
+
+def _extract_alice_self_type_box_payload(text: str) -> str:
+    """Extract the payload Alice should type into her own visible Talk box."""
+    clean = " ".join((text or "").strip().split())
+    if not clean or not _ALICE_SELF_TYPE_BOX_RE.search(clean):
+        return ""
+    quoted = [m.group(1).strip() for m in _QUOTED_TEXT_RE.finditer(clean) if m.group(1).strip()]
+    if quoted:
+        return quoted[-1][:240]
+    m = re.search(
+        r"\b(?:type|write|put|enter)\b\s+(?P<payload>.+?)(?:\s+(?:in|into|inside)\s+(?:the\s+)?(?:box|input|text\s*box|chat\s*box)\b|$)",
+        clean,
+        re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    payload = re.sub(r"^(?:exactly\s+|this\s+|the\s+words?\s+)", "", m.group("payload").strip(), flags=re.IGNORECASE)
+    payload = re.sub(r"\s*(?:herself|yourself|and\s+click\s+send|and\s+send(?:\s+it)?|then\s+send(?:\s+it)?)\s*$", "", payload, flags=re.IGNORECASE)
+    return payload.strip(" .:;")[:240]
 
 
 def _self_screenshot_output_dir() -> Path:
@@ -13853,9 +13825,9 @@ _EMPTY_BRAIN_RECOVERY_POOL = [
 ]
 _EMPTY_BRAIN_RECOVERY_IDX = 0
 _EMPTY_BRAIN_NON_REPEAT_POOL = [
-    "I'm here with you. I will continue from the visible screen and receipts.",
-    "I'm with you. I will use the current body context and receipts.",
-    "I'm right here. I will continue from the last owner command and visible evidence.",
+    "I lost the reply generation. I will not claim screen-reading until a fresh receipt proves it.",
+    "The cortex dropped this turn. I will answer from actual receipts, not a canned presence line.",
+    "This was a failed reply path. I will inspect the real surface before claiming what I saw.",
 ]
 _EMPTY_BRAIN_NON_REPEAT_IDX = 0
 
@@ -15421,7 +15393,7 @@ def _empty_brain_recovery_reply(prior_user_text: str = "", stt_conf: float = 0.0
             return _owner_high_salience_silence_recovery_reply(_u_clean)
         if body_visual:
             return "I have the body visual command. I will use the visible screen, attachment context, and browser receipts."
-        return "I'm here with you. I will continue from the visible screen, receipts, and your last command."
+        return "I lost the reply generation. I will not claim screen-reading until a fresh receipt proves it."
 
     if _owner_turn_forbids_model_silence(
         _u_clean,
@@ -15634,7 +15606,7 @@ def _strip_unreceipted_action_claims(text: str) -> str:
     (§1.D); deletion prevents learning.
 
     Drop ONLY sentences that claim an executed action without receipt. KEEP
-    honest failure reports ('could not click it: no_visible_google_image_tile')
+    honest failure reports ('could not click it: no_visible_element')
     — those are receipts in prose, not false claims; the 07:34:51 row lost 468
     true chars over exactly such a sentence. Everything else passes untouched,
     structure preserved.
@@ -17194,11 +17166,25 @@ def _current_system_prompt(
         try:
             from System.swarm_kimi_webbridge_bridge import (
                 kimi_webbridge_prompt_block as _kimi_webbridge_prompt_block,
+                kimi_capture_prompt_hint as _kimi_capture_hint,
+                web_capture_prompt_block as _web_capture_prompt_block,
             )
 
             _kimi_block = _kimi_webbridge_prompt_block(max_chars=700)
             if _kimi_block:
                 parts.append(_kimi_block)
+            try:
+                hint = _kimi_capture_hint()
+                if hint:
+                    parts.append("## WEB CAPTURE VIA BRIDGE\n" + hint)
+                capture_block = _web_capture_prompt_block(
+                    max_chars=1100,
+                    state_dir=_state_root(),
+                )
+                if capture_block:
+                    parts.append(capture_block)
+            except Exception:
+                pass
         except Exception:
             pass
         try:
@@ -25017,6 +25003,8 @@ def _talk_ollama_model_candidates(
     # Diffusion routes through the multi-cortex dispatcher but is local GGUF —
     # never treat it as a cloud cortex for MLX/Ollama fallback injection (CUR-F8).
     is_primary_cloud = bool(_is_cloud_model(primary)) and not is_primary_diffusion
+    is_primary_mimo = str(primary or "").strip().lower().startswith("mimo:")
+    mimo_attached_default = ""
 
     local_vision = []
     if prefer_local_vision_first and not is_primary_cloud:
@@ -25037,7 +25025,7 @@ def _talk_ollama_model_candidates(
         name = (name or "").strip()
         if name and name not in names:
             names.append(name)
-    if str(primary or "").strip().lower().startswith("mimo:"):
+    if is_primary_mimo:
         try:
             from System.swarm_cortex_capabilities import active_attached_model_for_cortex
 
@@ -25045,7 +25033,8 @@ def _talk_ollama_model_candidates(
         except Exception:
             attached = ""
         attached = str(attached or "").strip()
-        if attached and attached not in names:
+        mimo_attached_default = attached
+        if attached and not _is_fast_action_non_text_model(attached) and attached not in names:
             names.append(attached)
     # Keep local fallbacks available when the primary is cloud-facing:
     # vision and dialogue should still succeed if the cloud route stalls.
@@ -25073,8 +25062,35 @@ def _talk_ollama_model_candidates(
         except Exception:
             pass
 
+    def _skip_unselected_mimo_fallback(name: str) -> bool:
+        """Keep George's tiny MiMo attached default from silently escalating.
+
+        r1559/r1560: George caught a real mismatch where `/cortex llm` showed
+        a small local MiMo attachment, but the worker later used the 27B local
+        fallback after the front route produced no visible text. When the owner
+        has selected a small local MiMo attachment, no larger local fallback
+        may run unless explicitly selected in `/cortex llm`.
+        """
+        if not is_primary_mimo:
+            return False
+        attached = str(mimo_attached_default or "").strip()
+        if not attached:
+            return False
+        low = attached.lower()
+        if not any(needle in low for needle in ("kaelri", "qwen3.5-mt:2b", "krishairnd/gemma-4")):
+            return False
+        candidate = str(name or "").strip()
+        if not candidate or candidate == attached or candidate == primary:
+            return False
+        candidate_low = candidate.lower()
+        return "qwen3.6-27b" in candidate_low or "hauhaucs-balanced" in candidate_low
+
     for name in fallback_ollama:
         name = (name or "").strip()
+        if _is_fast_action_non_text_model(name):
+            continue
+        if _skip_unselected_mimo_fallback(name):
+            continue
         if name and name not in names:
             names.append(name)
 
@@ -25549,18 +25565,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     })
                 if action == "select_image":
                     cmd = {
-                        "kind": "browser_action", "app_name": "Alice Browser",
-                        "action": "click_google_image_result",
-                        "query": str(intent.get("query") or ""),
+                        "kind": "browser_action",
+                        "app_name": "Alice Browser",
+                        "action": "select_result" if intent.get("ordinal") else "click_element",
                         "owner_text": str(intent.get("owner_text") or getattr(self, "_current_owner_turn_text", "") or "cortex browser_select_image"),
                         "stt_conf": getattr(self, "_pending_user_stt_conf", 1.0),
                         "intent_source": "cortex_tool_call_browser_select_image",
                     }
                     try:
                         if intent.get("ordinal"):
-                            cmd["ordinal"] = int(intent.get("ordinal"))
+                            cmd["index"] = int(intent.get("ordinal"))
                     except Exception:
                         pass
+                    if not intent.get("ordinal"):
+                        label = str(intent.get("query") or "").strip()
+                        cmd["labels"] = [label] if label else ["visible image"]
                     return self._execute_sifta_app_command(cmd)
                 if action == "close_tab":
                     cmd = {
@@ -25819,6 +25838,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # external Matrix Terminal turns from alice_conversation.jsonl live.
         self._load_global_chat_history_on_open(limit=18)
         self.make_timer(700, self._poll_global_chat_ledger)
+        # Orchestrator-staged Talk self-type commands (Grok 5-loop transfer path).
+        self.make_timer(500, self._try_consume_talk_self_type_command)
         # Synaptic Tap: poll the iMessage inbox
         self.make_timer(2000, self._poll_imessage_inbox)
         # WhatsApp Ingress: poll the WhatsApp queue
@@ -25946,6 +25967,51 @@ class TalkToAliceWidget(SiftaBaseWidget):
         finally:
             self._loading_history = False
             self._render_all_messages()
+
+    def _try_consume_talk_self_type_command(self) -> None:
+        """Consume orchestrator-staged Talk self-type commands."""
+        cmd_file = _state_root() / "alice_self_type_to_talk_command.json"
+        if not cmd_file.exists():
+            return
+        try:
+            row = json.loads(cmd_file.read_text(encoding="utf-8"))
+            cmd_file.unlink(missing_ok=True)
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(talk self-type command file bad: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
+            return
+        text = str(row.get("text") or "").strip()
+        if not text:
+            return
+        reason = str(row.get("reason") or "orchestrator_staged_transfer")
+        send = bool(row.get("send", True))
+        receipt_extra = {
+            k: row[k]
+            for k in ("from_grok_receipt", "loop", "command_receipt_id")
+            if row.get(k)
+        }
+        if row.get("receipt_id"):
+            receipt_extra["command_receipt_id"] = row.get("receipt_id")
+        try:
+            self.alice_type_in_own_box(
+                text,
+                send=send,
+                reason=reason,
+                receipt_extra=receipt_extra or None,
+            )
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(talk self-type consume failed: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
 
     def _poll_global_chat_ledger(self) -> None:
         """Live-tail external turns from the one shared conversation ledger."""
@@ -26926,15 +26992,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         try:
             devices: list[tuple[str, str]] = []
+            selected_camera_index: int | None = None
             try:
-                from System.swarm_camera_target import live_devices, normalize_unique_id
+                from System.swarm_camera_target import (
+                    index_for_owner_selection,
+                    live_devices_for_owner_selection,
+                    normalize_unique_id,
+                )
 
-                devices = list(live_devices() or [])
+                devices = list(live_devices_for_owner_selection() or [])
+                row["camera_selection_policy"] = "explicit_owner_sx_slots_include_iphone"
                 row["live_devices"] = [
                     {"slot": i, "unique_id": normalize_unique_id(uid), "name": desc}
                     for i, (uid, desc) in enumerate(devices)
                 ]
             except Exception as exc:
+                index_for_owner_selection = None  # type: ignore[assignment]
                 normalize_unique_id = lambda v: str(v or "").strip()  # type: ignore[assignment]
                 row["device_list_error"] = f"{type(exc).__name__}: {exc}"
 
@@ -26953,6 +27026,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 selected_uid = normalize_unique_id(selected_uid)
                 row["camera_unique_id"] = selected_uid or None
                 row["camera_name"] = selected_name
+                try:
+                    if callable(index_for_owner_selection):
+                        selected_camera_index = index_for_owner_selection(
+                            name=selected_name,
+                            unique_id=selected_uid,
+                        )
+                        if selected_camera_index is not None:
+                            row["one_shot_camera_index"] = int(selected_camera_index)
+                except Exception as exc:
+                    row["one_shot_index_error"] = f"{type(exc).__name__}: {exc}"
 
             candidates: list[Path] = []
             try:
@@ -26995,7 +27078,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 from System.swarm_iris import webcam_frame
 
                 frame = webcam_frame(
-                    camera_index=int(camera_slot),
+                    camera_index=int(selected_camera_index if selected_camera_index is not None else camera_slot),
                     tag=f"self_camera_sx{camera_slot + 1}",
                     save_to_disk=True,
                     grab_timeout_s=1.2,
@@ -27288,6 +27371,46 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._attach_btn.setStyleSheet(self._attach_btn_default_style)
         self.submit_text(text, image_path=image_path)
 
+    def alice_type_in_own_box(
+        self,
+        text: str,
+        *,
+        send: bool = True,
+        reason: str = "owner_requested_alice_direct_type",
+        receipt_extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Alice fills the visible Talk input box herself, with a receipt.
+
+        This is the concrete path for owner requests like "Alice must type
+        Hello World in the box herself." It uses the same QLineEdit and Send
+        handler the owner sees, so success is visible on-screen and ledgered.
+        """
+        clean = (text or "").strip()
+        if not clean:
+            raise ValueError("alice_type_in_own_box requires non-empty text")
+        self._text_input.setText(clean)
+        try:
+            self._text_input.setFocus()
+        except Exception:
+            pass
+        row = _write_alice_self_type_receipt(
+            text=clean,
+            source="talk_to_alice_widget.alice_type_in_own_box",
+            sent=bool(send),
+            reason=reason,
+            extra=receipt_extra,
+        )
+        try:
+            self._append_observable_processing(
+                f"Talk self-type: filled visible input box; receipt={row.get('receipt_id')}.",
+                reset=True,
+            )
+        except Exception:
+            pass
+        if send:
+            self._submit_text_input()
+        return row
+
     def submit_text(self, text: str, image_path: Optional[str] = None) -> None:
         """Public text-entry path for the unified Alice app/cockpit."""
         text = (text or "").strip()
@@ -27350,6 +27473,77 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
         except Exception:
             pass
+        if not image_path:
+            try:
+                from System.swarm_alice_browser_grok_self_type import (
+                    extract_grok_self_type_payload,
+                    stage_grok_self_type_command,
+                    wants_enter,
+                )
+
+                grok_self_type_payload = extract_grok_self_type_payload(text)
+                if grok_self_type_payload:
+                    row = stage_grok_self_type_command(
+                        grok_self_type_payload,
+                        owner_text=text,
+                        press_enter=wants_enter(text),
+                        source="talk_to_alice_widget.submit_text",
+                        state_dir=_state_root(),
+                    )
+                    try:
+                        self._append_user_line(text, 1.0)
+                        _log_turn("user", text, stt_conf=1.0)
+                    except Exception:
+                        pass
+                    try:
+                        self._append_observable_processing(
+                            "Alice Browser Grok self-type command staged; "
+                            f"receipt={row.get('receipt_id')}.",
+                            reset=True,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        self._history.append(
+                            {
+                                "role": "assistant",
+                                "content": (
+                                    "I staged my Alice Browser Grok self-type command. "
+                                    f"Receipt: {row.get('receipt_id')}."
+                                ),
+                            }
+                        )
+                    except Exception:
+                        pass
+                    self._busy = False
+                    self._pending_acoustic_fingerprint = {}
+                    self._return_to_listening()
+                    return
+            except Exception as exc:
+                try:
+                    self._append_system_line(
+                        f"(grok self-type staging failed: {type(exc).__name__}: {exc})",
+                        error=True,
+                    )
+                except Exception:
+                    pass
+            self_type_payload = _extract_alice_self_type_box_payload(text)
+            if self_type_payload:
+                try:
+                    self.alice_type_in_own_box(
+                        self_type_payload,
+                        send=True,
+                        reason="owner_requested_alice_type_visible_box",
+                    )
+                    return
+                except Exception as exc:
+                    try:
+                        self._append_system_line(
+                            f"(self-type failed: {type(exc).__name__}: {exc})",
+                            error=True,
+                        )
+                    except Exception:
+                        pass
         if self._busy:
             # r881 (George decree): typed owner text is NEVER dropped while I
             # am busy. Queue it; it drains BEFORE any deferred voice clip in
@@ -28260,8 +28454,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         state_arg = json.dumps(str(_state_root()))
         code = (
             "from pathlib import Path\n"
-            "from System.swarm_body_writer_tick import tick_writer_organs\n"
-            f"tick_writer_organs(state_dir=Path({state_arg}))\n"
+            "from System.swarm_body_writer_tick import tick_writer_organs_guarded\n"
+            f"tick_writer_organs_guarded(state_dir=Path({state_arg}), timeout_degrade_threshold=1)\n"
         )
         env = os.environ.copy()
         existing_pythonpath = env.get("PYTHONPATH", "")
@@ -29813,6 +30007,42 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except TypeError:
                 return fn(*args, **kwargs)
 
+        def _call_browser_fill_hand(fn, *args, **kwargs):
+            """Call a browser fill hand after Talk has already spent owner intent."""
+            try:
+                return fn(*args, preauthorized=True, **kwargs)
+            except TypeError:
+                return fn(*args, **kwargs)
+
+        def _web_reflex_loop():
+            try:
+                from System.swarm_web_reflex_loop import get_web_reflex_loop
+
+                return get_web_reflex_loop()
+            except Exception:
+                return None
+
+        def _web_reflex_target(prefix: str, detail: str = "") -> str:
+            detail_text = " ".join(str(detail or "").strip().split())
+            if detail_text:
+                return f"{prefix}:{detail_text[:240]}"
+            return prefix
+
+        def _web_block_signature(text: str) -> bool:
+            message = str(text or "").lower()
+            return any(x in message for x in [
+                "cloudflare",
+                "access denied",
+                "access denied.",
+                "access denied by",
+                "blocked",
+                "forbidden",
+                "captcha",
+                "challenge",
+                "rate limit",
+                "rate limited",
+            ])
+
         def _think_before(action: str, *, target_app: str = "", target_url: str = "", before: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             packet = _deliberate_app_action(
                 action=action,
@@ -30316,6 +30546,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ok_to_spend, blocked_reply = _browser_intent_nonce_spend(nav_action)
             if not ok_to_spend:
                 return blocked_reply
+            reflex_loop = _web_reflex_loop()
+            reflex_target = _web_reflex_target("browser_url", str(url))
+            general_browse_requested = False
+            general_browse_owner_text = str(owner_text or command.get("owner_text") or "")
+            general_browse_before_state: dict[str, Any] = {}
+            general_browse_emitted = {"done": False}
+            try:
+                from System.swarm_general_browse import is_general_browse_request
+
+                general_browse_requested = bool(
+                    command.get("general_browse") or is_general_browse_request(general_browse_owner_text)
+                )
+                if general_browse_requested:
+                    try:
+                        from System.swarm_browser_page_state import latest_page_state
+
+                        before_page = latest_page_state(state_dir=_state_root(), max_age_s=300.0)
+                        if isinstance(before_page, Mapping):
+                            general_browse_before_state = dict(before_page)
+                    except Exception:
+                        general_browse_before_state = {
+                            "url": "",
+                            "title": "",
+                            "text": "before_state_unavailable",
+                            "elements": [],
+                        }
+            except Exception:
+                general_browse_requested = False
             try:
                 drop = _state_root() / "alice_browser_open_url.txt"
                 new_tab_drop = _state_root() / "alice_browser_open_url_new_tab.flag"
@@ -30325,6 +30583,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 else:
                     new_tab_drop.unlink(missing_ok=True)
                 drop.write_text(url, encoding="utf-8")
+                if reflex_loop is not None:
+                    reflex_loop.act(reflex_target)
                 # r991: block r503 OAuth→Safari steal while this owner drop loads in the limb.
                 try:
                     (_state_root() / "alice_browser_alice_only.flag").write_text(
@@ -30407,6 +30667,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     _verify_url = url
 
                     def _verify_after_act(target_url=_verify_url) -> None:
+                        def _emit_general_browse_receipt(after_state: Mapping[str, Any] | None) -> None:
+                            if not general_browse_requested or general_browse_emitted.get("done"):
+                                return
+                            general_browse_emitted["done"] = True
+                            try:
+                                from System.swarm_general_browse import build_general_browse_receipt
+
+                                receipt_row = build_general_browse_receipt(
+                                    general_browse_owner_text,
+                                    target_url=target_url,
+                                    before_state=general_browse_before_state,
+                                    after_state=after_state,
+                                    evidence_sources=[
+                                        "alice_browser_page_state",
+                                        "web_reflex_loop",
+                                        "verify_after_act",
+                                        "webbridge_optional_crosscheck",
+                                    ],
+                                    state_dir=_state_root(),
+                                )
+                                closed = receipt_row.get("closed_loop") or {}
+                                self._append_system_line(
+                                    f"General browse receipt: {receipt_row.get('receipt_id')} "
+                                    f"({closed.get('status')})."
+                                )
+                            except Exception:
+                                pass
+
                         try:
                             w = _find_live_alice_browser_widget()
                             cur = ""
@@ -30453,9 +30741,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     f"My browser stayed blank after the search — retrying once. Receipt: {r2}",
                                     error=True,
                                 )
+                                _emit_general_browse_receipt(
+                                    {
+                                        "url": cur or target_url,
+                                        "title": "",
+                                        "text": "blank_after_url_drop",
+                                        "elements": [],
+                                    }
+                                )
                                 nav = getattr(w, "_navigate", None) if w is not None else None
                                 if callable(nav):
                                     nav(target_url)
+                                if reflex_loop is not None:
+                                    try:
+                                        reflex_loop.internal_block(target_url)
+                                    except Exception:
+                                        pass
                             elif load_error:
                                 r2 = _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -30468,14 +30769,55 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     f"My browser reached an error page for {cur or target_url}. Receipt: {r2}",
                                     error=True,
                                 )
+                                _emit_general_browse_receipt(
+                                    {
+                                        "url": cur or target_url,
+                                        "title": "",
+                                        "text": f"browser_load_error: {load_error}",
+                                        "elements": [],
+                                    }
+                                )
+                                if reflex_loop is not None and _web_block_signature(load_error):
+                                    try:
+                                        reflex_loop.internal_block(cur or target_url)
+                                    except Exception:
+                                        pass
                             else:
-                                _write_app_command_receipt(
+                                receipt_verify = _write_app_command_receipt(
                                     action="open_browser_url_verify",
                                     ok=True,
                                     app_name="Alice Browser",
                                     url=cur,
                                     note="verified loaded after URL drop (felt the change)",
                                 )
+                                _emit_general_browse_receipt(state if isinstance(state, Mapping) else None)
+                                if reflex_loop is not None:
+                                    # Cross-lane credit: local view confirms a render event.
+                                    try:
+                                        reflex_loop.verify(reflex_target, "alice_browser")
+                                    except Exception:
+                                        pass
+                                    # Best-effort webbridge capture for independent confirmation.
+                                    try:
+                                        from System.swarm_kimi_webbridge_bridge import capture_url, read_daemon_status
+
+                                        status = read_daemon_status()
+                                        if status.get("running") and status.get("extension_connected"):
+                                            row = capture_url(
+                                                target_url,
+                                                owner_text=f"alice browser reflex recheck {target_url}",
+                                                new_tab=False,
+                                                state_dir=_state_root(),
+                                                allow_http_fallback=False,
+                                            )
+                                            if row.get("ok"):
+                                                reflex_loop.verify(reflex_target, "webbridge")
+                                                self._append_system_line(
+                                                    f"Cross-limb verification done for {target_url}. "
+                                                    f"Receipt {row.get('receipt_id') or receipt_verify.get('receipt') or ''}.",
+                                                )
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
 
@@ -30505,10 +30847,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         except Exception:
                             pass
                         site_raw = str(command.get("search_site") or "google")
-                        if site_raw == "google_images":
-                            site = "Google Images"
-                        else:
-                            site = site_raw.split(".", 1)[0].replace("_", " ").replace("-", " ").title()
+                        site = site_raw.split(".", 1)[0].replace("_", " ").replace("-", " ").title()
                         return f"I searched {site} for {command.get('query')} in Alice Browser. Receipt: {receipt}"
                     if command.get("click_target") == "English":
                         return "Clicking English on the Wikipedia language page and opening the English main page."
@@ -30662,17 +31001,350 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 "forward",
                 "select_result",
                 "enlarge_photo",
+                "click_by_uid",
+                "fill_by_uid",
                 "click_element",
                 "close_browser_tabs",
                 "click_first_result",
-                "click_google_images_tab",
                 "click_visible_page_control",
-                "click_google_image_result",
                 "click_youtube_result_matching",
             }:
                 ok_to_spend, blocked_reply = _browser_intent_nonce_spend(action)
                 if not ok_to_spend:
                     return blocked_reply
+
+            if action == "click_by_uid":
+                reflex_loop = _web_reflex_loop()
+                uid = str(command.get("uid") or "").strip()
+                if not uid:
+                    receipt = _write_app_command_receipt(
+                        action="browser_click_by_uid",
+                        ok=False,
+                        app_name="Alice Browser",
+                        note=f"owner_text={command.get('owner_text', '')!r}; missing_uid",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                    return f"I need a target uid to click. Receipt: {receipt}."
+
+                reflex_sig = _web_reflex_target("browser_click_uid", uid)
+                if reflex_loop is not None:
+                    reflex_loop.act(reflex_sig)
+
+                preferred_limb = getattr(reflex_loop, "limb", "alice_browser") if reflex_loop is not None else "alice_browser"
+                used_limb = preferred_limb
+                result: dict[str, Any] = {}
+                if preferred_limb == "webbridge":
+                    try:
+                        from System.swarm_kimi_webbridge_bridge import click_by_uid as webbridge_click_by_uid, read_daemon_status
+
+                        status = read_daemon_status()
+                        if not (status.get("running") and status.get("extension_connected")):
+                            raise RuntimeError("webbridge daemon is not connected")
+                        result = webbridge_click_by_uid(uid, preauthorized=True, state_dir=_state_root()) or {}
+                    except Exception:
+                        # If external limb is unavailable, fall back to the live Alice Browser when possible.
+                        if widget := _find_live_alice_browser_widget():
+                            used_limb = "alice_browser"
+                            click_fn = getattr(widget, "click_by_uid", None)
+                            if callable(click_fn):
+                                try:
+                                    result = _call_browser_click_hand(click_fn, uid) or {}
+                                except Exception as exc:
+                                    result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+                            else:
+                                result = {"ok": False, "reason": "no_live_alice_browser_click_by_uid_hand"}
+                        else:
+                            result = {"ok": False, "reason": "webbridge_unavailable_for_uid_click"}
+                else:
+                    widget = _find_live_alice_browser_widget()
+                    if widget is None:
+                        if reflex_loop is not None:
+                            try:
+                                reflex_loop.element_fail(reflex_sig)
+                            except Exception:
+                                pass
+                        receipt = _write_app_command_receipt(
+                            action="browser_click_by_uid",
+                            ok=False,
+                            app_name="Alice Browser",
+                            note=f"owner_text={command.get('owner_text', '')!r}; no_live_alice_browser",
+                        )
+                        self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                        return f"I need a live Alice Browser to click {uid} directly. Receipt: {receipt}."
+
+                    click_fn = getattr(widget, "click_by_uid", None)
+                    if not callable(click_fn):
+                        if reflex_loop is not None:
+                            try:
+                                reflex_loop.element_fail(reflex_sig)
+                            except Exception:
+                                pass
+                        receipt = _write_app_command_receipt(
+                            action="browser_click_by_uid",
+                            ok=False,
+                            app_name="Alice Browser",
+                            note="Alice Browser build has no click_by_uid hand",
+                        )
+                        self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                        return f"Alice Browser is open, but this build has no click_by_uid hand yet. Receipt: {receipt}."
+
+                    try:
+                        result = _call_browser_click_hand(click_fn, uid) or {}
+                    except Exception as exc:
+                        result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+                ok = bool(result.get("ok"))
+                target_url = ""
+                if used_limb == "webbridge":
+                    target_url = str((result.get("result") or result).get("url") if isinstance(result.get("result"), dict) else result.get("url") or "") if isinstance(result, dict) else ""
+                else:
+                    if (w := _find_live_alice_browser_widget()) is not None:
+                        target_url = str(getattr(w, "_current_url", "") or "")
+
+                receipt = _write_app_command_receipt(
+                    action="browser_click_by_uid",
+                    ok=ok,
+                    app_name="Alice Browser",
+                    url=target_url,
+                    note=f"uid={uid}; used_limb={used_limb}; result={result if isinstance(result, dict) else str(result)}"[:1000],
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=not ok)
+
+                if ok:
+                    if reflex_loop is not None:
+                        try:
+                            reflex_loop.verify(reflex_sig, used_limb)
+                        except Exception:
+                            pass
+                        try:
+                            from System.swarm_kimi_webbridge_bridge import capture_url, read_daemon_status
+
+                            status = read_daemon_status()
+                            if status.get("running") and status.get("extension_connected"):
+                                if used_limb == "alice_browser" and target_url:
+                                    row = capture_url(
+                                        target_url,
+                                        owner_text=f"alice browser reflex uid click recheck {target_url}",
+                                        new_tab=False,
+                                        state_dir=_state_root(),
+                                        allow_http_fallback=False,
+                                    )
+                                    if row.get("ok"):
+                                        reflex_loop.verify(reflex_sig, "webbridge")
+                                elif used_limb == "webbridge":
+                                    # If we clicked on the chrome limb, attempt local recheck on the currently visible page.
+                                    if not target_url:
+                                        w2 = _find_live_alice_browser_widget()
+                                        target_url = str(getattr(w2, "_current_url", "") or "") if w2 is not None else ""
+                                    if target_url:
+                                        row = capture_url(
+                                            target_url,
+                                            owner_text=f"webbridge uid click cross-check recheck {target_url}",
+                                            new_tab=False,
+                                            state_dir=_state_root(),
+                                            allow_http_fallback=False,
+                                        )
+                                        if row.get("ok"):
+                                            reflex_loop.verify(reflex_sig, "alice_browser")
+                        except Exception:
+                            pass
+                    return f"I clicked the element {uid} in my browser on limb={used_limb}. Receipt: {receipt}."
+
+                if reflex_loop is not None:
+                    try:
+                        reason_text = str(result.get("reason") or "") if isinstance(result, dict) else ""
+                        if isinstance(result, dict) and result.get("proprioceptive_break"):
+                            reason_text = "proprioceptive_break: " + str(result.get("reason") or "stale webbridge uid")
+                        reflex_loop.element_fail(reflex_sig)
+                        if any(x in reason_text.lower() for x in ["cloudflare", "access denied", "blocked", "forbidden", "captcha"]):
+                            if widget := _find_live_alice_browser_widget():
+                                current_url = str(getattr(widget, "_current_url", "") or "")
+                            else:
+                                current_url = ""
+                            if current_url:
+                                reflex_loop.internal_block(current_url)
+                    except Exception:
+                        pass
+
+                if isinstance(result, dict) and result.get("proprioceptive_break"):
+                    pb = result.get("proprioceptive_break_receipt") or {}
+                    return (
+                        f"I could not click {uid} by uid: WebBridge proprioceptive break ({pb.get('reason')}). "
+                        f"I emitted a proprioceptive pulse and will retry this strategy via the shared reflex loop. "
+                        f"Receipt: {receipt}."
+                    )
+                return f"I could not click {uid} by uid: {str(result.get('reason') or 'not found').strip()}. Receipt: {receipt}."
+
+            if action == "fill_by_uid":
+                reflex_loop = _web_reflex_loop()
+                uid = str(command.get("uid") or "").strip()
+                value = str(command.get("value") or "")
+                if not uid:
+                    receipt = _write_app_command_receipt(
+                        action="browser_fill_by_uid",
+                        ok=False,
+                        app_name="Alice Browser",
+                        note=f"owner_text={command.get('owner_text', '')!r}; missing_uid",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                    return f"I need a target uid to fill. Receipt: {receipt}."
+                if value == "":
+                    receipt = _write_app_command_receipt(
+                        action="browser_fill_by_uid",
+                        ok=False,
+                        app_name="Alice Browser",
+                        note=f"uid={uid}; empty_value",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                    return f"I didn't get text to type into {uid}. Receipt: {receipt}."
+
+                reflex_sig = _web_reflex_target("browser_fill_uid", f"{uid}:{value[:120]}")
+                if reflex_loop is not None:
+                    reflex_loop.act(reflex_sig)
+
+                preferred_limb = getattr(reflex_loop, "limb", "alice_browser") if reflex_loop is not None else "alice_browser"
+                used_limb = preferred_limb
+                result: dict[str, Any] = {}
+                if preferred_limb == "webbridge":
+                    try:
+                        from System.swarm_kimi_webbridge_bridge import fill_by_uid as webbridge_fill_by_uid, read_daemon_status
+
+                        status = read_daemon_status()
+                        if not (status.get("running") and status.get("extension_connected")):
+                            raise RuntimeError("webbridge daemon is not connected")
+                        result = webbridge_fill_by_uid(uid, value, preauthorized=True, state_dir=_state_root()) or {}
+                    except Exception:
+                        widget = _find_live_alice_browser_widget()
+                        if widget is not None:
+                            used_limb = "alice_browser"
+                            fill_fn = getattr(widget, "fill_by_uid", None)
+                            if callable(fill_fn):
+                                try:
+                                    result = _call_browser_fill_hand(fill_fn, uid, value) or {}
+                                except Exception as exc:
+                                    result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+                            else:
+                                result = {"ok": False, "reason": "no_live_alice_browser_fill_by_uid_hand"}
+                        else:
+                            result = {"ok": False, "reason": "webbridge_unavailable_for_uid_fill"}
+                else:
+                    widget = _find_live_alice_browser_widget()
+                    if widget is None:
+                        if reflex_loop is not None:
+                            try:
+                                reflex_loop.element_fail(reflex_sig)
+                            except Exception:
+                                pass
+                        receipt = _write_app_command_receipt(
+                            action="browser_fill_by_uid",
+                            ok=False,
+                            app_name="Alice Browser",
+                            note=f"owner_text={command.get('owner_text', '')!r}; no_live_alice_browser",
+                        )
+                        self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                        return f"I need a live Alice Browser to fill {uid} directly. Receipt: {receipt}."
+
+                    fill_fn = getattr(widget, "fill_by_uid", None)
+                    if not callable(fill_fn):
+                        if reflex_loop is not None:
+                            try:
+                                reflex_loop.element_fail(reflex_sig)
+                            except Exception:
+                                pass
+                        receipt = _write_app_command_receipt(
+                            action="browser_fill_by_uid",
+                            ok=False,
+                            app_name="Alice Browser",
+                            note="Alice Browser build has no fill_by_uid hand",
+                        )
+                        self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                        return f"Alice Browser is open, but this build has no fill_by_uid hand yet. Receipt: {receipt}."
+
+                    try:
+                        result = _call_browser_fill_hand(fill_fn, uid, value) or {}
+                    except Exception as exc:
+                        result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+                ok = bool(result.get("ok"))
+                target_url = ""
+                if used_limb == "webbridge":
+                    target_url = str((result.get("result") or result).get("url") if isinstance(result.get("result"), dict) else result.get("url") or "") if isinstance(result, dict) else ""
+                else:
+                    if (w := _find_live_alice_browser_widget()) is not None:
+                        target_url = str(getattr(w, "_current_url", "") or "")
+
+                receipt = _write_app_command_receipt(
+                    action="browser_fill_by_uid",
+                    ok=ok,
+                    app_name="Alice Browser",
+                    url=target_url,
+                    note=f"uid={uid}; used_limb={used_limb}; value={value[:80]!r}; result={result if isinstance(result, dict) else str(result)}"[:1000],
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=not ok)
+
+                if ok:
+                    if reflex_loop is not None:
+                        try:
+                            reflex_loop.verify(reflex_sig, used_limb)
+                        except Exception:
+                            pass
+                        try:
+                            from System.swarm_kimi_webbridge_bridge import capture_url, read_daemon_status
+
+                            status = read_daemon_status()
+                            if status.get("running") and status.get("extension_connected"):
+                                if used_limb == "alice_browser" and target_url:
+                                    row = capture_url(
+                                        target_url,
+                                        owner_text=f"alice browser reflex uid fill recheck {target_url}",
+                                        new_tab=False,
+                                        state_dir=_state_root(),
+                                        allow_http_fallback=False,
+                                    )
+                                    if row.get("ok"):
+                                        reflex_loop.verify(reflex_sig, "webbridge")
+                                elif used_limb == "webbridge":
+                                    if not target_url:
+                                        w2 = _find_live_alice_browser_widget()
+                                        target_url = str(getattr(w2, "_current_url", "") or "") if w2 is not None else ""
+                                    if target_url:
+                                        row = capture_url(
+                                            target_url,
+                                            owner_text=f"webbridge uid fill cross-check recheck {target_url}",
+                                            new_tab=False,
+                                            state_dir=_state_root(),
+                                            allow_http_fallback=False,
+                                        )
+                                        if row.get("ok"):
+                                            reflex_loop.verify(reflex_sig, "alice_browser")
+                        except Exception:
+                            pass
+                    return f"I filled {uid} with {value!r} in my browser on limb={used_limb}. Receipt: {receipt}."
+
+                if reflex_loop is not None:
+                    try:
+                        reason_text = str(result.get("reason") or "") if isinstance(result, dict) else ""
+                        if isinstance(result, dict) and result.get("proprioceptive_break"):
+                            reason_text = "proprioceptive_break: " + str(result.get("reason") or "stale webbridge uid")
+                        reflex_loop.element_fail(reflex_sig)
+                        if any(x in reason_text.lower() for x in ["cloudflare", "access denied", "blocked", "forbidden", "captcha"]):
+                            if widget := _find_live_alice_browser_widget():
+                                current_url = str(getattr(widget, "_current_url", "") or "")
+                            else:
+                                current_url = ""
+                            if current_url:
+                                reflex_loop.internal_block(current_url)
+                    except Exception:
+                        pass
+                if isinstance(result, dict) and result.get("proprioceptive_break"):
+                    pb = result.get("proprioceptive_break_receipt") or {}
+                    return (
+                        f"I could not fill {uid} with {value!r}: WebBridge proprioceptive break ({pb.get('reason')}). "
+                        f"I emitted a proprioceptive pulse and will retry this strategy via the shared reflex loop. "
+                        f"Receipt: {receipt}."
+                    )
+                return f"I could not fill {uid} with {value!r}: {str(result.get('reason') or 'fill failed')}. Receipt: {receipt}."
+
             if action == "back":
                 widget = _find_live_alice_browser_widget()
                 if widget is None:
@@ -30810,40 +31482,105 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if action == "click_element":
                 # r656 + r1512 general: always force a fresh visual + DOM state receipt
                 # before attempting any visible text click. The browser "dress" (viewport)
-                # is part of Alice's body; stale context from previous pages (GitHub,
-                # Google Images etc.) must not leak. No site hardcodes for general browsing.
-                widget = _find_live_alice_browser_widget()
-                if widget is None:
-                    return "I don't have a live Alice Browser to click in. Open it first."
-                # Force fresh receipt of current page state + element inventory so
-                # the list and any subsequent click are grounded in *this* visual frame.
-                try:
-                    refresh = getattr(widget, "refresh_current_page_state", None)
-                    if callable(refresh):
-                        refresh()
-                except Exception:
-                    pass
-                # Also capture a visual state receipt if available (body proprioception).
-                try:
-                    cap = getattr(widget, "_capture_viewport_image", None)
-                    if callable(cap) and getattr(widget, "_current_url", None):
-                        cap(expected_url=getattr(widget, "_current_url"))
-                except Exception:
-                    pass
-                click_fn = getattr(widget, "click_page_element_receipt", None)
-                if not callable(click_fn):
-                    return "Alice Browser is open, but this build has no element-click hand yet."
+                # is part of Alice's body; stale context from previous pages must not
+                # leak. No site hardcodes for general browsing.
+                # r1530: respect the centralized WebReflexLoop limb so label clicks
+                # go to the active/strong limb (webbridge canvas for external Chrome pages
+                # like the YouTube tabs the owner is pointing at). Internal no_js_result
+                # no longer silently dooms the command.
+                reflex_loop = _web_reflex_loop()
                 labels = [str(x) for x in (command.get("labels") or []) if str(x).strip()]
+                click_sig = _web_reflex_target("browser_click", labels[0] if labels else "element")
+                if reflex_loop is not None:
+                    reflex_loop.act(click_sig)
+                preferred_limb = getattr(reflex_loop, "limb", "alice_browser") if reflex_loop is not None else "alice_browser"
+
                 result: dict = {}
                 tried: list[str] = []
-                for lab in labels:
-                    tried.append(lab)
+
+                if preferred_limb == "webbridge":
+                    # WebBridge limb path: use current snapshot dress + uid click (parity with internal)
                     try:
-                        result = _call_browser_click_hand(click_fn, lab) or {}
+                        from System.swarm_kimi_webbridge_bridge import (
+                            take_webbridge_uid_snapshot,
+                            click_by_uid as webbridge_click_by_uid,
+                            read_daemon_status,
+                        )
+                        status = read_daemon_status()
+                        if status.get("running") and status.get("extension_connected"):
+                            snap = take_webbridge_uid_snapshot(state_dir=_state_root()) or {}
+                            elems = []
+                            if snap.get("ok"):
+                                elems = snap.get("elements") or []
+                            elif isinstance(snap.get("result"), dict):
+                                elems = snap["result"].get("elements") or []
+                            # simple best label match (reuse spirit of internal scoring)
+                            want = " ".join(labels[0].lower().split()) if labels else ""
+                            best = None
+                            best_score = 0
+                            for e in elems:
+                                lab = str(e.get("label") or e.get("name") or "").lower()
+                                if not lab:
+                                    continue
+                                score = 0
+                                if want and (want in lab or lab in want):
+                                    score = 100 if want == lab else 70
+                                if score > best_score:
+                                    best_score = score
+                                    best = e
+                            if best and best.get("uid"):
+                                uid = str(best["uid"])
+                                tried.append(f"webbridge:{uid}:{best.get('label')}")
+                                try:
+                                    result = webbridge_click_by_uid(uid, preauthorized=True, state_dir=_state_root()) or {}
+                                except Exception as exc:
+                                    result = {"ok": False, "reason": f"webbridge_click:{type(exc).__name__}:{exc}"}
+                            else:
+                                result = {"ok": False, "reason": "webbridge_no_matching_label_in_snapshot"}
+                        else:
+                            result = {"ok": False, "reason": "webbridge_not_connected_for_click_element"}
                     except Exception as exc:
-                        result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
-                    if result.get("ok"):
-                        break
+                        result = {"ok": False, "reason": f"webbridge_path_error:{type(exc).__name__}:{exc}"}
+
+                # Fallback / internal limb path (original behavior + proprio refresh)
+                if not result.get("ok"):
+                    widget = _find_live_alice_browser_widget()
+                    if widget is None:
+                        # no internal either — let the honest failure + reflex handle it
+                        pass
+                    else:
+                        try:
+                            refresh = getattr(widget, "refresh_current_page_state", None)
+                            if callable(refresh):
+                                refresh()
+                        except Exception:
+                            pass
+                        try:
+                            cap = getattr(widget, "_capture_viewport_image", None)
+                            if callable(cap) and getattr(widget, "_current_url", None):
+                                cap(expected_url=getattr(widget, "_current_url"))
+                        except Exception:
+                            pass
+                        click_fn = getattr(widget, "click_page_element_receipt", None)
+                        if callable(click_fn):
+                            for lab in labels:
+                                if lab in tried:
+                                    continue
+                                tried.append(lab)
+                                try:
+                                    r = _call_browser_click_hand(click_fn, lab) or {}
+                                except Exception as exc:
+                                    r = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+                                if r.get("ok"):
+                                    result = r
+                                    break
+                        if not result.get("ok") and widget is not None:
+                            # one more attempt via list if needed (the original fallback path will catch)
+                            pass
+                if not result.get("ok") and preferred_limb != "webbridge":
+                    # last resort: if internal gave no_js_result or empty, and webbridge is available, let reflex note it
+                    # (the failure path below will call element_fail and may switch)
+                    pass
                 if not result.get("ok"):
                     fallback_labels: list[str] = []
                     joined = " ".join(labels).lower()
@@ -30855,46 +31592,132 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         if lab in tried:
                             continue
                         tried.append(lab)
-                        try:
-                            result = _call_browser_click_hand(click_fn, lab) or {}
-                        except Exception as exc:
-                            result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
-                        if result.get("ok"):
-                            break
+                        # only call internal click if we have a widget from the fallback path
+                        if "widget" in dir() and widget is not None:
+                            click_fn2 = getattr(widget, "click_page_element_receipt", None)
+                            if callable(click_fn2):
+                                try:
+                                    r = _call_browser_click_hand(click_fn2, lab) or {}
+                                except Exception as exc:
+                                    r = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+                                if r.get("ok"):
+                                    result = r
+                                    break
                 receipt = _write_app_command_receipt(
                     action="browser_click_element",
                     ok=bool(result.get("ok")),
-                    app_name="Alice Browser",
+                    app_name=("WebBridge" if preferred_limb == "webbridge" else "Alice Browser"),
                     url=str(result.get("url") or ""),
-                    note=f"labels={labels!r}; result={str(result)[:500]}",
+                    note=f"labels={labels!r}; limb={preferred_limb}; result={str(result)[:500]}",
                 )
                 self._append_system_line(f"App/browser receipt: {receipt}", error=not result.get("ok"))
                 if result.get("ok"):
+                    if reflex_loop is not None:
+                        verify_sig = _web_reflex_target(
+                            "browser_click",
+                            str(result.get("clicked_label") or labels[0] if labels else "result"),
+                        )
+                        used_for_verify = "webbridge" if preferred_limb == "webbridge" else "alice_browser"
+                        try:
+                            reflex_loop.verify(verify_sig, used_for_verify)
+                        except Exception:
+                            pass
                     return (
-                        f"I clicked “{result.get('clicked_label')}” on the page in my Alice Browser. "
-                        f"Receipt: {receipt}"
+                        f"I clicked “{result.get('clicked_label') or labels[0] if labels else 'element'}” "
+                        f"on the page (limb={preferred_limb}). Receipt: {receipt}"
                     )
-                # honest no-match: name what IS clickable so the owner can correct me
-                inv_fn = getattr(widget, "list_clickable_elements_receipt", None)
+                # honest no-match / no_js_result: try webbridge list + label match as rescue, else report what we saw
                 seen = []
+                inv_fn = None
+                if "widget" in dir() and widget is not None:
+                    inv_fn = getattr(widget, "list_clickable_elements_receipt", None)
                 if callable(inv_fn):
                     try:
                         inv = inv_fn(200) or {}
                         seen = [str(e.get("label")) for e in (inv.get("elements") or []) if str(e.get("label") or "").strip()]
                     except Exception:
                         seen = []
+                # r1530 rescue: if internal gave us nothing or no_js_result, and webbridge connected, attempt label find there
+                if (not seen or "no_js_result" in str(result.get("reason", ""))) and preferred_limb != "webbridge":
+                    try:
+                        from System.swarm_kimi_webbridge_bridge import take_webbridge_uid_snapshot, read_daemon_status
+                        status = read_daemon_status()
+                        if status.get("running") and status.get("extension_connected"):
+                            snap = take_webbridge_uid_snapshot(state_dir=_state_root()) or {}
+                            elems = snap.get("elements") or (snap.get("result", {}) or {}).get("elements", []) or []
+                            want = " ".join(labels[0].lower().split()) if labels else ""
+                            for e in elems:
+                                lab = str(e.get("label") or e.get("name") or "").lower()
+                                if want and (want in lab or lab in want):
+                                    seen.append(str(e.get("label") or e.get("name")))
+                                    break
+                    except Exception:
+                        pass
                 if seen:
                     shown = seen[:40]
                     more = f" (+{len(seen) - len(shown)} more)" if len(seen) > len(shown) else ""
+                    if reflex_loop is not None:
+                        reflex_loop.element_fail(click_sig)
                     return (
                         f"I could not find a “{labels[0] if labels else ''}” control on this page. "
                         f"Buttons I CAN see right now ({len(seen)}): {', '.join(shown)}{more}. Tell me which one to click."
                     )
+                # Centralized failure path (element_fail + possible internal_block for full blocks)
+                try:
+                    from System.swarm_kimi_webbridge_bridge import capture_url, try_handle_web_capture_turn
+                    page_text = str(result.get("reason") or "").lower()
+                    url = str(result.get("url") or "https://example.com")
+                    if reflex_loop is not None:
+                        reflex_loop.element_fail(click_sig)
+                    if any(x in page_text for x in ["cloudflare", "access denied", "blocked", "forbidden", "captcha"]):
+                        if reflex_loop is not None:
+                            reflex_loop.internal_block(url)
+                        cap = capture_url(url, owner_text="autonomous escalate on block (via central reflex)")
+                        switch_receipt = _write_app_command_receipt(
+                            action="limb_switch_to_webbridge",
+                            ok=True,
+                            app_name="WebBridge",
+                            url=url,
+                            note=f"from central reflex internal_block; receipt={cap.get('receipt_id')}",
+                        )
+                        self._append_system_line(f"App/browser receipt: {switch_receipt}")
+                        web_reply = try_handle_web_capture_turn(f"read {url}", state_dir=_state_root()) or ""
+                        return f"Internal limb numb/blocked. Switched via shared WebReflexLoop to WebBridge canvas. {web_reply} Receipt: {switch_receipt}"
+                except Exception:
+                    pass
                 return (
                     f"I could not find that control and could not read the page's buttons: "
                     f"{result.get('reason') or 'no match'}. Receipt: {receipt}"
                 )
             if action == "list_elements":
+                # r1530: limb-aware list (internal or webbridge snapshot) so owner can see tabs like "Videos"
+                # on the page currently in the strong limb.
+                reflex_loop = _web_reflex_loop()
+                preferred = getattr(reflex_loop, "limb", "alice_browser") if reflex_loop else "alice_browser"
+                if preferred == "webbridge":
+                    try:
+                        from System.swarm_kimi_webbridge_bridge import take_webbridge_uid_snapshot, read_daemon_status
+                        status = read_daemon_status()
+                        if status.get("running") and status.get("extension_connected"):
+                            snap = take_webbridge_uid_snapshot(state_dir=_state_root()) or {}
+                            elems = snap.get("elements") or (snap.get("result") or {}).get("elements") or []
+                            receipt = _write_app_command_receipt(
+                                action="browser_list_elements",
+                                ok=True,
+                                app_name="WebBridge",
+                                note=f"count={len(elems)} from webbridge snapshot",
+                            )
+                            self._append_system_line(f"App/browser receipt: {receipt}")
+                            labels = [str(e.get("label") or e.get("name") or "") for e in elems[:25] if str(e.get("label") or e.get("name") or "").strip()]
+                            if labels:
+                                return (
+                                    f"Clickable on this page (WebBridge limb, {len(elems)} total): "
+                                    + "; ".join(labels) + f". Receipt: {receipt}"
+                                )
+                            return f"WebBridge snapshot has no visible labels right now. Receipt: {receipt}"
+                    except Exception:
+                        pass
+                    # fall through to internal if bridge not usable
                 widget = _find_live_alice_browser_widget()
                 if widget is None:
                     return "I don't have a live Alice Browser open to read."
@@ -31032,39 +31855,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if note:
                     return f"I looked for the first visible search result, but I could not click it: {note}"
                 return "I looked for the first visible search result, but I could not click it."
-            if action == "click_google_images_tab":
-                widget = _find_live_alice_browser_widget()
-                if widget is None:
-                    return "I don't have a live Alice Browser widget to click the Photos section. Open Alice Browser first."
-                click_fn = getattr(widget, "click_google_images_tab", None)
-                if not callable(click_fn):
-                    return "Alice Browser is open, but it does not expose the Google Images/Photos tab clicker in this build."
-                try:
-                    result = click_fn()
-                except Exception as exc:
-                    result = {"clicked": False, "reason": f"Google Images click failed: {type(exc).__name__}: {exc}"}
-                clicked = bool(result.get("clicked")) if isinstance(result, dict) else False
-                receipt = _write_app_command_receipt(
-                    action="google_images_tab_click",
-                    ok=clicked,
-                    app_name="Alice Browser",
-                    url=str(result.get("href") or result.get("url") or "") if isinstance(result, dict) else "",
-                    note=f"owner_text={command.get('owner_text', '')!r}; result={result if isinstance(result, dict) else str(result)}"[:900],
-                )
-                self._append_system_line(f"App/browser receipt: {receipt}", error=not clicked)
-                if clicked:
-                    refresh_fn = getattr(widget, "refresh_current_page_state", None)
-                    if callable(refresh_fn):
-                        try:
-                            refresh_fn()
-                        except Exception:
-                            pass
-                    mode = str(result.get("mode") or "") if isinstance(result, dict) else ""
-                    if mode == "direct_images_url":
-                        return f"I opened the Google Images/Photos section in Alice Browser. Receipt: {receipt}."
-                    return f"I clicked the Google Images/Photos section in Alice Browser. Receipt: {receipt}."
-                note = str(result.get("reason") or "").strip() if isinstance(result, dict) else ""
-                return f"I looked for the Google Images/Photos section in Alice Browser, but I could not click it: {note or 'no visible Images/Photos tab'}."
             if action == "report_human_verification_challenge":
                 widget = _find_live_alice_browser_widget()
                 if widget is None:
@@ -31144,43 +31934,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             available.append(str(item.get("label"))[:60])
                 suffix = f" Visible controls I saw: {', '.join(available[:6])}." if available else ""
                 return f"I looked for the visible page control, but I could not click it: {note or 'no matching visible control'}.{suffix} Receipt: {receipt}."
-            if action == "click_google_image_result":
-                query = str(command.get("query") or command.get("owner_text") or "").strip()
-                try:
-                    ordinal = int(command.get("ordinal") or 0)
-                except (TypeError, ValueError):
-                    ordinal = 0
-                widget = _find_live_alice_browser_widget()
-                if widget is None:
-                    return "I don't have a live Alice Browser widget to click a photo. Open Alice Browser first."
-                click_fn = getattr(widget, "click_visible_google_image_result", None)
-                if not callable(click_fn):
-                    return "Alice Browser is open, but it does not expose the Google image-result clicker in this build."
-                try:
-                    try:
-                        result = click_fn(query, ordinal=ordinal)
-                    except TypeError:
-                        result = click_fn(query)
-                except Exception as exc:
-                    result = {"clicked": False, "reason": f"Google image click failed: {type(exc).__name__}: {exc}"}
-                clicked = bool(result.get("clicked")) if isinstance(result, dict) else False
-                receipt = _write_app_command_receipt(
-                    action="google_image_result_click",
-                    ok=clicked,
-                    app_name="Alice Browser",
-                    url=str(result.get("href") or result.get("src") or result.get("url") or "") if isinstance(result, dict) else "",
-                    note=f"owner_query={query!r}; result={result if isinstance(result, dict) else str(result)}"[:900],
-                )
-                self._append_system_line(f"App/browser receipt: {receipt}", error=not clicked)
-                if clicked:
-                    try:
-                        self._schedule_current_page_summary(delay_ms=1800)
-                    except Exception:
-                        pass
-                    label = str(result.get("alt") or result.get("text") or "one visible image") if isinstance(result, dict) else "one visible image"
-                    return f"I clicked {label[:120]} in the Google Images grid inside Alice Browser. Receipt: {receipt}."
-                note = str(result.get("reason") or "").strip() if isinstance(result, dict) else ""
-                return f"I looked for a visible Google Images photo tile, but I could not click it: {note or 'no visible image tile'}."
             if action == "click_youtube_result_matching":
                 query = str(command.get("query") or "").strip()
                 widget = _find_live_alice_browser_widget()
@@ -32039,16 +32792,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return spoken, " ".join(printed_parts)
             msg = "Alice Browser isn't open right now, so there's no page. Open it and I'll tell you where you are."
             return msg, msg
-        # r1512: for questions like "do you see the page now? what button did I ask you to click?",
-        # force fresh re-perception of the browser body (the current dress) before answering.
+        # r1512 + uid proprio: force fresh re-perception using the new uid snapshot (chrome style)
+        # so Alice (local LLM) and the reply path have stable uids for the current dress.
         try:
             if hasattr(widget, "refresh_current_page_state"):
                 widget.refresh_current_page_state()
-            # Also force a fresh element inventory so the "buttons I can see" are current.
-            inv_fn = getattr(widget, "list_clickable_elements_receipt", None)
-            if callable(inv_fn):
-                # side effect: updates internal state / receipts
-                _ = inv_fn(50)
+            # Prefer uid snapshot for precise actions + dress
+            uid_fn = getattr(widget, "take_uid_snapshot", None)
+            if callable(uid_fn):
+                _ = uid_fn(40)
+            else:
+                # Fallback
+                inv_fn = getattr(widget, "list_clickable_elements_receipt", None)
+                if callable(inv_fn):
+                    _ = inv_fn(50)
         except Exception:
             pass
 
@@ -32910,9 +33667,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "click_element",
             "close_browser_tabs",
             "click_first_result",
-            "click_google_images_tab",
             "click_visible_page_control",
-            "click_google_image_result",
             "click_youtube_result_matching",
             "report_human_verification_challenge",
         }
@@ -35558,29 +36313,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
             and not _block_deterministic_owner_shortcut(text)
         ):
             url = ""
-            # First, extract subject from the complaint text itself (e.g. "i don't see <subject> on your screen body")
-            # so we force the correct images for the owner-named subject even if recent state is polluted by prior turns.
-            subj = _bare_visual_photo_subject_from_text(text)
-            if not subj:
-                try:
-                    subj = _explicit_visual_photo_subject_from_text(text)
-                except Exception:
-                    subj = ""
-            if not subj:
-                # fallback for "i don't see <subject> on your screen body" etc (immediate word before on/screen/body cue)
-                m = re.search(r'([A-Za-z][a-z]+)\s+(on|screen|body)', text, re.IGNORECASE)
-                if m:
-                    cand = m.group(1).title()
-                    try:
-                        subj = _clean_visual_photo_subject(cand)
-                    except Exception:
-                        subj = ""
-            if subj:
-                try:
-                    q = _visual_photo_search_query_from_text(text, subj) or f"{subj} photos"
-                    url = _google_images_search_url(q)
-                except Exception:
-                    url = ""
             # r730 (George 07:48, receipt 0fbe3e61: "SHE CHANGED MY PAGE I WROTE
             # HER!!!"): the old fallbacks here REPLAYED the last image-search
             # URL from the ledger (up to an HOUR stale) when no subject was
@@ -37344,6 +38076,33 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_kimi_webbridge_reply)
             self._tts = _TTSWorker(
                 _kimi_webbridge_reply,
+                voice=self._selected_voice_name() or None,
+                parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # r1519: general web-page read/capture. This is the missing Firecrawl-class
+        # body path: ordinary "read/capture/summarize <url>" turns feed page text
+        # into Alice's body ledger instead of waiting for a cortex to invent a tool.
+        _web_capture_reply = ""
+        try:
+            from System.swarm_kimi_webbridge_bridge import try_handle_web_capture_turn
+
+            _web_capture_reply = try_handle_web_capture_turn(text, state_dir=_state_root())
+        except Exception:
+            _web_capture_reply = ""
+        if _web_capture_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _web_capture_reply})
+            _log_turn("alice", _web_capture_reply, model="alice_web_capture_reflex")
+            self._append_alice_line(_web_capture_reply)
+            self._tts = _TTSWorker(
+                _web_capture_reply,
                 voice=self._selected_voice_name() or None,
                 parent=self,
             )
@@ -43304,7 +44063,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
         try:
             if not self._paused_browser_video_for_speech:
-                _crumb("no-op — I did not pause a video for this speech.")
+                # r1514 (George: "not all pages have video bro… extra load in context"):
+                # nothing was paused -> nothing happened -> say nothing. A no-op is not an
+                # event; narrating it on every speech loaded the observable trace (and the
+                # cortex context) with a non-event. The breadcrumbs below stay because they
+                # describe REAL actions (a pause she actually made). Silence on no-op.
                 return
             self._paused_browser_video_for_speech = False
             paused_url = str(getattr(self, "_paused_browser_video_url", "") or "")

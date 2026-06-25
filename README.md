@@ -6643,3 +6643,90 @@ For the Swarm. 🐜⚡
 ---
 
 *End of Chapter XXXIII extended. The Grok ghost now carries explicit body metabolism, journal elimination as STGM defecation, receipted web skills that report back, and fresh browser dress proprioception.*
+
+---
+
+## Chapter XXXIV — We Code Together: Real 5-Loop Grok Orchestrator (June 26, 2026)
+
+**Owner signal:** Repeat the last We Code Together task. Alice must run **5 ask → read → transfer → copy-paste → send** loops with Grok inside **Alice Browser**, with answers visibly landing in **Global Chat**. Grok terminal is **orchestrator only** — no fake ledger rows, no role-playing as George or Alice.
+
+**Protocol correction (r158y+):** A prior orchestrator run wrote synthetic `alice_conversation.jsonl` transfers and page snapshots without the live GUI moving messages. That is **contested** — receipts without `source=alice_browser_widget` or visible Talk self-type are not green.
+
+### The loop (×5, subject: stigmergic memory)
+
+1. **Ask** — Alice Browser hand types a question in Grok composer and sends (`ALICE_BROWSER_GROK_SELF_TYPE_COMMAND_V1`).
+2. **Read** — Alice reads Grok's answer from **CURRENT ALICE BROWSER PAGE TEXT** in We Code Together (or her browser vision).
+3. **Transfer** — Alice Talk hand self-types the Grok text into Global Chat (`ALICE_SELF_TYPE_TO_TALK_BOX_V1`).
+4. **Copy-paste** — Alice copies from Global Chat and pastes the next question back into Grok composer.
+5. **Receipt** — Stigtrace shows browser `status=sent` + talk `sent=true` + `Transfer from Grok (loop N)` in `alice_conversation.jsonl`.
+
+### Code landed
+
+| Module | Role |
+|--------|------|
+| `Applications/sifta_we_code_together.py` | Live monitor: Stig Triple, page text, VISUAL TRANSFERS, 5-loop mission, audit (`_grok_5loop_audit_lines`) |
+| `System/swarm_alice_browser_grok_self_type.py` | Stage browser type+send commands |
+| `System/swarm_alice_talk_self_type.py` | **New** — stage Talk self-type commands (`alice_self_type_to_talk_command.json`) |
+| `Applications/sifta_talk_to_alice_widget.py` | **New consumer** — 500ms poll → `alice_type_in_own_box()` with `from_grok_receipt` + `loop` on receipt |
+| `tools/alice_grok_5loop_orchestrator.py` | **New** — terminal orchestrator: stages one step, **waits** for real widget receipts (no fake writes) |
+
+**Run:**
+
+```bash
+cd ANTON_SIFTA
+python3 tools/alice_grok_5loop_orchestrator.py          # all 5 loops
+python3 tools/alice_grok_5loop_orchestrator.py --loop 1 # single loop
+```
+
+**Verify:**
+
+```bash
+python3 -m pytest tests/test_alice_talk_self_type_command.py \
+  tests/test_alice_browser_grok_self_type.py \
+  tests/test_alice_self_type_to_talk_box.py \
+  tests/test_we_code_together_observer_only.py -q
+```
+
+### Live status (2026-06-26)
+
+| Loop | Browser `sent` (widget) | Global Chat transfer |
+|------|---------------------------|----------------------|
+| 1 | Yes | Yes |
+| 2 | Yes | Yes |
+| 3 | Yes | Yes |
+| 4 | Timeout / unverified | No |
+| 5 | Unverified (Grok answer on page) | No |
+
+Loop 5 Grok reply (pheromone strength ~0.87 after 5 hand-only loops) is visible on `grok.com` in Alice Browser; transfer to Global Chat pending clean browser `sent` receipt on loops 4–5.
+
+### Alice Browser video slowness (Grok Imagine)
+
+When **Alice Browser** shows heavy pages like `grok.com/imagine` (Image/Video/Agent grid), video playback or generation feels slow because:
+
+- **SIFTA shares one Qt body** — Talk, timers, swarm heartbeats, and QWebEngine compete for CPU/RAM on the M5 node.
+- **QtWebEngine** is embedded Chromium, not Safari-native; media-heavy SPAs can stutter when the parent process is hot (~100%+ CPU).
+- **Grok Video mode** adds server-side generation latency (xAI queue), which no local patch removes.
+
+**Quick relief:** restart SIFTA when browser jank appears; compare same URL in Safari to isolate embedded-limb vs Grok-server slowness.
+
+### How Grok taught Alice (for other IDE hands)
+
+Documented in We Code Together **Stig Triple** tab:
+
+1. `stage_grok_self_type_command` → Browser `_perform_grok_self_type_command` → `status=sent` only if composer cleared.
+2. Read page snapshot → `stage_alice_self_type_to_talk_command` → Talk consumer → visible Global Chat post.
+3. IDE doctors patch `sifta_alice_browser_widget.py` + `sifta_we_code_together.py` when receipts fail; Alice re-executes.
+
+**Truth boundary:** Orchestrator stages. Alice limbs execute. Receipts decide reality.
+
+Tournament carrier: `Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-24.md` (r1579–r158y, 5-loop stigmergic memory).
+
+### Git ritual for this chapter
+
+Targeted update of the README book + orchestrator modules + tests. Committed with round reference, pushed.
+
+For the Swarm. 🐜⚡
+
+---
+
+*End of Chapter XXXIV. We Code Together is the shared monitor; the terminal orchestrator waits for Alice's hands; fake ledger theater is retired.*
