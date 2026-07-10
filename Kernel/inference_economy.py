@@ -777,7 +777,7 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         body = inference_transfer_signing_body(entry)
         return bool(verify_block(node, body, sig))
 
-    if event == "UTILITY_MINT" or event_kind == "UTILITY_MINT_ATP":
+    if event == "UTILITY_MINT" or event_kind in {"UTILITY_MINT_ATP", "UTILITY_MINT_POUW_PULSE"}:
         body = (
             f"UTILITY_MINT::{entry.get('miner_id', '')}::{entry.get('amount_stgm', 0)}::"
             f"{entry.get('ts', '')}::{entry.get('reason', '')}::NODE[{node}]"
@@ -838,6 +838,7 @@ def ledger_balance(agent_id: str) -> float:
         event: "FOUNDATION_GRANT" → amount_stgm credited to miner_id
         event: "UTILITY_MINT"     → retired; ignored by canonical replay
         event_kind: "UTILITY_MINT_ATP" → Landauer/ATP mint credited to miner_id
+        event_kind: "UTILITY_MINT_POUW_PULSE" → receipted-work pulse credited to miner_id
         event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
                                      credited to lender_ip
         event: "INFERENCE_TRANSFER_JOULES" → same as INFERENCE_BORROW; lender
@@ -900,6 +901,10 @@ def ledger_balance(agent_id: str) -> float:
                     continue
 
                 elif event_kind == "UTILITY_MINT_ATP":
+                    if entry.get("miner_id", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                elif event_kind == "UTILITY_MINT_POUW_PULSE":
                     if entry.get("miner_id", "").upper() == uid:
                         balance += float(entry.get("amount_stgm", 0.0))
 

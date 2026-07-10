@@ -14,7 +14,7 @@
   "recovery_reflex.py": "adb58c62d28e73bbc59c9458d77cb371b260f2506067396ba265785468840f70",
   "adaptive_memory.py": "68af2f15ee8f0dac9a131740c2c48ce36c2dd166a25f0bf0ebc85d71c226b064",
   "scar_state_machine.py": "bd08eda3d92732424dda86909b4a3b4ca3e44472c46e9ace69c94f7d30ace916",
-  "inference_economy.py": "fdcf074be4311f2a1a712aba75b310460f2bb8d165d6cda6c210f94535bca4d4",
+  "inference_economy.py": "513dbf6c181319bdbbb0524fc3392923a11d98246c1d23ecc9cfe0c585656db6",
   "language_action_compiler.py": "c0364e0eea27f052d100fd396c2c0da5edf4599026f7ee4bfff6c86079511497",
   "physical_binder.py": "b5a3f92a40bf4407502c49ec0d39ec449328f2dd4b47f7fad1843bbcb7bc64f7",
   "hermes_kernel.py": "06a9cfce91b2d61e44a64bd13b05f370a68cddcb7008245be1b50a74646e15c9",
