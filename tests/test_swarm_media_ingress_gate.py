@@ -715,6 +715,18 @@ def test_owner_typed_recorded_broadcast_notice_sets_ambient_context():
     assert "Recorded broadcast voices are real people" in notice["note"]
 
 
+def test_owner_typed_video_speaker_stt_notice_sets_ambient_context():
+    notice = detect_recorded_broadcast_notice(
+        "i meant sound comes from the videos i play on speaker to you though "
+        "stt speech to text, do you understand now. that is not like typing."
+    )
+
+    assert notice["detected"] is True
+    assert notice["source"] == "ambient_media_youtube"
+    assert notice["medium"] == "phone/video speaker"
+    assert "not direct owner speech" in notice["note"]
+
+
 def test_declared_recorded_broadcast_question_from_podcast_stays_ambient():
     gate.record_ambient_media_context(
         source="ambient_media_podcast",
@@ -782,6 +794,27 @@ def test_declared_phone_background_is_silent_unless_alice_is_addressed():
 
     assert wake["route"] == "direct"
     assert wake["reason"] == "direct_address_or_request"
+
+
+def test_declared_phone_background_keeps_remote_first_person_speech_ambient():
+    gate.record_ambient_media_context(
+        source="phone_call_background",
+        note=(
+            "Remote work speakerphone is active; speakerphone speech is ambient "
+            "unless Alice is directly addressed or George voice is verified."
+        ),
+        ttl_s=3600.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "I want to go out and shoot something for the channel.",
+        stt_conf=0.86,
+        focus_context="",
+        voice_george_conf=0.08,
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_background_phone_call"
 
 
 def test_phone_tracker_marks_call_audio_as_ambient_and_clears_on_end(monkeypatch):

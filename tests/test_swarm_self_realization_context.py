@@ -39,6 +39,8 @@ def test_builds_one_alice_context_from_app_focus_and_talk(tmp_path: Path) -> Non
     assert ctx.active_app == "Acer"
     assert ctx.active_selection == "Z"
     assert "I am one Alice across SIFTA OS surfaces" in ctx.prompt_block
+    assert "We Code Together is one of my hands" in ctx.prompt_block
+    assert "shared code/body-health workbench" in ctx.prompt_block
     assert "Apps change my habitat; they do not fork my identity" in ctx.prompt_block
     assert "Lesson card showing Z" in ctx.prompt_block
     assert "George: Hi Alice" in ctx.prompt_block

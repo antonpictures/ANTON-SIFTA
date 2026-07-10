@@ -17,13 +17,23 @@ Pure stdlib + existing organs.
 
 from __future__ import annotations
 
+import json
 import re
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 from System.swarm_hallucination_receipts import (
     classify_generated_output,
     write_hallucination_receipt,
 )
+
+_REPO = Path(__file__).resolve().parents[1]
+_STATE = _REPO / ".sifta_state"
+COMPOSE_LEDGER = _STATE / "alice_compose_decisions.jsonl"
+APPROVAL_LEDGER = _STATE / "dispatch_approvals.jsonl"
 
 _THINKING_LEAK_RE = re.compile(
     r"\b(Here(?:'s| is) (?:a |my )?thinking process|MY COGNITIVE FRAMEWORK|thinking process that leads to the suggested response)\b",
@@ -34,6 +44,130 @@ _FABRICATED_CLAIM_RE = re.compile(
     r"\b(SEARCH COMPLETE|back button patched|history stored in `?Alice_Memory_Core`?|Receipt:\s*[0-9a-f]{8,})\b",
     re.IGNORECASE,
 )
+
+
+@dataclass
+class ComposeDecision:
+    compose_id: str
+    status: str
+    user_text: str = ""
+    proposed_payload: str = ""
+    task_anchors: list[str] = field(default_factory=list)
+    source_section: str = ""
+    field_failure: str = ""
+    ts: float = field(default_factory=time.time)
+
+
+@dataclass
+class DispatchApproval:
+    approval_id: str
+    compose_id: str
+    approved: bool
+    reviewer: str = "architect"
+    notes: str = ""
+    ts: float = field(default_factory=time.time)
+
+
+def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _compose_payload(user_text: str, task_anchors: list[str], source_section: str = "") -> str:
+    anchors = ", ".join(task_anchors) if task_anchors else "unanchored"
+    section = f"\nSource section: {source_section}" if source_section else ""
+    return (
+        "DISPATCH_DRAFT\n"
+        f"Owner request: {user_text.strip()}\n"
+        f"Task anchors: {anchors}{section}\n"
+        "Required receipts: py_compile, pytest, work_receipt, and changed-file summary."
+    )
+
+
+def compose_dispatch(
+    user_text: str,
+    *,
+    task_anchors: list[str] | None = None,
+    source_section: str = "",
+) -> ComposeDecision:
+    """Compatibility dispatch-draft API used by older We Code Together tests."""
+    clean = " ".join(str(user_text or "").split())
+    if not clean:
+        return ComposeDecision(
+            compose_id=f"compose-{uuid.uuid4().hex[:12]}",
+            status="FIELD_FAILURE",
+            field_failure="empty_user_text",
+        )
+    anchors = [str(a) for a in (task_anchors or [])]
+    decision = ComposeDecision(
+        compose_id=f"compose-{uuid.uuid4().hex[:12]}",
+        status="DISPATCH_DRAFT",
+        user_text=clean,
+        proposed_payload=_compose_payload(clean, anchors, source_section),
+        task_anchors=anchors,
+        source_section=str(source_section or ""),
+    )
+    _append_jsonl(COMPOSE_LEDGER, asdict(decision))
+    return decision
+
+
+def format_for_review(decision: ComposeDecision) -> str:
+    if decision.status == "FIELD_FAILURE":
+        return f"FIELD_FAILURE: {decision.field_failure or 'unknown'}"
+    anchors = ", ".join(decision.task_anchors) if decision.task_anchors else "none"
+    return (
+        f"{decision.status} {decision.compose_id}\n"
+        f"Anchors: {anchors}\n"
+        f"{decision.proposed_payload}\n"
+        "George, approve dispatch?"
+    )
+
+
+def record_approval(
+    compose_id: str,
+    *,
+    approved: bool,
+    reviewer: str = "architect",
+    notes: str = "",
+) -> DispatchApproval:
+    approval = DispatchApproval(
+        approval_id=f"approval-{uuid.uuid4().hex[:12]}",
+        compose_id=str(compose_id or ""),
+        approved=bool(approved),
+        reviewer=str(reviewer or "architect"),
+        notes=str(notes or ""),
+    )
+    _append_jsonl(APPROVAL_LEDGER, asdict(approval))
+    return approval
+
+
+def get_pending_compose() -> ComposeDecision | None:
+    if not COMPOSE_LEDGER.exists():
+        return None
+    try:
+        lines = [ln for ln in COMPOSE_LEDGER.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("status") != "DISPATCH_DRAFT":
+            continue
+        return ComposeDecision(
+            compose_id=str(row.get("compose_id") or ""),
+            status=str(row.get("status") or ""),
+            user_text=str(row.get("user_text") or ""),
+            proposed_payload=str(row.get("proposed_payload") or ""),
+            task_anchors=list(row.get("task_anchors") or []),
+            source_section=str(row.get("source_section") or ""),
+            field_failure=str(row.get("field_failure") or ""),
+            ts=float(row.get("ts") or time.time()),
+        )
+    return None
+
 
 def apply_cortex_compose_gate(
     raw_cortex_text: str,

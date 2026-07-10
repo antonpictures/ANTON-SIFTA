@@ -125,9 +125,10 @@ def test_resolve_site_navigation_fills_mutable_search_query(tmp_path):
 
 
 def test_resolve_ebay_marketplace_open_as_site_search_not_subject_hardcode(tmp_path):
+    # Must use the owner's query (Ceramic Vase), never a hardcoded person name.
     assert (
         pb.resolve_site_navigation("open Ceramic Vase on eBay", state_dir=tmp_path)
-        == "https://www.ebay.com/sch/i.html?_nkw=Jane+Doe"
+        == "https://www.ebay.com/sch/i.html?_nkw=Ceramic+Vase"
     )
     assert (
         pb.resolve_site_navigation("open blue red sweater on eBay", state_dir=tmp_path)

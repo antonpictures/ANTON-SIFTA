@@ -12,7 +12,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Mapping, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from System.swarm_effect_verified_action import (
     TRUTH_LABEL as EFFECT_TRUTH_LABEL,
@@ -58,13 +58,75 @@ def organ_for_action(action: str) -> tuple[str, str]:
     return ACTION_ORGAN_MAP.get(str(action or ""), ("alice_app_command", str(action or "unknown")))
 
 
+_IGNORED_QUERY_KEYS = frozenset({
+    "aep",
+    "biw",
+    "bih",
+    "client",
+    "csuir",
+    "dpr",
+    "fbclid",
+    "fbs",
+    "gclid",
+    "gl",
+    "hl",
+    "hs",
+    "igsh",
+    "mtid",
+    "ntc",
+    "rls",
+    "rlz",
+    "sa",
+    "sca_esv",
+    "sei",
+    "source",
+    "sxsrf",
+    "utm_campaign",
+    "utm_content",
+    "utm_medium",
+    "utm_source",
+    "utm_term",
+    "ved",
+})
+
+
+def _canonical_host(host: str) -> str:
+    clean = str(host or "").strip().lower()
+    return clean[4:] if clean.startswith("www.") else clean
+
+
+def _meaningful_query(url: str) -> dict[str, list[str]]:
+    try:
+        parsed = urlparse(str(url or ""))
+    except Exception:
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, value in parse_qsl(parsed.query or "", keep_blank_values=True):
+        k = key.strip().lower()
+        if not k or k in _IGNORED_QUERY_KEYS or k.startswith("utm_"):
+            continue
+        out.setdefault(k, []).append(str(value or "").strip().casefold())
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _target_query_is_preserved(target: str, observed: str) -> bool:
+    target_q = _meaningful_query(target)
+    if not target_q:
+        return True
+    observed_q = _meaningful_query(observed)
+    for key, target_vals in target_q.items():
+        if observed_q.get(key) != target_vals:
+            return False
+    return True
+
+
 def _normalize_url(url: str) -> str:
     raw = str(url or "").strip()
     if not raw:
         return ""
     try:
         parsed = urlparse(raw)
-        host = (parsed.netloc or "").lower()
+        host = _canonical_host(parsed.netloc or "")
         path = (parsed.path or "").rstrip("/")
         return f"{host}{path}".lower()
     except Exception:
@@ -72,11 +134,33 @@ def _normalize_url(url: str) -> str:
 
 
 def _urls_match(target: str, observed: str) -> bool:
-    t = _normalize_url(target)
-    o = _normalize_url(observed)
-    if not t or not o:
+    raw_target = str(target or "").strip()
+    raw_observed = str(observed or "").strip()
+    if not raw_target or not raw_observed:
         return False
-    return t in o or o in t
+    try:
+        t_parsed = urlparse(raw_target)
+        o_parsed = urlparse(raw_observed)
+        t_host = _canonical_host(t_parsed.netloc or "")
+        o_host = _canonical_host(o_parsed.netloc or "")
+        if t_host and o_host:
+            if t_host != o_host:
+                return False
+            t_path = (t_parsed.path or "/").rstrip("/") or "/"
+            o_path = (o_parsed.path or "/").rstrip("/") or "/"
+            if t_path != "/" and t_path != o_path:
+                return False
+            return _target_query_is_preserved(raw_target, raw_observed)
+    except Exception:
+        pass
+    t = _normalize_url(raw_target)
+    o = _normalize_url(raw_observed)
+    return bool(t and o and t == o)
+
+
+def browser_urls_match(target: str, observed: str) -> bool:
+    """Public URL landing check for Browser effect verification and Talk guards."""
+    return _urls_match(target, observed)
 
 
 def _read_jsonl_tail(path: Path, *, max_rows: int = 40) -> list[dict[str, Any]]:
@@ -98,11 +182,15 @@ def _read_jsonl_tail(path: Path, *, max_rows: int = 40) -> list[dict[str, Any]]:
     return rows
 
 
-def _latest_browser_page(state_dir: Optional[Path | str]) -> dict[str, Any]:
+def _latest_browser_page(
+    state_dir: Optional[Path | str],
+    *,
+    max_age_s: float = 30.0,
+) -> dict[str, Any]:
     try:
         from System.swarm_browser_page_state import latest_page_state
 
-        row = latest_page_state(state_dir=state_dir, max_age_s=300.0)
+        row = latest_page_state(state_dir=state_dir, max_age_s=max_age_s)
         return dict(row) if isinstance(row, dict) else {}
     except Exception:
         return {}
@@ -120,12 +208,26 @@ def probe_open_browser_url(
     *,
     target_url: str,
     state_dir: Optional[Path | str] = None,
+    min_ts: float = 0.0,
+    max_age_s: float = 30.0,
 ) -> dict[str, Any]:
-    page = _latest_browser_page(state_dir)
+    page = _latest_browser_page(state_dir, max_age_s=max_age_s)
+    observed_url = str(page.get("url") or "")
+    try:
+        page_ts = float(page.get("ts") or 0.0)
+    except Exception:
+        page_ts = 0.0
+    is_current = bool(page.get("is_current_page"))
+    after_command = bool(is_current or not min_ts or (page_ts >= float(min_ts)))
     return {
         "target_url": target_url,
-        "observed_url": str(page.get("url") or ""),
+        "observed_url": observed_url,
+        "url_match": _urls_match(target_url, observed_url),
         "page_fresh": bool(page.get("fresh")),
+        "page_ts": page_ts,
+        "page_age_s": page.get("age_s"),
+        "is_current_page": is_current,
+        "after_command": after_command,
         "open_tabs_count": int(page.get("open_tabs_count") or 0),
     }
 
@@ -195,11 +297,13 @@ def probe_schedule_fire(
 def success_open_browser_url(effect: Mapping[str, Any], probe: Mapping[str, Any]) -> bool:
     if not bool(effect.get("ok")):
         return False
+    if not bool(probe.get("page_fresh")):
+        return False
+    if not bool(probe.get("after_command", True)):
+        return False
     target = str(probe.get("target_url") or effect.get("url") or "")
     observed = str(probe.get("observed_url") or "")
-    if _urls_match(target, observed):
-        return True
-    return bool(probe.get("page_fresh")) and bool(observed)
+    return _urls_match(target, observed)
 
 
 def success_close_tab(effect: Mapping[str, Any], probe: Mapping[str, Any]) -> bool:
@@ -237,7 +341,12 @@ def build_probe(action: str, *, context: Mapping[str, Any] | None = None) -> dic
     ctx = dict(context or {})
     state_dir = ctx.get("state_dir")
     if action == "open_browser_url":
-        return probe_open_browser_url(target_url=str(ctx.get("url") or ""), state_dir=state_dir)
+        return probe_open_browser_url(
+            target_url=str(ctx.get("url") or ""),
+            state_dir=state_dir,
+            min_ts=float(ctx.get("min_ts") or 0.0),
+            max_age_s=float(ctx.get("max_age_s") or 30.0),
+        )
     if action == "browser_close_tab":
         return probe_browser_close_tab(
             result=ctx.get("result"),
@@ -398,6 +507,7 @@ def enrich_app_command_row(
             **dict(verify_context or {}),
             "url": verify_context.get("url") if verify_context else out.get("url"),
             "app_name": verify_context.get("app_name") if verify_context else out.get("app_name"),
+            "min_ts": out.get("ts"),
         },
         state_dir=state_dir,
         verify_delay_s=verify_delay_s,
@@ -439,6 +549,7 @@ __all__ = [
     "TOP5_ACTIONS",
     "ACTION_ORGAN_MAP",
     "build_probe",
+    "browser_urls_match",
     "complete_youtube_skip_verification",
     "enrich_app_command_row",
     "is_top5_action",

@@ -1,7 +1,61 @@
 from __future__ import annotations
 
+import json
+
 from Applications import sifta_talk_to_alice_widget as talk
 from System.swarm_tool_router import parse_tool_calls
+
+
+def test_stgm_wallet_question_uses_body_truth_reflex(monkeypatch, tmp_path) -> None:
+    from System import stgm_economy
+
+    seen: dict[str, object] = {}
+
+    def fake_snapshot(**kwargs):
+        seen.update(kwargs)
+        return {
+            "spendable_total_stgm": 1144.899675682,
+            "pulse_mint_lines": 15,
+            "pulse_minted_stgm": 0.0025,
+            "atp_minted_stgm": 0.000056682,
+            "cache_age_s": 3.0,
+        }
+
+    monkeypatch.setattr(stgm_economy, "stgm_body_truth_snapshot", fake_snapshot)
+
+    reply, tag = talk._autonomic_prebrain_reflex(
+        "How much STGM your body has now?",
+        state_dir=tmp_path,
+    )
+
+    assert tag == "stgm_wallet_receipt_reflex_r20260705"
+    assert "STGM 1,144.899675682" in reply
+    assert "15 row(s), +0.002500000 STGM" in reply
+    assert "0.000056682 STGM" in reply
+    assert "Stigmergic Trace Global Metric" not in reply
+    assert "repair_log replay" in reply
+    assert seen["state_dir"] == tmp_path
+    assert seen["cache_path"] == tmp_path / "stgm_economy_cache.json"
+
+
+def test_stgm_wallet_reflex_does_not_hijack_rich_turn(monkeypatch) -> None:
+    from System import stgm_economy
+
+    monkeypatch.setattr(
+        stgm_economy,
+        "stgm_body_truth_snapshot",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("should not read wallet")),
+    )
+    rich = (
+        "George pasted a long report about STGM, wallet balance, memory pulses, "
+        "and a bunch of body economy doctrine that should still go to cortex "
+        "because it is commentary and not a short sensor question. " * 3
+    )
+
+    reply, tag = talk._autonomic_prebrain_reflex(rich)
+
+    assert reply == ""
+    assert tag == ""
 
 
 def test_direct_run_request_reaches_cortex_before_terminal_tool_call() -> None:
@@ -639,28 +693,143 @@ def test_prebrain_temporal_memory_recall_runs_without_precortex_flag(tmp_path, m
     )
 
     assert model == "temporal_episodic_memory_reflex_r1504"
-    assert "From my diary and ledger timeline" in reply
+    assert "From my journal" in reply
+    assert "Owner asked for outfit recap" in reply
+    assert '"ts"' not in reply
 
 
-def test_prebrain_body_journal_load_phrase_routes_to_memory_load_even_with_flag_off(tmp_path, monkeypatch) -> None:
+def test_prebrain_journal_recall_speaks_talk_not_raw_json(tmp_path, monkeypatch) -> None:
     from System import alice_body_diary_timeline_awareness as memory_module
 
-    monkeypatch.setattr(
-        memory_module,
-        "load_memory_into_body",
-        lambda topic="", time_spec="": {
-            "instagram_links_found": ["https://instagram.com/fashion-clothing"],
-            "relevant_diary_entries": 2,
-        },
+    raw_rows = "; ".join(
+        json.dumps(
+            {
+                "ts": ts,
+                "role": "user",
+                "text": text,
+                "model": "",
+                "stt_confidence": 1.0,
+            }
+        )
+        for ts, text in (
+            (1782831566.037441, "A million likes just from pointing someone else's hard work or intelligence agree."),
+            (1782831519.542538, "I'm going to go around and start it. I was able to switch."),
+        )
     )
+
     monkeypatch.setattr(
         memory_module,
         "query_body_diary_for_remember",
         lambda text: {
+            "facts": [{"source": "alice_conversation.jsonl", "snippet": raw_rows}],
+            "diary_samples": [
+                {
+                    "ts": 1782831518.3728378,
+                    "source": "alice_conversation.jsonl",
+                    "data": raw_rows + "  📋 Copy",
+                }
+            ],
+            "resolved_window": (0, 0),
+        },
+    )
+    monkeypatch.setattr(
+        memory_module,
+        "load_memory_into_body",
+        lambda topic="", time_spec="": {"instagram_links_found": [], "relevant_diary_entries": 0},
+    )
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    reply, model = talk._autonomic_prebrain_reflex(
+        "what does your journal remember about the likes thing?",
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert model == "temporal_episodic_memory_reflex_r1504"
+    assert "A million likes just from pointing" in reply
+    assert "I'm going to go around and start it" in reply
+    assert '"ts"' not in reply
+    assert "178283" not in reply
+    assert '"role"' not in reply
+    assert '"text"' not in reply
+    assert "📋 Copy" not in reply
+
+
+def test_prebrain_exact_femur_memory_query_routes_to_journal_recall(tmp_path, monkeypatch) -> None:
+    from System import alice_body_diary_timeline_awareness as memory_module
+
+    called = {"query": ""}
+
+    def fake_query(text: str) -> dict:
+        called["query"] = text
+        return {
+            "facts": [
+                {
+                    "source": "memory_ledger.jsonl",
+                    "snippet": (
+                        "my brother adi said: Fractura de femur, admission tonight, "
+                        "surgery Monday; mom broke her femur and is in the hospital"
+                    ),
+                }
+            ],
+            "diary_samples": [],
+            "resolved_window": (0, 0),
+            "recall_mode": "content_ranked_all_time",
+        }
+
+    monkeypatch.setattr(memory_module, "query_body_diary_for_remember", fake_query)
+    monkeypatch.setattr(
+        memory_module,
+        "load_memory_into_body",
+        lambda topic="", time_spec="": {"instagram_links_found": [], "relevant_diary_entries": 0},
+    )
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    owner_text = "remember she broke her femur? she is in the hospital still. look up in your memory"
+    reply, model = talk._autonomic_prebrain_reflex(
+        owner_text,
+        state_dir=tmp_path,
+        owner_label="Layer One Owner",
+        write_receipt=False,
+    )
+
+    assert called["query"] == owner_text
+    assert model == "temporal_episodic_memory_reflex_r1504"
+    assert "From my journal" in reply
+    assert "Fractura de femur" in reply
+    assert "surgery Monday" in reply
+
+
+def test_prebrain_look_in_journal_phrase_routes_to_recall_even_with_flag_off(tmp_path, monkeypatch) -> None:
+    from System import alice_body_diary_timeline_awareness as memory_module
+
+    called = {"query": 0, "load": 0}
+
+    def fake_load(topic="", time_spec=""):
+        called["load"] += 1
+        return {
+            "instagram_links_found": ["https://instagram.com/fashion-clothing"],
+            "relevant_diary_entries": 2,
+        }
+
+    def fake_query(text):
+        called["query"] += 1
+        return {
             "facts": [],
             "diary_samples": [],
             "resolved_window": (0, 0),
-        },
+        }
+
+    monkeypatch.setattr(
+        memory_module,
+        "load_memory_into_body",
+        fake_load,
+    )
+    monkeypatch.setattr(
+        memory_module,
+        "query_body_diary_for_remember",
+        fake_query,
     )
     monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
 
@@ -671,8 +840,10 @@ def test_prebrain_body_journal_load_phrase_routes_to_memory_load_even_with_flag_
         write_receipt=False,
     )
 
-    assert model == "body_journal_load_reflex_r1508"
-    assert "Instagram links now resident" in reply
+    assert model == "temporal_episodic_memory_reflex_r1504"
+    assert "do not have a clear match" in reply
+    assert "not a pile of timestamps" in reply
+    assert called == {"query": 1, "load": 0}
 
 
 def test_prebrain_load_query_with_used_you_before_phrase_prefers_memory_lane(tmp_path, monkeypatch) -> None:

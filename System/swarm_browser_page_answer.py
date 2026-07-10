@@ -111,6 +111,15 @@ def current_browser_page(
         fresh = is_current
     else:
         fresh = bool(age is not None and age <= max_age_s)
+    blank_render = {}
+    try:
+        snap_extra = snap.get("extra") if isinstance(snap, dict) else {}
+        if isinstance(snap_extra, dict) and str(snap.get("url") or "") == url:
+            maybe_blank = snap_extra.get("blank_render")
+            if isinstance(maybe_blank, dict):
+                blank_render = maybe_blank
+    except Exception:
+        blank_render = {}
     return {
         "url": url,
         "title": str(row.get("title") or ""),
@@ -122,6 +131,9 @@ def current_browser_page(
         "live_url": live,
         "live_mismatch": bool(live_available and not is_current),
         "source": source,
+        "blank_render_action": str(blank_render.get("action") or ""),
+        "blank_render_reason": str(blank_render.get("reason") or ""),
+        "blank_render_persisted": str(blank_render.get("action") or "") == "blank_render_persisted",
     }
 
 
@@ -147,6 +159,13 @@ def page_answer_block(
         return (f"MY BROWSER PAGE: my freshest receipt{stale} says {p.get('title') or p.get('url')} "
                 f"— {p.get('url')}. I should re-read the page to be sure.")
     title = p.get("title") or p.get("url")
+    if p.get("blank_render_persisted"):
+        reason = p.get("blank_render_reason") or "blank_render_persisted"
+        return (
+            f"MY BROWSER PAGE: I am on {title} — {p.get('url')} ({p.get('domain')}), "
+            f"but this page did not render readably in Alice Browser. Latest blank-render reason: {reason}. "
+            "I should not describe a working interface from this receipt."
+        )
     # Prefer the structured DOM page-state receipt (it reads the rendered SPA that
     # toPlainText misses) so "what is on the screen?" answers with real contents.
     contents = ""

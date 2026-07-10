@@ -22,6 +22,7 @@ Features:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -31,7 +32,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from PyQt6.QtCore import QEventLoop, QPointF, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot, QFileSystemWatcher
+from PyQt6.QtCore import QEventLoop, QPoint, QPointF, QUrl, Qt, QTimer, pyqtSignal, pyqtSlot, QFileSystemWatcher
 from PyQt6.QtGui import QFont, QIcon, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -70,6 +71,11 @@ except Exception as exc:
     _HAS_WEBENGINE = False
     _WEBENGINE_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
+try:
+    from PyQt6.QtTest import QTest
+except Exception:
+    QTest = None
+
 from System.swarm_app_hardening import record_app_hardening_event
 
 _STATE = REPO / ".sifta_state"
@@ -77,6 +83,11 @@ _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
 _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 _PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
 APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
+_DESKTOP_CHROME_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36"
+)
 
 
 def _record_browser_hardening(event: str, **details) -> None:
@@ -1014,6 +1025,10 @@ class AliceBrowserWidget(QMainWindow):
                 cls._shared_profile = None
         from PyQt6.QtWidgets import QApplication as _QApp
         cls._shared_profile = QWebEngineProfile("alice_browser", _QApp.instance())
+        try:
+            cls._shared_profile.setHttpUserAgent(_DESKTOP_CHROME_USER_AGENT)
+        except Exception:
+            pass
         return cls._shared_profile
 
     def __init__(self):
@@ -1030,6 +1045,9 @@ class AliceBrowserWidget(QMainWindow):
         self._last_awareness_dom_ts = 0.0
         self._awareness_dom_inflight = False
         self._awareness_dom_inflight_started_ts = 0.0
+        self._blank_render_retry_by_url: dict[str, int] = {}
+        self._blank_render_probe_retry_by_url: dict[str, int] = {}
+        self._rendered_error_fallback_by_url: dict[str, int] = {}
         self._owner_browser_action_cache: dict[str, float] = {}
         self._setup_ui()
         self._apply_style()
@@ -1043,6 +1061,10 @@ class AliceBrowserWidget(QMainWindow):
         self._drop_file = REPO / ".sifta_state" / "alice_browser_open_url.txt"
         self._drop_new_tab_file = REPO / ".sifta_state" / "alice_browser_open_url_new_tab.flag"
         self._js_drop_file = REPO / ".sifta_state" / "alice_browser_execute_js.txt"
+        self._grok_self_type_file = REPO / ".sifta_state" / "alice_browser_grok_self_type_command.json"
+        self._grok_copy_file = REPO / ".sifta_state" / "alice_browser_grok_copy_command.json"
+        self._grok_paste_clipboard_file = REPO / ".sifta_state" / "alice_browser_grok_paste_clipboard_command.json"
+        self._pending_web_ai_file = REPO / ".sifta_state" / "pending_web_ai_chat.json"
         self._web_ai_poll_state: dict = {}
         self._web_ai_answer_timer = QTimer(self)
         self._web_ai_answer_timer.setSingleShot(True)
@@ -1065,6 +1087,8 @@ class AliceBrowserWidget(QMainWindow):
             # If file exists at boot, watch it too (create events on dir may suffice).
             if self._drop_file.exists():
                 self._drop_watcher.addPath(str(self._drop_file))
+            if self._pending_web_ai_file.exists():
+                self._drop_watcher.addPath(str(self._pending_web_ai_file))
         except Exception:
             self._drop_watcher = None
 
@@ -1234,6 +1258,13 @@ class AliceBrowserWidget(QMainWindow):
         view = QWebEngineView()
         page = _AlicePage(self._profile, self)
         view.setPage(page)
+        # Force robust mouse / trackpad input on macOS (external mouse clicks were not registering in some Qt sessions while trackpad worked)
+        try:
+            view.setMouseTracking(True)
+            view.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            view.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
+        except Exception:
+            pass
         self._wire_tab_view(view, page)
         return view, page
 
@@ -1897,7 +1928,16 @@ class AliceBrowserWidget(QMainWindow):
                     pass
             else:
                 url = "https://" + url
+        try:
+            self._blank_render_retry_by_url[str(url)] = 0
+            self._blank_render_probe_retry_by_url[str(url)] = 0
+        except Exception:
+            pass
         self._view.load(QUrl(url))
+        try:
+            QTimer.singleShot(9000, lambda u=str(url): self._verify_rendered_after_navigation(u, source="navigate_timeout"))
+        except Exception:
+            pass
 
     def _on_url_entered(self):
         self._navigate(self._url_bar.text().strip())
@@ -2388,6 +2428,14 @@ class AliceBrowserWidget(QMainWindow):
             except Exception:
                 pass
 
+            # Always capture fresh uid proprioception snapshot after meaningful page load.
+            # This keeps "BROWSER DRESS" current in Alice body + local LLM prompt.
+            try:
+                if hasattr(self, "take_uid_snapshot"):
+                    QTimer.singleShot(650, lambda: self.take_uid_snapshot(45))
+            except Exception:
+                pass
+
         # r462: full load gets actor attribution + stigmergic web receipt.
         if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
             self._log_owner_browser_behaviour(
@@ -2519,6 +2567,10 @@ class AliceBrowserWidget(QMainWindow):
                 )
                 # Cheap viewport grab so a vision arm can describe the photo on demand.
                 self._capture_viewport_image(expected_url=url)
+                try:
+                    QTimer.singleShot(3500, lambda u=url: self._verify_rendered_after_navigation(u, source="load_finished_render_proof"))
+                except Exception:
+                    pass
 
             domain = _domain(url)
             self._receipt_lbl.setText(f"✅ receipt → {domain} ({duration}s)")
@@ -3285,7 +3337,8 @@ class AliceBrowserWidget(QMainWindow):
                 return tag;
             }
             function isRecoveryLabel(lab) {
-                return /^(retry|reload|try again)$/i.test(String(lab || '').trim());
+                // Generalized recovery (no site hardcodes).
+                return /\b(retry|reload|try again|refresh)\b/i.test(String(lab || '').trim());
             }
             function pushControl(el, seenKeys, arr, maxN) {
                 if (!el || arr.length >= maxN) return;
@@ -3585,6 +3638,7 @@ class AliceBrowserWidget(QMainWindow):
                     self._apply_youtube_ad_controller(ad_state, url=u)
             except Exception:
                 pass
+            self._maybe_handle_rendered_error_page(result, url=u, title=t, source=s)
             import threading as _th
 
             def _record() -> bool:
@@ -3600,7 +3654,7 @@ class AliceBrowserWidget(QMainWindow):
                             media_playback["codec_status"] = self.get_current_media_playback_status()
                         except Exception:
                             pass
-                    record_page_state(
+                    page_row = record_page_state(
                         u, t,
                         text=result.get("text", ""),
                         headings=result.get("headings"),
@@ -3619,6 +3673,17 @@ class AliceBrowserWidget(QMainWindow):
                         source="dom",
                         state_dir=_STATE,
                     )
+                    try:
+                        from System.swarm_browser_interruption_recovery import maybe_record_interruption
+
+                        maybe_record_interruption(
+                            page_row,
+                            expected_url=expected_url,
+                            source=s,
+                            state_dir=_STATE,
+                        )
+                    except Exception as _recovery_exc:
+                        print(f"[AliceBrowser] interruption recovery receipt failed: {_recovery_exc}")
                     self._log_owner_browser_dom_actions(result, url=u, title=t)
                     return True
                 except Exception as _e:
@@ -3656,6 +3721,316 @@ class AliceBrowserWidget(QMainWindow):
                     pass
             pass
 
+    def _blank_render_probe_js(self) -> str:
+        return r"""
+        (function () {
+            function safeText(el) {
+                try { return (el && (el.innerText || el.textContent) || '').trim(); }
+                catch (e) { return ''; }
+            }
+            var body = document.body || null;
+            var de = document.documentElement || null;
+            var text = safeText(body);
+            var title = String(document.title || '').trim();
+            var bg = '';
+            try { bg = body ? getComputedStyle(body).backgroundColor : ''; } catch (e) {}
+            var children = body ? body.children.length : 0;
+            var controls = 0;
+            try {
+                controls = document.querySelectorAll('a[href],button,input,textarea,select,[role="button"]').length;
+            } catch (e) {}
+            var imgs = 0;
+            try { imgs = document.images ? document.images.length : 0; } catch (e) {}
+            var htmlLen = 0;
+            try { htmlLen = de ? (de.outerHTML || '').length : 0; } catch (e) {}
+            var viewport = { w: window.innerWidth || 0, h: window.innerHeight || 0 };
+            var ready = String(document.readyState || '');
+            var pageComplete = ready === 'complete';
+            var visuallyEmpty = (!title && text.length === 0 && controls === 0 && imgs === 0);
+            var structurallyEmpty = children === 0 || htmlLen < 250;
+            return {
+                url: String(location.href || ''),
+                title: title,
+                ready_state: ready,
+                text_chars: text.length,
+                body_children: children,
+                controls_count: controls,
+                images_count: imgs,
+                html_len: htmlLen,
+                background: bg,
+                viewport: viewport,
+                blank_render: !!(pageComplete && (visuallyEmpty || structurallyEmpty)),
+                probe_unreadable: !pageComplete,
+                reason: !pageComplete ? 'document_not_complete' : (visuallyEmpty ? 'no_title_text_controls_or_images' : (structurallyEmpty ? 'empty_dom' : 'render_has_content'))
+            };
+        })();
+        """
+
+    def _record_blank_render_probe(self, probe: dict, *, source: str, action: str) -> None:
+        try:
+            from System.jsonl_file_lock import append_line_locked
+
+            row = {
+                "ts": time.time(),
+                "truth_label": "ALICE_BROWSER_BLANK_RENDER_V1",
+                "source": source,
+                "action": action,
+                "url": str((probe or {}).get("url") or getattr(self, "_current_url", "") or ""),
+                "title": str((probe or {}).get("title") or ""),
+                "ready_state": str((probe or {}).get("ready_state") or ""),
+                "text_chars": int((probe or {}).get("text_chars") or 0),
+                "body_children": int((probe or {}).get("body_children") or 0),
+                "controls_count": int((probe or {}).get("controls_count") or 0),
+                "images_count": int((probe or {}).get("images_count") or 0),
+                "html_len": int((probe or {}).get("html_len") or 0),
+                "background": str((probe or {}).get("background") or ""),
+                "reason": str((probe or {}).get("reason") or ""),
+                "blank_render": bool((probe or {}).get("blank_render")),
+                "probe_unreadable": bool((probe or {}).get("probe_unreadable")),
+            }
+            _STATE.mkdir(parents=True, exist_ok=True)
+            line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+            append_line_locked(_STATE / "alice_browser_blank_render.jsonl", line)
+            append_line_locked(_STATE / "alice_app_commands.jsonl", line)
+        except Exception:
+            pass
+
+    def _maybe_handle_rendered_error_page(self, result: dict, *, url: str, title: str, source: str) -> None:
+        """Classify rendered site error pages and apply narrow, receipted fallbacks."""
+        try:
+            from System.swarm_browser_photo_description import pick_featured_image
+            from System.swarm_crypto_ticker_search import (
+                classify_coinmarketcap_rendered_error,
+                record_rendered_error,
+            )
+            feat = pick_featured_image(result.get("images") or [], og_image=result.get("og", ""))
+            page_like = {
+                "truth_label": "BROWSER_PAGE_STATE_V1",
+                "url": url,
+                "title": title,
+                "domain": QUrl(url).host(),
+                "text_excerpt": str(result.get("text") or "")[:1200],
+                "text_chars": len(str(result.get("text") or "")),
+                "featured_image": feat.get("src", ""),
+                "controls_count": len(result.get("controls") or []),
+            }
+            classified = classify_coinmarketcap_rendered_error(page_like)
+            if not classified.get("is_error"):
+                return
+            receipt = record_rendered_error(
+                page_like,
+                state_dir=_STATE,
+                action=f"{source}_rendered_error_observed",
+            )
+            fallback = str(classified.get("fallback_url") or "").strip()
+            if not fallback:
+                return
+            tries = int(self._rendered_error_fallback_by_url.get(url, 0) or 0)
+            if tries >= 1:
+                return
+            self._rendered_error_fallback_by_url[url] = tries + 1
+            try:
+                self._status.showMessage(
+                    "CoinMarketCap rendered an error; opening canonical W/Wormhole page.",
+                    7000,
+                )
+            except Exception:
+                pass
+            try:
+                from System.jsonl_file_lock import append_line_locked
+
+                row = {
+                    "ts": time.time(),
+                    "truth_label": "ALICE_BROWSER_RENDERED_ERROR_FALLBACK_V1",
+                    "action": "open_fallback_after_rendered_error",
+                    "source": source,
+                    "url": url,
+                    "fallback_url": fallback,
+                    "error_receipt_id": receipt.get("receipt_id"),
+                    "ticker": classified.get("ticker"),
+                    "asset": classified.get("fallback_asset"),
+                    "ok": True,
+                }
+                line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+                append_line_locked(_STATE / "alice_app_commands.jsonl", line)
+                append_line_locked(_STATE / "work_receipts.jsonl", line)
+            except Exception:
+                pass
+            QTimer.singleShot(500, lambda f=fallback: self._navigate(f))
+        except Exception as exc:
+            try:
+                print(f"[AliceBrowser] rendered-error fallback failed: {exc}")
+            except Exception:
+                pass
+
+    @staticmethod
+    def _blank_render_followup_delay_ms(url: str, *, after_hard_reload: bool = False) -> int:
+        try:
+            host = QUrl(str(url or "")).host().lower()
+        except Exception:
+            host = ""
+        heavy_hosts = ("ebay.", "instagram.", "whatsapp.", "youtube.", "tiktok.")
+        if any(token in host for token in heavy_hosts):
+            return 15000 if after_hard_reload else 12000
+        return 11000 if after_hard_reload else 9000
+
+    def _hard_reload_current_page(self) -> bool:
+        try:
+            page = self._view.page() if self._view else None
+        except Exception:
+            page = None
+        try:
+            webengine_page = globals().get("QWebEnginePage")
+            action = getattr(getattr(webengine_page, "WebAction", object), "ReloadAndBypassCache", None)
+            if page is not None and action is not None:
+                page.triggerAction(action)
+                return True
+        except Exception:
+            pass
+        try:
+            if self._view:
+                self._view.reload()
+                return False
+        except Exception:
+            pass
+        return False
+
+    def _verify_rendered_after_navigation(self, expected_url: str, *, source: str) -> None:
+        if not self._view or not expected_url:
+            return
+        current = str(getattr(self, "_current_url", "") or "")
+        if current != expected_url:
+            return
+
+        def _on_probe(result, u=expected_url, s=source):
+            probe = result if isinstance(result, dict) else {
+                "url": u,
+                "blank_render": False,
+                "probe_unreadable": True,
+                "reason": "probe_returned_non_dict",
+                "probe_result_type": type(result).__name__,
+            }
+            if str(probe.get("url") or u).split("#", 1)[0] != str(u).split("#", 1)[0]:
+                return
+            ready_state = str(probe.get("ready_state") or "")
+            if probe.get("probe_unreadable") or (ready_state and ready_state != "complete"):
+                attempts = int(getattr(self, "_blank_render_probe_retry_by_url", {}).get(u, 0) or 0)
+                action = "probe_unreadable" if attempts < 2 else "probe_unreadable_persisted"
+                self._record_blank_render_probe(probe, source=s, action=action)
+                if attempts < 2:
+                    try:
+                        self._blank_render_probe_retry_by_url[u] = attempts + 1
+                        self._status.showMessage("Page render proof is not readable yet; retrying before judging blank.", 5000)
+                        QTimer.singleShot(700 * (attempts + 1), lambda: self._verify_rendered_after_navigation(u, source=f"{s}_probe_retry"))
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        self._status.showMessage(
+                            "Page render proof stayed unreadable; I will not call it blank without DOM proof.",
+                            9000,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        _write_current_page_snapshot(
+                            url=u,
+                            title=str(probe.get("title") or ""),
+                            text="",
+                            duration_s=max(0.0, time.time() - float(getattr(self, "_page_load_ts", time.time()) or time.time())),
+                            extra={
+                                "source": "blank_render_probe_unreadable",
+                                "blank_render": {**probe, "action": action},
+                                "honest_message": f"Page render proof stayed unreadable for {u}; I did not verify a blank page.",
+                                "media_playback": self.get_current_media_playback_status(),
+                            },
+                        )
+                    except Exception:
+                        pass
+                return
+            try:
+                self._blank_render_probe_retry_by_url[u] = 0
+            except Exception:
+                pass
+            if not probe.get("blank_render"):
+                try:
+                    self._capture_current_page_state(source=f"{s}_proof_dom", expected_url=u)
+                except Exception:
+                    pass
+                return
+            retries = int(getattr(self, "_blank_render_retry_by_url", {}).get(u, 0) or 0)
+            if retries < 1:
+                action = "reload_once"
+            elif retries < 2:
+                action = "hard_reload_once"
+            else:
+                action = "blank_render_persisted"
+            self._record_blank_render_probe(probe, source=s, action=action)
+            try:
+                _write_current_page_snapshot(
+                    url=u,
+                    title=str(probe.get("title") or ""),
+                    text="",
+                    duration_s=max(0.0, time.time() - float(getattr(self, "_page_load_ts", time.time()) or time.time())),
+                    extra={
+                        "source": "blank_render_probe",
+                        "blank_render": {**probe, "action": action},
+                        "honest_message": (
+                            f"Page did not render for me: {u} reason={probe.get('reason')}"
+                            if action == "blank_render_persisted"
+                            else ""
+                        ),
+                        "media_playback": self.get_current_media_playback_status(),
+                    },
+                )
+            except Exception:
+                pass
+            if retries < 1:
+                try:
+                    self._blank_render_retry_by_url[u] = retries + 1
+                    self._status.showMessage("Page is blank after load; reloading once for render proof.", 7000)
+                    self._view.reload()
+                    QTimer.singleShot(
+                        self._blank_render_followup_delay_ms(u),
+                        lambda: self._verify_rendered_after_navigation(u, source="blank_render_reload_verify"),
+                    )
+                except Exception:
+                    pass
+            elif retries < 2:
+                try:
+                    self._blank_render_retry_by_url[u] = retries + 1
+                    hard = self._hard_reload_current_page()
+                    verb = "hard reloading" if hard else "reloading again"
+                    self._status.showMessage(f"Page is still blank after reload; {verb} once before stopping.", 9000)
+                    QTimer.singleShot(
+                        self._blank_render_followup_delay_ms(u, after_hard_reload=True),
+                        lambda: self._verify_rendered_after_navigation(u, source="blank_render_hard_reload_verify"),
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    self._status.showMessage(
+                        f"Page did not render in Alice Browser ({probe.get('reason') or 'blank'}).",
+                        14000,
+                    )
+                except Exception:
+                    pass
+
+        try:
+            self._view.page().runJavaScript(self._blank_render_probe_js(), _on_probe)
+        except Exception:
+            self._record_blank_render_probe(
+                {
+                    "url": expected_url,
+                    "blank_render": False,
+                    "probe_unreadable": True,
+                    "reason": "runJavaScript_failed",
+                },
+                source=source,
+                action="probe_failed",
+            )
+
     def _browser_awareness_tick(self) -> None:
         """Explicit/event-driven browser awareness refresh.
 
@@ -3679,6 +4054,10 @@ class AliceBrowserWidget(QMainWindow):
                 )
             if _is_instagram_media_url(url):
                 self._read_instagram_carousel()
+            try:
+                self._fire_pending_web_ai_for(url)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -3874,18 +4253,22 @@ class AliceBrowserWidget(QMainWindow):
                 });
             }
             function isRecoveryLabel(lab) {
-                return /^(retry|reload|try again)$/i.test(String(lab || '').trim());
+                // Generalized — any visible "retry / reload / try again" affordance.
+                // No longer x.com or YouTube specific.
+                return /\b(retry|reload|try again|refresh)\b/i.test(String(lab || '').trim());
             }
-            var sel = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick], [aria-label]';
+            // Generalized a11y-first selector. YouTube / x.com specifics removed.
+            // Relies on standard roles, aria, and visible interactive elements.
+            // Shadow DOM traversal can be added later for deeper SPAs.
+            var sel = 'button, a[href], [role="button"], [role="tab"], [role="link"], input[type="button"], input[type="submit"], [onclick], [aria-label], [aria-labelledby], [contenteditable], textarea, input[type="text"], input[type="search"]';
             var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));
             var seen = {}; var out = [];
             var maxN = %MAX%;
             for (var i = 0; i < nodes.length && out.length < maxN; i++) {
                 pushElement(nodes[i], seen, out, maxN);
             }
-            // r1478: SPA error states (x.com "Something went wrong") — Retry may sit on
-            // a plain div/span wrapper, not only native <button> tags.
-            var recovery = document.querySelectorAll('button, a, [role="button"], div, span');
+            // Generalized recovery for SPA error states (any "retry" text, not site-specific).
+            var recovery = document.querySelectorAll('button, a, [role="button"], div, span, [role="tab"]');
             for (var j = 0; j < recovery.length && out.length < maxN; j++) {
                 var el2 = recovery[j];
                 var t2 = (el2.innerText || el2.textContent || '').trim().replace(/\\s+/g, ' ');
@@ -3898,6 +4281,413 @@ class AliceBrowserWidget(QMainWindow):
         """.replace("%MAX%", str(max(5, int(max_elements))))
         result = self._run_javascript_sync(js, wait_ms=1500)
         return result if isinstance(result, dict) else {"ok": False, "action": "list_elements", "reason": "no_js_result"}
+
+    def take_uid_snapshot(self, max_elements: int = 50) -> dict:
+        """Fresh structured proprioception snapshot with stable uids (like chrome-devtools take_snapshot).
+
+        Every element gets a short uid ("e0", "e12"...) for this snapshot.
+        We inject data-alice-uid so later click_by_uid / fill_by_uid can target precisely.
+        This is Alice's "browser dress" — the live body sense of the page.
+        Always call refresh_current_page_state + this before LLM or high-level actions.
+        Returns compact list suitable for the local 2b model prompt.
+        """
+        if self._view is None:
+            return {"ok": False, "action": "uid_snapshot", "reason": "no_web_view"}
+
+        js = """
+        (function () {
+            var maxN = %MAX%;
+            var uidCounter = 0;
+            var out = [];
+            var seen = {};
+
+            function assignUid(el) {
+                if (!el || el.getAttribute('data-alice-uid')) return el && el.getAttribute('data-alice-uid');
+                var uid = 'e' + (uidCounter++);
+                el.setAttribute('data-alice-uid', uid);
+                return uid;
+            }
+            function attrText(el, names) {
+                for (var i = 0; i < names.length; i++) {
+                    var v = (el.getAttribute(names[i]) || '').trim();
+                    if (v) return v;
+                }
+                return '';
+            }
+            function contentEditableOn(el) {
+                if (!el) return false;
+                var ce = (el.getAttribute('contenteditable') || '').toLowerCase();
+                return !!el.isContentEditable || (el.hasAttribute('contenteditable') && ce !== 'false');
+            }
+            function isTextTarget(el) {
+                if (!el) return false;
+                var tag = (el.tagName || '').toLowerCase();
+                var role = (el.getAttribute('role') || '').toLowerCase();
+                var type = (el.getAttribute('type') || '').toLowerCase();
+                if (tag === 'textarea') return true;
+                if (tag === 'input' && ['hidden','button','submit','reset','checkbox','radio','file'].indexOf(type) < 0) return true;
+                if (role === 'textbox' || role === 'searchbox') return true;
+                if (contentEditableOn(el)) return true;
+                return false;
+            }
+            function findFillTarget(el) {
+                if (isTextTarget(el)) return el;
+                if (!el || !el.querySelector) return null;
+                return el.querySelector('textarea, input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), [role="textbox"], [role="searchbox"], [contenteditable]:not([contenteditable="false"])');
+            }
+            function isLikelyTextInput(el) {
+                if (findFillTarget(el)) return true;
+                var marker = attrText(el, ['placeholder','aria-placeholder','data-placeholder']);
+                if (marker) return true;
+                return false;
+            }
+            function bestName(el) {
+                var a = attrText(el, ['aria-label','title','placeholder','aria-placeholder','data-placeholder']);
+                if (a) return a.trim().replace(/\\s+/g, ' ').slice(0, 80);
+                var t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+                if (t && t.length <= 80) return t;
+                var phEl = el.querySelector && el.querySelector('[placeholder], [aria-placeholder], [data-placeholder]');
+                if (phEl) {
+                    var ph = attrText(phEl, ['placeholder','aria-placeholder','data-placeholder']);
+                    if (ph) return ph.trim().replace(/\\s+/g, ' ').slice(0, 80);
+                }
+                var img = el.querySelector && el.querySelector('img[alt]');
+                if (img) return (img.getAttribute('alt') || '').trim().slice(0, 60);
+                return (t || el.tagName.toLowerCase()).slice(0, 80);
+            }
+            function isWorthwhile(el) {
+                if (!el) return false;
+                var tag = (el.tagName || '').toLowerCase();
+                var role = (el.getAttribute('role') || '').toLowerCase();
+                var type = (el.getAttribute('type') || '').toLowerCase();
+                if (['button','a','input','textarea','select'].indexOf(tag) >= 0) return true;
+                if (role === 'button' || role === 'link' || role === 'textbox' || role === 'searchbox' || role === 'tab') return true;
+                if (contentEditableOn(el)) return true;
+                if (isLikelyTextInput(el)) return true;
+                if (tag === 'img' && el.getAttribute('alt')) return true;
+                if (['h1','h2','h3','h4'].indexOf(tag) >= 0) return true;
+                if (role && ['navigation','main','banner','search'].indexOf(role) >= 0) return true;
+                return false;
+            }
+            function visible(el) {
+                try {
+                    var r = el.getBoundingClientRect();
+                    var cs = window.getComputedStyle(el);
+                    return r.width > 3 && r.height > 3 &&
+                           r.bottom > 0 && r.top < (window.innerHeight + 600) &&
+                           cs.visibility !== 'hidden' && cs.display !== 'none';
+                } catch(e) { return false; }
+            }
+            function collect(root) {
+                var walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_ELEMENT);
+                var el;
+                while ((el = walker.nextNode()) && out.length < maxN) {
+                    if (!isWorthwhile(el)) continue;
+                    if (!visible(el)) continue;
+                    var lab = bestName(el);
+                    if (!lab) continue;
+                    var key = (el.tagName + '|' + lab).toLowerCase().slice(0,60);
+                    if (seen[key]) continue;
+                    seen[key] = true;
+                    var uid = assignUid(el);
+                    var r = el.getBoundingClientRect();
+                    var tagName = el.tagName.toLowerCase();
+                    var textLike = isLikelyTextInput(el);
+                    var fillTarget = findFillTarget(el);
+                    var role = el.getAttribute('role') || (tagName === 'a' ? 'link' : (tagName === 'button' ? 'button' : (textLike ? 'textbox' : '')));
+                    var entry = {
+                        uid: uid,
+                        role: role || tagName,
+                        name: lab,
+                        tag: tagName,
+                        interactive: !! (el.onclick || ['button','a','input','textarea'].indexOf(tagName)>=0 || contentEditableOn(el) || (el.getAttribute('role')||'').match(/button|link|textbox|searchbox/) || textLike),
+                    };
+                    if (textLike) {
+                        entry.fillable = !!fillTarget;
+                        var ph = attrText(fillTarget || el, ['placeholder','aria-placeholder','data-placeholder']);
+                        if (ph) entry.placeholder = ph.slice(0, 80);
+                    }
+                    if (el.href) entry.href = el.href.split('#')[0];
+                    out.push(entry);
+                }
+            }
+            collect(document.body);
+            // Also pick up any late SPA injected controls we might have missed
+            var extra = document.querySelectorAll('[data-testid], [aria-label], [role="button"], textarea, input:not([type="hidden"]), [role="textbox"], [role="searchbox"], [contenteditable]:not([contenteditable="false"]), [placeholder], [aria-placeholder], [data-placeholder]');
+            for (var k=0; k<extra.length && out.length < maxN; k++) {
+                var ex = extra[k];
+                if (visible(ex) && isWorthwhile(ex)) {
+                    var l2 = bestName(ex);
+                    if (l2 && !seen[(ex.tagName+'|'+l2).toLowerCase()]) {
+                        seen[(ex.tagName+'|'+l2).toLowerCase()] = true;
+                        var u2 = assignUid(ex);
+                        var exTextLike = isLikelyTextInput(ex);
+                        var exFillTarget = findFillTarget(ex);
+                        var exEntry = {uid: u2, role: ex.getAttribute('role') || (exTextLike ? 'textbox' : ex.tagName.toLowerCase()), name: l2, tag: ex.tagName.toLowerCase(), interactive: true};
+                        if (exTextLike) {
+                            exEntry.fillable = !!exFillTarget;
+                            var exPh = attrText(exFillTarget || ex, ['placeholder','aria-placeholder','data-placeholder']);
+                            if (exPh) exEntry.placeholder = exPh.slice(0, 80);
+                        }
+                        out.push(exEntry);
+                    }
+                }
+            }
+            return {
+                ok: true,
+                action: 'uid_snapshot',
+                url: location.href,
+                title: document.title || '',
+                count: out.length,
+                elements: out,
+                ts: (Date.now() / 1000)
+            };
+        })();
+        """.replace("%MAX%", str(max(8, int(max_elements))))
+
+        result = self._run_javascript_sync(js, wait_ms=1600)
+        if not isinstance(result, dict) or not result.get("ok"):
+            return {"ok": False, "action": "uid_snapshot", "reason": "no_js_result"}
+
+        # Persist a dedicated uid proprioception snapshot (small, for body + local LLM)
+        try:
+            snap_path = _STATE / "alice_browser_uid_snapshot.json"
+            snap_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+        # Lightweight proprioception receipt into the browser action diary (or return evidence)
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            row = {
+                "ts": time.time(),
+                "action": "uid_snapshot",
+                "ok": True,
+                "url": result.get("url"),
+                "count": result.get("count"),
+                "truth_label": "ALICE_BROWSER_UID_PROPRIO_V1",
+            }
+            append_line_locked(_STATE / "browser_action_diary.jsonl", json.dumps(row, sort_keys=True))
+        except Exception:
+            pass
+
+        return result
+
+    def click_by_uid(self, uid: str, *, preauthorized: bool = False) -> dict:
+        """Canonical action: click an element by its uid from the last uid snapshot.
+        This is the precise, general, receipted path (the chrome-devtools style).
+        """
+        if self._view is None:
+            return {"ok": False, "action": "click_uid", "reason": "no_web_view"}
+        uid = str(uid or "").strip()
+        if not uid:
+            return {"ok": False, "action": "click_uid", "reason": "bad_uid"}
+
+        js = """
+        (function() {
+            var uid = %UID%;
+            var el = document.querySelector('[data-alice-uid="' + uid + '"]');
+            if (!el) return {ok: false, reason: 'uid_not_found_in_dom'};
+            try {
+                el.scrollIntoView({block: 'center', behavior: 'instant'});
+            } catch(e){}
+            try { el.focus(); } catch(e){}
+            el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+            el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+            el.click();
+            return {ok: true, uid: uid, name: (el.getAttribute('aria-label')||el.innerText||'').slice(0,60)};
+        })();
+        """.replace("%UID%", json.dumps(uid))
+
+        res = self._run_javascript_sync(js, wait_ms=1200)
+        # Force a state refresh so next snapshot or dress is current
+        try:
+            self.refresh_current_page_state(wait_ms=200)
+        except Exception:
+            pass
+        ok = bool(res and res.get("ok"))
+        receipt_id = f"click_uid_{uid}_{int(time.time())}"
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            row = {"ts": time.time(), "action": "click_by_uid", "uid": uid, "ok": ok, "truth_label": "ALICE_BROWSER_UID_ACTION_V1"}
+            append_line_locked(_STATE / "browser_action_diary.jsonl", json.dumps(row, sort_keys=True))
+        except Exception:
+            pass
+        return {
+            "ok": ok,
+            "action": "click_by_uid",
+            "uid": uid,
+            "result": res,
+            "receipt": receipt_id,
+        }
+
+    def fill_by_uid(self, uid: str, value: str, *, preauthorized: bool = False) -> dict:
+        """Canonical action: fill / type into an element by uid (inputs, textareas, contenteditable)."""
+        if self._view is None:
+            return {"ok": False, "action": "fill_uid", "reason": "no_web_view"}
+        uid = str(uid or "").strip()
+        val = str(value or "")
+        if not uid:
+            return {"ok": False, "action": "fill_uid", "reason": "bad_uid"}
+
+        js = """
+        (function() {
+            var uid = %UID%;
+            var val = %VAL%;
+            var el = document.querySelector('[data-alice-uid="' + uid + '"]');
+            if (!el) return {ok: false, reason: 'uid_not_found'};
+
+            function contentEditableOn(node) {
+                if (!node) return false;
+                var ce = (node.getAttribute('contenteditable') || '').toLowerCase();
+                return !!node.isContentEditable || (node.hasAttribute('contenteditable') && ce !== 'false');
+            }
+            function isFillTarget(node) {
+                if (!node) return false;
+                var tag = (node.tagName || '').toUpperCase();
+                var type = (node.getAttribute('type') || '').toLowerCase();
+                var role = (node.getAttribute('role') || '').toLowerCase();
+                if (tag === 'TEXTAREA') return true;
+                if (tag === 'INPUT' && ['hidden','button','submit','reset','checkbox','radio','file'].indexOf(type) < 0) return true;
+                if (role === 'textbox' || role === 'searchbox') return true;
+                if (contentEditableOn(node)) return true;
+                return false;
+            }
+            function findFillTarget(node) {
+                if (isFillTarget(node)) return node;
+                if (!node || !node.querySelector) return null;
+                return node.querySelector('textarea, input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), [role="textbox"], [role="searchbox"], [contenteditable]:not([contenteditable="false"])');
+            }
+            function setNativeValue(input, value) {
+                var tag = (input.tagName || '').toUpperCase();
+                var proto = tag === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                if (desc && desc.set) desc.set.call(input, value);
+                else input.value = value;
+            }
+            function fireInput(node, value) {
+                try {
+                    node.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: value}));
+                } catch(e) {
+                    node.dispatchEvent(new Event('input', {bubbles: true}));
+                }
+                node.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+            function fieldText(node) {
+                var tag = (node.tagName || '').toUpperCase();
+                if (tag === 'TEXTAREA' || tag === 'INPUT') return node.value || '';
+                return (node.innerText || node.textContent || '');
+            }
+
+            var target = findFillTarget(el);
+            if (!target) {
+                return {ok: false, reason: 'target_not_fillable', uid: uid, tag: el.tagName, role: el.getAttribute('role') || ''};
+            }
+            try { target.scrollIntoView({block:'center'}); } catch(e){}
+            try { target.focus(); } catch(e){}
+            try { target.click(); } catch(e){}
+
+            var tag = (target.tagName || '').toUpperCase();
+            if (tag === 'TEXTAREA' || tag === 'INPUT') {
+                setNativeValue(target, val);
+                fireInput(target, val);
+            } else if (contentEditableOn(target) || (target.getAttribute('role') || '').toLowerCase().match(/textbox|searchbox/)) {
+                try {
+                    var range = document.createRange();
+                    range.selectNodeContents(target);
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } catch(e){}
+                target.textContent = val;
+                fireInput(target, val);
+            } else {
+                return {ok: false, reason: 'target_not_fillable', uid: uid, tag: target.tagName, role: target.getAttribute('role') || ''};
+            }
+
+            var typed = fieldText(target);
+            if ((typed || '').trim() !== (val || '').trim()) {
+                return {ok: false, reason: typed ? 'value_mismatch_after_set' : 'input_empty_after_set', uid: uid, typed: (typed || '').slice(0, 120), targetTag: target.tagName, targetRole: target.getAttribute('role') || ''};
+            }
+            return {ok: true, uid: uid, targetTag: target.tagName, targetRole: target.getAttribute('role') || '', typed_len: typed.length};
+        })();
+        """.replace("%UID%", json.dumps(uid)).replace("%VAL%", json.dumps(val))
+
+        res = self._run_javascript_sync(js, wait_ms=900)
+        try:
+            self.refresh_current_page_state(wait_ms=100)
+        except Exception:
+            pass
+        ok = bool(res and res.get("ok"))
+        receipt_id = f"fill_uid_{uid}_{int(time.time())}"
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            row = {"ts": time.time(), "action": "fill_by_uid", "uid": uid, "ok": ok, "truth_label": "ALICE_BROWSER_UID_ACTION_V1"}
+            append_line_locked(_STATE / "browser_action_diary.jsonl", json.dumps(row, sort_keys=True))
+        except Exception:
+            pass
+        return {
+            "ok": ok,
+            "action": "fill_by_uid",
+            "uid": uid,
+            "result": res,
+            "receipt": receipt_id,
+        }
+
+    def _try_consume_pending_xcom_uid(self) -> None:
+        """If a pending_xcom_exec with use_uid_protocol is staged, perform the full
+        fresh-snapshot + uid action loop (the chrome style) and clean it.
+        This makes x_post_skill fully use Alice's own browser proprioception.
+        """
+        try:
+            p = _STATE / "pending_xcom_exec.json"
+            if not p.exists():
+                return
+            data = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+            if not data.get("use_uid_protocol"):
+                return
+            text = data.get("tweet_text") or ""
+            p.unlink(missing_ok=True)
+
+            # 1. Fresh proprioception
+            snap = self.take_uid_snapshot(50) if hasattr(self, "take_uid_snapshot") else {}
+            elems = (snap or {}).get("elements") or []
+
+            # 2. Find compose uid by name heuristics (general, not hardcoded data-testid)
+            compose_uid = None
+            post_uid = None
+            for e in elems:
+                nm = (e.get("name") or "").lower()
+                role = (e.get("role") or "").lower()
+                if not compose_uid and ("happening" in nm or "tweet" in nm or "compose" in nm or "what" in nm) and ("text" in role or "box" in role or "edit" in role or e.get("tag") in ("textarea", "div")):
+                    compose_uid = e.get("uid")
+                if not post_uid and ("post" in nm or "send" in nm) and ("button" in role or e.get("tag") == "button"):
+                    post_uid = e.get("uid")
+
+            # Fallback scan for any contenteditable or prominent button
+            if not compose_uid:
+                for e in elems:
+                    if e.get("interactive") and ("contenteditable" in str(e) or e.get("tag") in ("textarea", "div")):
+                        compose_uid = e.get("uid")
+                        break
+            if not post_uid:
+                for e in elems:
+                    if "post" in (e.get("name") or "").lower() or "button" in (e.get("role") or ""):
+                        post_uid = e.get("uid")
+                        break
+
+            # 3. Execute with uid (report each)
+            if compose_uid:
+                self.fill_by_uid(compose_uid, text)
+            if post_uid:
+                self.click_by_uid(post_uid)
+
+            # 4. Confirm proprioception
+            self.take_uid_snapshot(30)
+
+            # ledger note already in the action methods + xcom ledgers
+        except Exception:
+            pass
 
     def select_search_result_receipt(self, index: int = 1) -> dict:
         """r657 (George: "SELECT THE THIRD ON THE LIST"): open the Nth visible search-result
@@ -4152,7 +4942,8 @@ class AliceBrowserWidget(QMainWindow):
                 return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < (window.innerHeight + 400);
             }
             function isRecoveryLabel(lab) {
-                return /^(retry|reload|try again)$/i.test(String(lab || '').trim());
+                // Generalized recovery (no site hardcodes).
+                return /\b(retry|reload|try again|refresh)\b/i.test(String(lab || '').trim());
             }
             function collectNodes() {
                 var sel = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick], [aria-label]';
@@ -5104,257 +5895,10 @@ class AliceBrowserWidget(QMainWindow):
             "automated_bypass": False,
         }
 
-    def click_google_images_tab(self) -> dict:
-        """Click Google's Images/Photos tab, or navigate to the images URL.
-
-        George may say "Photos section" while Google renders the control as
-        "Images". This stays inside Alice Browser and uses the current query
-        from the visible Google page.
-        """
-        refused = self._gate_click_refused("click_google_images_tab")
-        if refused:
-            return refused
-        if not self._view:
-            return {"clicked": False, "reason": "no_web_view"}
-        try:
-            current_url = self._view.url().toString() if self._view is not None else ""
-        except Exception:
-            current_url = getattr(self, "_current_url", "") or ""
-        if "google." not in str(current_url or "").lower():
-            return {
-                "clicked": False,
-                "reason": "not_google_page",
-                "url": str(current_url or ""),
-            }
-        js = r"""
-        (function () {
-            function visible(el) {
-                if (!el || !el.getBoundingClientRect) return false;
-                var r = el.getBoundingClientRect();
-                var s = window.getComputedStyle(el);
-                return r.width > 4 && r.height > 4 &&
-                    s.display !== 'none' && s.visibility !== 'hidden' &&
-                    s.opacity !== '0';
-            }
-            function label(el) {
-                return [
-                    el.textContent || '',
-                    el.getAttribute('aria-label') || '',
-                    el.getAttribute('title') || '',
-                    el.getAttribute('role') || ''
-                ].join(' ').replace(/\s+/g, ' ').trim();
-            }
-            function clickNode(el, mode) {
-                try { el.scrollIntoView({block:'center', inline:'center', behavior:'instant'}); } catch (e) {}
-                var r = el.getBoundingClientRect();
-                var cx = Math.round(r.left + r.width / 2);
-                var cy = Math.round(r.top + r.height / 2);
-                ['mouseover','mousedown','mouseup','click'].forEach(function (name) {
-                    try {
-                        el.dispatchEvent(new MouseEvent(name, {
-                            bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
-                        }));
-                    } catch (e) {}
-                });
-                try { el.click(); } catch (e) {}
-                return {
-                    clicked:true,
-                    mode:mode || 'visible_tab_click',
-                    href: el.href || el.getAttribute('href') || '',
-                    text: label(el).slice(0, 160),
-                    x: cx,
-                    y: cy
-                };
-            }
-            var candidates = Array.prototype.slice.call(document.querySelectorAll(
-                'a, [role="tab"], [role="link"], button, div[role="button"]'
-            )).filter(visible);
-            var exact = null;
-            var fuzzy = null;
-            for (var i = 0; i < candidates.length; i++) {
-                var el = candidates[i];
-                var text = label(el);
-                var low = text.toLowerCase();
-                var href = (el.href || el.getAttribute('href') || '').toLowerCase();
-                if (/\b(images?|photos?|pictures?)\b/.test(low) || /(?:tbm=isch|udm=2)/.test(href)) {
-                    if (/^(images?|photos?|pictures?)$/i.test(text.trim()) || /(?:tbm=isch|udm=2)/.test(href)) {
-                        exact = el;
-                        break;
-                    }
-                    if (!fuzzy) fuzzy = el;
-                }
-            }
-            if (exact) return clickNode(exact, 'visible_images_tab_click');
-            if (fuzzy) return clickNode(fuzzy, 'visible_images_control_click');
-
-            var params = new URLSearchParams(window.location.search || '');
-            var q = params.get('q') || '';
-            if (!q) {
-                var input = document.querySelector('textarea[name="q"], input[name="q"], input[type="search"]');
-                if (input && input.value) q = input.value;
-            }
-            if (!q) return {clicked:false, reason:'google_query_not_found', url:String(window.location.href || '')};
-            var target = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q);
-            try {
-                window.location.href = target;
-                return {clicked:true, mode:'direct_images_url', href:target, text:'Google Images', query:q};
-            } catch (e) {
-                return {clicked:false, reason:'direct_images_url_failed:' + (e && e.message ? e.message : e), query:q};
-            }
-        })();
-        """
-        result = self._run_javascript_sync(js, wait_ms=1200)
-        if isinstance(result, dict) and result.get("clicked"):
-            try:
-                QTimer.singleShot(650, self.refresh_current_page_state)
-            except Exception:
-                pass
-        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result"}
-
-    def click_visible_google_image_result(self, query: str = "", ordinal: int = 0) -> dict:
-        """Click a visible image tile on ANY image-results page (Google, DuckDuckGo,
-        Bing, Brave, Yahoo, ...). ``ordinal`` selects which tile in reading order:
-        1=first, 2=second ... -1=last; 0 keeps the prominent best-score pick. This is a
-        pure body effector — Alice just executes the click; she does not need to be
-        conscious of what the tile shows (George 2026-06-02)."""
-        refused = self._gate_click_refused("click_visible_google_image_result")
-        if refused:
-            refused["query"] = query
-            refused["ordinal"] = ordinal
-            return refused
-        if not self._view:
-            return {"clicked": False, "reason": "no_web_view", "query": query}
-        try:
-            current_url = self._view.url().toString() if self._view is not None else ""
-        except Exception:
-            current_url = getattr(self, "_current_url", "") or ""
-        if not str(current_url or "").lower().startswith(("http://", "https://")):
-            return {
-                "clicked": False,
-                "reason": "no_web_page",
-                "url": str(current_url or ""),
-                "query": query,
-            }
-        js = f"""
-        (function () {{
-            var ownerQuery = {json.dumps(str(query or ""))};
-            var ord = {json.dumps(int(ordinal or 0))};
-            function clean(s) {{
-                return (s || '').toString().toLowerCase()
-                    .replace(/[^a-z0-9]+/g, ' ')
-                    .replace(/\\s+/g, ' ')
-                    .trim();
-            }}
-            function visible(el) {{
-                if (!el || !el.getBoundingClientRect) return false;
-                var r = el.getBoundingClientRect();
-                var s = window.getComputedStyle(el);
-                return r.width >= 70 && r.height >= 70 &&
-                    s.display !== 'none' && s.visibility !== 'hidden' &&
-                    s.opacity !== '0' && r.bottom > 110 && r.top < window.innerHeight - 8 &&
-                    r.right > 0 && r.left < window.innerWidth;
-            }}
-            function clickableFor(img) {{
-                return img.closest('a[href], div[role="button"], [jsaction], [data-ved]') || img;
-            }}
-            function labelFor(img, click) {{
-                return [
-                    img.alt || '',
-                    img.getAttribute('aria-label') || '',
-                    img.getAttribute('title') || '',
-                    click ? (click.getAttribute('aria-label') || click.getAttribute('title') || click.textContent || '') : ''
-                ].join(' ').replace(/\\s+/g, ' ').trim();
-            }}
-            var q = clean(ownerQuery);
-            var tokens = q.split(' ').filter(function (w) {{
-                return w.length >= 4 && ['click','select','choose','open','photo','photos','image','images','picture','pictures','screen','alice','please','want'].indexOf(w) === -1;
-            }}).slice(0, 8);
-            var imgs = Array.prototype.slice.call(document.querySelectorAll('img')).filter(visible);
-            var cands = [];
-            var best = null, bestClick = null, bestScore = -1, bestLabel = '';
-            imgs.forEach(function (img, idx) {{
-                var click = clickableFor(img);
-                if (!click) return;
-                var r = img.getBoundingClientRect();
-                var lab = labelFor(img, click);
-                var n = clean(lab);
-                var score = Math.min(600, r.width) * Math.min(400, r.height) / 1000;
-                score += Math.max(0, 220 - r.top) / 20;
-                score += Math.max(0, 500 - Math.abs((r.left + r.width / 2) - (window.innerWidth / 2))) / 80;
-                tokens.forEach(function (tok) {{
-                    if (n.indexOf(tok) !== -1) score += 8;
-                }});
-                if (idx === 0) score += 2;
-                cands.push({{img: img, click: click, r: r, lab: lab, score: score}});
-                if (score > bestScore) {{
-                    best = img;
-                    bestClick = click;
-                    bestScore = score;
-                    bestLabel = lab;
-                }}
-            }});
-            // ord != 0 -> pick by reading order (top row-band, then left-to-right),
-            // not by score: "the first one" means the first tile, period.
-            if (ord !== 0 && cands.length) {{
-                var ordered = cands.slice().sort(function (a, b) {{
-                    var ra = Math.round(a.r.top / 120), rb = Math.round(b.r.top / 120);
-                    if (ra !== rb) return ra - rb;
-                    return a.r.left - b.r.left;
-                }});
-                var pick = ord > 0 ? (ord - 1) : (ordered.length + ord);
-                if (pick < 0) pick = 0;
-                if (pick > ordered.length - 1) pick = ordered.length - 1;
-                best = ordered[pick].img;
-                bestClick = ordered[pick].click;
-                bestScore = ordered[pick].score;
-                bestLabel = ordered[pick].lab;
-            }}
-            if (!best || !bestClick) {{
-                return {{clicked:false, reason:'no_visible_google_image_tile', query:ownerQuery, url:String(window.location.href || '')}};
-            }}
-            try {{ best.scrollIntoView({{block:'center', inline:'center', behavior:'instant'}}); }} catch (e) {{}}
-            var r = best.getBoundingClientRect();
-            var cx = Math.round(r.left + r.width / 2);
-            var cy = Math.round(r.top + r.height / 2);
-            ['mouseover','mousedown','mouseup','click'].forEach(function (name) {{
-                try {{
-                    bestClick.dispatchEvent(new MouseEvent(name, {{
-                        bubbles:true, cancelable:true, view:window, clientX:cx, clientY:cy
-                    }}));
-                }} catch (e) {{}}
-            }});
-            try {{ bestClick.click(); }} catch (e) {{}}
-            return {{
-                clicked:true,
-                mode:'google_image_tile_click',
-                href: bestClick.href || bestClick.getAttribute('href') || '',
-                src: best.currentSrc || best.src || '',
-                alt: bestLabel.slice(0, 220),
-                score: bestScore,
-                x: cx,
-                y: cy,
-                query: ownerQuery
-            }};
-        }})();
-        """
-        result = self._run_javascript_sync(js, wait_ms=1500)
-        if isinstance(result, dict) and result.get("clicked"):
-            try:
-                from System.swarm_browser_photo_description import mark_frame_changed
-                mark_frame_changed(url=self._current_url, state_dir=_STATE)
-            except Exception:
-                pass
-            try:
-                QTimer.singleShot(1100, self.refresh_current_page_state)
-            except Exception:
-                pass
-        return result if isinstance(result, dict) else {"clicked": False, "reason": "no_js_result", "query": query}
-
     def start_image_slideshow(self, subject: str = "", *, engine=None, interval_ms: int = 3500) -> dict:
         """r383 (George 2026-06-02): 'slideshow images of cats' — one image every 3.5s.
         With a subject, navigate to that subject's image results on the resolved engine
-        (DuckDuckGo by default; the current site's engine if already on one — 'if the user
-        is on google.com then she does the slideshow on Google Images') then inject the
+        (DuckDuckGo by default; the current site's engine if already on one) then inject the
         slideshow overlay. With no subject, slideshow whatever gallery is already on screen.
         A pure body effector — she just runs it; click or Esc stops it."""
         if not _HAS_WEBENGINE or self._view is None:
@@ -5442,14 +5986,22 @@ class AliceBrowserWidget(QMainWindow):
         if str(row.get("phase") or "await_load") not in {"await_load"}:
             return
         try:
-            from urllib.parse import urlparse
-
-            host = urlparse(loaded_url or "").netloc.lower()
+            from System.swarm_web_ai_chat_bridge import pending_host_matches_url
         except Exception:
-            host = ""
+            pending_host_matches_url = None  # type: ignore[assignment,misc]
         pending_host = str(row.get("host") or row.get("site") or "").lower()
-        if pending_host and host and pending_host not in host and host not in pending_host:
-            return
+        if pending_host_matches_url is not None:
+            if not pending_host_matches_url(pending_host, loaded_url or ""):
+                return
+        else:
+            try:
+                from urllib.parse import urlparse
+
+                host = urlparse(loaded_url or "").netloc.lower()
+            except Exception:
+                host = ""
+            if pending_host and host and pending_host not in host and host not in pending_host:
+                return
 
         type_js = str(row.get("type_js") or "").strip()
         if not type_js:
@@ -5485,13 +6037,14 @@ class AliceBrowserWidget(QMainWindow):
                             "type_result": result_payload,
                         }
                     )
-                    if type_attempts < 3:
+                    if type_attempts < 5:
                         mark_pending_web_ai_phase(
                             "await_load",
                             type_attempts=type_attempts,
                             last_type_result=result_payload,
                         )
-                        QTimer.singleShot(1200, self._fire_pending_web_ai_timer)
+                        retry_ms = 1800 if str(row.get("site") or "") == "chatgpt.com" else 1200
+                        QTimer.singleShot(retry_ms, self._fire_pending_web_ai_timer)
                     else:
                         mark_pending_web_ai_phase(
                             "typing_failed",
@@ -5507,30 +6060,38 @@ class AliceBrowserWidget(QMainWindow):
                     mark_pending_web_ai_phase,
                 )
 
-                mark_pending_web_ai_phase("await_answer", last_type_result=result_payload)
+                query_text = str(
+                    row.get("query")
+                    or result_payload.get("query")
+                    or result_payload.get("typed")
+                    or ""
+                ).strip()
+                mark_pending_web_ai_phase("await_answer", last_type_result=result_payload, query=query_text)
                 append_web_ai_bridge_row(
                     {
                         "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
                         "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
                         "ts": time.time(),
                         "site": row.get("site"),
-                        "query": row.get("query"),
+                        "query": query_text,
                         "phase": "typed_submitted",
                         "type_attempts": type_attempts,
                         "type_result": result_payload,
+                        "submit_only": bool(row.get("submit_only")),
                     }
                 )
             except Exception:
-                pass
+                query_text = str(row.get("query") or "")
             self._web_ai_poll_state = {
                 "site": row.get("site") or "duck.ai",
-                "query": row.get("query") or "",
-                "read_js": str(row.get("read_js") or ""),
+                "query": query_text,
+                "read_js": str(row.get("read_js") or "") or "",
                 "started_ts": time.time(),
                 "deadline_ts": time.time() + float(row.get("ttl_s", 120.0)),
                 "stable_text": "",
                 "stable_hits": 0,
                 "attempts": 0,
+                "typed_receipt_id": str(row.get("receipt_id") or ""),
             }
             try:
                 self._status.showMessage(
@@ -5636,6 +6197,8 @@ class AliceBrowserWidget(QMainWindow):
                     response_count=result.get("response_count"),
                     poll_attempts=state.get("attempts"),
                     elapsed_s=round(time.time() - float(state.get("started_ts", time.time())), 2),
+                    typed_receipt_id=str(state.get("typed_receipt_id") or ""),
+                    browser_receipt_id=str(state.get("browser_receipt_id") or state.get("typed_receipt_id") or ""),
                 )
             except Exception:
                 pass
@@ -6209,7 +6772,11 @@ class AliceBrowserWidget(QMainWindow):
                 _local_ollama_eye = local_vision_available(state_dir=_STATE)
                 if _local_ollama_eye:
                     _local_krishna_model = pick_local_vision_model(state_dir=_STATE)
-                if _local_ollama_eye and (
+                # Never clear an *explicit* owner-selected arm (grok_agent / codex_agent / …).
+                # Only clear model-inferred strict when the model is not vision-capable and
+                # no explicit arm was chosen — otherwise local Ollama steals selected eyes.
+                _explicit_arm = str(current_arm or "").strip().lower() in _STRICT_SELECTED_EYE_ARMS
+                if _local_ollama_eye and not _explicit_arm and (
                     not strict_eye or (strict_eye and not _isvis(current_model))
                 ):
                     strict_eye = ""
@@ -6568,21 +7135,22 @@ class AliceBrowserWidget(QMainWindow):
                             )
                     eye_name = _eye_display_name(strict_eye)
                     if not strict_grok_eye:
-                        # r528 (extends r527, George approved 2026-06-04): a NON-grok selected eye
-                        # (e.g. Codex) that produced no usable description on this frame — whether
-                        # non_visual OR a hard 'failed' — must not trap her blind. Fall through to the
-                        # existing vision failover below: a backup eye supplies the pixels (loud note)
-                        # and the selected cortex still composes the answer. Grok keeps its own
-                        # OAuth/backup policy above. Her chat cortex selection is unchanged either way.
+                        # r1605 restores selected-eye honesty for non-Grok (Codex/Claude/…):
+                        # a failed/empty scan reports that eye's failure and does NOT spend
+                        # another provider's credits. Grok keeps its OAuth + local-backup path
+                        # above. (_strict_selected_eye docstring / page-identity tests.)
                         _why = (
                             "returned no image description"
-                            if attempt.get("non_visual")
+                            if attempt.get("non_visual") or not str(attempt.get("text") or "").strip()
                             else "could not see this frame"
                         )
-                        diary_notes.append(
-                            f"my selected {eye_name} eye {_why} ({attempt.get('status')}); I am using a "
-                            f"backup vision eye for the pixels only — my cortex stays {eye_name}."
+                        selected_eye_failure_status = _strict_eye_failure_status(strict_eye)
+                        selected_eye_error_summary = (
+                            f"{eye_name} is my selected cortex/eye for this photo; it {_why} "
+                            f"({attempt.get('status')}). I did not switch to Claude."
                         )
+                        diary_notes.append(selected_eye_error_summary)
+                        break
                     else:
                         if not selected_eye_error_summary:
                             selected_eye_error_summary = (
@@ -6678,9 +7246,1468 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
 
+    def _try_consume_grok_self_type_command(self) -> None:
+        """Consume Alice-owned Grok self-type commands staged by Talk."""
+        cmd_file = getattr(self, "_grok_self_type_file", None)
+        if cmd_file is None or not cmd_file.exists():
+            return
+        try:
+            row = json.loads(cmd_file.read_text(encoding="utf-8"))
+            cmd_file.unlink(missing_ok=True)
+        except Exception as exc:
+            try:
+                from System.swarm_alice_browser_grok_self_type import append_grok_self_type_result
+
+                append_grok_self_type_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_self_type",
+                        "status": "bad_command_file",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "alice_browser_widget",
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+            return
+        text = str(row.get("text") or "").strip()
+        if not text:
+            return
+        url = str(row.get("url") or "https://grok.com/").strip() or "https://grok.com/"
+        try:
+            cur = self._view.url().toString() if self._view is not None else ""
+        except Exception:
+            cur = ""
+        try:
+            from System.swarm_web_ai_chat_bridge import pending_host_matches_url
+
+            on_target = pending_host_matches_url(url, cur)
+        except Exception:
+            on_target = "grok.com" in cur.lower() and "grok.com" in url.lower()
+        if not on_target:
+            try:
+                self._navigate(url)
+            except Exception:
+                pass
+            QTimer.singleShot(7000, lambda r=row: self._perform_grok_self_type_command(r))
+        else:
+            QTimer.singleShot(350, lambda r=row: self._perform_grok_self_type_command(r))
+
+    def _perform_grok_self_type_command(self, row: dict) -> None:
+        """Fill Grok composer and optionally press Enter from inside Alice Browser."""
+        text = str(row.get("text") or "").strip()
+        press_enter = bool(row.get("press_enter", True))
+        receipt_id = str(row.get("receipt_id") or f"alice-browser-grok-self-type-{uuid.uuid4().hex[:12]}")
+        started = time.time()
+
+        action_name = str(row.get("action") or "alice_browser_grok_self_type")
+
+        def _append_result(**payload) -> None:
+            try:
+                payload.setdefault("receipt_id", receipt_id)
+                payload.setdefault("action", action_name)
+                payload.setdefault("source", "alice_browser_widget")
+                payload.setdefault("text_preview", text[:240])
+                payload.setdefault("press_enter", press_enter)
+                try:
+                    payload.setdefault("url", self._view.url().toString() if self._view is not None else "")
+                except Exception:
+                    pass
+                if action_name == "alice_browser_grok_paste_clipboard":
+                    from System.swarm_alice_browser_grok_paste_clipboard import append_grok_paste_result
+
+                    append_grok_paste_result(payload, state_dir=_STATE)
+                else:
+                    from System.swarm_alice_browser_grok_self_type import append_grok_self_type_result
+
+                    append_grok_self_type_result(payload, state_dir=_STATE)
+            except Exception:
+                pass
+
+        if self._view is None:
+            _append_result(ok=False, status="no_web_view")
+            return
+        if action_name == "alice_browser_grok_paste_clipboard":
+            target_url = str(row.get("url") or "").strip()
+            try:
+                current_url = self._view.url().toString() if self._view is not None else ""
+            except Exception:
+                current_url = ""
+            try:
+                from System.swarm_alice_browser_grok_paste_clipboard import needs_target_thread_navigation
+
+                needs_navigation = needs_target_thread_navigation(current_url, target_url)
+            except Exception:
+                needs_navigation = False
+            if needs_navigation:
+                attempt = int(row.get("_target_thread_wait_attempt", 0) or 0)
+                if attempt >= 8:
+                    _append_result(
+                        ok=False,
+                        status="target_thread_navigation_failed",
+                        current_url=current_url,
+                        target_url=target_url,
+                        retry_attempt=attempt,
+                    )
+                    return
+                retry = dict(row)
+                retry["_target_thread_wait_attempt"] = attempt + 1
+                _append_result(
+                    ok=False,
+                    status="waiting_for_target_thread",
+                    current_url=current_url,
+                    target_url=target_url,
+                    retry_attempt=attempt + 1,
+                )
+                try:
+                    self._navigate(target_url)
+                except Exception as exc:
+                    _append_result(
+                        ok=False,
+                        status="target_thread_navigation_exception",
+                        current_url=current_url,
+                        target_url=target_url,
+                        error=f"{type(exc).__name__}: {exc}",
+                        retry_attempt=attempt + 1,
+                    )
+                QTimer.singleShot(5200, lambda r=retry: self._perform_grok_self_type_command(r))
+                return
+        else:
+            target_url = str(row.get("url") or "").strip()
+            if target_url:
+                try:
+                    current_url = self._view.url().toString() if self._view is not None else ""
+                except Exception:
+                    current_url = ""
+                try:
+                    from System.swarm_web_ai_chat_bridge import pending_host_matches_url
+
+                    on_target = pending_host_matches_url(target_url, current_url)
+                except Exception:
+                    on_target = True
+                if not on_target:
+                    attempt = int(row.get("_target_site_wait_attempt", 0) or 0)
+                    if attempt >= 8:
+                        _append_result(
+                            ok=False,
+                            status="target_site_navigation_failed",
+                            current_url=current_url,
+                            target_url=target_url,
+                            retry_attempt=attempt,
+                        )
+                        return
+                    retry = dict(row)
+                    retry["_target_site_wait_attempt"] = attempt + 1
+                    _append_result(
+                        ok=False,
+                        status="waiting_for_target_site",
+                        current_url=current_url,
+                        target_url=target_url,
+                        retry_attempt=attempt + 1,
+                    )
+                    try:
+                        self._navigate(target_url)
+                    except Exception as exc:
+                        _append_result(
+                            ok=False,
+                            status="target_site_navigation_exception",
+                            current_url=current_url,
+                            target_url=target_url,
+                            error=f"{type(exc).__name__}: {exc}",
+                            retry_attempt=attempt + 1,
+                        )
+                    QTimer.singleShot(5200, lambda r=retry: self._perform_grok_self_type_command(r))
+                    return
+        final_written = {"done": False}
+        _append_result(
+            ok=False,
+            status="started",
+            current_url=self._view.url().toString() if self._view is not None else "",
+        )
+
+        def _append_final(**payload) -> None:
+            final_written["done"] = True
+            _append_result(**payload)
+
+        def _watchdog() -> None:
+            if final_written.get("done"):
+                return
+            _append_result(
+                ok=False,
+                status="timeout_no_js_callback",
+                current_url=self._view.url().toString() if self._view is not None else "",
+                elapsed_s=round(time.time() - started, 3),
+            )
+
+        QTimer.singleShot(45000, _watchdog)
+
+        focus_js = """
+        (function(){
+          function visible(el){
+            if(!el) return false;
+            const r=el.getBoundingClientRect();
+            const s=getComputedStyle(el);
+            return r.width>1 && r.height>1 && s.display!=='none' && s.visibility!=='hidden';
+          }
+          function score(el){
+            const tag=(el.tagName||'').toUpperCase();
+            const ph=(el.getAttribute('placeholder')||el.getAttribute('aria-placeholder')||'').toLowerCase();
+            const role=(el.getAttribute('role')||'').toLowerCase();
+            const label=(el.getAttribute('aria-label')||'').toLowerCase();
+            const r=el.getBoundingClientRect();
+            let s=0;
+            if(tag==='TEXTAREA') s+=120;
+            if(tag==='INPUT') s+=80;
+            if(role==='textbox') s+=70;
+            if(el.isContentEditable) s+=60;
+            if(/what|mind|ask|message|grok|anything|know/.test(ph+' '+label)) s+=70;
+            if(visible(el)) s+=100;
+            if(r.width>250) s+=35;
+            if(r.width<160) s-=260;
+            if(r.height>180) s-=90;
+            if(r.x<50) s-=120;
+            s+=Math.max(0,r.bottom)/20;
+            return s;
+          }
+          const candidates=Array.from(document.querySelectorAll(
+            'textarea,input:not([type=hidden]):not([type=button]):not([type=submit]),[role="textbox"],[contenteditable="true"],[contenteditable]:not([contenteditable="false"])'
+          )).map((el,i)=>({el,i,score:score(el)})).sort((a,b)=>b.score-a.score);
+          const c=candidates[0];
+          if(!c) return {ok:false, reason:'no_composer', candidate_count:candidates.length, title:document.title, url:location.href};
+          const el=c.el;
+          try{el.scrollIntoView({block:'center'});}catch(e){}
+          try{el.focus(); el.click();}catch(e){}
+          try{
+            if(el.tagName==='TEXTAREA'||el.tagName==='INPUT') el.value='';
+            else el.textContent='';
+            el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));
+          }catch(e){}
+          const r=el.getBoundingClientRect();
+          return {ok:true, tag:el.tagName, role:el.getAttribute('role')||'', placeholder:el.getAttribute('placeholder')||'', score:c.score, rect:{x:r.x,y:r.y,w:r.width,h:r.height,b:r.bottom}, url:location.href, title:document.title};
+        })();
+        """
+
+        def _after_focus(result):
+            result_payload = result if isinstance(result, dict) else {"ok": False, "reason": "no_focus_result"}
+            if not result_payload.get("ok"):
+                reason = str(result_payload.get("reason") or "")
+                attempt = int(row.get("_composer_wait_attempt", 0) or 0)
+                if reason == "no_composer" and attempt < 5:
+                    retry = dict(row)
+                    retry["_composer_wait_attempt"] = attempt + 1
+                    _append_result(
+                        ok=False,
+                        status="waiting_for_composer",
+                        focus_result=result_payload,
+                        retry_attempt=attempt + 1,
+                    )
+                    final_written["done"] = True
+                    QTimer.singleShot(2500, lambda r=retry: self._perform_grok_self_type_command(r))
+                    return
+                _append_final(ok=False, status="focus_failed", focus_result=result_payload)
+                return
+            method = "js_native_fill_enter_submit"
+            try:
+                self._view.setFocus(Qt.FocusReason.OtherFocusReason)
+            except Exception as exc:
+                _append_final(
+                    ok=False,
+                    status="actuation_exception",
+                    focus_result=result_payload,
+                    method=method,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                return
+
+            fill_js = """
+            (function(){
+              const text = %TEXT%;
+              const press = %PRESS%;
+              function visible(el){
+                if(!el) return false;
+                const r=el.getBoundingClientRect();
+                const s=getComputedStyle(el);
+                return r.width>1 && r.height>1 && s.display!=='none' && s.visibility!=='hidden';
+              }
+              function nativeSet(el, value){
+                const tag=(el.tagName||'').toUpperCase();
+                if(tag==='TEXTAREA' || tag==='INPUT'){
+                  const proto = tag === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                  if(desc && desc.set) desc.set.call(el, value);
+                  else el.value = value;
+                } else {
+                  el.textContent = value;
+                }
+              }
+              function composerScore(el){
+                const tag=(el.tagName||'').toUpperCase();
+                const ph=(el.getAttribute('placeholder')||el.getAttribute('aria-placeholder')||'').toLowerCase();
+                const role=(el.getAttribute('role')||'').toLowerCase();
+                const label=(el.getAttribute('aria-label')||'').toLowerCase();
+                const r=el.getBoundingClientRect();
+                let s=0;
+                if(tag==='TEXTAREA') s+=120;
+                if(tag==='INPUT') s+=80;
+                if(role==='textbox') s+=70;
+                if(el.isContentEditable) s+=60;
+                if(/what|mind|ask|message|grok|anything|know|help/.test(ph+' '+label)) s+=80;
+                if(visible(el)) s+=100;
+                if(r.width>250) s+=35;
+                if(r.width<160) s-=260;
+                if(r.height>180) s-=90;
+                if(r.x<50) s-=120;
+                s+=Math.max(0,r.bottom)/20;
+                return s;
+              }
+              function bestComposer(){
+                const nodes=Array.from(document.querySelectorAll(
+                  'textarea,input:not([type=hidden]):not([type=button]):not([type=submit]),[role="textbox"],[contenteditable="true"],[contenteditable]:not([contenteditable="false"])'
+                )).filter(visible);
+                return nodes.map(el=>({el,score:composerScore(el)})).sort((a,b)=>b.score-a.score)[0]?.el || document.activeElement;
+              }
+	              function buttonScore(btn, rect){
+	                if(!visible(btn)) return -9999;
+	                const r=btn.getBoundingClientRect();
+	                if(r.width < 20 || r.height < 20) return -9999;
+	                const lab=((btn.getAttribute('aria-label')||'')+' '+(btn.title||'')+' '+(btn.innerText||'')+' '+(btn.getAttribute('data-testid')||'')+' '+(btn.getAttribute('type')||'')).toLowerCase();
+	                let s=0;
+	                const submitType=(btn.getAttribute('type')||'').toLowerCase()==='submit';
+	                const sendish=/send|submit|arrow|composer/.test(lab) || submitType;
+	                if(sendish) s+=90;
+	                if(submitType) s+=80;
+	                if(!sendish) s-=140;
+	                if(/instant|model|dictation|voice|microphone|private|auto|attach|file|upgrade|sidebar|think|harder|notified|enable|stop|stop answering/.test(lab)) s-=320;
+                if(r.left >= rect.left - 20) s+=20;
+                if(r.left >= rect.right - 160) s+=45;
+                const cy=r.top+r.height/2, composerCy=rect.top+rect.height/2;
+                s-=Math.abs(cy-composerCy)/4;
+                s-=Math.max(0, rect.left-r.left)/3;
+                return s;
+              }
+              const el = bestComposer();
+              if(!el) return {ok:false, reason:'no_composer'};
+              try{el.scrollIntoView({block:'center'});}catch(e){}
+              try{el.focus(); el.click();}catch(e){}
+              nativeSet(el, text);
+              try{el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text}));}catch(e){}
+              try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));}catch(e){el.dispatchEvent(new Event('input',{bubbles:true}));}
+              try{el.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}
+              const typed=(el.value||el.innerText||el.textContent||'').slice(0,240);
+              const rect=el.getBoundingClientRect();
+              const form=el.closest ? el.closest('form') : null;
+              const formRect=(form && visible(form)) ? form.getBoundingClientRect() : null;
+              let submit={attempted:false};
+              if(press){
+                try{
+                  el.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,key:'Enter',code:'Enter',which:13,keyCode:13}));
+                  el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,cancelable:true,key:'Enter',code:'Enter',which:13,keyCode:13}));
+                }catch(e){}
+                const buttons=Array.from(document.querySelectorAll('button,[role="button"],input[type="submit"]')).filter(visible);
+                const ranked=buttons.map(btn=>({btn,score:buttonScore(btn,rect),label:((btn.getAttribute('aria-label')||'')+' '+(btn.title||'')+' '+(btn.innerText||'')+' '+(btn.getAttribute('type')||'')).trim(),rect:btn.getBoundingClientRect()})).sort((a,b)=>b.score-a.score);
+                const best=ranked[0];
+                if(best && best.score > 20){
+                  try{best.btn.click(); submit={attempted:true, score:best.score, label:best.label, rect:{x:best.rect.x,y:best.rect.y,w:best.rect.width,h:best.rect.height}};}catch(e){submit={attempted:true,error:String(e),score:best.score,label:best.label};}
+                } else {
+                  submit={attempted:false, reason:'no_submit_candidate', candidates:ranked.slice(0,4).map(x=>({score:x.score,label:x.label}))};
+                }
+              }
+              return {ok:true, typed, press, submit, composer_rect:{x:rect.x,y:rect.y,w:rect.width,h:rect.height}, form_rect:formRect?{x:formRect.x,y:formRect.y,w:formRect.width,h:formRect.height}:null, url:location.href, title:document.title};
+            })();
+            """.replace("%TEXT%", json.dumps(text)).replace("%PRESS%", "true" if press_enter else "false")
+
+            def _verify(fill_result=None) -> None:
+                try:
+                    self.refresh_current_page_state(wait_ms=1800)
+                except Exception:
+                    pass
+                try:
+                    cur_url = self._view.url().toString() if self._view is not None else ""
+                except Exception:
+                    cur_url = ""
+                page_text = ""
+                try:
+                    if _CURRENT_PAGE_SNAPSHOT.exists():
+                        snap = json.loads(_CURRENT_PAGE_SNAPSHOT.read_text(encoding="utf-8"))
+                        page_text = str(snap.get("text") or "")
+                except Exception:
+                    page_text = ""
+                verify_js = """
+                (function(){
+                  const text = %TEXT%;
+                  function visible(el){
+                    if(!el) return false;
+                    const r=el.getBoundingClientRect();
+                    const s=getComputedStyle(el);
+                    return r.width>1 && r.height>1 && s.display!=='none' && s.visibility!=='hidden';
+                  }
+                  function valueOf(el){
+                    return String(el.value || el.innerText || el.textContent || '').replace(/\\s+/g,' ').trim();
+                  }
+                  function composerish(el){
+                    const r=el.getBoundingClientRect();
+                    const tag=(el.tagName||'').toUpperCase();
+                    const role=(el.getAttribute('role')||'').toLowerCase();
+                    if(!visible(el)) return false;
+                    if(r.width < 160 || r.height < 12 || r.height > 260 || r.x < 50) return false;
+                    return tag==='TEXTAREA' || tag==='INPUT' || role==='textbox' || el.isContentEditable;
+                  }
+                  const nodes=Array.from(document.querySelectorAll(
+                    'textarea,input:not([type=hidden]):not([type=button]):not([type=submit]),[role="textbox"],[contenteditable="true"],[contenteditable]:not([contenteditable="false"])'
+                  )).filter(composerish);
+                  const drafts=nodes.map(el=>{
+                    const r=el.getBoundingClientRect();
+                    return {
+                      text:valueOf(el).slice(0,600),
+                      tag:el.tagName,
+                      role:el.getAttribute('role')||'',
+                      placeholder:el.getAttribute('placeholder')||el.getAttribute('aria-placeholder')||'',
+                      rect:{x:r.x,y:r.y,w:r.width,h:r.height}
+                    };
+                  }).filter(x=>x.text);
+                  return {
+                    ok:true,
+                    page_text:String(document.body && document.body.innerText || '').slice(-8000),
+                    draft_texts:drafts.map(x=>x.text),
+                    draft_candidates:drafts.slice(0,8),
+                    draft_contains_payload:drafts.some(x=>x.text.includes(text)),
+                    url:location.href,
+                    title:document.title
+                  };
+                })();
+                """.replace("%TEXT%", json.dumps(text))
+
+                def _finish_verify(probe=None) -> None:
+                    nonlocal page_text
+                    draft_texts = []
+                    if isinstance(probe, dict):
+                        draft_texts = [str(x) for x in (probe.get("draft_texts") or [])]
+                        if not page_text:
+                            page_text = str(probe.get("page_text") or "")
+                    try:
+                        from System.swarm_alice_browser_grok_self_type import grok_send_verdict
+
+                        verdict = grok_send_verdict(
+                            text,
+                            url=cur_url,
+                            page_text=page_text,
+                            draft_texts=draft_texts,
+                            press_enter=press_enter,
+                        )
+                    except Exception as exc:
+                        verdict = {
+                            "ok": False,
+                            "status": "unverified",
+                            "reason": f"verdict_exception:{type(exc).__name__}:{exc}",
+                        }
+                    sent_ok = bool(verdict.get("ok")) and str(verdict.get("status") or "") == "sent"
+                    _append_final(
+                        ok=bool(verdict.get("ok")),
+                        status=str(verdict.get("status") or "unverified"),
+                        reason=str(verdict.get("reason") or ""),
+                        method=method,
+                        focus_result=result_payload,
+                        fill_result=fill_result if isinstance(fill_result, dict) else {},
+                        verify_probe=probe if isinstance(probe, dict) else {},
+                        verdict=verdict,
+                        current_url=cur_url,
+                        elapsed_s=round(time.time() - started, 3),
+                        page_text_tail=page_text[-600:],
+                    )
+
+                    def _maybe_late_verify_after_page_settles() -> None:
+                        if sent_ok or not press_enter:
+                            return
+                        reason = str(verdict.get("reason") or "")
+                        if reason not in {"payload_not_found_after_submit", "payload_on_page_without_composer_clear_proof"}:
+                            return
+                        if not isinstance(fill_result, dict) or not fill_result.get("ok"):
+                            return
+
+                        def _run_late_verify() -> None:
+                            try:
+                                self.refresh_current_page_state(wait_ms=1800)
+                            except Exception:
+                                pass
+                            try:
+                                late_url = self._view.url().toString() if self._view is not None else cur_url
+                            except Exception:
+                                late_url = cur_url
+                            late_page_text = ""
+                            try:
+                                if _CURRENT_PAGE_SNAPSHOT.exists():
+                                    snap = json.loads(_CURRENT_PAGE_SNAPSHOT.read_text(encoding="utf-8"))
+                                    late_page_text = str(snap.get("text") or "")
+                            except Exception:
+                                late_page_text = ""
+
+                            def _finish_late_verify(late_probe=None) -> None:
+                                nonlocal late_page_text
+                                late_drafts = []
+                                if isinstance(late_probe, dict):
+                                    late_drafts = [str(x) for x in (late_probe.get("draft_texts") or [])]
+                                    probe_text = str(late_probe.get("page_text") or "")
+                                    if len(probe_text) > len(late_page_text):
+                                        late_page_text = probe_text
+                                try:
+                                    from System.swarm_alice_browser_grok_self_type import grok_send_verdict
+
+                                    late_verdict = grok_send_verdict(
+                                        text,
+                                        url=late_url,
+                                        page_text=late_page_text,
+                                        draft_texts=late_drafts,
+                                        press_enter=press_enter,
+                                    )
+                                except Exception as exc:
+                                    late_verdict = {
+                                        "ok": False,
+                                        "status": "unverified",
+                                        "reason": f"late_verdict_exception:{type(exc).__name__}:{exc}",
+                                    }
+                                late_sent_ok = (
+                                    bool(late_verdict.get("ok"))
+                                    and str(late_verdict.get("status") or "") == "sent"
+                                )
+                                _append_result(
+                                    ok=bool(late_verdict.get("ok")),
+                                    status="sent" if late_sent_ok else str(late_verdict.get("status") or "unverified"),
+                                    reason=(
+                                        "late_page_settle_payload_on_chat_page"
+                                        if late_sent_ok
+                                        else str(late_verdict.get("reason") or "")
+                                    ),
+                                    method=method,
+                                    late_verification=True,
+                                    prior_verdict=verdict,
+                                    verify_probe=late_probe if isinstance(late_probe, dict) else {},
+                                    verdict=late_verdict,
+                                    current_url=late_url,
+                                    elapsed_s=round(time.time() - started, 3),
+                                    page_text_tail=late_page_text[-600:],
+                                )
+                                if not late_sent_ok:
+                                    return
+                                try:
+                                    from System.swarm_web_ai_chat_bridge import (
+                                        ai_chat_site_from_url,
+                                        append_web_ai_bridge_row,
+                                        build_read_response_js,
+                                    )
+
+                                    site = ai_chat_site_from_url(late_url)
+                                    if site and site != "grok.com":
+                                        source_name = str(row.get("source") or "")
+                                        if action_name != "alice_browser_grok_self_type":
+                                            append_web_ai_bridge_row(
+                                                {
+                                                    "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                                                    "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                                                    "ts": time.time(),
+                                                    "site": site,
+                                                    "query": text,
+                                                    "url": late_url,
+                                                    "phase": "typed_submitted",
+                                                    "limb": action_name,
+                                                    "browser_receipt_id": receipt_id,
+                                                    "late_verification": True,
+                                                    "type_result": fill_result if isinstance(fill_result, dict) else {},
+                                                },
+                                                state_dir=_STATE,
+                                            )
+                                        else:
+                                            append_web_ai_bridge_row(
+                                                {
+                                                    "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                                                    "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                                                    "ts": time.time(),
+                                                    "site": site,
+                                                    "query": text,
+                                                    "url": late_url,
+                                                    "phase": "answer_poll_started",
+                                                    "limb": action_name,
+                                                    "browser_receipt_id": receipt_id,
+                                                    "source": source_name,
+                                                    "late_verification": True,
+                                                },
+                                                state_dir=_STATE,
+                                            )
+                                        if source_name == "web_ai_chat_bridge":
+                                            try:
+                                                from System.swarm_alice_talk_mirror_line import stage_talk_mirror_line_command
+
+                                                stage_talk_mirror_line_command(
+                                                    text,
+                                                    turn=0,
+                                                    owner_text="web-AI bridge: mirror Alice opening browser send to Global Chat",
+                                                    from_browser_receipt=receipt_id,
+                                                    source="web_ai_chat_bridge",
+                                                    speaker="alice",
+                                                    site="ChatGPT" if site == "chatgpt.com" else site,
+                                                    browser_url=late_url,
+                                                    state_dir=_STATE,
+                                                )
+                                            except Exception:
+                                                pass
+                                        self._web_ai_poll_state = {
+                                            "site": site,
+                                            "query": text,
+                                            "read_js": build_read_response_js(site, query=text),
+                                            "started_ts": time.time(),
+                                            "deadline_ts": time.time() + 180.0,
+                                            "stable_text": "",
+                                            "stable_hits": 0,
+                                            "attempts": 0,
+                                            "browser_receipt_id": receipt_id,
+                                            "typed_receipt_id": receipt_id,
+                                        }
+                                        self._schedule_web_ai_answer_poll(delay_ms=2500)
+                                except Exception:
+                                    pass
+                                if action_name == "alice_browser_grok_self_type":
+                                    try:
+                                        from System.swarm_alice_grok_mirror_autopilot import maybe_mirror_alice_browser_send
+
+                                        maybe_mirror_alice_browser_send(
+                                            text=text,
+                                            browser_receipt_id=receipt_id,
+                                            source=str(row.get("source") or ""),
+                                            state_dir=_STATE,
+                                        )
+                                    except Exception:
+                                        pass
+                                elif action_name == "alice_browser_grok_paste_clipboard":
+                                    try:
+                                        from System.swarm_alice_grok_mirror_autopilot import note_alice_browser_send
+
+                                        note_alice_browser_send(
+                                            text=text,
+                                            browser_receipt_id=receipt_id,
+                                            source=str(row.get("source") or ""),
+                                            state_dir=_STATE,
+                                        )
+                                    except Exception:
+                                        pass
+
+                            try:
+                                self._view.page().runJavaScript(verify_js, _finish_late_verify)
+                            except Exception:
+                                _finish_late_verify({"ok": False, "draft_texts": []})
+
+                        QTimer.singleShot(6500, _run_late_verify)
+
+                    _maybe_late_verify_after_page_settles()
+                    if sent_ok:
+                        try:
+                            from System.swarm_web_ai_chat_bridge import (
+                                ai_chat_site_from_url,
+                                append_web_ai_bridge_row,
+                                build_read_response_js,
+                            )
+
+                            site = ai_chat_site_from_url(cur_url)
+                            if site and site != "grok.com":
+                                source_name = str(row.get("source") or "")
+                                if action_name != "alice_browser_grok_self_type":
+                                    append_web_ai_bridge_row(
+                                        {
+                                            "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                                            "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                                            "ts": time.time(),
+                                            "site": site,
+                                            "query": text,
+                                            "url": cur_url,
+                                            "phase": "typed_submitted",
+                                            "limb": action_name,
+                                            "browser_receipt_id": receipt_id,
+                                            "type_result": fill_result if isinstance(fill_result, dict) else {},
+                                        },
+                                        state_dir=_STATE,
+                                    )
+                                else:
+                                    append_web_ai_bridge_row(
+                                        {
+                                            "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                                            "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                                            "ts": time.time(),
+                                            "site": site,
+                                            "query": text,
+                                            "url": cur_url,
+                                            "phase": "answer_poll_started",
+                                            "limb": action_name,
+                                            "browser_receipt_id": receipt_id,
+                                            "source": source_name,
+                                        },
+                                        state_dir=_STATE,
+                                    )
+                                if source_name == "web_ai_chat_bridge":
+                                    try:
+                                        from System.swarm_alice_talk_mirror_line import stage_talk_mirror_line_command
+
+                                        stage_talk_mirror_line_command(
+                                            text,
+                                            turn=0,
+                                            owner_text="web-AI bridge: mirror Alice opening browser send to Global Chat",
+                                            from_browser_receipt=receipt_id,
+                                            source="web_ai_chat_bridge",
+                                            speaker="alice",
+                                            site="ChatGPT" if site == "chatgpt.com" else site,
+                                            browser_url=cur_url,
+                                            state_dir=_STATE,
+                                        )
+                                    except Exception:
+                                        pass
+                                self._web_ai_poll_state = {
+                                    "site": site,
+                                    "query": text,
+                                    "read_js": build_read_response_js(site, query=text),
+                                    "started_ts": time.time(),
+                                    "deadline_ts": time.time() + 180.0,
+                                    "stable_text": "",
+                                    "stable_hits": 0,
+                                    "attempts": 0,
+                                    "browser_receipt_id": receipt_id,
+                                    "typed_receipt_id": receipt_id,
+                                }
+                                self._schedule_web_ai_answer_poll(delay_ms=2500)
+                        except Exception:
+                            pass
+                    if sent_ok and action_name == "alice_browser_grok_self_type":
+                        try:
+                            from System.swarm_alice_grok_mirror_autopilot import maybe_mirror_alice_browser_send
+
+                            maybe_mirror_alice_browser_send(
+                                text=text,
+                                browser_receipt_id=receipt_id,
+                                source=str(row.get("source") or ""),
+                                state_dir=_STATE,
+                            )
+                        except Exception:
+                            pass
+                    elif sent_ok and action_name == "alice_browser_grok_paste_clipboard":
+                        try:
+                            from System.swarm_alice_grok_mirror_autopilot import note_alice_browser_send
+
+                            note_alice_browser_send(
+                                text=text,
+                                browser_receipt_id=receipt_id,
+                                source=str(row.get("source") or ""),
+                                state_dir=_STATE,
+                            )
+                        except Exception:
+                            pass
+
+                try:
+                    self._view.page().runJavaScript(verify_js, _finish_verify)
+                except Exception as exc:
+                    _finish_verify(
+                        {
+                            "ok": False,
+                            "reason": f"verify_js_failed:{type(exc).__name__}:{exc}",
+                            "draft_texts": [],
+                        }
+                    )
+
+            delayed_submit_js = """
+            (function(){
+              const text = %TEXT%;
+              function visible(el){
+                if(!el) return false;
+                const r=el.getBoundingClientRect();
+                const s=getComputedStyle(el);
+                return r.width>1 && r.height>1 && s.display!=='none' && s.visibility!=='hidden';
+              }
+	              function badButton(btn){
+	                const r=btn.getBoundingClientRect();
+	                if(r.width < 20 || r.height < 20) return true;
+	                const lab=((btn.getAttribute('aria-label')||'')+' '+(btn.title||'')+' '+(btn.innerText||'')+' '+(btn.getAttribute('data-testid')||'')+' '+(btn.getAttribute('type')||'')).toLowerCase();
+	                return /instant|model|dictation|voice|microphone|private|auto|history|attach|file|upgrade|sidebar|stop|stop answering|stop-button/.test(lab);
+	              }
+              function composerScore(el){
+                const tag=(el.tagName||'').toUpperCase();
+                const ph=(el.getAttribute('placeholder')||el.getAttribute('aria-placeholder')||'').toLowerCase();
+                const role=(el.getAttribute('role')||'').toLowerCase();
+                const label=(el.getAttribute('aria-label')||'').toLowerCase();
+                const r=el.getBoundingClientRect();
+                let s=0;
+                if(tag==='TEXTAREA') s+=120;
+                if(tag==='INPUT') s+=80;
+                if(role==='textbox') s+=70;
+                if(el.isContentEditable) s+=60;
+                if(/what|mind|ask|message|grok|anything|know|help/.test(ph+' '+label)) s+=80;
+                if((el.value||el.innerText||el.textContent||'').includes(text)) s+=90;
+                if(visible(el)) s+=100;
+                if(r.width>250) s+=35;
+                if(r.width<160) s-=260;
+                if(r.height>180) s-=90;
+                if(r.x<50) s-=120;
+                s+=Math.max(0,r.bottom)/20;
+                return s;
+              }
+              const nodes=Array.from(document.querySelectorAll(
+                'textarea,input:not([type=hidden]):not([type=button]):not([type=submit]),[role="textbox"],[contenteditable="true"],[contenteditable]:not([contenteditable="false"])'
+              )).filter(visible);
+              const ranked=nodes.map(el=>({el,score:composerScore(el)})).sort((a,b)=>b.score-a.score);
+              const el=ranked[0]?.el || document.activeElement;
+              if(!el) return {attempted:false, reason:'no_composer_for_delayed_submit'};
+              const rect=el.getBoundingClientRect();
+              const form=el.closest ? el.closest('form') : null;
+              const scanRects=[];
+              scanRects.push(rect);
+              if(form && visible(form)) scanRects.push(form.getBoundingClientRect());
+              for(const sr of scanRects){
+                const ys=[sr.top+sr.height/2, sr.top+Math.max(8, sr.height*0.35), sr.top+Math.min(sr.height-8, sr.height*0.65)];
+                const xs=[sr.right-16, sr.right-28, sr.right-44, sr.right-64, sr.right-88];
+                for(const y of ys){
+                  for(const x of xs){
+                    let n=document.elementFromPoint(x,y);
+                    let depth=0;
+                    while(n && depth<6){
+                      const role=(n.getAttribute && (n.getAttribute('role')||'').toLowerCase()) || '';
+                      const tag=(n.tagName||'').toUpperCase();
+                      if(tag==='BUTTON' || role==='button' || tag==='INPUT'){
+                        if(visible(n) && !badButton(n)){
+                          const nr=n.getBoundingClientRect();
+                          try{n.click();}catch(e){}
+                          return {
+                            attempted:true,
+                            method:'element_from_point_right_edge',
+                            label:((n.getAttribute('aria-label')||'')+' '+(n.title||'')+' '+(n.innerText||'')+' '+(n.getAttribute('data-testid')||'')+' '+(n.getAttribute('type')||'')).trim(),
+                            rect:{x:nr.x,y:nr.y,w:nr.width,h:nr.height},
+                            point:{x,y},
+                            composer_rect:{x:rect.x,y:rect.y,w:rect.width,h:rect.height},
+                            form_rect:form?{x:form.getBoundingClientRect().x,y:form.getBoundingClientRect().y,w:form.getBoundingClientRect().width,h:form.getBoundingClientRect().height}:null
+                          };
+                        }
+                        break;
+                      }
+                      n=n.parentElement;
+                      depth++;
+                    }
+                  }
+                }
+              }
+              if(form){
+                try{
+                  if(form.requestSubmit){
+                    form.requestSubmit();
+                    return {attempted:true, method:'form_request_submit'};
+                  }
+                }catch(e){}
+                try{
+                  const ev=new Event('submit',{bubbles:true,cancelable:true});
+                  form.dispatchEvent(ev);
+                  return {attempted:true, method:'form_submit_event'};
+                }catch(e){}
+              }
+              return {
+                attempted:false,
+                reason:'no_right_edge_button_or_form',
+                composer_rect:{x:rect.x,y:rect.y,w:rect.width,h:rect.height},
+                form_rect:form?{x:form.getBoundingClientRect().x,y:form.getBoundingClientRect().y,w:form.getBoundingClientRect().width,h:form.getBoundingClientRect().height}:null
+              };
+            })();
+            """.replace("%TEXT%", json.dumps(text))
+
+            def _after_fill(fill_result):
+                typed_preview = ""
+                if isinstance(fill_result, dict):
+                    typed_preview = str(fill_result.get("typed") or "").strip()
+                if not typed_preview:
+                    attempt = int(row.get("_fill_retry_attempt", 0) or 0)
+                    if attempt < 4:
+                        retry = dict(row)
+                        retry["_fill_retry_attempt"] = attempt + 1
+                        final_written["done"] = True
+                        _append_result(
+                            ok=False,
+                            status="retry_empty_composer_fill",
+                            fill_result=fill_result if isinstance(fill_result, dict) else {},
+                            retry_attempt=attempt + 1,
+                        )
+                        QTimer.singleShot(3000, lambda r=retry: self._perform_grok_self_type_command(r))
+                        return
+                initial_submit = {}
+                if isinstance(fill_result, dict) and isinstance(fill_result.get("submit"), dict):
+                    initial_submit = fill_result.get("submit") or {}
+                initial_submit_attempted = bool(initial_submit.get("attempted"))
+                if press_enter and QTest is not None and not initial_submit_attempted:
+                    try:
+                        self._view.setFocus(Qt.FocusReason.OtherFocusReason)
+                        QTest.qWait(160)
+                        QTest.keyClick(self._view, Qt.Key.Key_Return)
+                        if isinstance(fill_result, dict):
+                            rect = result_payload.get("rect") or fill_result.get("composer_rect") or {}
+                            form_rect = fill_result.get("form_rect") or {}
+                            fill_rect = fill_result.get("composer_rect") or {}
+                            try:
+                                if float(form_rect.get("w") or 0) > float(rect.get("w") or 0):
+                                    rect = form_rect
+                                elif float(fill_rect.get("w") or 0) > float(rect.get("w") or 0):
+                                    rect = fill_rect
+                            except Exception:
+                                pass
+                            w = float(rect.get("w") or 0)
+                            h = float(rect.get("h") or 0)
+                            x = float(rect.get("x") or 0)
+                            y = float(rect.get("y") or 0)
+                            if w >= 160 and h >= 24:
+                                QTest.qWait(220)
+                                QTest.mouseClick(
+                                    self._view,
+                                    Qt.MouseButton.LeftButton,
+                                    Qt.KeyboardModifier.NoModifier,
+                                    QPoint(int(x + w - 24), int(y + h / 2)),
+                                )
+                    except Exception:
+                        pass
+                def _finish_with_submit(delayed_submit=None):
+                    if isinstance(fill_result, dict) and isinstance(delayed_submit, dict):
+                        fill_result["delayed_submit"] = delayed_submit
+                    QTimer.singleShot(6000, lambda fr=fill_result: _verify(fr))
+
+                if press_enter:
+                    if initial_submit_attempted:
+                        if isinstance(fill_result, dict):
+                            fill_result["delayed_submit"] = {
+                                "attempted": False,
+                                "reason": "initial_submit_already_attempted",
+                                "initial_submit": initial_submit,
+                            }
+                        _finish_with_submit()
+                        return
+
+                    def _run_delayed_submit():
+                        try:
+                            self._view.page().runJavaScript(delayed_submit_js, _finish_with_submit)
+                        except Exception as exc:
+                            if isinstance(fill_result, dict):
+                                fill_result["delayed_submit"] = {
+                                    "attempted": False,
+                                    "reason": "delayed_submit_js_failed",
+                                    "error": f"{type(exc).__name__}: {exc}",
+                                }
+                            _finish_with_submit()
+
+                    QTimer.singleShot(650, _run_delayed_submit)
+                else:
+                    _finish_with_submit()
+
+            try:
+                self._view.page().runJavaScript(fill_js, _after_fill)
+            except Exception as exc:
+                _append_final(
+                    ok=False,
+                    status="fill_js_failed",
+                    focus_result=result_payload,
+                    method=method,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
+        try:
+            self._view.page().runJavaScript(focus_js, _after_focus)
+        except Exception as exc:
+            _append_final(ok=False, status="run_js_failed", error=f"{type(exc).__name__}: {exc}")
+
+    def _read_system_clipboard_text(self) -> str:
+        try:
+            clip = QApplication.clipboard()
+            if clip is not None:
+                return str(clip.text() or "").strip()
+        except Exception:
+            pass
+        try:
+            import subprocess
+
+            out = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=2)
+            if out.returncode == 0:
+                return str(out.stdout or "").strip()
+        except Exception:
+            pass
+        return ""
+
+    def _try_consume_grok_copy_command(self) -> None:
+        """Consume staged command: Alice clicks Grok COPY on latest reply."""
+        cmd_file = getattr(self, "_grok_copy_file", None)
+        if cmd_file is None or not cmd_file.exists():
+            return
+        try:
+            row = json.loads(cmd_file.read_text(encoding="utf-8"))
+            cmd_file.unlink(missing_ok=True)
+        except Exception as exc:
+            try:
+                from System.swarm_alice_browser_grok_copy import append_grok_copy_result
+
+                append_grok_copy_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_copy_last_reply",
+                        "status": "bad_command_file",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "alice_browser_widget",
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+            return
+        QTimer.singleShot(350, lambda r=row: self._perform_grok_copy_command(r))
+
+    def _perform_grok_copy_command(self, row: dict) -> None:
+        """Click Grok's COPY button on the latest assistant message, read clipboard."""
+        receipt_id = str(row.get("receipt_id") or f"alice-browser-grok-copy-{uuid.uuid4().hex[:12]}")
+        started = time.time()
+
+        def _append_result(**payload) -> None:
+            try:
+                from System.swarm_alice_browser_grok_copy import append_grok_copy_result
+
+                payload.setdefault("receipt_id", receipt_id)
+                payload.setdefault("action", "alice_browser_grok_copy_last_reply")
+                payload.setdefault("source", "alice_browser_widget")
+                try:
+                    payload.setdefault("url", self._view.url().toString() if self._view is not None else "")
+                except Exception:
+                    pass
+                append_grok_copy_result(payload, state_dir=_STATE)
+            except Exception:
+                pass
+
+        if self._view is None:
+            _append_result(ok=False, status="no_web_view")
+            return
+
+        copy_rank_offset = int(row.get("copy_rank_offset") or 0)
+        last_alice_send_sha256 = ""
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import STATE_FILE as _GROK_STATE_FILE
+            from System.swarm_alice_grok_mirror_autopilot import state_dir_path as _grok_sd
+
+            state_path = _grok_sd(_STATE) / _GROK_STATE_FILE
+            if state_path.exists():
+                grok_state = json.loads(state_path.read_text(encoding="utf-8"))
+                last_alice_send_sha256 = str(grok_state.get("last_alice_browser_send_sha256") or "")
+        except Exception:
+            last_alice_send_sha256 = ""
+
+        def _clipboard_quality(clip_text: str) -> dict:
+            try:
+                from System.swarm_alice_browser_grok_copy import clipboard_looks_like_grok_reply
+
+                return clipboard_looks_like_grok_reply(
+                    clip_text,
+                    last_alice_send_sha256=last_alice_send_sha256,
+                )
+            except Exception:
+                return {
+                    "ok": bool(clip_text) and len(clip_text) >= 80,
+                    "reason": "fallback_quality_check",
+                }
+
+        dom_extract_js = """
+        (function(){
+          const body=String(document.body && document.body.innerText || '').replace(/\\r\\n/g,'\\n');
+          const parts=body.split(/Thought for \\d+s/i);
+          if(parts.length<2) return {ok:false, reason:'no_thought_block'};
+          let chunk=parts[parts.length-1].trim();
+          const footers=['Explore ','Get notified when Grok finishes answering','Enable','\\nFast\\n','Upgrade to SuperGrok','Upgrade to'];
+          for(const f of footers){
+            const idx=chunk.indexOf(f);
+            if(idx>60) chunk=chunk.slice(0,idx).trim();
+          }
+          if(chunk.length<80) return {ok:false, reason:'chunk_too_short', preview:chunk.slice(0,120)};
+	          try{navigator.clipboard.writeText(chunk);}catch(e){}
+	          return {ok:true, method:'dom_extract', chars:chunk.length, text:chunk, preview:chunk.slice(0,160)};
+        })();
+        """
+        copy_js = """
+        (function(){
+          const rankOffset=%RANK_OFFSET%;
+          function visible(el){
+            if(!el) return false;
+            const r=el.getBoundingClientRect();
+            const s=getComputedStyle(el);
+            return r.width>1 && r.height>1 && s.display!=='none' && s.visibility!=='hidden';
+          }
+          function labelOf(btn){
+            return ((btn.getAttribute('aria-label')||'')+' '+(btn.title||'')+' '+(btn.innerText||'')+' '+(btn.getAttribute('data-testid')||'')).toLowerCase();
+          }
+          function contextOf(btn){
+            let n=btn, parts=[];
+            for(let i=0;i<10 && n;i++,n=n.parentElement){
+              const t=String(n.innerText||n.textContent||'').replace(/\\s+/g,' ').trim();
+              if(t) parts.push(t.slice(0,600));
+            }
+            return parts.join(' | ');
+          }
+          function modelish(t){
+            return /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.:-]+/.test(String(t||'').trim());
+          }
+          function hasThoughtAncestor(btn){
+            let n=btn;
+            for(let i=0;i<12 && n;i++,n=n.parentElement){
+              const t=String(n.innerText||n.textContent||'').slice(0,900);
+              if(/thought for \\d+s/i.test(t) && t.length>120) return true;
+            }
+            return false;
+          }
+          function footerish(ctx){
+            return /\\b(fast|upgrade|supergrok|enable|explore|get notified)\\b/i.test(ctx);
+          }
+          function transcriptish(ctx){
+            return /\\b(?:ioan|george|alice|grok)\\s+\\((?:typed|spoken|world stt|browser|grok mirror)\\b/i.test(ctx) || /📋\\s*copy/i.test(ctx);
+          }
+          function userPromptish(ctx){
+            const clean=String(ctx||'').trim();
+            return /^(?:what llm is running|let['’]?s dive into that routing detail|which approach performs better|do you primarily rely on top)/i.test(clean) ||
+              /how does your mixture[-\\s]of[-\\s]experts architecture/i.test(clean) ||
+              /bonus points if you can quantify|latency profile gain compared to dense/i.test(clean) ||
+              /\\$\\\\text\\{/i.test(clean) ||
+              /answer grok in alice browser|alice answ?e?er above/i.test(clean);
+          }
+          function assistantish(btn, ctx){
+            return hasThoughtAncestor(btn) || /thought for \\d+s/i.test(ctx);
+          }
+          const candidates=Array.from(document.querySelectorAll('button,[role="button"]')).filter(btn=>{
+            const lab=labelOf(btn);
+            return visible(btn) && /\\bcopy\\b/.test(lab) && !/copy link|copy url/.test(lab);
+          }).map(btn=>{
+            const r=btn.getBoundingClientRect();
+            const ctx=contextOf(btn);
+            let score=0;
+            score += r.top / 8;
+            if(ctx.length>180) score += 120;
+            if(ctx.length<60) score -= 140;
+            if(modelish(ctx)) score -= 420;
+            if(footerish(ctx)) score -= 320;
+            if(transcriptish(ctx)) score -= 900;
+            if(userPromptish(ctx)) score -= 900;
+            if(assistantish(btn, ctx)) score += 360;
+            else score -= 220;
+            if(/power to the swarm|i see you/i.test(ctx)) score += 40;
+            return {btn, score, ctx:ctx.slice(0,220), rect:r, label:labelOf(btn).trim()};
+          }).sort((a,b)=>b.score-a.score || b.rect.top-a.rect.top);
+          if(!candidates.length) return {ok:false, reason:'no_copy_button', candidate_count:0};
+          const idx=Math.max(0, Math.min(candidates.length-1, rankOffset));
+          const picked=candidates[idx];
+          const btn=picked.btn;
+          const r=btn.getBoundingClientRect();
+          try{btn.scrollIntoView({block:'center'});}catch(e){}
+          try{btn.click();}catch(e){}
+          return {
+            ok:true,
+            method:'copy_button',
+            label:picked.label,
+            rank_offset:rankOffset,
+            score:picked.score,
+            context_preview:picked.ctx,
+            rect:{x:r.x,y:r.y,w:r.width,h:r.height},
+            copy_button_count:candidates.length,
+            url:location.href,
+            title:document.title
+          };
+        })();
+        """.replace("%RANK_OFFSET%", json.dumps(copy_rank_offset))
+
+        def _finalize_copy(
+            *,
+            click_result: dict,
+            clip_text: str,
+            capture_method: str,
+            dom_extract: dict | None = None,
+        ) -> None:
+            import hashlib
+
+            clip_sha = hashlib.sha256(" ".join(clip_text.split()).encode("utf-8")).hexdigest() if clip_text else ""
+            quality = _clipboard_quality(clip_text)
+            ok = bool(quality.get("ok"))
+            if ok:
+                _append_result(
+                    ok=True,
+                    status="copied",
+                    capture_method=capture_method,
+                    click_result=click_result,
+                    dom_extract=dom_extract or {},
+                    clipboard_quality=quality,
+                    clipboard_sha256=clip_sha,
+                    clipboard_text=clip_text[:8000],
+                    clipboard_preview=clip_text[:240],
+                    clipboard_chars=len(clip_text),
+                    elapsed_s=round(time.time() - started, 3),
+                    from_grok_receipt=str(row.get("from_grok_receipt") or ""),
+                    loop=int(row.get("loop") or 0),
+                )
+                return
+            next_offset = copy_rank_offset + 1
+            if next_offset <= 6:
+                retry = dict(row)
+                retry["copy_rank_offset"] = next_offset
+                _append_result(
+                    ok=False,
+                    status="wrong_clipboard_target",
+                    capture_method=capture_method,
+                    click_result=click_result,
+                    dom_extract=dom_extract or {},
+                    clipboard_quality=quality,
+                    clipboard_sha256=clip_sha,
+                    clipboard_preview=clip_text[:240],
+                    clipboard_chars=len(clip_text),
+                    retry_rank_offset=next_offset,
+                    elapsed_s=round(time.time() - started, 3),
+                    from_grok_receipt=str(row.get("from_grok_receipt") or ""),
+                    loop=int(row.get("loop") or 0),
+                )
+                QTimer.singleShot(500, lambda r=retry: self._perform_grok_copy_command(r))
+                return
+            _append_result(
+                ok=False,
+                status="wrong_clipboard_target",
+                capture_method=capture_method,
+                click_result=click_result,
+                dom_extract=dom_extract or {},
+                clipboard_quality=quality,
+                clipboard_sha256=clip_sha,
+                clipboard_preview=clip_text[:240],
+                clipboard_chars=len(clip_text),
+                elapsed_s=round(time.time() - started, 3),
+                from_grok_receipt=str(row.get("from_grok_receipt") or ""),
+                loop=int(row.get("loop") or 0),
+            )
+
+        def _after_click(result) -> None:
+            result_payload = result if isinstance(result, dict) else {"ok": False, "reason": "no_click_result"}
+            if not result_payload.get("ok"):
+                def _dom_only(dom_result) -> None:
+                    dom_payload = dom_result if isinstance(dom_result, dict) else {}
+                    clip_text = self._read_system_clipboard_text()
+                    if not _clipboard_quality(clip_text).get("ok"):
+                        clip_text = str(dom_payload.get("text") or "")
+                    if not clip_text and _CURRENT_PAGE_SNAPSHOT.exists():
+                        try:
+                            from System.swarm_alice_browser_grok_copy import (
+                                extract_latest_grok_reply_from_page_text,
+                            )
+
+                            page = json.loads(_CURRENT_PAGE_SNAPSHOT.read_text(encoding="utf-8", errors="replace"))
+                            clip_text = extract_latest_grok_reply_from_page_text(str(page.get("text") or ""))
+                        except Exception:
+                            clip_text = ""
+                    _finalize_copy(
+                        click_result=result_payload,
+                        clip_text=clip_text,
+                        capture_method="copy_button_fallback_dom_extract",
+                        dom_extract=dom_payload,
+                    )
+
+                try:
+                    self._view.page().runJavaScript(dom_extract_js, _dom_only)
+                except Exception:
+                    _append_result(
+                        ok=False,
+                        status="copy_click_failed",
+                        click_result=result_payload,
+                        elapsed_s=round(time.time() - started, 3),
+                    )
+                return
+
+            def _read_clipboard() -> None:
+                clip_text = self._read_system_clipboard_text()
+                quality = _clipboard_quality(clip_text)
+                if quality.get("ok"):
+                    _finalize_copy(
+                        click_result=result_payload,
+                        clip_text=clip_text,
+                        capture_method="copy_button",
+                    )
+                    return
+
+                def _after_dom_extract(dom_result) -> None:
+                    dom_payload = dom_result if isinstance(dom_result, dict) else {}
+                    dom_clip = self._read_system_clipboard_text()
+                    if not _clipboard_quality(dom_clip).get("ok"):
+                        dom_clip = str(dom_payload.get("text") or "")
+                    if not dom_clip and _CURRENT_PAGE_SNAPSHOT.exists():
+                        try:
+                            from System.swarm_alice_browser_grok_copy import (
+                                extract_latest_grok_reply_from_page_text,
+                            )
+
+                            page = json.loads(_CURRENT_PAGE_SNAPSHOT.read_text(encoding="utf-8", errors="replace"))
+                            dom_clip = extract_latest_grok_reply_from_page_text(str(page.get("text") or ""))
+                        except Exception:
+                            dom_clip = ""
+                    _finalize_copy(
+                        click_result=result_payload,
+                        clip_text=dom_clip,
+                        capture_method="copy_button_fallback_dom_extract",
+                        dom_extract=dom_payload,
+                    )
+
+                try:
+                    self._view.page().runJavaScript(dom_extract_js, _after_dom_extract)
+                except Exception:
+                    _finalize_copy(
+                        click_result=result_payload,
+                        clip_text=clip_text,
+                        capture_method="copy_button",
+                    )
+
+            QTimer.singleShot(900, _read_clipboard)
+
+        try:
+            self._view.page().runJavaScript(copy_js, _after_click)
+        except Exception as exc:
+            _append_result(ok=False, status="copy_js_failed", error=f"{type(exc).__name__}: {exc}")
+
+    def _try_consume_grok_paste_clipboard_command(self) -> None:
+        """Consume staged command: paste system clipboard into Grok composer."""
+        cmd_file = getattr(self, "_grok_paste_clipboard_file", None)
+        if cmd_file is None or not cmd_file.exists():
+            return
+        try:
+            row = json.loads(cmd_file.read_text(encoding="utf-8"))
+            cmd_file.unlink(missing_ok=True)
+        except Exception as exc:
+            try:
+                from System.swarm_alice_browser_grok_paste_clipboard import append_grok_paste_result
+
+                append_grok_paste_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_paste_clipboard",
+                        "status": "bad_command_file",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "alice_browser_widget",
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+            return
+        clip_text = str(row.get("clipboard_text") or "").strip()
+        bad_stage_status = str(row.get("status") or "") == "bad_action_receipt_no_paste_attempted"
+        if not clip_text and not bad_stage_status:
+            clip_text = self._read_system_clipboard_text()
+        try:
+            from System.swarm_alice_browser_grok_paste_clipboard import (
+                append_grok_paste_result,
+                looks_like_bad_no_receipt_action_payload,
+            )
+
+            if bad_stage_status or looks_like_bad_no_receipt_action_payload(clip_text):
+                append_grok_paste_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_paste_clipboard",
+                        "status": "bad_action_receipt_no_paste_attempted",
+                        "receipt_id": str(row.get("receipt_id") or ""),
+                        "source": "alice_browser_widget",
+                        "bad_action_reason": "stale_no_receipt_fallback_payload",
+                    },
+                    state_dir=_STATE,
+                )
+                return
+        except Exception:
+            pass
+        if not clip_text:
+            try:
+                from System.swarm_alice_browser_grok_paste_clipboard import append_grok_paste_result
+
+                append_grok_paste_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_paste_clipboard",
+                        "status": "clipboard_empty",
+                        "receipt_id": str(row.get("receipt_id") or ""),
+                        "source": "alice_browser_widget",
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+            return
+        expected_sha = str(row.get("clipboard_sha256") or row.get("expected_clipboard_sha256") or "").strip()
+        actual_sha = ""
+        try:
+            import hashlib
+
+            actual_sha = hashlib.sha256(" ".join(clip_text.split()).encode("utf-8")).hexdigest()
+        except Exception:
+            actual_sha = ""
+        if expected_sha and actual_sha and actual_sha != expected_sha:
+            try:
+                from System.swarm_alice_browser_grok_paste_clipboard import append_grok_paste_result
+
+                append_grok_paste_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_paste_clipboard",
+                        "status": "payload_hash_mismatch",
+                        "receipt_id": str(row.get("receipt_id") or ""),
+                        "source": "alice_browser_widget",
+                        "expected_clipboard_sha256": expected_sha,
+                        "actual_clipboard_sha256": actual_sha,
+                        "payload_frozen_at_stage": bool(row.get("payload_frozen_at_stage")),
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+            return
+        merged = dict(row)
+        merged["text"] = clip_text[:8000]
+        merged["press_enter"] = bool(row.get("press_enter", True))
+        merged["action"] = "alice_browser_grok_paste_clipboard"
+        QTimer.singleShot(350, lambda r=merged: self._perform_grok_self_type_command(r))
+
     def _check_drop_file(self) -> None:
         """Consume .sifta_state/alice_browser_open_url.txt if present."""
         self._apply_alice_only_handoff_flag()
+        # Also opportunistically execute pending xcom uid protocol if present
+        try:
+            self._try_consume_pending_xcom_uid()
+        except Exception:
+            pass
+        try:
+            self._try_consume_grok_self_type_command()
+        except Exception as exc:
+            try:
+                from System.swarm_alice_browser_grok_self_type import append_grok_self_type_result
+
+                append_grok_self_type_result(
+                    {
+                        "ok": False,
+                        "action": "alice_browser_grok_self_type",
+                        "status": "consumer_exception",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "alice_browser_widget",
+                    },
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+        try:
+            self._try_consume_grok_copy_command()
+        except Exception:
+            pass
+        try:
+            self._try_consume_grok_paste_clipboard_command()
+        except Exception:
+            pass
+        try:
+            self._fire_pending_web_ai_timer()
+        except Exception:
+            pass
+        try:
+            pending_drop = getattr(self, "_pending_web_ai_file", None)
+            watcher = getattr(self, "_drop_watcher", None)
+            if watcher is not None and pending_drop is not None and pending_drop.exists():
+                path = str(pending_drop)
+                if path not in watcher.files():
+                    watcher.addPath(path)
+        except Exception:
+            pass
         drop = self._drop_file
         if not drop.exists():
             return
@@ -6710,7 +8737,7 @@ class AliceBrowserWidget(QMainWindow):
             # and any pending viewport capture reflect the target (e.g. x.com photo/1 frame) not stale home.
             # This helps receipts + describe_current_photo see the opened content promptly.
             try:
-                self._browser_awareness_tick()
+                QTimer.singleShot(1200, self._browser_awareness_tick)
             except Exception:
                 pass
             # r1356: fallback if loadFinished races the drop nav for web-AI chat.

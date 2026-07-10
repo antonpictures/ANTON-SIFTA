@@ -12,11 +12,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from System import swarm_browser_page_answer as bpa
 
 
-def _snap(tmp_path, url, title, ts, text_chars=0):
+def _snap(tmp_path, url, title, ts, text_chars=0, extra=None):
     sd = tmp_path / ".sifta_state"; sd.mkdir(parents=True, exist_ok=True)
-    (sd / "alice_browser_current_page.json").write_text(
-        json.dumps({"url": url, "title": title, "domain": "www.tiktok.com",
-                    "ts": ts, "text_chars": text_chars}), encoding="utf-8")
+    row = {"url": url, "title": title, "domain": "www.tiktok.com", "ts": ts, "text_chars": text_chars}
+    if extra is not None:
+        row["extra"] = extra
+    (sd / "alice_browser_current_page.json").write_text(json.dumps(row), encoding="utf-8")
 
 
 def test_names_page_even_with_no_text(tmp_path):
@@ -64,6 +65,30 @@ def test_old_current_page_receipt_is_still_current_when_it_is_the_live_url(tmp_p
     block = bpa.page_answer_block(now=now, state_dir=tmp_path)
     assert "I am on TikTok" in block
     assert "stale" not in block
+
+
+def test_persisted_blank_render_is_named_not_described_as_working_page(tmp_path):
+    now = time.time()
+    _snap(
+        tmp_path,
+        "https://www.ebay.com/sch/i.html?_nkw=maisie+williams",
+        "eBay",
+        now - 2,
+        text_chars=0,
+        extra={
+            "blank_render": {
+                "action": "blank_render_persisted",
+                "reason": "empty_dom",
+            }
+        },
+    )
+
+    p = bpa.current_browser_page(now=now, state_dir=tmp_path)
+    assert p["blank_render_persisted"] is True
+
+    block = bpa.page_answer_block(now=now, state_dir=tmp_path)
+    assert "did not render readably" in block
+    assert "should not describe a working interface" in block
 
 
 if __name__ == "__main__":

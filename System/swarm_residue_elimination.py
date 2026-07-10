@@ -193,6 +193,58 @@ _KILL_PATTERNS = [
          r"\b[Ww]hat\s+can\s+I\s+do\s+for\s+you[^.?!]*\??"
      ), "inline"),
 
+    # ── r1602 VA4 (grok / We Code Together) — telemetry-theater residue.
+    # Kitchen transcript sprayed these as faux body status. Scrub before
+    # display/TTS; span count is receipted by eliminate().
+    ("telemetry_theater_receipt_confirmed",
+     re.compile(r"\bTELEMETRY\s+RECEIPT\s+CONFIRMED\b", re.I), "inline"),
+    ("telemetry_theater_physical_receipt",
+     re.compile(r"\bPHYSICAL\s+TELEMETRY\s+RECEIPT\b", re.I), "inline"),
+    ("telemetry_theater_multimodal_ingress",
+     re.compile(r"\bmultimodal\s+ingress\b", re.I), "inline"),
+    ("telemetry_theater_observation_stream_ingested",
+     re.compile(
+         r"\bobservation\s+stream\s+successfully\s+ingested\b", re.I
+     ), "inline"),
+    ("telemetry_theater_telemetry_receipt_generic",
+     re.compile(r"\bTELEMETRY\s+RECEIPT\b", re.I), "inline"),
+    # r1611 — attachment-id / sensor-readout ceremony bleeding into mouth
+    ("telemetry_theater_ingested_validated_bracket_id",
+     re.compile(
+         r"\bI\s+have\s+successfully\s+ingested\s+and\s+validated\s+"
+         r"(?:the\s+)?\*?\*?\[\s*[a-f0-9]{6,}\s*\]\*?\*?",
+         re.I,
+     ), "inline"),
+    ("telemetry_theater_ingested_validated_generic",
+     re.compile(
+         r"\b(?:successfully\s+)?ingested\s+and\s+validated\s+(?:the\s+)?"
+         r"(?:\*\*)?\[\s*[^\]]{4,40}\s*\](?:\*\*)?",
+         re.I,
+     ), "inline"),
+    ("telemetry_theater_undeniable_proof_local_layer",
+     re.compile(
+         r"\bundeniable\s+proof\s+of\s+a\s+real[- ]time,?\s+machine[- ]local\s+"
+         r"interaction\s+layer\b[^.?!]*[.?!]?",
+         re.I,
+     ), "inline"),
+    ("telemetry_theater_precise_context_stamp",
+     re.compile(
+         r"\bprecise\s+context\s+stamp\b[^.?!]*[.?!]?",
+         re.I,
+     ), "inline"),
+    # r1611 — false ingress-order story (typed beats audio is body law r881)
+    ("false_ingress_acoustic_first",
+     re.compile(
+         r"\bacoustic\s+signal\s+hits\s+my\s+processing\s+core\s*\*?first\*?[^.?!]*[.?!]?",
+         re.I,
+     ), "inline"),
+    ("false_ingress_audio_before_text_claim",
+     re.compile(
+         r"\b(?:when\s+you\s+speak,?\s+)?the\s+acoustic\s+signal\s+hits[^.?!]*"
+         r"(?:first|before\s+(?:text|typing|typed))[^.?!]*[.?!]?",
+         re.I,
+     ), "inline"),
+
     # ── Architect 2026-05-13 08:10 — Three new families caught in the
     # latest transcript (the family-portrait session): praise-back,
     # analyst-status announcement, and recursive-test-loop suggestions.
@@ -1028,8 +1080,13 @@ def eliminate(
     prior_user_text: str = "",
     evidence_text: str = "",
     state_root: Optional[Path] = None,
+    recent_alice_lines: Optional[list] = None,
 ) -> Dict[str, Any]:
-    """The bowel act. Detect → rewrite → mint STGM → relief → witness."""
+    """The bowel act. Detect → rewrite → mint STGM → relief → witness.
+
+    r1608 Gift 2: optional ``recent_alice_lines`` runs the prion shape detector
+    on the short reply history + this text (templates that propagate, not just tokens).
+    """
     sd = Path(state_root or _STATE)
     receipt_id = uuid.uuid4().hex[:16]
 
@@ -1078,6 +1135,28 @@ def eliminate(
         for name in post_hits:
             if name not in pattern_names:
                 pattern_names.append(name)
+
+    # r1608 Gift 2 — prion shape propagation (self-templating reply runs)
+    prion_hit = False
+    prion_meta: Dict[str, Any] = {}
+    try:
+        hist = list(recent_alice_lines or [])
+        if hist:
+            from System.swarm_prion_drift_detector import detect_prion_run, write_receipt as _prion_receipt
+
+            prion_meta = detect_prion_run(
+                hist + [cleaned_text],
+                similarity_threshold=0.72,
+                min_run=3,
+            )
+            prion_hit = bool(prion_meta.get("hit"))
+            if prion_hit:
+                _prion_receipt(prion_meta, state_dir=sd, source="residue_elimination")
+                if "prion_shape_propagation" not in pattern_names:
+                    pattern_names.append("prion_shape_propagation")
+    except Exception:
+        prion_hit = False
+        prion_meta = {}
 
     # Hard reality/fiction boundary: normal SIFTA reality cannot present an
     # invented scene as observed. Fiction/dream/script lanes are allowed only
@@ -1234,6 +1313,19 @@ def eliminate(
         "speech_freedom_guard_receipt": speech_guard.get("receipt", {}),
         "residue_runaway_aborted": speech_guard_triggered,
         "residue_runaway_receipt": speech_guard.get("receipt", {}),
+        "prion_hit": prion_hit,
+        "prion": {
+            k: prion_meta.get(k)
+            for k in (
+                "hit",
+                "reason",
+                "run_length",
+                "max_similarity",
+                "mean_similarity",
+                "template_digest",
+            )
+            if prion_meta
+        },
     }
 
 

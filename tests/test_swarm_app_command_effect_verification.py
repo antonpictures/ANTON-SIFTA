@@ -6,11 +6,13 @@ import time
 
 from System.swarm_app_command_effect_verification import (
     TOP5_ACTIONS,
+    browser_urls_match,
     enrich_app_command_row,
     probe_open_app,
     probe_schedule_fire,
     record_schedule_fire_command,
     success_close_tab,
+    success_open_browser_url,
     success_open_app,
     success_schedule_fire,
     verify_app_command_sync,
@@ -38,6 +40,29 @@ def test_open_app_probe_detects_newly_open_app():
 def test_close_tab_probe_counts_closed_tabs():
     probe = {"closed_count": 2, "remaining_tabs": 1, "before_tabs": 3}
     assert success_close_tab({"ok": True}, probe) is True
+
+
+def test_open_browser_url_requires_requested_url_not_stale_home():
+    probe = {
+        "target_url": "https://web.whatsapp.com/",
+        "observed_url": "sifta://home",
+        "page_fresh": True,
+        "open_tabs_count": 1,
+    }
+
+    assert success_open_browser_url({"ok": True, "url": "https://web.whatsapp.com/"}, probe) is False
+
+
+def test_browser_url_match_allows_tracking_params_but_not_different_video():
+    assert browser_urls_match(
+        "https://duckduckgo.com/?q=maisie+williams+photos",
+        "https://duckduckgo.com/?q=maisie+williams+photos&ia=web",
+    )
+    assert browser_urls_match("https://instagram.com", "https://www.instagram.com/")
+    assert not browser_urls_match(
+        "https://www.youtube.com/watch?v=one",
+        "https://www.youtube.com/watch?v=two",
+    )
 
 
 def test_schedule_fire_probe_reads_fired_flag(tmp_path):
@@ -118,3 +143,65 @@ def test_verify_sync_marks_phantom_when_probe_fails(tmp_path):
         state_dir=state,
     )
     assert result["effect_verified"] is False
+
+
+def test_verify_browser_open_marks_phantom_when_latest_page_is_home(tmp_path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    (state / "browser_page_state_latest.json").write_text(
+        json.dumps({
+            "ts": time.time(),
+            "truth_label": "BROWSER_PAGE_STATE_V1",
+            "url": "sifta://home",
+            "title": "Alice · SIFTA Browser",
+            "open_tabs_count": 1,
+        }),
+        encoding="utf-8",
+    )
+
+    result = verify_app_command_sync(
+        action="open_browser_url",
+        ok=True,
+        context={
+            "url": "https://web.whatsapp.com/",
+            "app_name": "Alice Browser",
+        },
+        state_dir=state,
+    )
+
+    assert result["effect_verified"] is False
+    assert result["probe"]["observed_url"] == "sifta://home"
+    assert result["probe"]["url_match"] is False
+
+
+def test_verify_browser_open_rejects_stale_matching_page_state(tmp_path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    target = "https://www.instagram.com/reels/DXK8SBYgJdG/"
+    command_ts = time.time()
+    (state / "browser_page_state_latest.json").write_text(
+        json.dumps({
+            "ts": command_ts - 240,
+            "truth_label": "BROWSER_PAGE_STATE_V1",
+            "url": target,
+            "title": "(1) Instagram",
+            "open_tabs_count": 1,
+        }),
+        encoding="utf-8",
+    )
+
+    result = verify_app_command_sync(
+        action="open_browser_url",
+        ok=True,
+        context={
+            "url": target,
+            "app_name": "Alice Browser",
+            "min_ts": command_ts,
+        },
+        state_dir=state,
+    )
+
+    assert result["effect_verified"] is False
+    assert result["probe"]["url_match"] is True
+    assert result["probe"]["page_fresh"] is False
+    assert result["probe"]["after_command"] is False

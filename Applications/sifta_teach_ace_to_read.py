@@ -2589,10 +2589,20 @@ class TeachAceToReadWidget(QWidget):
 
     def _lesson_handle_verdict(self, row: Dict) -> None:
         """Branch on verdict: praise+advance, nudge+retry, or move on."""
-        if getattr(self, "_conversation_mode", True):
-            # No verdicts in conversation mode — no expected_say to
+        _lesson_state = str(getattr(self, "_lesson_state", "") or "").upper()
+        _lesson_active = _lesson_state in {
+            "LISTEN",
+            "PRAISE",
+            "CUE",
+            "NUDGE",
+            "RETRY",
+            "MOVE_ON",
+            "WAIT",
+        }
+        if getattr(self, "_conversation_mode", True) and not _lesson_active:
+            # No verdicts in pure conversation mode — no expected_say to
             # score against. Drop any stale rows from a previous drill
-            # session silently.
+            # session silently. Active lesson states still score.
             return
         label = (row.get("verdict_label") or "").upper()
         display_label = _visible_lesson_verdict_label(label)

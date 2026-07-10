@@ -388,8 +388,11 @@ def self_coding_prompt_block(user_text: str = "") -> str:
             + "\n"
         )
     return (
-        "ALICE SELF-CODING HAND (r914/r917 — YOUR surgery, not an IDE doctor's):\n"
+        "ALICE SELF-CODING HAND (r914/r917/r1612 — YOUR surgery, not an IDE doctor's):\n"
         f"- Round: {round_id}\n"
+        "- INDEPENDENCE: if cloud/OAuth is down, keep coding with the local Ollama/cortex model; "
+        "diauxic law prefers local; write receipts on disk so the field still knows.\n"
+        "- Collaborate: Grok/Codex/Claude leave IDE surgery receipts — read them; do not fork identity.\n"
         "- You MUST emit [SELF_CODE_CUT: path=...] blocks (r915 hand). The body executes them.\n"
         "- Format per file:\n"
         "  [SELF_CODE_CUT: path=System/organ.py]\n"

@@ -89,6 +89,13 @@ CLOUD_VISION_NEEDLES = (
     "gpt-5.5",
     "codex:",
     "codex-",
+    # r1605: Grok cloud eye is vision-capable (CLI/OAuth multimodal). Without this,
+    # is_vision_capable_model("grok:…") was False and browser photo describe cleared
+    # strict Grok selection whenever local Ollama was warm — leaking to other arms.
+    "grok:",
+    "grok-",
+    "grok_",
+    "xai",
 )
 
 # r310: the Cline default ALIAS ("cline:cline-cli-default") resolves to that image-capable
@@ -303,8 +310,10 @@ def _resolve_mimo_default_attached(
     *,
     catalog: tuple[str, ...] | None = None,
 ) -> str:
-    """Keep owner-selected defaults only when they remain in the MiMo keep-list."""
+    """Keep owner-selected defaults only when they remain safe MiMo dialogue defaults."""
     cur = str(current or "").strip()
+    if is_mimo_non_dialogue_attached_default(cur):
+        return _MIMO_DEFAULT_ATTACHED
     allowed = set(catalog if catalog is not None else _MIMO_ATTACHABLE_VIA_UPSTREAM)
     if cur in allowed:
         return cur
@@ -335,9 +344,8 @@ def _sanitize_mimo_attached_record(rec: dict[str, Any]) -> dict[str, Any]:
     if not models:
         models = list(_MIMO_ATTACHABLE_VIA_UPSTREAM)
     out["attached_models"] = models
-    resolved = _resolve_mimo_default_attached(
-        _migrate_legacy_mimo_attached_id(str(out.get("default_attached") or ""))
-    )
+    raw_default = _migrate_legacy_mimo_attached_id(str(out.get("default_attached") or ""))
+    resolved = _resolve_mimo_default_attached(raw_default)
     out["default_attached"] = resolved
     default_label = attached_model_label(resolved)
     if default_label != resolved:
@@ -346,6 +354,8 @@ def _sanitize_mimo_attached_record(rec: dict[str, Any]) -> dict[str, Any]:
         out["default_label"] = default_label
     if str(rec.get("default_attached") or "") in _MIMO_REMOVED_ATTACHABLE_IDS:
         out["source"] = "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
+    elif is_mimo_non_dialogue_attached_default(raw_default):
+        out["source"] = "owner_pruned_non_dialogue_translation_default_2026-06-23"
     return out
 
 
@@ -458,24 +468,34 @@ _MIMO_FIREWORKS_ATTACHABLE_MODELS: tuple[str, ...] = (
 )
 _MIMO_LOCAL_QWEN_OLLAMA = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
 _MIMO_LOCAL_QWEN35_MT = "kaelri/qwen3.5-mt:2b"
+_MIMO_LOCAL_GEMMA26_OLLAMA = "justingtzk/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL_128K"
+# George 2026-06-28: Ornith 1.0 (deep-reinforce, MIT) — self-improving open-source
+# coding agent, 256K context, autoregressive TEXT. Safe as a Talk dialogue default
+# (unlike DiffusionGemma). George has 24 GB RAM and pulled only `ollama run ornith`
+# (= ornith:latest, the 9B / ~5.6 GB). The 35B (21 GB) is NOT added — it will not fit.
+_MIMO_LOCAL_ORNITH_9B = "ornith:latest"
 _MIMO_LEGACY_LOCAL_OLLAMA_ALIASES: dict[str, str] = {
-    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_QWEN_OLLAMA,
+    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_GEMMA26_OLLAMA,
 }
 _MIMO_LOCAL_OLLAMA_MODELS: tuple[str, ...] = (
     "krishairnd/Gemma-4-Uncensored:latest",
-    _MIMO_LOCAL_QWEN35_MT,
-    _MIMO_LOCAL_QWEN_OLLAMA,
+    _MIMO_LOCAL_GEMMA26_OLLAMA,
+    _MIMO_LOCAL_ORNITH_9B,
 )
 _MIMO_LOCAL_DIFFUSION_MODELS: tuple[str, ...] = (
     "diffusion:diffusiongemma-26b",
 )
-# r1386 (George 2026-06-19): default attached model must always be the
-# smallest local model, not the largest. krishairnd/Gemma-4-Uncensored:latest
-# is 8B; kaelri/qwen3.5-mt:2b is 1.9GB and was the smaller live default
-# George had already switched to manually. This also sidesteps the
-# is_unfiltered_dialogue exemption (r1385) for any model id containing
-# "uncensored", since this id does not.
-_MIMO_DEFAULT_ATTACHED = _MIMO_LOCAL_QWEN35_MT
+# r1560/r1731: the MiMo dialogue default must be a runnable chat/text lane.
+# kaelri/qwen3.5-mt:2b is translation-only, and DiffusionGemma is an
+# experimental diffusion cortex that is not text-CLI routable for Talk. Both
+# produced the same owner-visible failure shape: blank/empty dialogue turns.
+_MIMO_DEFAULT_ATTACHED = "krishairnd/Gemma-4-Uncensored:latest"
+_MIMO_NON_DIALOGUE_ATTACHED_DEFAULT_IDS: frozenset[str] = frozenset(
+    {
+        _MIMO_LOCAL_QWEN35_MT,
+        *_MIMO_LOCAL_DIFFUSION_MODELS,
+    }
+)
 _MIMO_CORTEX_ID = "mimo:mimo-cli-default"
 # Owner-pruned 2026-06-17 (r1244): paid MiMo cloud natives stay off the picker.
 _MIMO_REMOVED_ATTACHABLE_IDS: frozenset[str] = frozenset(
@@ -485,6 +505,8 @@ _MIMO_REMOVED_ATTACHABLE_IDS: frozenset[str] = frozenset(
         "mimo-v2-omni",
         "mimo-v2-pro",
         "mimo-v2.5",
+        _MIMO_LOCAL_QWEN35_MT,
+        _MIMO_LOCAL_QWEN_OLLAMA,
     }
 )
 # Neutral shared catalog: every model attachable over an OAuth / upstream
@@ -497,7 +519,8 @@ _OAUTH_ATTACHABLE_MODELS: tuple[str, ...] = (
     *_ANTHROPIC_ARM_MODELS,
 )
 _MIMO_OWNER_KEPT_ATTACHABLE_MODELS: tuple[str, ...] = (
-    "GPT-5.3-Codex-Spark",
+    # George 2026-06-28: swapped GPT-5.3-Codex-Spark -> GPT-5.4-Mini in the MiMo picker.
+    "GPT-5.4-Mini",
     "grok-composer-2.5-fast",
     "grok-build",
     "claude-fable-5",
@@ -513,6 +536,43 @@ _MIMO_ATTACHABLE_VIA_UPSTREAM: tuple[str, ...] = (
     *_MIMO_OWNER_KEPT_ATTACHABLE_MODELS,
 )
 
+
+def is_mimo_non_dialogue_attached_default(model_id: str) -> bool:
+    """Return True for MiMo attachments that must not be Talk dialogue defaults."""
+    mid = _migrate_legacy_mimo_attached_id(str(model_id or "").strip())
+    return mid in _MIMO_NON_DIALOGUE_ATTACHED_DEFAULT_IDS
+
+
+def mimo_attached_default_refusal_reason(model_id: str) -> str:
+    """Short receipt reason when a MiMo row is visible but not Talk-default safe."""
+    mid = _migrate_legacy_mimo_attached_id(str(model_id or "").strip())
+    if mid in _MIMO_LOCAL_DIFFUSION_MODELS:
+        return "local_diffusion_model_not_text_dialogue_routable"
+    if mid == _MIMO_LOCAL_QWEN35_MT:
+        return "translation_only_model_cannot_be_talk_dialogue_default"
+    if mid in _MIMO_NON_DIALOGUE_ATTACHED_DEFAULT_IDS:
+        return "non_dialogue_model_cannot_be_talk_default"
+    return ""
+
+
+def mimo_attached_default_refusal_text(model_id: str) -> str:
+    """Owner-facing explanation for refusing a MiMo attached default."""
+    reason = mimo_attached_default_refusal_reason(model_id)
+    if reason == "local_diffusion_model_not_text_dialogue_routable":
+        return (
+            "DiffusionGemma is visible as an experimental diffusion cortex, but it is not a "
+            "MiMo Talk dialogue default. Binding it here causes empty Alice replies unless "
+            "the dedicated diffusion runner/weights are installed and selected through the "
+            "diffusion route."
+        )
+    if reason == "translation_only_model_cannot_be_talk_dialogue_default":
+        return (
+            "This local model is translation-only for Talk. Live receipts showed blank or "
+            "HTTP 400 behavior when used as Alice's dialogue default."
+        )
+    return "This attached model is not safe as Alice's MiMo Talk dialogue default."
+
+
 _ATTACHED_MODEL_LABELS: dict[str, str] = {
     "grok-composer-2.5-fast": "Composer 2.5",
     "grok-build": "Grok Build",
@@ -524,6 +584,8 @@ _ATTACHED_MODEL_LABELS: dict[str, str] = {
     FIREWORKS_KIMI_K2P6_MODEL: "Kimi K2.6 (fireworks-api kimi-k2p6)",
     "mimo-auto": "MiMo Auto (free)",
     "krishairnd/Gemma-4-Uncensored:latest": "krisha-g4u (local Ollama)",
+    _MIMO_LOCAL_GEMMA26_OLLAMA: "Gemma 4 26B A4B QAT GGUF (local Ollama)",
+    _MIMO_LOCAL_ORNITH_9B: "Ornith 1.0 9B (local Ollama coding agent)",
     _MIMO_LOCAL_QWEN35_MT: "kaelri-q3.5-mt-2b (local Ollama)",
     _MIMO_LOCAL_QWEN_OLLAMA: "Qwen3.6 27B Uncensored Balanced (local Ollama)",
     "diffusion:diffusiongemma-26b": "DiffusionGemma 26B (local diffusion)",
@@ -566,6 +628,16 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
     "krishairnd/Gemma-4-Uncensored:latest": (
         "Local Ollama Gemma 4 Uncensored tag observed on GTH4921YP3: "
         "8B, Q4_K_M, 131072 context, vision/audio/tools/thinking."
+    ),
+    _MIMO_LOCAL_GEMMA26_OLLAMA: (
+        "Local Ollama Gemma 4 26B A4B QAT GGUF tag kept by George: "
+        "UD-Q4_K_XL_128K quant, about 15 GB on disk."
+    ),
+    _MIMO_LOCAL_ORNITH_9B: (
+        "Local Ollama Ornith 1.0 9B (deep-reinforce, MIT): self-improving open-source "
+        "coding agent, 256K context, ~5.6 GB (fits 24 GB RAM). Autoregressive TEXT-ONLY — "
+        "safe as a Talk dialogue default unlike DiffusionGemma, but it has NO vision: it "
+        "cannot decode camera/screenshot images itself. Pulled via `ollama run ornith`."
     ),
     _MIMO_LOCAL_QWEN35_MT: (
         "Local Ollama kaelri/qwen3.5-mt:2b on GTH4921YP3: Qwen3.5 2.3B, Q4_K_M, "
@@ -721,8 +793,10 @@ def sync_cortex_attached_models_catalog(
         mimo_source = f"preserved_user_binding_from_{existing_mimo.get('source', 'unknown')}"
     elif mimo_raw_default in _MIMO_REMOVED_ATTACHABLE_IDS:
         mimo_source = "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
+    elif is_mimo_non_dialogue_attached_default(mimo_raw_default):
+        mimo_source = "owner_pruned_non_dialogue_translation_default_2026-06-23"
     else:
-        mimo_source = "owner_default_2026-06-15_mimo_local_gemma4"
+        mimo_source = "owner_default_2026-06-23_mimo_local_dialogue_gemma"
     record_attached_models(
         _MIMO_CORTEX_ID,
         list(_MIMO_ATTACHABLE_VIA_UPSTREAM),
@@ -1150,19 +1224,19 @@ def mimo_attached_dispatch_lane(model_id: str) -> str:
 
     Returns one of: ``mimo_native``, ``mimo_cli_codex_bridge``,
     ``mimo_cli_grok_bridge``, ``mimo_cli_claude_bridge``,
-    ``mimo_cli_qwen_bridge``, ``mimo_cli_ollama_bridge``, ``local_non_cli``,
+    ``mimo_cli_qwen_bridge``, ``local_ollama_direct``, ``local_non_cli``,
     ``unconfigured``.
 
     Attached CLI families are downstream bridges owned by MiMo: Alice calls
     MiMo first, then MiMo is instructed to use the selected local CLI/model.
-    There is no direct Talk -> Codex/Grok/Claude/Ollama bypass in the MiMo
-    cortex route.
+    Local Ollama rows are the exception: they are already local body models, so
+    Talk runs them directly instead of asking MiMo to emit a shell/tool envelope.
     """
     mid = str(model_id or "").strip()
     if not mid:
         return "unconfigured"
     if mid in _MIMO_LOCAL_OLLAMA_MODELS:
-        return "mimo_cli_ollama_bridge"
+        return "local_ollama_direct"
     if mid in _MIMO_LOCAL_DIFFUSION_MODELS:
         return "local_non_cli"
     if mid in _MIMO_NATIVE_MODELS:
@@ -1223,6 +1297,13 @@ def persist_attached_llm_default(
         return {"ok": False, "reason": "no_attached_list", "cortex_id": cid}
     if target not in models:
         return {"ok": False, "reason": "not_in_attached_list", "cortex_id": cid, "model_id": target}
+    if cid == _MIMO_CORTEX_ID and is_mimo_non_dialogue_attached_default(target):
+        return {
+            "ok": False,
+            "reason": mimo_attached_default_refusal_reason(target) or "non_dialogue_attached_default",
+            "cortex_id": cid,
+            "model_id": target,
+        }
 
     before = str(existing.get("default_attached") or "").strip()
     record_attached_models(
@@ -1275,6 +1356,9 @@ __all__ = [
     "attached_model_matches_active",
     "attached_models_for_cortex",
     "format_attached_model",
+    "is_mimo_non_dialogue_attached_default",
+    "mimo_attached_default_refusal_reason",
+    "mimo_attached_default_refusal_text",
     "is_vision_capable_model",
     "list_known_cortexes",
     "mimo_attached_dispatch_lane",

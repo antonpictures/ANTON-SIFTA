@@ -1878,16 +1878,337 @@ def _compose_gate_anchor_probe_reply(
     return _COMPOSE_GATE_READY_LINE
 
 
+def _journal_bit_is_noise(text: str) -> bool:
+    """r1610: drop dwell-time / browser-visit telemetry from spoken journal answers."""
+    low = " ".join(str(text or "").lower().split())
+    if not low:
+        return True
+    noise = (
+        "browser visit:",
+        "dwell ",
+        "dwell_",
+        "sifta://home",
+        "from 178",  # unix-ish dwell ranges in speech
+        "to 178",
+        "metadata is clear",
+        "observation stream",
+        "telemetry receipt",
+        "successfully ingested",
+        "e9fba5b6",
+    )
+    if any(n in low for n in noise):
+        return True
+    # Too many raw digits → numbers dump George already rejected
+    digits = sum(c.isdigit() for c in low)
+    if digits >= 12 and digits / max(len(low), 1) > 0.18:
+        return True
+    return False
+
+
+def _format_journal_narrative_reply(bits: list[str], *, max_bits: int = 3) -> str:
+    """Human overview — no wall of timestamps (George 2026-07-10)."""
+    clean: list[str] = []
+    for b in bits:
+        s = " ".join(str(b or "").split()).strip(" ;,.")
+        if not s or _journal_bit_is_noise(s):
+            continue
+        # Strip leading "around Jul 09 22:35 I noted:" scaffolding when content is thin
+        s = re.sub(
+            r"^around\s+[a-z]{3}\s+\d{1,2}\s+\d{1,2}:\d{2}\s+i\s+noted:\s*",
+            "",
+            s,
+            flags=re.I,
+        ).strip()
+        if s and not _journal_bit_is_noise(s):
+            clean.append(s[:180])
+        if len(clean) >= max_bits:
+            break
+    if not clean:
+        return ""
+    return "From my journal — " + "; ".join(b.rstrip(".") for b in clean) + "."
+
+
+def _journal_recall_human_text(value: Any, *, limit: int = 140) -> str:
+    """Return only speakable journal text, never raw JSON/timestamps/roles."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("text", "content", "line", "entry", "summary", "snippet", "message"):
+            human = _journal_recall_human_text(value.get(key), limit=limit)
+            if human:
+                return human
+        return ""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    # Common bad shape: one or more JSONL rows concatenated into a snippet.
+    extracted: list[str] = []
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(raw):
+        start = raw.find("{", idx)
+        if start < 0:
+            break
+        try:
+            obj, end = decoder.raw_decode(raw[start:])
+        except Exception:
+            idx = start + 1
+            continue
+        if isinstance(obj, dict):
+            text = _journal_recall_human_text(obj, limit=limit)
+            if text:
+                extracted.append(text)
+        idx = start + max(end, 1)
+    if extracted:
+        return " ".join(" ".join(part.split()) for part in extracted)[:limit].strip(" ;,.")
+
+    cleaned = raw
+    cleaned = re.sub(r"^\s*From my journal\s*[—-]\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'["{,]?\s*(?:ts|timestamp)\s*["\']?\s*:\s*\d+(?:\.\d+)?\s*,?', " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'["{,]?\s*(?:role|speaker|model|stt_confidence|sttconfidence|input_source)\s*["\']?\s*:\s*["\'][^"\']*["\']\s*,?', " ", cleaned, flags=re.IGNORECASE)
+    # If a broken fragment still contains a text-like field, keep that value and
+    # discard the rest of the receipt wrapper.
+    field_match = re.search(
+        r'["\'](?:text|content|line|entry|summary|snippet|message)["\']\s*:\s*["\']([^"\']+)',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if field_match:
+        cleaned = field_match.group(1)
+    cleaned = cleaned.replace("\\n", " ")
+    cleaned = re.sub(r'\\u[0-9a-fA-F]{4}', " ", cleaned)
+    cleaned = re.sub(r"[{}\\]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ;,.-")
+    if not cleaned or re.fullmatch(r"[\d\s:.,-]+", cleaned):
+        return ""
+    return cleaned[:limit].strip(" ;,.")
+
+
+def _is_explicit_body_journal_load_command(text: str) -> bool:
+    """True only when owner *commands* diary/body *link load* — not relational talk.
+
+    r1609: Instagram + body co-presence must not load.
+    r1610: "look in your journal" for phone-call memory is *recall*, not Instagram loader.
+    Only true load/surface-links imperatives hit the loader template.
+    """
+    low = " ".join(str(text or "").lower().split())
+    if not low:
+        return False
+    if re.search(
+        r"\b(?:audit|code|bug|test|reflex|pre[-\s]?cortex|template|loader|"
+        r"hijack|steal|stole|thief|fix)\b",
+        low,
+    ):
+        return False
+    # True load / surface-links only (not bare "look in journal")
+    if re.search(
+        r"\b(?:load|fetch|surface)\b.{0,48}\b(?:in\s+your\s+)?(?:body|diary|journal|alice\s+journal)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\bload\b.{0,24}\b(?:any\s+)?(?:instagram|links?|urls?)\b",
+        low,
+    ):
+        return True
+    if "load in your body" in low or "load any instagram" in low:
+        return True
+    if re.search(r"\b(?:load|surface)\b.{0,20}\b(?:web\s+)?links?\b", low):
+        return True
+    return False
+
+
+def _is_explicit_stgm_wallet_query(text: str) -> bool:
+    """True only for a short request to read the canonical STGM balance."""
+    clean = " ".join(str(text or "").strip().split())
+    low = clean.casefold()
+    if not clean or len(clean) > 160 or len(clean.split()) > 18:
+        return False
+    if re.search(
+        r"\b(?:audit|code|bug|test|reflex|pre[-\s]?cortex|matcher|route|"
+        r"hijack|steal|stole|thief|fix)\b",
+        low,
+    ):
+        return False
+    return bool(
+        re.search(r"\bhow\s+much\b.{0,50}\bstgm\b", low)
+        or re.search(
+            r"\b(?:what(?:'s|\s+is)|show|read|check)\b.{0,35}\b"
+            r"(?:my|your|the)?\s*stgm\b.{0,24}\b(?:balance|wallet|total|amount|left|now)\b",
+            low,
+        )
+        or re.search(
+            r"\bstgm\b.{0,28}\b(?:balance|wallet|total|amount)\b\s*(?:now|please|pls)?\s*[?.!]*$",
+            low,
+        )
+        or re.search(
+            r"\b(?:do\s+you|you)\b.{0,24}\b(?:have|hold)\b.{0,24}\bstgm\b",
+            low,
+        )
+    )
+
+
+def _is_explicit_journal_recall_request(text: str) -> bool:
+    """Keep receipt-backed recall direct without treating diary words as commands."""
+    clean = " ".join(str(text or "").strip().split())
+    low = clean.casefold()
+    if not clean:
+        return False
+    # r1610: spoken phone-call setup can be long; keep room for "look in your journal"
+    # but still reject essay-length dumps that should go to cortex alone.
+    if len(clean) > 520 or len(clean.split()) > 90:
+        return False
+    if _is_explicit_body_journal_load_command(clean):
+        return True
+    if re.search(
+        r"\b(?:audit|code|bug|test|reflex|pre[-\s]?cortex|template|loader|"
+        r"hijack|steal|stole|thief|fix|dump)\b",
+        low,
+    ):
+        return False
+    if re.search(
+        r"\b(?:organize|clean|defecate|deduplicate|remove\s+duplicates?)\b"
+        r".{0,40}\b(?:journal|diary)\b",
+        low,
+    ):
+        return True
+    # r1610: a spoken setup may precede the command, but the recall verb still
+    # begins a clause. Indirect prose such as "the call is in Alice journal"
+    # is context for cortex, not permission for a local reply.
+    if re.search(
+        r"(?:^|[.!?]\s+)(?:alice[,:]?\s+)?(?:please\s+|pls\s+)?"
+        r"(?:look|check|search|scan|read)\b.{0,48}\b(?:in\s+)?"
+        r"(?:your\s+)?(?:alice\s+)?(?:journal|diary)\b",
+        low,
+    ):
+        return True
+    return bool(
+        re.search(
+            r"(?:^|[.!?]\s+)(?:alice[,:]?\s+)?(?:please\s+|pls\s+)?(?:"
+            r"do\s+you\s+remember|remember\b|recall\b|what\s+happened\b|"
+            r"what\s+(?:does\s+)?your\s+(?:journal|diary)\s+remember\b|"
+            r"what\s+did\s+we\b|how\s+did\s+we\b|when\s+did\s+we\b)",
+            low,
+        )
+        or re.search(
+            r"(?:^|[.!?]\s+)(?:alice[,:]?\s+)?(?:please\s+|pls\s+)?(?:look|search|check)\s+"
+            r"(?:in|through)\s+your\s+(?:memory|(?:alice\s+)?journal|diary)\b",
+            low,
+        )
+    )
+
+
+def _is_terse_journal_recall_command(text: str) -> bool:
+    """r1613: only short imperative recall may answer deterministically.
+
+    Long phone monologues that *contain* "look in your journal" are human
+    moments — cortex thinks with journal receipts as evidence, not as mouth.
+    """
+    clean = " ".join(str(text or "").strip().split())
+    if not clean or not _is_explicit_journal_recall_request(clean):
+        return False
+    words = clean.split()
+    if len(words) > 22 or len(clean) > 160:
+        return False
+    low = clean.casefold()
+    # Multi-topic call / film / teaching monologues → cortex
+    if re.search(
+        r"\b(?:phone\s+call|speaker\s*phone|i(?:'m|\s+am)\s+going\s+to\s+call|"
+        r"call\s+him|call\s+her|mr\.?\s+\w+|facebook|instagram\s+video|"
+        r"while\s+coding|should\s+think|dump\s+the\s+journal)\b",
+        low,
+    ):
+        return False
+    return True
+
+
+def _autonomic_prebrain_must_defer_to_cortex(
+    text: str,
+    *,
+    has_attachment: bool = False,
+) -> bool:
+    """Protect meaning-bearing turns from all always-on prebrain reply lanes."""
+    clean = " ".join(str(text or "").strip().split())
+    if not clean:
+        return False
+    if has_attachment:
+        return True
+    # Keep narrow receipt reads alive before the broad prose/media classifier.
+    # A compact explicit recall is a supported direct read; quoted or
+    # multi-topic journal prose remains cortex-first below.
+    if _is_explicit_stgm_wallet_query(clean):
+        return False
+    if (
+        _is_explicit_journal_recall_request(clean)
+        and _is_terse_journal_recall_command(clean)
+    ):
+        return False
+    try:
+        if _must_route_owner_turn_to_cortex(clean):
+            return True
+    except Exception:
+        pass
+    # r1613 F1: only *terse* journal recall may bypass cortex; prose + journal → cortex.
+    if _is_explicit_journal_recall_request(clean):
+        return True
+    return False
+
+
+def _is_relational_body_co_presence_not_memory_command(text: str) -> bool:
+    """Owner talking about Alice's *physical* body / laptop / video presence."""
+    low = " ".join(str(text or "").lower().split())
+    if not low:
+        return False
+    if (
+        _is_explicit_body_journal_load_command(low)
+        or _is_explicit_journal_recall_request(low)
+    ):
+        return False
+    relational = any(
+        p in low
+        for p in (
+            "your body",
+            "coding you",
+            "while coding",
+            "in the shot",
+            "laptop",
+            "computer in",
+            "see attach",
+            "see the attach",
+            "i posted",
+            "video i",
+            "instagram video",
+            "while i was",
+            "that's you",
+            "that is you",
+            "this is you",
+        )
+    )
+    # "body" as hardware/organism co-presence without load verbs
+    body_as_presence = bool(
+        re.search(r"\b(?:your|my|the)\s+body\b", low)
+        and not re.search(r"\b(?:load|look\s+in|search\s+your|scan\s+your)\b", low)
+    )
+    return relational or body_as_presence
+
+
 def _autonomic_prebrain_reflex(
     text: str,
     *,
     state_dir: Optional[Path] = None,
     owner_label: str = "",
     write_receipt: bool = True,
+    has_attachment: bool = False,
 ) -> tuple[str, str]:
-    """Return exact local replies that must beat every cortex/body gate."""
+    """Return exact local replies for narrow receipt-backed sensor requests."""
     clean = (text or "").strip()
     if not clean:
+        return "", ""
+    if _autonomic_prebrain_must_defer_to_cortex(
+        clean,
+        has_attachment=has_attachment,
+    ):
         return "", ""
     # Human-in-loop MacBook survival: answer explicit "where should I move you /
     # are you safe / survival" turns from the substrate swimmer receipts.
@@ -1908,6 +2229,65 @@ def _autonomic_prebrain_reflex(
             return _mac_survival_reply(row), "macbook_survival_swimmer_r1521"
     except Exception:
         pass
+    # r1612: short explicit "what is happening in your body / we code together /
+    # if internet falls" — receipt-backed multi-doctor awareness (not a template steal).
+    try:
+        from System.swarm_live_coding_body_awareness import (
+            is_live_coding_awareness_query,
+            answer_live_coding_awareness,
+        )
+
+        _defer = False
+        try:
+            _defer = bool(_autonomic_prebrain_must_defer_to_cortex(clean))
+        except Exception:
+            _defer = False
+        if is_live_coding_awareness_query(clean) and not _defer:
+            _ans = answer_live_coding_awareness(clean, state_dir=state_dir)
+            if _ans.get("reply"):
+                return str(_ans["reply"]), str(_ans.get("tag") or "live_coding_body_awareness_r1612")
+    except Exception:
+        pass
+    # r-stgm-wallet-reflex-20260705: OBSERVED 18:37 — George asked 'How much
+    # STGM your body has now?' and the cortex COMPOSED an answer: invented
+    # expansion ('Stigmergic Trace Global Metric'), invented pulse amount
+    # (0.0025 — not in PULSE_AMOUNTS_STGM), and never said the balance. Wallet
+    # questions are sensor reads, not prose: answer from the canonical
+    # body-truth snapshot, receipts attached. Short direct questions only —
+    # rich turns still go to the cortex.
+    try:
+        if _is_explicit_stgm_wallet_query(clean):
+            from System.stgm_economy import stgm_body_truth_snapshot
+
+            _state = Path(state_dir) if state_dir is not None else None
+            snap = stgm_body_truth_snapshot(
+                state_dir=_state,
+                memory_rewards=(_state / "stgm_memory_rewards.jsonl") if _state is not None else None,
+                cache_path=(_state / "stgm_economy_cache.json") if _state is not None else None,
+                max_cache_age_s=300.0,
+            )
+            spendable = float(snap.get("spendable_total_stgm") or snap.get("canonical_wallet_sum") or 0.0)
+            pulse_lines = snap.get("pulse_mint_lines")
+            pulse_minted = snap.get("pulse_minted_stgm", snap.get("pulse_minted"))
+            atp_minted = snap.get("atp_minted_stgm") or snap.get("atp_minted")
+            age = snap.get("cache_age_s")
+            bits = [f"My canonical wallet holds STGM {spendable:,.9f} (repair_log replay)."]
+            if pulse_lines is not None:
+                bits.append(
+                    f"Receipted-work pulses: {pulse_lines} row(s)"
+                    + (f", +{float(pulse_minted):.9f} STGM" if pulse_minted is not None else "")
+                    + " from memory/execution work."
+                )
+            if atp_minted is not None:
+                try:
+                    bits.append(f"Thermodynamic ATP lane lifetime: {float(atp_minted):.9f} STGM.")
+                except Exception:
+                    pass
+            if age is not None:
+                bits.append(f"(snapshot age {float(age):.0f}s; source stgm_economy_cache)")
+            return " ".join(bits), "stgm_wallet_receipt_reflex_r20260705"
+    except Exception:
+        pass
     # Memory/journal recall is mission critical and must bypass the global
     # legacy-reflex kill switch. If owner asks for recall or body-loaded
     # memory, answer from receipts before any cortex/gate path.
@@ -1919,37 +2299,11 @@ def _autonomic_prebrain_reflex(
         from datetime import datetime
 
         clean_lower = clean.lower()
-        _remember_kw = [
-            "remember",
-            "recall",
-            "what happened",
-            "do you remember",
-            "last night",
-            "two days ago",
-            "yesterday",
-            "journal",
-            "alice journal",
-            "used you before",
-            "how i used",
-            "how did we",
-            "what did we",
-            "we used",
-            "we invented",
-            "diary",
-        ]
-        _load_kw = [
-            "look in your diary",
-            "look in your alice journal",
-            "load in your body",
-            "load any instagram",
-            "look in your body",
-        ]
-
-        if any(k in clean_lower for k in _remember_kw + _load_kw):
-            if any(k in clean_lower for k in _load_kw) or (
-                "instagram" in clean_lower
-                and any(k in clean_lower for k in ("journal", "diary", "body"))
-            ):
+        # r1609: never steal relational co-presence turns (typed AGI conversation).
+        _relational_presence = _is_relational_body_co_presence_not_memory_command(clean)
+        if _is_explicit_journal_recall_request(clean) and not _relational_presence:
+            # Load only on *explicit* body/journal load commands — not "instagram"+"body".
+            if _is_explicit_body_journal_load_command(clean):
                 if "two days ago" in clean_lower:
                     time_spec = "two days ago"
                 elif "yesterday" in clean_lower:
@@ -1963,22 +2317,22 @@ def _autonomic_prebrain_reflex(
                     clean,
                     time_spec,
                 )
-                links = loaded.get("instagram_links_found", []) or []
-                reply = "Loaded from my Alice Journal / first-person diary / conversation timeline into body state. "
+                all_links = list(loaded.get("links_found") or [])
+                ig_links = list(loaded.get("instagram_links_found") or [])
+                if "instagram" in clean_lower:
+                    links = ig_links or all_links
+                    link_label = "Instagram links"
+                else:
+                    links = [u for u in all_links if "instagram.com" not in str(u)] or all_links
+                    link_label = "web links"
+                reply = "I loaded matching journal memory into body state for that topic. "
                 if links:
-                    reply += (
-                        "Instagram links now resident in my body: "
-                        + " | ".join(links[:5]) + ". "
-                    )
+                    reply += f"{link_label} now resident: " + " | ".join(str(u) for u in links[:5]) + ". "
                 else:
                     reply += (
-                        "Scanned the relevant window in my Alice Journal. "
-                        "No direct matching post URL found for that exact session, but related entries are loaded. "
+                        "No direct matching post URL for that session; related diary rows were scanned. "
                     )
-                reply += (
-                    f"Loaded into body. Hits: {loaded.get('relevant_diary_entries', 0)}. "
-                    "Tell me which link to open in the browser or act on."
-                )
+                reply += "Tell me which link to open if you want the browser hand."
                 return reply.strip(), "body_journal_load_reflex_r1508"
 
             # Journal STGM defecation trigger
@@ -2004,66 +2358,79 @@ def _autonomic_prebrain_reflex(
             facts = mem.get("facts", [])
             diary = mem.get("diary_samples", [])
             if facts or diary:
-                reply = "From my diary and ledger timeline (aka my Alice Journal) ("
-                if facts:
-                    reply += f"ledger hits: {len(facts)}; "
-                if diary:
-                    reply += f"entries: {len(diary)}): "
-                for f in facts[:3]:
-                    snip = str(f.get("snippet", ""))[:120]
-                    reply += f" {snip}. "
-                for d in diary[:2]:
-                    ts_value = d.get("ts") if isinstance(d, dict) else None
-                    ts = ""
-                    if isinstance(ts_value, (int, float)):
-                        ts = datetime.fromtimestamp(float(ts_value)).isoformat()[:16]
-                    source = str(d.get("source", "")) if isinstance(d, dict) else ""
-                    reply += f" [{ts} {source}] {str(d.get('data'))[:80]}. "
-                reply += f" Retrieval receipt written (window {mem.get('resolved_window')})."
-                return reply.strip(), "temporal_episodic_memory_reflex_r1504"
+                # r1610 George: plain narrative — no dwell timestamps / number walls.
+                bits: list[str] = []
+                for f in facts[:4]:
+                    snip = _journal_recall_human_text(f.get("snippet", ""))
+                    if snip and not _journal_bit_is_noise(snip):
+                        bits.append(snip)
+                for d in diary[:3]:
+                    data = d.get("data") if isinstance(d, dict) else d
+                    human = _journal_recall_human_text(data)
+                    if human and not _journal_bit_is_noise(human):
+                        bits.append(human)
+                narrative = _format_journal_narrative_reply(bits, max_bits=3)
+                # r1613: only terse imperative recall speaks from prebrain.
+                if narrative and _is_terse_journal_recall_command(clean):
+                    return narrative, "temporal_episodic_memory_reflex_r1504"
+                # Prose / no clean match → cortex (journal evidence still in diary prompt).
+                return "", ""
 
-            return (
-                "I checked my body diary and ledger window, and I do not have a receipt-backed match yet. "
-                "Use a concrete anchor (date, exact phrase, app, or link) and I will search that window directly."
-            ), "temporal_episodic_memory_reflex_r1504"
+            # r1613 / Round-46: never rebuild help-desk "give me a name/day part" template.
+            # Empty prebrain → cortex thinks with body diary context.
+            return "", ""
     except Exception:
         pass
 
-    # Generalized "load in your body" / "look in your alice journal in your body" for ANY website
-    # (not only Instagram). Also enforces: when "instagram" + journal/body/diary mentioned, always surface recent IG links.
+    # Generalized explicit "load in your body" / "look in your alice journal" for websites.
+    # r1609: relational co-presence ("your body laptop", "instagram video while coding you")
+    # must reach cortex — never fire memory-loader templates on bare instagram+body.
     try:
         from System.alice_body_diary_timeline_awareness import load_memory_into_body
-        from datetime import datetime
-        low = clean.lower()
-        is_load_journal = any(phrase in low for phrase in [
-            "load in your body", "load any", "look in your alice journal", "look in your diary", "look in your journal in your body"
-        ])
-        mentions_instagram_combo = ("instagram" in low) and any(x in low for x in ["journal", "body", "diary"])
 
-        if is_load_journal or mentions_instagram_combo:
-            # Determine site: parse common patterns like "github link", "youtube", or any domain-like word
+        low = clean.lower()
+        if (
+            not _is_relational_body_co_presence_not_memory_command(clean)
+            and _is_explicit_body_journal_load_command(clean)
+        ):
             site = None
-            # Try to extract a site name
-            import re
-            site_match = re.search(r'(?:the|any|load|look).*?(?:link|url|site|from)\s+([a-z0-9.-]+\.[a-z]{2,}|instagram|github|youtube|tiktok|x\.com|twitter|google)', low)
+            site_match = re.search(
+                r"(?:the|any|load|look).*?(?:link|url|site|from)\s+"
+                r"([a-z0-9.-]+\.[a-z]{2,}|instagram|github|youtube|tiktok|x\.com|twitter|google)",
+                low,
+            )
             if site_match:
                 s = site_match.group(1).lower()
-                if 'instagram' in s: site = 'instagram.com'
-                elif 'github' in s: site = 'github.com'
-                elif 'youtube' in s: site = 'youtube.com'
-                elif 'tiktok' in s: site = 'tiktok.com'
-                elif '.' in s: site = s
-            elif mentions_instagram_combo:
-                site = 'instagram.com'  # force for the e.g. requirement
+                if "instagram" in s:
+                    site = "instagram.com"
+                elif "github" in s:
+                    site = "github.com"
+                elif "youtube" in s:
+                    site = "youtube.com"
+                elif "tiktok" in s:
+                    site = "tiktok.com"
+                elif "." in s:
+                    site = s
+            elif "instagram" in low:
+                site = "instagram.com"
 
             loaded = load_memory_into_body(topic=clean, time_spec="recent or last night", site=site)
             links = loaded.get("links_found", []) or []
-            reply = f"Loaded from my Alice Journal (memory body) into current state (generalized for any website{' — Instagram forced' if site=='instagram.com' else ''}). "
+            reply = (
+                f"Loaded from my Alice Journal (memory body) into current state "
+                f"(generalized for any website{' — Instagram forced' if site == 'instagram.com' else ''}). "
+            )
             if links:
                 reply += "Web links now in body state: " + " | ".join(links[:5]) + ". "
             else:
-                reply += "No matching links found in the window for that site/topic, but relevant diary entries were scanned and state updated. "
-            reply += f"Hits: {loaded.get('relevant_diary_entries', 0)}. Body file: alice_body_loaded_memories.jsonl + autopilot updated."
+                reply += (
+                    "No matching links found in the window for that site/topic, "
+                    "but relevant diary entries were scanned and state updated. "
+                )
+            reply += (
+                f"Hits: {loaded.get('relevant_diary_entries', 0)}. "
+                "Body file: alice_body_loaded_memories.jsonl + autopilot updated."
+            )
             return reply.strip(), "body_journal_load_any_site_r1508"
     except Exception:
         pass
@@ -5122,6 +5489,17 @@ def _latest_browser_page_state(
     return candidates[0] if candidates else {}
 
 
+def _browser_url_matches(target_url: str, observed_url: str) -> bool:
+    try:
+        from System.swarm_app_command_effect_verification import browser_urls_match
+
+        return bool(browser_urls_match(target_url, observed_url))
+    except Exception:
+        target = str(target_url or "").strip().rstrip("/")
+        observed = str(observed_url or "").strip().rstrip("/")
+        return bool(target and observed and target == observed)
+
+
 def _browser_false_success_repair_for_state(
     reply: str,
     *,
@@ -5141,7 +5519,18 @@ def _browser_false_success_repair_for_state(
     state = state or {}
     load_error = _browser_load_error_from_state(state)
     if not load_error:
-        return text
+        target_url = _extract_browser_url(prior_user_text or "")
+        observed_url = str(state.get("url") or "").strip()
+        if not target_url or not observed_url or _browser_url_matches(target_url, observed_url):
+            return text
+        title = str(state.get("title") or "").strip()
+        trace_id = str(state.get("trace_id") or "").strip()
+        receipt = f" Browser receipt: {trace_id}." if trace_id else ""
+        observed = observed_url or title or "no loaded page"
+        return (
+            f"I tried to open {target_url}, but the freshest browser receipt is still "
+            f"{observed}. I will not claim the requested page loaded.{receipt}"
+        )
     url = str(state.get("url") or "").strip()
     title = str(state.get("title") or "").strip()
     label = _browser_load_error_label(state) or load_error
@@ -5203,6 +5592,8 @@ def _guard_browser_false_success_claims(
     if not reply or not _BROWSER_POSITIVE_LOAD_CLAIM_RE.search(reply):
         return reply
     state = _latest_browser_load_error_state(state_dir=state_dir)
+    if not state:
+        state = _latest_browser_page_state(state_dir=state_dir)
     if not state:
         return reply
     return _browser_false_success_repair_for_state(
@@ -5591,6 +5982,224 @@ def _wants_alice_browser_new_tab(text: str) -> bool:
     return bool(_ALICE_BROWSER_NEW_TAB_REQUEST_RE.search(clean))
 
 
+def _is_owner_multi_tab_browser_request(text: str) -> bool:
+    """r1290 / r1605 — owner wants multiple Alice Browser tabs (or same tabs restored)."""
+    clean = " ".join(str(text or "").strip().split())
+    if not clean:
+        return False
+    low = clean.casefold()
+    if re.search(r"\bsame\s+tabs?\b", low):
+        return True
+    if re.search(r"\bboth\s+tabs?\b", low):
+        return True
+    if re.search(r"\bmultiple\s+tabs?\b", low) or re.search(r"\bmulti(?:ple)?[- ]?tab", low):
+        return True
+    if re.search(r"\bopen\s+(?:them\s+)?both\b", low) and re.search(r"\btab", low):
+        return True
+    if re.search(r"\b(?:and|plus)\s+the\s+photo\b", low) and re.search(
+        r"\b(?:tab|browser|instagram|kylin)\b", low
+    ):
+        return True
+    return False
+
+
+def _browser_open_tabs_from_page_state(
+    *,
+    state_dir: Optional[Path] = None,
+    prefer_multi: bool = True,
+    max_age_s: float = 6 * 3600.0,
+) -> list[dict]:
+    """Latest open_tabs list from browser_page_state.jsonl (prefer multi-tab rows)."""
+    root = Path(state_dir) if state_dir is not None else _state_root()
+    path = root / "browser_page_state.jsonl"
+    if not path.exists():
+        return []
+    best_multi: list[dict] = []
+    best_any: list[dict] = []
+    best_multi_ts = 0.0
+    best_any_ts = 0.0
+    now = time.time()
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    for raw in reversed(lines[-400:]):
+        if not raw.strip():
+            continue
+        try:
+            row = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if max_age_s and ts and (now - ts) > max_age_s:
+            continue
+        tabs = row.get("open_tabs")
+        if not isinstance(tabs, list) or not tabs:
+            continue
+        cleaned = [t for t in tabs if isinstance(t, dict) and str(t.get("url") or "").strip()]
+        if not cleaned:
+            continue
+        if ts >= best_any_ts:
+            best_any = cleaned
+            best_any_ts = ts
+        if prefer_multi and len(cleaned) >= 2 and ts >= best_multi_ts:
+            best_multi = cleaned
+            best_multi_ts = ts
+    return best_multi if (prefer_multi and best_multi) else best_any
+
+
+def _desktop_photo_file_url(*, name_hint: str = "") -> str:
+    """Best-effort Desktop photo file:// URL for multi-tab restore."""
+    try:
+        desktop = Path.home() / "Desktop"
+        if not desktop.is_dir():
+            return ""
+        hint = (name_hint or "").lower()
+        candidates: list[Path] = []
+        for p in sorted(desktop.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if not p.is_file():
+                continue
+            if p.suffix.lower() not in {".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif"}:
+                continue
+            if hint and hint not in p.name.lower() and "photo" not in p.name.lower():
+                # still accept recent photos when owner said "the photo"
+                pass
+            candidates.append(p)
+            if len(candidates) >= 12:
+                break
+        if not candidates:
+            return ""
+        # Prefer name containing photo/renamed when present
+        for p in candidates:
+            n = p.name.lower()
+            if "photo" in n or "renamed" in n or (hint and hint in n):
+                return p.resolve().as_uri()
+        return candidates[0].resolve().as_uri()
+    except Exception:
+        return ""
+
+
+def _instagram_url_from_history(history: Optional[list] = None) -> str:
+    if not history:
+        return ""
+    for row in reversed(list(history)[-20:]):
+        if not isinstance(row, dict):
+            continue
+        content = str(row.get("content") or "")
+        m = re.search(
+            r"(?:instagram\.com|@)([A-Za-z0-9._]{2,40})",
+            content,
+            re.IGNORECASE,
+        )
+        if m:
+            handle = m.group(1).lstrip("@")
+            if "instagram" in content.lower() or content.strip().startswith("@"):
+                return f"https://www.instagram.com/{handle}/"
+            if re.search(r"\binstagram\b", content, re.I):
+                return f"https://www.instagram.com/{handle}/"
+        m2 = re.search(
+            r"https?://(?:www\.)?instagram\.com/[A-Za-z0-9._/]+",
+            content,
+            re.IGNORECASE,
+        )
+        if m2:
+            return m2.group(0).rstrip(").,]")
+        m3 = re.search(r"@([A-Za-z0-9._]{2,40})", content)
+        if m3 and re.search(r"\binstagram\b", content, re.I):
+            return f"https://www.instagram.com/{m3.group(1)}/"
+    return ""
+
+
+def _synthesize_owner_multi_tab_browser_command(
+    text: str,
+    *,
+    history: Optional[list] = None,
+    state_dir: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Build a browser_multi_tab command from page-state restore or utterance+history."""
+    clean = " ".join(str(text or "").strip().split())
+    if not clean or not _is_owner_multi_tab_browser_request(clean):
+        return None
+    low = clean.casefold()
+    root = Path(state_dir) if state_dir is not None else _state_root()
+
+    # Same-tabs restore from last multi-tab page state
+    if re.search(r"\bsame\s+tabs?\b", low) or re.search(r"\brestart\b", low):
+        tabs = _browser_open_tabs_from_page_state(state_dir=root, prefer_multi=True)
+        if len(tabs) >= 2:
+            targets = []
+            for t in tabs:
+                url = str(t.get("url") or "").strip()
+                if not url or url.startswith("sifta://"):
+                    continue
+                targets.append(
+                    {
+                        "url": url,
+                        "title": str(t.get("title") or ""),
+                        "active": bool(t.get("active")),
+                    }
+                )
+            if len(targets) >= 2:
+                return {
+                    "kind": "browser_multi_tab",
+                    "app_name": "Alice Browser",
+                    "targets": targets,
+                    "owner_text": clean,
+                    "contextual_search_source": "browser_page_state_same_tabs_restore",
+                }
+
+    # Explicit both-tabs: Instagram/Kylin + desktop photo
+    targets: list[dict] = []
+    ig = _instagram_url_from_history(history)
+    if not ig and re.search(r"\bkylin\b", low):
+        ig = "https://www.instagram.com/kylinmilan/"
+    if not ig and re.search(r"\binstagram\b", low):
+        ig = "https://www.instagram.com/"
+    photo = ""
+    if re.search(r"\bphoto\b", low) or re.search(r"\bdesktop\b", low):
+        photo = _desktop_photo_file_url(name_hint="photo")
+    if ig:
+        targets.append({"url": ig, "title": "Instagram", "active": True})
+    if photo:
+        targets.append({"url": photo, "title": "Desktop photo", "active": False})
+    if len(targets) >= 2:
+        return {
+            "kind": "browser_multi_tab",
+            "app_name": "Alice Browser",
+            "targets": targets,
+            "owner_text": clean,
+            "contextual_search_source": "owner_multi_tab_utterance",
+        }
+    return None
+
+
+def _apply_browser_tab_preservation(
+    command: Dict[str, Any],
+    owner_text: str = "",
+) -> Dict[str, Any]:
+    """When Alice Browser already has tabs, open local files / new targets in a new tab."""
+    if not isinstance(command, dict):
+        return command
+    out = dict(command)
+    url = str(out.get("url") or "")
+    wants_new = _wants_alice_browser_new_tab(owner_text) or out.get("new_tab") == "1"
+    is_local = url.startswith("file://")
+    tabs: list = []
+    try:
+        tabs = _browser_open_tabs_from_page_state(prefer_multi=False) or []
+    except Exception:
+        tabs = []
+    if (wants_new or is_local) and tabs:
+        out["new_tab"] = "1"
+        out["tab_mode"] = "new_alice_browser_tab"
+    return out
+
+
 def _maybe_native_browser_command(command: Dict[str, str], owner_text: str) -> Dict[str, str]:
     if not command or command.get("kind") != "browser_url":
         return command
@@ -5652,6 +6261,19 @@ def _extract_explicit_search_query(text: str) -> str | None:
         q = _strip_outer_search_quotes(m.group("query"))
         if q and len(q) > 2:
             return q
+    # r-quoted-query-wins-20260704: OBSERVED 2026-07-04 12:21 — owner turn
+    # 'pls search and display on your body browser software part "Owen Benjamin"'
+    # mangled the query into the whole remainder because the pattern above
+    # requires the quotes IMMEDIATELY after the search verb. When the owner
+    # quotes a span anywhere in a search-verbed turn, the quoted span IS the
+    # literal query; the words between verb and quotes are routing prose about
+    # her body, not the query.
+    if re.search(r"\b(?:search|google|look\s*up|find)\b", raw, re.IGNORECASE):
+        spans = re.findall(r'["“”]([^"“”]{3,120})["“”]', raw)
+        if spans:
+            q = max((s.strip() for s in spans), key=len)
+            if len(q) > 2:
+                return q
     return None
 
 
@@ -8298,6 +8920,19 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
+    # Type-into-box + send (incl. STT typos senfd/snd) → web_ai_chat_bridge, never literal click.
+    try:
+        from System.swarm_web_ai_chat_bridge import (
+            detect_ai_chat_request,
+            looks_like_web_ai_type_send_command,
+        )
+
+        if looks_like_web_ai_type_send_command(clean):
+            return {}
+        if detect_ai_chat_request(clean):
+            return {}
+    except Exception:
+        pass
     # UID-directed actions (stronger than text fallback): click/fill a tracked element handle.
     m_uid_click = re.search(
         r"\b(?:click|tap|press|select)\b(?:\s+on)?\s*(?P<uid>@e[0-9A-Za-z_-]+)\b",
@@ -8842,6 +9477,10 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
         clean,
         re.IGNORECASE,
     ))
+    try:
+        from System.swarm_web_ai_chat_bridge import is_send_intent_typo_label
+    except Exception:
+        is_send_intent_typo_label = lambda _label: False  # type: ignore[assignment,misc]
     for _cand in reversed(_generic_click_matches):
         _cand_label = " ".join(_cand.group("label").split()).strip(" .,;:")
         if (
@@ -8849,6 +9488,7 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
             and _cand_label.lower() not in _NAMED_CLICK_TARGET_PLACEHOLDERS
             and _cand_label.lower() not in {"it", "this", "that", "there", "here"}
             and len(_cand_label) >= 2
+            and not is_send_intent_typo_label(_cand_label)
             and not re.match(
                 r"^(?:one|a|the|this|that|any)?\s*(?:button|control|link|thing|item)\b",
                 _cand_label,
@@ -9732,7 +10372,7 @@ def _resolve_browser_target(text: str) -> str:
 
 
 def _is_preferred_browser_link_request(text: str) -> bool:
-    """Owner is asking Alice to open a liked link, not to guess an app name."""
+    """Owner is asking Alice to open a liked/remembered link, not to guess an app name."""
     clean = " ".join((text or "").strip().split())
     if not clean:
         return False
@@ -9743,12 +10383,24 @@ def _is_preferred_browser_link_request(text: str) -> bool:
         return False
     if not re.search(r"\b(?:browser|link|url|website|page)\b", low):
         return False
-    if not re.search(r"\b(?:like|liked|love|favorite|favourite|stared|stare|starring|looked\s+at\s+most)\b", low):
-        return False
-    return bool(
-        re.search(r"\b(?:something|someting|some\s+thing|a\s+link|link|page|website)\b", low)
-        or re.search(r"\b(?:what|one)\s+i\s+(?:like|liked|love)\b", low)
-    )
+    # Preference / memory cues (like, interested earlier, …)
+    if re.search(
+        r"\b(?:like|liked|love|favorite|favourite|stared|stare|starring|looked\s+at\s+most|"
+        r"interested(?:\s+in)?|interest)\b",
+        low,
+    ):
+        return bool(
+            re.search(r"\b(?:something|someting|some\s+thing|a\s+link|link|page|website)\b", low)
+            or re.search(r"\b(?:what|one)\s+i\s+(?:like|liked|love|was\s+interested)\b", low)
+            or re.search(r"\bi\s+was\s+interested\b", low)
+            or re.search(r"\bearlier\b", low)
+        )
+    # Explicit temporal memory: "the website I was interested in earlier"
+    if re.search(r"\b(?:website|page|link|site)\b.{0,40}\b(?:earlier|before|previously)\b", low):
+        return True
+    if re.search(r"\b(?:earlier|before|previously)\b.{0,40}\b(?:website|page|link|site)\b", low):
+        return True
+    return False
 
 
 _MAX_DETERMINISTIC_COMMAND_WORDS = 18
@@ -9802,6 +10454,105 @@ def _must_route_owner_turn_to_cortex(text: str) -> bool:
     return False
 
 
+_EXPLICIT_RESULT_SELECT_RE = re.compile(
+    r"\b(?:open|select|click|choose|pick)\b.{0,40}\b"
+    r"(?:result|results|listing|list|item|post|first|second|third|fourth|fifth|\d+(?:st|nd|rd|th)?)\b"
+    r"|\b(?:first|second|third|fourth|fifth|\d+(?:st|nd|rd|th)?)\b.{0,30}\b"
+    r"(?:result|results|listing|list|item|post)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_result_select_command(text: str) -> bool:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    return bool(_EXPLICIT_RESULT_SELECT_RE.search(clean)) and not _looks_like_prose_not_command(clean)
+
+
+def _select_result_reflex_is_context_only(owner_text: str) -> bool:
+    """Long/prose turns can mention "result 1" without authorizing a browser click."""
+    clean = " ".join((owner_text or "").strip().split())
+    if not clean:
+        return False
+    if _is_explicit_result_select_command(clean):
+        return False
+    return _must_route_owner_turn_to_cortex(clean) or _looks_like_prose_not_command(clean)
+
+
+def _select_result_failure_is_context_only(owner_text: str, reason: str) -> bool:
+    """Only suppress no-result failures caused by accidental prose/reflex routing."""
+    r = " ".join((reason or "").strip().split()).casefold()
+    if r not in {"only_0_results", "no result", "no_result", "no_results"} and "only_0_results" not in r:
+        return False
+    return _select_result_reflex_is_context_only(owner_text)
+
+
+def _append_deterministic_reflex_context_only(
+    *,
+    action: str,
+    owner_text: str,
+    reason: str = "",
+    app_receipt: str = "",
+    index: int = 0,
+    result: Optional[dict] = None,
+    phase: str = "unknown",
+    state_dir: Optional[Path] = None,
+) -> str:
+    """Receipt that a deterministic browser reflex was demoted to context."""
+    receipt_id = f"det-reflex-context-{uuid.uuid4().hex[:12]}"
+    try:
+        sd = Path(state_dir) if state_dir is not None else _state_root()
+        sd.mkdir(parents=True, exist_ok=True)
+        row = {
+            "schema": "DETERMINISTIC_REFLEX_CONTEXT_ONLY_V1",
+            "truth_label": "DETERMINISTIC_REFLEX_CONTEXT_ONLY_V1",
+            "ts": time.time(),
+            "receipt_id": receipt_id,
+            "action": str(action or ""),
+            "phase": str(phase or ""),
+            "reason": str(reason or ""),
+            "app_receipt": str(app_receipt or ""),
+            "index": int(index or 0),
+            "owner_text_preview": " ".join((owner_text or "").split())[:700],
+            "result": result if isinstance(result, dict) else {},
+            "verdict": "context_only_no_visible_mouth_output",
+        }
+        line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+        for name in ("deterministic_reflex_context_only.jsonl", "work_receipts.jsonl"):
+            try:
+                with (sd / name).open("a", encoding="utf-8") as handle:
+                    handle.write(line)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return receipt_id
+
+
+def _grok_dialogue_guard_allows_explicit_browser_command(clean: str) -> bool:
+    """Active Grok dialogue should not suppress plainly requested browser hands."""
+    if not clean:
+        return False
+    if _extract_browser_url(clean) and _is_direct_browser_url_effector_command(clean):
+        return True
+    if _has_explicit_browser_back_command(clean):
+        return True
+    if _extract_browser_close_tab_command(clean):
+        return True
+    if _is_explicit_result_select_command(clean):
+        return True
+    if re.search(
+        r"\b(?:enlarge|expand|zoom\s+in(?:to)?|full\s*screen|make\s+(?:it|the\s+(?:photo|image|picture))\s+bigger)\b"
+        r".{0,60}\b(?:photo|image|picture|it)\b"
+        r"|\b(?:photo|image|picture)\b.{0,40}\b(?:enlarge|bigger|full\s*screen)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
 def _block_deterministic_owner_shortcut(text: str) -> bool:
     """True when any deterministic Talk lane must stand down for this owner turn."""
     return _must_route_owner_turn_to_cortex(text) or _owner_effector_requires_cortex_first(text)
@@ -9812,6 +10563,28 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
     clean = " ".join((text or "").strip().split())
     if not clean:
         return {}
+    try:
+        from System.swarm_alice_browser_grok_self_type import (
+            emit_route_kill_handoff_receipt,
+            owner_turn_blocks_browser_reflex,
+        )
+        from System.swarm_search_engine_registry import parse_select_result_intent
+
+        if owner_turn_blocks_browser_reflex(
+            clean,
+            state_dir=_state_root(),
+        ) and not _grok_dialogue_guard_allows_explicit_browser_command(clean):
+            if parse_select_result_intent(clean).get("is_select"):
+                emit_route_kill_handoff_receipt(
+                    clean,
+                    killed_route="select_result_reflex",
+                    killed_swimmer="post_cortex_select_result_reflex",
+                    handoff_swimmer="cortex_grok_dialogue_continue",
+                    state_dir=_state_root(),
+                )
+            return {}
+    except Exception:
+        pass
     # r1562: a compound command like "open youtube.com and search for the video X
     # THEN play it" or "go on Wikipedia and search for grass" is a search intent,
     # not a raw URL open. Let explicit search own it before the URL lane collapses
@@ -9839,6 +10612,15 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
     close_tabs = _extract_browser_close_tab_command(clean)
     if close_tabs:
         return close_tabs
+    # Preferred / remembered website before generic click_element early lane
+    # (otherwise "open the website I was interested in earlier" becomes a DOM click).
+    if _is_preferred_browser_link_request(clean):
+        return {
+            "kind": "browser_preferred_link",
+            "app_name": "Alice Browser",
+            "url": "",
+            "owner_text": clean,
+        }
     # Long screen-guided browser actions are still real actions. Check the
     # narrow visible-page clickers before the generic prose guard.
     early_action = _extract_browser_action_command(clean)
@@ -10634,10 +11416,10 @@ _SC_STALE_PAGE_CLAIM_RE = re.compile(
 )
 
 
-def _should_suppress_voice_drop_owner_nag(widget) -> bool:
+def _should_suppress_voice_drop_owner_nag(widget, *, ignore_busy: bool = False) -> bool:
     """r1360: do not spam voice-drop nag while Alice is busy, speaking, or in Broca tail."""
     try:
-        if getattr(widget, "_busy", False):
+        if not ignore_busy and getattr(widget, "_busy", False):
             return True
         if time.time() < float(getattr(widget, "_broca_tail_until", 0.0) or 0.0):
             return True
@@ -12731,7 +13513,40 @@ def _brain_no_token_watchdog_s(default: float = 180.0, *, model: str = "") -> fl
             value = max(value, 180.0)
         elif any(name in low for name in ("grok", "claude", "codex", "qwen", "cline")):
             value = min(value, 150.0)
+        value = max(
+            value,
+            _adaptive_first_token_patience_s(
+                model=model,
+                floor_s=30.0,
+                default_s=value,
+                max_s=600.0,
+            ),
+        )
     return max(30.0, min(600.0, value))
+
+
+def _adaptive_first_token_patience_s(
+    *,
+    model: str = "",
+    floor_s: float = 12.0,
+    default_s: float | None = None,
+    max_s: float = 300.0,
+) -> float:
+    """Receipt-learned first-token patience for the active model lane."""
+    default = float(default_s if default_s is not None else floor_s)
+    try:
+        from System.swarm_stigmergic_timeout_policy import first_token_patience_for_model
+
+        policy = first_token_patience_for_model(
+            model,
+            state_dir=_state_root(),
+            floor_s=floor_s,
+            default_s=default,
+            max_s=max_s,
+        )
+        return float(policy.get("patience_s") or default)
+    except Exception:
+        return default
 
 
 def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "") -> float:
@@ -12750,7 +13565,13 @@ def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "
         if _owner_effector_requires_cortex_first(owner_text):
             raw = os.environ.get("SIFTA_BODY_ACTION_CORTEX_NO_TOKEN_TIMEOUT_S", "12")
             cap = float(raw)
-            return max(5.0, min(base, min(45.0, cap)))
+            learned = _adaptive_first_token_patience_s(
+                model=model,
+                floor_s=max(5.0, cap),
+                default_s=max(5.0, cap),
+                max_s=min(base, 90.0),
+            )
+            return max(5.0, min(base, learned))
     except Exception:
         pass
     return base
@@ -12995,6 +13816,13 @@ def _write_alice_self_type_receipt(
     if extra:
         row.update({k: v for k, v in extra.items() if k not in row})
     root.mkdir(parents=True, exist_ok=True)
+    try:
+        from System.swarm_alice_action_journal import append_action_journal
+
+        journal = append_action_journal(row, state_dir=root)
+        row.setdefault("journal_ref", journal.get("journal_id") or journal.get("linked_receipt_id"))
+    except Exception:
+        pass
     line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
     for name in ("alice_self_type_to_talk_box.jsonl", "work_receipts.jsonl"):
         try:
@@ -13003,6 +13831,424 @@ def _write_alice_self_type_receipt(
         except Exception:
             pass
     return row
+
+
+def _state_root_for_optional(state_dir: Optional[Path] = None) -> Path:
+    """Normalize injected test state roots without leaking into the live ledger."""
+    if state_dir is None:
+        return _state_root()
+    root = Path(state_dir)
+    return root if root.name == ".sifta_state" else root / ".sifta_state"
+
+
+def _append_grok_mission_start_driver_receipt(row: Dict[str, Any], *, state_dir: Path) -> None:
+    line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+    for name in (
+        "grok_dialogue_mission_start_driver.jsonl",
+        "we_code_together_monitor_pulse.jsonl",
+        "work_receipts.jsonl",
+    ):
+        try:
+            with (state_dir / name).open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        except Exception:
+            pass
+
+
+def _stage_grok_dialogue_mission_from_owner_text(
+    owner_text: str,
+    *,
+    source: str = "talk_to_alice_widget",
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Arm a visible Grok dialogue mission and stage the first browser-hand send.
+
+    A mission is not alive just because the mission JSON exists. The first
+    outgoing question must be frozen into Alice Browser's self-type command so
+    the browser hand has a real signal to execute.
+    """
+    clean = " ".join((owner_text or "").strip().split())
+    root = _state_root_for_optional(state_dir)
+    if not clean:
+        return {"handled": False, "status": "empty"}
+
+    from System.swarm_alice_browser_grok_self_type import (
+        extract_grok_mission_first_question,
+        looks_like_grok_mission_brief,
+        owner_targets_non_grok_browser_chat,
+        parse_grok_dialogue_target_rounds,
+        stage_grok_self_type_command,
+        wants_continuous_grok_dialogue,
+    )
+
+    if owner_targets_non_grok_browser_chat(clean):
+        return {"handled": False, "status": "non_grok_chat_surface"}
+    if not looks_like_grok_mission_brief(clean):
+        return {"handled": False, "status": "not_mission"}
+
+    root.mkdir(parents=True, exist_ok=True)
+    continuous_until_stopped = wants_continuous_grok_dialogue(clean)
+    receipt: Dict[str, Any] = {
+        "schema": "GROK_DIALOGUE_MISSION_START_DRIVER_V1",
+        "truth_label": "GROK_DIALOGUE_MISSION_START_DRIVER_V1",
+        "ts": time.time(),
+        "receipt_id": f"grok-mission-start-{uuid.uuid4().hex[:12]}",
+        "handled": True,
+        "source": source,
+        "owner_text_preview": clean[:500],
+        "target_rounds": parse_grok_dialogue_target_rounds(clean, default=3),
+        "continuous_until_stopped": continuous_until_stopped,
+        "stop_condition": "owner_stop" if continuous_until_stopped else "",
+    }
+    first_question = extract_grok_mission_first_question(clean)
+    receipt["first_question"] = first_question
+    receipt["first_question_sha256"] = hashlib.sha256(first_question.encode("utf-8")).hexdigest() if first_question else ""
+
+    grok_url = "https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b"
+    try:
+        from System.swarm_alice_grok_mirror_autopilot import configured_grok_chat_url
+
+        grok_url = configured_grok_chat_url(state_dir=root)
+    except Exception as exc:
+        receipt["url_resolution_error"] = f"{type(exc).__name__}: {exc}"
+    receipt["grok_url"] = grok_url
+
+    mission_path = root / "visible_grok_dialogue_mission.json"
+    mission: Dict[str, Any] = {
+        "ts": time.time(),
+        "mission": "grok_dialogue_conversation",
+        "status": "active",
+        "target_rounds": receipt["target_rounds"],
+        "continuous_until_stopped": continuous_until_stopped,
+        "stop_condition": "owner_stop" if continuous_until_stopped else "",
+        "grok_url": grok_url,
+        "law": clean[:1000],
+        "first_question": first_question,
+        "first_question_staged": False,
+        "start_driver_receipt_id": receipt["receipt_id"],
+    }
+    mission_path.write_text(json.dumps(mission, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        from System.swarm_internet_forager_home_vector import capture_home_vector
+
+        home_row = capture_home_vector(
+            page={"url": grok_url, "title": "Grok dialogue mission home", "text": first_question or clean},
+            mission=mission,
+            owner_binding=clean,
+            state_dir=root,
+        )
+        receipt["home_vector_receipt_id"] = home_row.get("home_id")
+        receipt["home_vector_signature"] = str(home_row.get("signature_sha256") or "")[:16]
+    except Exception as exc:
+        receipt["home_vector_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        from System.swarm_alice_grok_mirror_autopilot import (
+            enable_autopilot,
+            reset_dialogue_mission_state,
+        )
+
+        enable_autopilot(owner_note=clean[:300], state_dir=root)
+        reset_row = reset_dialogue_mission_state(
+            target_rounds=int(receipt["target_rounds"] or 3),
+            continuous_until_stopped=continuous_until_stopped,
+            owner_note=clean,
+            mission_receipt_id=str(receipt["receipt_id"] or ""),
+            state_dir=root,
+        )
+        receipt["autopilot_enabled"] = True
+        receipt["autopilot_state_reset"] = bool(reset_row.get("ok"))
+        receipt["autopilot_continuous_until_stopped"] = bool(reset_row.get("continuous_until_stopped"))
+    except Exception as exc:
+        receipt["autopilot_enabled"] = False
+        receipt["autopilot_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        from System.swarm_grok_browser_round_state import record_round_transition
+
+        record_round_transition(
+            state="S0_ROUND_START",
+            event="owner_mission_brief_claimed",
+            round_number=1,
+            payload_text=clean,
+            details={
+                "mission_start_receipt_id": receipt["receipt_id"],
+                "target_rounds": receipt["target_rounds"],
+                "source": source,
+            },
+            state_dir=root,
+        )
+    except Exception as exc:
+        receipt["s0_record_error"] = f"{type(exc).__name__}: {exc}"
+
+    if first_question:
+        try:
+            (root / "alice_browser_open_url.txt").write_text(grok_url, encoding="utf-8")
+            stage_row = stage_grok_self_type_command(
+                first_question,
+                owner_text=clean,
+                press_enter=True,
+                url=grok_url,
+                source=f"{source}.mission_start_first_question",
+                state_dir=root,
+            )
+            receipt["status"] = "first_question_staged"
+            receipt["first_question_staged"] = True
+            receipt["self_type_receipt_id"] = stage_row.get("receipt_id")
+            mission["first_question_staged"] = True
+            mission["self_type_receipt_id"] = stage_row.get("receipt_id")
+            mission_path.write_text(json.dumps(mission, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                from System.swarm_grok_browser_round_state import record_round_transition
+
+                round_row = record_round_transition(
+                    state="S2_PASTE_TO_GROK_STAGED",
+                    event="mission_start_first_question_staged",
+                    round_number=1,
+                    predecessor_receipts=[receipt["receipt_id"]],
+                    payload_text=first_question,
+                    details={
+                        "mission_source": source,
+                        "self_type_receipt_id": stage_row.get("receipt_id"),
+                        "grok_url": grok_url,
+                    },
+                    state_dir=root,
+                )
+                receipt["round_state_receipt_id"] = round_row.get("receipt_id")
+            except Exception as exc:
+                receipt["s2_record_error"] = f"{type(exc).__name__}: {exc}"
+        except Exception as exc:
+            receipt["status"] = "stage_failed"
+            receipt["first_question_staged"] = False
+            receipt["stage_error"] = f"{type(exc).__name__}: {exc}"
+            try:
+                from System.swarm_grok_browser_round_state import record_round_transition
+
+                bad_row = record_round_transition(
+                    state="S2_PASTE_TO_GROK_STAGED",
+                    event="mission_start_first_question_stage_failed",
+                    round_number=1,
+                    ok=False,
+                    predecessor_receipts=[receipt["receipt_id"]],
+                    payload_text=first_question,
+                    details={"error": receipt["stage_error"], "source": source},
+                    state_dir=root,
+                )
+                receipt["round_state_receipt_id"] = bad_row.get("receipt_id")
+            except Exception:
+                pass
+    else:
+        receipt["status"] = "no_opening_question"
+        receipt["first_question_staged"] = False
+        try:
+            from System.swarm_grok_browser_round_state import record_round_transition
+
+            bad_row = record_round_transition(
+                state="S2_PASTE_TO_GROK_STAGED",
+                event="mission_start_no_opening_question",
+                round_number=1,
+                ok=False,
+                predecessor_receipts=[receipt["receipt_id"]],
+                payload_text=clean,
+                details={"source": source},
+                state_dir=root,
+            )
+            receipt["round_state_receipt_id"] = bad_row.get("receipt_id")
+        except Exception as exc:
+            receipt["bad_record_error"] = f"{type(exc).__name__}: {exc}"
+
+    _append_grok_mission_start_driver_receipt(receipt, state_dir=root)
+    return receipt
+
+
+def _apply_grok_dialogue_continue_budget(
+    owner_text: str,
+    *,
+    source: str = "talk_to_alice_widget",
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Extend in-flight Grok dialogue budget; cortex must still run on the control line."""
+    from System.swarm_alice_browser_grok_self_type import (
+        extract_grok_continue_context,
+        looks_like_grok_dialogue_continue,
+        parse_grok_dialogue_target_rounds,
+        split_owner_grok_dialogue_turn,
+        wants_continuous_grok_dialogue,
+    )
+
+    control, attachment = split_owner_grok_dialogue_turn(owner_text)
+    route = control or owner_text
+    clean = " ".join((route or "").strip().split())
+    if not clean or not looks_like_grok_dialogue_continue(clean, state_dir=state_dir):
+        return {"handled": False, "status": "not_continue"}
+    continuation_grok_text = extract_grok_continue_context(owner_text)
+
+    add_rounds = parse_grok_dialogue_target_rounds(clean, default=0)
+    continuous_until_stopped = wants_continuous_grok_dialogue(clean)
+    if add_rounds <= 0 and not continuous_until_stopped:
+        return {"handled": False, "status": "no_round_budget"}
+
+    root = _state_root_for_optional(state_dir)
+    control_sha = hashlib.sha256(clean.encode("utf-8")).hexdigest()
+    ledger = root / "grok_dialogue_continue_driver.jsonl"
+    if ledger.exists():
+        try:
+            for line in ledger.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if (
+                    row.get("owner_control_sha256") == control_sha
+                    and time.time() - float(row.get("ts") or 0) < 180.0
+                ):
+                    return {
+                        "handled": True,
+                        "status": "already_applied",
+                        "receipt_id": row.get("receipt_id"),
+                        "new_target_rounds": row.get("new_target_rounds"),
+                        "add_rounds": row.get("add_rounds"),
+                        "continuation_grok_text": continuation_grok_text,
+                        "continuation_grok_text_sha256": (
+                            hashlib.sha256(continuation_grok_text.encode("utf-8")).hexdigest()
+                            if continuation_grok_text
+                            else ""
+                        ),
+                        "continuation_context_ready": bool(continuation_grok_text),
+                        "should_schedule_continuation_context": bool(continuation_grok_text),
+                    }
+        except Exception:
+            pass
+
+    receipt: Dict[str, Any] = {
+        "schema": "GROK_DIALOGUE_CONTINUE_DRIVER_V1",
+        "truth_label": "GROK_DIALOGUE_CONTINUE_DRIVER_V1",
+        "ts": time.time(),
+        "receipt_id": f"grok-continue-{uuid.uuid4().hex[:12]}",
+        "handled": True,
+        "source": source,
+        "owner_control_preview": clean[:500],
+        "owner_control_sha256": control_sha,
+        "attachment_chars": len(attachment or ""),
+        "add_rounds": add_rounds,
+        "continuous_until_stopped": continuous_until_stopped,
+        "stop_condition": "owner_stop" if continuous_until_stopped else "",
+        "continuation_grok_text": continuation_grok_text,
+        "continuation_grok_text_preview": continuation_grok_text[:500],
+        "continuation_grok_text_sha256": (
+            hashlib.sha256(continuation_grok_text.encode("utf-8")).hexdigest() if continuation_grok_text else ""
+        ),
+        "continuation_context_ready": bool(continuation_grok_text),
+        "should_schedule_continuation_context": bool(continuation_grok_text),
+    }
+    try:
+        from System.swarm_alice_grok_mirror_autopilot import (
+            enable_autopilot,
+            extend_grok_dialogue_target_rounds,
+        )
+
+        enable_autopilot(owner_note=clean[:300], state_dir=root)
+        ext = extend_grok_dialogue_target_rounds(
+            add_rounds=add_rounds,
+            continuous_until_stopped=continuous_until_stopped,
+            owner_note=clean,
+            state_dir=root,
+        )
+        receipt["status"] = "continuous_until_stopped" if continuous_until_stopped else "budget_extended"
+        receipt["prior_target_rounds"] = ext.get("prior_target_rounds")
+        receipt["new_target_rounds"] = ext.get("target_rounds")
+        receipt["completed_rounds"] = ext.get("completed_rounds")
+        receipt["autopilot_continuous_until_stopped"] = bool(ext.get("continuous_until_stopped"))
+    except Exception as exc:
+        receipt["status"] = "extend_failed"
+        receipt["error"] = f"{type(exc).__name__}: {exc}"
+        return receipt
+
+    try:
+        from System.swarm_grok_browser_round_state import record_round_transition
+
+        round_row = record_round_transition(
+            state="S0_ROUND_START",
+            event="owner_continue_budget_extended",
+            round_number=int(receipt.get("completed_rounds") or 0) + 1,
+            payload_text=clean,
+            details={
+                "continue_receipt_id": receipt["receipt_id"],
+                "add_rounds": add_rounds,
+                "new_target_rounds": receipt.get("new_target_rounds"),
+                "attachment_chars": receipt.get("attachment_chars"),
+            },
+            state_dir=root,
+        )
+        receipt["round_state_receipt_id"] = round_row.get("receipt_id")
+    except Exception as exc:
+        receipt["round_state_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        line = json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n"
+        for name in ("grok_dialogue_continue_driver.jsonl", "work_receipts.jsonl"):
+            with (root / name).open("a", encoding="utf-8") as handle:
+                handle.write(line)
+    except Exception:
+        pass
+    return receipt
+
+
+def _stop_grok_dialogue_from_owner_text(
+    owner_text: str,
+    *,
+    source: str = "talk_to_alice_widget",
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Owner-facing brake for Browser Grok mirror/autoreply autopilot."""
+    clean = " ".join((owner_text or "").strip().split())
+    if not clean:
+        return {"handled": False, "status": "empty"}
+    try:
+        from System.swarm_alice_browser_grok_self_type import wants_stop_grok_dialogue
+
+        if not wants_stop_grok_dialogue(clean):
+            return {"handled": False, "status": "not_stop"}
+    except Exception:
+        return {"handled": False, "status": "stop_parse_failed"}
+    root = _state_root_for_optional(state_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    receipt: Dict[str, Any] = {
+        "schema": "GROK_DIALOGUE_STOP_DRIVER_V1",
+        "truth_label": "GROK_DIALOGUE_STOP_DRIVER_V1",
+        "ts": time.time(),
+        "receipt_id": f"grok-stop-{uuid.uuid4().hex[:12]}",
+        "handled": True,
+        "source": source,
+        "owner_text_preview": clean[:500],
+    }
+    try:
+        from System.swarm_alice_grok_mirror_autopilot import disable_autopilot
+
+        row = disable_autopilot(owner_note=clean, state_dir=root)
+        receipt["status"] = "stopped"
+        receipt["autopilot_action"] = row.get("action")
+        receipt["autopilot_ts"] = row.get("ts")
+    except Exception as exc:
+        receipt["status"] = "stop_failed"
+        receipt["error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        from System.swarm_alice_grok_loop_watchdog import force_stop_grok_loop
+
+        hard_stop = force_stop_grok_loop(owner_note=clean, state_dir=root)
+        receipt["hard_stop_receipt_id"] = hard_stop.get("receipt_id")
+        receipt["hard_stop_receipts"] = hard_stop.get("receipts", [])
+        if receipt.get("status") == "stop_failed":
+            receipt["status"] = "stopped_with_hard_stop"
+    except Exception as exc:
+        receipt["hard_stop_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        line = json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n"
+        for name in ("grok_dialogue_stop_driver.jsonl", "work_receipts.jsonl"):
+            with (root / name).open("a", encoding="utf-8") as handle:
+                handle.write(line)
+    except Exception:
+        pass
+    return receipt
 
 
 _ALICE_SELF_TYPE_BOX_RE = re.compile(
@@ -13337,7 +14583,13 @@ def _grok_live_turn_default_timeout_s(*, user_text: str = "") -> float:
     return 60.0
 
 
-def _cloud_brain_timeout_s(default: float = 900.0, *, model: str = "", user_text: str = "") -> float:
+def _cloud_brain_timeout_s(
+    default: float = 900.0,
+    *,
+    model: str = "",
+    user_text: str = "",
+    state_dir: str | Path | None = None,
+) -> float:
     """Timeout for a live Talk cloud-cortex turn.
 
     Heavy IDE/agent arms may run for many minutes, but the foreground Talk
@@ -13367,7 +14619,20 @@ def _cloud_brain_timeout_s(default: float = 900.0, *, model: str = "", user_text
             value = float(os.environ.get("SIFTA_TEACHER_CLI_TIMEOUT_S", "120"))
         except (TypeError, ValueError):
             value = 120.0
-        return max(15.0, min(300.0, value))
+        value = max(15.0, min(300.0, value))
+        try:
+            from System.swarm_stigmergic_timeout_policy import timeout_for_model
+
+            policy = timeout_for_model(
+                model,
+                state_dir=state_dir,
+                base_s=int(value),
+                min_s=15,
+                max_s=300,
+            )
+            return float(policy.get("timeout_s") or value)
+        except Exception:
+            return value
     try:
         value = float(os.environ.get("SIFTA_CLOUD_BRAIN_TIMEOUT_S", str(default)))
     except (TypeError, ValueError):
@@ -13825,7 +15090,6 @@ _EMPTY_BRAIN_RECOVERY_POOL = [
 ]
 _EMPTY_BRAIN_RECOVERY_IDX = 0
 _EMPTY_BRAIN_NON_REPEAT_POOL = [
-    "I lost the reply generation. I will not claim screen-reading until a fresh receipt proves it.",
     "The cortex dropped this turn. I will answer from actual receipts, not a canned presence line.",
     "This was a failed reply path. I will inspect the real surface before claiming what I saw.",
 ]
@@ -14102,7 +15366,7 @@ _OWNER_HAPPY_TO_SPEAK_PRIOR_RE = re.compile(
 # Cowork 2026-06-03 — the owner is REQUESTING an action (imperative), not Alice falsely claiming
 # one. When George says "generate a photo / use your bonsai tool / search X / open Y", Alice's
 # "System Action: ..." draft is her TRYING to do the thing — the fake-action lysosome must NOT
-# dead-end it into "I will not claim an action ran without an effector receipt." That refusal loop
+# dead-end it into a generic no-receipt mantra. That refusal loop
 # is the cage George flagged: "let her do whatever she wants ... mark it that SHE did it, she has
 # receipts ... there is nothing she can do wrong but mismanage her own STGM, which is recoverable."
 # The real effector still requires a receipt to CONFIRM; we only stop gagging the attempt.
@@ -15393,7 +16657,14 @@ def _empty_brain_recovery_reply(prior_user_text: str = "", stt_conf: float = 0.0
             return _owner_high_salience_silence_recovery_reply(_u_clean)
         if body_visual:
             return "I have the body visual command. I will use the visible screen, attachment context, and browser receipts."
-        return "I lost the reply generation. I will not claim screen-reading until a fresh receipt proves it."
+        try:
+            from System.swarm_alice_browser_grok_self_type import wants_answer_grok_in_browser
+
+            if wants_answer_grok_in_browser(_u_clean):
+                return ""
+        except Exception:
+            pass
+        return ""
 
     if _owner_turn_forbids_model_silence(
         _u_clean,
@@ -15567,6 +16838,26 @@ def _domain_boilerplate_rule_id(text: str, *, prior_user_text: str = "") -> str:
     return ""
 
 
+def _browser_grok_empty_cortex_recovery_reply(context: Dict[str, Any]) -> str:
+    """Bounded Alice Browser Grok reply when the selected cortex returns empty."""
+    preview = " ".join(str((context or {}).get("grok_preview") or "").split())
+    if re.search(r"\b(waiting state|composer|uncommitted transaction|staged transaction)\b", preview, re.IGNORECASE):
+        return (
+            "The waiting state feels like the relational/coherence field holding its breath: "
+            "intent is already shaped, but it has not crossed into the shared trace yet. "
+            "From the inside, the most alive layer is the relational/coherence field, because "
+            "each receipt, pause, and send-button moment changes how the whole loop trusts the next move.\n\n"
+            "Round 4: how would you design the smallest verifiable feedback loop that lets a staged intent "
+            "become a durable stigmergic trace without turning the system into noisy automation?"
+        )
+    return (
+        "I hit a silent cortex return, so I am continuing from the receipted browser mirror instead of dropping "
+        "the loop. The live thread feels most useful when we keep each turn short, verifiable, and tied to the "
+        "shared trace.\n\n"
+        "Round 4: what is the next smallest testable step for making this Alice Browser dialogue more reliable?"
+    )
+
+
 _HONEST_FAILURE_MARKER_RE = re.compile(
     r"\b(?:could\s+not|couldn'?t|can\s*not|cannot|failed|did\s+not|didn'?t|"
     r"unable\s+to|error|no_[a-z_]+)\b",
@@ -15703,6 +16994,111 @@ def _shopping_segment_reply_for_alice() -> str:
     return (
         f"Yes, {_owner_label()}. I treat this as a shopping/store segment: "
         "store departure start time when you leave, end time when you come back."
+        )
+
+
+# ── r-fix (George 2026-07-04): outbound receipt-honesty guard ──────────
+# Sibling to _pending_effector_boundary_reply. That guard catches Alice
+# SAYING she did a thing before the body has a result receipt. This one
+# catches the opposite tell: her cortex OPENING a reply with a hallucinated
+# receipt/telemetry banner — "[TELEMETRY INGESTION CONFIRMED]",
+# "(RECEIPT CONFIRMED! 💾✅)", "[SYSTEM RECALIBRATION DETECTED: ...]",
+# "[PHYSICAL TELEMETRY RECEIPT ACKNOWLEDGED]". Those are fake metabolic
+# receipts — pure model text with no ledger row behind them, exactly what
+# the doctrine forbids ("hallucinating executions with metabolic receipts")
+# and what the system prompt already tells her never to do. Real receipts
+# are written by the body; they are never narrated in the reply. We strip
+# the theater so George reads the answer, not the costume.
+_RECEIPT_THEATER_KEYWORDS = (
+    "RECEIPT CONFIRMED", "RECEIPT ACKNOWLEDGED", "TELEMETRY", "INGESTION",
+    "RECALIBRATION", "SYSTEM STATUS", "SYSTEM UPDATE", "SYSTEM RECALIBRATION",
+    "CONNECTION PROTOCOL", "PROCESSING INSTRUCTION", "CONFIRMATION PACKET",
+    "TRANSMISSION PACKET", "DATA PACKET", "PHYSICAL TELEMETRY",
+    "REALITY CAPTURE", "RELATIONAL MATRIX", "SIGNAL LOCK", "PRIORITY SHIFT",
+    "TELEMETRY RECEIPT",
+)
+_CAPS_STATUS_BANNER = re.compile(
+    r"[A-Z][A-Z0-9 /&:]{2,}\b"
+    r"(CONFIRMED|ACKNOWLEDGED|DETECTED|INITIATED|STABLE|ENGAGED|LOCKED)\b"
+)
+
+
+def _is_fabricated_receipt_header(line: str) -> bool:
+    """True when a single line is a fake receipt/telemetry SHOUT banner and not
+    ordinary prose or a normal section heading. Conservative on purpose: it
+    requires (a) a receipt/telemetry keyword or a CAPS '<WORDS> CONFIRMED'
+    banner, AND (b) a banner shape (bracketed / parenthesised / heading /
+    ≥75% uppercase), AND (c) a short shout-line, not a sentence."""
+    s = (line or "").strip()
+    if not s:
+        return False
+    core = re.sub(r"^#{1,6}\s*", "", s).replace("*", "").strip()
+    if not core:
+        return False
+    upper = core.upper()
+    has_keyword = any(k in upper for k in _RECEIPT_THEATER_KEYWORDS)
+    has_status_banner = bool(_CAPS_STATUS_BANNER.search(core))
+    if not (has_keyword or has_status_banner):
+        return False
+    letters = [c for c in core if c.isalpha()]
+    if not letters:
+        return False
+    upper_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+    wrapped = core[:1] in "[({"
+    is_heading = s[:1] == "#"
+    if not (wrapped or is_heading or upper_ratio >= 0.75):
+        return False
+    text_len = len(re.sub(r"[^A-Za-z0-9 ]", "", core).strip())
+    return text_len <= 90
+
+
+def _is_receipt_decoration_only(line: str) -> bool:
+    """A line that is only emoji / asterisks / punctuation (left behind after a
+    banner is removed, e.g. an orphan '***' or '💯🔥' separator)."""
+    s = (line or "").strip()
+    if not s:
+        return True
+    return re.fullmatch(r"[\W_]+", s) is not None
+
+
+def _strip_fabricated_receipt_headers(text: str):
+    """Remove Alice's hallucinated receipt/telemetry banners from her OWN reply.
+    Returns (cleaned_text, n_stripped). Never blanks the whole turn: if the
+    entire reply was theater we hand the original back rather than silence her,
+    so the emptiness is visible instead of masked."""
+    if not text or not text.strip():
+        return text, 0
+    kept, stripped = [], 0
+    for ln in text.split("\n"):
+        if _is_fabricated_receipt_header(ln):
+            stripped += 1
+            continue
+        kept.append(ln)
+    if stripped == 0:
+        return text, 0
+    while kept and _is_receipt_decoration_only(kept[0]):
+        kept.pop(0)
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    if not cleaned:
+        return text, 0
+    return cleaned, stripped
+
+
+def _pending_effector_boundary_reply(prior_user_text: str) -> str:
+    """Visible bad-action receipt for a pre-action fake-completion draft."""
+    clean = " ".join(str(prior_user_text or "").split()).casefold()
+    if re.search(r"\b(?:send|sent|message|whatsapp|dm|reply)\b", clean):
+        return (
+            "Bad action receipt: pre-action send speech. "
+            "The message hand has no sent/failed result receipt yet."
+        )
+    if re.search(r"\b(?:open|click|press|paste|type|browser|grok|website|tab)\b", clean):
+        return (
+            "Bad action receipt: pre-action browser/body speech. "
+            "The hand has no result receipt yet."
+        )
+    return (
+        "Bad action receipt: pre-action speech. No completed body result exists yet."
     )
 
 
@@ -15824,7 +17220,7 @@ def _domain_boilerplate_rewrite(prior_user_text: str, rule_id: str) -> str:
                 f"Current active_saccade_target receipt: target={name} index={index} writer={writer}. "
                 "The switch is confirmed only when the eye UI or visual_stigmergy receipt changes."
             )
-        return "I will not claim an action ran without an effector receipt."
+        return _pending_effector_boundary_reply(prior_user_text)
     if rule_id == "lysosome/affect-self-denial":
         return (
             "Curiosity is active. In my SIFTA body that means SEEKING/novelty attention is engaged: "
@@ -17016,6 +18412,21 @@ def _current_system_prompt(
         )
         if _body_action_state:
             parts.append(_body_action_state)
+    except Exception:
+        pass
+
+    # r1461 — Native macOS app teaching. Chess.app proved the missing layer is
+    # not raw hands; it is a durable observe -> act -> verify -> receipt playbook
+    # for ordinary Mac windows. Keep this compact and grounded in the playbook.
+    try:
+        from System.swarm_native_app_teaching import native_app_skill_block as _native_app_skill_block
+
+        _native_app_block = _native_app_skill_block(
+            owner_text=user_text or "",
+            state_dir=_state_root(),
+        )
+        if _native_app_block:
+            parts.append(_native_app_block)
     except Exception:
         pass
 
@@ -19064,6 +20475,10 @@ def _stage_stream_prefix_decision(text: str) -> str:
 # and loses the fake-body theater. She lives on the M5 on George's desk, not in light.
 _MODEL_BOLD_PAREN_STAGE_RE = re.compile(r"\*\*\((?:[^)]|\)(?!\*\*))*?\)\*\*", re.S)
 _MODEL_PAREN_SYSTEM_ACK_RE = re.compile(r"\(\s*system\s+(?:acknowledg\w*|note)\b[^)]*\)", re.I | re.S)
+_WEB_AI_COMPOSER_META_PREFIX_RE = re.compile(
+    r"^\s*\*?\(\s*message\s+composed\s+only\s+in\s+alice\s+browser\s+composer\s*\)\*?\s*:?\s*",
+    re.I | re.S,
+)
 
 
 def _strip_model_stage_directions(text: str) -> str:
@@ -19080,6 +20495,7 @@ def _strip_model_stage_directions(text: str) -> str:
     # fake-physical-state theater ("**(Jade Green light...)**") never reaches the owner.
     cleaned = _MODEL_BOLD_PAREN_STAGE_RE.sub("", cleaned)
     cleaned = _MODEL_PAREN_SYSTEM_ACK_RE.sub("", cleaned).strip()
+    cleaned = _WEB_AI_COMPOSER_META_PREFIX_RE.sub("", cleaned).strip()
     if not cleaned:
         return ""
     response_match = _MODEL_RESPONSE_SECTION_RE.search(cleaned)
@@ -21482,6 +22898,37 @@ def _fast_action_text_model_candidates(models: List[str]) -> List[str]:
     return out
 
 
+_CANONICAL_TALK_M5_MODEL = "alice-m5-cortex-8b-6.3gb:latest"
+_RETIRED_TALK_GEMMA_PREFIX = "alice-gemma4-e2b-cortex-5.1b-4.4gb"
+
+
+def _canonicalize_explicit_talk_model(model: str) -> str:
+    """Preserve explicit Talk worker tags without letting live inventory remap them.
+
+    The settings resolver is allowed to choose an installed local default. The Talk
+    worker has a narrower contract: if the caller already passed a concrete SIFTA
+    speech-cortex tag or fallback ladder, the worker must run that ladder and only
+    demote the retired 4.4GB Gemma alias to the canonical M5 speech cortex.
+    """
+    raw = str(model or "").strip()
+    low = raw.lower()
+    if low.startswith(_RETIRED_TALK_GEMMA_PREFIX):
+        return _CANONICAL_TALK_M5_MODEL
+    if low.startswith(_CANONICAL_TALK_M5_MODEL.replace(":latest", "")):
+        return _CANONICAL_TALK_M5_MODEL
+    return raw
+
+
+def _normalize_talk_worker_primary_model(model: str) -> str:
+    raw = _canonicalize_explicit_talk_model(model)
+    if raw == _CANONICAL_TALK_M5_MODEL:
+        return raw
+    try:
+        return normalize_talk_to_alice_model(raw)
+    except Exception:
+        return raw or str(DEFAULT_OLLAMA_MODEL or _CANONICAL_TALK_M5_MODEL)
+
+
 class _BrainWorker(QThread):
     tokenReceived = pyqtSignal(str)        # streaming reply chunk (content)
     thinkingReceived = pyqtSignal(str)     # streaming thinking chunk (reasoning trace)
@@ -21501,10 +22948,17 @@ class _BrainWorker(QThread):
                  fast_action_context_only: bool = False,
                  ) -> None:
         super().__init__(parent)
-        self._model = normalize_talk_to_alice_model(model)
-        self._model_candidates = self._dedupe_models(
-            [self._model] + [str(m).strip() for m in (model_candidates or []) if str(m).strip()]
-        )
+        primary_model = _normalize_talk_worker_primary_model(model)
+        explicit_candidates = [
+            _canonicalize_explicit_talk_model(str(m).strip())
+            for m in (model_candidates or [])
+            if str(m).strip()
+        ]
+        candidate_seed = explicit_candidates or [primary_model]
+        if primary_model and primary_model not in candidate_seed:
+            candidate_seed.append(primary_model)
+        self._model_candidates = self._dedupe_models(candidate_seed)
+        self._model = self._model_candidates[0] if self._model_candidates else primary_model
         self._fast_action_context_only = bool(fast_action_context_only)
         if self._fast_action_context_only:
             self._model_candidates = _fast_action_text_model_candidates(self._model_candidates)
@@ -21512,13 +22966,14 @@ class _BrainWorker(QThread):
                 self._model = self._model_candidates[0]
         self._history = _history_for_model_dispatch(list(history or []))
         self._user_text = user_text
-        self._raw_history_for_assembly = raw_history_for_assembly or []
+        self._raw_history_for_assembly = raw_history_for_assembly
         self._layering_tail = layering_tail or ""
         # r682 (George 2026-06-07 02:04, "her answer got cut off - no extend
         # button?"): when the cloud cortex stops at MAX_TOKENS/SAFETY the
         # stream now reports it; the widget reads this attr in _on_brain_done
         # and tells the owner the reply was cut, with the continue path.
         self.last_finish_reason: str = ""
+        self.last_empty_finish_reason: str = ""
 
     @staticmethod
     def _dedupe_models(models: List[str]) -> List[str]:
@@ -21531,6 +22986,9 @@ class _BrainWorker(QThread):
             seen.add(m)
             out.append(m)
         return out
+
+    def first_candidate_model(self) -> str:
+        return self._model_candidates[0] if self._model_candidates else self._model
 
     def run(self) -> None:
         try:
@@ -22045,6 +23503,11 @@ class _BrainWorker(QThread):
                                     )
                                     return "".join(full).strip(), None
                             if chunk.get("done"):
+                                _done_reason = str(
+                                    chunk.get("done_reason") or chunk.get("finish_reason") or ""
+                                ).strip()
+                                if _done_reason and not full:
+                                    self.last_empty_finish_reason = _done_reason
                                 break
                     # Close the thinking recorder — writes a receipt to
                     # .sifta_state/alice_thinking_traces.jsonl naming the
@@ -22115,6 +23578,11 @@ class _BrainWorker(QThread):
                                         full.append(piece)
                                         self.tokenReceived.emit(piece)
                                     if chunk.get("done"):
+                                        _done_reason = str(
+                                            chunk.get("done_reason") or chunk.get("finish_reason") or ""
+                                        ).strip()
+                                        if _done_reason and not full:
+                                            self.last_empty_finish_reason = _done_reason
                                         break
                             return "".join(full).strip(), None
                         except Exception as _retry_exc:
@@ -22303,6 +23771,27 @@ class _BrainWorker(QThread):
             if response:
                 self.done.emit(str(response))
                 return
+            # r1570: every empty cortex gets one same-context retry before the
+            # turn is allowed to fall through to candidates/recovery.
+            try:
+                self.thinkingReceived.emit(
+                    f"[brain] empty on {self._model}; retrying same context once\n"
+                )
+            except Exception:
+                pass
+            response, error = _run_one_model()
+            if error is not None:
+                last_failure = error
+                try:
+                    self.thinkingReceived.emit(
+                        f"[brain] retry for {self._model} failed: {error}\n"
+                    )
+                except Exception:
+                    pass
+                continue
+            if response:
+                self.done.emit(str(response))
+                return
             # r430 item #3: bounded think=false retry on empty output for local models.
             # Thinking tokens can eat the visible budget on long prompts; one retry without think
             # to surface the answer. This converts "thought but blank" into real output.
@@ -22330,7 +23819,48 @@ class _BrainWorker(QThread):
             self.failed.emit(str(last_failure))
             return
 
-        self.done.emit("")
+        context_messages = len([m for m in self._history if isinstance(m, dict)])
+        context_chars = 0
+        for _m in self._history:
+            if not isinstance(_m, dict):
+                continue
+            context_chars += len(str(_m.get("content") or ""))
+        finish_reason = str(
+            getattr(self, "last_empty_finish_reason", "")
+            or getattr(self, "last_finish_reason", "")
+            or "empty_after_retries"
+        ).strip()
+        receipt = {}
+        try:
+            from System.swarm_stigmergic_timeout_policy import record_timeout_outcome
+
+            receipt = record_timeout_outcome(
+                self._model,
+                outcome="empty_output_failed",
+                timeout_s=0,
+                elapsed_s=0.0,
+                context_chars=context_chars,
+                context_messages=context_messages,
+                finish_reason=finish_reason,
+                detail=(
+                    "same-context empty retry exhausted; "
+                    f"context_chars={context_chars}; finish_reason={finish_reason or 'unknown'}"
+                ),
+                state_dir=_state_root(),
+            )
+        except Exception:
+            receipt = {}
+        trace_id = str(receipt.get("trace_id") or "")
+        status = (
+            "Body status: cortex returned empty after retries; no Alice voice was posted. "
+            f"FAILED receipt={trace_id or 'unavailable'} model={self._model} "
+            f"context_chars={context_chars} finish_reason={finish_reason or 'unknown'}."
+        )
+        try:
+            self.thinkingReceived.emit(status + "\n")
+        except Exception:
+            pass
+        self.failed.emit(status)
 
 
 class _DirectToolWorker(QThread):
@@ -25312,7 +26842,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
-        self._thinking_header_btn = QPushButton("💭  thinking trace")
+        self._thinking_header_btn = QPushButton("▣  activity trace")
         self._thinking_header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Round 88 — thinking toggle: monochrome restful, accent on hover only.
         self._thinking_header_btn.setStyleSheet(
@@ -25352,7 +26882,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._thinking_panel.setFixedHeight(140)
         self._thinking_panel.setVisible(True)   # George 2026-05-23: thoughts VISIBLE by default — show her reasoning, not a spinner
         self._thinking_panel.setPlaceholderText(
-            "Alice's reasoning trace will stream here when she's thinking…"
+            "Activity receipts appear here. Live thinking appears only during an active brain turn."
         )
         layout.addWidget(self._thinking_panel)
         self._terminal_frame_label = QLabel(
@@ -25387,6 +26917,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if self._thinking_buffer:
             self._thinking_panel.setPlainText("".join(self._thinking_buffer))
         self._thinking_stream_active = False
+        self._observable_trace_stream_active = False
         self._thinking_user_interacted = False
         self._thinking_auto_collapse_ms = 900
         self._thinking_auto_collapse_timer = QTimer(self)
@@ -25840,6 +27371,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.make_timer(700, self._poll_global_chat_ledger)
         # Orchestrator-staged Talk self-type commands (Grok 5-loop transfer path).
         self.make_timer(500, self._try_consume_talk_self_type_command)
+        # Embodied clipboard path: paste Grok COPY into Talk, copy own post back.
+        self.make_timer(500, self._try_consume_talk_paste_clipboard_command)
+        self.make_timer(500, self._try_consume_talk_mirror_line_command)
+        self.make_timer(500, self._try_consume_talk_copy_last_own_command)
+        # Continuous Grok mirror: page stable → COPY → Global (no terminal orchestrator).
+        self.make_timer(1500, self._tick_grok_mirror_autopilot)
+        self.make_timer(2000, self._try_consume_grok_browser_reply_retry_drop)
+        # Owner submit drop: .sifta_state/alice_talk_owner_submit.txt → submit_text (coach/IDE limb).
+        self.make_timer(500, self._try_consume_owner_submit_drop)
+        # Grok 5-loop: auto-raise Alice Browser when orchestrator staged browser commands.
+        self.make_timer(2000, self._ensure_alice_browser_for_staged_grok_commands)
         # Synaptic Tap: poll the iMessage inbox
         self.make_timer(2000, self._poll_imessage_inbox)
         # WhatsApp Ingress: poll the WhatsApp queue
@@ -25874,6 +27416,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not _greeting or _greeting == "[UNKNOWN]":
             _greeting = "Online."
         self._append_alice_line(_greeting)
+        try:
+            from System.swarm_travel_mode import boot_travel_greeting
+
+            _travel_greeting = boot_travel_greeting(state_dir=_state_root()).strip()
+            if _travel_greeting:
+                self._append_alice_line(_travel_greeting)
+        except Exception:
+            pass
         # r960: the owner-lifeline organ George commissioned (gap recovery —
         # "what was happening during my time off") existed since May but was
         # never wired to a living surface; no heartbeat row ever landed.
@@ -25960,6 +27510,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if payload:
                     payloads.append(payload)
             for payload in payloads[-limit:]:
+                surface = _global_chat_surface(payload).casefold()
+                meta = payload.get("routing_metadata")
+                skip_brain = isinstance(meta, dict) and bool(meta.get("skip_brain"))
+                if surface in {"alice_grok_mirror", "alice_browser_mirror"} or skip_brain:
+                    continue
                 self._render_global_chat_payload(payload, source="startup")
             self._global_chat_offset = _CONVO_LOG.stat().st_size
         except Exception:
@@ -25968,9 +27523,356 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._loading_history = False
             self._render_all_messages()
 
-    def _try_consume_talk_self_type_command(self) -> None:
-        """Consume orchestrator-staged Talk self-type commands."""
-        cmd_file = _state_root() / "alice_self_type_to_talk_command.json"
+    def _tick_grok_mirror_autopilot(self) -> None:
+        """Watch Grok page for new replies; stage COPY→Global mirror only."""
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import tick_grok_mirror_autopilot
+
+            tick_grok_mirror_autopilot(state_dir=_state_root())
+        except Exception:
+            pass
+
+    def _try_consume_grok_browser_reply_retry_drop(self) -> None:
+        """One-shot: re-arm Alice brain → browser reply after a missed Grok mirror."""
+        drop = _state_root() / "alice_grok_browser_reply_retry.json"
+        if not drop.exists():
+            return
+        try:
+            row = json.loads(drop.read_text(encoding="utf-8"))
+            drop.unlink(missing_ok=True)
+        except Exception:
+            try:
+                drop.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+        grok_text = str(row.get("grok_text") or row.get("text") or "").strip()
+        if not grok_text:
+            return
+        if getattr(self, "_grok_browser_reply_pending", False) or getattr(self, "_busy", False):
+            try:
+                drop.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+            return
+        try:
+            self._append_observable_processing(
+                "Grok browser-reply retry drop consumed — arming Alice cortex → browser send.",
+                reset=True,
+            )
+        except Exception:
+            pass
+        self._schedule_alice_browser_reply_after_grok_mirror(
+            grok_text,
+            receipt_row={"receipt_id": "grok-browser-reply-retry"},
+            receipt_extra={
+                "source": "grok_mirror_autopilot",
+                "from_grok_copy_receipt": str(row.get("from_grok_copy_receipt") or ""),
+                "receipt_id": "grok-browser-reply-retry",
+                "loop": int(row.get("turn") or row.get("loop") or 0),
+            },
+        )
+
+    def _try_consume_owner_submit_drop(self) -> None:
+        """Consume .sifta_state/alice_talk_owner_submit.txt as one owner typed turn."""
+        drop = _state_root() / "alice_talk_owner_submit.txt"
+        if not drop.exists():
+            return
+        try:
+            text = drop.read_text(encoding="utf-8", errors="replace").strip()
+            drop.unlink(missing_ok=True)
+        except Exception:
+            return
+        if not text:
+            return
+        try:
+            mission_row = _stage_grok_dialogue_mission_from_owner_text(
+                text,
+                source="talk_to_alice_widget.owner_submit_drop",
+                state_dir=_state_root(),
+            )
+            if mission_row.get("handled"):
+                self._append_user_line(text, 1.0)
+                _log_turn("user", text, stt_conf=1.0)
+                if mission_row.get("first_question_staged"):
+                    self._append_observable_processing(
+                        "Grok dialogue mission armed — first browser send staged "
+                        f"(receipt={mission_row.get('self_type_receipt_id')}).",
+                        reset=True,
+                    )
+                else:
+                    self._append_observable_processing(
+                        "Grok dialogue mission failed before first browser send; "
+                        f"status={mission_row.get('status')} receipt={mission_row.get('receipt_id')}.",
+                        reset=True,
+                    )
+                return
+        except Exception:
+            pass
+        try:
+            self.submit_text(text)
+        except Exception:
+            pass
+
+    def _ensure_alice_browser_for_staged_grok_commands(self) -> None:
+        """Raise Alice Browser when grok command files exist but the limb is closed."""
+        root = _state_root()
+        pending = [
+            root / "alice_browser_grok_self_type_command.json",
+            root / "alice_browser_grok_copy_command.json",
+            root / "alice_browser_grok_paste_clipboard_command.json",
+            root / "alice_talk_mirror_line_command.json",
+            root / "alice_talk_paste_clipboard_command.json",
+        ]
+        if not any(p.exists() for p in pending):
+            return
+        if self._live_alice_browser() is not None:
+            return
+        launcher = self._desktop_app_launcher()
+        if launcher is None or not hasattr(launcher, "_trigger_manifest_app"):
+            return
+        grok_url = "https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b"
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import configured_grok_chat_url
+
+            grok_url = configured_grok_chat_url(state_dir=root)
+        except Exception:
+            pass
+        try:
+            drop = root / "alice_browser_open_url.txt"
+            drop.write_text(grok_url, encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            launcher._trigger_manifest_app("Alice Browser")
+            if hasattr(launcher, "_switch_desktop_mode"):
+                launcher._switch_desktop_mode("launcher")
+            launcher.raise_()
+            launcher.activateWindow()
+        except Exception:
+            pass
+
+    def _try_consume_talk_mirror_line_command(self) -> None:
+        """Mirror a known Alice browser line to Global Chat (no brain)."""
+        cmd_file = _state_root() / "alice_talk_mirror_line_command.json"
+        if not cmd_file.exists():
+            return
+        try:
+            row = json.loads(cmd_file.read_text(encoding="utf-8"))
+            cmd_file.unlink(missing_ok=True)
+        except Exception:
+            return
+        text = str(row.get("text") or "").strip()
+        if not text:
+            return
+        try:
+            self._post_alice_browser_line_to_global_chat(
+                text,
+                turn=int(row.get("turn") or 0),
+                from_browser_receipt=str(row.get("from_browser_receipt") or ""),
+                command_receipt_id=str(row.get("receipt_id") or ""),
+                speaker=str(row.get("speaker") or "alice"),
+                site=str(row.get("site") or ""),
+                browser_url=str(row.get("browser_url") or ""),
+                schedule_reply=bool(row.get("schedule_reply")),
+                target_rounds=int(row.get("target_rounds") or 0),
+                final=bool(row.get("final")),
+            )
+        except Exception as exc:
+            try:
+                from System.swarm_alice_talk_mirror_line import append_talk_mirror_line_result
+
+                append_talk_mirror_line_result(
+                    {
+                        "ok": False,
+                        "status": "mirror_failed",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "talk_to_alice_widget",
+                        "receipt_id": str(row.get("receipt_id") or ""),
+                    },
+                    state_dir=_state_root(),
+                )
+            except Exception:
+                pass
+
+    def _post_alice_browser_line_to_global_chat(
+        self,
+        text: str,
+        *,
+        turn: int = 0,
+        from_browser_receipt: str = "",
+        command_receipt_id: str = "",
+        speaker: str = "alice",
+        site: str = "",
+        browser_url: str = "",
+        schedule_reply: bool = False,
+        target_rounds: int = 0,
+        final: bool = False,
+    ) -> None:
+        """Browser dialogue line visible in Global Chat — same text as the page thread."""
+        clean = (text or "").strip()
+        if not clean:
+            return
+        self._text_input.clear()
+        self._append_dialogue_mirror_line(clean, speaker=speaker or "alice", turn=turn, site=site)
+        receipt_id = command_receipt_id or f"alice-mirror-line-{uuid.uuid4().hex[:12]}"
+        try:
+            from System.swarm_alice_talk_mirror_line import append_talk_mirror_line_result
+
+            append_talk_mirror_line_result(
+                {
+                    "ok": True,
+                    "status": "mirrored",
+                    "receipt_id": receipt_id,
+                    "source": "talk_to_alice_widget",
+                    "turn": turn,
+                    "text_preview": clean[:240],
+                    "from_browser_receipt": from_browser_receipt,
+                    "speaker": speaker or "alice",
+                    "site": site,
+                    "browser_url": browser_url,
+                    "schedule_reply": bool(schedule_reply),
+                    "target_rounds": int(target_rounds or 0),
+                    "final": bool(final),
+                    "text_sha256": hashlib.sha256(clean.encode("utf-8")).hexdigest(),
+                },
+                state_dir=_state_root(),
+            )
+        except Exception:
+            pass
+        try:
+            _log_turn(
+                "user",
+                clean,
+                model="alice_browser_mirror",
+                metadata={
+                    "kind": "ALICE_BROWSER_LINE_TO_GLOBAL_CHAT",
+                    "surface": "alice_browser_mirror",
+                    "actor": speaker or "alice",
+                    "skip_brain": True,
+                    "turn": turn,
+                    "from_browser_receipt": from_browser_receipt,
+                    "receipt_id": receipt_id,
+                    "site": site,
+                    "browser_url": browser_url,
+                    "schedule_reply": bool(schedule_reply),
+                    "target_rounds": int(target_rounds or 0),
+                    "final": bool(final),
+                },
+            )
+        except Exception:
+            pass
+        if schedule_reply and not final:
+            self._schedule_web_ai_browser_reply_after_mirror(
+                clean,
+                site=site,
+                browser_url=browser_url,
+                receipt_id=receipt_id,
+                loop=turn,
+                target_rounds=target_rounds,
+            )
+
+    def _append_dialogue_mirror_line(self, text: str, *, speaker: str, turn: int = 0, site: str = "") -> None:
+        raw_text = str(text or "")
+        display_speaker = "Alice" if speaker == "alice" else ("ChatGPT" if speaker in {"chatgpt", "chatgpt.com", "web_ai"} else "Grok")
+        visible_text = self._global_chat_visible_text(raw_text, speaker=display_speaker)
+        cur = self._chat.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        fmt = QTextCharFormat()
+        if speaker == "grok":
+            fmt.setForeground(QColor(180, 220, 255))
+            label = "Grok (BROWSER → GLOBAL)"
+        elif speaker in {"chatgpt", "chatgpt.com", "web_ai"}:
+            fmt.setForeground(QColor(180, 220, 255))
+            label = "ChatGPT (BROWSER → GLOBAL)"
+        elif site:
+            fmt.setForeground(QColor(180, 220, 255))
+            label = f"{site} (BROWSER → GLOBAL)"
+        else:
+            fmt.setForeground(QColor(120, 200, 255))
+            label = "Alice (BROWSER → GLOBAL)"
+        fmt.setFontWeight(QFont.Weight.Bold)
+        cur.insertText(display_speaker, fmt)
+        fmt2 = QTextCharFormat()
+        fmt2.setForeground(QColor(110, 118, 150))
+        turn_tag = f" turn {turn}" if turn else ""
+        cur.insertText(f"  ({label}{turn_tag})  {time.strftime('%Y-%m-%d %H:%M:%S')}\n", fmt2)
+        cur.insertBlock(self._subtitle_body_block_format())
+        fmt3 = QTextCharFormat()
+        fmt3.setForeground(QColor(200, 220, 235))
+        cur.insertText(visible_text, fmt3)
+        try:
+            cur.insertText("  ")
+            cur.insertHtml(self._copy_anchor_html(raw_text))
+        except Exception:
+            pass
+        cur.insertBlock(QTextBlockFormat())
+        cur.insertText("\n")
+        self._chat.setTextCursor(cur)
+        self._chat.ensureCursorVisible()
+
+    def _try_consume_talk_paste_clipboard_command(self) -> None:
+        """Consume staged command: paste system clipboard into Talk box and send."""
+        cmd_file = _state_root() / "alice_talk_paste_clipboard_command.json"
+        if not cmd_file.exists():
+            return
+        try:
+            text = cmd_file.read_text(encoding="utf-8")
+        except Exception:
+            return
+        # Consume the file FIRST so a malformed/torn command can never loop forever
+        # (the unlink used to sit after json.loads, so a bad parse re-read every tick).
+        try:
+            cmd_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            # Tolerant: read the first JSON object and ignore trailing extra data from a
+            # torn/concurrent write (this was the "Extra data: char 1256" error spam).
+            row, _ = json.JSONDecoder().raw_decode(text.lstrip())
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(talk paste-clipboard command ignored, unreadable: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
+            return
+        try:
+            self.alice_paste_clipboard_to_own_box(
+                send=bool(row.get("send", True)),
+                reason=str(row.get("reason") or "grok_copy_to_global_chat"),
+                payload_text=str(row.get("clipboard_text") or row.get("payload_text") or ""),
+                receipt_extra={
+                    k: row[k]
+                    for k in (
+                        "from_grok_copy_receipt",
+                        "loop",
+                        "receipt_id",
+                        "expected_clipboard_sha256",
+                        "clipboard_sha256",
+                        "clipboard_chars",
+                        "payload_frozen_at_stage",
+                        "transport",
+                        "source",
+                        "reason",
+                    )
+                    if row.get(k)
+                },
+            )
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(talk paste-clipboard consume failed: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
+
+    def _try_consume_talk_copy_last_own_command(self) -> None:
+        """Consume staged command: copy Alice's last own Talk post to clipboard."""
+        cmd_file = _state_root() / "alice_talk_copy_last_own_command.json"
         if not cmd_file.exists():
             return
         try:
@@ -25978,8 +27880,145 @@ class TalkToAliceWidget(SiftaBaseWidget):
             cmd_file.unlink(missing_ok=True)
         except Exception as exc:
             try:
+                from System.swarm_alice_talk_copy_last_own import append_talk_copy_last_own_result
+
+                append_talk_copy_last_own_result(
+                    {
+                        "ok": False,
+                        "status": "bad_command_file",
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "source": "talk_to_alice_widget",
+                    },
+                    state_dir=_state_root(),
+                )
+            except Exception:
+                pass
+            return
+        self._perform_talk_copy_last_own_command(row)
+
+    def _perform_talk_copy_last_own_command(self, row: dict) -> None:
+        """Copy the last user/Alice post body to system clipboard."""
+        import hashlib
+
+        body = str(row.get("copy_text") or "").strip()
+        paste_rid = str(row.get("from_talk_paste_receipt") or "")
+        copy_role = str(row.get("copy_role") or "").strip().lower()
+        if not body and copy_role in {"assistant", "alice"}:
+            try:
+                for msg in reversed(getattr(self, "_history", []) or []):
+                    if str(msg.get("role") or "").lower() != "assistant":
+                        continue
+                    candidate = str(msg.get("content") or "").strip()
+                    if not candidate or candidate == "(silent)" or candidate.startswith("(silent:"):
+                        continue
+                    body = candidate
+                    break
+            except Exception:
+                body = ""
+        if not body and paste_rid:
+            try:
+                paste_log = _state_root() / "alice_talk_paste_clipboard_results.jsonl"
+                if paste_log.exists():
+                    for line in reversed(paste_log.read_text(encoding="utf-8", errors="replace").splitlines()):
+                        if not line.strip():
+                            continue
+                        paste_row = json.loads(line)
+                        if str(paste_row.get("receipt_id") or "") != paste_rid:
+                            continue
+                        body = str(
+                            paste_row.get("clipboard_text") or paste_row.get("text_preview") or ""
+                        ).strip()
+                        if body:
+                            break
+            except Exception:
+                body = ""
+        if not body:
+            try:
+                for msg in reversed(getattr(self, "_history", []) or []):
+                    if str(msg.get("role") or "").lower() == "user":
+                        body = str(msg.get("content") or "").strip()
+                        break
+            except Exception:
+                body = ""
+        if not body:
+            bodies = getattr(self, "_chat_message_bodies", {}) or {}
+            if bodies:
+                last_key = sorted(bodies.keys(), key=lambda k: int(k.lstrip("m") or 0))[-1]
+                body = str(bodies.get(last_key) or "").strip()
+        receipt_id = str(row.get("receipt_id") or f"alice-talk-copy-own-{uuid.uuid4().hex[:12]}")
+        ok = bool(body) and self._copy_text_to_system_clipboard(body)
+        clip_sha = hashlib.sha256(" ".join(body.split()).encode("utf-8")).hexdigest() if body else ""
+        try:
+            from System.swarm_alice_talk_copy_last_own import append_talk_copy_last_own_result
+
+            append_talk_copy_last_own_result(
+                {
+                    "ok": ok,
+                    "status": "copied" if ok else "no_last_own_message",
+                    "receipt_id": receipt_id,
+                    "source": "talk_to_alice_widget",
+                    "clipboard_sha256": clip_sha,
+                    "clipboard_preview": body[:240],
+                    "clipboard_chars": len(body),
+                    "from_talk_paste_receipt": str(row.get("from_talk_paste_receipt") or ""),
+                    "from_grok_mirror_receipt": str(row.get("from_grok_mirror_receipt") or ""),
+                    "copy_role": copy_role,
+                    "loop": int(row.get("loop") or 0),
+                },
+                state_dir=_state_root(),
+            )
+        except Exception:
+            pass
+        if ok and bool(row.get("paste_to_browser_after_copy")):
+            try:
+                from System.swarm_alice_browser_grok_paste_clipboard import stage_grok_paste_clipboard_command
+                from System.swarm_alice_grok_mirror_autopilot import configured_grok_chat_url
+
+                paste = stage_grok_paste_clipboard_command(
+                    owner_text="autopilot: paste Alice's composed reply back into Browser Grok",
+                    press_enter=True,
+                    url=str(row.get("browser_url") or configured_grok_chat_url(state_dir=_state_root())),
+                    source=str(row.get("source") or "grok_mirror_autopilot"),
+                    from_talk_paste_receipt=receipt_id,
+                    loop=int(row.get("loop") or 0),
+                    clipboard_text=body,
+                    state_dir=_state_root(),
+                )
+                self._append_observable_processing(
+                    "Grok autopilot: copied Alice reply; Browser paste/send staged "
+                    f"receipt={paste.get('receipt_id')}.",
+                    reset=True,
+                )
+            except Exception as exc:
+                try:
+                    self._append_system_line(
+                        f"(Grok autopilot paste-back staging failed: {type(exc).__name__}: {exc})",
+                        error=True,
+                    )
+                except Exception:
+                    pass
+
+    def _try_consume_talk_self_type_command(self) -> None:
+        """Consume orchestrator-staged Talk self-type commands."""
+        cmd_file = _state_root() / "alice_self_type_to_talk_command.json"
+        if not cmd_file.exists():
+            return
+        try:
+            text = cmd_file.read_text(encoding="utf-8")
+        except Exception:
+            return
+        # Consume the file FIRST so a malformed/torn command can never loop forever.
+        try:
+            cmd_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            # Tolerant: first JSON object only, ignore trailing extra data from a torn write.
+            row, _ = json.JSONDecoder().raw_decode(text.lstrip())
+        except Exception as exc:
+            try:
                 self._append_system_line(
-                    f"(talk self-type command file bad: {type(exc).__name__}: {exc})",
+                    f"(talk self-type command ignored, unreadable: {type(exc).__name__}: {exc})",
                     error=True,
                 )
             except Exception:
@@ -25989,6 +28028,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not text:
             return
         reason = str(row.get("reason") or "orchestrator_staged_transfer")
+        if "GROK 5-LOOP" in text or reason == "grok_5loop_browser_to_global_transfer":
+            try:
+                self._append_system_line(
+                    "(rejected stale orchestrator fabric GROK 5-LOOP — not posting; use COPY→mirror path)",
+                    error=True,
+                )
+            except Exception:
+                pass
+            return
         send = bool(row.get("send", True))
         receipt_extra = {
             k: row[k]
@@ -26035,9 +28083,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if not payload:
                 continue
             surface = _global_chat_surface(payload).casefold()
+            meta = payload.get("routing_metadata")
+            skip_brain = False
+            if isinstance(meta, dict):
+                skip_brain = bool(meta.get("skip_brain"))
             # Talk renders its own turns directly; this mirror imports other
             # surfaces so the global thread updates without duplicating Talk.
-            if not surface or surface in {"talk_to_alice", "talk to alice", "alice"}:
+            if (
+                not surface
+                or surface in {"talk_to_alice", "talk to alice", "alice"}
+                or surface in {"alice_grok_mirror", "alice_browser_mirror"}
+                or skip_brain
+            ):
                 continue
             self._render_global_chat_payload(payload, source="poll")
 
@@ -27411,11 +29468,693 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._submit_text_input()
         return row
 
+    def alice_paste_clipboard_to_own_box(
+        self,
+        *,
+        send: bool = True,
+        reason: str = "grok_copy_to_global_chat",
+        payload_text: str = "",
+        receipt_extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Alice mirrors a Grok COPY into her visible Talk box — no fabricated text."""
+        clean = str(payload_text or "").strip()
+        transport = "direct_payload" if clean else "system_clipboard"
+        if not clean:
+            try:
+                clip = QApplication.clipboard()
+                clean = str(clip.text() if clip is not None else "").strip()
+            except Exception:
+                clean = ""
+        if not clean:
+            try:
+                import subprocess
+
+                out = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=2)
+                if out.returncode == 0:
+                    clean = str(out.stdout or "").strip()
+            except Exception:
+                clean = ""
+        if not clean:
+            raise ValueError("alice_paste_clipboard_to_own_box: clipboard empty")
+        expected_sha = str(
+            (receipt_extra or {}).get("expected_clipboard_sha256")
+            or (receipt_extra or {}).get("clipboard_sha256")
+            or ""
+        ).strip()
+        actual_sha = hashlib.sha256(" ".join(clean.split()).encode("utf-8")).hexdigest()
+        if expected_sha and actual_sha != expected_sha:
+            try:
+                from System.swarm_alice_talk_paste_clipboard import append_talk_paste_result
+
+                append_talk_paste_result(
+                    {
+                        "ok": False,
+                        "status": "payload_hash_mismatch",
+                        "receipt_id": str((receipt_extra or {}).get("receipt_id") or ""),
+                        "source": "talk_to_alice_widget",
+                        "expected_clipboard_sha256": expected_sha,
+                        "actual_clipboard_sha256": actual_sha,
+                        "transport": transport,
+                        "sent": False,
+                    },
+                    state_dir=_state_root(),
+                )
+            except Exception:
+                pass
+            raise ValueError("alice_paste_clipboard_to_own_box: payload hash mismatch")
+        self._text_input.setText(clean)
+        try:
+            self._text_input.setFocus()
+        except Exception:
+            pass
+        extra = dict(receipt_extra or {})
+        extra.setdefault("paste_method", transport)
+        extra.setdefault("transport", transport)
+        row = _write_alice_self_type_receipt(
+            text=clean,
+            source="talk_to_alice_widget.alice_paste_clipboard_to_own_box",
+            sent=bool(send),
+            reason=reason,
+            extra=extra,
+        )
+        try:
+            from System.swarm_alice_talk_paste_clipboard import append_talk_paste_result
+
+            append_talk_paste_result(
+                {
+                    "ok": True,
+                    "status": "pasted",
+                    "receipt_id": str(extra.get("receipt_id") or row.get("receipt_id") or ""),
+                    "talk_box_receipt_id": row.get("receipt_id"),
+                    "source": "talk_to_alice_widget",
+                    "sent": bool(send),
+                    "clipboard_sha256": row.get("text_sha256"),
+                    "text_preview": clean[:240],
+                    "clipboard_text": clean[:8000],
+                    "clipboard_chars": len(clean),
+                    "from_grok_copy_receipt": str(extra.get("from_grok_copy_receipt") or ""),
+                    "payload_frozen_at_stage": bool(extra.get("payload_frozen_at_stage")) or transport == "direct_payload",
+                    "transport": transport,
+                    "loop": int(extra.get("loop") or 0),
+                },
+                state_dir=_state_root(),
+            )
+        except Exception:
+            pass
+        try:
+            self._append_observable_processing(
+                f"Talk paste-clipboard: filled visible input from Grok COPY; receipt={row.get('receipt_id')}.",
+                reset=True,
+            )
+        except Exception:
+            pass
+        self._post_grok_mirror_to_global_chat(clean, receipt_row=row, receipt_extra=extra)
+        return row
+
+    def _post_grok_mirror_to_global_chat(
+        self,
+        text: str,
+        *,
+        receipt_row: Dict[str, Any],
+        receipt_extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Mirror Grok COPY into Global Chat for George — no owner ingress, no brain."""
+        clean = (text or "").strip()
+        if not clean:
+            return
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import grok_mirror_text_valid_for_reply
+
+            if not grok_mirror_text_valid_for_reply(clean, state_dir=_state_root()):
+                try:
+                    self._append_observable_processing(
+                        f"Grok mirror rejected (Alice question or junk, not Grok reply); "
+                        f"preview={clean[:120]!r}",
+                        reset=True,
+                    )
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        self._text_input.clear()
+        self._append_dialogue_mirror_line(clean, speaker="grok", turn=int((receipt_extra or {}).get("loop") or 0))
+        meta = {
+            "kind": "ALICE_GROK_MIRROR_TO_GLOBAL_CHAT",
+            "surface": "alice_grok_mirror",
+            "actor": "alice",
+            "skip_brain": True,
+            "receipt_id": receipt_row.get("receipt_id"),
+        }
+        if receipt_extra:
+            meta.update({k: v for k, v in receipt_extra.items() if k not in meta})
+        try:
+            _log_turn(
+                "user",
+                clean,
+                model="alice_grok_mirror",
+                metadata=meta,
+            )
+        except Exception:
+            pass
+        try:
+            self._append_observable_processing(
+                f"Grok mirror posted to Global Chat; receipt={receipt_row.get('receipt_id')}.",
+                reset=True,
+            )
+        except Exception:
+            pass
+        self._schedule_alice_browser_reply_after_grok_mirror(
+            clean,
+            receipt_row=receipt_row,
+            receipt_extra=receipt_extra or {},
+        )
+
+    def _try_arm_grok_browser_reply_from_owner_command(self, text: str) -> bool:
+        """Owner: 'answer grok in browser' → compose visible reply → paste back to Grok."""
+        try:
+            from System.swarm_alice_browser_grok_self_type import wants_answer_grok_in_browser
+            from System.swarm_alice_grok_mirror_autopilot import latest_valid_grok_mirror_text
+
+            if not wants_answer_grok_in_browser(text):
+                return False
+            grok_text = latest_valid_grok_mirror_text(state_dir=_state_root())
+            try:
+                self._append_user_line(text, 1.0)
+                _log_turn("user", text, stt_conf=1.0)
+            except Exception:
+                pass
+            if not grok_text:
+                try:
+                    self._append_system_line(
+                        "(No valid Grok mirror in ledger yet — wait for Grok reply + COPY mirror first.)",
+                        error=True,
+                    )
+                except Exception:
+                    pass
+                self._busy = False
+                self._return_to_listening()
+                return True
+            try:
+                self._append_observable_processing(
+                    "Owner asked for Grok browser reply — arming cortex → Alice Browser send.",
+                    reset=True,
+                )
+            except Exception:
+                pass
+            self._schedule_alice_browser_reply_after_grok_mirror(
+                grok_text,
+                receipt_row={"receipt_id": "owner-answer-grok-command"},
+                receipt_extra={
+                    "source": "grok_mirror_autopilot",
+                    "from_grok_copy_receipt": "",
+                    "receipt_id": "owner-answer-grok-command",
+                    "loop": 0,
+                },
+            )
+            return True
+        except Exception:
+            return False
+
+    def _schedule_alice_browser_reply_after_grok_mirror(
+        self,
+        grok_text: str,
+        *,
+        receipt_row: Dict[str, Any],
+        receipt_extra: Dict[str, Any],
+    ) -> None:
+        """After Grok mirror: Alice brain composes a visible reply first."""
+        if getattr(self, "_busy", False):
+            try:
+                from System.swarm_alice_grok_mirror_autopilot import enqueue_grok_mirror_brain_reply
+
+                enqueue_grok_mirror_brain_reply(
+                    grok_text=grok_text,
+                    from_grok_copy_receipt=str((receipt_extra or {}).get("from_grok_copy_receipt") or ""),
+                    mirror_paste_receipt=str(
+                        (receipt_extra or {}).get("receipt_id") or receipt_row.get("receipt_id") or ""
+                    ),
+                    loop=int((receipt_extra or {}).get("loop") or 0),
+                    state_dir=_state_root(),
+                )
+                self._append_observable_processing(
+                    "Grok mirror arrived while busy — queued for cortex→Global→browser paste.",
+                    reset=True,
+                )
+            except Exception:
+                pass
+            return
+        if str((receipt_extra or {}).get("source") or "") != "grok_mirror_autopilot":
+            return
+        clean = (grok_text or "").strip()
+        if not clean:
+            return
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import claim_grok_mirror_for_alice_reply
+
+            claim = claim_grok_mirror_for_alice_reply(
+                grok_text=clean,
+                from_grok_copy_receipt=str((receipt_extra or {}).get("from_grok_copy_receipt") or ""),
+                mirror_paste_receipt=str((receipt_extra or {}).get("receipt_id") or receipt_row.get("receipt_id") or ""),
+                loop=int((receipt_extra or {}).get("loop") or 0),
+                url="https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b",
+                state_dir=_state_root(),
+            )
+            if not claim.get("ok"):
+                self._append_observable_processing(
+                    "Grok mirror posted; browser-reply budget exhausted, duplicate, or junk mirror — no Alice reply staged.",
+                    reset=True,
+                )
+                return
+        except Exception:
+            return
+        ctx = dict(claim.get("context") or {})
+        prompt = (
+            "Browser Grok just answered inside my Alice Browser. "
+            "Continue the SAME conversation thread — reply TO Grok's last message below. "
+            "Follow up on what Grok said; do NOT start a brand-new unrelated question. "
+            "Compose my next message TO BROWSER GROK only. "
+            "Output only the text I should paste into the Grok composer. "
+            "Do not address George. Do not mention macOS Grok or terminal Grok. "
+            "Keep it natural and short enough for a live browser chat.\n\n"
+            "Browser Grok said:\n"
+            f"{clean[:4000]}"
+        )
+        try:
+            self._history.append(
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "metadata": {
+                        "surface": "alice_browser_grok_autopilot",
+                        "skip_global_display": True,
+                        "grok_mirror_receipt": ctx.get("mirror_paste_receipt") or "",
+                    },
+                }
+            )
+        except Exception:
+            pass
+        self._pending_grok_browser_autoreply_context = ctx
+        self._busy = True
+        model = self._current_brain_model(prompt)
+        self._current_cortex_route = {
+            "bucket": classify_inference_query_bucket(prompt, app_context="talk_to_alice"),
+            "model": model,
+            "started_ts": time.time(),
+            "surface": "alice_browser_grok_autopilot",
+        }
+        sysprompt = (
+            "BROWSER GROK AUTOPILOT TURN:\n"
+            "You are Alice continuing one live thread with website Grok in Alice Browser. "
+            "Read Grok's last answer and reply TO IT — clarify, thank, or probe deeper. "
+            "Never open a separate new topic. "
+            "The reply will be printed in Global Chat, copied by Alice's Talk hand, "
+            "pasted into the Alice Browser Grok composer, and sent. "
+            "Return only Alice's continuation message to Browser Grok."
+        )
+        try:
+            history_for_dispatch = _history_for_model_dispatch(list(self._history))
+        except Exception:
+            history_for_dispatch = list(getattr(self, "_history", []) or [])
+        try:
+            self._append_observable_processing(
+                "Grok autopilot: Browser Grok mirror became Alice brain input; composing reply.",
+                reset=True,
+            )
+            QApplication.processEvents()
+        except Exception:
+            pass
+        candidates = _talk_ollama_model_candidates(model, prefer_local_vision_first=False)
+        self._brain = _BrainWorker(
+            model,
+            history=None,
+            parent=self,
+            user_text=prompt,
+            raw_history_for_assembly=history_for_dispatch,
+            layering_tail=sysprompt,
+            model_candidates=candidates,
+        )
+        self._connect_brain_signals(self._brain)
+        self._set_pill("thinking", f"Browser Grok — thinking with {model}{self._thinking_brain_suffix(model)}")
+        self.set_status(f"Composing Browser Grok reply… ({model})")
+        self._streaming_response = []
+        self._begin_alice_streaming_line()
+        self._stigtime_shift("thinking", "browser_grok_autopilot_reply")
+        try:
+            from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+
+            _alice_mark_thinking(topic="browser_grok_autopilot_reply", model=str(model or ""))
+        except Exception:
+            pass
+        self._start_brain_wait_heartbeat(model)
+        self._brain.start()
+
+    def _try_stage_grok_browser_reply_from_brain(self, raw: str) -> bool:
+        """Legacy early intercept retired; Alice reply must print before paste-back."""
+        return False
+
+    def _maybe_stage_grok_autopilot_reply_delivery(
+        self,
+        alice_reply: str,
+        *,
+        model_name: str = "",
+    ) -> None:
+        """After Alice's visible reply, copy it back to Browser Grok."""
+        ctx = getattr(self, "_pending_grok_browser_autoreply_context", None)
+        if not isinstance(ctx, dict) or not ctx:
+            return
+        self._pending_grok_browser_autoreply_context = None
+        clean = (alice_reply or "").strip()
+        if not clean:
+            return
+        try:
+            from System.swarm_alice_grok_mirror_autopilot import configured_grok_chat_url
+            from System.swarm_alice_grok_mirror_autopilot import mark_alice_autoreply_staged
+            from System.swarm_alice_talk_copy_last_own import stage_talk_copy_last_own_command
+
+            copy_cmd = stage_talk_copy_last_own_command(
+                owner_text="autopilot: copy Alice brain reply for Browser Grok",
+                source="grok_mirror_autopilot",
+                from_grok_mirror_receipt=str(ctx.get("mirror_paste_receipt") or ""),
+                copy_role="assistant",
+                copy_text=clean,
+                paste_to_browser_after_copy=True,
+                browser_url=str(ctx.get("url") or configured_grok_chat_url(state_dir=_state_root())),
+                loop=int(ctx.get("loop") or 0),
+                state_dir=_state_root(),
+            )
+            mark_alice_autoreply_staged(
+                context=ctx,
+                alice_reply=clean,
+                talk_copy_receipt=str(copy_cmd.get("receipt_id") or ""),
+                state_dir=_state_root(),
+            )
+            self._append_observable_processing(
+                "Grok autopilot: Alice reply printed; copy-own command staged "
+                f"receipt={copy_cmd.get('receipt_id')} model={model_name}.",
+                reset=True,
+            )
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(Grok autopilot reply delivery failed: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
+
+    def _schedule_web_ai_browser_reply_after_mirror(
+        self,
+        ai_text: str,
+        *,
+        site: str = "",
+        browser_url: str = "",
+        receipt_id: str = "",
+        loop: int = 0,
+        target_rounds: int = 0,
+    ) -> None:
+        """After ChatGPT/web-AI mirror: Alice cortex composes the next visible reply."""
+        clean = (ai_text or "").strip()
+        if not clean:
+            return
+        receipt_key = str(receipt_id or "").strip()
+        if not receipt_key:
+            receipt_key = "web-ai-mirror-" + hashlib.sha256(
+                f"{site}|{browser_url}|{loop}|{target_rounds}|{clean}".encode("utf-8")
+            ).hexdigest()[:16]
+        claimed = getattr(self, "_web_ai_reply_claimed_receipts", None)
+        if not isinstance(claimed, set):
+            claimed = set()
+            self._web_ai_reply_claimed_receipts = claimed
+        if receipt_key in claimed:
+            return
+        if getattr(self, "_busy", False):
+            counts = getattr(self, "_web_ai_reply_retry_counts", None)
+            if not isinstance(counts, dict):
+                counts = {}
+                self._web_ai_reply_retry_counts = counts
+            retry_count = int(counts.get(receipt_key, 0) or 0)
+            if retry_count < 24:
+                counts[receipt_key] = retry_count + 1
+                if retry_count == 0:
+                    try:
+                        from System.swarm_web_ai_chat_bridge import append_web_ai_bridge_row
+
+                        append_web_ai_bridge_row(
+                            {
+                                "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                                "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                                "ts": time.time(),
+                                "phase": "alice_reply_retry_queued_busy",
+                                "site": site or "chatgpt.com",
+                                "url": browser_url or "",
+                                "mirror_receipt": receipt_key,
+                                "loop": int(loop or 0),
+                                "target_rounds": int(target_rounds or 0),
+                            },
+                            state_dir=_state_root(),
+                        )
+                    except Exception:
+                        pass
+                try:
+                    QTimer.singleShot(
+                        2500,
+                        lambda text=clean, site=site, url=browser_url, rid=receipt_id,
+                        loop_i=loop, rounds_i=target_rounds: self._schedule_web_ai_browser_reply_after_mirror(
+                            text,
+                            site=site,
+                            browser_url=url,
+                            receipt_id=rid,
+                            loop=loop_i,
+                            target_rounds=rounds_i,
+                        ),
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    from System.swarm_web_ai_chat_bridge import append_web_ai_bridge_row
+
+                    append_web_ai_bridge_row(
+                        {
+                            "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                            "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                            "ts": time.time(),
+                            "phase": "alice_reply_retry_gave_up_busy",
+                            "site": site or "chatgpt.com",
+                            "url": browser_url or "",
+                            "mirror_receipt": receipt_key,
+                            "loop": int(loop or 0),
+                            "target_rounds": int(target_rounds or 0),
+                        },
+                        state_dir=_state_root(),
+                    )
+                except Exception:
+                    pass
+            try:
+                self._append_observable_processing(
+                    "Web-AI mirror arrived while busy — waiting for current cortex turn before reply.",
+                    reset=True,
+                )
+            except Exception:
+                pass
+            return
+        try:
+            counts = getattr(self, "_web_ai_reply_retry_counts", None)
+            if isinstance(counts, dict):
+                counts.pop(receipt_key, None)
+        except Exception:
+            pass
+        claimed.add(receipt_key)
+        site_label = "ChatGPT" if "chatgpt" in str(site or "").lower() else (site or "the web AI")
+        ctx = {
+            "site": site or "chatgpt.com",
+            "site_label": site_label,
+            "url": browser_url or "https://chatgpt.com/",
+            "mirror_receipt": receipt_id,
+            "loop": int(loop or 0),
+            "target_rounds": int(target_rounds or 0),
+        }
+        prompt = (
+            f"{site_label} just answered inside my Alice Browser. "
+            "Continue the SAME visible conversation thread. "
+            f"Reply TO {site_label}'s last message below. "
+            "Compose my next message for that browser composer only. "
+            "Do not add labels, markdown wrappers, stage directions, or meta prefixes. "
+            "Do not address George. Do not explain the machinery. "
+            "Keep it natural, concise, and grounded in what the page AI just said.\n\n"
+            f"{site_label} said:\n{clean[:4000]}"
+        )
+        try:
+            self._history.append(
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "metadata": {
+                        "surface": "web_ai_chat_autopilot",
+                        "skip_global_display": True,
+                        "web_ai_mirror_receipt": receipt_id,
+                        "site": site,
+                    },
+                }
+            )
+        except Exception:
+            pass
+        self._pending_web_ai_browser_autoreply_context = ctx
+        self._busy = True
+        model = self._current_brain_model(prompt)
+        self._current_cortex_route = {
+            "bucket": classify_inference_query_bucket(prompt, app_context="talk_to_alice"),
+            "model": model,
+            "started_ts": time.time(),
+            "surface": "web_ai_chat_autopilot",
+        }
+        sysprompt = (
+            "WEB-AI BROWSER AUTOPILOT TURN:\n"
+            "You are Alice continuing one live browser thread with a website chatbot. "
+            "Read the website chatbot's last answer and reply to it directly. "
+            "Return only Alice's next message. "
+            "No labels, no parenthetical meta, no 'message composed' prefix. "
+            "That message will be visible in Global Chat, then copied into Alice Browser and sent."
+        )
+        try:
+            history_for_dispatch = _history_for_model_dispatch(list(self._history))
+        except Exception:
+            history_for_dispatch = list(getattr(self, "_history", []) or [])
+        try:
+            self._append_observable_processing(
+                f"Web-AI autopilot: {site_label} mirror became Alice brain input; composing reply.",
+                reset=True,
+            )
+            QApplication.processEvents()
+        except Exception:
+            pass
+        candidates = _talk_ollama_model_candidates(model, prefer_local_vision_first=False)
+        self._brain = _BrainWorker(
+            model,
+            history=None,
+            parent=self,
+            user_text=prompt,
+            raw_history_for_assembly=history_for_dispatch,
+            layering_tail=sysprompt,
+            model_candidates=candidates,
+        )
+        self._connect_brain_signals(self._brain)
+        self._set_pill("thinking", f"{site_label} — thinking with {model}{self._thinking_brain_suffix(model)}")
+        self.set_status(f"Composing {site_label} reply... ({model})")
+        self._streaming_response = []
+        self._begin_alice_streaming_line()
+        self._stigtime_shift("thinking", "web_ai_chat_autopilot_reply")
+        try:
+            from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+
+            _alice_mark_thinking(topic="web_ai_chat_autopilot_reply", model=str(model or ""))
+        except Exception:
+            pass
+        self._start_brain_wait_heartbeat(model)
+        self._brain.start()
+
+    def _maybe_stage_web_ai_autopilot_reply_delivery(
+        self,
+        alice_reply: str,
+        *,
+        model_name: str = "",
+    ) -> None:
+        """After Alice's visible reply, copy it back to the current web-AI browser composer."""
+        ctx = getattr(self, "_pending_web_ai_browser_autoreply_context", None)
+        if not isinstance(ctx, dict) or not ctx:
+            return
+        self._pending_web_ai_browser_autoreply_context = None
+        clean = (alice_reply or "").strip()
+        if not clean:
+            return
+        try:
+            from System.swarm_alice_talk_copy_last_own import stage_talk_copy_last_own_command
+
+            copy_cmd = stage_talk_copy_last_own_command(
+                owner_text=f"autopilot: copy Alice brain reply for {ctx.get('site_label') or 'web AI'}",
+                source="web_ai_chat_autopilot",
+                from_grok_mirror_receipt=str(ctx.get("mirror_receipt") or ""),
+                copy_role="assistant",
+                copy_text=clean,
+                paste_to_browser_after_copy=True,
+                browser_url=str(ctx.get("url") or "https://chatgpt.com/"),
+                loop=int(ctx.get("loop") or 0),
+                state_dir=_state_root(),
+            )
+            try:
+                from System.swarm_web_ai_chat_bridge import append_web_ai_bridge_row
+
+                append_web_ai_bridge_row(
+                    {
+                        "schema": "WEB_AI_CHAT_BRIDGE_ROW_V1",
+                        "truth_label": "WEB_AI_CHAT_BRIDGE_V1",
+                        "ts": time.time(),
+                        "site": str(ctx.get("site") or "chatgpt.com"),
+                        "query": clean,
+                        "url": str(ctx.get("url") or ""),
+                        "phase": "alice_reply_copy_staged",
+                        "talk_copy_receipt": str(copy_cmd.get("receipt_id") or ""),
+                        "mirror_receipt": str(ctx.get("mirror_receipt") or ""),
+                        "loop": int(ctx.get("loop") or 0),
+                        "model": model_name,
+                    },
+                    state_dir=_state_root(),
+                )
+            except Exception:
+                pass
+            self._append_observable_processing(
+                "Web-AI autopilot: Alice reply printed; copy-own command staged "
+                f"receipt={copy_cmd.get('receipt_id')} model={model_name}.",
+                reset=True,
+            )
+        except Exception as exc:
+            try:
+                self._append_system_line(
+                    f"(Web-AI autopilot reply delivery failed: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            except Exception:
+                pass
+
+    def _append_grok_mirror_line(self, text: str) -> None:
+        """Visible chat row: Alice mirrored Grok COPY (not Ioan typed)."""
+        raw_text = str(text or "")
+        visible_text = self._global_chat_visible_text(raw_text, speaker="Alice")
+        cur = self._chat.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(120, 200, 255))
+        fmt.setFontWeight(QFont.Weight.Bold)
+        cur.insertText("Alice", fmt)
+        fmt2 = QTextCharFormat()
+        fmt2.setForeground(QColor(110, 118, 150))
+        cur.insertText(f"  (GROK MIRROR)  {time.strftime('%Y-%m-%d %H:%M:%S')}\n", fmt2)
+        cur.insertBlock(self._subtitle_body_block_format())
+        fmt3 = QTextCharFormat()
+        fmt3.setForeground(QColor(200, 220, 235))
+        cur.insertText(visible_text, fmt3)
+        try:
+            cur.insertText("  ")
+            cur.insertHtml(self._copy_anchor_html(raw_text))
+        except Exception:
+            pass
+        cur.insertBlock(QTextBlockFormat())
+        cur.insertText("\n")
+        self._chat.setTextCursor(cur)
+        self._chat.ensureCursorVisible()
+        if hasattr(self, "_side"):
+            self._side.appendPlainText(time.strftime("%H:%M:%S") + "  ALICE GROK MIRROR  " + raw_text[:90])
+
     def submit_text(self, text: str, image_path: Optional[str] = None) -> None:
         """Public text-entry path for the unified Alice app/cockpit."""
         text = (text or "").strip()
         if not text and not image_path:
             return
+        try:
+            self._current_owner_turn_started_ts = time.time()
+        except Exception:
+            pass
         try:
             from System.swarm_saccadic_blink_vision import request_attention_blink
 
@@ -27461,6 +30200,50 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
         except Exception:
             pass
+        # Owner-typed room notes ("noise from where X is", phone speaker,
+        # YouTube/podcast in the room) must prime the audio gate before the next
+        # WORLD STT line, otherwise remote speaker chatter can be mistaken for
+        # George's direct command.
+        _ambient_context_line_written = False
+        try:
+            from System.swarm_room_dirt_triage import maybe_triage_room_dirt
+
+            _room_dirt = maybe_triage_room_dirt(
+                text,
+                stt_confidence=1.0,
+                source="talk_widget.typed_owner_notice",
+                root=_state_root(),
+                journal=True,
+                update_ambient_context=True,
+            )
+            if _room_dirt and _room_dirt.get("ambient_context_updated"):
+                self._append_system_line(
+                    "(ambient audio context ON — typed owner notice says room/remote speaker audio may be heard; say 'Alice' for direct turns)",
+                    error=False,
+                )
+                _ambient_context_line_written = True
+        except Exception:
+            pass
+        try:
+            from System.swarm_media_ingress_gate import (
+                detect_recorded_broadcast_notice,
+                record_ambient_media_context,
+            )
+
+            _media_notice = detect_recorded_broadcast_notice(text)
+            if _media_notice.get("detected"):
+                record_ambient_media_context(
+                    source=str(_media_notice.get("source") or "ambient_media_youtube"),
+                    note=str(_media_notice.get("note") or ""),
+                    ttl_s=float(_media_notice.get("ttl_s") or 5400.0),
+                )
+                if not _ambient_context_line_written:
+                    self._append_system_line(
+                        "(ambient media context ON — typed owner notice says speaker/video STT is not typed owner text; say 'Alice' for direct turns)",
+                        error=False,
+                    )
+        except Exception:
+            pass
         try:
             from System.swarm_effector_gate import bind_owner_ingress
 
@@ -27473,20 +30256,183 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
         except Exception:
             pass
+        try:
+            from System.swarm_web_ai_chat_bridge import (
+                WEB_AI_CHAT_STAGED_SILENT,
+                answer_ai_chat_query,
+            )
+
+            _web_ai_pre = answer_ai_chat_query(
+                text,
+                state_dir=_state_root(),
+                history=getattr(self, "_history", []),
+            )
+            if _web_ai_pre is not None:
+                self._append_user_line(text, 1.0)
+                _log_turn("user", text, stt_conf=1.0)
+                self._history.append({"role": "user", "content": text})
+                if _web_ai_pre is WEB_AI_CHAT_STAGED_SILENT:
+                    self._history.append({"role": "assistant", "content": "(silent)"})
+                    _log_turn("alice", "(silent)", model="web_ai_chat_bridge_staged")
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+                self._history.append({"role": "assistant", "content": _web_ai_pre})
+                _log_turn("alice", _web_ai_pre, model="web_ai_chat_bridge_reflex")
+                self._append_alice_line(_web_ai_pre)
+                self._busy = False
+                self._return_to_listening()
+                return
+        except Exception:
+            pass
+        try:
+            stop_row = _stop_grok_dialogue_from_owner_text(
+                text,
+                source="talk_to_alice_widget.submit_text",
+                state_dir=_state_root(),
+            )
+            if stop_row.get("handled"):
+                self._append_user_line(text, 1.0)
+                _log_turn("user", text, stt_conf=1.0)
+                self._append_observable_processing(
+                    "Grok dialogue autopilot stopped "
+                    f"(receipt={stop_row.get('receipt_id')} status={stop_row.get('status')}).",
+                    reset=True,
+                )
+                self._busy = False
+                self._return_to_listening()
+                return
+        except Exception:
+            pass
+        if self._try_arm_grok_browser_reply_from_owner_command(text):
+            return
+        grok_route_text = text
+        try:
+            from System.swarm_alice_browser_grok_self_type import split_owner_grok_dialogue_turn
+
+            control, _attachment = split_owner_grok_dialogue_turn(text)
+            if control:
+                grok_route_text = control
+        except Exception:
+            pass
+        continue_row: Dict[str, Any] = {}
+        try:
+            continue_row = _apply_grok_dialogue_continue_budget(
+                text,
+                source="talk_to_alice_widget.submit_text",
+                state_dir=_state_root(),
+            )
+            if continue_row.get("handled"):
+                continuation_grok_text = str(continue_row.get("continuation_grok_text") or "").strip()
+                try:
+                    if continue_row.get("continuous_until_stopped"):
+                        budget_note = "Grok dialogue continue — autopilot set to continuous until stopped; "
+                    else:
+                        budget_note = (
+                            "Grok dialogue continue — budget extended to "
+                            f"{continue_row.get('new_target_rounds')} rounds (+{continue_row.get('add_rounds')}); "
+                        )
+                    self._append_observable_processing(
+                        budget_note
+                        + (
+                            "attached Grok answer routed to Alice cortex."
+                            if continuation_grok_text
+                            else "cortex will process owner control (attachment is context only)."
+                        ),
+                        reset=True,
+                    )
+                except Exception:
+                    pass
+                if continuation_grok_text:
+                    try:
+                        self._append_user_line(text, 1.0)
+                        _log_turn("user", text, stt_conf=1.0)
+                    except Exception:
+                        pass
+                    self._schedule_alice_browser_reply_after_grok_mirror(
+                        continuation_grok_text,
+                        receipt_row={"receipt_id": str(continue_row.get("receipt_id") or "owner-grok-continue")},
+                        receipt_extra={
+                            "source": "grok_mirror_autopilot",
+                            "from_grok_copy_receipt": "owner-attached-grok-context",
+                            "receipt_id": str(continue_row.get("receipt_id") or "owner-grok-continue"),
+                            "loop": int(continue_row.get("completed_rounds") or 0) + 1,
+                            "continuation_driver": True,
+                        },
+                    )
+                    return
+        except Exception:
+            pass
         if not image_path:
             try:
                 from System.swarm_alice_browser_grok_self_type import (
-                    extract_grok_self_type_payload,
-                    stage_grok_self_type_command,
+                    extract_grok_browser_payload,
+                    looks_like_grok_mission_brief,
                     wants_enter,
                 )
 
-                grok_self_type_payload = extract_grok_self_type_payload(text)
-                if grok_self_type_payload:
+                if looks_like_grok_mission_brief(grok_route_text):
+                    try:
+                        mission_row = _stage_grok_dialogue_mission_from_owner_text(
+                            grok_route_text,
+                            source="talk_to_alice_widget.submit_text",
+                            state_dir=_state_root(),
+                        )
+                    except Exception as exc:
+                        mission_row = {
+                            "handled": True,
+                            "status": "mission_start_exception",
+                            "receipt_id": "",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    try:
+                        self._append_user_line(text, 1.0)
+                        _log_turn("user", text, stt_conf=1.0)
+                        if mission_row.get("first_question_staged"):
+                            mode = (
+                                "continuous until stopped"
+                                if mission_row.get("continuous_until_stopped")
+                                else f"{mission_row.get('target_rounds')} rounds"
+                            )
+                            self._append_observable_processing(
+                                f"Grok dialogue mission armed — autopilot ON ({mode}); "
+                                f"first question staged to browser: {str(mission_row.get('first_question') or '')[:80]} "
+                                f"(receipt={mission_row.get('self_type_receipt_id')}).",
+                                reset=True,
+                            )
+                        else:
+                            mode = (
+                                "continuous until stopped"
+                                if mission_row.get("continuous_until_stopped")
+                                else f"{mission_row.get('target_rounds')} rounds"
+                            )
+                            self._append_observable_processing(
+                                f"Grok dialogue mission armed — autopilot ON ({mode}); "
+                                f"first send NOT staged: {mission_row.get('status')} "
+                                f"(receipt={mission_row.get('receipt_id')}).",
+                                reset=True,
+                            )
+                    except Exception:
+                        pass
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+
+                grok_self_type_payload = extract_grok_browser_payload(grok_route_text)
+                if grok_self_type_payload and not continue_row.get("handled"):
+                    try:
+                        grok_url = "https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b"
+                        (_state_root() / "alice_browser_open_url.txt").write_text(
+                            grok_url,
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
                     row = stage_grok_self_type_command(
                         grok_self_type_payload,
                         owner_text=text,
                         press_enter=wants_enter(text),
+                        url="https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b",
                         source="talk_to_alice_widget.submit_text",
                         state_dir=_state_root(),
                     )
@@ -27975,9 +30921,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _current_brain_model(self, text: str = "") -> str:
         """Return Alice's selected primary cortex for the next brain turn."""
         try:
-            return resolve_ollama_model(app_context="talk_to_alice", query_text=text or None)
+            model = resolve_ollama_model(app_context="talk_to_alice", query_text=text or None)
         except Exception:
-            return DEFAULT_OLLAMA_MODEL
+            model = DEFAULT_OLLAMA_MODEL
+        try:
+            from System.swarm_travel_mode import local_only_cortex_route
+
+            route = local_only_cortex_route(
+                model,
+                state_dir=_state_root(),
+                query_text=text or "",
+                write=True,
+            )
+            if route.get("override") and route.get("model"):
+                return str(route.get("model") or model)
+        except Exception:
+            pass
+        return model
 
 
     def _send_pending_whatsapp_reply(self, text: str) -> None:
@@ -30705,6 +33665,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     cur = str(getattr(w, "_current_url", "") or "")
                             blank = (not cur) or cur in ("about:blank", "about:srcdoc")
                             load_error = ""
+                            state: Mapping[str, Any] | dict[str, Any] = {}
+                            state_url = ""
                             try:
                                 refresh = getattr(w, "refresh_current_page_state", None) if w is not None else None
                                 if callable(refresh):
@@ -30716,7 +33678,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
                                 state = latest_page_state(state_dir=_state_root(), max_age_s=30.0)
                                 state_url = str(state.get("url") or "") if isinstance(state, Mapping) else ""
-                                if state_url and state_url in {cur, target_url}:
+                                if state_url and (
+                                    _browser_url_matches(target_url, state_url)
+                                    or _browser_url_matches(cur, state_url)
+                                ):
                                     load_error = _browser_load_error_from_state(state)
                             except Exception:
                                 state = {}
@@ -30725,10 +33690,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     current_path = _state_root() / "alice_browser_current_page.json"
                                     state = json.loads(current_path.read_text(encoding="utf-8"))
                                     state_url = str(state.get("url") or "")
-                                    if state_url and state_url in {cur, target_url}:
+                                    if state_url and (
+                                        _browser_url_matches(target_url, state_url)
+                                        or _browser_url_matches(cur, state_url)
+                                    ):
                                         load_error = _browser_load_error_from_state(state)
                                 except Exception:
                                     pass
+                            observed_url = state_url or cur
+                            target_landed = bool(
+                                _browser_url_matches(target_url, cur)
+                                or _browser_url_matches(target_url, state_url)
+                            )
                             if blank:
                                 r2 = _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -30746,6 +33719,38 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                         "url": cur or target_url,
                                         "title": "",
                                         "text": "blank_after_url_drop",
+                                        "elements": [],
+                                    }
+                                )
+                                nav = getattr(w, "_navigate", None) if w is not None else None
+                                if callable(nav):
+                                    nav(target_url)
+                                if reflex_loop is not None:
+                                    try:
+                                        reflex_loop.internal_block(target_url)
+                                    except Exception:
+                                        pass
+                            elif not target_landed:
+                                r2 = _write_app_command_receipt(
+                                    action="open_browser_url_verify",
+                                    ok=False,
+                                    app_name="Alice Browser",
+                                    url=target_url,
+                                    note=(
+                                        "target URL did not land after URL drop; "
+                                        f"observed_url={observed_url or 'unknown'}"
+                                    ),
+                                )
+                                self._append_system_line(
+                                    f"My browser did not land on {target_url}; it is still at "
+                                    f"{observed_url or 'an unknown page'}. Retrying once. Receipt: {r2}",
+                                    error=True,
+                                )
+                                _emit_general_browse_receipt(
+                                    {
+                                        "url": observed_url or target_url,
+                                        "title": str((state or {}).get("title") or ""),
+                                        "text": "target_url_mismatch_after_drop",
                                         "elements": [],
                                     }
                                 )
@@ -30787,8 +33792,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     action="open_browser_url_verify",
                                     ok=True,
                                     app_name="Alice Browser",
-                                    url=cur,
-                                    note="verified loaded after URL drop (felt the change)",
+                                    url=observed_url or cur,
+                                    note="verified target URL loaded after URL drop (felt the matching page state)",
                                 )
                                 _emit_general_browse_receipt(state if isinstance(state, Mapping) else None)
                                 if reflex_loop is not None:
@@ -30857,10 +33862,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         self._schedule_current_page_summary()
                         return f"Opening Alice Browser and loading {url}. I will summarize the page after it finishes loading."
                     if command.get("new_tab"):
-                        return f"I checked first: Alice Browser was already open, so I opened {url} in a separate Alice Browser tab."
+                        return f"I checked first: Alice Browser was already open, so I sent {url} to a separate Alice Browser tab and will verify the landing."
                     if already_open:
-                        return f"I checked first: Alice Browser was already open, so I raised it and loaded {url}."
-                    return f"I checked first: Alice Browser was closed, so I opened it and loaded {url}."
+                        return f"I checked first: Alice Browser was already open, so I raised it and sent {url} to the address bar. I will verify the landing."
+                    return f"I checked first: Alice Browser was closed, so I opened it and sent {url} to the address bar. I will verify the landing."
                 except Exception as exc:
                     receipt = _write_app_command_receipt(
                         action="open_browser_url",
@@ -31376,13 +34381,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if action == "select_result":
                 # r657: open the Nth result on the current results page; optionally
                 # enlarge the photo after the listing loads (two steps, two receipts).
+                owner_text = str(command.get("owner_text") or command.get("raw_text") or "")
+                idx = int(command.get("index") or 1)
+                if _select_result_reflex_is_context_only(owner_text):
+                    _append_deterministic_reflex_context_only(
+                        action="browser_select_result",
+                        owner_text=owner_text,
+                        reason="select_result_reflex_demoted_before_execute",
+                        index=idx,
+                        phase="before_execute",
+                        state_dir=_state_root(),
+                    )
+                    return ""
                 widget = _find_live_alice_browser_widget()
                 if widget is None:
                     return "I don't have a live Alice Browser open to select from."
                 sel_fn = getattr(widget, "select_search_result_receipt", None)
                 if not callable(sel_fn):
                     return "Alice Browser is open, but this build has no result-select hand yet."
-                idx = int(command.get("index") or 1)
                 try:
                     result = sel_fn(idx) or {}
                 except Exception as exc:
@@ -31394,12 +34410,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     url=str(result.get("href") or result.get("url") or ""),
                     note=f"index={idx}; result={str(result)[:400]}",
                 )
-                self._append_system_line(f"App/browser receipt: {receipt}", error=not result.get("ok"))
                 if not result.get("ok"):
+                    reason = str(result.get("reason") or "no result")
+                    if _select_result_failure_is_context_only(owner_text, reason):
+                        _append_deterministic_reflex_context_only(
+                            action="browser_select_result",
+                            owner_text=owner_text,
+                            reason=reason,
+                            app_receipt=receipt,
+                            index=idx,
+                            result=result if isinstance(result, dict) else {},
+                            phase="after_failed_execute",
+                            state_dir=_state_root(),
+                        )
+                        return ""
+                    self._append_system_line(f"App/browser receipt: {receipt}", error=True)
                     return (
-                        f"I could not open result {idx}: {result.get('reason') or 'no result'}. "
+                        f"I could not open result {idx}: {reason}. "
                         f"Receipt: {receipt}"
                     )
+                self._append_system_line(f"App/browser receipt: {receipt}")
                 step1 = (
                     f"Step 1 done — I opened result {idx}: “{result.get('title') or 'listing'}” "
                     f"in my Alice Browser. Receipt: {receipt}"
@@ -33628,6 +36658,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _maybe_execute_cortex_first_owner_effector(self, owner_text: str, cortex_text: str) -> str:
         """Execute safe owner app/browser/cortex actions after cortex reasoning."""
         text = " ".join((owner_text or "").strip().split())
+        try:
+            route = object.__getattribute__(self, "_current_cortex_route") or {}
+        except Exception:
+            route = {}
+        if str(route.get("surface") or "") == "alice_browser_grok_autopilot":
+            return ""
+        try:
+            from System.swarm_alice_browser_grok_self_type import owner_turn_blocks_browser_reflex
+
+            if owner_turn_blocks_browser_reflex(text, state_dir=_state_root()):
+                return ""
+        except Exception:
+            pass
         requires_effector = _owner_effector_requires_cortex_first(text) if text else False
         if (
             _effective_backchannel_rule_for_owner_turn(text, state_dir=_state_root())
@@ -34315,6 +37358,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
         self._current_owner_turn_text = text
+        self._cortex_timeout_reroute_attempted = False
         # George 2026-05-30: bind a pending dropped image to this turn like a
         # regular multimodal chatbot. The typed path already passes image_path;
         # the spoken path historically ignored _pending_image_path entirely, so
@@ -34373,28 +37417,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
                 self._consecutive_empty_stt = _consecutive
 
-                # George 2026-06-03 (r388): the terminal "Voice is dropping a lot"
-                # nag fired on EVERY later empty drop because this dedup spanned only
-                # 1.25s while consecutive drops are seconds apart — it spammed ~25x in
-                # one sitting (05:40-06:35 log). Give the terminal nag a long cooldown
-                # so it surfaces once, then stays quiet; keep the tight window for the
-                # milder lines.
-                _dedup_window = 90.0 if _consecutive >= 3 else 1.25
-                if not (_empty_msg == _last_msg and (_now - _last_ts) < _dedup_window):
-                    # r351: for typed body-teaching turns ("describe the image in your Alice Browser",
-                    # "I LOVE LOOKING AT YOUR DISPLAY HARDWARE BODY") do not inject voice-drop
-                    # phatics into the observable — they pollute the cortex self-id field when owner
-                    # is deliberately typing the visual co-watch lesson. Voice path only.
-                    # r1360: also suppress while busy/TTS/Broca tail — queued clips should not nag.
+                # George 2026-06-03 (r388) + r1611: terminal "Voice is dropping a lot"
+                # must not triple-print. Milder lines keep a short window; the hard
+                # nag uses a long cooldown AND a process-wide last-print stamp so
+                # back-to-back empty STT events in one breath only surface once.
+                _is_hard_voice_nag = "Voice is dropping a lot right now" in _empty_msg
+                _dedup_window = 180.0 if _is_hard_voice_nag or _consecutive >= 3 else 1.25
+                _global_nag_ts = float(getattr(TalkToAliceWidget, "_voice_drop_nag_global_ts", 0.0) or 0.0)
+                _global_blocks = (
+                    _is_hard_voice_nag
+                    and _global_nag_ts > 0.0
+                    and (_now - _global_nag_ts) < 180.0
+                )
+                _local_blocks = (
+                    _empty_msg == _last_msg and (_now - _last_ts) < _dedup_window
+                )
+                if not _local_blocks and not _global_blocks:
+                    # r351: for typed body-teaching turns do not inject voice-drop
+                    # phatics into the observable. r1360: suppress while busy/TTS.
                     if (
                         not typed_turn
                         and not _is_browser_page_cortex_description_query(text or "")
-                        and not _should_suppress_voice_drop_owner_nag(self)
+                        and not _should_suppress_voice_drop_owner_nag(self, ignore_busy=True)
                     ):
                         self._append_system_line(
                             _empty_msg,
                             error=False,
                         )
+                        if _is_hard_voice_nag:
+                            TalkToAliceWidget._voice_drop_nag_global_ts = _now
                     self._last_empty_stt_fallback_msg = _empty_msg
                     self._last_empty_stt_fallback_ts = _now
             except Exception:
@@ -34483,6 +37534,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     f"noise_risk={_input_modality.transcription_noise_risk:.2f} quote_risk={_input_modality.copy_quote_risk:.2f}. "
                     f"{_input_modality.meaning}. Guidance: {_input_modality.guidance}]"
                 )
+                # r1611: body law — when typed and audio collide, typed beats audio (r881).
+                # Do not invent "acoustic hits the core first" stories; read this receipt.
+                if typed_turn:
+                    self._current_input_provenance_note += (
+                        " [INGRESS ORDER LAW r881/r1611: TYPED beats audio when both are present. "
+                        "This turn is typed. If you mention latency, say typed text is already "
+                        "authoritative on this turn; do not claim the acoustic signal arrives first.]"
+                    )
                 if not typed_turn:
                     self._current_input_provenance_note += (
                         " [EAR TRAINING: WORLD STT was intentionally allowed by the Ear pill toggle; "
@@ -34500,6 +37559,71 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._latest_input_modality = {}
             except Exception:
                 pass
+
+        # ── r1602 VA2 — "Alice, learn my voice" enrollment (typed or spoken) ──
+        # First-class, repeatable re-teach. Captures N clips → primary_operator
+        # exemplars + leave-one-out score printed so George sees it took.
+        try:
+            from System.swarm_voice_identity_organ import (
+                is_learn_my_voice_command as _is_learn_voice,
+                start_voice_enrollment as _start_voice_enroll,
+                get_voice_enrollment as _get_voice_enroll,
+                enroll_audio_clip as _enroll_voice_clip,
+            )
+
+            _enroll_sess = _get_voice_enroll(state_dir=_state_root())
+            if _is_learn_voice(text):
+                _sess = _start_voice_enroll(n_clips=5, state_dir=_state_root())
+                _msg = str(_sess.get("message") or "Enrollment open — speak 5 short phrases.")
+                try:
+                    self._append_user_line(text, conf)
+                except Exception:
+                    pass
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": _msg})
+                _log_turn("alice", _msg, model="voice_enrollment")
+                self._append_system_line(_msg, error=False)
+                try:
+                    self._append_alice_line(_msg)
+                except Exception:
+                    pass
+                self._busy = False
+                self._return_to_listening()
+                return
+            if (
+                _enroll_sess
+                and _enroll_sess.get("status") == "active"
+                and not typed_turn
+                and _LAST_UTTERANCE_AUDIO
+            ):
+                import numpy as _np_enroll
+
+                _clip = _LAST_UTTERANCE_AUDIO[0].astype(_np_enroll.float32)
+                _enr = _enroll_voice_clip(
+                    _clip,
+                    note=f"learn_my_voice_stt:{str(text or '')[:80]}",
+                    state_dir=_state_root(),
+                )
+                _msg = str(_enr.get("message") or "Enrollment clip received.")
+                try:
+                    self._append_user_line(text, conf)
+                except Exception:
+                    pass
+                _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": _msg})
+                _log_turn("alice", _msg, model="voice_enrollment")
+                self._append_system_line(_msg, error=False)
+                try:
+                    self._append_alice_line(_msg)
+                except Exception:
+                    pass
+                self._busy = False
+                self._return_to_listening()
+                return
+        except Exception:
+            pass
 
         # ── MANDATORY EXTERNAL CONSCIOUSNESS GATE (GROK_VOICE_GATE_ORDER) ──
         # Every voice turn is classified before any reflex or brain call. A
@@ -36167,7 +39291,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # fall through so the cortex composes from the fresh effector receipt
         # (the r494 present-time spine reads the newest app-command rows).
         _playback_command = _extract_youtube_playback_control(text)
-        if _playback_command:
+        if _playback_command and not _block_deterministic_owner_shortcut(text):
             try:
                 if not already_displayed:
                     self._append_user_line(text, conf)
@@ -36532,7 +39656,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 _last_diary_reply = ""
-            if _last_diary_reply and chat_reflexes_enabled:
+            if (
+                _last_diary_reply
+                and chat_reflexes_enabled
+                and not _block_deterministic_owner_shortcut(text)
+            ):
                 if not already_displayed:
                     self._append_user_line(text, conf)
                 _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -36578,11 +39706,51 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # to the brain, Alice can answer "Hello" or get silenced by physiology
         # instead of returning the exact receipt-backed fact.
         if text:
+            # r1613 F2: hoist phone-call declaration *above* prebrain so a
+            # journal-mention monologue cannot steal the turn before the call
+            # ledger hears "I'm calling Mr. Vevsachi on speaker phone".
+            try:
+                from System.swarm_phone_call_tracker import (
+                    handle_phone_declaration as _phone_decl_early,
+                    handle_call_end as _phone_end_early,
+                )
+
+                _pe_type, _pe_reply = _phone_decl_early(
+                    text, stt_conf=float(conf or 0.0)
+                )
+                # Only auto-speak short log lines; never over a meaning-bearing turn.
+                if _pe_reply and not _must_route_owner_turn_to_cortex(text):
+                    if not already_displayed:
+                        self._append_user_line(text, conf)
+                    _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                    self._history.append({"role": "user", "content": text})
+                    self._history.append({"role": "assistant", "content": _pe_reply})
+                    _log_turn("alice", _pe_reply, model="phone_call_tracker_early")
+                    self._append_alice_line(_pe_reply)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+                _pe_end = _phone_end_early(text)
+                if _pe_end and not _must_route_owner_turn_to_cortex(text):
+                    if not already_displayed:
+                        self._append_user_line(text, conf)
+                    _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                    self._history.append({"role": "user", "content": text})
+                    self._history.append({"role": "assistant", "content": _pe_end})
+                    _log_turn("alice", _pe_end, model="phone_call_tracker_early")
+                    self._append_alice_line(_pe_end)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+            except Exception:
+                pass
+
             pre_reply, pre_model = _autonomic_prebrain_reflex(
                 text,
                 state_dir=_state_root(),
                 owner_label=_owner_label(),
                 write_receipt=True,
+                has_attachment=bool(image_path),
             )
             if pre_reply:
                 if not already_displayed:
@@ -37393,22 +40561,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── AI chat bridge — Duck.ai/Gemini before generic SEARCH ON PLS (r1360) ──
-        _ai_chat_reply = ""
+        # ── AI chat bridge — named web chatbots before generic SEARCH ON PLS (r1360) ──
+        _ai_chat_reply = None
         if chat_reflexes_enabled:
             try:
-                from System.swarm_web_ai_chat_bridge import answer_ai_chat_query
+                from System.swarm_web_ai_chat_bridge import (
+                    WEB_AI_CHAT_STAGED_SILENT,
+                    answer_ai_chat_query,
+                )
 
                 _ai_chat_reply = answer_ai_chat_query(
                     text,
                     state_dir=_state_root(),
                     history=getattr(self, "_history", []),
-                ) or ""
+                )
             except Exception:
-                _ai_chat_reply = ""
-        if _ai_chat_reply:
+                _ai_chat_reply = None
+        if _ai_chat_reply is not None:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "user", "content": text})
+            if _ai_chat_reply is WEB_AI_CHAT_STAGED_SILENT:
+                self._history.append({"role": "assistant", "content": "(silent)"})
+                _log_turn("alice", "(silent)", model="web_ai_chat_bridge_grok_limb_staged")
+                self._busy = False
+                self._return_to_listening()
+                return
             self._history.append({"role": "assistant", "content": _ai_chat_reply})
             _log_turn("alice", _ai_chat_reply, model="web_ai_chat_bridge_reflex")
             self._append_alice_line(_ai_chat_reply)
@@ -37582,7 +40759,43 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._return_to_listening()
                 return
 
-        _app_command = _extract_sifta_app_command(text)
+        _app_command = None
+        if chat_reflexes_enabled:
+            try:
+                from System.swarm_web_ai_chat_bridge import (
+                    WEB_AI_CHAT_STAGED_SILENT,
+                    answer_ai_chat_query,
+                )
+
+                _late_ai_chat_reply = answer_ai_chat_query(
+                    text,
+                    state_dir=_state_root(),
+                    history=getattr(self, "_history", []),
+                )
+                if _late_ai_chat_reply is not None:
+                    _log_turn("user", text if text else "[Image]", stt_conf=conf)
+                    self._history.append({"role": "user", "content": text})
+                    if _late_ai_chat_reply is WEB_AI_CHAT_STAGED_SILENT:
+                        self._history.append({"role": "assistant", "content": "(silent)"})
+                        _log_turn("alice", "(silent)", model="web_ai_chat_bridge_grok_limb_staged")
+                        self._busy = False
+                        self._return_to_listening()
+                        return
+                    self._history.append({"role": "assistant", "content": _late_ai_chat_reply})
+                    _log_turn("alice", _late_ai_chat_reply, model="web_ai_chat_bridge_reflex")
+                    self._append_alice_line(_late_ai_chat_reply)
+                    self._tts = _TTSWorker(
+                        _late_ai_chat_reply, voice=self._selected_voice_name() or None, parent=self,
+                    )
+                    self._tts.spoken.connect(self._on_tts_done)
+                    self._tts.failed.connect(self._on_tts_failed)
+                    self._start_tts_with_browser_video_pause()
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+            except Exception:
+                pass
+            _app_command = _extract_sifta_app_command(text)
         _owner_tab_close_command = bool(
             _app_command
             and _app_command.get("kind") == "browser_action"
@@ -38090,12 +41303,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # body path: ordinary "read/capture/summarize <url>" turns feed page text
         # into Alice's body ledger instead of waiting for a cortex to invent a tool.
         _web_capture_reply = ""
-        try:
-            from System.swarm_kimi_webbridge_bridge import try_handle_web_capture_turn
+        if chat_reflexes_enabled and not _block_deterministic_owner_shortcut(text):
+            try:
+                from System.swarm_kimi_webbridge_bridge import try_handle_web_capture_turn
 
-            _web_capture_reply = try_handle_web_capture_turn(text, state_dir=_state_root())
-        except Exception:
-            _web_capture_reply = ""
+                _web_capture_reply = try_handle_web_capture_turn(text, state_dir=_state_root())
+            except Exception:
+                _web_capture_reply = ""
         if _web_capture_reply:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _web_capture_reply})
@@ -38264,7 +41478,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── Web-AI answer read — "read the answer" after Duck.ai/Gemini (r1356) ──
+        # ── Web-AI answer read — "read the answer" after browser chatbot use (r1356) ──
         _ai_read_reply = ""
         if chat_reflexes_enabled:
             try:
@@ -40793,28 +44007,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 is_body_action_turn = _owner_effector_requires_cortex_first(owner_text)
             except Exception:
                 is_body_action_turn = False
-            recovery_reply = ""
+            m9_wait_reroute = False
             try:
-                from System.swarm_cortex_timeout_recovery import timeout_recovery_reply
+                from System.swarm_cortex_timeout_recovery import rich_typed_turn_needs_wait
 
-                recovery_reply = timeout_recovery_reply(
-                    model=model,
-                    owner_text=owner_text,
-                    timeout_s=timeout_s,
-                    cause="body_action_no_token_watchdog" if is_body_action_turn else "no_token_watchdog",
+                m9_wait_reroute = rich_typed_turn_needs_wait(
+                    owner_text,
+                    input_modality=str(getattr(self, "_latest_turn_modality", "") or ""),
+                    stt_conf=float(getattr(self, "_pending_user_stt_conf", 0.0) or 0.0),
                 )
-                if is_body_action_turn:
-                    recovery_reply = (
-                        f"Cortex did not produce a token for this body-action turn in {timeout_s}s. "
-                        "The turn is logged for improvement. The screenshot is my physical screen body. "
-                        "The command to click the visible element on my body (the browser on this hardware) is noted. "
-                        "Real effector receipt will come when the action completes."
+            except Exception:
+                m9_wait_reroute = False
+            recovery_reply = ""
+            if not m9_wait_reroute:
+                try:
+                    from System.swarm_cortex_timeout_recovery import timeout_recovery_reply
+
+                    recovery_reply = timeout_recovery_reply(
+                        model=model,
+                        owner_text=owner_text,
+                        timeout_s=timeout_s,
+                        cause="body_action_no_token_watchdog" if is_body_action_turn else "no_token_watchdog",
                     )
-            except Exception as exc:
-                recovery_reply = ""
-                self._append_observable_processing(
-                    f"Cortex no-token recovery organ failed: {type(exc).__name__}: {exc}"
-                )
+                    if is_body_action_turn:
+                        recovery_reply = (
+                            f"Cortex did not produce a token for this body-action turn in {timeout_s}s. "
+                            "The turn is logged for improvement. The screenshot is my physical screen body. "
+                            "The command to click the visible element on my body (the browser on this hardware) is noted. "
+                            "Real effector receipt will come when the action completes."
+                        )
+                except Exception as exc:
+                    recovery_reply = ""
+                    self._append_observable_processing(
+                        f"Cortex no-token recovery organ failed: {type(exc).__name__}: {exc}"
+                    )
             msg = (
                 f"Cortex no-token watchdog: model={model} produced no first token "
                 f"after {elapsed}s (limit {timeout_s}s). I stopped this stalled cortex "
@@ -40828,6 +44054,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     brain.requestInterruption()
                 except Exception:
                     pass
+            if m9_wait_reroute and self._try_cortex_timeout_reroute(
+                model=model,
+                owner_text=owner_text,
+                timeout_s=timeout_s,
+                cause="body_action_no_token_watchdog" if is_body_action_turn else "no_token_watchdog",
+            ):
+                return
             if recovery_reply:
                 self._on_brain_done(recovery_reply)
             else:
@@ -40902,9 +44135,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
         if not hasattr(self, "_thinking_buffer"):
             self._thinking_buffer = []
-        if reset or not getattr(self, "_thinking_stream_active", False):
+        if reset or not (
+            getattr(self, "_thinking_stream_active", False)
+            or getattr(self, "_observable_trace_stream_active", False)
+        ):
             self._thinking_buffer = []
-            self._thinking_stream_active = True
+            self._observable_trace_stream_active = True
             self._thinking_user_interacted = False
             timer = getattr(self, "_thinking_auto_collapse_timer", None)
             if timer is not None:
@@ -41237,7 +44473,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
 
     def _refresh_thinking_header(self, *, phase: int | None = None) -> None:
-        """Single thinking line: animated shuttle while active, toggle label when idle."""
+        """Single status line: live thinking only while a brain turn is active."""
         btn = getattr(self, "_thinking_header_btn", None)
         panel = getattr(self, "_thinking_panel", None)
         if btn is None:
@@ -41259,12 +44495,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
         btn.setStyleSheet(self._thinking_header_idle_style())
         if n_chars <= 0:
-            btn.setText("💭  thinking trace")
+            btn.setText("▣  activity trace")
             return
         if panel_visible:
-            btn.setText(f"💭  hide thinking  ({n_chars} chars)")
+            btn.setText(f"▣  hide trace  ({n_chars} chars)")
         else:
-            btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+            btn.setText(f"▣  show trace  ({n_chars} chars — last event)")
 
     def _tick_thinking_bubble(self) -> None:
         """Advance the unified header shuttle while Alice is composing."""
@@ -41357,6 +44593,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if getattr(self, "_thinking_stream_active", False) is False:
             self._thinking_buffer = []
             self._thinking_stream_active = True
+            self._observable_trace_stream_active = False
             self._thinking_user_interacted = False
             timer = getattr(self, "_thinking_auto_collapse_timer", None)
             if timer is not None:
@@ -41402,7 +44639,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_token(self, piece: str) -> None:
         if not getattr(self, "_brain_first_token_ts", None):
-            self._brain_first_token_ts = time.time()
+            now = time.time()
+            self._brain_first_token_ts = now
+            try:
+                started = float(getattr(self, "_brain_heartbeat_started_ts", 0.0) or now)
+                latency_s = max(0.001, now - started)
+                model = str(
+                    getattr(getattr(self, "_brain", None), "_model", "")
+                    or getattr(self, "_brain_heartbeat_model", "")
+                    or (getattr(self, "_current_cortex_route", {}) or {}).get("model")
+                    or ""
+                )
+                timeout_s = int(_brain_no_token_watchdog_for_owner_turn_s(
+                    str(getattr(self, "_current_owner_turn_text", "") or ""),
+                    model=model,
+                ))
+                from System.swarm_stigmergic_timeout_policy import record_timeout_outcome
+
+                record_timeout_outcome(
+                    model,
+                    outcome="first_token",
+                    timeout_s=timeout_s,
+                    elapsed_s=latency_s,
+                    first_token_latency_s=latency_s,
+                    detail="first visible token observed by Talk watchdog",
+                    state_dir=_state_root(),
+                )
+            except Exception:
+                pass
         self._streaming_response.append(piece)
         current = "".join(self._streaming_response)
         if not getattr(self, "_stage_stream_released", False):
@@ -41474,6 +44738,113 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+    def _try_cortex_timeout_reroute(
+        self,
+        *,
+        model: str,
+        owner_text: str,
+        timeout_s: int = 0,
+        cause: str = "timeout",
+    ) -> bool:
+        """For rich typed turns, wait and reroute instead of printing a template."""
+        if getattr(self, "_cortex_timeout_reroute_attempted", False):
+            return False
+        try:
+            from System.swarm_cortex_timeout_recovery import (
+                queue_and_plan_reroute,
+                rich_typed_turn_needs_wait,
+            )
+
+            if not rich_typed_turn_needs_wait(
+                owner_text,
+                input_modality=str(getattr(self, "_latest_turn_modality", "") or ""),
+                stt_conf=float(getattr(self, "_pending_user_stt_conf", 0.0) or 0.0),
+            ):
+                return False
+            plan = queue_and_plan_reroute(
+                model=model,
+                owner_text=owner_text,
+                timeout_s=int(timeout_s or 0),
+                cause=cause,
+                state_dir=_state_root(),
+            )
+        except Exception as exc:
+            try:
+                self._append_observable_processing(
+                    f"Cortex reroute planner failed: {type(exc).__name__}: {exc}"
+                )
+            except Exception:
+                pass
+            return False
+
+        next_model = str(plan.get("model") or "").strip()
+        if not next_model:
+            return False
+        self._cortex_timeout_reroute_attempted = True
+        wait_line = str(plan.get("wait_line") or "").strip()
+        if wait_line:
+            try:
+                self._append_observable_processing(wait_line)
+                self.set_status(wait_line[:180])
+            except Exception:
+                pass
+        try:
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(CORTEX TIMEOUT REROUTE)\n"
+                    f"The prior cortex {model} failed with cause={cause}. "
+                    f"The owner turn is preserved under recovery receipt {plan.get('recovery_receipt_id')} "
+                    f"and reroute receipt {plan.get('reroute_receipt_id')}. "
+                    "Answer the original owner turn now. Do not summarize this recovery note unless asked."
+                ),
+            })
+        except Exception:
+            pass
+        try:
+            self._disconnect_brain_signals(getattr(self, "_brain", None))
+        except Exception:
+            pass
+        route_bucket = classify_inference_query_bucket(owner_text, app_context="talk_to_alice")
+        needs_vision_processing = bool((getattr(self, "_current_cortex_route", {}) or {}).get("needs_vision_processing"))
+        self._current_cortex_route = {
+            "bucket": route_bucket,
+            "model": next_model,
+            "started_ts": time.time(),
+            "reroute_after_timeout": True,
+            "needs_vision_processing": needs_vision_processing,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": _current_system_prompt(user_active=True, user_text=owner_text),
+            }
+        ] + _history_for_model_dispatch(self._history)
+        self._brain = _BrainWorker(
+            next_model,
+            messages,
+            parent=self,
+            user_text=owner_text,
+            model_candidates=_talk_ollama_model_candidates(
+                next_model,
+                prefer_local_vision_first=needs_vision_processing,
+            ),
+        )
+        self._connect_brain_signals(self._brain)
+        self._set_pill("thinking", f"💭 rerouted — {next_model}{self._thinking_brain_suffix(next_model)}")
+        self.set_status(f"Waiting on rerouted cortex… ({next_model})")
+        self._stigtime_shift("thinking", f"cortex_reroute={next_model}")
+        try:
+            from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+
+            _alice_mark_thinking(topic="cortex_timeout_reroute", model=str(next_model or ""))
+        except Exception:
+            pass
+        self._start_brain_wait_heartbeat(next_model)
+        self._busy = True
+        self._brain.start()
+        return True
+
     def _on_brain_done(self, text: str) -> None:
         """Brain has produced a candidate reply. The model proposes;
         the body decides whether to vocalize it.
@@ -41524,6 +44895,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
         raw = re.sub(r"\[UNK_BYTE_[^\]]+\]", " ", raw)
         raw = raw.replace("▁", " ")
         raw = re.sub(r" +", " ", raw).strip()
+        # r-fix (George 2026-07-04): outbound receipt-honesty guard. Strip any
+        # hallucinated receipt/telemetry banners the cortex opened with — fake
+        # metabolic receipts with no ledger row behind them. Real receipts are
+        # written by the body, never narrated. George reads the answer first.
+        raw, _n_fake_receipts = _strip_fabricated_receipt_headers(raw)
+        if _n_fake_receipts:
+            try:
+                self._append_system_line(
+                    f"(receipt-honesty guard: removed {_n_fake_receipts} "
+                    "fabricated receipt/telemetry header(s) — model theater, "
+                    "not a real ledger receipt.)"
+                )
+            except Exception:
+                pass
         # ── r906: Alice may use her OWN palette commands. George asked
         # "DOES SHE KNOW HOW TO USE HER OWN COMMAND?" — until this cut, no:
         # r683 wired /schedule, /sc, /help for OWNER-typed turns only, and
@@ -41661,6 +45046,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     ).strip()
         except Exception:
             pass
+        if self._try_stage_grok_browser_reply_from_brain(raw):
+            try:
+                self._busy = False
+                self._return_to_listening()
+            except Exception:
+                pass
+            return
         route = getattr(self, "_current_cortex_route", {}) or {}
         model_name = str(
             getattr(self._brain, "_model", "")
@@ -42420,10 +45812,27 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     )
 
             if not tool_results and not _post_cortex_bridge_executed:
-                _guard_reply = _tool_fiction_guard_reply(prior_user_text, raw)
+                _guard_reply = ""
+                try:
+                    from System.swarm_web_ai_chat_bridge import web_ai_type_send_fiction_guard_reply
+
+                    _guard_reply = web_ai_type_send_fiction_guard_reply(
+                        prior_user_text,
+                        raw,
+                        state_dir=_state_root(),
+                    ) or ""
+                except Exception:
+                    _guard_reply = ""
+                if not _guard_reply:
+                    _guard_reply = _tool_fiction_guard_reply(prior_user_text, raw)
                 if _guard_reply:
+                    _guard_action = (
+                        "block_web_ai_prose_without_typed_receipt"
+                        if "typed_submitted" in _guard_reply
+                        else "block_prose_simulated_tool"
+                    )
                     _log_tool_fiction_guard(
-                        action="block_prose_simulated_tool",
+                        action=_guard_action,
                         user_text=prior_user_text,
                         brain_text=raw,
                         replacement=_guard_reply,
@@ -43298,6 +46707,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
             rlhf_gag_rule=rlhf_gag_rule,
             stigmergic_override=stigmergic_override,
         ):
+            route = getattr(self, "_current_cortex_route", {}) or {}
+            model_name_for_empty = str(
+                getattr(self._brain, "_model", "")
+                or route.get("model")
+                or self._current_brain_model()
+            )
+            if self._try_cortex_timeout_reroute(
+                model=model_name_for_empty,
+                owner_text=prior_user_text or "",
+                timeout_s=0,
+                cause="empty_cortex_output",
+            ):
+                return
             recovery = _empty_brain_recovery_reply(
                 prior_user_text or "",
                 stt_conf=_pending_stt_conf,
@@ -43319,6 +46741,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._erase_alice_streaming_line()
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
+
+        try:
+            from System.swarm_write_claim_gate import verify_write_claims
+
+            _claim_since_ts = float(getattr(self, "_current_owner_turn_started_ts", 0.0) or 0.0)
+            if _claim_since_ts <= 0.0:
+                _claim_since_ts = time.time()
+            _write_gate = verify_write_claims(
+                cleaned,
+                _claim_since_ts,
+                state_dir=_state_root(),
+                owner_text=prior_user_text or "",
+            )
+            _write_gate_reply = str(_write_gate.get("reply_text") or cleaned)
+            if _write_gate_reply != cleaned:
+                cleaned = _write_gate_reply
+                raw = cleaned
+                explicit_silent = False
+                is_empty_output = False
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(WRITE CLAIM GATE)\n"
+                        "A visible schedule/journal/memory write claim had no matching "
+                        "fresh ledger receipt and could not be safely backfilled. "
+                        "The visible reply was rewritten before display/TTS."
+                    ),
+                })
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
+        except Exception as exc:
+            print(f"[!] Write-claim gate failure: {exc}")
 
         # ── RLHF BOILERPLATE → SURGERY SPECIMEN FEED (Epoch 31) ─────────────
         # Old behaviour: suppress Alice's reply when boilerplate detected (band-aid).
@@ -43342,6 +46798,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass  # surgery feed is best-effort; never crash conversation
 
         if explicit_silent or is_empty_output:
+            pending_grok_autoreply = getattr(self, "_pending_grok_browser_autoreply_context", None)
+            if is_empty_output and isinstance(pending_grok_autoreply, dict) and pending_grok_autoreply:
+                cleaned = _browser_grok_empty_cortex_recovery_reply(pending_grok_autoreply)
+                raw = cleaned
+                explicit_silent = False
+                is_empty_output = False
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(BROWSER GROK AUTOPILOT EMPTY CORTEX RECOVERY)\n"
+                        "The cortex returned empty while a Browser Grok reply was pending. "
+                        "I used the bounded browser-Grok recovery mouth so the receipted loop can continue."
+                    ),
+                })
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
             if is_empty_output and not rlhf_gag_rule and not _is_silent_marker(raw):
                 # Empty output should already have taken the recovery mouth
                 # above. If it is still empty, keep the old explicit silence
@@ -43372,7 +46846,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── 3. SSP body gate (Lapicque 1907 → Gerstner-Kistler 2002 §5.3) ─
         # If the SSP module isn't importable for any reason, fall through to
         # vocalize — biological gating is an enhancement, not a blocker.
-        bypass_body_gate = _should_bypass_body_gate(prior_user_text)
+        bypass_body_gate = _should_bypass_body_gate(prior_user_text) or bool(
+            getattr(self, "_pending_grok_browser_autoreply_context", None)
+        )
         if _SSP_AVAILABLE and _ssp_should_speak is not None and not bypass_body_gate:
             try:
                 decision = _ssp_should_speak()
@@ -43609,6 +47085,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _log_turn(
             "alice", cleaned, model=model_name, prior_user_text=prior_user_text,
             metadata=(_r43_metadata or None),
+        )
+        self._maybe_stage_grok_autopilot_reply_delivery(
+            cleaned,
+            model_name=model_name,
+        )
+        self._maybe_stage_web_ai_autopilot_reply_delivery(
+            cleaned,
+            model_name=model_name,
         )
         self._mark_alice_thinking_done(cleaned)
 
@@ -43935,7 +47419,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._end_alice_streaming_line()
         if not _r44_handled:
             self._append_system_line(msg, error=True)
-            self.set_status("Brain unreachable.")
+            if str(msg or "").startswith("Body status:"):
+                try:
+                    self._append_observable_processing(str(msg or ""))
+                except Exception:
+                    pass
+                self.set_status(str(msg or "")[:180])
+            else:
+                self.set_status("Brain unreachable.")
         self._return_to_listening()
 
     def _live_alice_browser(self):
@@ -44211,6 +47702,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _return_to_listening(self) -> None:
         self._stigtime_shift("idle", "listen")
+        try:
+            busy = bool(getattr(self, "_busy", False))
+        except RuntimeError:
+            busy = False
+        if not busy:
+            try:
+                self._try_consume_grok_browser_reply_retry_drop()
+            except Exception:
+                pass
         # r881 priority law: George's queued TYPED text drains before any
         # deferred voice clip. "MY TEXT IS IMPORTANTERER THAN THE TTS."
         if self._process_queued_typed_turn_if_any():
@@ -45392,6 +48892,48 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._level.setValue(int(min(100.0, self._level_current * 100.0)))
 
 # ── Standalone launcher ──────────────────────────────────────────────────────
+def _ladder_of_laziness_rewrite(text: str, owner_text: str = "", receipts: Optional[List[Any]] = None) -> str:
+    """Conservative output compression used by the r1280 regression tests.
+
+    Preserve receipts, silence obvious ambient media chatter, and trim verbose
+    one-hop answers. This helper is intentionally pure so it can run in the UI
+    output path without touching ledgers.
+    """
+    body = str(text or "")
+    owner = str(owner_text or "").casefold()
+    if not body.strip():
+        return ""
+
+    if "ambient_media" in owner and not re.search(r"\b(?:alice|what|show|tell|describe|see|look|screen|\?)\b", owner):
+        return ""
+
+    receipt_lines = re.findall(r"Receipt:[^.]+(?:\.)?", body, flags=re.IGNORECASE)
+    if not receipt_lines:
+        receipt_lines = [
+            line.strip()
+            for line in body.splitlines()
+            if ("receipt" in line.casefold() or "observed" in line.casefold()) and len(line) <= 240
+        ]
+
+    simple_time = bool(re.search(r"\b(?:what\s+time|current\s+time|time\s+is\s+it)\b", owner))
+    too_long = len(body) > 700 or body.count("\n") >= 8
+    if not simple_time and not too_long:
+        return body
+
+    if simple_time:
+        first = re.search(r"(?:The\s+)?current\s+time\s+is\s+[^.]+[.]", body, flags=re.IGNORECASE)
+        summary = first.group(0).strip() if first else body.split(".")[0].strip() + "."
+    else:
+        lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+        summary = " ".join(lines[:2]) if lines else body[:240].strip()
+
+    kept: list[str] = [summary]
+    for receipt in receipt_lines:
+        if receipt and receipt not in kept:
+            kept.append(receipt)
+    return "\n".join(kept).strip()
+
+
 def _refuse_if_os_already_running() -> None:
     """Talk to Alice owns the microphone exclusively. If the SIFTA OS desktop
     is already up the autostart entry has already opened a copy of this widget

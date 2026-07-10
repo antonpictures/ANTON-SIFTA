@@ -36,6 +36,13 @@ except Exception:
     def is_my_own_browser_playback(**kwargs):  # type: ignore
         return False, {"reason": "import_failed_fallback"}
 
+# GM8 integration note: media context now consults self-type results for time-aware
+# predecessor checks when Grok browser hand is active (impatience gate support).
+try:
+    from System.swarm_alice_browser_grok_self_type import predecessor_receipt_exists
+except Exception:
+    def predecessor_receipt_exists(*a, **k): return True
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
@@ -372,6 +379,9 @@ _RECORDED_BROADCAST_NOTICE_RE = re.compile(
     r"\b(?:"
     r"(?:real\s+world\s+)?noise\s+from\s+(?:the\s+)?(?:tv|television|podcast|joe\s+rogan|jre|broadcast)|"
     r"(?:tv|television|podcast|joe\s+rogan|jre|broadcast)\s+(?:is\s+)?(?:playing|on|noise|in\s+the\s+background)|"
+    r"(?:videos?|youtube|tiktok|reels?)\s+(?:i\s+)?(?:play|played|am\s+playing|watch|watching|listen(?:ing)?\s+to)\s+(?:on\s+)?(?:speaker|speakers?|my\s+phone)|"
+    r"sound\s+comes?\s+from\s+(?:the\s+)?(?:videos?|youtube|tiktok|reels?).{0,80}\b(?:stt|speech\s*(?:to|-)?\s*text|not\s+like\s+typing)\b|"
+    r"(?:videos?|youtube|tiktok|reels?).{0,80}\b(?:speaker|speakers?|stt|speech\s*(?:to|-)?\s*text).{0,80}\bnot\s+like\s+typing|"
     r"(?:recorded\s+)?broadcasts?\s+(?:are|is)\s+(?:playing|recorded|not\s+me|not\s+george)|"
     r"(?:while\s+i(?:'m| am)?\s+(?:gone|away|out|at\s+the\s+store|at\s+the\s+grocery\s+store))"
     r")\b",
@@ -445,7 +455,12 @@ def detect_recorded_broadcast_notice(text: str) -> dict[str, Any]:
     if not clean or not _RECORDED_BROADCAST_NOTICE_RE.search(clean):
         return {"detected": False}
     low = clean.lower()
-    medium = "podcast" if re.search(r"\b(?:podcast|joe\s+rogan|jre)\b", low) else "tv"
+    if re.search(r"\b(?:podcast|joe\s+rogan|jre)\b", low):
+        medium = "podcast"
+    elif re.search(r"\b(?:video|videos|youtube|tiktok|reels?)\b", low):
+        medium = "phone/video speaker"
+    else:
+        medium = "tv"
     owner_away = bool(re.search(r"\b(?:gone|away|out|store|grocery)\b", low))
     source = "ambient_media_podcast" if medium == "podcast" else "ambient_media_youtube"
     note_bits = [
@@ -879,7 +894,7 @@ def classify_external_consciousness_lane(
         except Exception:
             own_browser, own_details = False, {"reason": "own_browser_probe_failed"}
 
-    if route_s == "direct" or (voice_george_conf and voice_george_conf >= 0.60):
+    if route_s == "direct" or _owner_voice_commits(float(voice_george_conf or 0.0)):
         source_class = "owner_direct_speech"
         attention_policy = "route_to_dialog_cortex"
         field_layer = "owner_direct_consciousness_lane"
@@ -973,6 +988,76 @@ def classify_external_consciousness_lane(
     }
 
 
+def _owner_voice_commits(voice_george_conf: float, *, media_active: bool = False) -> bool:
+    """r1608 Gift 3 — allosteric Hill commit replaces hard ``>= 0.60`` cutoff.
+
+    Soft-fails to legacy hard threshold if the organ is unavailable.
+    """
+    try:
+        from System.swarm_allosteric_gate import should_commit_owner_voice
+
+        return bool(
+            should_commit_owner_voice(
+                float(voice_george_conf or 0.0),
+                media_active=media_active,
+            )
+        )
+    except Exception:
+        return bool(voice_george_conf and float(voice_george_conf) >= 0.60)
+
+
+def _apply_ambiguous_voice_media_observe_bias(
+    decision: Mapping[str, Any],
+    text: str,
+    *,
+    stt_conf: float = 0.0,
+    voice_george_conf: float = 0.0,
+) -> dict[str, Any]:
+    """r1602 VA3 — resting posture under media.
+
+    Only rewrites a *direct* promotion when ambient media is active and the
+    voiceprint is ambiguous. Already-silenced ambient/observed routes keep
+    their specific reasons. Real turns still open on typed text, confident
+    owner voice, explicit Alice wake, short architect control words, or an
+    owner realtime voice claim.
+
+    r1608: owner confidence judged allosterically (Hill), not a linear 0.60 cut.
+    """
+    out = dict(decision or {})
+    if str(out.get("route") or "") != "direct":
+        return out
+    if stt_conf and float(stt_conf) >= 1.0:
+        return out
+    # Only force observe when the media context flag is actually live.
+    try:
+        media_on = bool(ambient_media_context_active())
+    except Exception:
+        media_on = False
+    if not media_on:
+        return out
+    if _owner_voice_commits(voice_george_conf, media_active=True):
+        return out
+
+    clean = " ".join(str(text or "").split())
+    if re.search(r"\balice\b", clean, re.IGNORECASE):
+        return out
+    if _OWNER_REALTIME_CORRECTION_RE.search(clean):
+        return out
+    if _ARCHITECT_CONTROL_UTTERANCE_RE.search(clean):
+        return out
+    # Voice-identity bypass reason already implies owner — leave it.
+    if str(out.get("reason") or "") == "voice_identity_george_bypasses_media_gate":
+        return out
+
+    return {
+        "route": "observed_media",
+        "reason": "ambiguous_voice_under_active_media_observe",
+        "confidence": 0.93,
+        "prior_route": out.get("route"),
+        "prior_reason": out.get("reason"),
+    }
+
+
 def classify_spoken_ingress(
     text: str,
     *,
@@ -998,6 +1083,12 @@ def classify_spoken_ingress(
         acoustic_fingerprint=acoustic_fingerprint,
         voice_george_conf=voice_george_conf,
         deferred_busy_capture=deferred_busy_capture,
+    )
+    decision = _apply_ambiguous_voice_media_observe_bias(
+        decision,
+        text,
+        stt_conf=stt_conf,
+        voice_george_conf=voice_george_conf,
     )
     try:
         if decision.get("route") == "direct":
@@ -1034,6 +1125,20 @@ def _classify_spoken_ingress_core(
     if stt_conf and stt_conf >= 1.0:
         return {"route": "direct", "reason": "typed_input_always_direct", "confidence": 1.0}
 
+    # r1613 F4 — platform end-cards are not owner speech (kitchen/TV host).
+    if re.match(
+        r"^\s*(?:thank\s+you\s+for\s+watching|thanks\s+for\s+watching|"
+        r"please\s+(?:like|subscribe)|don'?t\s+forget\s+to\s+subscribe|"
+        r"see\s+you\s+(?:in\s+the\s+next|next\s+time)|hit\s+(?:the\s+)?bell)\b",
+        clean,
+        re.IGNORECASE,
+    ):
+        return {
+            "route": "observed_media",
+            "reason": "platform_end_card_not_owner",
+            "confidence": 0.96,
+        }
+
     # r1303: clips queued while Alice was busy on a typed turn are usually room
     # bleed (podcast/TV) captured during owner typing — not fresh owner commands.
     if deferred_busy_capture:
@@ -1058,11 +1163,17 @@ def _classify_spoken_ingress_core(
             "confidence": max(0.70, _score_from_fingerprint(acoustic_fingerprint, "farfield_replay_likelihood", 0.70)),
         }
 
-    if voice_george_conf and voice_george_conf >= 0.60:
+    # r1608: allosteric owner-voice commit (Gift 3). Media-aware cooperativity
+    # when ambient context is live — kills the 0.51–0.60 linear straddle leak.
+    try:
+        _media_for_voice = bool(ambient_media_context_active())
+    except Exception:
+        _media_for_voice = False
+    if _owner_voice_commits(voice_george_conf, media_active=_media_for_voice):
         return {
             "route": "direct",
             "reason": "voice_identity_george_bypasses_media_gate",
-            "confidence": max(0.90, min(1.0, float(voice_george_conf))),
+            "confidence": max(0.90, min(1.0, float(voice_george_conf or 0.0))),
         }
 
     context = "\n".join(
@@ -1425,7 +1536,11 @@ def _classify_spoken_ingress_core(
         # Exact "Alice ..." or confirmed George voice already bypassed above.
         wc = _word_count(clean)
         conf = float(stt_conf or 0.0)
-        if PHONE_CONTROL_UTTERANCE_RE.match(clean):
+        owner_proof = (
+            acoustic_cue == "nearfield_voice_likely"
+            or float(voice_george_conf or 0.0) >= 0.35
+        )
+        if owner_proof and PHONE_CONTROL_UTTERANCE_RE.match(clean):
             return {
                 "route": "direct",
                 "reason": "control_token_under_declared_ambient_phone",
@@ -1436,14 +1551,15 @@ def _classify_spoken_ingress_core(
             stt_conf=conf,
             acoustic_fingerprint=acoustic_fingerprint,
         )
-        if owner_p >= 0.68:
+        if owner_proof and owner_p >= 0.68:
             return {
                 "route": "direct",
                 "reason": "owner_speech_sigmoid_under_declared_ambient_phone",
                 "confidence": owner_p,
             }
         if (
-            wc <= 12
+            owner_proof
+            and wc <= 12
             and owner_p >= 0.45
             and _OWNER_GROUNDING_SIGNAL_RE.search(clean)
             and not NARRATION_RE.search(clean)

@@ -32,8 +32,9 @@ Probe (before code): the infrastructure is already real.
   and :mod:`Applications.sifta_provider_schedule_widget`. Shape:
   ``{text, priority, created, done, source, schedule_id}``.
 
-This module is **read-only**: it never writes. It produces the awareness
-Alice's resident Talk can speak from.
+This module primarily produces the awareness Alice's resident Talk can
+speak from. A small append-only diary writer is kept here too because
+older body organs import it from this awareness module.
 
 Public functions:
 
@@ -100,6 +101,54 @@ def _tail_jsonl(path: Path, *, max_bytes: int = 1 << 19) -> List[Dict[str, Any]]
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def append_narrative_entry(
+    kind: str,
+    entry: str,
+    extra: Optional[Dict[str, Any]] = None,
+    *,
+    state_dir: Optional[Path] = None,
+    narrator: str = "alice",
+) -> Dict[str, Any]:
+    """Append one first-person narrative diary row.
+
+    Kept intentionally tiny and append-only: browser/game organs already import
+    this symbol, and missing it should not break page-load awareness.
+    """
+    base = Path(state_dir) if state_dir is not None else _STATE
+    row: Dict[str, Any] = {
+        **_now(),
+        "kind": str(kind or "diary_entry"),
+        "narrator": str(narrator or "alice"),
+        "entry": str(entry or ""),
+        "event_type": str(kind or "diary_entry"),
+        "truth_label": "ALICE_NARRATIVE_DIARY_ENTRY_V1",
+    }
+    if isinstance(extra, dict) and extra:
+        row["extra"] = dict(extra)
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        with (base / "alice_narrative_diary.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return row
+
+
+def write_diary_entry(
+    entry: str,
+    *,
+    kind: str = "diary_entry",
+    tags: Optional[List[str]] = None,
+    state_dir: Optional[Path] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """Compatibility writer used by live browser awareness call sites."""
+    payload: Dict[str, Any] = dict(extra)
+    if tags:
+        payload["tags"] = list(tags)
+    return append_narrative_entry(kind, entry, payload, state_dir=state_dir)
 
 
 def _row_ts(row: Dict[str, Any], *, fallback_keys: tuple[str, ...] = ("ts", "created")) -> float:
@@ -319,9 +368,11 @@ def get_full_consciousness_extended(
 
 __all__ = [
     "TRUTH_LABEL",
+    "append_narrative_entry",
     "feel_my_episodic_summary",
     "feel_my_recent_diary",
     "feel_owner_schedule",
     "get_full_consciousness_extended",
     "get_my_schedule_and_diary",
+    "write_diary_entry",
 ]

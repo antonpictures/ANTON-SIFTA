@@ -124,6 +124,64 @@ def route_cortex(turn_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any
     ts = time.time()
     rid = str(uuid.uuid4())
 
+    # r1608 Gift 4 — diauxic law (optional signals on turn_context):
+    # local_empty_replies / local_timeouts / battery_low / offline_required /
+    # lag_phase_already_receipted. When local is depleted, emit lag-phase
+    # receipt once before any expensive-tier path is allowed to win.
+    diauxic_meta: Dict[str, Any] = {}
+    try:
+        from System.swarm_diauxic_cortex_switch import (
+            TIER_HOLD,
+            TIER_LOCAL,
+            choose_cortex_tier,
+            write_lag_phase_receipt,
+        )
+
+        diauxic = choose_cortex_tier(
+            local_available=bool(turn.get("local_available", True)),
+            local_empty_replies=int(turn.get("local_empty_replies") or 0),
+            local_timeouts=int(turn.get("local_timeouts") or 0),
+            local_error=bool(turn.get("local_error") or False),
+            consecutive_low_quality=int(turn.get("consecutive_low_quality") or 0),
+            cloud_available=bool(turn.get("cloud_available", True)),
+            battery_low=bool(turn.get("battery_low") or False),
+            offline_required=bool(turn.get("offline_required") or False),
+            force_cloud=bool(turn.get("force_cloud") or False),
+            force_local=bool(turn.get("force_local") or False),
+            lag_phase_already_receipted=bool(turn.get("lag_phase_already_receipted") or False),
+        )
+        diauxic_meta = dict(diauxic)
+        if diauxic.get("tier") == TIER_HOLD and diauxic.get("lag_phase"):
+            write_lag_phase_receipt(diauxic, state_dir=_get_state_dir())
+            # Hold: prefer local canonical until next turn after lag receipt.
+            pick = str(turn.get("local_model") or "alice-m5-cortex-8b-6.3gb:latest")
+            reason = f"diauxic_lag_phase:{diauxic.get('reason')}"
+            rec = {
+                "ts": ts,
+                "round": "r1608",
+                "chosen_model": pick,
+                "reason": reason,
+                "receipt_id": rid,
+                "diauxic": diauxic,
+                "tier": TIER_HOLD,
+            }
+            _append_route_receipt(rec)
+            return {
+                "model": pick,
+                "reason": reason,
+                "receipt_id": rid,
+                "diauxic": diauxic,
+                "lag_phase": True,
+            }
+        if diauxic.get("tier") == TIER_LOCAL and diauxic.get("reason") in {
+            "battery_low_prefer_local",
+            "offline_required",
+            "force_local",
+        }:
+            turn = {**turn, "force_local_diauxic": True}
+    except Exception:
+        diauxic_meta = {}
+
     installed = _get_installed_capable()
 
     # 1. owner override ALWAYS wins (per r495 policy) — checked BEFORE the no-installed
@@ -150,6 +208,45 @@ def route_cortex(turn_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         rec = {"ts": ts, "round": "r498", "chosen_model": pick, "reason": reason, "receipt_id": rid, "turn": {k: turn.get(k) for k in ("has_images","needs_tools","task_type","owner_override") if k in turn}}
         _append_route_receipt(rec)
         return {"model": pick, "reason": reason, "receipt_id": rid}
+
+    current_model = str(turn.get("current_model") or turn.get("owner_selected_model") or "").strip()
+    if current_model:
+        try:
+            from System.swarm_travel_mode import local_only_cortex_route
+
+            travel_route = local_only_cortex_route(
+                current_model,
+                state_dir=_get_state_dir(),
+                query_text=str(turn.get("query_text") or turn.get("task_type") or ""),
+                write=True,
+            )
+            if travel_route.get("override") and travel_route.get("model"):
+                pick = str(travel_route.get("model"))
+                reason = (
+                    "travel/offline local-only route via metabolic router: "
+                    f"{travel_route.get('reason')}"
+                )
+                rec = {
+                    "ts": ts,
+                    "round": "r498",
+                    "chosen_model": pick,
+                    "reason": reason,
+                    "receipt_id": rid,
+                    "turn": {
+                        k: turn.get(k)
+                        for k in ("has_images", "needs_tools", "task_type", "current_model", "owner_selected_model")
+                        if k in turn
+                    },
+                    "signals": {
+                        "travel_route_local_only": True,
+                        "travel_receipt_id": travel_route.get("travel_receipt_id"),
+                        "travel_route_receipt_id": travel_route.get("receipt_id"),
+                    },
+                }
+                _append_route_receipt(rec)
+                return {"model": pick, "reason": reason, "receipt_id": rid}
+        except Exception:
+            pass
 
     # 2. determine needed
     has_images = bool(turn.get("has_images") or "vision" in str(turn.get("task_type", "")).lower() or "image" in str(turn.get("task_type", "")).lower())

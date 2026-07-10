@@ -409,11 +409,20 @@ def _row_text(row: Mapping[str, Any]) -> str:
         return str(row).casefold()
 
 
+_ERROR_VALUE_RE = re.compile(r'"error"\s*:(?!\s*(?:null\b|""|[,}]))')
+
+
 def _row_outcome(row: Mapping[str, Any]) -> tuple[bool | None, bool, bool]:
     """Return (ok, timeout, error) from common receipt row shapes."""
     text = _row_text(row)
     timeout = "timeout" in text or "timed out" in text
-    error = any(token in text for token in ("exception", "traceback", '"error"', "error:", "failed", "failure"))
+    # r-fable-code-sweep-20260703: the bare '"error"' text token made every row
+    # that merely CARRIES an error field look like a failure — including
+    # "error": null, the healthy receipt shape organs write on success. Only an
+    # error field with real content (or explicit failure words) counts.
+    error = any(
+        token in text for token in ("exception", "traceback", "error:", "failed", "failure")
+    ) or bool(_ERROR_VALUE_RE.search(text))
 
     candidates: list[Any] = [
         row.get("ok"),
@@ -428,10 +437,14 @@ def _row_outcome(row: Mapping[str, Any]) -> tuple[bool | None, bool, bool]:
         if isinstance(candidate, bool):
             return candidate, timeout, error or (not candidate)
     status = str(row.get("status") or row.get("health") or row.get("result") or "").casefold()
-    if any(token in status for token in ("ok", "success", "captured", "healthy", "complete", "green")):
+    if any(token in status for token in ("ok", "success", "captured", "healthy", "complete", "green", "done")):
         return True, timeout, error
     if any(token in status for token in ("fail", "error", "timeout", "degraded", "quarantine", "broken")):
         return False, timeout or "timeout" in status, True
+    if "error" in row and row.get("error") in (None, "") and not timeout and not error:
+        # Explicit null/empty error is the healthy shape: a valid receipt when
+        # the row names an event, unknown when it carries no event at all.
+        return (True, timeout, error) if row.get("event") else (None, timeout, error)
     if timeout or error:
         return False, timeout, error
     return None, timeout, error
@@ -911,6 +924,97 @@ def route_query(
     }
     out["receipt"] = _json_hash(out)
     return out
+
+
+def organs_relevant_to_text(
+    text: str,
+    *,
+    top_n: int = 8,
+    root: Path | str | None = None,
+    state_dir: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Historical convenience wrapper for page/article -> organ matching."""
+    clean = str(text or "").strip()
+    if not clean:
+        return []
+    repo = _repo_root(root)
+    routed = route_query(
+        clean,
+        root=repo,
+        state_dir=state_dir,
+        limit=max(20, int(top_n)),
+        include_dynamic=False,
+    )
+    hits: list[dict[str, Any]] = []
+    for row in routed.get("matches", []):
+        if not isinstance(row, Mapping):
+            continue
+        hits.append(
+            {
+                "organ_id": row.get("organ_id"),
+                "stable_id": row.get("stable_id"),
+                "display_name": row.get("display_name"),
+                "layer": row.get("layer"),
+                "score": row.get("score"),
+                "matched_keywords": list(row.get("matched_keywords") or []),
+                "matched_aliases": list(row.get("matched_aliases") or []),
+                "matched_capabilities": list(row.get("matched_capabilities") or []),
+                "matched_terms": list(row.get("matched_terms") or []),
+                "organ_paths": list(row.get("organ_paths") or []),
+                "ledgers": list(row.get("ledgers") or []),
+                "write_action": bool(row.get("write_action")),
+                "owner_sensitive": bool(row.get("owner_sensitive")),
+                "health": {},
+                "stgm_profitability": {},
+                "source_registry": row.get("source_registry", ""),
+            }
+        )
+
+    fallback_specs = (
+        {
+            "organ_id": "quantum_swimmer_sentinel",
+            "display_name": "Quantum Swimmer Sentinel",
+            "terms": ("quantum", "sensor", "sensors", "atoms", "gravity", "magnetism", "qml"),
+            "paths": ("System/swarm_quantum_swimmer_sentinel.py", "System/swarm_qml_sifta_nuggets.py"),
+        },
+        {
+            "organ_id": "alice_browser",
+            "display_name": "Alice Browser / Browser Body",
+            "terms": ("browser", "page", "web", "website", "alice browser"),
+            "paths": ("Applications/sifta_alice_browser_widget.py", "System/swarm_browser_page_state.py"),
+        },
+    )
+    existing_ids = {str(row.get("organ_id") or "") for row in hits}
+    lower = clean.casefold()
+    for spec in fallback_specs:
+        if spec["organ_id"] in existing_ids:
+            continue
+        matched = sorted({term for term in spec["terms"] if term in lower})
+        present_paths = [p for p in spec["paths"] if (repo / p).exists()]
+        if not matched or not present_paths:
+            continue
+        hits.append(
+            {
+                "organ_id": spec["organ_id"],
+                "stable_id": "organ_" + spec["organ_id"],
+                "display_name": spec["display_name"],
+                "layer": "code_inventory",
+                "score": round(20.0 + len(matched), 4),
+                "matched_keywords": matched,
+                "matched_aliases": [],
+                "matched_capabilities": [],
+                "matched_terms": matched,
+                "organ_paths": present_paths,
+                "ledgers": [],
+                "write_action": False,
+                "owner_sensitive": False,
+                "health": {},
+                "stgm_profitability": {},
+                "source_registry": "code_file_fallback",
+            }
+        )
+    hits.sort(key=lambda row: (-float(row.get("score") or 0.0), str(row.get("organ_id") or "")))
+    return hits[: max(1, int(top_n))]
 
 
 def write_registry_snapshot(
