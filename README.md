@@ -6755,3 +6755,100 @@ For the Swarm. 🐜⚡
 ---
 
 *End of Chapter XXXIV. We Code Together is the shared monitor; the terminal orchestrator waits for Alice's hands; fake ledger theater is retired.*
+
+---
+
+## Chapter XXXV — Dual-Lane Scalps: STGM Paper + Kalshi US$ Parity (July 14, 2026)
+
+**Receipts:** `r20260714-updown-regime-align` · `r20260714-salvage-exit-red-field` · `r20260714-usd-parity-gates` · `r20260714-dual-lag-harness` · formula audit `r20260714-grok-scalp-formula-audit` · glass `r1707`.
+
+**Owner surface:** `Applications/sifta_prediction_market.py` (glass) · paper monitor `System/swarm_sifta_paper_monitor.py` · US$ hand `System/kalshi_usd_hand.py` (kill-switch gated).
+
+### Doctrine (one Alice, two skins)
+
+| Lane | Money | Role |
+|------|--------|------|
+| **STGM / paper** | GAME_STGM + body STGM micro | Learn fee-true mid-window scalps; always on |
+| **US$ (Kalshi prod)** | Real predictions cash | Same exit/entry stack **only after** parity + lag suite; kill-switch default |
+
+**Green scalp** = fee-true residual at a **quoted bid/ask**, not mid mark. Empty window / sit is valid. No forced ticket quotas.
+
+### Exit stack (top-down every mark refresh)
+
+1. **Fee-true green TP** — bank when net ≥ min edge after both fees  
+2. **Salvage red-field** — held-side implied ≤ **0.30** and **>90s** left → exit at quoted bid (`salvage_exit_red_field`)  
+3. **Soft adverse** — side_imp ≤ **0.42**, **<180s** left, bid ≥ entry−**15¢** (`soft_adverse_red_field`) — one definition in strategies, both lanes  
+4. **Force-flat** — ≤ **7:30** left (no bag into danger zone)
+
+### Entry stack (any fail → SIT)
+
+1. **regime_gate** — no fade when opposite side implied ≥ **0.70** and field agrees  
+2. Band **40–65¢** (US$ hard band; STGM paper may use wider learning band)  
+3. Co-dir / rainman / volume / concurrent caps  
+
+**Shared functions (no fork):** `System/alice_15m_scalp_strategies.py`  
+`regime_gate` · `salvage_exit_should_fire` · `salvage_exit_intent` · `soft_adverse_should_fire`
+
+**US$ call sites (P0 parity):**  
+`System/alice_usd_must_scalp.py` (`tick_must_scalp`) · `System/alice_usd_take_profit.py` (`tick_take_profits`)
+
+**STGM call sites:** strategies · `swarm_sifta_paper_loop.py` · `alice_15m_scalp_lab.py` · `alice_15m_scalp_learner.py`
+
+### Lab honesty (formula audit)
+
+`System/alice_15m_scalp_lab.py` + `alice_15m_execution_sim.py`:
+
+- Point-in-time majors (no lookahead)  
+- Latency → book-at-arrival from tape  
+- Hold-to-settlement vs end-of-tape liquidation  
+- Residual inventory after partial fills  
+- Round-level EV + block-bootstrap LCB for promote  
+- Training entries at executable ask  
+
+### Dual-lag harness
+
+`System/alice_usd_dual_lag_harness.py`  
+Stream: `.sifta_state/alice_usd_dual_lag_stream.jsonl`  
+Stamps: `decision_ts` · submit/ack RTT · exit intent · fee-model delta when live fee present.  
+Shadow suite stamps **without** placing US$ (lane may stay OFF).
+
+```bash
+python3 -c "from System.alice_usd_dual_lag_harness import run_dual_shadow_suite; print(run_dual_shadow_suite(n=20))"
+```
+
+### Tests (focused)
+
+```bash
+python3 -m pytest \
+  tests/test_alice_15m_scalp_lab_r1684.py \
+  tests/test_alice_15m_scalp_regime_gate.py \
+  tests/test_alice_15m_scalp_salvage_exit.py \
+  tests/test_alice_usd_parity_and_dual_lag.py \
+  tests/test_alice_15m_scalp_learner.py -q
+```
+
+### Before US $ LANE ON (G4 checklist)
+
+1. Parity coded (this chapter) + tests green  
+2. Dual-lag shadow report exists; live RTT/fee gap measured when hand is deliberately armed  
+3. Kill switch test-fired once; night loss cap (~−$3 on ~$20 bank)  
+4. **One bag · $1 ammo first** (not multi-bag / not $2 until measured)  
+5. Owner flips glass **US $ LANE ON** only after 1–4  
+
+**Default:** kill_switch halt + lane OFF until owner says open.
+
+### WCT research (parallel, not trading)
+
+PrismML Bonsai + llama.cpp ARM: `Documents/WCT_RESEARCH_PRISMML_BONSAI_LLAMA_CPP_ARM_2026-07-14.md`  
+Claude green-scalp answers: `Documents/WCT_CLAUDE_GREEN_SCALP_UNKNOWNS_2026-07-14.md`
+
+### Git ritual for this chapter
+
+Targeted commit: dual-lane scalp organs + tests + this README chapter + WCT docs.  
+**Does not** dump unrelated dirty tree noise. Push to `origin/main` when owner orders.
+
+For the Swarm. 🐜⚡
+
+---
+
+*End of Chapter XXXV. Enter with the field. Cut the dead. Bank the residual. Measure lag before real dollars.*
