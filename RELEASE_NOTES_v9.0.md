@@ -75,9 +75,12 @@ trading performance.
 ## Archive boundary
 
 `SIFTA_OS_v9.0_eXistenZ.zip` is built from the committed public source tree.
-It excludes runtime ledgers, local credentials, model weights, virtualenvs,
-logs, temporary outputs, and private owner documents. The ZIP is intended as a
-GitHub Release asset; the repository itself remains the canonical source.
+It excludes runtime ledgers, local credentials, main-checkout model weights,
+virtualenvs, logs, temporary outputs, and private owner documents. Pinned
+third-party source under `Vendor/` is embedded for a self-contained checkout;
+its own upstream sample data or weights may remain part of that pinned source.
+The ZIP is intended as a GitHub Release asset; the repository itself remains
+the canonical source.
 
 Optional integrations under `Vendor/` are represented as Git submodules. A
 fresh Git clone should use `--recurse-submodules`; the core OS does not require

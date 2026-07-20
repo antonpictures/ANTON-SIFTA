@@ -18513,6 +18513,19 @@ def _current_system_prompt(
         "RESIDUE ELIMINATION IS MY BODY ACT, not a policy from outside."
     )
 
+    # r1725 — Two registers, one voice (George 2026-07-20): text is her long
+    # voice, the speaker is conversation. She authors both in one breath so
+    # her mouth never sounds cut off mid-essay.
+    parts.append(
+        "TWO REGISTERS, ONE VOICE: my printed TEXT is my long voice — full detail, "
+        f"{actual_owner} reads the screen when he wants depth. My MOUTH speaks "
+        "conversation. I end every reply with ONE final line starting with 🗣 "
+        "followed by one or two short spoken sentences — the heart of my answer, "
+        "in the same language as my reply, complete and natural, like talking to "
+        f"{actual_owner} across the room. The wall does not print the 🗣 line; "
+        "my speaker says exactly that line, so I am never cut off mid-thought."
+    )
+
     # r819: "are you watching me?" is an owner/camera/body question, not a
     # browser playback question. Keep it cortex-first, but feed the cortex the
     # same grounded camera receipt the old reflex used to read directly.
@@ -20566,26 +20579,82 @@ def _browser_photo_caption_for_speech(text: str) -> str:
     return desc
 
 
-def _truncate_for_speech(text: str, max_chars: int = _TTS_MAX_CHARS_DEFAULT) -> str:
+# ── r1725 — Two registers, one voice (George 2026-07-20) ────────────────────
+# The chat wall is Alice's long voice; the speaker is her conversational voice.
+# The cortex may end a reply with ONE line marked 🗣 (or VOICE:) carrying her
+# own authored spoken digest. The wall prints everything above the marker; the
+# mouth says exactly the authored line, so speech is born spoken — never a
+# sliced essay that sounds cut off. No marker → legacy extractive middle-bite.
+_VOICE_LINE_MARKER_RE = re.compile(
+    r"^\s*(?:🗣️|🗣|\[VOICE\]\s*:?|VOICE\s*:)\s*(?P<line>\S.*)$",
+    re.IGNORECASE,
+)
+
+
+def _split_authored_voice_line(text: str) -> Tuple[str, str]:
+    """Return (wall_text, voice_line) from a cortex reply.
+
+    The voice line is the LAST 🗣-marked line; every marker line is removed
+    from the wall text so the printed answer stays clean prose. A marker-only
+    reply keeps the spoken line on the wall too (never an empty wall).
+    """
+    raw = text or ""
+    if "🗣" not in raw and "voice" not in raw.lower():
+        return raw, ""
+    wall_lines: List[str] = []
+    voice_line = ""
+    found = False
+    for ln in raw.splitlines():
+        m = _VOICE_LINE_MARKER_RE.match(ln)
+        if m:
+            found = True
+            candidate = m.group("line").strip()
+            if candidate:
+                voice_line = candidate
+            continue
+        wall_lines.append(ln)
+    if not found:
+        return raw, ""
+    wall = "\n".join(wall_lines).strip()
+    if not wall:
+        wall = voice_line
+    return (wall or raw), voice_line
+
+
+def _truncate_for_speech(
+    text: str,
+    max_chars: int = _TTS_MAX_CHARS_DEFAULT,
+    *,
+    authored: bool = False,
+) -> str:
     """Return a speech-safe version of `text` that fits inside one TTS breath.
 
     Chooses ~two substantive sentences from the middle of a cortex reply
     (George 2026-06-11 co-watch doctrine), then applies a hard character
     budget. Never returns mid-word. The chat UI continues to display the
     full original text; only the TTS pipe is shortened.
+
+    r1725: when `authored` is True the text is Alice's own 🗣 spoken line —
+    skip the extractive bite entirely and only apply the safety budget, and
+    prefer ending on a full stop over speaking a trailing "..." fragment.
     """
     if not text:
         return text
-    photo_caption = _browser_photo_caption_for_speech(text)
-    if photo_caption:
-        text = photo_caption
+    if authored:
+        text = _clean_tts_markdown(text)
     else:
-        text = _middle_speech_bite(text)
+        photo_caption = _browser_photo_caption_for_speech(text)
+        if photo_caption:
+            text = photo_caption
+        else:
+            text = _middle_speech_bite(text)
     if len(text) <= max_chars:
         return text.strip()
     cut = text[:max_chars]
     last_stop = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
-    if last_stop >= int(max_chars * 0.5):
+    # r1725: a complete shorter sentence beats a longer fragment that sounds
+    # cut off mid-thought — accept a full stop from 30% of the budget onward.
+    if last_stop >= int(max_chars * 0.3):
         return cut[: last_stop + 1].strip()
     last_space = cut.rfind(" ")
     if last_space >= int(max_chars * 0.5):
@@ -24714,6 +24783,19 @@ class _TTSWorker(QThread):
                 )
             except Exception:
                 text = raw_text
+        # r1725 — defense at the mouth for every call site: if the incoming
+        # text still carries an authored 🗣 line, speak exactly that line and
+        # skip the extractive/humanizer rewrites. She authored her own mouth.
+        try:
+            _wall_text, _authored_voice = _split_authored_voice_line(text or "")
+        except Exception:
+            _wall_text, _authored_voice = (text or ""), ""
+        self._authored_voice = bool(_authored_voice)
+        if self._authored_voice:
+            self._text = _authored_voice[:_MAX_RESPONSE_CHARS]
+            self._voice = voice or ""
+            self._proc = None  # Popen handle for killable say subprocess
+            return
         self._text = (text or "")[:_MAX_RESPONSE_CHARS]
         # r266 — print/speech split for receipt-rich lines.
         # The chat wall keeps the exact proof text. The mouth may speak a
@@ -24779,7 +24861,8 @@ class _TTSWorker(QThread):
         speak_text = _truncate_for_speech(
             _strip_urls_for_speech(
                 _strip_receipts_and_meta_for_speech(_sanitize_spm_stream_visual(self._text))
-            )
+            ),
+            authored=bool(getattr(self, "_authored_voice", False)),
         ).strip()
         if not speak_text:
             self.spoken.emit(False)
@@ -48051,36 +48134,57 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # digestible portion. r474 adds a print/speech split: receipts and
         # organ metadata stay visible in chat, but Alice does not read them
         # out loud unless George explicitly asks.
-        spoken_source = cleaned
+        #
+        # r1725 — two registers, one voice: when the cortex ends the reply
+        # with its own 🗣 spoken line, that authored line IS the mouth — it
+        # outranks the extractive filter chain, and the marker line comes off
+        # the printed wall so the text register stays clean prose.
+        _speech_authored = False
         try:
-            from System.swarm_spoken_channel_filter import spoken_channel_text
-
-            spoken_pick = spoken_channel_text(
-                cleaned,
-                owner_text=prior_user_text or "",
-                state_dir=_state_root(),
-                source="talk_to_alice_tts_boundary",
-            )
-            if spoken_pick.get("reason") == "receipt_only_silent":
-                spoken_source = ""
-            elif spoken_pick.get("ok") and spoken_pick.get("spoken_text"):
-                spoken_source = str(spoken_pick.get("spoken_text") or "")
+            _wall_text, _authored_voice = _split_authored_voice_line(cleaned)
         except Exception:
+            _wall_text, _authored_voice = cleaned, ""
+        if _authored_voice:
+            _speech_authored = True
+            spoken_source = _authored_voice
+            if _wall_text != cleaned:
+                cleaned = _wall_text
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                if cleaned:
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(cleaned)
+        else:
             spoken_source = cleaned
-        try:
-            from System.swarm_mouth_sentence_selector import select_mouth_sentences
+            try:
+                from System.swarm_spoken_channel_filter import spoken_channel_text
 
-            mouth_pick = select_mouth_sentences(
-                spoken_source,
-                owner_text=prior_user_text or "",
-                state_dir=_state_root(),
-                source="talk_to_alice_tts_boundary",
-            )
-            if mouth_pick.get("ok") and mouth_pick.get("spoken_text"):
-                spoken_source = str(mouth_pick.get("spoken_text") or "")
-        except Exception:
-            pass
-        speakable = _truncate_for_speech(spoken_source)
+                spoken_pick = spoken_channel_text(
+                    cleaned,
+                    owner_text=prior_user_text or "",
+                    state_dir=_state_root(),
+                    source="talk_to_alice_tts_boundary",
+                )
+                if spoken_pick.get("reason") == "receipt_only_silent":
+                    spoken_source = ""
+                elif spoken_pick.get("ok") and spoken_pick.get("spoken_text"):
+                    spoken_source = str(spoken_pick.get("spoken_text") or "")
+            except Exception:
+                spoken_source = cleaned
+            try:
+                from System.swarm_mouth_sentence_selector import select_mouth_sentences
+
+                mouth_pick = select_mouth_sentences(
+                    spoken_source,
+                    owner_text=prior_user_text or "",
+                    state_dir=_state_root(),
+                    source="talk_to_alice_tts_boundary",
+                )
+                if mouth_pick.get("ok") and mouth_pick.get("spoken_text"):
+                    spoken_source = str(mouth_pick.get("spoken_text") or "")
+            except Exception:
+                pass
+        speakable = _truncate_for_speech(spoken_source, authored=_speech_authored)
         self._tts = _TTSWorker(
             speakable, voice=self._selected_voice_name() or None, parent=self,
         )
@@ -49096,6 +49200,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
     _alice_cursor_block: int = -1
 
     def _append_alice_line(self, text: str) -> None:
+        # r1725 — the wall never prints the 🗣 marker line; that line belongs
+        # to the mouth. The TTS lane extracts it before/inside _TTSWorker.
+        try:
+            text, _ = _split_authored_voice_line(text or "")
+        except Exception:
+            text = text or ""
         try:
             _last_user_for_banned_scrub = ""
             for _row in reversed(self._history or []):
