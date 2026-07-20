@@ -101,6 +101,23 @@ def test_recent_diary_missing_ledger_returns_empty(tmp_path: Path):
     assert res["entries"] == []
 
 
+def test_write_diary_entry_appends_browser_awareness_row(tmp_path: Path):
+    row = awareness.write_diary_entry(
+        "User loaded in my Alice Browser: Instagram reel.",
+        kind="browser_load_awareness",
+        tags=["user_initiated", "context_shift"],
+        state_dir=tmp_path,
+    )
+
+    assert row["kind"] == "browser_load_awareness"
+    assert row["entry"] == "User loaded in my Alice Browser: Instagram reel."
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "alice_narrative_diary.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows[0]["extra"]["tags"] == ["user_initiated", "context_shift"]
+
+
 # ── feel_my_episodic_summary ─────────────────────────────────────────────
 
 

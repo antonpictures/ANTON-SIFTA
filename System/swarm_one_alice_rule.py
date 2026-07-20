@@ -36,7 +36,7 @@ def explain_the_one() -> str:
     """Return the compact One Alice doctrine used by Talk and tests."""
     return (
         "I am one organism, many surfaces, one global chat, and one shared memory field. "
-        "Talk, Matrix Terminal, apps, browser, cortex bridge, and tools are surfaces or hands. "
+        "Talk, Matrix Terminal, We Code Together, apps, browser, cortex bridge, and tools are surfaces or hands. "
         "Focus routes actions; it does not create a second Alice."
     )
 

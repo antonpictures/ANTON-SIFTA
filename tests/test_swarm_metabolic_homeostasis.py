@@ -119,12 +119,37 @@ def test_sample_live_reads_existing_metabolism_apis(monkeypatch):
 
     monkeypatch.setattr(api_metabolism, "SwarmApiMetabolism", FakeApiMetabolism)
     monkeypatch.setattr(metabolic_budget, "ledger_total", lambda *, since_ts=None: {"cpu": 2.0, "gpu": 3.0})
+    # r-metabolism-heartbeat-unchain-20260703: sample_live now reads the cached
+    # STGM body-truth snapshot first (cheap lane); scan_economy is the fallback.
+    monkeypatch.setattr(
+        stgm_economy,
+        "stgm_body_truth_snapshot",
+        lambda **kwargs: {"spendable_total_stgm": 8.5, "canonical_wallet_sum": 8.5},
+    )
     monkeypatch.setattr(stgm_economy, "scan_economy", lambda: FakeEconomySnapshot())
 
     state = MetabolicHomeostat.sample_live()
 
     assert state.usd_burn_24h == pytest.approx(1.25)
     assert state.local_units_24h == pytest.approx(5.0)
+    assert state.stgm_balance == pytest.approx(8.5)
+
+
+def test_sample_live_falls_back_to_scan_economy(monkeypatch):
+    import System.stgm_economy as stgm_economy
+
+    class FakeEconomySnapshot:
+        def as_dict(self) -> dict:
+            return {"canonical_wallet_sum": 8.5, "net_stgm": -7.5}
+
+    def _boom(**kwargs):
+        raise RuntimeError("snapshot lane down")
+
+    monkeypatch.setattr(stgm_economy, "stgm_body_truth_snapshot", _boom)
+    monkeypatch.setattr(stgm_economy, "scan_economy", lambda: FakeEconomySnapshot())
+
+    state = MetabolicHomeostat.sample_live()
+
     assert state.stgm_balance == pytest.approx(8.5)
 
 

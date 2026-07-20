@@ -77,5 +77,5 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
 fi
 
-echo "Booting BeeSon v8.0 from $REPO_DIR (python=$PYTHON_BIN)"
+echo "Booting SIFTA OS v9.0 eXistenZ from $REPO_DIR (python=$PYTHON_BIN)"
 exec "$PYTHON_BIN" sifta_os_desktop.py

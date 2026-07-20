@@ -268,10 +268,24 @@ class SiftaBaseWidget(QWidget):
         self._status.setStyleSheet("color: rgb(100,108,140); font-size: 10px;")
         title_row.addWidget(self._status)
 
+        # r1640 (George): help is click-only — never auto-open on app launch.
+        # Arm after a short delay so open-under-cursor mouse-ups cannot fire it.
         btn_help = QPushButton("?")
         btn_help.setObjectName("btnHelp")
-        btn_help.setToolTip(f"Help — {self.APP_NAME}")
+        btn_help.setToolTip(f"Help — {self.APP_NAME} (click only; never auto-opens)")
+        btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        try:
+            btn_help.setAutoDefault(False)
+            btn_help.setDefault(False)
+        except Exception:
+            pass
+        self._help_armed = False
+
+        def _arm_help() -> None:
+            self._help_armed = True
+
         btn_help.clicked.connect(self._show_help)
+        QTimer.singleShot(800, _arm_help)
         title_row.addWidget(btn_help)
 
         root.addLayout(title_row)
@@ -496,6 +510,9 @@ class SiftaBaseWidget(QWidget):
     # ── Help system ───────────────────────────────────────────────
 
     def _show_help(self) -> None:
+        """Explicit ? click only — never auto-open (George r1640)."""
+        if not getattr(self, "_help_armed", True):
+            return
         text = _load_help_text(self.APP_NAME)
         w = QPlainTextEdit()
         w.setReadOnly(True)

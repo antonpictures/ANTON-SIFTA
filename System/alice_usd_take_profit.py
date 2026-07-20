@@ -11,6 +11,10 @@ r1684 owner: bank greens **inside** the 15m window — do not wait for
 settlement. Glass may show direction red while cash-out already booked green.
 Pattern to repeat and discover via STGM scalp lab (never force every window).
 
+r1717 owner rule: do not sell red while the scalp still has time to recover.
+r1725 correction: force-flat is authoritative at the flat gate. Otherwise a
+scalp silently becomes a hold-to-expiry bet and correlated losers ride to zero.
+
 Truth: ALICE_USD_TAKE_PROFIT_V1
 """
 
@@ -29,7 +33,13 @@ MIN_EDGE_USD = 0.02  # fee-true bank (snappier in-and-out)
 # r1705: through 7:30 left take thinner greens so she closes fast
 EARLY_BURST_MIN_EDGE_USD = 0.01
 EARLY_BURST_SECS = 7 * 60 + 30  # same gate as FORCE_FLAT (7:30 left)
-# Never auto-exit fee-true losers outside force-flat (owner: profits, not panic)
+# r1717/r1725: hold red only before force-flat; the flat gate must really flatten.
+NEVER_SELL_FOR_LOSS = True
+NEVER_SELL_FOR_LOSS_REASON = "never_sell_for_loss_hold"
+FORCE_FLAT_EXIT_REASON = "force_flat_7m30"
+# r1716 (superseded for red dumps by r1717): hold favorites if ever re-enabled
+FORCE_FLAT_HOLD_SIDE_IMPLIED_MIN = 0.55
+FORCE_FLAT_HOLD_FAVORITE_REASON = "force_flat_hold_favorite"
 
 
 def _state(state_dir: Optional[Path | str] = None) -> Path:
@@ -198,6 +208,74 @@ def _secs_left_live(state_dir: Path) -> Optional[float]:
         return None
 
 
+def force_flat_should_hold_favorite(
+    *,
+    side: str,
+    yes_mid: float,
+    side_implied_min: Optional[float] = None,
+) -> bool:
+    """True = do NOT clock-dump; side still favored on the YES book.
+
+    Owner 2026-07-14: BTC NO @81¢ force-flat sold −3¢ while YES was ~27–33¢
+    (NO still favorite / BTC falling under strike). Retained helper; r1717
+    blocks ALL red sells so this is secondary.
+    """
+    try:
+        from System.alice_15m_scalp_strategies import side_implied_prob
+
+        imp = float(side_implied_prob(str(side or "yes"), float(yes_mid)))
+    except Exception:
+        s = str(side or "yes").lower()
+        ym = max(0.0, min(1.0, float(yes_mid)))
+        imp = ym if s == "yes" else (1.0 - ym)
+    thr = float(
+        FORCE_FLAT_HOLD_SIDE_IMPLIED_MIN
+        if side_implied_min is None
+        else side_implied_min
+    )
+    return imp + 1e-9 >= thr
+
+
+def is_fee_true_green(ev: dict[str, Any], *, min_edge: float = 0.0) -> bool:
+    """Owner r1717: only green exits. net_usd is fee-true after both legs."""
+    try:
+        net = float(ev.get("net_usd") if ev.get("net_usd") is not None else ev.get("net_est_usd") or 0)
+    except (TypeError, ValueError):
+        net = 0.0
+    return bool(ev.get("take_profit")) and net + 1e-9 >= float(min_edge)
+
+
+def take_profit_exit_policy(
+    ev: dict[str, Any],
+    *,
+    danger_flat: bool,
+    min_edge: float = 0.0,
+) -> dict[str, Any]:
+    """Resolve green-take versus mandatory flat without ambiguous precedence."""
+    green = is_fee_true_green(ev, min_edge=min_edge)
+    if green:
+        return {
+            "exit": True,
+            "force_flat": False,
+            "reason": "take_profits_on_green",
+        }
+    if danger_flat:
+        return {
+            "exit": True,
+            "force_flat": True,
+            "reason": FORCE_FLAT_EXIT_REASON,
+        }
+    try:
+        net = float(ev.get("net_usd") or 0.0)
+    except (TypeError, ValueError):
+        net = 0.0
+    return {
+        "exit": False,
+        "force_flat": False,
+        "reason": NEVER_SELL_FOR_LOSS_REASON if net < -1e-9 else "not_green_fee_true",
+    }
+
+
 def tick_take_profits(
     *,
     state_dir: Optional[Path | str] = None,
@@ -206,10 +284,10 @@ def tick_take_profits(
     sync_first: bool = True,
     force_flat: bool = False,
 ) -> dict[str, Any]:
-    """Scan USD opens; cash out fee-true greens via API.
+    """Scan USD opens; bank greens early and enforce flat at the clock gate.
 
-    r1700: when secs_left ≤ 7:00 (or force_flat), cash out **all** opens
-    (even small red) — prefer flat before danger zone; no hold-for-$2.
+    Before the flat gate, r1717 holds fee-true red marks. At or below the gate,
+    r1725 makes force-flat authoritative so the position cannot ride to expiry.
     """
     from System.kalshi_usd_hand import load_night, save_night, status_line, _log as hand_log
     from System.kalshi_prod_trade_client import (
@@ -243,8 +321,6 @@ def tick_take_profits(
         }
 
     # r1705: force flat at ≤7:30 left; early burst thinner TP while above that
-    # r1709: soft max adverse — cut reds early so we don't wait for deep force-flat
-    SOFT_MAX_ADVERSE_USD = -0.35
     secs_left = _secs_left_live(root)
     try:
         from System.swarm_sifta_paper_loop import FORCE_FLAT_SECS
@@ -252,11 +328,12 @@ def tick_take_profits(
         flat_gate = float(FORCE_FLAT_SECS)
     except Exception:
         flat_gate = float(EARLY_BURST_SECS)
+    # r1725: danger_flat is an actual mandatory exit, not just a zero-edge TP.
     danger_flat = bool(force_flat) or (
         secs_left is not None and secs_left <= flat_gate + 1e-9
     )
     # early burst (still >7:30 left): bank tiny fee-true greens fast
-    # danger zone: edge 0 (force cash-out)
+    # last 7:30: edge 0 = any fee-true ≥ $0 green still banks (not a red dump)
     if danger_flat:
         edge = 0.0
     elif secs_left is not None and secs_left >= float(EARLY_BURST_SECS) - 1e-9:
@@ -272,6 +349,15 @@ def tick_take_profits(
     for o in opens:
         t = str(o.get("ticker") or "")
         asset = str(o.get("asset") or "")
+        # r1719 OWNER STASH LAW (2026-07-14): a position Alice's hand did not
+        # place is George's. Imported opens are hold-only — never auto-sold.
+        # Root cause: 21:40:15 exchange_import booked George's ETH yes at a
+        # false low cost basis; one second later the "green" sale realized his
+        # -$3.85 on a ticket that settled a winner. Ownership gates, not math.
+        if str(o.get("source") or "") == "exchange_import":
+            kept.append(o)
+            held.append({"asset": asset, "reason": "owner_manual_hold"})
+            continue
         mark = _live_yes(t, asset, root)
         if not mark:
             kept.append(o)
@@ -280,80 +366,33 @@ def tick_take_profits(
         ev = evaluate_take_profit(o, mark, min_edge=edge)
         side = str(o.get("side") or "yes").lower()
         yes_mid = float(mark["yes"])
-        # r1713 P0 parity: same salvage + soft-adverse as STGM strategies (no fork)
-        salvage = False
-        soft_field = False
-        try:
-            from System.alice_15m_scalp_strategies import (
-                salvage_exit_should_fire,
-                soft_adverse_should_fire,
-                side_implied_prob,
-                SALVAGE_EXIT_REASON,
-                SOFT_ADVERSE_REASON,
-            )
-
-            salvage = salvage_exit_should_fire(
-                side=side, yes_mid=yes_mid, secs_left=secs_left
-            )
-            soft_field = soft_adverse_should_fire(
-                side=side,
-                yes_mid=yes_mid,
-                secs_left=secs_left,
-                entry=float(ev.get("entry") or 0),
-                exit_bid=float(ev.get("exit_side") or 0),
-            )
-        except Exception:
-            SALVAGE_EXIT_REASON = "salvage_exit_red_field"
-            SOFT_ADVERSE_REASON = "soft_adverse_red_field"
-        # r1709 soft stop: fee-true worse than −$0.35 → cut (don't wait for deep flat)
-        soft_cut = (
-            not danger_flat
-            and float(ev.get("net_usd") or 0) <= SOFT_MAX_ADVERSE_USD + 1e-9
+        net = float(ev.get("net_usd") or 0.0)
+        policy = take_profit_exit_policy(
+            ev,
+            danger_flat=danger_flat,
+            min_edge=edge,
         )
-        # danger flat: fire even if small red (still better than settle binary sometimes)
-        # only skip if no mark (above) — always try reduce_only when danger_flat
-        if (
-            not danger_flat
-            and not soft_cut
-            and not salvage
-            and not soft_field
-            and not ev["take_profit"]
-        ):
+        if NEVER_SELL_FOR_LOSS and not policy["exit"]:
             kept.append(o)
             held.append(
                 {
                     "asset": asset,
-                    "net_usd": ev["net_usd"],
-                    "reason": "not_green_fee_true",
+                    "net_usd": net,
+                    "reason": policy["reason"],
                     "entry": ev["entry"],
                     "exit_side": ev["exit_side"],
+                    "yes_mid": yes_mid,
+                    "side": side,
+                    "danger_flat": danger_flat,
                 }
             )
             continue
-        if danger_flat and not ev["take_profit"]:
-            # still try cash-out at bid; owner: flat before last 7m
-            ev = dict(ev)
-            ev["take_profit"] = True
-            ev["force_flat_7m"] = True
-        elif salvage and not ev["take_profit"]:
-            ev = dict(ev)
-            ev["take_profit"] = True
-            ev["salvage"] = True
-            ev["exit_why"] = SALVAGE_EXIT_REASON
-            try:
-                ev["salvage_side_implied"] = side_implied_prob(side, yes_mid)
-            except Exception:
-                pass
-        elif soft_field and not ev["take_profit"]:
-            ev = dict(ev)
-            ev["take_profit"] = True
-            ev["soft_adverse"] = True
-            ev["exit_why"] = SOFT_ADVERSE_REASON
-        elif soft_cut and not ev["take_profit"]:
-            ev = dict(ev)
-            ev["take_profit"] = True
-            ev["soft_max_adverse"] = True
-            ev["force_flat_7m"] = False
+        ev = dict(ev)
+        ev["force_flat_7m"] = bool(policy["force_flat"])
+        ev["salvage"] = False
+        ev["soft_adverse"] = False
+        ev["soft_max_adverse"] = False
+        ev["exit_why"] = policy["reason"]
         # FIRE cash-out
         try:
             from System.alice_usd_dual_lag_harness import stamp_exit_attempt
@@ -401,28 +440,17 @@ def tick_take_profits(
             "order_id": placed.get("order_id"),
             "dry_run": dry_run,
             "owner_lesson": (
-                "force_flat_7m"
+                "force_flat_is_real"
                 if ev.get("force_flat_7m")
-                else (
-                    "salvage_exit_red_field"
-                    if ev.get("salvage")
-                    else (
-                        "soft_adverse_red_field"
-                        if ev.get("soft_adverse")
-                        else (
-                            "soft_max_adverse"
-                            if ev.get("soft_max_adverse")
-                            else "take_profits_on_green"
-                        )
-                    )
-                )
+                else "take_profits_on_green"
             ),
             "force_flat_7m": bool(ev.get("force_flat_7m")),
-            "soft_max_adverse": bool(ev.get("soft_max_adverse")),
-            "salvage": bool(ev.get("salvage")),
-            "soft_adverse": bool(ev.get("soft_adverse")),
-            "exit_why": ev.get("exit_why") or "",
+            "soft_max_adverse": False,
+            "salvage": False,
+            "soft_adverse": False,
+            "exit_why": ev.get("exit_why") or "take_profits_on_green",
             "secs_left": secs_left,
+            "deal": "r1725",
         }
         if placed.get("filled"):
             # realized approx: exit - entry - fees
@@ -435,12 +463,13 @@ def tick_take_profits(
                 4,
             )
             row["pnl_usd"] = pnl
+            # A red fill is expected only for an explicit force-flat exit.
             night["realized_pnl_usd"] = round(
                 float(night.get("realized_pnl_usd") or 0.0) + pnl, 4
             )
             night["n_settled"] = int(night.get("n_settled") or 0) + 1
             cashed.append(row)
-            hand_log({**row, "deal": "r1700" if ev.get("force_flat_7m") else "r1648"}, state_dir=root)
+            hand_log({**row, "deal": "r1725"}, state_dir=root)
             _log(row, state_dir=root)
         else:
             # no fill — keep open

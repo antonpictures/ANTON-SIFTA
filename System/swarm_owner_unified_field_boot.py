@@ -142,6 +142,18 @@ def anchor_owner_unified_field_on_boot(
         source="System.swarm_owner_unified_field_boot",
         path=schedule_path(root),
     )
+    try:
+        from System.swarm_travel_mode import sample_travel_mode
+
+        sample_travel_mode(
+            state_dir=sd,
+            write=True,
+            force=True,
+            source="owner_unified_field_boot",
+            now=now,
+        )
+    except Exception:
+        pass
 
     if gap_s is not None and gap_s >= 300.0:
         record_owner_moment(

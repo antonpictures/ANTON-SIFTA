@@ -65,10 +65,15 @@ DEFAULT_MIN_SECS = 7 * 60 + 30  # no new entry once <7:30 left (STGM + US$)
 FORCE_FLAT_SECS = 7 * 60 + 30  # force cash-out all opens ≤7:30 left
 SCALP_WINDOW_FIRST_MINUTES = 7.5  # dual cycle target through 7:30 left
 # r1710 owner: STGM-only learning — many paper scalps / 15m round (US$ stays off)
+# r1714: spray correlation cap — 5× same-side is one macro bet (19:18 wound)
 MAX_SCALPS_PER_WINDOW = 18
 STGM_TARGET_SCALPS_PER_ROUND = 18
-STGM_PAPER_MAX_OPEN = 9  # concurrent open bags on paper (majors)
-STGM_PAPER_MAX_SAME_DIR = 9
+# r1724 owner: SIX concurrent — STGM leads, US$ copies (match lanes)
+STGM_PAPER_MAX_OPEN = 4  # r1726 stigmergy: lead field mirrors US$ max 4
+STGM_PAPER_MAX_SAME_DIR = 2  # r1726: no multi-YES spray — half/half risk only
+# r1715: entry clock — no open-bell spray; after first ~5m (secs_left <= 600)
+ENTRY_CLOCK_MAX_SECS_LEFT = 10 * 60  # must be ≤10:00 left (= ≥5m into strip)
+ENTRY_CLOCK_ENABLED = True
 DEFAULT_STAKE = 1.0
 # r1706: STGM entry band = US$ band (exact copy for learning)
 STGM_MIN_SECS = DEFAULT_MIN_SECS  # same hunt clock as US$
@@ -107,6 +112,19 @@ PAPER_UNIT = 1.0
 PAPER_MAX_OPEN = int(STGM_PAPER_MAX_OPEN)
 PAPER_MAX_SAME_DIR = int(STGM_PAPER_MAX_SAME_DIR)
 STGM_SCALP_COUNT_FILE = "alice_15m_stgm_scalp_counts.json"
+SCALP_LAB_TOURNAMENT_INTERVAL_S = 60.0
+_LAST_SCALP_LAB_TOURNAMENT_TS = 0.0
+
+
+def _scalp_lab_tournament_due(*, now: Optional[float] = None) -> bool:
+    """Keep the research tournament from delaying 10-second control ticks."""
+    global _LAST_SCALP_LAB_TOURNAMENT_TS
+    current = float(time.time() if now is None else now)
+    elapsed = current - _LAST_SCALP_LAB_TOURNAMENT_TS
+    if _LAST_SCALP_LAB_TOURNAMENT_TS > 0.0 and 0.0 <= elapsed < SCALP_LAB_TOURNAMENT_INTERVAL_S:
+        return False
+    _LAST_SCALP_LAB_TOURNAMENT_TS = current
+    return True
 
 
 def _paper_strategy_variant(max_secs: int = DEFAULT_MAX_SECS) -> str:
@@ -864,9 +882,11 @@ def register_open_bets(
                 _mark(
                     b,
                     ok=False,
-                    reason="max_same_dir",
+                    reason="spray_correlation_cap",
                     n=side_counts[side],
                     cap=int(PAPER_MAX_SAME_DIR),
+                    detail="max 2 same-side bags/window",
+                    deal="r20260714-spray-correlation-cap",
                 )
                 continue
 
@@ -1290,12 +1310,12 @@ def paper_bet_15m(
                     {
                         "asset": m.asset,
                         "reason": "weird_asset",
-                        "detail": "HYPE/ZEC/NEAR shadow-visible, not live (owner)",
+                        "detail": "ZEC/NEAR shadow-visible dust, not live (r1720)",
                     }
                 )
                 continue
         except Exception:
-            if str(m.asset or "").upper() in ("HYPE", "ZEC", "NEAR"):
+            if str(m.asset or "").upper() in ("ZEC", "NEAR"):
                 skipped.append({"asset": m.asset, "reason": "weird_asset"})
                 continue
         # r1710: STGM burst — do not sit liquid majors for tournament shadow-only
@@ -1401,6 +1421,18 @@ def paper_bet_15m(
                         "secs": secs,
                         "need": f"{min_secs}-{max_secs}s",
                         "wait_until_secs": max_secs,
+                    }
+                )
+                continue
+            # r1715: late-entry lesson — block open-bell (first ~5m of strip)
+            if ENTRY_CLOCK_ENABLED and secs > float(ENTRY_CLOCK_MAX_SECS_LEFT) + 1e-9:
+                skipped.append(
+                    {
+                        "asset": m.asset,
+                        "reason": "entry_clock_too_early",
+                        "secs": secs,
+                        "need": f"secs_left<={ENTRY_CLOCK_MAX_SECS_LEFT}",
+                        "deal": "r1715-entry-clock-late-pays",
                     }
                 )
                 continue
@@ -1565,11 +1597,12 @@ def paper_bet_15m(
             skipped.append(
                 {
                     "asset": m.asset,
-                    "reason": "max_same_dir",
+                    "reason": "spray_correlation_cap",
                     "side": side_l,
                     "n": side_counts[side_l],
                     "cap": int(paper_max_same),
-                    "deal": "r1710_stgm_burst18",
+                    "detail": "max 2 same-side tickets per window",
+                    "deal": "r20260714-spray-correlation-cap",
                 }
             )
             continue
@@ -2017,33 +2050,50 @@ def paper_bet_15m(
                 }
                 entry["stgm_stake"] = 0.0
                 entry["token_body"] = "PAPER_UNIT"
-            # r1647: parallel US $ hand (owner-armed only; never blocks STGM)
+            # r1647/r1723: STIGMERGIC dual — STGM trail first, US$ copies exact
+            # bag (same ticker/side). Not a test lane: paper IS the field mark.
             try:
                 from System.kalshi_usd_hand import maybe_mirror_paper_bet
 
-                # Prefer explicit side entry price for USD gate (80–88 FIRE)
                 entry["entry_price"] = _paper_price(side, ky)
-                # Market.volume belongs to the local GAME_STGM engine and is a
-                # participant-keyed dict.  Only exchange 24h volume is valid.
                 entry["volume"] = _usd_mirror_volume(m)
+                entry["stgm_exact_copy"] = True
+                # ensure rainman present so dual isn't skipped as score_unknown
+                rm = dict(entry.get("rainman") or {})
+                if rm.get("score") is None:
+                    rm["score"] = 0.65
+                if not rm.get("action"):
+                    rm["action"] = "fire"
+                rm["bucket"] = rm.get("bucket") or "stgm_exact_copy"
+                entry["rainman"] = rm
                 entry["usd_live"] = maybe_mirror_paper_bet(
                     entry, state_dir=engine.state_dir
                 )
-                # r1695: one immediate retry on no-fill / reject (AMMO, band flicker)
+                # r1695/r1723: up to 2 retries — dual must stick to the trail
                 ul = entry.get("usd_live") or {}
-                if not ul.get("filled") and str(ul.get("event") or "") in (
-                    "usd_no_fill",
-                    "usd_reject",
-                    "usd_error",
-                    "usd_skip",
-                ):
+                for _retry in range(2):
+                    if ul.get("filled"):
+                        break
+                    if str(ul.get("event") or "") not in (
+                        "usd_no_fill",
+                        "usd_reject",
+                        "usd_error",
+                        "usd_skip",
+                    ):
+                        break
                     reason = str(ul.get("reason") or "")
-                    if "kill_switch" not in reason and "night_loss" not in reason:
-                        entry["usd_live_retry"] = maybe_mirror_paper_bet(
-                            entry, state_dir=engine.state_dir
-                        )
-                        if (entry.get("usd_live_retry") or {}).get("filled"):
-                            entry["usd_live"] = entry["usd_live_retry"]
+                    if "kill_switch" in reason or "night_loss" in reason:
+                        break
+                    if reason in (
+                        "band",
+                        "usd_late_no_dual",
+                        "lottery_coupon_blocked",
+                        "banned_asset",
+                    ):
+                        break  # structural sit — don't thrash
+                    ul = maybe_mirror_paper_bet(entry, state_dir=engine.state_dir)
+                    entry["usd_live"] = ul
+                    entry[f"usd_live_retry_{_retry + 1}"] = ul
             except Exception as exc:
                 entry["usd_live"] = {
                     "ok": False,
@@ -2685,6 +2735,15 @@ def paper_loop_tick(
     except Exception as exc:
         take_profit = {"ok": False, "reason": f"{type(exc).__name__}:{exc}"}
     # r1698/r1700: up to MAX_SCALPS_PER_WINDOW duals while ≥8:00 left + flat
+    # r1723: catch-up dual for any STGM open still missing US$ twin
+    dual_catchup: Any = None
+    try:
+        from System.alice_usd_position_sync import ensure_usd_dual_for_paper_opens
+
+        dual_catchup = ensure_usd_dual_for_paper_opens(state_dir=engine.state_dir)
+    except Exception as exc:
+        dual_catchup = {"ok": False, "reason": f"{type(exc).__name__}:{exc}"}
+    # r1723: must_scalp is STGM-copy only (no independent cash hunt)
     must_scalp: Any = None
     try:
         from System.alice_usd_must_scalp import tick_must_scalp
@@ -2697,8 +2756,15 @@ def paper_loop_tick(
     try:
         from System.alice_15m_scalp_lab import tick_scalp_lab
 
-        # tournament every tick is light (recent tape only); still STGM-only
-        scalp_lab = tick_scalp_lab(state_dir=engine.state_dir, run_tournament=True)
+        # Tape capture stays per tick; the CPU-heavy tournament cannot delay
+        # take-profit and lane-sync checks on every 10-second control cycle.
+        run_tournament = _scalp_lab_tournament_due()
+        scalp_lab = tick_scalp_lab(
+            state_dir=engine.state_dir,
+            run_tournament=run_tournament,
+        )
+        if isinstance(scalp_lab, dict):
+            scalp_lab.setdefault("tournament_ran", run_tournament)
     except Exception as exc:
         scalp_lab = {"ok": False, "reason": f"{type(exc).__name__}:{exc}"}
     settle = settle_paper_from_api(engine)

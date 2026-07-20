@@ -274,19 +274,9 @@ def evaluate_ticket(
         return {"ok": False, "reason": "night_halted", "detail": night.get("halt_reason")}
 
     p = float(entry_price)
-    # r1677: match paper must-fire band so dual does not skip whole windows
+    # r1726: US$ stays ledger scalp band 40–65¢ (prefer ~50). Paper MUST_FIRE
+    # 20–80 is STGM-only — never widen cash into lottery/rich chase.
     band_lo, band_hi = float(MIN_ENTRY), float(MAX_ENTRY)
-    try:
-        from System.swarm_sifta_paper_loop import (
-            MUST_FIRE_EVERY_WINDOW,
-            MUST_FIRE_MIN_ENTRY,
-            MUST_FIRE_MAX_ENTRY,
-        )
-
-        if MUST_FIRE_EVERY_WINDOW:
-            band_lo, band_hi = float(MUST_FIRE_MIN_ENTRY), float(MUST_FIRE_MAX_ENTRY)
-    except Exception:
-        pass
     if p < band_lo - 1e-9 or p > band_hi + 1e-9:
         return {
             "ok": False,
@@ -375,6 +365,20 @@ def evaluate_ticket(
 
     n_contracts = contracts_for_ammo(state_dir=state_dir)
     cost = round(p * n_contracts, 4)
+    # r1715: never stake the whole pocket — hard notional ceiling
+    try:
+        from System.ledger_deal import MAX_TICKET_NOTIONAL_USD as _MAX_NOTIONAL
+    except Exception:
+        _MAX_NOTIONAL = 2.5
+    if cost > float(_MAX_NOTIONAL) + 1e-9:
+        return {
+            "ok": False,
+            "reason": "ticket_notional_cap",
+            "cost_usd": cost,
+            "cap": float(_MAX_NOTIONAL),
+            "detail": "all-in lottery blocked — ammo $1–2 only",
+            "deal": "r1715-bank-the-green-size-law",
+        }
     exposure = sum(float(o.get("cost_usd") or 0.0) for o in opens) + cost
     if exposure > MAX_BUDGET + 1e-9:
         return {"ok": False, "reason": "budget", "exposure": exposure}
@@ -388,6 +392,29 @@ def evaluate_ticket(
             "worst_case_after_usd": worst_case_after,
         }
 
+    # r1721 owner: stop waiting forever — only skip open-bell first ~45s
+    # (secs_left > 14:15). Multi auto-scalp needs to buy as soon as strip is live.
+    secs_left = _secs_left_for_usd(state_dir)
+    if secs_left is not None:
+        if secs_left > 14 * 60.0 + 15.0 + 1e-9:
+            return {
+                "ok": False,
+                "reason": "entry_clock_too_early",
+                "secs_left": secs_left,
+                "need": "secs_left<=855 (after first ~45s of strip)",
+                "deal": "r1721-fast-entry-multi-scalp",
+            }
+        # lottery coupon near settle: extreme premium + little clock
+        if secs_left < 180.0 and (p >= 0.80 or p <= 0.20):
+            return {
+                "ok": False,
+                "reason": "lottery_coupon_blocked",
+                "secs_left": secs_left,
+                "price": p,
+                "detail": "high-prob late ticket risks book to win cents",
+                "deal": "r1715-bank-the-green-size-law",
+            }
+
     return {
         "ok": True,
         "reason": "pass",
@@ -398,6 +425,7 @@ def evaluate_ticket(
         "ammo_usd": get_ammo_usd(state_dir=state_dir),
         "asset": asset,
         "ticker": t,
+        "secs_left": secs_left,
     }
 
 
@@ -431,6 +459,36 @@ def _secs_left_for_usd(state_dir: Optional[Path | str] = None) -> Optional[float
         return best
     except Exception:
         return None
+
+
+def usd_entry_cooldown_gate(state_dir: Path) -> Optional[dict]:
+    """FAIL-CLOSED entry gate for the force-flat-red cooldown (r20260714-cooldown-gate-leak).
+
+    Returns a usd_skip row when new US$ entries must not fire, None when clear.
+    If the cooldown state cannot be read at all, the gate refuses the entry —
+    a real order may never ride through a broken check. Exits are never gated
+    here; cutting an open position must always be allowed.
+    """
+    try:
+        from System.alice_usd_must_scalp import _force_flat_red_cooldown
+
+        cool = _force_flat_red_cooldown(state_dir)
+    except Exception as exc:
+        return {
+            "event": "usd_skip",
+            "ok": False,
+            "reason": "cooldown_check_failed_fail_closed",
+            "check_error": repr(exc),
+        }
+    if cool.get("cool"):
+        return {
+            "event": "usd_skip",
+            "ok": False,
+            "reason": "cooldown_after_force_flat_reds",
+            "n_red": cool.get("n_red"),
+            "until_ts": cool.get("until_ts"),
+        }
+    return None
 
 
 def _maybe_mirror_paper_bet_locked(
@@ -490,23 +548,11 @@ def _maybe_mirror_paper_bet_locked(
             return row
 
         # r1709: cool-down after force-flat red cluster — dual sits too
-        try:
-            from System.alice_usd_must_scalp import _force_flat_red_cooldown
-
-            cool = _force_flat_red_cooldown(_state(state_dir))
-            if cool.get("cool"):
-                row = {
-                    "event": "usd_skip",
-                    "ok": False,
-                    "reason": "cooldown_after_force_flat_reds",
-                    "asset": bet.get("asset"),
-                    "n_red": cool.get("n_red"),
-                    "until_ts": cool.get("until_ts"),
-                }
-                _log(row, state_dir=state_dir)
-                return row
-        except Exception:
-            pass
+        cool_skip = usd_entry_cooldown_gate(_state(state_dir))
+        if cool_skip is not None:
+            cool_skip["asset"] = bet.get("asset")
+            _log(cool_skip, state_dir=state_dir)
+            return cool_skip
 
         # r1704: same-dir lock vs existing USD opens
         night0 = load_night(state_dir)
@@ -540,9 +586,21 @@ def _maybe_mirror_paper_bet_locked(
             score_f = float(rainman_score)
         except (TypeError, ValueError):
             score_f = None
+        # r1723 stigmergic dual: paper trail IS the rainman — don't sit on missing score
+        if score_f is None and (
+            bet.get("stgm_exact_copy")
+            or str(rainman_bucket or "") in ("stgm_exact_copy", "dual_sync_owner", "must_scalp")
+            or bet.get("body_stgm")
+            or bet.get("token_body") in ("STGM", "PAPER_UNIT")
+        ):
+            score_f = 0.65
+            action = action or "fire"
+            rainman_bucket = rainman_bucket or "stgm_exact_copy"
         if score_f is None:
             gate = {"ok": False, "reason": "rainman_score_unknown"}
         else:
+            if not action:
+                action = "fire"
             gate = evaluate_ticket(
                 entry_price=entry_p,
                 side=side,
@@ -602,23 +660,11 @@ def _maybe_mirror_paper_bet_locked(
         # Live book price so dual FILLS (stale entry → usd_no_fill when mid runs)
         place_price = float(gate["price"])
         ticker = str(bet.get("ticker") or "")
-        # r1686: scalp buy-low band (never rebid past this)
+        # r1726: US$ hard scalp band only — never inherit paper MUST_FIRE 20–80
         lo, hi = float(MIN_ENTRY), float(MAX_ENTRY)
-        try:
-            from System.swarm_sifta_paper_loop import (
-                MUST_FIRE_EVERY_WINDOW,
-                MUST_FIRE_MIN_ENTRY,
-                MUST_FIRE_MAX_ENTRY,
-            )
-
-            if MUST_FIRE_EVERY_WINDOW:
-                lo, hi = float(MUST_FIRE_MIN_ENTRY), float(MUST_FIRE_MAX_ENTRY)
-        except Exception:
-            pass
         # take_next may nudge +2¢ for fill — still hard-cap at scalp max (no 90¢ chase)
         if take_next:
-            # never widen past scalp ceiling (65¢)
-            hi = min(float(hi), 0.65)
+            hi = min(float(hi), float(MAX_ENTRY))
 
         try:
             mkt = client._request("GET", f"/markets/{ticker}")

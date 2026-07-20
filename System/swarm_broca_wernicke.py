@@ -69,6 +69,48 @@ except Exception:
     _modulate_voice = None  # type: ignore
     _MODULATOR_AVAILABLE = False
 
+# Romanian TTS routing (r-multilingual). Detection keys off WORDS, not just
+# diacritics, because Romanian is often typed in plain ASCII.
+_RO_DIACRITICS = re.compile(r"[ăîâșțĂÎÂȘȚşţ]")
+_RO_DECISIVE = frozenset("""
+multumesc multam multumim merci salut buna vorbeste vorbesti vorbim vorbi
+romaneste romana romaneasca foarte sunt esti este suntem sunteti bravo
+pentru dorinta dorim doresti doreste vrem vreau vrei facem faci faceti
+avem aveti despre decat catre spune spunemi spuneti absolut adevarat
+problema problemele nimic poate putem raspuns raspunde raspunsul cuvinte
+cuvant numarul exemplul deranjeaza serviciu servicii profitam profit
+trebuie intrebare intrebarea intreb alegi alege scriem scrie scrii
+gestionarea introducerea asteptare clientii totul retine acesta aceasta
+aceste bineinteles multumim inteleg intelegi nevoie asadar
+""".split())
+_RO_STOP = frozenset("""
+sau dar acum aici doar asta tine hai cel cea cele intre dintre imi iti
+place unde cand cine cum bine ceva mult mereu deci pai atunci cu ca si sa
+ne de nu ii le ei ele noi voi vom va vor mi ti se te ma isi
+""".split())
+_RO_VOICE = "Ioana"
+
+
+def _is_romanian(text: str) -> bool:
+    """True if `text` looks Romanian — diacritics OR Romanian vocabulary.
+
+    English-collision words (care, mine, mai, la, am, are) are excluded so
+    English never routes to the Romanian voice.
+    """
+    if not text:
+        return False
+    if _RO_DIACRITICS.search(text):
+        return True
+    toks = re.findall(r"[a-z]+", text.lower())
+    if not toks:
+        return False
+    if any(t in _RO_DECISIVE for t in toks):
+        return True
+    n = len(toks)
+    stop = sum(1 for t in toks if t in _RO_STOP)
+    return n >= 4 and stop >= max(3, n * 0.4)
+
+
 MODULE_VERSION = "2026-04-19.v4-dual-path"
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -415,9 +457,10 @@ class BrocaEgress:
         with self._dispatch_lock:
             _BROCA_SPEAKING.set()
             try:
+                ro = _is_romanian(text)
                 if _VOCAL_CORDS_AVAILABLE and _get_voice_backend is not None:
                     backend = _get_voice_backend()
-                    base = _VoiceParams() if _VoiceParams else None
+                    base = (_VoiceParams(voice=_RO_VOICE) if ro else _VoiceParams()) if _VoiceParams else None
                     if _MODULATOR_AVAILABLE and _modulate_voice is not None:
                         params = _modulate_voice(text, base=base)
                     else:
@@ -434,8 +477,12 @@ class BrocaEgress:
                 # reason) — keep v2 behaviour exactly so we never silently
                 # change the timeout/return contract on partial installs.
                 try:
+                    _say_cmd = ["say"]
+                    if ro:
+                        _say_cmd.extend(["-v", _RO_VOICE])
+                    _say_cmd.extend(["--", text])
                     proc = subprocess.run(
-                        ["say", "--", text],
+                        _say_cmd,
                         timeout=self.SAY_TIMEOUT_S,
                         capture_output=True,
                     )

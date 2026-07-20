@@ -752,7 +752,7 @@ def seed_defaults(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
         "the query/person/item changes every time; the move does not.",
         state_dir=state_dir)
     # r383: slideshow habit per engine. "slideshow images of cats" defaults to
-    # DuckDuckGo; on google.com it runs on Google Images. One image every 3.5s via the
+    # DuckDuckGo; on an image-capable engine it runs on image results. One image every 3.5s via the
     # Alice Browser slideshow overlay (click or Esc to stop).
     out["duckduckgo_slideshow"] = ensure_site_skill(
         "duckduckgo.com", "slideshow images",

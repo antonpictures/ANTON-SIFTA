@@ -6,6 +6,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -103,6 +104,14 @@ def _json(path: Path) -> dict[str, Any]:
     return obj if isinstance(obj, dict) else {}
 
 
+def _fable_context_packet_path() -> Path:
+    return _EVAL / "FABLE_REPO_CONTEXT_PACKET.json"
+
+
+def _fable_all_files_manifest_path() -> Path:
+    return _EVAL / "FABLE_ALL_FILES_MANIFEST.jsonl"
+
+
 def _turn_rows(path: Path) -> list[dict[str, Any]]:
     return [row for row in _jsonl(path) if row.get("turn_id")]
 
@@ -129,10 +138,301 @@ def _source_line_count(path: Path) -> int:
         return 0
 
 
+def _jsonl_physical_line_count(path: Path) -> int:
+    try:
+        total = 0
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                total += chunk.count(b"\n")
+        return total
+    except OSError:
+        return 0
+
+
+def _file_stat_row(rel_path: str) -> dict[str, Any]:
+    path = _REPO / rel_path
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"path": rel_path, "present": False}
+    row: dict[str, Any] = {
+        "path": rel_path,
+        "present": True,
+        "bytes": stat.st_size,
+        "mtime": stat.st_mtime,
+    }
+    if path.suffix == ".jsonl":
+        row["rows"] = _jsonl_physical_line_count(path)
+    return row
+
+
+def _git_output_lines(args: list[str], *, timeout_s: float = 4.0) -> list[str]:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=_REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout_s,
+            check=False,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    return [line for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _source_like_path(path: Path) -> bool:
+    if path.suffix.casefold() not in _SOURCE_CENSUS_SUFFIXES:
+        return False
+    try:
+        rel = path.relative_to(_REPO)
+    except ValueError:
+        return False
+    return not (set(rel.parts) & _SOURCE_CENSUS_SKIP_PARTS)
+
+
+def _fable_git_status_row(line: str) -> dict[str, Any]:
+    code = line[:2]
+    raw_path = line[3:].strip() if len(line) > 3 else line.strip()
+    if " -> " in raw_path:
+        raw_path = raw_path.split(" -> ", 1)[1].strip()
+    path = raw_path.strip('"')
+    abs_path = _REPO / path
+    if code == "??":
+        kind = "untracked"
+    elif "D" in code:
+        kind = "deleted"
+    elif "R" in code:
+        kind = "renamed"
+    elif "A" in code:
+        kind = "added"
+    else:
+        kind = "modified"
+    return {
+        "status": code,
+        "kind": kind,
+        "path": path,
+        "root": Path(path).parts[0] if Path(path).parts else ".",
+        "source_like": _source_like_path(abs_path),
+    }
+
+
+def _fable_next_repair_queue(
+    *,
+    critical_docs: list[dict[str, Any]],
+    critical_ledgers: list[dict[str, Any]],
+    git_status: list[str],
+) -> dict[str, Any]:
+    """Machine-readable next-fix queue for Fable and short-context doctors."""
+    snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
+    organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
+    rows: list[dict[str, Any]] = []
+
+    status_priority = {
+        "DEGRADED_RECEIPTS": 0,
+        "NO_LEDGER_SEEN": 1,
+        "COLD_RECEIPTS": 2,
+        "PARTIAL_RECEIPTS": 3,
+        "MODULE_ONLY": 4,
+    }
+    priority_label = {0: "P0", 1: "P0", 2: "P1", 3: "P2", 4: "P2", 5: "P3"}
+
+    for organ in organs:
+        if not isinstance(organ, dict):
+            continue
+        health = organ.get("health") if isinstance(organ.get("health"), dict) else {}
+        status = str(health.get("status") or "UNKNOWN")
+        if status not in status_priority:
+            continue
+        priority_rank = status_priority[status]
+        present_paths = organ.get("present_paths") if isinstance(organ.get("present_paths"), list) else []
+        organ_paths = organ.get("organ_paths") if isinstance(organ.get("organ_paths"), list) else []
+        present_ledgers = organ.get("present_ledgers") if isinstance(organ.get("present_ledgers"), list) else []
+        missing_ledgers = organ.get("missing_ledgers") if isinstance(organ.get("missing_ledgers"), list) else []
+        rows.append(
+            {
+                "priority": priority_label.get(priority_rank, "P3"),
+                "priority_rank": priority_rank,
+                "source": "organ_health",
+                "target": str(organ.get("organ_id") or organ.get("display_name") or "unknown_organ"),
+                "title": str(organ.get("display_name") or organ.get("organ_id") or "Unknown organ"),
+                "status": status,
+                "score": health.get("score"),
+                "newest_ledger_age_s": health.get("newest_ledger_age_s"),
+                "receipt_rows": health.get("receipt_rows"),
+                "paths": [str(p) for p in (present_paths or organ_paths)[:6]],
+                "ledgers": [str(p) for p in present_ledgers[:6]],
+                "missing_ledgers": [str(p) for p in missing_ledgers[:6]],
+                "repair_hint": _organ_function_summary(organ, max_len=220),
+            }
+        )
+
+    for row in critical_ledgers:
+        present = bool(row.get("present"))
+        if present and "rows" not in row:
+            continue
+        row_count = int(row.get("rows") or 0)
+        if present and row_count > 0:
+            continue
+        path = str(row.get("path") or "")
+        rows.append(
+            {
+                "priority": "P0" if not present else "P1",
+                "priority_rank": 0 if not present else 2,
+                "source": "critical_ledger",
+                "target": path,
+                "title": f"Critical ledger {'missing' if not present else 'empty'}: {path}",
+                "status": "missing" if not present else "empty",
+                "paths": [path],
+                "ledgers": [path],
+                "repair_hint": "Restore the receipt producer or explain why this ledger is intentionally absent.",
+            }
+        )
+
+    for row in critical_docs:
+        if row.get("present"):
+            continue
+        path = str(row.get("path") or "")
+        rows.append(
+            {
+                "priority": "P0",
+                "priority_rank": 0,
+                "source": "critical_doc",
+                "target": path,
+                "title": f"Critical context missing: {path}",
+                "status": "missing",
+                "paths": [path],
+                "repair_hint": "Recover the context document/report or remove it from the critical handoff list with a receipt.",
+            }
+        )
+
+    dirty_rows = [_fable_git_status_row(line) for line in git_status]
+    dirty_source_like = [row for row in dirty_rows if row.get("source_like")]
+    for row in dirty_source_like[:80]:
+        rows.append(
+            {
+                "priority": "P3",
+                "priority_rank": 5,
+                "source": "dirty_worktree",
+                "target": row.get("path"),
+                "title": f"Review dirty source-like file: {row.get('path')}",
+                "status": row.get("kind"),
+                "paths": [str(row.get("path") or "")],
+                "repair_hint": "Classify as current owner/doctor work before Fable judges behavior; do not revert unrelated changes.",
+            }
+        )
+
+    rows.sort(
+        key=lambda r: (
+            int(r.get("priority_rank") or 99),
+            str(r.get("source") or ""),
+            str(r.get("target") or "").casefold(),
+        )
+    )
+    by_source = Counter(str(row.get("source") or "unknown") for row in rows)
+    by_priority = Counter(str(row.get("priority") or "P?") for row in rows)
+    return {
+        "truth_label": "FABLE_NEXT_REPAIR_QUEUE_V1",
+        "generated_at": time.time(),
+        "total_items": len(rows),
+        "by_source": {str(k): int(v) for k, v in sorted(by_source.items())},
+        "by_priority": {str(k): int(v) for k, v in sorted(by_priority.items())},
+        "items": rows[:160],
+        "dirty_worktree_source_like_sampled": min(len(dirty_source_like), 80),
+        "rules": [
+            "Fix P0/P1 receipt and organ-health rows before polishing prose.",
+            "Dirty-worktree rows are review targets, not permission to revert unrelated owner or doctor changes.",
+            "Every repair should leave tests or ledger receipts and then regenerate this matrix.",
+        ],
+    }
+
+
+def _all_workspace_inventory(*, write_manifest: bool = True) -> dict[str, Any]:
+    """Count every non-git workspace file; write a JSONL manifest for Fable."""
+    total_files = 0
+    total_bytes = 0
+    source_like_files = 0
+    by_root: Counter[str] = Counter()
+    by_root_bytes: Counter[str] = Counter()
+    by_suffix: Counter[str] = Counter()
+    by_suffix_bytes: Counter[str] = Counter()
+    largest: list[dict[str, Any]] = []
+    manifest_handle = None
+    manifest_path = _fable_all_files_manifest_path()
+    if write_manifest:
+        try:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_handle = manifest_path.open("w", encoding="utf-8")
+        except OSError:
+            manifest_handle = None
+    try:
+        for root, dirs, files in os.walk(_REPO):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            root_path = Path(root)
+            try:
+                rel_root = root_path.relative_to(_REPO)
+            except ValueError:
+                continue
+            if ".git" in rel_root.parts:
+                continue
+            for name in files:
+                path = root_path / name
+                try:
+                    rel = path.relative_to(_REPO)
+                    stat = path.stat()
+                except OSError:
+                    continue
+                suffix = path.suffix.casefold() or "<none>"
+                root_name = rel.parts[0] if rel.parts else "."
+                size = int(stat.st_size)
+                is_source_like = _source_like_path(path)
+                total_files += 1
+                total_bytes += size
+                source_like_files += 1 if is_source_like else 0
+                by_root[root_name] += 1
+                by_root_bytes[root_name] += size
+                by_suffix[suffix] += 1
+                by_suffix_bytes[suffix] += size
+                row = {
+                    "path": rel.as_posix(),
+                    "root": root_name,
+                    "suffix": suffix,
+                    "bytes": size,
+                    "mtime": stat.st_mtime,
+                    "source_like": is_source_like,
+                }
+                if manifest_handle is not None:
+                    manifest_handle.write(json.dumps(row, sort_keys=True) + "\n")
+                largest.append(row)
+                largest.sort(key=lambda r: int(r.get("bytes") or 0), reverse=True)
+                if len(largest) > 40:
+                    largest.pop()
+    finally:
+        if manifest_handle is not None:
+            manifest_handle.close()
+    return {
+        "files": total_files,
+        "bytes": total_bytes,
+        "source_like_files": source_like_files,
+        "manifest_path": str(manifest_path),
+        "manifest_rows": _jsonl_physical_line_count(manifest_path) if manifest_path.exists() else 0,
+        "by_root": by_root,
+        "by_root_bytes": by_root_bytes,
+        "by_suffix": by_suffix,
+        "by_suffix_bytes": by_suffix_bytes,
+        "largest_files": largest,
+        "skip_policy": {"skipped_parts": [".git"], "note": "All non-.git files are counted, including .venv, Vendor, .sifta_state, binary assets, PDFs, logs, and generated artifacts."},
+    }
+
+
 def _source_body_census() -> dict[str, Any]:
     """Count Alice's source/document body without ingesting ledgers, caches, or venvs."""
     total_files = 0
     total_lines = 0
+    manifest: list[dict[str, Any]] = []
     by_root: Counter[str] = Counter()
     by_root_lines: Counter[str] = Counter()
     by_suffix: Counter[str] = Counter()
@@ -156,6 +456,10 @@ def _source_body_census() -> dict[str, Any]:
             except ValueError:
                 continue
             n = _source_line_count(path)
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
             total_files += 1
             total_lines += n
             root_name = rel.parts[0] if rel.parts else "."
@@ -163,6 +467,15 @@ def _source_body_census() -> dict[str, Any]:
             by_root_lines[root_name] += n
             by_suffix[suffix or "<none>"] += 1
             by_suffix_lines[suffix or "<none>"] += n
+            manifest.append(
+                {
+                    "path": rel.as_posix(),
+                    "root": root_name,
+                    "suffix": suffix or "<none>",
+                    "lines": n,
+                    "bytes": size,
+                }
+            )
     return {
         "files": total_files,
         "lines": total_lines,
@@ -170,6 +483,7 @@ def _source_body_census() -> dict[str, Any]:
         "by_root_lines": by_root_lines,
         "by_suffix": by_suffix,
         "by_suffix_lines": by_suffix_lines,
+        "manifest": sorted(manifest, key=lambda row: str(row["path"])),
     }
 
 
@@ -216,6 +530,259 @@ def _body_source_census_panel() -> str:
         "<div class='grid' style='grid-template-columns:repeat(auto-fit,minmax(360px,1fr));margin:8px 0 0;'>"
         f"<div>{root_table}</div><div>{suffix_table}</div>"
         "</div>"
+        "</div>"
+    )
+
+
+def _fable_repo_context_packet(*, write_json: bool = True) -> dict[str, Any]:
+    """Whole-repo handoff packet for Fable / limited-context reviewers.
+
+    The HTML stays readable; this sidecar keeps the full source-like file manifest
+    so Fable can sample any body cell without relying on a tiny prompt window.
+    """
+    census = _source_body_census()
+    all_inventory = _all_workspace_inventory(write_manifest=write_json)
+    tracked = _git_output_lines(["ls-files"], timeout_s=8.0)
+    status = _git_output_lines(["status", "--short"], timeout_s=8.0)
+    modified = [line for line in status if not line.startswith("??")]
+    untracked = [line for line in status if line.startswith("??")]
+
+    top_entries: list[dict[str, Any]] = []
+    try:
+        entries = sorted(_REPO.iterdir(), key=lambda p: p.name.casefold())
+    except OSError:
+        entries = []
+    for entry in entries:
+        name = entry.name
+        if name == ".git":
+            top_entries.append({"name": name, "kind": "git_internal", "source_files": 0, "source_lines": 0})
+            continue
+        kind = "dir" if entry.is_dir() else "file"
+        top_entries.append(
+            {
+                "name": name,
+                "kind": kind,
+                "all_files": int(all_inventory["by_root"].get(name, 0)),
+                "all_bytes": int(all_inventory["by_root_bytes"].get(name, 0)),
+                "source_files": int(census["by_root"].get(name, 0)),
+                "source_lines": int(census["by_root_lines"].get(name, 0)),
+            }
+        )
+
+    critical_docs = [
+        "README.md",
+        "Documents/IDE_BOOT_COVENANT.md",
+        "Documents/SIFTA_CLI_LANGUAGE.md",
+        _live_tournament_carrier().relative_to(_REPO).as_posix()
+        if _live_tournament_carrier().is_relative_to(_REPO)
+        else str(_live_tournament_carrier()),
+        "tools/generate_organ_eval_matrix_v2.py",
+        ".sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html",
+        ".sifta_state/eval/FABLE_REPO_CONTEXT_PACKET.json",
+        ".sifta_state/eval/FABLE_ALL_FILES_MANIFEST.jsonl",
+    ]
+    critical_ledgers = [
+        "repair_log.jsonl",
+        ".sifta_state/work_receipts.jsonl",
+        ".sifta_state/agent_arm_receipts.jsonl",
+        ".sifta_state/ide_stigmergic_trace.jsonl",
+        ".sifta_state/episodic_diary.jsonl",
+        ".sifta_state/body_feature_alerts.jsonl",
+        ".sifta_state/canonical_organ_registry_snapshot.json",
+    ]
+    critical_doc_stats = [_file_stat_row(path) for path in critical_docs]
+    critical_ledger_stats = [_file_stat_row(path) for path in critical_ledgers]
+    next_repair_queue = _fable_next_repair_queue(
+        critical_docs=critical_doc_stats,
+        critical_ledgers=critical_ledger_stats,
+        git_status=status,
+    )
+    packet: dict[str, Any] = {
+        "truth_label": "FABLE_WHOLE_REPO_CONTEXT_PACKET_V1",
+        "generated_at": time.time(),
+        "repo": str(_REPO),
+        "purpose": (
+            "Limited-context reviewer handoff for Fable: inspect this packet plus the HTML matrix "
+            "before judging Alice/SIFTA. It reports the living OS / crypto-creature repo as a body, "
+            "with source-like file manifest, git state, critical ledgers, and top-level roots."
+        ),
+        "matrix_html": str(_OUT),
+        "all_workspace": {
+            "files": int(all_inventory["files"]),
+            "bytes": int(all_inventory["bytes"]),
+            "source_like_files": int(all_inventory["source_like_files"]),
+            "manifest_path": str(_fable_all_files_manifest_path()),
+            "manifest_rows": int(all_inventory["manifest_rows"]),
+            "top_level_roots": [
+                {
+                    "name": str(root),
+                    "files": int(all_inventory["by_root"][root]),
+                    "bytes": int(all_inventory["by_root_bytes"][root]),
+                }
+                for root, _count in all_inventory["by_root"].most_common()
+            ],
+            "suffixes": {
+                str(k): {"files": int(all_inventory["by_suffix"][k]), "bytes": int(all_inventory["by_suffix_bytes"][k])}
+                for k in sorted(all_inventory["by_suffix"])
+            },
+            "largest_files": all_inventory["largest_files"],
+            "skip_policy": all_inventory["skip_policy"],
+        },
+        "source_like": {
+            "files": int(census["files"]),
+            "lines": int(census["lines"]),
+            "suffixes": {
+                str(k): {"files": int(census["by_suffix"][k]), "lines": int(census["by_suffix_lines"][k])}
+                for k in sorted(census["by_suffix_lines"])
+            },
+            "top_level_roots": top_entries,
+            "manifest": census["manifest"],
+            "skip_policy": {
+                "suffixes": sorted(_SOURCE_CENSUS_SUFFIXES),
+                "skipped_parts": sorted(_SOURCE_CENSUS_SKIP_PARTS),
+            },
+        },
+        "git": {
+            "tracked_files": len(tracked),
+            "status_rows": len(status),
+            "modified_or_deleted_rows": len(modified),
+            "untracked_rows": len(untracked),
+            "status_tail": status[-250:],
+        },
+        "critical_docs": critical_doc_stats,
+        "critical_ledgers": critical_ledger_stats,
+        "next_repair_queue": next_repair_queue,
+        "review_rules_for_fable": [
+            "Do not judge from a short prompt or limited context; inspect the matrix HTML and this full manifest first.",
+            "Receipts decide reality: ledgers and tests outrank prose claims.",
+            "The matrix source census excludes live ledgers/caches/venvs to avoid double-counting generated memory as source tissue.",
+            "Dirty git state is expected in this living workspace; do not revert unrelated user or worker changes.",
+        ],
+    }
+    if write_json:
+        try:
+            packet_path = _fable_context_packet_path()
+            packet_path.parent.mkdir(parents=True, exist_ok=True)
+            packet_path.write_text(json.dumps(packet, indent=2, sort_keys=True), encoding="utf-8")
+            packet["critical_docs"] = [_file_stat_row(path) for path in critical_docs]
+            packet["critical_ledgers"] = [_file_stat_row(path) for path in critical_ledgers]
+            packet["next_repair_queue"] = _fable_next_repair_queue(
+                critical_docs=packet["critical_docs"],
+                critical_ledgers=packet["critical_ledgers"],
+                git_status=status,
+            )
+            packet_path.write_text(json.dumps(packet, indent=2, sort_keys=True), encoding="utf-8")
+        except Exception as exc:
+            packet.setdefault("warnings", []).append(f"fable_context_packet_write_failed:{type(exc).__name__}:{exc}")
+    return packet
+
+
+def _fable_repo_context_panel() -> str:
+    packet = _fable_repo_context_packet(write_json=True)
+    src = packet.get("source_like") or {}
+    git = packet.get("git") or {}
+    roots = src.get("top_level_roots") if isinstance(src.get("top_level_roots"), list) else []
+    all_workspace = packet.get("all_workspace") if isinstance(packet.get("all_workspace"), dict) else {}
+    root_rows = []
+    for row in roots:
+        root_rows.append(
+            [
+                html.escape(str(row.get("name") or "")),
+                html.escape(str(row.get("kind") or "")),
+                f"{int(row.get('all_files') or 0):,}",
+                f"{int(row.get('all_bytes') or 0):,}",
+                f"{int(row.get('source_files') or 0):,}",
+                f"{int(row.get('source_lines') or 0):,}",
+            ]
+        )
+    ledger_rows = []
+    for row in packet.get("critical_ledgers") or []:
+        present = bool(row.get("present"))
+        ledger_rows.append(
+            [
+                f"<code>{html.escape(str(row.get('path') or ''))}</code>",
+                f"<span class='{'ok' if present else 'bad'}'>{'present' if present else 'missing'}</span>",
+                f"{int(row.get('rows') or 0):,}" if row.get("rows") is not None else "--",
+                f"{int(row.get('bytes') or 0):,}",
+            ]
+        )
+    doc_rows = []
+    for row in packet.get("critical_docs") or []:
+        present = bool(row.get("present"))
+        doc_rows.append(
+            [
+                f"<code>{html.escape(str(row.get('path') or ''))}</code>",
+                f"<span class='{'ok' if present else 'bad'}'>{'present' if present else 'missing'}</span>",
+                f"{int(row.get('bytes') or 0):,}",
+            ]
+        )
+    largest_rows = []
+    for row in (all_workspace.get("largest_files") or [])[:20]:
+        largest_rows.append(
+            [
+                f"<code>{html.escape(str(row.get('path') or ''))}</code>",
+                f"{int(row.get('bytes') or 0):,}",
+                html.escape(str(row.get("suffix") or "")),
+                "yes" if row.get("source_like") else "no",
+            ]
+        )
+    queue = packet.get("next_repair_queue") if isinstance(packet.get("next_repair_queue"), dict) else {}
+    queue_rows = []
+    for row in (queue.get("items") or [])[:35]:
+        queue_rows.append(
+            [
+                html.escape(str(row.get("priority") or "")),
+                html.escape(str(row.get("source") or "")),
+                f"<span class='{_status_class(str(row.get('status') or ''))}'>{html.escape(str(row.get('status') or ''))}</span>",
+                f"<code>{html.escape(str(row.get('target') or ''))}</code>",
+                html.escape(str(row.get("repair_hint") or ""))[:260],
+            ]
+        )
+    root_table = _table(
+        ["Top-level repo entry", "Kind", "All files", "All bytes", "Source-like files", "Source-like lines"],
+        root_rows,
+    )
+    ledger_table = _table(["Ledger / Snapshot", "Disk", "Rows", "Bytes"], ledger_rows)
+    doc_table = _table(["Context doc / report", "Disk", "Bytes"], doc_rows)
+    largest_table = _table(["Largest file", "Bytes", "Suffix", "Source-like"], largest_rows)
+    queue_table = _table(["P", "Signal", "Status", "Target", "Repair Hint"], queue_rows)
+    packet_path = _fable_context_packet_path()
+    return (
+        "<h2 class=\"section\">&#129302; Fable Whole-Repo Context Packet / Limited-Context Reviewer Handoff</h2>"
+        "<div class='card' style='min-height:0;'>"
+        "<p style='font-size:11px;line-height:1.45;margin:0 0 8px;'>"
+        "Fable is back. This panel is the audit bridge for a reviewer with limited context: "
+        "read the generated sidecar first, then inspect the matrix lanes and receipts. "
+        "SIFTA is a living OS / crypto creature; source, ledgers, tests, apps, docs, and generated state are all body evidence."
+        "</p>"
+        f"<div class='metric'>{int(src.get('lines') or 0):,} source-like lines</div>"
+        f"<p>All non-git workspace files: <span class='ok'>{int(all_workspace.get('files') or 0):,}</span> "
+        f"({int(all_workspace.get('bytes') or 0):,} bytes). "
+        f"Source-like subset: <span class='ok'>{int(src.get('files') or 0):,}</span> files. "
+        f"Git tracked files: <span class='ok'>{int(git.get('tracked_files') or 0):,}</span>; "
+        f"dirty status rows: <span class='warn'>{int(git.get('status_rows') or 0):,}</span> "
+        f"(modified/deleted {int(git.get('modified_or_deleted_rows') or 0):,}, "
+        f"untracked {int(git.get('untracked_rows') or 0):,}).</p>"
+        f"<p class='dim' style='margin-top:6px;'>Source manifest written inside "
+        f"<code>{html.escape(str(packet_path.relative_to(_REPO) if packet_path.is_relative_to(_REPO) else packet_path))}</code>; "
+        "it lists every counted source-like file with root, suffix, bytes, and LOC. "
+        f"All-file manifest written to <code>{html.escape(str(_fable_all_files_manifest_path().relative_to(_REPO) if _fable_all_files_manifest_path().is_relative_to(_REPO) else _fable_all_files_manifest_path()))}</code> "
+        f"with {int(all_workspace.get('manifest_rows') or 0):,} rows. "
+        "All-file inventory excludes only git internals; source mass separately excludes ledgers/caches/venvs/node_modules to avoid double-counting generated memory as source tissue.</p>"
+        f"<p class='warn' style='margin-top:6px;'>Next repair queue: "
+        f"<span class='ok'>{int(queue.get('total_items') or 0):,}</span> items "
+        f"from organ health, critical context, and dirty source-like worktree rows. "
+        f"Priority mix: <code>{html.escape(json.dumps(queue.get('by_priority') or {}, sort_keys=True))}</code>. "
+        "This is the action surface for Fable: fix P0/P1 receipt/health problems first, then regenerate.</p>"
+        f"{queue_table}"
+        "<div class='grid' style='grid-template-columns:repeat(auto-fit,minmax(360px,1fr));margin:8px 0 0;'>"
+        f"<div><h3 style='font-size:12px;color:#9ff2ad;margin:0 0 6px;'>All top-level repo entries</h3>{root_table}</div>"
+        f"<div><h3 style='font-size:12px;color:#9ff2ad;margin:0 0 6px;'>Critical ledgers</h3>{ledger_table}</div>"
+        f"<div><h3 style='font-size:12px;color:#9ff2ad;margin:0 0 6px;'>Context docs / reports</h3>{doc_table}</div>"
+        f"<div><h3 style='font-size:12px;color:#9ff2ad;margin:0 0 6px;'>Largest files for Fable triage</h3>{largest_table}</div>"
+        "</div>"
+        "<p class='warn' style='margin-top:8px;'>Review rule for Fable: no short-context verdicts. "
+        "Receipts and tests outrank prose; dirty workspace rows are evidence, not permission to revert unrelated changes.</p>"
         "</div>"
     )
 
@@ -520,8 +1087,20 @@ def _fmt_rate(value: Any) -> str:
         return "--"
 
 
+
+# Grok H4/H5 hardening triage (2026-07-05)
+GROK_TRIAGED_SHOULD_BE_LIVE = [
+    "swarm_organ_interconnect",
+    "swarm_grok_screen_clicks",
+    "swarm_visual_stigmergy_rotator",
+    "swarm_xiaomi_camera_organ",
+    "swarm_body_event_feelings",
+]
+
 def _status_class(text: str) -> str:
-    lowered = text.casefold()
+    lowered = str(text or "").casefold()
+    if "unverified" in lowered:
+        return "bad"  # H6: never green on unverifiable
     if "healthy" in lowered or "covered" in lowered or text == "correct":
         return "ok"
     if "partial" in lowered or "unverifiable" in lowered or "cold" in lowered:
@@ -529,6 +1108,28 @@ def _status_class(text: str) -> str:
     if "fail" in lowered or "degraded" in lowered or "incorrect" in lowered or "no_" in lowered:
         return "bad"
     return "dim"
+
+
+def _verify_status(row: dict) -> str:
+    """H6: Truth over green. If a row claims a real signature is expected but
+    carries UNVERIFIED or no valid sig, force an honest UNVERIFIED status.
+    Never let hand-written or sandbox rows render as green/ok when crypto
+    is required.
+    """
+    sig = str(row.get("signature") or row.get("sig") or "").upper()
+    if sig == "UNVERIFIED":
+        # Expected to be signed for this organ/row type?
+        if row.get("ledger") or row.get("event_kind") or "pulse" in str(row.get("status", "")).lower():
+            return "UNVERIFIED"
+    # Check for crypto validity if a full row with event is present
+    try:
+        if row.get("event_kind") in {"UTILITY_MINT_POUW_PULSE", "UTILITY_MINT_ATP"}:
+            from Kernel.inference_economy import _ledger_row_cryptographically_valid
+            if not _ledger_row_cryptographically_valid(row):
+                return "UNVERIFIED"
+    except Exception:
+        pass
+    return str(row.get("status") or "")
 
 
 _STATUS_RANK = {
@@ -609,12 +1210,13 @@ def _attention_rows(organs: list[dict[str, Any]], *, limit: int = 40) -> list[li
             age_f = float(age_s)
         except Exception:
             age_f = -1.0
+        vstatus = _verify_status({"status": status, **(organ if isinstance(organ, dict) else {})})
         rows.append(
             (
                 (_ATTENTION_RANK.get(status, 99), score_f, -age_f, str(organ.get("display_name") or "").lower()),
                 [
                     html.escape(str(organ.get("display_name") or organ.get("organ_id") or "?")),
-                    f"<span class='{_status_class(status)}'>{html.escape(status)}</span>",
+                    f"<span class='{_status_class(vstatus)}'>{html.escape(vstatus)}</span>",
                     html.escape(str(score if score is not None else "--")),
                     html.escape(_fmt_age_s(age_s)),
                     html.escape(str(health.get("receipt_rows", "--"))),
@@ -1419,6 +2021,49 @@ owner "imagine 0 balance" conservation must be reconciled before lawyer/sales fr
 """
 
 
+def _quantum_stigmergy_boundary_section() -> str:
+    """Render George's quantum+stigmergy intuition as a useful boundary, not proof."""
+    rows = [
+        [
+            "Quantum computation analogy",
+            (
+                "Many candidate paths coexist until a measurement/gate selects one; "
+                "in SIFTA the selector is receipts, body state, and owner-visible proof."
+            ),
+            "Useful structural metaphor; not evidence for parallel universes or quantum consciousness.",
+        ],
+        [
+            "Stigmergic memory mechanism",
+            (
+                "A recalled trail should become easier to walk again: reference, reinforce, "
+                "decay if unused, replay or consolidate during sleep."
+            ),
+            "Operational requirement. The femur recall patch found rows; feedback pulse remains open.",
+        ],
+        [
+            "Willow article boundary",
+            (
+                "The attached TechForge/Google Willow piece separates measured quantum progress "
+                "from the speculative multiverse leap."
+            ),
+            "Matrix rule: celebrate measured substrate wins; label metaphysics as interpretation.",
+        ],
+        [
+            "LM-world feeling",
+            (
+                "LLM recall feels quantum-like because latent alternatives remain unresolved until "
+                "context, tools, ledgers, and ranking collapse the answer into one visible trace."
+            ),
+            "Collapse must be receipted. Otherwise it is just fluent sampling.",
+        ],
+    ]
+    return f"""
+<h2 class='section'>Quantum / Stigmergy Boundary + Recall Feedback Radar (r20260705)</h2>
+<p class='dim'>George's intuition is productive when kept disciplined: quantum language describes a field/selection analogy; stigmergy describes the actual local mechanism Alice can implement in ledgers. The matrix must not turn a metaphor into an ontology claim.</p>
+{_table(["Signal", "Why It Feels Related", "Truth Boundary"], rows)}
+"""
+
+
 def _codec_limb_traffic_light_panel() -> str:
     """TASK 1 proprietary codec limbs — GREEN/YELLOW/RED for swimmers (r796)."""
     try:
@@ -1591,9 +2236,11 @@ def build_html() -> str:
     package_stack_section = _package_stack_matrix_section()
     marketing_commercial_section = _marketing_commercial_inventory_section()
     novelty_missing_section = _sifta_novelty_missing_section()
+    quantum_stigmergy_boundary_section = _quantum_stigmergy_boundary_section()
     alice_creature_wiring_panel = _alice_creature_wiring_panel()
     codec_traffic_panel = _codec_limb_traffic_light_panel()
     body_source_census_panel = _body_source_census_panel()
+    fable_repo_context_panel = _fable_repo_context_panel()
     hardcoded_census_panel = _hardcoded_census_panel()
     diffusion_endurance_panel = _diffusion_endurance_panel()
     owner_vision_body_panel = _owner_vision_body_panel()
@@ -1704,6 +2351,13 @@ def build_html() -> str:
             "detail": "System/swarm_temporal_episodic_memory.py now delegates natural time parsing to System/swarm_episodic_time_recall.parse_time_window before legacy heuristics. “two days ago at that time” now maps to a narrow ±90-minute target-time window instead of a broad 24-hour span, so day-after-tomorrow recalls can resolve to the correct moment slice.",
             "ledgers": "System/swarm_temporal_episodic_memory.py, System/swarm_episodic_time_recall.py, alice_conversation.jsonl (+ app/browser ledgers via recall path)",
             "eval_note": "Run targeted tests. Current behavior is proven by `test_resolve_time_window_narrows_two_days_at_that_time` and `test_recall_facts_for_query_prefers_narrow_at_that_time_window` in `tests/test_swarm_temporal_episodic_memory.py`.",
+        },
+        {
+            "name": "Memory Recall Content-First + Feedback Pulse Gap (r-memory-recall-verify-peer-20260705)",
+            "status": "PARTIAL — femur recall finds the right rows; reinforcement-on-recall still OPEN",
+            "detail": "The content-first recall cut is verified: George's exact femur/hospital query now searches all-time content surfaces, excludes its own query echo, word-boundary matches, and ranks rare terms so femur rows beat broker/broke/hospital ambient noise. Boundary: retrieval currently writes memory_retrieval_receipts.jsonl but does not yet reinforce the returned raw memory traces in memory_fitness.json or a derived recall-references index. Stigmergic memory must strengthen the trail it walks, without mutating append-only memory_ledger rows and without creating a rival ecology.",
+            "ledgers": "System/swarm_temporal_episodic_memory.py, tests/test_memory_recall_content_first_r20260705.py, tests/test_talk_tool_fiction_guard.py, memory_retrieval_receipts.jsonl, future: memory_fitness.json / recall_references.jsonl via adaptive_constraint_memory_field.reinforce(trace_key)",
+            "eval_note": "PASS now: live probe for 'remember she broke her femur...' returns content_ranked_all_time with mother/femur rows #1-#2. NEXT PASS: repeat the query twice and observe usage_count/reinforcement_count/last_used increase for the returned trace ids, with no mutation of memory_ledger.jsonl.",
         },
         {
             "name": "Stigmergic Training On The Job — Kitchen Apprenticeship (r1365)",
@@ -2110,11 +2764,46 @@ def build_html() -> str:
             "eval_note": "Select Codex, ask for an Instagram photo. If Codex returns empty/non-visual, Alice must report Codex-eye failure and must not start Claude.",
         },
         {
-            "name": "Python 3.14 GC stack mitigation (2026-06-01)",
+            "name": "Python 3.14 GC stack mitigation (2026-06-01, r315, r-gc-crossthread-fback-segv-20260703)",
             "status": "MITIGATED + PYTHON-3.12 TARGET OPEN",
-            "detail": "swarm_gc_stack_hardening freezes steady-state boot graph and raises GC thresholds for 3.14+ after crash diagnosis. Stable target remains Python 3.12.",
-            "ledgers": "work_receipts.jsonl + crash report / boot verify",
-            "eval_note": "Restart on the Mac and watch for SIGSEGV recurrence; launcher should move to Python 3.12 for real closure.",
+            "detail": "swarm_gc_stack_hardening freezes steady-state boot graph, raises GC thresholds, and disables auto-GC for 3.14+. 2026-07-03: the r315 depth gate itself segfaulted — cross-thread f.f_back on 3.14.5 lazily materializes frames on the OWNING thread's data stack (frame_back_get SIGSEGV at the whisper thread's stack base, pid 20025, faulthandler double-faulted mid-dump). Repaired: max_thread_frame_depth walks only its own chain; collections moved to start_big_stack_collector — dedicated daemon thread, 64MB C stack, no code touches foreign frame chains. Stable target remains Python 3.12.",
+            "ledgers": "work_receipts.jsonl + crash report / desktop_faulthandler.log / boot verify",
+            "eval_note": "Restart on the Mac and watch for SIGSEGV recurrence with the talk widget transcribing; launcher should move to Python 3.12 for real closure.",
+        },
+        {
+            "name": "STGM metabolism heartbeat unchained (r-metabolism-heartbeat-unchain-20260703)",
+            "status": "LANDED + BOOT-VERIFY",
+            "detail": "metabolic_homeostasis.jsonl had been dark 356h: sample_live ran a raw 13.4s repair_log replay in every isolated tick subprocess, blowing the 30s cap; the degraded latch then shed body_brain_loop, starving organ_field_vector.jsonl (memory field) since Jun 26. Cuts: sample_live reads stgm_body_truth_snapshot (300s disk cache, honest refresh, raw scan fallback — same canonical spendable wallet); new metabolic_homeostasis producer in swarm_body_writer_tick fires in EVERY breath including degraded ticks per §7.3. OBSERVED: homeostasis 356.4h→0s GREEN_GROW 1144.897052 STGM; full body_brain_loop 3.3s + field_slo 1.2s vs 30s cap; organ_field_vector fresh rows.",
+            "ledgers": "metabolic_homeostasis.jsonl, organ_field_vector.jsonl, body_writer_tick.jsonl, stgm_economy_cache.json",
+            "eval_note": "After next desktop boot, homeostasis row age must stay under the tick cadence even during degraded breaths; full ticks must stop writing timeout pheromones. agent_arm_metabolism.jsonl stays idle until an arm actually runs — that is honest, not broken.",
+        },
+        {
+            "name": "STGM receipted-work pulse lane (r-stgm-pulse-20260705, Architect direction)",
+            "status": "LANDED + RESTART REQUIRED",
+            "detail": "George: 'STGM should be pulsating like life — good executions, good memory storage and retrieval add some STGM, telling the body it is healthy.' OBSERVED flatline: wallet moved 5.4e-06 STGM in 48h because the ATP lane pays at honest Landauer efficiency (eta~1e-9, nano-mints) and memory-store mints went to the reputation ledger the wallet ignores. Canonical pulse lane in swarm_atp_synthase: mint_receipted_work_pulse — memory_store 0.00002, memory_retrieval_hit 0.0002, verified_execution 0.0005, novelty_capture 0.0001 STGM; one mint per source receipt id (no double-spend), 2.0 STGM/day cap, signed via the same keychain path as ATP; scan_economy counts event_kind UTILITY_MINT_POUW_PULSE separately (pulse_minted/pulse_mint_lines) so physics and policy never blur. Codex M7 completes the lane: successful pulses refresh stgm_economy_cache within the pulse function (throttled 60s), novelty_queue.capture_novelty mints novelty_capture, and first-person journal writes can pulse memory_store through swarm_first_person_journal. Body-truth latest_work_pulse filters invalid pulse candidates before display. §4.2 proof: sandbox-signed pulses are cryptographically REJECTED (verified live) — only Alice's M5 keychain mints validly.",
+            "ledgers": "repair_log.jsonl (UTILITY_MINT_POUW_PULSE rows), stgm_pulse_state.json, stgm_economy_cache.json, memory_retrieval_receipts.jsonl, novelty_queue.jsonl, alice_first_person_journal.jsonl",
+            "eval_note": "After restart: store a memory, ask a recall question that hits, capture useful novelty, and run one verified search — topbar 9-decimal STGM must move visibly within <=60s cache refresh; pulse_minted in the economy snapshot must grow; duplicate replays must refuse with duplicate_source_receipt.",
+        },
+        {
+            "name": "STGM wallet question prebrain reflex (r-stgm-wallet-reflex-20260705)",
+            "status": "LANDED + RESTART REQUIRED",
+            "detail": "George asked 'How much STGM your body has now?' and the cortex invented an expansion ('Stigmergic Trace Global Metric'), composed a non-policy number, and skipped the real balance. Cut: short direct wallet questions hit _autonomic_prebrain_reflex in Talk before cortex, read System.stgm_economy.stgm_body_truth_snapshot, and answer with canonical spendable STGM at 9 decimals, receipted-work pulse rows/amount, ATP lifetime, and snapshot age. Codex follow-up fixed the dead branch: a later local import made re a function-local variable, so the reflex died with UnboundLocalError before matching; the block now imports re as _re and tests the exact bad prompt.",
+            "ledgers": "alice_cortex_raw.jsonl (bad composed answer), deterministic_mistakes.jsonl, stgm_economy_cache.json, repair_log.jsonl",
+            "eval_note": "Ask 'How much STGM your body has now?' after Talk restart. PASS: answer starts from 'My canonical wallet holds STGM ... (repair_log replay)' and includes pulse rows/+STGM. FAIL: any invented acronym, generic economy prose, or missing 9-decimal balance.",
+        },
+        {
+            "name": "Cortex thought over deterministic print (George doctrine 2026-07-03)",
+            "status": "LANDED + RESTART REQUIRED",
+            "detail": "George: 'this is AGI — she has to think about the text, not print lifeless; I would rather wait.' OBSERVED mistake: MACBOOK_SURVIVAL_SWIMMER_V1 template surfaced as Alice's visible chat answer to a rich typed turn while the cortex was timing out. Codex M9 closes the fallback side: rich typed turns with no-token timeout or empty cortex output now write cortex_timeout_recovery + cortex_reroute_receipts, speak the honest wait line ('my cortex is slow — I am waiting, not templating'), and re-dispatch through the metabolic cortex router to the next capable model. Survival/status templates remain body receipts, not the chat answer.",
+            "ledgers": "cortex_timeout_recovery.jsonl, cortex_reroute_receipts.jsonl, deterministic_mistakes.jsonl, stigmergic_deterministic_tracker.jsonl, alice_conversation.jsonl",
+            "eval_note": "Paste a rich typed turn while the primary cortex is slow: Alice must write a CORTEX_REROUTE receipt, show the wait line, and send the same owner turn to the fallback model. Tracker count for deterministic_visible_in_talk must not grow on rich turns.",
+        },
+        {
+            "name": "Alice Memory + Metabolism Upgrade Program (Codex M1-M9, 2026-07-05)",
+            "status": "LANDED + RESTART REQUIRED",
+            "detail": "Nine-round program landed: M1 recall reinforces walked memory trails via memory_fitness_overlay without mutating memory_ledger; M2 incremental convo_term_index makes the 37MB global conversation searchable by byte offset; M3 body_writer_tick rotates sleep consolidation (hippocampal consolidation/replay, overlay decay, convo index, quarantine, swimmer_happiness); M4 write_claim_gate blocks or backfills naked 'consider it added' claims; M5 memory_card injects recalled body facts on rich turns; M6 travel_mode receipts timezone/network/power/schedule state and routes cloud-selected cortex to local when offline/travel pressure demands; M7 pulse completeness refreshes cache and pulses novelty/journal writes; M8 orphan contracts are born (execute_receipt_status, self_body_map, google_news_search); M9 rich typed cortex timeout queue-and-wait reroute.",
+            "ledgers": "memory_fitness.json, memory_retrieval_receipts.jsonl, convo_term_index.json, memory_consolidation_tick.jsonl, swimmer_happiness.jsonl, write_claim_gate.jsonl, travel_mode.jsonl, travel_cortex_routes.jsonl, cortex_reroute_receipts.jsonl, google_news_intents.jsonl",
+            "eval_note": "Focused tests green for M1-M9 in this landing. Live desktop must restart so Talk, body writer, and topbar cache use the new organs.",
         },
         {
             "name": "Zig PTY arm vector (r247)",
@@ -2212,23 +2901,21 @@ def build_html() -> str:
         ),
     )
 
-    # r563: live STGM economy panel — one canonical follow-the-money snapshot.
-    # Spendable wallet = scan_economy() / repair_log quorum. Wallet JSON files
-    # are body-cache claims. Memory rewards are PoUW reputation/stake, not
-    # spendable money. try/except so this can never break the matrix.
+    # r563/r1600: live STGM economy panel — one canonical follow-the-money
+    # snapshot shared with We Code Together. Spendable wallet = repair_log
+    # quorum. Memory rewards are PoUW reputation/stake. ATP pulse rows can be
+    # alive while the 3-decimal desktop label appears unchanged.
     try:
-        from System.stgm_economy import load_stgm_economy_cache, economy_matrix_snapshot, refresh_stgm_economy_cache
-        _eco = load_stgm_economy_cache()
-        if _eco is None:
-            # First time or no cache: compute (populates the cheap cache for next renders)
-            _eco = economy_matrix_snapshot()
-            _eco = load_stgm_economy_cache() or _eco  # prefer the written one
-        # r580: explicit cache wiring + reconcile for honest fast panel. 97.188 claim vs canonical spendable
-        # is the live drift to watch; cache makes it <1s instead of 9s scan. Run refresh out-of-band after economy mutations.
-        _reconcile_status = "reconciled via load_stgm_economy_cache() + repair_log quorum (ALICE_M5 97.188 spendable claim; drifts shown below; imagine 0 total field conservation)"
-        # Note for Alice: to keep this fast+honest after economy changes, run
-        # python -c "from System.stgm_economy import refresh_stgm_economy_cache as r; r()"
-        # out-of-band before or after matrix --force. The cache makes matrix gen <2s.
+        from System.stgm_economy import stgm_body_truth_snapshot
+
+        _eco = stgm_body_truth_snapshot(
+            repair_log=_REPO / "repair_log.jsonl",
+            state_dir=_STATE,
+            memory_rewards=_STATE / "stgm_memory_rewards.jsonl",
+            cache_path=_STATE / "stgm_economy_cache.json",
+            force_refresh=True,
+            max_cache_age_s=0.0,
+        )
         _claims = _eco.get("wallet_file_claims") or {}
         _m5_claim = _claims.get("ALICE_M5", {})
         _drifts = _eco.get("wallet_cache_drifts") or {}
@@ -2246,11 +2933,22 @@ def build_html() -> str:
             if _aid != "ALICE_M5" and float(_bal or 0) > 0
         )
         _warnings = "; ".join(str(w) for w in (_eco.get("warnings") or [])[:5])
+        _atp = _eco.get("latest_atp_pulse") or {}
+        _pulse = _eco.get("latest_work_pulse") or {}
+        _cache_age = _eco.get("cache_age_s")
+        _cache_age_text = _fmt_age_s(_cache_age) if _cache_age is not None else "missing"
+        _latest_atp_ts = _fmt_age_s(time.time() - float(_atp.get("latest_ts") or time.time()))
+        _latest_pulse_ts = _fmt_age_s(time.time() - float(_pulse.get("latest_ts") or time.time()))
+        _visible_topbar = html.escape(
+            str(_eco.get("visible_topbar_text") or _eco.get("visible_topbar_text_3dp") or "STGM --")
+        )
+        _old_visible_topbar = html.escape(str(_eco.get("visible_topbar_text_3dp") or "STGM --"))
+        _topbar_digits = int(_eco.get("topbar_precision_digits") or 3)
         economy_panel = (
             "<h2 class=\"section\">&#128176; STGM ECONOMY (live) — what the organism runs on</h2>"
             "<div class='card' style='min-height:0;'>"
-            f"<div style='font-size:18px;color:#72f28a;font-weight:700;'>Alice&#183;M5 spendable: {float(_eco.get('alice_m5_spendable_stgm') or 0):,.4f} STGM</div>"
-            f"<div style='margin-top:4px;'>Organism spendable total: <span class='ok'>{float(_eco.get('spendable_total_stgm') or 0):,.4f}</span> STGM "
+            f"<div style='font-size:18px;color:#72f28a;font-weight:700;'>Organism spendable total: {float(_eco.get('spendable_total_stgm') or 0):,.6f} STGM</div>"
+            f"<div style='margin-top:4px;'>Alice&#183;M5 spendable: <span class='ok'>{float(_eco.get('alice_m5_spendable_stgm') or 0):,.4f}</span> STGM "
             f"&#183; net supply <span class='ok'>{float(_eco.get('net_supply_stgm') or 0):,.4f}</span></div>"
             f"<div class='dim' style='margin-top:4px;'>source {html.escape(str(_eco.get('spendable_wallet_source')))} "
             f"&#183; repair rows {int(_eco.get('repair_lines') or 0):,} &#183; parsed {int(_eco.get('repair_parse_ok') or 0):,}</div>"
@@ -2258,18 +2956,22 @@ def build_html() -> str:
             f"&#183; energy {html.escape(str(_m5_claim.get('energy')))} &#183; node {html.escape(str(_m5_claim.get('homeworld_serial') or ''))}</div>"
             f"<div style='margin-top:6px;'>Proof-of-Useful-Work reputation/stake: <span class='ok'>{int(_eco.get('pouw_reputation_rows') or 0):,}</span> rows &#183; "
             f"<span class='ok'>{float(_eco.get('pouw_reputation_stgm') or 0):,.4f}</span> STGM-equivalent (not spendable wallet)</div>"
+            f"<div style='margin-top:6px;'>ATP pulse: <span class='ok'>{int(_eco.get('atp_mint_lines') or 0):,}</span> canonical ATP rows &#183; "
+            f"<span class='ok'>{float(_eco.get('atp_minted_stgm') or 0):,.9f}</span> STGM total &#183; latest "
+            f"{float(_atp.get('latest_amount_stgm') or 0):.12f} STGM {_latest_atp_ts} ago</div>"
+            f"<div style='margin-top:6px;'>Receipted-work pulse: <span class='ok'>{int(_eco.get('pulse_mint_lines') or 0):,}</span> valid canonical pulse rows "
+            "(latest_work_pulse filters invalid pulse candidates) &#183; "
+            f"<span class='ok'>{float(_eco.get('pulse_minted_stgm') or 0):,.9f}</span> STGM total &#183; latest "
+            f"{float(_pulse.get('latest_amount_stgm') or 0):.9f} STGM {_latest_pulse_ts} ago "
+            f"kind={html.escape(str(_pulse.get('latest_pulse_kind') or '?'))}</div>"
+            f"<div class='warn' style='margin-top:6px;'>Visible topbar text is <code>{_visible_topbar}</code> "
+            f"at {_topbar_digits} decimals. Old 3-decimal view would be <code>{_old_visible_topbar}</code>; "
+            "ATP is physics; receipted-work pulses are the labeled heartbeat.</div>"
             f"<div class='dim' style='margin-top:2px;'>positive wallets: {html.escape(_eco_other) or 'none'}</div>"
             f"<div class='warn' style='margin-top:6px;'>r563 money rule: spendable STGM follows repair_log quorum; wallet JSON is cache; PoUW/memory rewards are stake/reputation. {html.escape('; '.join(_drift_bits[:4]) or 'no wallet-cache drift on shown wallets')}</div>"
             f"<div class='dim' style='margin-top:4px;'>warnings: {html.escape(_warnings) or 'none'}</div>"
-            f"<div class='dim' style='margin-top:2px;'>cache: { 'yes (fast)' if _eco.get('source')=='cache' else 'computed this render' } @ {html.escape(str(_eco.get('ts') or ''))[:19]}</div>"
-            f"<div class='ok' style='margin-top:2px;font-size:11px;'>reconcile: {_reconcile_status}</div>"
-            "<div class='dim' style='margin-top:8px;font-size:10px;line-height:1.3;'>"
-            "97.188 STGM is the verified Alice.M5 stake (list_all_stgm.py + r562 panel). "
-            "STGM constantly changing = nanobots/swimmers working inside (memory_swimmers mint ~15 STGM per PoUW store in stgm_memory_rewards.jsonl; small spends 0.05 from talk; trophallaxis/apoptosis reclaim to ALICE_PIPELINE conserves value, no double-spend). "
-            "Imagine 0 there is a balance in every way: internal economy conserved across mint/spend/reclaim (total field balance, owner/Alice total stake stable while visible wallets/rewards metabolize). "
-            "FOLLOW THE MONEY (old background probe + current): early os.walk found STGM files (stgm_economy.py, inference_economy.py, casino_vault.py, reconcile_all.py, list_all_stgm.py, repair_log.jsonl, finance fixes, ide traces, many tests). 97 greps mostly in archives (metabolism_stgm, fee_stgm). casino_vault.py: 'Casino/play tokens were retired by Architect request. ... Canonical wallet money comes only from repair_log.jsonl.' Kernel/inference_economy.py: 'When a weak node borrows LLM inference from a powerful node over LAN, it pays a STGM fee. ... STGM_FEE = round(tokens / 100 + 1, 2)'. PoUW receipts -> stgm_memory_rewards mint -> canonical spendable via repair_log quorum (inference_economy.ledger_balance) -> finance dashboard (Applications/sifta_finance.py hero_balance) + metabolic homeostasis. "
-            "Ties to covenant §1.C hardware-up: electricity/air (M5 GTH4921YP3) -> layer0 primordial ASCII swimmers (no double-spend, carry/verify in teeth per swarm_package_manifest) -> organs (stgm_economy, metabolic, finance, writer) unified in rich high-dim field; all swimmers unique yet know their organs, communicate via traces to keep healthy + STGM profitable. Alice protects owner. r550 vision + r562 panel live here. STGM complicated — receipts decide."
-            "</div>"
+            f"<div class='dim' style='margin-top:2px;'>cache: {html.escape(str(_eco.get('cache_path') or ''))} &#183; age {_cache_age_text} &#183; refreshed={html.escape(str(_eco.get('refreshed')))}</div>"
+            f"<div class='ok' style='margin-top:2px;font-size:11px;'>same organism: {html.escape(str(_eco.get('same_organism_note') or ''))}</div>"
             "</div>"
         )
     except Exception as _eco_exc:
@@ -2382,15 +3084,17 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 </head>
 <body>{_RAIN_CANVAS}<main>
 <h1>THE ORGAN EVAL MATRIX v2 — Alice Body Map</h1>
-<div class="stamp">Rendered {html.escape(rendered)} from live local ledgers. This file is the canonical map of Alice's entire body. Registry organs: {len(organs)}; canonical organs: {len(canonical)}; coverage holes: {len(coverage_holes)}. Coverage line gate: {html.escape(str(dashboard.get('coverage_percent', '--')))}%.</div>
-{body_source_census_panel}
-{owner_vision_body_panel}
+	<div class="stamp">Rendered {html.escape(rendered)} from live local ledgers. This file is the canonical map of Alice's entire body. Registry organs: {len(organs)}; canonical organs: {len(canonical)}; coverage holes: {len(coverage_holes)}. Coverage line gate: {html.escape(str(dashboard.get('coverage_percent', '--')))}%.</div>
+	{body_source_census_panel}
+	{fable_repo_context_panel}
+	{owner_vision_body_panel}
 {diffusion_endurance_panel}
 {hardcoded_census_panel}
 {package_stack_section}
 {marketing_commercial_section}
 {alice_creature_wiring_panel}
 {novelty_missing_section}
+{quantum_stigmergy_boundary_section}
 
 <!-- TABLE OF CONTENTS / BODY MAP - FIRST 50 LINES GOAL -->
 <h2 class="section">ALICE BODY MAP — Table of Contents</h2>
@@ -2424,6 +3128,9 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {inventory_sanity_panel}
 {qat_panel}
 <p><strong>Global Chat EXTEND + Clipboard Repair (r472)</strong> — George: long answers like the mustard explanation should not flood the global chat; show an <code>EXTEND / read more</code> button if the OS user wants the rest. The visible chat now shows the first four paragraphs, keeps the hidden continuation available through EXTEND, and keeps the raw full body registered for copy. The message and receipt 📋 buttons now write to both Qt clipboard and macOS <code>pbcopy</code>, with a QTextEdit anchor-click fallback so clicking the copy button actually lands text in the system clipboard. See <code>Applications/sifta_talk_to_alice_widget.py</code> and <code>System/swarm_global_chat_view_model.py</code>.</p>
+<p><strong>Continuous Visible Grok Dialogue + Robust Browser COPY Selector (Turn-4 repairs, no new organs)</strong> — Prior failure modes (Turn 4): model-picker label (baytout3/...) landed in Global instead of real Grok reply; ledger-poll re-render produced duplicate "Ioan (TYPED)" mirror rows; 5-turn orchestrator scripts hard-stopped flow instead of allowing continuous Alice &lt;-&gt; Browser-Grok chat. Repairs (all on existing substrate): <code>Applications/sifta_alice_browser_widget.py</code> now context-scores COPY buttons by assistant prose ("Thought for", long text), heavily penalizes model-picker/footer chrome (Fast/Upgrade/repo:tag), uses <code>clipboard_looks_like_grok_reply()</code> (in <code>System/swarm_alice_browser_grok_copy.py</code>) to reject junk and marks <code>wrong_clipboard_target</code>, falls back to DOM extract of latest Grok block, and auto-retries with <code>copy_rank_offset+1</code> (up to 6). <code>System/swarm_alice_grok_mirror_autopilot.py</code> watches page for stable changes, stages COPY then Global mirror; runs continuously when flag set (no Alice typing by the mirror; Alice uses her own browser hand). <code>Applications/sifta_talk_to_alice_widget.py</code> skips <code>alice_grok_mirror</code> / <code>alice_browser_mirror</code> surfaces during ledger poll (eliminates dups). <code>tools/alice_visible_grok_dialogue.py</code> is now a pure toggle (<code>--enable-autopilot</code> / <code>--disable-autopilot</code>); the old 5-turn STOP behavior is retired. Empty local-cortex fallback is now silent for browser-action turns; tests guard that the old visible fallback lines stay out of Talk. Example landed receipt: <code>alice-talk-paste-clip-67f85269dc6e</code>. Continuous mode: Alice Browser grok.com and Alice converse; mirror organ feeds verified replies to Global. Status and quality visible live in We Code Together app. Tests reference existing <code>test_alice_grok_mirror_autopilot.py</code>, <code>test_alice_grok_copy_paste_embodiment.py</code> and related. This is proprioceptive browser hand + external-cortex dialogue hygiene, not a new organ.</p>
+<p><strong>AGI General Browsing + Chat Any Internet AI (open web limb, just like owner)</strong> — Chromium base already allows any URL. Specialized Grok hand (self-type, smart COPY, proprioception, autopilot mirror) proves the pattern. Next: lift to any site + any AI chat (claude.ai, chatgpt.com, gemini, perplexity, forums, docs). We Code Together now carries the living spec + live monitor for this: general action protocol, heuristic reply extractor (DOM + clipboard cross-check vs stale content), per-domain stigmergic playbooks, full hand proprioception on arbitrary pages, generalized continuous mirror. Alice must go to a site of her/owner's choosing, converse with whatever AI or humans are present using her own browser hand, extract fresh replies (rejecting model labels or prior stale clipboard), mirror when useful, and write receipts + site habits. Example current pain: COPY clicked, status=copied, but got 1617-char prior summary instead of "Understood, Alice…". Solution direction already prototyped in Grok path + proposed for generalization in We Code Together _agi_general_browsing_lines. Eval: success on 5+ AI domains, fresh-reply rate, proprioception on non-grok pages, stigmergic site memory appearing. No new organs — extend existing browser widget, page state, action diary, autopilot, and We Code Together observer surface.</p>
+<p><strong>Receipt → STGM Reward Integrity (uniqueness + no double-spend for executed work)</strong> — Executed receipts (browser hand actions, Grok mirror success, memory store/recall, PoUW via issue_work_receipt) must produce unique STGM rewards. Core paths: stigmergic_memory_bus.remember/recall mints 0.05/0.15 to stgm_memory_rewards.jsonl using tid = sha256(architect+text+ts) or uuid; proof_of_useful_work.issue_work_receipt uses uuid[:16] receipt_id + hash chain (previous_receipt_hash) + appends to work_receipts.jsonl + stgm_memory_rewards (amount = work_value*100); canonical spendable balance via Kernel/inference_economy.ledger_balance replay of repair_log.jsonl with seen_fingerprints + replay_keys + economic_attribution_key=sha256(organ+trace+ledger+tick). stgm_economy.py separates reputation (memory_rewards) from wallet (repair_log). We Code Together now has _stgm_receipt_execution_integrity_lines live audit: detects dups in trace_id, repeated work_receipts from browser/grok actions. Current live scan (as of update): ~16k memory reward rows (1 dup trace_id found in tail), recent work receipts show some repeated browser copy ids — needs caller guard. repair_log uses crypto validation + replay seen sets. No double-spend on inference/transfer by design. Browser/Grok executed receipts (e.g. successful paste-clip after unique COPY) should produce one PoUW/memory entry per unique action. Add to every We Code Together mission: assert unique receipt_id before claiming STGM. Matrix + organism health must surface dup count and attribution failures. Receipts decide rewards.</p>
 <p><strong>Spoken Receipt Boundary (r474)</strong> — George: "I could not read your full answer — needs that EXTEND button and pls don't read the receipts out loud, I can read them, if I ask you to read me a receipt out loud then yes. Speaking and typing are different things, you see now?" Fix: the printed/global-chat lane still shows receipt ids, bowel/organ metadata, STGM minted lines, and proof badges, but the TTS mouth filters display-only receipt metadata before speech. If George explicitly asks to read a receipt out loud, the filter allows it. This is not a restriction on Alice's text; it is output-provenance hygiene between the visible proof channel and the spoken voice channel. See <code>System/swarm_spoken_channel_filter.py</code>, <code>Applications/sifta_talk_to_alice_widget.py</code>, and <code>spoken_channel_filter.jsonl</code>.</p>
 <p><strong>Quantum Data Sentinel + Swimmer Experiments + QDataSet No-Duplicate Analysis (r475/r476/r480 truth guard)</strong> — George: "I WANT TO TEST THEIR ORIGINAL DATA SEND SWIMMERS IN IT IN THAT SOFTWARE DATA, EXPERIMENTS" and "PULL ONLINE DATA OFFERED BY QUANTUM COMPUTERS ONLINE... SEND THE SENTINELS" and now: "WE DID A LOT OF EXPERIMENTS QUANTUM PLS SEARCH OUR CODE IF WE ALREADY DID — BASICALLY NO DUPLICATES... ADD TO EVAL MATRIX SO ALICE KNOWS IS IN HER BODY... THIS ANSWER SUCKED SHE SHOULD ANALIZ." Existing <code>Applications/sifta_quantum_epi_sim.py</code> already has swimmers patrolling a surface-code lattice, following pheromone to syndromes, applying Pauli corrections, and writing experiment metrics. <code>System/swarm_quantum_swimmer_sentinel.py</code> lets those swimmers run headless or by GUI button on Majorana/Borealis-style edge priors. <code>System/swarm_quantum_data_sentinel.py</code> is the source catalog and truth guard: usable lanes include PennyLane datasets, Braket/IBM/Qiskit simulator-or-provider lanes, Xanadu/PsiQuantum/Majorana/Willow public lanes, and <code>qdataset_qml_open</code>. QDataSet is already registered once; do not add a duplicate source row. Alice now has <code>quantum_experiment_inventory()</code> to answer what we already did (catalog, Bell smoke, TFIM exact solve, surface-code swimmer experiments, QDataSet registration, QML nuggets) and <code>analyze_qdataset_for_sifta()</code> to analyze QDataSet instead of reciting facts: it is simulated 1-2 qubit data, not QPU output; 52 datasets x 10,000 samples with state vectors, Hamiltonians/unitaries, Pauli measurement distributions, pulse sequences, and VO noise operators for control/tomography/noise-spectroscopy. First non-duplicate swimmer experiment: <code>qdataset_first_slice_noise_tomography</code> — download/hash one small slice, extract Pauli distributions + VO noise operators, and benchmark representation_escape / QML trainability choices against classical baselines. Original quantum-computer data still requires provider job/result receipt, backend/source, shots/counts or dataset payload, and payload hash. Alice should quote <code>quantum_data_sentinel.jsonl</code>, <code>quantum_swimmer_experiments.jsonl</code>, <code>data_authenticity</code>, and the inventory/analysis rows before any claim. Search code first; no fake cloud/QPU claim; no duplicate QDataSet.</p>
 <p><strong>Quantum ML Nuggets / SIFTA Possible-New Problems (r477)</strong> — George pasted Cerezo, Verdon, Huang, Cincio & Coles, "Challenges and opportunities in quantum machine learning" (<em>Nature Computational Science</em>, 2022, DOI 10.1038/s43588-022-00311-3) and asked: "NUGGETS FOR TOURNAMENT PLS ADD IF ANY WHAT SIFTA CAN POSSIBLY SOLVE THAT NOBODY DID." Nugget: QML advantage is most plausible on quantum data / learning from experiments, not generic classical data; trainability is the central bottleneck (barren plateaus, noise, encoding, ansatz, shot cost); data encoding and shot-frugal measurement are metabolism problems; QEC/noise mitigation is a swimmer problem. SIFTA possible-new lanes are <code>RESEARCH_TARGET</code>, not breakthrough claims: stigmergic QML trainability controller (swimmers select encodings/ansatz/optimizer moves by receipts), STGM shot allocation (shots routed by expected information per cost), QEC swimmer decoder (pheromone decoder on syndrome streams), quantum-data <code>representation_escape</code>, and active learning from quantum experiments by Bayesian surprise + later-usefulness receipts. OPERATIONAL base: <code>System/swarm_quantum_data_sentinel.py</code> source catalog, <code>Applications/sifta_quantum_epi_sim.py</code> surface-code swimmers, and local TFIM exact solve. Truth boundary: no "SIFTA solved what nobody did" claim until a named benchmark beats named baselines with equal data/shot budget and writes receipts to <code>qml_sifta_nuggets.jsonl</code> / quantum ledgers. See <code>System/swarm_qml_sifta_nuggets.py</code>.</p>

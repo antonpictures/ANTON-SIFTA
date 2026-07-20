@@ -5,6 +5,8 @@ missing overlay types, or duplicate class bindings from patch order.
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -167,6 +169,69 @@ def test_economy_hud_scan_gated_for_offscreen_and_ci(monkeypatch):
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "yes")
     monkeypatch.setenv("CI", "")
     assert _economy_hud_full_scan_enabled() is False
+
+
+def test_topbar_stgm_hud_formats_one_canonical_body_balance():
+    desktop = (REPO / "sifta_os_desktop.py").read_text(encoding="utf-8")
+
+    assert 'return "STGM --"' in desktop
+    assert "_DESKTOP_STGM_HUD_PRECISION_DIGITS = 9" in desktop
+    assert 'return f"STGM {val:,.{digits}f}"' in desktop
+    assert "_format_stgm_balance_for_hud(value)" in desktop
+    assert "_latest_atp_pulse_for_topbar()" in desktop
+    assert "memory_reward_amount" not in desktop[
+        desktop.index("def _cached_stgm_balance_for_topbar"):
+        desktop.index("def _load_widget_class")
+    ]
+
+
+def test_topbar_stgm_hud_is_separate_from_clock_and_uses_canonical_source():
+    desktop = (REPO / "sifta_os_desktop.py").read_text(encoding="utf-8")
+    stgm_idx = desktop.index("layout.addWidget(self._stgm_balance_label)")
+    clock_idx = desktop.index("layout.addWidget(self.clock_label)")
+
+    assert "_stgm_balance_label" in desktop
+    assert "_format_stgm_balance_for_hud" in desktop
+    assert "canonical_wallet_sum" in desktop
+    assert "spendable_total_stgm" in desktop
+    assert "Memory rewards are reputation" in desktop
+    assert stgm_idx < clock_idx
+
+
+def test_desktop_crash_blackbox_writes_jsonl_receipt(tmp_path):
+    import sifta_os_desktop as m
+
+    receipt_path = tmp_path / "desktop_crash_receipts.jsonl"
+    try:
+        raise RuntimeError("desktop blackbox test")
+    except RuntimeError:
+        exc_info = sys.exc_info()
+
+    row = m._write_desktop_crash_receipt(
+        "test_unhandled_exception",
+        receipt_path=receipt_path,
+        exc_info=exc_info,
+        test_marker="desktop_blackbox",
+    )
+
+    lines = receipt_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    written = json.loads(lines[0])
+    assert row["receipt_id"] == written["receipt_id"]
+    assert written["truth_label"] == "SIFTA_DESKTOP_CRASH_BLACKBOX_V1"
+    assert written["kind"] == "test_unhandled_exception"
+    assert written["exception_type"] == "RuntimeError"
+    assert "desktop blackbox test" in written["traceback_tail"]
+    assert written["test_marker"] == "desktop_blackbox"
+
+
+def test_desktop_crash_blackbox_installs_before_qapplication():
+    desktop = (REPO / "sifta_os_desktop.py").read_text(encoding="utf-8")
+
+    assert "faulthandler.enable" in desktop
+    assert "_threading.excepthook = _desktop_thread_excepthook" in desktop
+    assert ".sifta_state\" / \"desktop_crash_receipts.jsonl" in desktop
+    assert desktop.index("_install_desktop_crash_blackbox()") < desktop.index("app = QApplication(sys.argv)")
 
 
 def test_kernel_scheduler_timer_ticks_inside_qt_app(monkeypatch):
@@ -720,6 +785,25 @@ def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
         assert len(contextual_help_buttons(plain_sub.widget())) == 1
         assert plain_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is not None
         assert base_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is None
+
+        # r1640: help is click-only and not armed at open — no auto-open race.
+        loop = None
+        for child in base_sub.widget().findChildren(SiftaBaseWidget):
+            if getattr(child, "APP_NAME", None) == "System Settings":
+                loop = child
+                break
+        assert loop is not None
+        assert loop._help_armed is False
+        assert "never auto-opens" in contextual_help_buttons(base_sub.widget())[0].toolTip()
+        before = getattr(loop, "_help_window", None)
+        loop._show_help()  # unarmed → no-op
+        assert getattr(loop, "_help_window", None) is before
+
+        mdi_help = plain_sub.widget().findChild(QPushButton, "mdiTitleHelpButton")
+        assert mdi_help is not None
+        assert "never auto-opens" in mdi_help.toolTip()
+        mdi_help.click()  # unarmed MDI help → must not raise / open dialog
+        app.processEvents()
     finally:
         desktop.close()
         app.processEvents()

@@ -49,11 +49,34 @@ def test_new_thinking_resets_interaction_and_stops_old_timer():
     assert "and not getattr(self, \"_thinking_user_interacted\", False)" in thinking_block
 
 
+def test_observable_processing_does_not_claim_live_thinking():
+    src = _src()
+    obs_start = src.index("def _append_observable_processing")
+    obs_end = src.index("def _trim_thinking_buffer_for_body_economy")
+    obs_block = src[obs_start:obs_end]
+    assert "self._observable_trace_stream_active = True" in obs_block
+    assert "self._thinking_stream_active = True" not in obs_block
+
+
+def test_idle_trace_labels_do_not_say_thinking():
+    src = _src()
+    refresh_start = src.index("def _refresh_thinking_header")
+    refresh_end = src.index("def _tick_thinking_bubble")
+    refresh_block = src[refresh_start:refresh_end]
+    assert "▣  activity trace" in refresh_block
+    assert "▣  hide trace" in refresh_block
+    assert "▣  show trace" in refresh_block
+    assert "hide thinking" not in refresh_block
+    assert "show thinking" not in refresh_block
+
+
 def test_done_schedules_auto_collapse_after_final_char_count():
     src = _src()
     done_start = src.index("def _on_brain_done")
-    done_block = src[done_start:done_start + 1800]
-    assert "n_chars = len(panel.toPlainText() or \"\")" in done_block
+    done_block = src[done_start:src.index("def _on_brain_failed")]
+    schedule_start = src.index("def _schedule_thinking_auto_collapse")
+    schedule_block = src[schedule_start:src.index("def _on_thinking")]
+    assert "n_chars = len(panel.toPlainText() or \"\")" in schedule_block
     assert "self._schedule_thinking_auto_collapse()" in done_block
 
 
@@ -196,7 +219,7 @@ def test_planning_mode_skips_pre_cortex_direct_tool_and_arm_prepass():
     src = _src()
     assert "not self._planning_mode_active() and self._maybe_start_observable_direct_tool_request" in src
     assert "elif self._planning_mode_active():" in src
-    assert "if self._planning_mode_active():\n            _reply, _tool_results = \"\", []" in src
+    assert "if self._planning_mode_active() or not chat_reflexes_enabled:\n            _reply, _tool_results = \"\", []" in src
     assert "agent-arm decision prepass REMOVED" in src
     assert "schedule_async_agent_arm_prepass" not in src
 

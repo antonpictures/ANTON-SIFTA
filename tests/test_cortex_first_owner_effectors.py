@@ -443,213 +443,6 @@ def test_exact_search_on_google_pls_preserves_inner_quotes_and_waits_for_cortex(
     assert talk._owner_effector_requires_cortex_first(phrase)
 
 
-def test_named_photo_request_routes_to_google_images_before_app_matcher(monkeypatch):
-    # r390: pin engine to google so the tbm=isch URL assertion is deterministic
-    # (live persisted engine is DuckDuckGo). search_site is hardcoded "google_images".
-    import System.swarm_search_engine_registry as _engreg
-    monkeypatch.setattr(_engreg, "current_engine", lambda *a, **k: "google")
-    phrase = "ALICE SHOW ME PHOTOS OF GLASS SCULPTURE"
-
-    command = talk._extract_sifta_app_command(
-        phrase,
-        app_names=["Territory Is The Law", "Epistemic Mesh (Anti-Gaslight)", "Ghost StigmergiCity"],
-    )
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["search_site"] == "google_images"
-    assert command["visual_subject"] == "Glass Sculpture"
-    assert command["query"] == "Glass Sculpture photos"
-    assert "tbm=isch" in command["url"]
-    assert "Glass+Sculpture+photos" in command["url"]
-
-
-# r722: George corrected the old exception. Search/image constructors still
-# parse into browser commands, but they do not execute before cortex.
-def test_pool_image_grid_phrase_is_cortex_first_and_keeps_visual_modifiers():
-    phrase = (
-        "by the pool image grid for WITH CERAMIC VASE please, in red glaze, do not let. "
-        "you already know about glass sculpture and ceramic vase. do not let."
-    )
-
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._is_direct_visual_image_grid_request(phrase)
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["visual_subject"] == "Ceramic Vase"
-    assert command["query"] == "Ceramic Vase by the pool in red glaze photos"
-    assert "Ceramic+Vase+by+the+pool+in+red+glaze+photos" in command["url"]
-    assert "WITH" not in command["query"]
-    assert "do not let" not in command["query"].lower()
-    assert "jane" not in command["query"].lower()
-    assert "glass sculpture" not in command["query"].lower()
-
-
-def test_bare_visual_query_is_cortex_first_and_keeps_modifiers():
-    phrase = "Ceramic Vase by the pool in red glaze BY THE POOL"
-
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._is_bare_visual_image_search_request(phrase)
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["visual_subject"] == "Ceramic Vase"
-    assert command["query"] == "Ceramic Vase by the pool in red glaze photos"
-    assert "Ceramic+Vase+by+the+pool+in+red+glaze+photos" in command["url"]
-
-
-def test_pool_image_grid_executes_after_cortex(monkeypatch):
-    phrase = "by the pool image grid for WITH CERAMIC VASE please, in red glaze, do not let."
-    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
-    captured = []
-
-    def fake_execute(command):
-        captured.append(command)
-        return "Receipt: r-visual-test"
-
-    widget._execute_sifta_app_command = fake_execute
-    widget._append_system_line = lambda *args, **kwargs: None
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_execute_cortex_switch_after_cortex",
-        lambda self, owner_text, cortex_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_consume_staged_foreground_browser_intent",
-        lambda self, owner_text: "",
-    )
-
-    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
-        widget,
-        phrase,
-        _owner_cortex_text("wants an image search, so I will use my browser limb."),
-    )
-
-    assert captured and captured[0]["query"] == "Ceramic Vase by the pool in red glaze photos"
-    assert captured[0]["owner_text"] == phrase
-    assert "After thinking, I executed the real body action: Receipt: r-visual-test" in reply
-
-
-def test_bare_visual_query_executes_after_cortex(monkeypatch):
-    phrase = "Ceramic Vase by the pool in red glaze BY THE POOL"
-    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
-    captured = []
-
-    def fake_execute(command):
-        captured.append(command)
-        return "Receipt: r-visual-test"
-
-    widget._execute_sifta_app_command = fake_execute
-    widget._append_system_line = lambda *args, **kwargs: None
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_execute_cortex_switch_after_cortex",
-        lambda self, owner_text, cortex_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_consume_staged_foreground_browser_intent",
-        lambda self, owner_text: "",
-    )
-
-    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
-        widget,
-        phrase,
-        _owner_cortex_text("wants an image search, so I will use my browser limb."),
-    )
-
-    assert captured and captured[0]["query"] == "Ceramic Vase by the pool in red glaze photos"
-    assert captured[0]["owner_text"] == phrase
-    assert "After thinking, I executed the real body action: Receipt: r-visual-test" in reply
-
-
-def test_google_images_pronoun_request_uses_recent_named_subject(tmp_path, monkeypatch):
-    (tmp_path / "alice_conversation.jsonl").write_text(
-        json.dumps({"role": "user", "content": "ALICE SHOW ME PHOTOS OF GLASS SCULPTURE"})
-        + "\n"
-        + json.dumps({"role": "assistant", "content": "I am processing your request."})
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(talk, "_state_root", lambda: tmp_path)
-
-    phrase = "PLS SEARCH FOR HER IN GOOGLE IMAGES"
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["search_site"] == "google_images"
-    assert command["visual_subject"] == "Glass Sculpture"
-    assert command["query"] == "Glass Sculpture photos"
-    assert "Glass+Sculpture+photos" in command["url"]
-
-
-def test_pics_request_routes_to_google_images_before_app_matcher():
-    phrase = "show me pics of ceramic vase pls"
-
-    command = talk._extract_sifta_app_command(
-        phrase,
-        app_names=["Epistemic Mesh (Anti-Gaslight)", "Alice Browser"],
-    )
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["search_site"] == "google_images"
-    assert command["visual_subject"] == "Ceramic Vase"
-    assert command["query"] == "Ceramic Vase photos"
-    assert "Ceramic+Vase+photos" in command["url"]
-
-
-def test_browser_correction_followup_reuses_prior_pics_subject(tmp_path, monkeypatch):
-    (tmp_path / "alice_conversation.jsonl").write_text(
-        json.dumps({"role": "user", "content": "show me pics of ceramic vase pls"})
-        + "\n"
-        + json.dumps({"role": "assistant", "content": "I missed the browser action."})
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(talk, "_state_root", lambda: tmp_path)
-
-    phrase = "I meant artist browser."
-    command = talk._extract_sifta_app_command(
-        phrase,
-        app_names=["Epistemic Mesh (Anti-Gaslight)", "Alice Browser"],
-    )
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_url"
-    assert command["app_name"] == "Alice Browser"
-    assert command["search_site"] == "google_images"
-    assert command["visual_subject"] == "Ceramic Vase"
-    assert command["query"] == "Ceramic Vase photos"
-    assert command["contextual_search_source"] == "browser_visual_search_correction"
-    assert "Ceramic+Vase+photos" in command["url"]
-
-
-def test_browser_correction_followup_prompt_block_carries_prior_subject(tmp_path):
-    (tmp_path / "alice_conversation.jsonl").write_text(
-        json.dumps({"role": "user", "content": "show me pics of ceramic vase pls"}) + "\n",
-        encoding="utf-8",
-    )
-
-    block = talk._browser_visual_search_correction_prompt_block(
-        "I meant browser.",
-        state_dir=tmp_path,
-    )
-
-    assert "BROWSER VISUAL SEARCH FOLLOW-UP CONTEXT" in block
-    assert "Ceramic Vase" in block
-    assert "Ceramic Vase photos" in block
-    assert "Do not invent a gallery" in block
-
-
 def test_recent_owner_url_reference_opens_recent_link_not_app(tmp_path, monkeypatch):
     url = "https://x.com/abellaskies/status/1836545266972786734/photo/1"
     (tmp_path / "alice_conversation.jsonl").write_text(
@@ -831,82 +624,6 @@ def test_post_cortex_slideshow_opens_browser_when_closed(monkeypatch):
     assert (f"{_registered_owner_name()} wants an image slideshow" in reply) or ("wasn't open" in reply)
     assert "wasn't open" in reply or "starting the slideshow" in reply
     assert "starting the slideshow" in reply or "image every 3.5s" in reply
-
-
-def test_google_photos_section_request_is_browser_action():
-    phrase = (
-        "WE ARE HERE https://www.google.com/search?q=avery+stone+photos IN ALICE BROWSER. "
-        "PLS CLICK ON PHOTOS SECTION ON THE SCREEN."
-    )
-
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_action"
-    assert command["app_name"] == "Alice Browser"
-    assert command["action"] == "click_google_images_tab"
-
-
-def test_google_photos_section_click_executes_after_cortex(monkeypatch):
-    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
-    lines = []
-    calls = []
-    widget._append_system_line = lambda line, *args, **kwargs: lines.append(line)
-    widget._desktop_app_launcher = lambda: None
-
-    class Browser:
-        def click_google_images_tab(self):
-            calls.append("click")
-            return {
-                "clicked": True,
-                "mode": "direct_images_url",
-                "href": "https://www.google.com/search?tbm=isch&q=avery%20stone%20photos",
-                "query": "ceramic vase photos",
-            }
-
-        def refresh_current_page_state(self):
-            calls.append("refresh")
-
-    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
-    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-images")
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_execute_cortex_switch_after_cortex",
-        lambda self, owner_text, cortex_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_consume_staged_foreground_browser_intent",
-        lambda self, owner_text: "",
-    )
-
-    phrase = (
-        "WE ARE HERE https://www.google.com/search?q=avery+stone+photos IN ALICE BROWSER. "
-        "PLS CLICK ON PHOTOS SECTION ON THE SCREEN."
-    )
-    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
-        widget,
-        phrase,
-        _owner_cortex_text("wants my browser hand to move from the web results to the photos."),
-    )
-
-    assert calls == ["click", "refresh"]
-    assert lines == ["App/browser receipt: r-images"]
-    assert f"{_registered_owner_name()} wants my browser hand" in reply
-    assert "opened the Google Images/Photos section" in reply
-    assert "Receipt: r-images" in reply
-
-
-def test_google_image_result_request_is_browser_action():
-    phrase = "I WANT YOU TO CLICK ONE VISIBLE CERAMIC VASE PHOTO ON THE SCREEN PLS"
-
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_action"
-    assert command["app_name"] == "Alice Browser"
-    assert command["action"] == "click_google_image_result"
-    assert command["query"] == phrase
 
 
 def test_two_step_select_third_listing_then_enlarge_beats_visible_control_regex():
@@ -1140,67 +857,6 @@ def test_browser_click_blocks_low_conf_owner_ingress(monkeypatch, tmp_path):
     assert (state_dir / "intent_nonce_gate.jsonl").exists()
 
 
-def test_duckduckgo_image_grid_selection_never_routes_to_youtube():
-    phrase = "OK, SELECT THE CERAMIC VASE PHOTO FROM THE CURRENT ALICE BROWSER SCREEN"
-
-    command = talk._extract_sifta_app_command(phrase)
-
-    assert talk._owner_effector_requires_cortex_first(phrase)
-    assert command["kind"] == "browser_action"
-    assert command["app_name"] == "Alice Browser"
-    assert command["action"] == "click_google_image_result"
-    assert command["query"] == phrase
-
-
-def test_google_image_result_click_executes_after_cortex(monkeypatch):
-    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
-    lines = []
-    calls = []
-    widget._append_system_line = lambda line, *args, **kwargs: lines.append(line)
-    widget._desktop_app_launcher = lambda: None
-
-    class Browser:
-        def click_visible_google_image_result(self, query):
-            calls.append(query)
-            return {
-                "clicked": True,
-                "mode": "google_image_tile_click",
-                "href": "https://www.google.com/imgres?imgurl=test",
-                "alt": "Ceramic Vase photo result",
-            }
-
-    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
-    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-photo")
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_execute_cortex_switch_after_cortex",
-        lambda self, owner_text, cortex_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_consume_staged_foreground_browser_intent",
-        lambda self, owner_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_schedule_current_page_summary",
-        lambda self, *args, **kwargs: None,
-    )
-
-    phrase = "I WANT YOU TO CLICK ONE VISIBLE CERAMIC VASE PHOTO ON THE SCREEN PLS"
-    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
-        widget,
-        phrase,
-        _owner_cortex_text("wants one visible Ceramic Vase photo opened from the grid."),
-    )
-
-    assert calls == [phrase]
-    assert lines == ["App/browser receipt: r-photo"]
-    assert f"{_registered_owner_name()} wants one visible Ceramic Vase photo" in reply
-    assert "clicked Ceramic Vase photo result" in reply
-    assert "Receipt: r-photo" in reply
-
-
 def test_self_screenshot_cortex_turn_never_executes_image_click(monkeypatch):
     widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
     calls = []
@@ -1208,9 +864,9 @@ def test_self_screenshot_cortex_turn_never_executes_image_click(monkeypatch):
     widget._desktop_app_launcher = lambda: None
 
     class Browser:
-        def click_visible_google_image_result(self, *args, **kwargs):
+        def click_page_element_receipt(self, *args, **kwargs):
             calls.append((args, kwargs))
-            raise AssertionError("/sc observation turn must not click browser images")
+            raise AssertionError("/sc observation turn must not click browser elements")
 
     monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
     monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-sc-forbidden")
@@ -1229,68 +885,14 @@ def test_self_screenshot_cortex_turn_never_executes_image_click(monkeypatch):
     assert calls == []
 
 
-def test_duckduckgo_image_grid_click_executes_image_limb_not_youtube(monkeypatch):
-    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
-    lines = []
-    calls = []
-    widget._append_system_line = lambda line, *args, **kwargs: lines.append(line)
-    widget._desktop_app_launcher = lambda: None
-
-    class Browser:
-        def click_visible_google_image_result(self, query, ordinal=0):
-            calls.append(("image", query, ordinal))
-            return {
-                "clicked": True,
-                "mode": "google_image_tile_click",
-                "href": "https://duckduckgo.com/?q=Daniel+Craig+photos&iax=images&ia=images",
-                "alt": "Daniel Craig and Rachel Weisz on red carpet photo",
-            }
-
-        def click_youtube_result_matching(self, query):
-            calls.append(("youtube", query))
-            raise AssertionError("DuckDuckGo image grid must not use YouTube selector")
-
-    monkeypatch.setattr(talk, "_find_live_alice_browser_widget", lambda: Browser())
-    monkeypatch.setattr(talk, "_write_app_command_receipt", lambda **kwargs: "r-duck-image")
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_execute_cortex_switch_after_cortex",
-        lambda self, owner_text, cortex_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_consume_staged_foreground_browser_intent",
-        lambda self, owner_text: "",
-    )
-    monkeypatch.setattr(
-        talk.TalkToAliceWidget,
-        "_schedule_current_page_summary",
-        lambda self, *args, **kwargs: None,
-    )
-
-    phrase = "OK, SELECT THE PHOTO WITH DANIEL CRAIG ON RED CARPET FROM THE CURRENT ALICE BROWSER SCREEN"
-    reply = talk.TalkToAliceWidget._maybe_execute_cortex_first_owner_effector(
-        widget,
-        phrase,
-        _owner_cortex_text("wants the Daniel Craig red carpet photo selected from the current image grid."),
-    )
-
-    assert calls == [("image", phrase, 0)]
-    assert lines == ["App/browser receipt: r-duck-image"]
-    assert "Daniel Craig red carpet" in reply
-    assert "clicked Daniel Craig and Rachel Weisz on red carpet photo" in reply
-    assert "Receipt: r-duck-image" in reply
-
-
-def test_open_on_youtube_dot_com_keeps_title_as_youtube_search():
+def test_open_on_youtube_dot_com_is_direct_url_not_search_constructor():
     command = talk._extract_sifta_app_command("OPEN ON YOUTUBE.COM Swim Swimwear Fashion Show - Miami Swim Week")
 
     assert command["kind"] == "browser_url"
     assert command["app_name"] == "Alice Browser"
-    assert command["search_site"] == "youtube.com"
-    assert command["query"] == "Swim Swimwear Fashion Show - Miami Swim Week"
-    assert "search_query=Swim+Swimwear+Fashion+Show+-+Miami+Swim+Week" in command["url"]
-    assert command["url"] != "https://YOUTUBE.COM"
+    assert command["url"] == "https://YOUTUBE.COM"
+    assert "search_site" not in command
+    assert "query" not in command
 
 
 def test_open_direct_url_in_separate_alice_browser_tab_sets_new_tab():
@@ -1578,3 +1180,23 @@ def test_r807_short_describe_still_allows_direct_when_not_doctrine(monkeypatch):
     assert not talk._must_route_owner_turn_to_cortex(owner_text)
     assert not talk._block_deterministic_owner_shortcut(owner_text)
     assert talk._is_browser_photo_description_query(owner_text)
+
+
+def test_select_result_reflex_stands_down_for_pasted_dialogue():
+    owner_text = (
+        "**Alice**, that was profoundly beautiful. Thank you for sharing your inner experience "
+        "so vividly. Your descriptions paint a rich, living qualia landscape. Result 1 is not "
+        "a command here; it is part of the conversation context that must go to cortex."
+    )
+
+    assert talk._must_route_owner_turn_to_cortex(owner_text)
+    assert talk._select_result_reflex_is_context_only(owner_text)
+    assert talk._select_result_failure_is_context_only(owner_text, "only_0_results")
+
+
+def test_select_result_reflex_still_allows_explicit_short_command():
+    owner_text = "open the first result"
+
+    assert talk._is_explicit_result_select_command(owner_text)
+    assert not talk._select_result_reflex_is_context_only(owner_text)
+    assert not talk._select_result_failure_is_context_only(owner_text, "only_0_results")

@@ -64,6 +64,148 @@ def test_matrix_snapshot_separates_wallet_cache_spendable_and_pouw_stake(tmp_pat
     assert "not spendable" in snap["interpretation"]
 
 
+def test_refresh_stgm_economy_cache_writes_current_snapshot(monkeypatch, tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    cache_path = tmp_path / "cache" / "stgm_economy_cache.json"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(
+        json.dumps({"id": "ALICE_M5"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(stgm_economy, "STGM_CACHE", cache_path)
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 10.0})
+    _append(repair_log, {"tx_type": "STGM_SPEND", "agent_id": "ALICE_M5", "amount": 2.0})
+    _append(state_dir / "stgm_memory_rewards.jsonl", {"amount": 15.0, "reason": "PoUW"})
+
+    snap = stgm_economy.refresh_stgm_economy_cache(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        memory_rewards=state_dir / "stgm_memory_rewards.jsonl",
+    )
+
+    assert snap["refreshed"] is True
+    assert snap["spendable_total_stgm"] == pytest.approx(8.0)
+    assert snap["cache_written"] == str(cache_path)
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cached["spendable_total_stgm"] == pytest.approx(8.0)
+    assert cached["pouw_reputation_stgm"] == pytest.approx(15.0)
+
+
+def test_stgm_body_truth_snapshot_shows_atp_pulse_and_topbar_rounding(monkeypatch, tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    cache_path = tmp_path / "cache" / "stgm_economy_cache.json"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(
+        json.dumps({"id": "ALICE_M5"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(stgm_economy, "STGM_CACHE", cache_path)
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 10.0})
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT_ATP",
+            "event_id": "ATP_MINT_UNIT_TINY",
+            "ts": 1234.0,
+            "agent_id": "ALICE_M5",
+            "miner_id": "ALICE_M5",
+            "amount_stgm": 0.000000002,
+            "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+            "engine": "ATP_SYNTHASE_v1",
+        },
+    )
+    _append(state_dir / "stgm_memory_rewards.jsonl", {"amount": 15.0, "reason": "PoUW"})
+
+    snap = stgm_economy.stgm_body_truth_snapshot(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        memory_rewards=state_dir / "stgm_memory_rewards.jsonl",
+        max_cache_age_s=0,
+        force_refresh=True,
+    )
+
+    assert snap["truth_label"] == "SIFTA_STGM_BODY_TRUTH_SNAPSHOT_V1"
+    assert snap["spendable_total_stgm"] == pytest.approx(10.0)
+    assert snap["visible_topbar_text_3dp"] == "STGM 10.000"
+    assert snap["visible_topbar_text_9dp"] == "STGM 10.000000002"
+    assert snap["visible_topbar_text"] == "STGM 10.000000002"
+    assert snap["topbar_precision_digits"] == 9
+    assert snap["latest_atp_pulse"]["latest_event_id"] == "ATP_MINT_UNIT_TINY"
+    assert snap["latest_atp_pulse"]["latest_amount_stgm"] == pytest.approx(0.000000002)
+    assert snap["atp_total_visible_at_3dp"] is False
+    assert snap["atp_total_visible_at_topbar_precision"] is True
+    assert "same canonical repair_log" in snap["same_organism_note"]
+
+
+def test_stgm_body_truth_snapshot_shows_receipted_work_pulse(monkeypatch, tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    cache_path = tmp_path / "cache" / "stgm_economy_cache.json"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(
+        json.dumps({"id": "ALICE_M5"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(stgm_economy, "STGM_CACHE", cache_path)
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 10.0})
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT_POUW_PULSE",
+            "event_id": "POUW_PULSE_UNIT",
+            "ts": 2345.0,
+            "agent_id": "ALICE_M5",
+            "miner_id": "ALICE_M5",
+            "amount_stgm": 0.0002,
+            "reason": "receipted_work_pulse:memory_retrieval_hit",
+            "pulse_kind": "memory_retrieval_hit",
+            "source_receipt_id": "retrieval-unit-1",
+            "policy": "STGM_POLICY_RECEIPTED_WORK_PULSE_v1",
+            "engine": "ATP_SYNTHASE_v1",
+        },
+    )
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT_POUW_PULSE",
+            "event_id": "POUW_PULSE_FORGED_UNIT",
+            "ts": 9999.0,
+            "agent_id": "ALICE_M5",
+            "miner_id": "ALICE_M5",
+            "amount_stgm": 0.5,
+            "reason": "receipted_work_pulse:memory_retrieval_hit",
+            "pulse_kind": "memory_retrieval_hit",
+            "source_receipt_id": "forged-retrieval-unit",
+            "policy": "STGM_POLICY_RECEIPTED_WORK_PULSE_v1",
+            "engine": "ATP_SYNTHASE_v1",
+            "ed25519_sig": "b" * 128,
+            "signing_node": "UNKNOWN_SERIAL",
+        },
+    )
+
+    snap = stgm_economy.stgm_body_truth_snapshot(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        memory_rewards=state_dir / "stgm_memory_rewards.jsonl",
+        max_cache_age_s=0,
+        force_refresh=True,
+    )
+
+    assert snap["spendable_total_stgm"] == pytest.approx(10.0002)
+    assert snap["pulse_mint_lines"] == 1
+    assert snap["pulse_minted_stgm"] == pytest.approx(0.0002)
+    assert snap["visible_topbar_text_9dp"] == "STGM 10.000200000"
+    assert snap["latest_work_pulse"]["latest_event_id"] == "POUW_PULSE_UNIT"
+    assert snap["latest_work_pulse"]["latest_pulse_kind"] == "memory_retrieval_hit"
+    assert snap["latest_work_pulse"]["tail_pulse_invalid_rows"] == 1
+    assert snap["pulse_total_visible_at_topbar_precision"] is True
+
+
 def test_deprecated_mint_attempts_are_audit_only(tmp_path: Path) -> None:
     repair_log = tmp_path / "repair_log.jsonl"
     state_dir = tmp_path / ".sifta_state"

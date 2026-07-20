@@ -425,9 +425,9 @@ def test_tracker_catches_web_page_state_dom_dump_reply(tmp_path, monkeypatch):
                     "model": "grok:grok-4.3",
                     "text": (
                         "WHAT IS ON MY SCREEN (from the rendered DOM (read ~3s ago)): "
-                        "Celebridades Femeninas Oficial: ALVA INGA — https://example.test. "
+                        "Celebridades Femeninas Oficial: EXAMPLE MODEL — https://example.test. "
                         "Open Alice Browser tabs (3): #1 DuckDuckGo; active #3 Blog. "
-                        "Visible controls/buttons: a; a; Alyvia Alyn Lind; Amber Montana. "
+                        "Visible controls/buttons: a; a; Sample Name One; Sample Name Two. "
                         "Comment thread (35 captured) — I can summarize these."
                     ),
                 }
@@ -728,7 +728,7 @@ def test_tracker_catches_deterministic_browser_without_owner_on_sc(tmp_path, mon
         json.dumps(
             {
                 "ts": now,
-                "action": "click_google_image_result",
+                "action": "click_element",
                 "ok": True,
                 "note": (
                     "owner_query='SELF-SCREENSHOT CORTEX TURN (/sc): George asked me to sense "
@@ -795,7 +795,7 @@ def test_tracker_catches_deterministic_browser_without_owner_on_sc(tmp_path, mon
 
     types = {row[1] for row in out}
     assert "deterministic_browser_without_owner" in types
-    assert any("/sc turn fired image-grid click" in row[2] for row in out)
+    assert any("/sc turn fired browser click" in row[2] for row in out)
     assert any("no owner modality" in row[2] for row in out)
     assert any("two Jama tabs" in row[2] for row in out)
     assert any("two Fly.io/OpenClaw tabs" in row[2] for row in out)

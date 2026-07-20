@@ -51,3 +51,11 @@ def test_journal_viewer_exports_manifest_widget_class():
     widget_class = getattr(viewer, "AliceJournalViewer")
 
     assert widget_class.APP_NAME == "Alice Journal Viewer"
+
+
+def test_journal_viewer_hidden_from_app_store_manifest():
+    repo = Path(__file__).resolve().parent.parent
+    manifest = json.loads((repo / "Applications" / "apps_manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["Alice Journal"].get("hidden") is not True
+    assert manifest["Alice Journal Viewer"].get("hidden") is True

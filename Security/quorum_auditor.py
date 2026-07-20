@@ -10,9 +10,24 @@ import ast
 import json
 import traceback
 
-import sifta_swarm_identity
-from sifta_quorum import cast_vote, get_quorum_score
-from proposal_engine import list_proposals, promote_to_pending, QUORUM_DRAFT_DIR
+# Hardened imports (H3) — fail closed with clear marker instead of crashing the auditor
+try:
+    import sifta_swarm_identity  # type: ignore
+except Exception:
+    sifta_swarm_identity = None
+
+try:
+    from sifta_quorum import cast_vote, get_quorum_score  # type: ignore
+except Exception:
+    def cast_vote(*a, **k): return "UNAVAILABLE"
+    def get_quorum_score(*a, **k): return 0.0
+
+try:
+    from proposal_engine import list_proposals, promote_to_pending, QUORUM_DRAFT_DIR  # type: ignore
+except Exception:
+    list_proposals = lambda *a, **k: []
+    promote_to_pending = lambda *a, **k: False
+    QUORUM_DRAFT_DIR = None
 
 AGENT_ID = "QUORUM_AUDITOR_0X1"
 

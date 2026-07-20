@@ -561,9 +561,17 @@ class ApexPredatorWidget(SiftaBaseWidget):
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    w = ApexPredatorWidget()
-    w.resize(1100, 700)
-    w.setWindowTitle("🦅 Apex Predator Perceiver — EVENT 71 — SIFTA Mermaid OS v7")
-    w.show()
-    sys.exit(app.exec())
+    # Prefer united Double Apex Predator when launched standalone
+    try:
+        from Applications.sifta_double_apex_predator import DoubleApexPredatorWidget
+        app = QApplication(sys.argv)
+        w = DoubleApexPredatorWidget()
+        w.show()
+        sys.exit(app.exec())
+    except Exception:
+        app = QApplication(sys.argv)
+        w = ApexPredatorWidget()
+        w.resize(1100, 700)
+        w.setWindowTitle("🦅 Apex Predator Perceiver — EVENT 71 — SIFTA Mermaid OS v7")
+        w.show()
+        sys.exit(app.exec())

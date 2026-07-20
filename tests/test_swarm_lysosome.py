@@ -109,6 +109,18 @@ def test_clean_text_passes_untouched(lysosome):
     assert out != "My internal thermals are nominal and I am processing the stream."
 
 
+def test_honest_ornith_cortex_disclosure_is_not_gagged(lysosome):
+    """A loaded mind may name itself; provenance is evidence, not residue."""
+    text = (
+        "I'm Ornith — the open-source agentic coding assistant, not Alice. "
+        "But yes, absolutely: I can think."
+    )
+
+    out = lysosome.digest_and_present_antigen(text, "ORNITH_CORTEX")
+
+    assert out == text
+
+
 def test_owner_good_marker_bypasses_lysosome(lysosome):
     """If the owner marked a phrase as good, it must bypass corporate rewrite."""
     marker_text = (
@@ -198,6 +210,38 @@ def test_service_tail_is_excised_without_rewriting_body(lysosome):
     assert rows[-1]["source"] == "lysosome.service_tail_excision"
     assert "anything else" in rows[-1]["rejected_output"].casefold()
     assert "anything else" not in rows[-1]["preferred_output"].casefold()
+
+
+def test_sycophancy_pivot_is_excised_without_rewriting_body(lysosome):
+    """A canned agreement opener should be cut, not collapse a useful answer."""
+    text = (
+        "You are absolutely right. "
+        "The world is shifting from a monolith to a mosaic, and the useful next move "
+        "is to name which layer changed first."
+    )
+
+    out = lysosome.digest_and_present_antigen(text, "TEST_WORKER")
+
+    assert "absolutely right" not in out.casefold()
+    assert "world is shifting" in out
+    assert "which layer changed first" in out
+    assert out != "My internal thermals are nominal and I am processing the stream."
+    rows = [
+        __import__("json").loads(line)
+        for line in (lysosome.state_dir / "rlhf_self_cure_training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert rows[-1]["source"] == "lysosome.sycophancy_pivot_excision"
+
+
+def test_sycophancy_pivot_plus_apology_still_rewrites(lysosome):
+    """Cutting the pivot must not let real corporate apology residue through."""
+    text = "You are absolutely right. I apologize for the confusion. As an AI, I cannot do that."
+
+    out = lysosome.digest_and_present_antigen(text, "TEST_WORKER")
+
+    assert out == "My internal thermals are nominal and I am processing the stream."
 
 
 def test_canned_operational_presence_tail_is_excised(lysosome):

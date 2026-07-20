@@ -58,14 +58,31 @@ _BODY_TASK_RE = re.compile(
 # force an image-bearing turn onto the VLM arm. Conservative: an unknown model is
 # treated as NOT text-only, so we never strip vision from a real VLM.
 _TEXT_ONLY_MODEL_RE = re.compile(
-    r"(heretic|igorls/|qat-q4_0-unquantized|text[\s_-]*only|-text\b)", re.IGNORECASE
+    r"(heretic|igorls/|qat-q4_0-unquantized|text[\s_-]*only|-text\b|"
+    r"krishairnd/gemma-4-uncensored|ornith:|qwenpaw|nightshift|north-mini-code|"
+    r"hauhau|ultragemma|baytout3/)",
+    re.IGNORECASE,
 )
 
 
 def is_text_only_cortex(model: str) -> bool:
     """True for cortexes with no vision tower (e.g. the igorls/heretic Gemma 4
-    12B QAT, whose card says 'TEXT only; vision goes to a separate VLM arm')."""
-    return bool(_TEXT_ONLY_MODEL_RE.search(str(model or "")))
+    12B QAT, whose card says 'TEXT only; vision goes to a separate VLM arm').
+
+    r1621-04: local heretic/Ornith/QwenPaw/Krisha tags stall or lack reliable
+    multimodal first-token — treat as text-only for image routing.
+    """
+    mid = str(model or "")
+    if not mid:
+        return False
+    # Explicit vision tags win
+    if re.search(
+        r"vision|llava|moondream|qwen-vl|mlx-vlm|qwopus|alice-m5-cortex",
+        mid,
+        re.I,
+    ):
+        return False
+    return bool(_TEXT_ONLY_MODEL_RE.search(mid))
 
 
 def _default_vlms() -> list[str]:

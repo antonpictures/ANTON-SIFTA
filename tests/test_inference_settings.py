@@ -44,7 +44,7 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-phc-cure"
 
 
-def test_talk_to_alice_missing_legacy_pin_normalizes_to_smallest_live(tmp_path, monkeypatch):
+def test_talk_to_alice_missing_legacy_pin_normalizes_to_dialogue_live(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
 
     monkeypatch.setattr(defaults, "_STATE", tmp_path)
@@ -68,11 +68,11 @@ def test_talk_to_alice_missing_legacy_pin_normalizes_to_smallest_live(tmp_path, 
             app_context="talk_to_alice",
             query_text="I am watching your Alice Browser organ now your body",
         )
-        == qwen_2b
+        == defaults.CANONICAL_OLLAMA_DAILY
     )
     assert (
         defaults.normalize_talk_to_alice_model("alice-m5-cortex-8b-deleted:latest")
-        == qwen_2b
+        == defaults.CANONICAL_OLLAMA_DAILY
     )
 
 
@@ -103,14 +103,13 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     raw.setdefault("per_app", {}).pop("talk_to_alice", None)
     defaults._ASSIGNMENTS.write_text(_json.dumps(raw), encoding="utf-8")
 
-    # The first automatic local pick is the smallest resident Ollama model.
-    # If that specific model then gets a failure receipt, the stigmergic field
-    # may escalate to a larger installed model instead of stubbornly looping.
+    # The first automatic Talk pick is the smallest runnable dialogue model;
+    # the translation-only 2B tag must not win just because it is tiny.
     initial_pick = defaults.resolve_ollama_model(
         app_context="talk_to_alice",
         query_text="debug the kernel router and run pytest",
     )
-    assert initial_pick == "kaelri/qwen3.5-mt:2b"
+    assert initial_pick == defaults.CANONICAL_OLLAMA_DAILY
 
     bucket = defaults.classify_inference_query_bucket(
         "debug the kernel router and run pytest",

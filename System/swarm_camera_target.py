@@ -728,8 +728,7 @@ def _system_profiler_live_devices() -> List[Tuple[str, str]]:
         if not name:
             continue
         uid = normalize_unique_id(row.get("spcamera_unique-id") or name)
-        if is_allowed_owner_body_camera(name):
-            out.append((uid, name))
+        out.append((uid, name))
     return out
 
 
@@ -760,16 +759,50 @@ def _filter_body_cameras(devices: List[Tuple[str, str]]) -> List[Tuple[str, str]
     return out
 
 
-def _live_devices() -> List[Tuple[str, str]]:
-    """Return [(unique_id, description), ...] in current live device order.
+def _filter_owner_selectable_cameras(devices: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """Camera order for explicit owner slash commands.
+
+    This is deliberately wider than automatic body topology: `/sx3` is an owner
+    command and may select iPhone/Continuity, while passive organs still use the
+    strict body allowlist from `_filter_body_cameras`.
+    """
+    builtins: List[Tuple[str, str]] = []
+    extras: List[Tuple[str, str]] = []
+    iphones: List[Tuple[str, str]] = []
+    seen: set[str] = set()
+    for uid, desc in devices:
+        name = str(desc or "").strip()
+        if not name or _is_noise_camera_name(name) or is_virtual_or_loopback_camera(name):
+            continue
+        clean_uid = normalize_unique_id(uid)
+        key = clean_uid or f"name:{_norm_name(name)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        item = (clean_uid, name)
+        if is_builtin_owner_camera(name):
+            builtins.append(item)
+        elif is_iphone_or_continuity(name):
+            iphones.append(item)
+        else:
+            extras.append(item)
+    return builtins + extras + iphones
+
+
+def _raw_live_devices() -> List[Tuple[str, str]]:
+    """Return [(unique_id, description), ...] before SIFTA body filtering.
 
     Qt wins when it is already available because the visible eye widget uses
     that order. Background cv2 organs fall back to AVFoundation, whose
     uniqueID is stable across USB hot-plug.
     """
     qt = _qt_live_devices()
-    raw = qt if qt else (_avfoundation_live_devices() or _system_profiler_live_devices())
-    return _filter_body_cameras(raw)
+    return qt if qt else (_avfoundation_live_devices() or _system_profiler_live_devices())
+
+
+def _live_devices() -> List[Tuple[str, str]]:
+    """Return [(unique_id, description), ...] in current live body-eye order."""
+    return _filter_body_cameras(_raw_live_devices())
 
 
 def _index_for_unique_id(uid: str, devices: Optional[List[Tuple[str, str]]] = None) -> int:
@@ -858,6 +891,39 @@ def _preferred_live_index(devices: Optional[List[Tuple[str, str]]] = None) -> in
 def live_devices() -> List[Tuple[str, str]]:
     """Public: [(unique_id, description), ...] in current live device order."""
     return _live_devices()
+
+
+def live_devices_for_owner_selection() -> List[Tuple[str, str]]:
+    """Public: explicit `/sxN` order.
+
+    `/sx` and `/sx1` select the default built-in eye, `/sx2` selects the next
+    non-virtual physical camera, and `/sx3+` can deliberately select
+    iPhone/Continuity rows. This must not be used as an automatic fallback list.
+    """
+    return _filter_owner_selectable_cameras(_raw_live_devices())
+
+
+def index_for_owner_selection(
+    *,
+    name: Optional[str] = None,
+    unique_id: Optional[str] = None,
+) -> Optional[int]:
+    """Best camera index for an explicit `/sxN` selected device.
+
+    The `/sxN` slot list removes OBS/virtual rows, but cv2/AVFoundation indices
+    still count those rows. Resolve against raw device order before falling back
+    to the frozen name map.
+    """
+    wanted_uid = normalize_unique_id(unique_id)
+    wanted_name = _norm_name(str(name or ""))
+    for i, (uid, desc) in enumerate(_raw_live_devices()):
+        if wanted_uid and normalize_unique_id(uid) == wanted_uid:
+            return i
+        if wanted_name and _norm_name(str(desc or "")) == wanted_name:
+            return i
+    if name:
+        return index_for_name(name)
+    return None
 
 
 def preferred_live_index() -> int:

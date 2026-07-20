@@ -267,24 +267,43 @@ class EventClock:
         self._load_tail()
 
     def _load_tail(self) -> None:
-        """Load the last hash from disk for chain continuity."""
+        """Load the last hash from disk for chain continuity.
+
+        Robust against long JSON lines (the 2000-byte truncation bug that
+        caused GENESIS restarts on fat turns). Backs up progressively until
+        the chunk contains at least one complete parsable tail record.
+        """
         try:
-            if self._chain_path.exists():
-                with self._chain_path.open("r", encoding="utf-8") as f:
-                    f.seek(0, 2)
-                    size = f.tell()
-                    f.seek(max(0, size - 2000))
-                    for line in reversed(f.readlines()):
+            if not self._chain_path.exists():
+                return
+            with self._chain_path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return
+                buffer = 2000
+                max_buffer = 1 << 20  # 1 MiB safety
+                while buffer <= max_buffer:
+                    start = max(0, size - buffer)
+                    f.seek(start)
+                    chunk = f.read()
+                    lines = [ln.strip() for ln in chunk.splitlines() if ln.strip()]
+                    for ln in reversed(lines):
+                        if not (ln.startswith("{") and ln.endswith("}")):
+                            continue
                         try:
-                            row = json.loads(line.strip())
-                            if "this_hash" in row and "ts" in row:
+                            row = json.loads(ln)
+                            if isinstance(row, dict) and "this_hash" in row and "ts" in row:
                                 self._last_hash = row["this_hash"]
                                 ts = HLCTimestamp.from_dict(row["ts"])
                                 self.hlc._last_physical = ts.physical_pt
                                 self.hlc._logical = ts.logical
                                 return
                         except Exception:
-                            pass
+                            continue
+                    if start == 0:
+                        break
+                    buffer = min(buffer * 2, max_buffer + 1)
         except Exception:
             pass
 

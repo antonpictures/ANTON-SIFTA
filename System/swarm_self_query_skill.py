@@ -130,6 +130,16 @@ def looks_like_self_query(text: str) -> bool:
     except Exception:
         pass
     stripped = s.strip()
+    # r1561: "what do you want to say/tell me" is a relational/freeform
+    # question, not a body-needs query. The older bare "what do you want"
+    # trigger correctly catches "what do you want/need?", but was too broad
+    # for George's 2026-06-23 "What do you want o say to me Alice?"
+    if re.search(
+        r"\bwhat\s+do\s+you\s+want\s+(?:(?:to|o)\s+)?(?:say|tell)\b",
+        stripped,
+        re.IGNORECASE,
+    ):
+        return False
     if len(stripped) > 200:
         # A long turn that OPENS with a quoted block is a paste of someone
         # else's words ('alice, please: "George — ..."') — never a live

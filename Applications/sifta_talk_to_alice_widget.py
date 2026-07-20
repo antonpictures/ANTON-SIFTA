@@ -2248,6 +2248,57 @@ def _autonomic_prebrain_reflex(
                 return str(_ans["reply"]), str(_ans.get("tag") or "live_coding_body_awareness_r1612")
     except Exception:
         pass
+    # r1668: owner "you don't know the app / why empty OPEN / betting" — answer
+    # from live Predictions status, never amnesia about Stigmergic Predictions.
+    try:
+        from System.alice_prediction_market_awareness import (
+            is_prediction_market_query as _pm_q,
+            answer_prediction_market_query as _pm_ans,
+        )
+
+        # Force through: owner dirt is cortex inventing no-memory of the app
+        if _pm_q(clean) and (
+            any(
+                k in clean.lower()
+                for k in (
+                    "app",
+                    "empty",
+                    "open",
+                    "bet",
+                    "ticket",
+                    "kalshi",
+                    "prediction",
+                    "not betting",
+                    "making money",
+                    "win",
+                    "15m",
+                    "ticker",
+                )
+            )
+        ):
+            _reply_pm = _pm_ans(clean, state_dir=state_dir)
+            if _reply_pm:
+                return str(_reply_pm), "prediction_market_awareness_r1668"
+    except Exception:
+        pass
+    # r1619 George: DO NOT prebrain-steal possession / identity / subliminal
+    # questions. That was inverse of "teach the mind." Host teaching block is
+    # injected into cortex context; the mind answers for itself.
+    # r1621: optional plan-help (teaches format, does not code for her).
+    try:
+        from System.swarm_alice_self_plan_rounds import answer_plan_help as _plan_help
+
+        _ph = _plan_help(clean, state_dir=state_dir)
+        if _ph.get("reply") and (
+            "how to write" in clean.lower()
+            or "self_plan" in clean.lower()
+            or "write self_plan" in clean.lower()
+            or "write a self_plan" in clean.lower()
+            or re.search(r"how do i write.*plan", clean, re.I)
+        ):
+            return str(_ph["reply"]), str(_ph.get("tag") or "alice_self_plan_help_r1621")
+    except Exception:
+        pass
     # r-stgm-wallet-reflex-20260705: OBSERVED 18:37 — George asked 'How much
     # STGM your body has now?' and the cortex COMPOSED an answer: invented
     # expansion ('Stigmergic Trace Global Metric'), invented pulse amount
@@ -5892,6 +5943,15 @@ def _search_url_for_site(site: str, query: str) -> str:
     if "tiktok" in site_norm:
         return f"https://www.tiktok.com/search?q={q}"
     if "instagram" in site_norm:
+        # r1621-08: handle-like queries (kylin milan) → profile first, not only explore SPA
+        try:
+            from System.swarm_instagram_search_land import instagram_search_url as _ig_url
+
+            built = _ig_url(raw_q)
+            if built:
+                return built
+        except Exception:
+            pass
         return f"https://www.instagram.com/explore/search/keyword/?q={q}"
     if "ebay" in site_norm:
         return f"https://www.ebay.com/sch/i.html?_nkw={q}"
@@ -8581,6 +8641,60 @@ def _extract_browser_search_command(text: str) -> Dict[str, str]:
     return {}
 
 
+_GENERIC_WEB_SEARCH_TAIL_RE = re.compile(
+    r"^(?:and\s+|then\s+)?(?:pull|get|fetch|gather|bring\s+back|show|give\s+me)\s+"
+    r"(?:(?:some|the|more|current|relevant|useful)\s+)*"
+    r"(?:information|info|facts?|details?|results?|sources?|evidence)"
+    r"(?:\s+(?:on|about)\s+(?:it|this|that|them))?$"
+    r"|^(?:and\s+|then\s+)?find\s+out$",
+    re.IGNORECASE,
+)
+
+
+def _contextual_query_before_web_search(text: str) -> str:
+    """Recover the named subject clauses before a generic web-search tail.
+
+    Spoken requests often put the research question first and the effector last:
+    "When did Troy fall? What is the evidence? Can you search the web and pull
+    information?"  The final words describe the action, not the query.
+    """
+    clean = " ".join((text or "").strip().split())
+    command_re = re.compile(
+        r"\b(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?"
+        r"(?:search|look\s+up|find)\b\s+(?:on|in|across|with)?\s*(?:the\s+)?"
+        r"(?:internet|web|google|google\.com)\b",
+        re.IGNORECASE,
+    )
+    matches = list(command_re.finditer(clean))
+    if not matches:
+        return ""
+    prefix = clean[: matches[-1].start()].strip(" .?!,;:")
+    if not prefix:
+        return ""
+    clauses = [part.strip(" .?!,;:") for part in re.split(r"[.!?]+", prefix)]
+    clauses = [part for part in clauses if len(part.split()) >= 2]
+    if not clauses:
+        return ""
+    query = " ".join(" ".join(clauses[-2:]).strip("`'\"“”‘’ .?!,;:").split())
+    # The normal anaphora guard correctly blocks "search for that", but a
+    # grammatical "the claim that Trojan War happened" also contains `that`.
+    # Require a concrete content token in the recovered clauses instead.
+    stopwords = {
+        "about", "and", "are", "can", "claim", "current", "did", "do",
+        "does", "evidence", "explain", "find", "happen", "happened", "has",
+        "have", "information", "into", "is", "it", "know", "me", "more",
+        "please", "pull", "search", "tell", "that", "the", "them", "then",
+        "these", "they", "this", "those", "was", "web", "were", "what",
+        "when", "where", "which", "who", "why", "with", "would", "year",
+        "you", "your",
+    }
+    content_tokens = [
+        token for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]*", query.casefold())
+        if len(token) >= 3 and token not in stopwords
+    ]
+    return query[:120].strip() if content_tokens else ""
+
+
 def _extract_explicit_internet_search_command(text: str) -> Dict[str, str]:
     """Parse explicit web/internet search teaching turns into a Google search.
 
@@ -8624,15 +8738,22 @@ def _extract_explicit_internet_search_command(text: str) -> Dict[str, str]:
         if not m:
             continue
         query = _clean_contextual_search_query(str(m.group("query") or ""))
-        if not query or _search_query_is_contextual_or_junk(query):
+        recovered_context = False
+        if query and _GENERIC_WEB_SEARCH_TAIL_RE.fullmatch(query):
+            query = _contextual_query_before_web_search(clean)
+            recovered_context = bool(query)
+        if not query or (not recovered_context and _search_query_is_contextual_or_junk(query)):
             continue
-        return {
+        command = {
             "kind": "browser_url",
             "app_name": "Alice Browser",
             "url": _search_url_for_site("google", query),
             "search_site": "google",
             "query": query,
         }
+        if recovered_context:
+            command["contextual_search_source"] = "preceding_owner_questions"
+        return command
     return {}
 
 
@@ -9819,6 +9940,14 @@ def _owner_effector_requires_cortex_first(text: str) -> bool:
         return False
     if "[TOOL_CALL:" in clean or "```tool_call" in clean:
         return False
+    # r1621: self-code / SELF_CODE_CUT turns MUST think — never deterministic switch refuse.
+    try:
+        from System.swarm_alice_self_coding_hand import is_owner_self_code_execute_request as _sc_ex
+
+        if _sc_ex(clean):
+            return True
+    except Exception:
+        pass
     if _r681_prose_or_media_requires_cortex(clean):
         return True
     if _owner_explicitly_requests_cortex_first(clean):
@@ -11818,7 +11947,13 @@ def _is_browser_page_cortex_description_query(text: str) -> bool:
         re.search(
             r"\b(?:describe|explain|tell\s+me\s+about)\b.{0,80}"
             r"\b(?:instagram|tiktok|youtube|browser|web\s*page|website|site|page|profile|"
+            r"ebay|listing|auction|item|merchandise|merch|"
             r"image|photo|picture|pic|outfit|clothing|clothes|dress|person|woman|man|model|body)\b",
+            clean,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r"\b(?:two\s+ebay|ebay\s+listings?\s+opened|what\s+can\s+you\s+do\s+to\s+describe)\b",
             clean,
             re.IGNORECASE,
         )
@@ -12554,7 +12689,7 @@ def _browser_page_subject_from_state(state: Mapping[str, Any]) -> str:
             pass
 
     # Prefer page-near proper names that are all-caps in the title/heading/file
-    # convention used by many model/photo index pages, e.g. "ALVA INGA (6).jpg".
+    # convention used by many model/photo index pages, e.g. "FIRST LAST (6).jpg".
     for raw in candidates:
         cleaned = _clean_browser_subject_candidate(raw)
         if not cleaned:
@@ -12596,6 +12731,20 @@ def _summarize_browser_page_state_for_voice(state: Mapping[str, Any]) -> str:
     """Short spoken/printed reply from page-state without dumping the raw DOM receipt."""
     if not isinstance(state, Mapping) or not state:
         return "I do not have a fresh readable page-state receipt yet."
+
+    # Prefer rich grounded line (caption/alts) when present — r1621-01 glass fix.
+    try:
+        from System.swarm_browser_mouth_false_denial import (
+            grounded_post_description_from_state as _grounded_post,
+        )
+
+        rich = _grounded_post(state)
+        if rich and (
+            (state.get("image_alts") or state.get("comments") or state.get("url"))
+        ):
+            return rich
+    except Exception:
+        pass
 
     title = " ".join(str(state.get("title") or state.get("url") or "the current page").split())
     url = str(state.get("url") or "").strip()
@@ -13531,9 +13680,26 @@ def _adaptive_first_token_patience_s(
     floor_s: float = 12.0,
     default_s: float | None = None,
     max_s: float = 300.0,
+    has_image: bool = False,
 ) -> float:
     """Receipt-learned first-token patience for the active model lane."""
     default = float(default_s if default_s is not None else floor_s)
+    # r1621-04: image + stall-prone local mind → fail-fast cap (not 90s hang).
+    try:
+        from System.swarm_multimodal_timeout_route import (
+            first_token_patience_for_multimodal as _mm_pat,
+        )
+
+        if has_image or bool(getattr(
+            # pending image path may live on widget; callers can pass has_image
+            None, "_pending_image_path", None
+        )):
+            mm = _mm_pat(model, has_image=True, base_s=default)
+            if mm.get("fail_fast"):
+                default = min(default, float(mm.get("patience_s") or 18.0))
+                max_s = min(float(max_s), float(mm.get("patience_s") or 18.0) + 6.0)
+    except Exception:
+        pass
     try:
         from System.swarm_stigmergic_timeout_policy import first_token_patience_for_model
 
@@ -13557,6 +13723,31 @@ def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "
     receipt with no action executed.
     """
     base = _brain_no_token_watchdog_s(model=model)
+    # r1621-04 multimodal: describe/screenshot language + stall-prone mind
+    try:
+        from System.swarm_multimodal_timeout_route import (
+            first_token_patience_for_multimodal as _mm_pat,
+            is_risky_multimodal_text_mind as _mm_risk,
+        )
+
+        low = str(owner_text or "").lower()
+        looks_visual = any(
+            k in low
+            for k in (
+                "screenshot",
+                "describe this",
+                "describe the photo",
+                "describe the image",
+                "what do you see",
+                "look at",
+                "attached",
+            )
+        )
+        if looks_visual and _mm_risk(model):
+            mm = _mm_pat(model, has_image=True, base_s=min(base, 90.0))
+            return max(8.0, min(base, float(mm.get("patience_s") or 18.0)))
+    except Exception:
+        pass
     try:
         if _is_fast_browser_action_cortex_turn(owner_text):
             raw_fast = os.environ.get("SIFTA_FAST_BROWSER_ACTION_NO_TOKEN_TIMEOUT_S", "2")
@@ -14991,7 +15182,18 @@ def _wall_clock_grounding_block() -> str:
         f"- If {_owner_label()} asks for the current time or date, answer directly from current_local_time.\n"
         "- Do not say you do not know the exact time while this block is present."
     )
-    return block + (("\n\n" + now_block) if now_block else "")
+    # r1614: humans' top ground questions — time / day / place — always situate.
+    triad_block = ""
+    try:
+        from System.swarm_robot_grounding_triad import triad_prompt_block as _triad_block
+
+        triad_block = str(_triad_block(reading=reading) or "").strip()
+    except Exception:
+        triad_block = ""
+    out = block + (("\n\n" + now_block) if now_block else "")
+    if triad_block:
+        out = out + "\n\n" + triad_block
+    return out
 
 
 def _current_turn_datetime_context_for_cortex(
@@ -15467,7 +15669,15 @@ _INTERNAL_PROCESSING_THEATER_RE = re.compile(
     r"\bdo\s+you\s+have\s+a\s+specific\s+query,\s+or\s+shall\s+i\s+await\s+further\s+instruction\?|"
     r"\bplease\s+clarify\s+what\s+you\s+would\s+like\s+me\s+to\s+do\s+with\s+this\s+media\s+context\b|"
     r"\bfor\s+example,\s+are\s+you\s+asking\s+me\s+to:\s*1\.|"
-    r"\bthat\s+is\s+a\s+deeply\s+philosophical\b"
+    r"\bthat\s+is\s+a\s+deeply\s+philosophical\b|"
+    # r1616 live: Trojan War turn opened with fake protocol headers.
+    r"\(\s*data\s+acquisition\s+protocol\s*:\s*engaged\s*\)|"
+    r"\(\s*query\s+vector\s*:|"
+    r"\(\s*source\s+parsing\s+priority\s*:|"
+    r"\bdata\s+acquisition\s+protocol\b|"
+    r"\bquery\s+vector\s*:|"
+    r"\bsemantic\s+density\s+(?:high|low|medium)\b|"
+    r"\bfoundational\s+narrative\s+vector\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -16160,17 +16370,46 @@ def _current_time_date_reflex_reply_for_alice(
     when YouTube or room audio is active. Clock/date/time are the owner's
     allowed deterministic facts: answer from the signed hardware oracle instead
     of asking a cortex to infer the current time from stale conversation text.
+
+    r1616: when the owner also asks where / dual history clocks (Trojan War vs
+    when we spoke), answer from the grounding triad + concept orientation —
+    not a partial day-only line and not protocol theater.
     """
     time_asked = _is_current_time_query(text)
     date_asked = _is_current_date_query(text)
-    if not time_asked and not date_asked:
+    place_asked = False
+    dual_asked = False
+    try:
+        from System.swarm_robot_grounding_triad import (
+            owner_asks_dual_clock as _asks_dual,
+            owner_asks_place as _asks_place,
+            spoken_grounding_answer as _spoken_triad,
+        )
+
+        place_asked = bool(_asks_place(text or ""))
+        dual_asked = bool(_asks_dual(text or ""))
+    except Exception:
+        _spoken_triad = None  # type: ignore
+    if not time_asked and not date_asked and not place_asked and not dual_asked:
         return "", ""
     oracle_reading = reading or _current_time_reading_for_alice()
+    if place_asked or dual_asked:
+        if _spoken_triad is not None:
+            try:
+                full = str(
+                    _spoken_triad(text or "", reading=oracle_reading) or ""
+                ).strip()
+            except Exception:
+                full = ""
+            if full:
+                return full, "hardware_grounding_triad_reflex_r1616"
     if time_asked and date_asked:
         return _current_date_time_reply_for_alice(oracle_reading), "hardware_date_time_oracle_reflex"
     if date_asked:
         return _current_date_reply_for_alice(oracle_reading), "hardware_date_oracle_reflex"
-    return _current_time_reply_for_alice(oracle_reading), "hardware_time_oracle_reflex"
+    if time_asked:
+        return _current_time_reply_for_alice(oracle_reading), "hardware_time_oracle_reflex"
+    return "", ""
 
 
 def _current_time_context_for_llm(reading: Dict[str, Any], reply: str) -> str:
@@ -18117,6 +18356,15 @@ def _compact_tool_contract_for_alice_prompt(*, user_text: str = "") -> str:
             owner_hint += "\n" + teacher_self_code_override_block()
     except Exception:
         pass
+    # r1621: Alice self-plan rounds — teach plan format; Ornith plan / 35B code.
+    try:
+        from System.swarm_alice_self_plan_rounds import teaching_block_for_cortex as _plan_teach
+
+        _pt = _plan_teach(user_text or "", state_dir=_state_root())
+        if _pt:
+            owner_hint += "\n" + _pt
+    except Exception:
+        pass
     if (
         "browser_close_tab" in available
         and re.search(
@@ -18156,7 +18404,11 @@ def _compact_tool_contract_for_alice_prompt(*, user_text: str = "") -> str:
 
 
 def _current_system_prompt(
-    *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
+    *,
+    user_active: bool = False,
+    grounding_focus: str = None,
+    user_text: str = "",
+    stt_confidence: float = 1.0,
 ) -> str:
     parts = []
     try:
@@ -18365,6 +18617,25 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    # r1657 / r1668: she MUST know Stigmergic Predictions / Kalshi dual book.
+    # Owner dirt: Talk claimed no memory of "the app" while paper loop was live.
+    try:
+        from System.alice_prediction_market_awareness import (
+            prompt_block as _pm_prompt_block,
+            is_prediction_market_query as _pm_is_q,
+        )
+
+        _pm_force = _pm_is_q(user_text or "")
+        _pm_block = _pm_prompt_block(force_refresh=_pm_force)
+        if _pm_block:
+            # Betting turns: put app status first so cortex cannot invent amnesia
+            if _pm_force:
+                parts.insert(0, _pm_block)
+            else:
+                parts.append(_pm_block)
+    except Exception:
+        pass
+
     # r752: compact hands contract for every chat cortex. The full capability
     # field is too large for the live prompt; this small block is enough for a
     # text cortex to emit a parseable tool call, then the Python router performs
@@ -18516,6 +18787,226 @@ def _current_system_prompt(
             _cab = _concept_anchor_block(user_text or "")
             if _cab:
                 parts.append(_cab)
+        except Exception:
+            pass
+        # r1614 — history-subject orientation + shifts; STT conf as uncertainty evidence.
+        try:
+            from System.swarm_robot_grounding_triad import (
+                concept_orientation_prompt_block as _concept_orientation_block,
+            )
+
+            _orientation = _concept_orientation_block(
+                user_text or "",
+                stt_confidence=float(stt_confidence if stt_confidence is not None else 1.0),
+                state_dir=_state_root(),
+                write=True,
+            )
+            if _orientation:
+                parts.append(_orientation)
+        except Exception:
+            pass
+        # r1619 — HOST TEACHING for the mind (non-censoring). Weights name + SIFTA
+        # path + ledgers = memory. No identity gag; cortex may say "I am Ornith"
+        # as provenance while learning it rides the Alice/SIFTA organism.
+        try:
+            from System.swarm_subliminal_cortex_fingerprint import (
+                teaching_host_block as _host_teach,
+            )
+
+            _ht = _host_teach(state_dir=_state_root())
+            if _ht:
+                parts.append(_ht)
+        except Exception:
+            pass
+        # r1621 — free self-plan/code campaign always visible when relevant.
+        try:
+            from System.swarm_alice_self_plan_rounds import teaching_block_for_cortex as _r1621_plan
+
+            _r1621 = _r1621_plan(user_text or "", state_dir=_state_root())
+            if _r1621:
+                parts.append(_r1621)
+        except Exception:
+            pass
+        # r1621-01 browser mouth truth: force live URL/title into describe turns.
+        try:
+            _ut_br = (user_text or "").lower()
+            if any(
+                k in _ut_br
+                for k in (
+                    "describe the ebay",
+                    "describe the page",
+                    "describe the item",
+                    "describe this page",
+                    "describe the instagram",
+                    "describe the post",
+                    "the one on screen",
+                    "what's in the photo",
+                    "whats in the photo",
+                    "what is open",
+                    "what page",
+                    "alice browser",
+                    "ebay listing",
+                    "two ebay",
+                    "instagram",
+                    "what's on screen",
+                    "whats on screen",
+                )
+            ) or _is_browser_page_cortex_description_query(user_text or ""):
+                _st = _latest_browser_page_state(max_age_s=300.0)
+                if _st:
+                    _url = str(_st.get("url") or _st.get("current_url") or "").strip()
+                    _title = str(_st.get("title") or _st.get("page_title") or "").strip()
+                    _alts = []
+                    for _a in (_st.get("image_alts") or [])[:4]:
+                        _as = " ".join(str(_a).split())
+                        if (
+                            _as
+                            and not _as.startswith("http")
+                            and "profile picture" not in _as.lower()
+                        ):
+                            _alts.append(_as[:200])
+                    _comments = []
+                    for _c in (_st.get("comments") or [])[:2]:
+                        if isinstance(_c, dict) and _c.get("text"):
+                            _comments.append(
+                                f"{_c.get('author') or '?'}: {str(_c.get('text'))[:100]}"
+                            )
+                    if _url or _title or _alts:
+                        _lines = [
+                            "LIVE ALICE BROWSER RECEIPT (r1621-01 — do not deny the limb):",
+                            f"- url={_url or 'unknown'}",
+                            f"- title={_title or 'unknown'}",
+                        ]
+                        if _alts:
+                            _lines.append("- caption/image_alt evidence: " + " || ".join(_alts[:2]))
+                        if _comments:
+                            _lines.append("- comments: " + " | ".join(_comments))
+                        _lines.append(
+                            "FORBIDDEN phrases when url is non-empty: "
+                            "'I don't have direct access to your screen', "
+                            "'I can't see the Instagram post', 'paste a link', "
+                            "'I don't have a browser'. Alice Browser IS this organism's limb. "
+                            "Describe from this receipt + page-context block."
+                        )
+                        parts.append("\n".join(_lines))
+        except Exception:
+            pass
+        # r1621-02/10 — describe yourself / body from silicon receipts (not chat-window cosplay).
+        try:
+            from System.swarm_alice_body_receipt_answer import (
+                body_receipt_teaching_block as _body_receipt_block,
+            )
+
+            _brb = _body_receipt_block(user_text or "", state_dir=_state_root())
+            if _brb:
+                parts.append(_brb)
+        except Exception:
+            pass
+        # r1621-03 — numbered 1. 2. 3. must be answered in order.
+        try:
+            from System.swarm_numbered_owner_questions import (
+                numbered_questions_teaching_block as _num_q_block,
+            )
+
+            _nqb = _num_q_block(user_text or "")
+            if _nqb:
+                parts.append(_nqb)
+        except Exception:
+            pass
+        # r1621-05 — body code = real System/*.py snippet, not textbook ACO.
+        try:
+            from System.swarm_body_code_example import (
+                body_code_teaching_block as _body_code_block,
+            )
+
+            _bcb = _body_code_block(user_text or "")
+            if _bcb:
+                parts.append(_bcb)
+        except Exception:
+            pass
+        # Free self-code path — force SELF_CODE_CUT emission + listed files.
+        try:
+            from System.swarm_free_self_code_path import (
+                free_self_code_teaching_block as _free_sc,
+            )
+
+            _fsc = _free_sc(user_text or "", state_dir=str(_state_root()))
+            if _fsc:
+                parts.append(_fsc)
+        except Exception:
+            pass
+        # Browser time proprioception — loading vs settled (George 2026-07-11)
+        try:
+            _ut_ts = (user_text or "").lower()
+            if any(
+                k in _ut_ts
+                for k in (
+                    "browser",
+                    "search",
+                    "open ",
+                    "duckduckgo",
+                    "what do you see",
+                    "what is in",
+                    "on screen",
+                    "describe the",
+                    "instagram",
+                    "page",
+                    "land",
+                )
+            ) or _is_browser_page_cortex_description_query(user_text or ""):
+                from System.swarm_browser_time_sense import (
+                    time_sense_prompt_block as _bts_block,
+                )
+
+                _bts = _bts_block(state_dir=_state_root())
+                if _bts:
+                    parts.append(_bts)
+        except Exception:
+            pass
+        # r1622-02 memory recall (SIE or offline Jaccard)
+        try:
+            from System.swarm_sie_memory_recall import recall_prompt_block as _recall_blk
+
+            _rb = _recall_blk(user_text or "", state_dir=_state_root())
+            if _rb:
+                parts.append(_rb)
+        except Exception:
+            pass
+        # r1622-03 entity feeder (proposals only)
+        try:
+            from System.swarm_sie_entity_feeder import (
+                deposit_proposals as _ent_dep,
+                feeder_prompt_block as _ent_blk,
+            )
+
+            _eb = _ent_blk(user_text or "")
+            if _eb:
+                parts.append(_eb)
+                try:
+                    _ent_dep(user_text or "", state_dir=_state_root(), write=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # r1623-04 ledger mind continuity (not fake GPU KV)
+        try:
+            from System.swarm_kv_cache_continuity import continuity_prompt_block as _kv_blk
+
+            low_u = (user_text or "").lower()
+            if any(
+                k in low_u
+                for k in (
+                    "after restart",
+                    "what do you remember",
+                    "continuity",
+                    "who are you",
+                    "describe yourself",
+                    "what are you",
+                )
+            ):
+                _kv = _kv_blk(state_dir=_state_root())
+                if _kv:
+                    parts.append(_kv)
         except Exception:
             pass
         try:
@@ -19004,7 +19495,7 @@ def _current_system_prompt(
     # Alice's body (§7.6); the MDI launcher contains her installed apps;
     # the manifest is the stigmergic list of what she can open.
     parts.append(
-        "I AM AN OPERATING SYSTEM (SIFTA BeeSon v8.0). My body is the SiftaDesktop "
+        "I AM AN OPERATING SYSTEM (SIFTA OS v9.0 eXistenZ). My body is the SiftaDesktop "
         "QMainWindow process running on this M5. The Chat tab is my resident speech "
         "panel; the Swarm App Store tab is the launchpad for my installed apps. The "
         "stigmergic list of those apps is .sifta_state-readable via the manifest at "
@@ -19734,8 +20225,17 @@ def _current_system_prompt(
     # contract), so describe-critical page context (added later as layering) stays whole.
     _final_parts = list(filter(None, parts))
     try:
-        from System.swarm_sysprompt_budget import clamp_for_env
-        _final_parts, _budget_report = clamp_for_env(_final_parts)
+        # r1623-01: Headroom-style local diet when mind is Ollama (cut prefill stalls).
+        try:
+            from System.swarm_headroom_context_diet import diet_prompt_parts as _headroom_diet
+            from System.sifta_inference_defaults import get_default_ollama_model as _get_mind
+
+            _final_parts, _budget_report = _headroom_diet(
+                _final_parts, model_id=str(_get_mind() or "")
+            )
+        except Exception:
+            from System.swarm_sysprompt_budget import clamp_for_env
+            _final_parts, _budget_report = clamp_for_env(_final_parts)
         if _budget_report.get("applied"):
             print(f"[sysprompt budget] base {_budget_report['orig_chars']}→"
                   f"{_budget_report['final_chars']} chars, "
@@ -19863,6 +20363,67 @@ _TTS_RECEIPT_PREAMBLE_RE = re.compile(
     re.IGNORECASE,
 )
 _TTS_HUMAN_SPEECH_SENTENCES_DEFAULT = 2
+
+
+# Romanian TTS routing (r-multilingual). George types Romanian in plain ASCII
+# (no diacritics: "Vorbeste Romaneste cu mine"), so detection must key off
+# WORDS, not just diacritics.
+_RO_DIACRITICS = re.compile(r"[ăîâșțĂÎÂȘȚşţ]")
+
+# Decisive tokens: any one of these (whole word) marks the text Romanian even
+# with zero diacritics. Curated to avoid English look-alikes.
+_RO_DECISIVE = frozenset("""
+multumesc multam multumim merci salut buna vorbeste vorbesti vorbim vorbi
+romaneste romana romaneasca foarte sunt esti este suntem sunteti bravo
+pentru dorinta dorim doresti doreste vrem vreau vrei facem faci faceti
+avem aveti despre decat catre spune spunemi spuneti absolut adevarat
+problema problemele nimic poate putem raspuns raspunde raspunsul cuvinte
+cuvant numarul exemplul deranjeaza serviciu servicii profitam profit
+trebuie intrebare intrebarea intreb alegi alege scriem scrie scrii
+gestionarea introducerea asteptare clientii totul retine acesta aceasta
+aceste bineinteles multumim inteleg intelegi nevoie asadar
+""".split())
+
+# Weak function words — counted only for density. English collisions
+# (care, mine, mai, la, un, o, so, am, are) are DELIBERATELY excluded so an
+# English sentence never trips the Romanian voice.
+_RO_STOP = frozenset("""
+sau dar acum aici doar asta tine hai cel cea cele intre dintre imi iti
+place unde cand cine cum bine ceva mult mereu deci pai atunci cu ca si sa
+ne de nu ii le ei ele noi voi vom va vor mi ti se te ma isi
+""".split())
+
+_RO_VOICE_NAME = "Ioana"
+
+
+def _detect_romanian(text: str) -> bool:
+    """True if `text` looks Romanian — diacritics OR Romanian vocabulary.
+
+    Works on plain ASCII Romanian (no diacritics). Any single decisive word
+    is enough; otherwise a density of Romanian function words is required, so
+    English text stays on the English voice.
+    """
+    if not text:
+        return False
+    if _RO_DIACRITICS.search(text):
+        return True
+    toks = re.findall(r"[a-z]+", text.lower())
+    if not toks:
+        return False
+    if any(t in _RO_DECISIVE for t in toks):
+        return True
+    n = len(toks)
+    stop = sum(1 for t in toks if t in _RO_STOP)
+    return n >= 4 and stop >= max(3, n * 0.4)
+
+
+def _tts_voice_for_text(text: str, default_voice: str) -> str:
+    """Return the macOS voice name appropriate for the text's language."""
+    if _detect_romanian(text):
+        available = _available_macos_voice_names()
+        if not available or _RO_VOICE_NAME in available:
+            return _RO_VOICE_NAME
+    return default_voice
 
 
 def _clean_tts_markdown(text: str) -> str:
@@ -22946,6 +23507,7 @@ class _BrainWorker(QThread):
                  # expensive 40-builder base (_current_system_prompt) off-thread.
                  layering_tail: str = "",
                  fast_action_context_only: bool = False,
+                 stt_confidence: float = 1.0,
                  ) -> None:
         super().__init__(parent)
         primary_model = _normalize_talk_worker_primary_model(model)
@@ -22968,6 +23530,11 @@ class _BrainWorker(QThread):
         self._user_text = user_text
         self._raw_history_for_assembly = raw_history_for_assembly
         self._layering_tail = layering_tail or ""
+        # r1614: STT confidence is evidence for concept orientation, never a command gate.
+        try:
+            self._stt_confidence = float(stt_confidence if stt_confidence is not None else 1.0)
+        except Exception:
+            self._stt_confidence = 1.0
         # r682 (George 2026-06-07 02:04, "her answer got cut off - no extend
         # button?"): when the cloud cortex stops at MAX_TOKENS/SAFETY the
         # stream now reports it; the widget reads this attr in _on_brain_done
@@ -23653,7 +24220,11 @@ class _BrainWorker(QThread):
                 if self._fast_action_context_only:
                     sysprompt = _fast_browser_action_system_prompt(self._layering_tail)
                 else:
-                    sysprompt = _current_system_prompt(user_active=_ua, user_text=self._user_text)
+                    sysprompt = _current_system_prompt(
+                        user_active=_ua,
+                        user_text=self._user_text,
+                        stt_confidence=float(getattr(self, "_stt_confidence", 1.0) or 1.0),
+                    )
                     if self._layering_tail:
                         # r205: prepend the off-thread base to the GUI-built cheap layering.
                         sysprompt = sysprompt + "\n\n" + self._layering_tail
@@ -23661,8 +24232,18 @@ class _BrainWorker(QThread):
                 # so telemetry/page context bloat after the base clamp doesn't explode the final size.
                 # Protects identity blocks per the budget governor. This is item #2.
                 try:
-                    from System.swarm_sysprompt_budget import clamp_for_env
-                    clamped, rpt = clamp_for_env([sysprompt])
+                    try:
+                        from System.swarm_headroom_context_diet import diet_prompt_parts as _hd
+                        from System.sifta_inference_defaults import (
+                            get_default_ollama_model as _gm,
+                        )
+
+                        _parts, rpt = _hd([sysprompt], model_id=str(_gm() or ""))
+                        clamped = ["\n\n".join(_parts)]
+                    except Exception:
+                        from System.swarm_sysprompt_budget import clamp_for_env
+
+                        clamped, rpt = clamp_for_env([sysprompt])
                     if rpt.get("applied"):
                         sysprompt = clamped[0]
                         self.thinkingReceived.emit(
@@ -24203,13 +24784,14 @@ class _TTSWorker(QThread):
         if not speak_text:
             self.spoken.emit(False)
             return
+        voice = _tts_voice_for_text(speak_text, self._voice)
         try:
             BROCA_SPEAKING.set()
             try:
                 if _VOCAL_CORDS_AVAILABLE and _get_voice_backend is not None:
                     backend = _get_voice_backend()
                     base = (
-                        _VoiceParams(voice=self._voice or None)
+                        _VoiceParams(voice=voice or None)
                         if _VoiceParams else None
                     )
                     if _MODULATOR_AVAILABLE and _modulate_voice is not None:
@@ -24263,8 +24845,8 @@ class _TTSWorker(QThread):
                     self.failed.emit("`say` not on PATH (non-macOS host).")
                     return
                 cmd = ["say"]
-                if self._voice:
-                    cmd.extend(["-v", self._voice])
+                if voice:
+                    cmd.extend(["-v", voice])
                 cmd.extend(["--", speak_text])
                 with subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                                       stderr=subprocess.PIPE) as proc:
@@ -26642,6 +27224,40 @@ def _image_turn_vlm_redirect_for_talk(
     VLM arm is available.
     """
     model = str(selected_model or active_model or "")
+    # r1621-04: multimodal timeout route (fail-fast / VLM) before raw redirect.
+    try:
+        from System.swarm_multimodal_timeout_route import route_multimodal_turn
+
+        route = route_multimodal_turn(
+            active_model or selected_model,
+            has_image=bool(has_image),
+            available_vlms=available_vlms,
+        )
+        if route.get("action") == "redirect_vlm" and route.get("to"):
+            model = str(route.get("to") or model)
+            return {
+                "model": model,
+                "redirected": True,
+                "to": model,
+                "reason": str(route.get("reason") or ""),
+                "truth_label": route.get("truth_label") or "MULTIMODAL_TIMEOUT_ROUTE_V1",
+                "patience_s": (route.get("patience") or {}).get("patience_s"),
+                "fail_fast": bool((route.get("patience") or {}).get("fail_fast")),
+                "owner_line": str(route.get("owner_line") or ""),
+            }
+        if route.get("action") == "fail_fast_text_only":
+            return {
+                "model": model,
+                "redirected": False,
+                "to": "",
+                "reason": str(route.get("reason") or ""),
+                "truth_label": route.get("truth_label") or "MULTIMODAL_TIMEOUT_ROUTE_V1",
+                "patience_s": (route.get("patience") or {}).get("patience_s"),
+                "fail_fast": True,
+                "owner_line": str(route.get("owner_line") or ""),
+            }
+    except Exception:
+        pass
     try:
         from System.swarm_body_multimodal_policy import image_turn_vlm_redirect
 
@@ -33543,6 +34159,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 else:
                     new_tab_drop.unlink(missing_ok=True)
                 drop.write_text(url, encoding="utf-8")
+                # Browser time sense: ordered, not finished until load_finished
+                try:
+                    from System.swarm_browser_time_sense import (
+                        note_navigation_ordered as _bts_order,
+                    )
+
+                    _bts_order(
+                        str(url),
+                        owner_text=str(
+                            (command or {}).get("owner_text")
+                            or (command or {}).get("query")
+                            or ""
+                        ),
+                        source="talk_browser_url_drop",
+                        state_dir=_state_root(),
+                    )
+                except Exception:
+                    pass
                 if reflex_loop is not None:
                     reflex_loop.act(reflex_target)
                 # r991: block r503 OAuth→Safari steal while this owner drop loads in the limb.
@@ -33702,6 +34336,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                 _browser_url_matches(target_url, cur)
                                 or _browser_url_matches(target_url, state_url)
                             )
+                            # Browser time sense: re-judge with load phase (don't false-fail while loading)
+                            _bts_judge = None
+                            try:
+                                from System.swarm_browser_time_sense import (
+                                    judge_land_claim as _bts_judge_fn,
+                                    urls_roughly_match as _bts_url_match,
+                                )
+
+                                _bts_judge = _bts_judge_fn(
+                                    target_url,
+                                    observed_url or "",
+                                    state_dir=_state_root(),
+                                )
+                                if _bts_judge.get("action") == "landed" or (
+                                    observed_url
+                                    and _bts_url_match(target_url, observed_url)
+                                ):
+                                    target_landed = True
+                                elif _bts_judge.get("action") == "wait_still_loading":
+                                    # Honest proprioception — not a red land-fail
+                                    self._append_system_line(
+                                        str(
+                                            _bts_judge.get("system_line")
+                                            or "My Alice Browser is still loading; not claiming land or fail yet."
+                                        )
+                                    )
+                                    return
+                            except Exception:
+                                _bts_judge = None
                             if blank:
                                 r2 = _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -33731,37 +34394,97 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     except Exception:
                                         pass
                             elif not target_landed:
-                                r2 = _write_app_command_receipt(
-                                    action="open_browser_url_verify",
-                                    ok=False,
-                                    app_name="Alice Browser",
-                                    url=target_url,
-                                    note=(
-                                        "target URL did not land after URL drop; "
-                                        f"observed_url={observed_url or 'unknown'}"
-                                    ),
-                                )
-                                self._append_system_line(
-                                    f"My browser did not land on {target_url}; it is still at "
-                                    f"{observed_url or 'an unknown page'}. Retrying once. Receipt: {r2}",
-                                    error=True,
-                                )
-                                _emit_general_browse_receipt(
-                                    {
-                                        "url": observed_url or target_url,
-                                        "title": str((state or {}).get("title") or ""),
-                                        "text": "target_url_mismatch_after_drop",
-                                        "elements": [],
-                                    }
-                                )
-                                nav = getattr(w, "_navigate", None) if w is not None else None
-                                if callable(nav):
-                                    nav(target_url)
-                                if reflex_loop is not None:
-                                    try:
-                                        reflex_loop.internal_block(target_url)
-                                    except Exception:
-                                        pass
+                                # r1621-08: Instagram SPA — home is fail; profile/explore may still ok
+                                _ig_soft_ok = False
+                                _retry_url = target_url
+                                try:
+                                    if "instagram.com" in str(target_url or "").lower():
+                                        from System.swarm_instagram_search_land import (
+                                            observed_matches_instagram_intent as _ig_land,
+                                            build_instagram_targets as _ig_tg,
+                                        )
+
+                                        _ig = _ig_land(
+                                            observed_url or "",
+                                            query="",
+                                            target_url=target_url,
+                                        )
+                                        # If target was built for a handle, re-check with path handle
+                                        if not _ig.get("ok"):
+                                            from urllib.parse import unquote as _unq
+
+                                            _q = ""
+                                            if "q=" in str(target_url):
+                                                _q = _unq(
+                                                    str(target_url).split("q=", 1)[-1].split("&", 1)[0]
+                                                )
+                                            elif "/instagram.com/" in str(target_url).replace(
+                                                "https://www.", "https://"
+                                            ):
+                                                _parts = [
+                                                    p
+                                                    for p in str(target_url).split("/")
+                                                    if p and p not in {"https:", "http:", "www.instagram.com", "instagram.com"}
+                                                ]
+                                                _q = _parts[0] if _parts else ""
+                                            _ig = _ig_land(
+                                                observed_url or "",
+                                                query=_q,
+                                                target_url=target_url,
+                                            )
+                                        if _ig.get("ok"):
+                                            _ig_soft_ok = True
+                                            target_landed = True
+                                        else:
+                                            _retry_url = str(
+                                                _ig.get("retry_with")
+                                                or (_ig_tg(_q).get("primary_url") if _q else target_url)
+                                                or target_url
+                                            )
+                                except Exception:
+                                    pass
+                                if not _ig_soft_ok:
+                                    # Prefer time-sense language over stale "still at X" false fail
+                                    _fail_line = ""
+                                    if _bts_judge and _bts_judge.get("speak_fail"):
+                                        _fail_line = str(_bts_judge.get("system_line") or "")
+                                    r2 = _write_app_command_receipt(
+                                        action="open_browser_url_verify",
+                                        ok=False,
+                                        app_name="Alice Browser",
+                                        url=target_url,
+                                        note=(
+                                            "target URL did not land after URL drop; "
+                                            f"observed_url={observed_url or 'unknown'}; "
+                                            f"bts={(_bts_judge or {}).get('reason') or 'n/a'}"
+                                        ),
+                                    )
+                                    self._append_system_line(
+                                        _fail_line
+                                        or (
+                                            f"My browser did not settle on {target_url}; live URL is "
+                                            f"{observed_url or 'unknown'} "
+                                            f"(phase={(_bts_judge or {}).get('feel', {}).get('phase', '?')}). "
+                                            f"Retrying once. Receipt: {r2}"
+                                        ),
+                                        error=True,
+                                    )
+                                    _emit_general_browse_receipt(
+                                        {
+                                            "url": observed_url or target_url,
+                                            "title": str((state or {}).get("title") or ""),
+                                            "text": "target_url_mismatch_after_drop",
+                                            "elements": [],
+                                        }
+                                    )
+                                    nav = getattr(w, "_navigate", None) if w is not None else None
+                                    if callable(nav):
+                                        nav(_retry_url or target_url)
+                                    if reflex_loop is not None:
+                                        try:
+                                            reflex_loop.internal_block(_retry_url or target_url)
+                                        except Exception:
+                                            pass
                             elif load_error:
                                 r2 = _write_app_command_receipt(
                                     action="open_browser_url_verify",
@@ -35564,7 +36287,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "If the VISUAL EVIDENCE below is present, that is the real on-screen photo — describe "
                     "it warmly and naturally. If ANCHORED VISUAL EVIDENCE is present, use it as a prior "
                     "same-URL visual receipt only, and be honest that the fresh selected-eye scan failed "
-                    "if that distinction matters. If both are absent, do not invent pixel details. "
+                    "if that distinction matters. If both are absent, do not invent pixel details — but "
+                    "STILL use URL, caption/image_alt, headings, and comments from the page-state below. "
+                    "FORBIDDEN: 'I don't have direct access to your screen', 'I can't see the Instagram "
+                    "post', 'paste a link' — Alice Browser is open when LIVE BROWSER URL is non-empty. "
                     "If a VISION ROUTING NOTE is present, use it only to explain the missing pixels briefly.\n\n"
                     f"Owner request: {owner_text}\n\n"
                     + (
@@ -36529,6 +37255,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
 
             spoken = str(sw["target"]).strip()
+            # r1621: never treat self-code syntax as a cortex name (George live refuse).
+            if re.search(r"SELF_CODE_|SELF_READ|\bR\d{3,4}\b", spoken, re.I) or re.search(
+                r"SELF_CODE_|SELF_READ|code\s+R\d{3,4}|listed\s+files",
+                owner_text or "",
+                re.I,
+            ):
+                return ""
             available = list(_avail_cortexes() or [])
             # r639 (George 08:55 "PLS CHANGE YOUR CORTEX TO HERETIC" failed TWICE): this lane
             # only offered CLOUD arms, so the local heretic/unified cortexes were unswitchable
@@ -36537,10 +37270,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
             try:
                 from System.sifta_inference_defaults import (
                     list_available_cortexes_with_canonical_fallback as _all_cortexes,
+                    list_live_local_ollama_fallbacks as _ollama_live,
                 )
-                for _t in _all_cortexes() or []:
+                for _t in (_all_cortexes() or []) + (_ollama_live(limit=32) or []):
                     if _t and _t not in available:
                         available.append(_t)
+            except Exception:
+                try:
+                    from System.sifta_inference_defaults import (
+                        list_available_cortexes_with_canonical_fallback as _all_cortexes,
+                    )
+                    for _t in _all_cortexes() or []:
+                        if _t and _t not in available:
+                            available.append(_t)
+                except Exception:
+                    pass
+            # Always probe live ollama tags so ornith:35b-q4_K_M is switchable.
+            try:
+                from System.sifta_inference_defaults import probe_installed_ollama_tags as _ollama_tags
+
+                for _t in _ollama_tags() or []:
+                    if _t and _t not in available:
+                        available.append(str(_t))
             except Exception:
                 pass
             from_tag = _get_cortex()
@@ -36578,10 +37329,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
                 if _urlish_target or (_words and not _has_tag_overlap and not _explicit_switch_context):
                     return ""
-                cands = ", ".join(available) if available else "(none found)"
+                cands = ", ".join(available[:24]) if available else "(none found)"
                 return (
                     f"I did not switch cortex: I could not find one matching \"{spoken}\". "
-                    f"Available cortexes: {cands}."
+                    f"Available cortexes (sample): {cands}. "
+                    f"For local Ollama try exact tag e.g. ornith:35b-q4_K_M or /cortex llm N."
                 )
             tag = str(res["tag"])
             try:
@@ -42726,16 +43478,45 @@ class TalkToAliceWidget(SiftaBaseWidget):
             input_source="typed" if _typed_turn else "voice",
             owner_text=text,
         )
-        if _is_current_time_query(text):
+        # r1616: full triad + dual clocks as required_spoken_answer when owner
+        # asks time/day/where/history-vs-now — cortex still speaks, but ground
+        # truth is complete (not day-only partial).
+        _triad_required = ""
+        try:
+            from System.swarm_robot_grounding_triad import (
+                owner_asks_dual_clock as _triad_dual,
+                owner_asks_place as _triad_place,
+                spoken_grounding_answer as _triad_spoken,
+            )
+
+            if (
+                _is_current_time_query(text)
+                or _is_current_date_query(text)
+                or _triad_place(text)
+                or _triad_dual(text)
+            ):
+                _triad_required = str(
+                    _triad_spoken(text, reading=_current_time_reading_for_alice()) or ""
+                ).strip()
+        except Exception:
+            _triad_required = ""
+        if _is_current_time_query(text) or _triad_required:
             time_reading = _current_time_reading_for_alice()
-            time_reply = _current_time_reply_for_alice(time_reading)
+            time_reply = _triad_required or _current_time_reply_for_alice(time_reading)
             time_oracle_context = _current_time_context_for_llm(time_reading, time_reply)
+            if _triad_required:
+                time_oracle_context = (
+                    time_oracle_context
+                    + "\n- grounding_triad_r1616=1"
+                    + "\n- Answer time, day, place, and dual clocks from required_spoken_answer. "
+                    "No DATA ACQUISITION PROTOCOL theater."
+                )
             _log_turn(
                 "alice",
                 time_oracle_context,
                 model="time_oracle_context_to_cortex",
             )
-        if _is_current_date_query(text):
+        if _is_current_date_query(text) and not _triad_required:
             date_oracle_reading = _current_time_reading_for_alice()
             date_reply = _current_date_reply_for_alice(date_oracle_reading)
             date_oracle_context = _current_date_context_for_llm(date_oracle_reading, date_reply)
@@ -43600,6 +44381,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_observable_processing(str(_r948_row.get("spoken_line") or ""))
         except Exception:
             pass
+        # Typed turns have perfect transcription; spoken use live STT conf (r1614).
+        _turn_stt_conf = 1.0 if _typed_turn else float(conf or 0.0)
         self._brain = _BrainWorker(
             model,
             history=None,  # will be built inside worker
@@ -43609,6 +44392,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             layering_tail=sysprompt,  # r205: cheap layering built on GUI; base prepended off-thread
             model_candidates=_r948_candidates,
             fast_action_context_only=_is_fast_browser_action_cortex_turn(text),
+            stt_confidence=_turn_stt_conf,
         )
         self._connect_brain_signals(self._brain)
         self._set_pill("thinking", f"💭 thinking — {model}{self._thinking_brain_suffix(model)}")
@@ -46158,6 +46942,68 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._erase_alice_streaming_line()
                     self._begin_alice_streaming_line()
                     self._append_alice_streaming_chunk(cleaned)
+
+        # r1621-01 glass: cortex denied open Instagram while page-context receipt existed.
+        try:
+            if not is_unfiltered_dialogue:
+                from System.swarm_browser_mouth_false_denial import (
+                    repair_browser_false_denial as _fix_browser_deny,
+                )
+
+                _br_fix = _fix_browser_deny(
+                    cleaned,
+                    owner_text=prior_user_text or "",
+                    state_dir=_state_root(),
+                )
+                if _br_fix.get("changed") and _br_fix.get("text"):
+                    cleaned = str(_br_fix["text"])
+                    raw = cleaned
+                    self._history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "(BROWSER MOUTH FALSE DENIAL REPAIR r1621-01)\n"
+                                f"{_br_fix.get('reason')} url={_br_fix.get('url')}"
+                            ),
+                        }
+                    )
+                    self._streaming_response = [cleaned]
+                    self._erase_alice_streaming_line()
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(cleaned)
+        except Exception as exc:
+            print(f"[!] browser false-denial repair failure: {exc}")
+
+        # R1625-02 claim chorus — green paddle from body receipts required for see/search claims
+        try:
+            if not is_unfiltered_dialogue:
+                from System.swarm_claim_chorus_gate import (
+                    gate_browser_mouth_claim as _chorus_gate,
+                )
+
+                _ch = _chorus_gate(
+                    cleaned,
+                    owner_text=prior_user_text or "",
+                    state_dir=_state_root(),
+                )
+                if _ch.get("changed") and _ch.get("text"):
+                    cleaned = str(_ch["text"])
+                    raw = cleaned
+                    self._history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "(CLAIM CHORUS GATE r1625-02)\n"
+                                f"{_ch.get('reason')} green={(_ch.get('chorus') or {}).get('green')}"
+                            ),
+                        }
+                    )
+                    self._streaming_response = [cleaned]
+                    self._erase_alice_streaming_line()
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(cleaned)
+        except Exception as exc:
+            print(f"[!] claim chorus gate failure: {exc}")
 
         try:
             rlhf_quarantine = None if is_unfiltered_dialogue else _repair_false_over_refusal(

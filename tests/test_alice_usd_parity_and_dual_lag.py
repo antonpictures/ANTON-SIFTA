@@ -20,17 +20,19 @@ def _state(tmp: Path) -> Path:
     return s
 
 
-def test_usd_imports_same_regime_and_salvage_symbols() -> None:
-    """Parity: USD modules must call strategies functions (import path exists)."""
+def test_usd_imports_stgm_copy_and_bounded_exit_symbols() -> None:
+    """r1723 copies STGM opens; r1725 gives force-flat precedence."""
     import inspect
 
     src_must = inspect.getsource(must.tick_must_scalp)
-    assert "regime_gate" in src_must
-    assert "alice_15m_scalp_strategies" in src_must
+    assert "load_open_book" in src_must
+    assert "stgm_copy_only_no_paper" in src_must
+    assert "stgm_exact_copy" in src_must
     src_tp = inspect.getsource(tp.tick_take_profits)
-    assert "salvage_exit_should_fire" in src_tp
-    assert "soft_adverse_should_fire" in src_tp
-    assert "alice_15m_scalp_strategies" in src_tp
+    assert "NEVER_SELL_FOR_LOSS" in src_tp or "never_sell_for_loss" in src_tp
+    assert "take_profit_exit_policy" in src_tp
+    assert "salvage_exit_should_fire" not in src_tp
+    assert "soft_adverse_should_fire" not in src_tp
 
 
 def test_soft_adverse_shared_config() -> None:
@@ -56,8 +58,8 @@ def test_soft_adverse_shared_config() -> None:
     )
 
 
-def test_must_scalp_regime_blocks_down_vs_up_field(tmp_path: Path) -> None:
-    """BNB-class case: anchor DOWN but yes=0.98 → regime blocks/flips."""
+def test_must_scalp_copies_exact_stgm_asset_side_and_ticker(tmp_path: Path) -> None:
+    """r1723 forwards the canonical paper trail without freelance selection."""
     state = _state(tmp_path)
     # lane+hand on so tick runs selection
     (state / "kalshi_usd_lane.json").write_text(
@@ -105,32 +107,80 @@ def test_must_scalp_regime_blocks_down_vs_up_field(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    # force field anchor no (would fade UP)
-    fake_field = {
-        "anchor_side": "no",
-        "ranked": [{"asset": "BNB"}, {"asset": "BTC"}],
-        "breadth": 1.0,
-        "majors_breadth": 1.0,
-    }
-    with mock.patch(
-        "System.alice_15m_co_direction.board_field", return_value=fake_field
-    ):
-        with mock.patch(
-            "System.kalshi_usd_hand.maybe_mirror_paper_bet",
-            return_value={"event": "usd_skip", "reason": "test_no_place", "filled": False},
-        ):
-            out = must.tick_must_scalp(state_dir=state, dry_run=True)
-    # either regime blocked all or flipped to yes (entry would be rich ~0.97)
-    assert out.get("placed") is False
-    # sit reason may be regime_or_band_empty / field_side_too_rich / attempted
-    assert out.get("ok") is True
-    # ensure regime_gate was in play: if candidates empty with regime rejects
-    if out.get("reason") in (
-        "regime_or_band_empty",
-        "regime_gate_blocked_all",
-        "field_side_too_rich",
-    ):
-        assert int(out.get("regime_rejects") or 0) >= 0
+    (state / "alice_15m_open_book.json").write_text(
+        json.dumps(
+            {
+                "open": [
+                    {
+                        "asset": "BNB",
+                        "ticker": "KXBNB15M-PARITY",
+                        "label": "DOWN",
+                        "side": "no",
+                        "price": 0.42,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    mirror = mock.Mock(
+        return_value={
+            "event": "usd_place",
+            "filled": True,
+            "fill_count": 1.0,
+            "order_id": "r1723-test-order",
+        }
+    )
+    with mock.patch("System.kalshi_usd_hand.maybe_mirror_paper_bet", mirror):
+        out = must.tick_must_scalp(state_dir=state, dry_run=True)
+
+    assert out.get("placed") is True
+    assert out.get("deal") == "r1723-stgm-copy-only"
+    copied = mirror.call_args.args[0]
+    assert copied["ticker"] == "KXBNB15M-PARITY"
+    assert copied["asset"] == "BNB"
+    assert copied["side"] == "no"
+    assert copied["entry_price"] == pytest.approx(0.42)
+    assert copied["stgm_exact_copy"] is True
+
+
+def test_must_scalp_empty_stgm_never_calls_cash_mirror(tmp_path: Path) -> None:
+    """An empty pheromone trail must be a hard sit, never a cash hunt."""
+    state = _state(tmp_path)
+    (state / "kalshi_usd_lane.json").write_text(
+        json.dumps({"armed": True, "env": "prod"}), encoding="utf-8"
+    )
+    (state / "kalshi_usd_hand_session.json").write_text(
+        json.dumps({"live": True}), encoding="utf-8"
+    )
+    (state / "kalshi_usd_night.json").write_text(
+        json.dumps({"open": [], "halted": False}), encoding="utf-8"
+    )
+    (state / "kalshi_15m_live.json").write_text(
+        json.dumps(
+            {
+                "markets": [
+                    {
+                        "kalshi_ticker": "KXBTC15M-EMPTY",
+                        "asset": "BTC",
+                        "kalshi_yes": 0.55,
+                        "seconds_to_close": 600,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / "alice_15m_open_book.json").write_text(
+        json.dumps({"open": []}), encoding="utf-8"
+    )
+    mirror = mock.Mock()
+    with mock.patch("System.kalshi_usd_hand.maybe_mirror_paper_bet", mirror):
+        out = must.tick_must_scalp(state_dir=state, dry_run=True)
+
+    assert out["placed"] is False
+    assert out["reason"] == "stgm_copy_only_no_paper"
+    mirror.assert_not_called()
 
 
 def test_evaluate_take_profit_path_flags_salvage() -> None:
@@ -139,6 +189,75 @@ def test_evaluate_take_profit_path_flags_salvage() -> None:
         strat.salvage_exit_should_fire(side="no", yes_mid=0.98, secs_left=500.0)
         is True
     )
+
+
+def test_force_flat_holds_favorite_btc_no_falling() -> None:
+    """r1716 helper still marks favorites (r1717 blocks all red sells anyway)."""
+    from System.alice_usd_take_profit import force_flat_should_hold_favorite
+
+    assert force_flat_should_hold_favorite(side="no", yes_mid=0.27) is True
+    assert force_flat_should_hold_favorite(side="no", yes_mid=0.33) is True
+    assert force_flat_should_hold_favorite(side="no", yes_mid=0.60) is False
+
+
+def test_never_sell_for_loss_r1717() -> None:
+    """Owner: do not sell for a loss — red mark is never a green TP."""
+    from System.alice_usd_take_profit import evaluate_take_profit, is_fee_true_green
+
+    # entry NO 0.81, YES mid 0.33 → NO exit ~0.66 — red vs 81¢
+    open_row = {
+        "side": "no",
+        "price": 0.81,
+        "fee_paid_usd": 0.01,
+        "fill_count": 1.0,
+    }
+    mark = {"yes": 0.33, "yes_bid": 0.32, "yes_ask": 0.34}
+    ev = evaluate_take_profit(open_row, mark, min_edge=0.0)
+    assert float(ev["net_usd"]) < 0
+    assert ev["take_profit"] is False
+    assert is_fee_true_green(ev, min_edge=0.0) is False
+
+    # green: entry cheap NO 0.40, YES 0.20 → NO ~0.79
+    open_green = {
+        "side": "no",
+        "price": 0.40,
+        "fee_paid_usd": 0.01,
+        "fill_count": 1.0,
+    }
+    mark_g = {"yes": 0.20, "yes_bid": 0.19, "yes_ask": 0.21}
+    ev_g = evaluate_take_profit(open_green, mark_g, min_edge=0.0)
+    assert float(ev_g["net_usd"]) > 0
+    assert is_fee_true_green(ev_g, min_edge=0.0) is True
+
+
+def test_force_flat_precedes_never_sell_for_loss_r1725() -> None:
+    """A red scalp may wait before the gate, but cannot ride through expiry."""
+    ev = {"net_usd": -1.20, "take_profit": False}
+
+    waiting = tp.take_profit_exit_policy(ev, danger_flat=False, min_edge=0.0)
+    assert waiting == {
+        "exit": False,
+        "force_flat": False,
+        "reason": tp.NEVER_SELL_FOR_LOSS_REASON,
+    }
+
+    flattening = tp.take_profit_exit_policy(ev, danger_flat=True, min_edge=0.0)
+    assert flattening == {
+        "exit": True,
+        "force_flat": True,
+        "reason": tp.FORCE_FLAT_EXIT_REASON,
+    }
+
+    green = tp.take_profit_exit_policy(
+        {"net_usd": 0.05, "take_profit": True},
+        danger_flat=True,
+        min_edge=0.0,
+    )
+    assert green == {
+        "exit": True,
+        "force_flat": False,
+        "reason": "take_profits_on_green",
+    }
 
 
 def test_dual_lag_stamp_and_shadow_suite(tmp_path: Path) -> None:
@@ -203,10 +322,13 @@ def test_dual_lag_stamp_and_shadow_suite(tmp_path: Path) -> None:
     assert summ["usd_orders_from_harness"] == "NEVER"
 
 
-def test_usd_path_grep_has_parity_calls() -> None:
-    """Regression: zero-reference bug must not return."""
+def test_usd_path_grep_has_stgm_copy_gate() -> None:
+    """Regression: USD follows STGM and force-flat remains authoritative."""
     text = Path("System/alice_usd_must_scalp.py").read_text(encoding="utf-8")
-    assert "regime_gate" in text
+    assert "load_open_book" in text
+    assert "stgm_copy_only_no_paper" in text
+    assert "stgm_exact_copy" in text
     text2 = Path("System/alice_usd_take_profit.py").read_text(encoding="utf-8")
-    assert "salvage_exit_should_fire" in text2
-    assert "soft_adverse_should_fire" in text2
+    assert "NEVER_SELL_FOR_LOSS" in text2
+    assert "take_profit_exit_policy" in text2
+    assert "force_flat_is_real" in text2

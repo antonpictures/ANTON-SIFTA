@@ -9,7 +9,7 @@ FORCE_PULL=0
 
 usage() {
   cat <<'EOF'
-BeeSon v8.1 installer
+SIFTA OS v9.0 eXistenZ installer
 
 Usage:
   bash scripts/install_beeson_v8.sh [--with-models] [--no-smoke] [--target DIR] [--pull]
@@ -50,7 +50,7 @@ banner() {
   printf '\033[1;33m'
   cat <<'EOF'
   ================================================
-       BeeSon v8.1 installer - SIFTA Living OS
+       SIFTA OS v9.0 eXistenZ installer
        Fresh Mac path: code, venv, receipts, smoke
   ================================================
 EOF
@@ -76,9 +76,14 @@ else
   else
     echo "[beeson] cloning $REPO_URL -> $REPO_DIR"
     mkdir -p "$(dirname "$REPO_DIR")"
-    git clone "$REPO_URL" "$REPO_DIR"
+    git clone --recurse-submodules "$REPO_URL" "$REPO_DIR"
   fi
   cd "$REPO_DIR"
+fi
+
+if [[ -f ".gitmodules" ]]; then
+  git submodule sync --recursive
+  git submodule update --init --recursive
 fi
 
 PYTHON_BOOT="${PYTHON_BOOT:-}"
@@ -202,7 +207,8 @@ from pathlib import Path
 row = {
     "ts": time.time(),
     "trace_id": str(uuid.uuid4()),
-    "kind": "BEESON_V8_INSTALL_RECEIPT",
+    "kind": "SIFTA_OS_V9_INSTALL_RECEIPT",
+    "release": "9.0.0-eXistenZ",
     "repo_dir": str(Path.cwd()),
     "with_models": os.environ.get("BEESON_WITH_MODELS", "0") == "1",
     "launcher": "SIFTA OS.command",
@@ -234,7 +240,7 @@ cat <<EOF
 [beeson] Install complete.
 
 Next:
-  open ~/Desktop/"SIFTA OS.command"
+  double-click ~/Desktop/"SIFTA OS.command"
 
 macOS permissions to grant on first boot:
   - Microphone

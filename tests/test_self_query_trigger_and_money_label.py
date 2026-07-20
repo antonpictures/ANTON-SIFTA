@@ -21,6 +21,12 @@ def test_real_wellbeing_asks_still_fire():
     assert looks_like_self_query("alice run a self-check") is True
 
 
+def test_relational_want_to_say_does_not_fire_self_query():
+    assert looks_like_self_query("What do you want to say to me Alice?") is False
+    assert looks_like_self_query("What do you want o say to me Alice?") is False
+    assert looks_like_self_query("what do you want") is True
+
+
 def test_canonical_spendable_line_defensive():
     # Must never raise; returns "" or a labeled canonical line.
     out = _canonical_spendable_line()

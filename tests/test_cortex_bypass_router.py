@@ -97,7 +97,7 @@ def test_natural_arm_dispatch_is_not_direct_tool_routed():
         "Alice, dispatch your Codex arm to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the next teaching gate.",
         "Alice, ask grok to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the lost-Alice fix.",
         "Alice, ask your Grok arm to read Documents/TOURNAMENT_PLAN_2026-05-26.md and code the next teaching gate.",
-        "Alice, use your Hermes arm to read file:///Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html",
+        "Alice, use your Hermes arm to read file://{get_repo_root()}/.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html  # was hardcoded; now resolver",
         "Alice, tell Claude Code to inspect the repo and patch the cortex-first gate.",
         "Alice, have Codex build the Round 47 restart loader and print receipt_id.",
     ],

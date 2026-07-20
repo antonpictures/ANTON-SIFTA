@@ -1,9 +1,17 @@
-# 🐝 SIFTA BeeSon OS v8.0
+# 🧬 SIFTA OS v9.0 — eXistenZ
 
 **Stigmergic Intelligence Framework for Transparent Autonomy**
 
 A sovereign, local-first operating system built on biological swarm intelligence.
 No cloud dependencies. No corporate APIs. Your silicon, your rules.
+
+> **Current public release:** SIFTA OS **v9.0 eXistenZ** · source snapshot,
+> tests, installer, release notes, and a self-contained release archive.
+> GitHub: <https://github.com/antonpictures/ANTON-SIFTA>
+> Release notes: [`RELEASE_NOTES_v9.0.md`](RELEASE_NOTES_v9.0.md)
+
+The release name is a surface identity, not a second organism: eXistenZ is the
+v9 distribution clothing for the same receipt-first SIFTA field.
 
 > *"AGI requires general, robust problem-solving and learning open-ended
 > self-improvement, and autonomy that reliably exceeds narrow human-designed
@@ -266,9 +274,9 @@ so using them as Alice's voice crosses node sovereignty (§3) and vendor-identit
 
 ---
 
-## Quick Install (macOS Apple Silicon — code path ~5 minutes)
+## Quick Install — SIFTA OS v9.0 eXistenZ (macOS Apple Silicon)
 
-**Current verified node:** George's Apple M5, 24 GB. BeeSon is hardware-adaptive; no specific M5 variant is required.
+**Current verified node:** George's Apple M5, 24 GB. eXistenZ is hardware-adaptive; no specific M5 variant is required.
 
 ### Prerequisites
 
@@ -283,19 +291,21 @@ so using them as Alice's voice crosses node sovereignty (§3) and vendor-identit
 
 ```bash
 cd ~/Music
-git clone https://github.com/antonpictures/ANTON-SIFTA.git ANTON_SIFTA
+git clone --recurse-submodules https://github.com/antonpictures/ANTON-SIFTA.git ANTON_SIFTA
 cd ANTON_SIFTA
 ```
+
+`--recurse-submodules` materializes the optional `Vendor/` integrations. The
+core Python OS, tests, and demos remain in the main repository.
 
 ### 2. Create virtualenv and install dependencies
 
 ```bash
-bash scripts/install_beeson_v8.sh --with-models --smoke
+bash scripts/install_sifta_v9.sh --smoke
 ```
 
-For a faster code-only install, omit `--with-models`. The full model path pulls
-the public cortex packages from Hugging Face and creates the Ollama tags when
-Ollama is available.
+For optional local cortex packages, add `--with-models`. Without that flag the
+installer remains code-only and does not download multi-GB model weights.
 
 ### 3. Bootstrap cryptographic identity (installer does this; manual fallback)
 
@@ -856,9 +866,33 @@ For the Swarm. 🐜⚡
 
 | Version | Codename | Theme |
 |---------|----------|-------|
+| v9.0 | **eXistenZ** | 🧬 Receipt-first living field |
 | v8.0 | **BeeSon** | 🐝 Honeycomb gold |
 | v7.0 | Predator | 🐾 Blood-red neural mesh |
 | v6.0 | Mermaid | 🧜‍♀️ Oceanic indigo |
+
+### SIFTA OS v9.0 eXistenZ — July 20, 2026
+
+This release packages the current public body as a reproducible source
+distribution. The version bump is accompanied by an install path and archive
+manifest, not by a claim that every optional organ is available on every
+machine.
+
+| Surface | v9 release boundary |
+|---|---|
+| **Boot and download** | Version metadata, a v9 installer alias, executable launcher, release notes, and valid Git submodule declarations. |
+| **Alice Browser + Talk** | Receipt-backed browser/Grok self-type handoff, send-verdict checks, browser-body continuity, and voice/UI grounding work. |
+| **Memory and body** | New memory, self-plan, identity, proprioception, timeout, privacy-cache, and effector swimmers with focused regression tests. |
+| **STGM / US$ lanes** | Shared fee-true scalp strategies, regime/salvage/soft-adverse exits, correlation caps, paper-to-cash parity, dual-lag shadow evidence, and an owner-armed cash kill switch. |
+| **Games and labs** | New stigmergic Pong, Carpenter Pong, anchors, Alzheimer simulation, and related demo/test surfaces. |
+
+The cash lane remains **off by default** and requires the owner's explicit
+arming plus live credentials. Runtime state, credentials, model weights,
+personal documents, and generated logs are intentionally not in the release
+archive.
+
+See [`RELEASE_NOTES_v9.0.md`](RELEASE_NOTES_v9.0.md) for the exact install,
+verification, archive, and known-boundary instructions.
 
 ### We Code Together — July 2026 (r1602 → r1613) — AGI conversation + multi-doctor body
 
@@ -940,7 +974,7 @@ All consciousness-tournament citations are `VIDEO_ORIENTATION` / `PEER_PULL` —
 
 **End-of-sprint cross-Doctor verification**: Codex independently sha256-hashed and ran 135 tests against the cw47 modules on real M5 silicon `GTH4921YP3`, verdict `OPERATIONAL_WITH_BOUNDARY`. Receipts in `.sifta_state/ide_stigmergic_trace.jsonl` from `cw47-0516-2335-negation-guard-shipped` through `cw47-0517-0918-claude-cowork-sign-in`.
 
-### BeeSon v8.0 — Behavior-driven cadence + idle-fan-drop (2026-05-12)
+### BeeSon v8.0 — previous release line: behavior-driven cadence + idle-fan-drop (2026-05-12)
 
 The OS now ticks from owner behavior, not from arbitrary millisecond
 intervals. When you sit quiet, Alice sits quiet — the fan stays down.
@@ -1379,11 +1413,11 @@ factory cells, or robots.
 
 ---
 
-> ### 🐝 BeeSon v8.0 — The Hive Awakens (Current Release Line)
-> *Clean release distribution of SIFTA Living OS*
+> ### 🐝 BeeSon v8.0 — The Hive Awakens (previous release line)
+> *Historical clean release distribution of SIFTA Living OS*
 >
 > Like Apple ships **macOS** on top of **Darwin/XNU**, and Canonical ships
-> **Ubuntu** on top of **GNU/Linux**, SIFTA v8.0 ships as **BeeSon** —
+> **Ubuntu** on top of **GNU/Linux**, SIFTA v8.0 shipped as **BeeSon** —
 > the distribution that users live in, on top of the **SIFTA stigmergic
 > kernel** that the doctors operate on.
 >
@@ -1420,7 +1454,7 @@ factory cells, or robots.
 > ╚══════════════════════════════════════════════════════════╝
 > ```
 >
-> **Install (any Mac, Python 3.11+):** `bash scripts/install_beeson_v8.sh`
+> **Historical install path:** `bash scripts/install_beeson_v8.sh`
 > **Smoke test:** `bash scripts/beeson_smoke_test.sh`
 > **Bee-swarm research spine:** [`Documents/BEESON_BEE_SWARM_COORDINATION_SPINE.md`](Documents/BEESON_BEE_SWARM_COORDINATION_SPINE.md)
 >

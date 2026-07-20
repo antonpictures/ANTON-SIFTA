@@ -35,12 +35,65 @@ import time
 import sys
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 _STATE_DIR = Path(".sifta_state")
 _PFC_MEMORY = _STATE_DIR / "pfc_working_memory.json"
 _NEOCORTEX = _STATE_DIR / "neocortical_long_term_memory.json"
 _CONSOLIDATION_LOG = _STATE_DIR / "memory_consolidation_ripples.json"
+
+
+def write_memory_summary_journal(
+    summary: str,
+    *,
+    source_receipt_id: str,
+    state_dir: Optional[Path | str] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Write one organ-labeled neocortex summary into the first-person journal."""
+    state = Path(state_dir) if state_dir is not None else _STATE_DIR
+    state.mkdir(parents=True, exist_ok=True)
+    journal = state / "alice_first_person_journal.jsonl"
+    ts = float(time.time() if now is None else now)
+    row = {
+        "ts": ts,
+        "line": str(summary)[:800],
+        "source": "swarm_neocortex_consolidation",
+        "source_receipt_id": str(source_receipt_id),
+        "truth_label": "NEOCORTEX_MEMORY_SUMMARY_V1",
+        "organ_generated": True,
+    }
+    try:
+        from System.swarm_first_person_journal import append_first_person_journal_row
+
+        row = append_first_person_journal_row(
+            row,
+            state_dir=state,
+            source_receipt_id=str(source_receipt_id),
+            pulse=True,
+        )
+    except Exception:
+        journal = state / "alice_first_person_journal.jsonl"
+        try:
+            from System.jsonl_file_lock import append_line_locked
+
+            append_line_locked(journal, json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            with journal.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+    ripple = {
+        "timestamp": ts,
+        "status": "JOURNAL_SUMMARY_WRITTEN",
+        "source_receipt_id": str(source_receipt_id),
+        "journal": journal.name,
+    }
+    log_path = state / "memory_consolidation_ripples.json"
+    try:
+        log_path.write_text(json.dumps(ripple, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+    return row
 
 def execute_memory_consolidation() -> Dict[str, Any]:
     """

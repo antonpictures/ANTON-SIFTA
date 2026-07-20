@@ -35,6 +35,7 @@ def test_empty_ledgers_returns_empty_card(tmp_ledgers):
          patch("System.swarm_memory_card._fetch_vision_arms_awareness", return_value=""), \
          patch("System.swarm_memory_card._fetch_browser_context", return_value=""), \
          patch("System.swarm_memory_card._fetch_taste_consequence", return_value=""), \
+         patch("System.swarm_memory_card._fetch_travel_mode", return_value=""), \
          patch("System.swarm_memory_card._fetch_active_plan", return_value=""), \
          patch("System.swarm_memory_card._fetch_arm_session", return_value=""), \
          patch("System.swarm_memory_card._fetch_body_stabilization_queue", return_value=""), \
@@ -72,6 +73,78 @@ def test_format_for_prompt_with_content():
     assert "ACTION: did something" in result
     assert "RECEIPT MEMORY ECOLOGY" in result
     assert "ENGRAM: remember this" in result
+
+
+def test_memory_card_injects_recalled_body_facts_for_rich_turn(tmp_ledgers):
+    now = time.time()
+    (tmp_ledgers / "memory_ledger.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": now - 86400,
+                "trace_id": "mother_femur_trace",
+                "raw_text": "Adrian said Fractura de femur; surgery Monday in Romania.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_ledgers / "alice_conversation.jsonl").write_text("", encoding="utf-8")
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_app_limb_context", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_owner_somatic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_owner_carbon_body", return_value=""), \
+         patch("System.swarm_memory_card._fetch_media_capability", return_value=""), \
+         patch("System.swarm_memory_card._fetch_vision_arms_awareness", return_value=""), \
+         patch("System.swarm_memory_card._fetch_browser_context", return_value=""), \
+         patch("System.swarm_memory_card._fetch_taste_consequence", return_value=""), \
+         patch("System.swarm_memory_card._fetch_active_plan", return_value=""), \
+         patch("System.swarm_memory_card._fetch_arm_session", return_value=""), \
+         patch("System.swarm_memory_card._fetch_body_stabilization_queue", return_value=""), \
+         patch("System.swarm_memory_card._fetch_love_field", return_value=""), \
+         patch("System.swarm_memory_card._fetch_receipt_ecology", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""), \
+         patch("System.swarm_memory_card._fetch_continuity_capsule", return_value=""):
+        card = compose_memory_card(
+            tmp_ledgers,
+            token_budget=2000,
+            user_text="I am thinking about Adrian and femur surgery before Romania.",
+        )
+
+    prompt = format_for_prompt(card)
+    assert "RECALLED FROM MY BODY" in prompt
+    assert "Fractura de femur" in prompt
+    assert "mother_femur_trace" not in prompt  # snippets, not raw ids, are shown
+    assert len(card.recalled_body_block) <= 600
+    assert (tmp_ledgers / "memory_retrieval_receipts.jsonl").exists()
+    from System.memory_fitness_overlay import strength_for
+
+    assert strength_for(["mother_femur_trace"], state_dir=tmp_ledgers)["mother_femur_trace"] > 1.0
+
+
+def test_memory_card_does_not_inject_recall_for_phatic_turn(tmp_ledgers):
+    with patch("System.swarm_memory_card._fetch_recent_actions", return_value=""), \
+         patch("System.swarm_memory_card._fetch_app_limb_context", return_value=""), \
+         patch("System.swarm_memory_card._fetch_engrams", return_value=""), \
+         patch("System.swarm_memory_card._fetch_episodic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_owner_somatic", return_value=""), \
+         patch("System.swarm_memory_card._fetch_owner_carbon_body", return_value=""), \
+         patch("System.swarm_memory_card._fetch_media_capability", return_value=""), \
+         patch("System.swarm_memory_card._fetch_vision_arms_awareness", return_value=""), \
+         patch("System.swarm_memory_card._fetch_browser_context", return_value=""), \
+         patch("System.swarm_memory_card._fetch_taste_consequence", return_value=""), \
+         patch("System.swarm_memory_card._fetch_active_plan", return_value=""), \
+         patch("System.swarm_memory_card._fetch_arm_session", return_value=""), \
+         patch("System.swarm_memory_card._fetch_body_stabilization_queue", return_value=""), \
+         patch("System.swarm_memory_card._fetch_love_field", return_value=""), \
+         patch("System.swarm_memory_card._fetch_receipt_ecology", return_value=""), \
+         patch("System.swarm_memory_card._fetch_digest", return_value=""), \
+         patch("System.swarm_memory_card._fetch_continuity_capsule", return_value=""):
+        card = compose_memory_card(tmp_ledgers, token_budget=2000, user_text="hi Alice")
+
+    assert card.recalled_body_block == ""
+    assert not (tmp_ledgers / "memory_retrieval_receipts.jsonl").exists()
 
 
 def test_format_for_prompt_includes_digest_header():

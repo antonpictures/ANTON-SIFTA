@@ -121,10 +121,10 @@ def test_spoken_channel_prints_page_state_dom_but_does_not_read_it(tmp_path):
 
     printed = (
         "WHAT IS ON MY SCREEN (from the rendered DOM (read ~2s ago)): "
-        "ALVA INGA at DuckDuckGo -- https://duckduckgo.com/?q=ALVA+INGA&ia=images. "
-        "Open Alice Browser tabs (1): active #1: ALVA INGA at DuckDuckGo. "
+        "EXAMPLE MODEL at DuckDuckGo -- https://duckduckgo.com/?q=EXAMPLE+MODEL&ia=images. "
+        "Open Alice Browser tabs (1): active #1: EXAMPLE MODEL at DuckDuckGo. "
         "Media playback receipt: no_media. "
-        "Visible controls/buttons: a; a; a; Alyvia Alyn Lind; Amber Montana. "
+        "Visible controls/buttons: a; a; a; Sample Name One; Sample Name Two. "
         "Comment thread (35 captured) -- I can summarize these."
     )
     out = spoken_channel_text(
@@ -142,4 +142,4 @@ def test_spoken_channel_prints_page_state_dom_but_does_not_read_it(tmp_path):
     assert "Visible controls/buttons" not in out["spoken_text"]
     assert "Comment thread" not in out["spoken_text"]
     assert "raw DOM" in out["spoken_text"]
-    assert "ALVA INGA at DuckDuckGo" in out["spoken_text"]
+    assert "EXAMPLE MODEL at DuckDuckGo" in out["spoken_text"]

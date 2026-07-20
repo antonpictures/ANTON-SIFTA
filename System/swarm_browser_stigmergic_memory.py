@@ -34,6 +34,7 @@ and records.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
@@ -124,6 +125,85 @@ def verification_status(
     return V_UNVERIFIED, 0.0
 
 
+# GM4/GM5 helpers (seal-on-write + relational coherence)
+def _get_last_hash(ledger_path: Path) -> str:
+    genesis = "GENESIS_" + hashlib.sha256(b"BROWSER_STIGMERGIC_MEMORY_V1").hexdigest()
+    if not ledger_path.exists():
+        return genesis
+    try:
+        with ledger_path.open("r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                if row.get("row_hash"):
+                    return row["row_hash"]
+            except Exception:
+                continue
+        return genesis
+    except Exception:
+        return genesis
+
+
+def _row_hash(prev_hash: str, core: dict) -> str:
+    core_json = json.dumps(core, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256((prev_hash + "|" + core_json).encode("utf-8")).hexdigest()
+
+
+def calculate_relational_coherence(
+    mutation_score: float,
+    attention_magnitude: float,
+    hex_energy_reading: float,
+    dialogue_match_strength: float = 0.85,
+    previous_coherence: float = 0.75,
+) -> float:
+    """Integrated from proposal wct-grok-proposal-6d779c0b22c2. Weights for relational."""
+    weights = {"mutation": 0.25, "attention": 0.25, "energy": 0.15, "dialogue": 0.35}
+    raw_score = (
+        weights["mutation"] * mutation_score
+        + weights["attention"] * attention_magnitude
+        + weights["energy"] * hex_energy_reading
+        + weights["dialogue"] * dialogue_match_strength
+    )
+    smoothed = 0.7 * raw_score + 0.3 * previous_coherence
+    return round(max(0.0, min(1.0, smoothed)), 4)
+
+
+def verify_trace_chain(state_dir: Optional[Path | str] = None) -> dict[str, Any]:
+    """GM4: verify the on-write hash chain. Tolerates legacy prefix."""
+    path = _ledger(state_dir)
+    rows = _read_all(state_dir)
+    if not rows:
+        return {"ok": True, "rows": 0, "first_bad_row": None, "reason": "empty"}
+    genesis = "GENESIS_" + hashlib.sha256(b"BROWSER_STIGMERGIC_MEMORY_V1").hexdigest()
+    last_hash = None
+    chain_started = False
+    for i, row in enumerate(rows):
+        if "row_hash" not in row or "prev_hash" not in row:
+            if chain_started:
+                return {"ok": False, "rows": i + 1, "first_bad_row": i, "reason": "missing chain fields after start"}
+            continue
+        chain_started = True
+        prev = row.get("prev_hash")
+        if last_hash is not None and prev != last_hash:
+            return {"ok": False, "rows": i + 1, "first_bad_row": i, "reason": "prev_hash mismatch"}
+        core = {k: v for k, v in row.items() if k not in ("prev_hash", "row_hash")}
+        expected = _row_hash(prev, core)
+        if expected != row.get("row_hash"):
+            return {"ok": False, "rows": i + 1, "first_bad_row": i, "reason": "row_hash mismatch (tamper)"}
+        last_hash = row["row_hash"]
+    return {
+        "ok": True,
+        "rows": len(rows),
+        "first_bad_row": None,
+        "reason": "ok",
+        "chain_started_at": next((i for i, r in enumerate(rows) if "row_hash" in r), 0),
+    }
+
+
 def record_visit(
     url: str,
     *,
@@ -156,8 +236,24 @@ def record_visit(
         "owner_confirmed": bool(owner_confirmed),
         "visit_count": visit_count,
     }
+
+    # GM5: compute coherence first (so it is part of the hashed core)
+    mut = 1.0 if visit_count <= 1 else max(0.05, 1.0 - score)
+    att = min(1.0, visit_count / 5.0)
+    energy = round(0.5 + score * 0.5, 4)
+    dial = 0.95 if owner_confirmed else 0.75
+    prev_coh = 0.75
+    if prior:
+        prev_coh = prior[-1].get("relational_coherence_score", 0.75)
+    entry["relational_coherence_score"] = calculate_relational_coherence(mut, att, energy, dial, prev_coh)
+
+    # GM4: seal-on-write (stamp before write; core now includes coh)
     if write:
         path = _ledger(state_dir)
+        prev = _get_last_hash(path)
+        core = {k: v for k, v in entry.items() if k not in ("prev_hash", "row_hash")}
+        entry["prev_hash"] = prev
+        entry["row_hash"] = _row_hash(prev, core)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as fh:
@@ -324,6 +420,25 @@ def record_site_features(
             "owner_confirmed": bool(owner_confirmed),
             "observation_count": len(observations) + 1,
         }
+
+        # GM5 for feature (before hash)
+        mut = 0.4
+        att = min(1.0, row["observation_count"] / 3.0)
+        energy = round(0.5 + score * 0.5, 4)
+        dial = 0.9 if owner_confirmed else 0.7
+        prev_coh = 0.75
+        if observations:
+            prev_coh = observations[-1].get("relational_coherence_score", 0.75)
+        row["relational_coherence_score"] = calculate_relational_coherence(mut, att, energy, dial, prev_coh)
+
+        # GM4 seal-on-write for feature ledger too
+        if write:
+            fpath = _feature_ledger(state_dir)
+            prev = _get_last_hash(fpath)
+            core = {k: v for k, v in row.items() if k not in ("prev_hash", "row_hash")}
+            row["prev_hash"] = prev
+            row["row_hash"] = _row_hash(prev, core)
+
         rows.append(row)
 
     if write and rows:
@@ -522,4 +637,5 @@ __all__ = [
     "infer_site_features", "record_site_features", "record_snapshot_memory",
     "record_visit", "confirm", "latest_for_url", "recall",
     "recall_site_features", "site_category_prompt_block",
+    "verify_trace_chain", "calculate_relational_coherence",
 ]

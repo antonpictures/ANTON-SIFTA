@@ -1019,6 +1019,9 @@ def _apply_upstream_attached_default(
     from System.swarm_cortex_capabilities import (
         attached_models_for_cortex,
         format_attached_model,
+        is_mimo_non_dialogue_attached_default,
+        mimo_attached_default_refusal_reason,
+        mimo_attached_default_refusal_text,
         record_attached_models,
     )
     from System.swarm_cortex_llm_list_binding import (
@@ -1062,6 +1065,30 @@ def _apply_upstream_attached_default(
     models = [str(m) for m in (row.get("items") or existing.get("attached_models") or []) if str(m).strip()]
     if target and target not in models:
         models.append(target)
+    if namespace == NAMESPACE_MIMO and is_mimo_non_dialogue_attached_default(target):
+        refusal_reason = (
+            mimo_attached_default_refusal_reason(target)
+            or "non_dialogue_attached_default"
+        )
+        out["error"] = "mimo_non_dialogue_attached_default"
+        write_binding_receipt(
+            action="mimo_non_dialogue_default_refused",
+            payload={
+                "binding": binding or {},
+                "cortex_id": cortex_id,
+                "namespace": namespace,
+                "to_default": target,
+                "owner_text_preview": owner_text[:120],
+                "reason": refusal_reason,
+            },
+            state_dir=state_dir,
+        )
+        out["reply"] = (
+            f"{format_attached_model(target)} cannot be my MiMo Talk default. "
+            f"{mimo_attached_default_refusal_text(target)} "
+            "Pick krisha-g4u, Kimi K2.6, MiMo Auto, or another rendered dialogue row."
+        )
+        return out
 
     before = str(existing.get("default_attached") or "").strip()
     record_attached_models(

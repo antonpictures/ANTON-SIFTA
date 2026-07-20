@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from types import MethodType
 
 import Applications.sifta_alice_browser_widget as browser
 from System import swarm_browser_page_state as page_state
@@ -51,6 +52,159 @@ def test_address_snapshot_preserves_existing_text_for_same_url(monkeypatch, tmp_
     assert data["text_chars"] == len("Body check profile grid visible.")
     assert data["extra"]["address_snapshot"]["address_only"] is False
     assert data["extra"]["source"] == "load_finished_text"
+
+
+def test_blank_render_proof_is_coded_not_address_only() -> None:
+    source = (Path(__file__).resolve().parents[1] / "Applications" / "sifta_alice_browser_widget.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "_DESKTOP_CHROME_USER_AGENT" in source
+    assert "setHttpUserAgent(_DESKTOP_CHROME_USER_AGENT)" in source
+    assert "ALICE_BROWSER_BLANK_RENDER_V1" in source
+    assert "_verify_rendered_after_navigation" in source
+    assert "QTimer.singleShot(1200, self._browser_awareness_tick)" in source
+    assert "probe_unreadable" in source
+    assert "ReloadAndBypassCache" in source
+
+
+def _jsonl_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _blank_probe(url: str, *, reason: str = "empty_dom") -> dict:
+    return {
+        "url": url,
+        "title": "",
+        "ready_state": "complete",
+        "text_chars": 0,
+        "body_children": 0,
+        "controls_count": 0,
+        "images_count": 0,
+        "html_len": 120,
+        "background": "rgba(0, 0, 0, 0)",
+        "blank_render": True,
+        "probe_unreadable": False,
+        "reason": reason,
+    }
+
+
+def _probe_widget(monkeypatch, tmp_path: Path, results: list[object]):
+    _patch_state(monkeypatch, tmp_path)
+    scheduled = []
+
+    class FakePage:
+        def __init__(self):
+            self.triggered = []
+
+        def runJavaScript(self, _js, callback):
+            callback(results.pop(0))
+
+        def triggerAction(self, action):
+            self.triggered.append(action)
+
+    class FakeView:
+        def __init__(self):
+            self._page = FakePage()
+            self.reload_count = 0
+
+        def page(self):
+            return self._page
+
+        def reload(self):
+            self.reload_count += 1
+
+    class FakeStatus:
+        def __init__(self):
+            self.messages = []
+
+        def showMessage(self, text, _timeout=0):
+            self.messages.append(text)
+
+    def fake_single_shot(ms, callback):
+        scheduled.append((ms, callback))
+
+    monkeypatch.setattr(browser.QTimer, "singleShot", fake_single_shot)
+    monkeypatch.setattr(
+        browser,
+        "QWebEnginePage",
+        SimpleNamespace(WebAction=SimpleNamespace(ReloadAndBypassCache="hard-reload")),
+        raising=False,
+    )
+
+    url = "https://www.ebay.com/sch/i.html?_nkw=maisie+williams"
+    view = FakeView()
+    status = FakeStatus()
+    widget = SimpleNamespace(
+        _view=view,
+        _current_url=url,
+        _page_load_ts=1000.0,
+        _blank_render_retry_by_url={url: 0},
+        _blank_render_probe_retry_by_url={url: 0},
+        _status=status,
+        captured=[],
+    )
+    widget._verify_rendered_after_navigation = MethodType(browser.AliceBrowserWidget._verify_rendered_after_navigation, widget)
+    widget._blank_render_probe_js = MethodType(browser.AliceBrowserWidget._blank_render_probe_js, widget)
+    widget._record_blank_render_probe = MethodType(browser.AliceBrowserWidget._record_blank_render_probe, widget)
+    widget._hard_reload_current_page = MethodType(browser.AliceBrowserWidget._hard_reload_current_page, widget)
+    widget._blank_render_followup_delay_ms = browser.AliceBrowserWidget._blank_render_followup_delay_ms
+    widget._capture_current_page_state = lambda **kw: widget.captured.append(kw)
+    widget.get_current_media_playback_status = lambda: {"ok": True}
+    return widget, view, status, scheduled, url
+
+
+def test_probe_returned_non_dict_is_unreadable_not_blank(monkeypatch, tmp_path):
+    url = "https://example.com/page"
+    results = [
+        None,
+        {"url": url, "title": "Loaded", "ready_state": "complete", "blank_render": False, "reason": "render_has_content"},
+    ]
+    widget, view, _status, scheduled, _ = _probe_widget(monkeypatch, tmp_path, results)
+    widget._current_url = url
+    widget._blank_render_retry_by_url = {url: 0}
+    widget._blank_render_probe_retry_by_url = {url: 0}
+
+    widget._verify_rendered_after_navigation(url, source="unit")
+
+    rows = _jsonl_rows(tmp_path / "alice_browser_blank_render.jsonl")
+    assert rows[-1]["action"] == "probe_unreadable"
+    assert rows[-1]["reason"] == "probe_returned_non_dict"
+    assert rows[-1]["blank_render"] is False
+    assert view.reload_count == 0
+    assert scheduled
+
+    scheduled.pop(0)[1]()
+    assert widget.captured[-1]["source"] == "unit_probe_retry_proof_dom"
+
+
+def test_blank_render_ladder_reloads_then_hard_reloads_then_persists(monkeypatch, tmp_path):
+    results = [_blank_probe(""), _blank_probe(""), _blank_probe("")]
+    widget, view, status, scheduled, url = _probe_widget(monkeypatch, tmp_path, results)
+    for probe in results:
+        probe["url"] = url
+
+    widget._verify_rendered_after_navigation(url, source="unit")
+    rows = _jsonl_rows(tmp_path / "alice_browser_blank_render.jsonl")
+    assert rows[-1]["action"] == "reload_once"
+    assert view.reload_count == 1
+    assert scheduled
+
+    scheduled.pop(0)[1]()
+    rows = _jsonl_rows(tmp_path / "alice_browser_blank_render.jsonl")
+    assert rows[-1]["action"] == "hard_reload_once"
+    assert view.page().triggered == ["hard-reload"]
+    assert scheduled
+
+    scheduled.pop(0)[1]()
+    rows = _jsonl_rows(tmp_path / "alice_browser_blank_render.jsonl")
+    assert rows[-1]["action"] == "blank_render_persisted"
+    assert any("did not render" in msg for msg in status.messages)
+    snapshot = json.loads((tmp_path / "alice_browser_current_page.json").read_text(encoding="utf-8"))
+    assert snapshot["extra"]["blank_render"]["action"] == "blank_render_persisted"
+    assert "did not render" in snapshot["extra"]["honest_message"]
 
 
 def test_spa_visit_timer_resets_per_url_for_browse_dwell_receipts():

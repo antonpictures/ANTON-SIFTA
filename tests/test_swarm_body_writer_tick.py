@@ -38,11 +38,22 @@ def _mock_heavy_producers():
             body_brain_tick=MagicMock(return_value={"tick_id": "test-tick", "soma_score": 1.0}),
         ),
     )
+    # r-metabolism-heartbeat-unchain-20260703 — the metabolism producer reads the
+    # real STGM economy when unmocked; mock it so unit tests stay hermetic and fast.
+    fake_metabolism_module = MagicMock()
+    fake_metabolism_module.MetabolicHomeostat = MagicMock(
+        return_value=MagicMock(
+            append_ledger_row=MagicMock(
+                return_value={"mode": "GREEN_GROW", "stgm_balance": 1.0, "budget_multiplier": 1.0}
+            ),
+        ),
+    )
     with patch.dict(
         "sys.modules",
         {
             "System.swarm_fractal_walker_organ": fake_walker,
             "System.swarm_body_brain_loop": fake_brain_module,
+            "System.swarm_metabolic_homeostasis": fake_metabolism_module,
         },
     ):
         yield fake_walker
@@ -51,8 +62,8 @@ def _mock_heavy_producers():
 # ─── Happy path: both producers fire ───────────────────────────────────────
 
 
-def test_tick_calls_all_four_producers_when_modules_present(tmp_path: Path):
-    """Round 91 — four producers fire and the tick row reports all four:
+def test_tick_calls_all_full_breath_producers_when_modules_present(tmp_path: Path):
+    """Full breath producers fire and the tick row reports them:
     basal_ganglia + fractal_pheromone + field_slo + body_brain_loop. Heavy
     producers (fractal walker, body brain loop) are mocked by the autouse
     fixture; basal_ganglia + field_slo are mocked here for hermetic write
@@ -77,9 +88,16 @@ def test_tick_calls_all_four_producers_when_modules_present(tmp_path: Path):
         row = bwt.tick_writer_organs(state_dir=state)
 
     assert row["truth_label"] == bwt.TRUTH_LABEL
-    assert row["producer_count"] == 4
+    assert row["producer_count"] == 6
     producer_names = {p["producer"] for p in row["producers"]}
-    assert producer_names == {"basal_ganglia", "fractal_pheromone", "field_slo", "body_brain_loop"}
+    assert producer_names == {
+        "basal_ganglia",
+        "fractal_pheromone",
+        "field_slo",
+        "body_brain_loop",
+        "memory_consolidation",
+        "metabolic_homeostasis",
+    }
     fake_bg_module.select_action.assert_called_once()
     fake_slo_module.append_state_dir_report.assert_called_once()
     # Receipt landed in the tick ledger
@@ -112,7 +130,7 @@ def test_basal_ganglia_success_records_action_and_score(tmp_path: Path):
     ):
         # We bypass the fractal producer to isolate this test
         row = bwt.tick_writer_organs(
-            state_dir=state, enable_fractal_pheromone=False,
+            state_dir=state, enable_fractal_pheromone=False, enable_memory_consolidation=False,
         )
 
     bg = next(p for p in row["producers"] if p["producer"] == "basal_ganglia")
@@ -142,8 +160,8 @@ def test_producer_import_failure_does_not_raise(tmp_path: Path):
     assert "producers" in row
     bg = next(p for p in row["producers"] if p["producer"] == "basal_ganglia")
     assert bg["status"] in ("call_failed", "import_failed")
-    # All four producers must still be represented (Round 91)
-    assert row["producer_count"] == 4
+    # All full-breath producers must still be represented (Round 91 + memory + metabolism heartbeat)
+    assert row["producer_count"] == 6
 
 
 # ─── Feature flags ─────────────────────────────────────────────────────────
@@ -156,6 +174,8 @@ def test_disable_basal_ganglia(tmp_path: Path):
         enable_basal_ganglia=False,
         enable_field_slo=False,
         enable_body_brain_loop=False,
+        enable_metabolic_homeostasis=False,
+        enable_memory_consolidation=False,
     )
     producers = {p["producer"] for p in row["producers"]}
     assert producers == {"fractal_pheromone"}
@@ -169,6 +189,8 @@ def test_disable_fractal_pheromone(tmp_path: Path):
         enable_fractal_pheromone=False,
         enable_field_slo=False,
         enable_body_brain_loop=False,
+        enable_metabolic_homeostasis=False,
+        enable_memory_consolidation=False,
     )
     producers = {p["producer"] for p in row["producers"]}
     assert producers == {"basal_ganglia"}
@@ -183,6 +205,8 @@ def test_disable_all_writes_empty_tick(tmp_path: Path):
         enable_fractal_pheromone=False,
         enable_field_slo=False,
         enable_body_brain_loop=False,
+        enable_metabolic_homeostasis=False,
+        enable_memory_consolidation=False,
     )
     assert row["producers"] == []
     assert row["producer_count"] == 0
@@ -204,6 +228,8 @@ def test_field_slo_producer_fires(tmp_path: Path):
             enable_basal_ganglia=False,
             enable_fractal_pheromone=False,
             enable_body_brain_loop=False,
+            enable_metabolic_homeostasis=False,
+            enable_memory_consolidation=False,
         )
     assert row["producer_count"] == 1
     slo = row["producers"][0]
@@ -219,6 +245,8 @@ def test_body_brain_loop_producer_fires(tmp_path: Path):
         enable_basal_ganglia=False,
         enable_fractal_pheromone=False,
         enable_field_slo=False,
+        enable_metabolic_homeostasis=False,
+        enable_memory_consolidation=False,
     )
     assert row["producer_count"] == 1
     bbl = row["producers"][0]
@@ -237,6 +265,7 @@ def test_field_slo_import_failure_does_not_raise(tmp_path: Path):
             enable_basal_ganglia=False,
             enable_fractal_pheromone=False,
             enable_body_brain_loop=False,
+            enable_memory_consolidation=False,
         )
     slo = next(p for p in row["producers"] if p["producer"] == "field_slo")
     assert slo["status"] in ("call_failed", "import_failed")
@@ -252,6 +281,7 @@ def test_body_brain_loop_import_failure_does_not_raise(tmp_path: Path):
             enable_basal_ganglia=False,
             enable_fractal_pheromone=False,
             enable_field_slo=False,
+            enable_memory_consolidation=False,
         )
     bbl = next(p for p in row["producers"] if p["producer"] == "body_brain_loop")
     assert bbl["status"] in ("call_failed", "import_failed")
@@ -406,8 +436,130 @@ def test_guarded_tick_runs_light_after_repeated_timeouts(tmp_path: Path):
 
     assert row["degraded_mode"] is True
     assert row["degraded_reason"] == "recent_supervisor_timeouts"
-    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia"]
+    # r-metabolism-heartbeat-unchain-20260703: the light breath still carries
+    # the metabolism heartbeat — only the heavy three producers are shed.
+    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
     fake_bg_module.select_action.assert_called_once()
+
+
+def test_direct_tick_runs_light_after_supervisor_timeout(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / bwt.TICK_LEDGER).write_text(
+        json.dumps(
+            {
+                "ts": 1.0,
+                "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
+                "overall_status": "all_failed",
+                "producer_count": 1,
+                "ok_count": 0,
+                "fail_count": 1,
+                "producers": [{"producer": "body_writer_supervisor", "status": "timeout"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    selection_path = state / "basal_ganglia_selections.jsonl"
+
+    def _select_action(*_args, **_kwargs):
+        selection_path.write_text("{}\n", encoding="utf-8")
+        return "rest_idle", 0.1
+
+    fake_bg_module = MagicMock(
+        select_action=MagicMock(side_effect=_select_action),
+        selection_log_path=MagicMock(return_value=selection_path),
+    )
+    with patch.dict(
+        "sys.modules",
+        {"System.swarm_basal_ganglia_action_selector": fake_bg_module},
+    ):
+        row = bwt.tick_writer_organs(state_dir=state)
+
+    assert row["degraded_mode"] is True
+    assert row["direct_call_guard"] is True
+    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
+    fake_bg_module.select_action.assert_called_once()
+
+
+def test_memory_consolidation_rotates_sleep_subjobs(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    now = 1783300000.0
+    (state / "alice_conversation.jsonl").write_text(
+        json.dumps({"ts": now, "role": "user", "text": "remember this important STGM receipt lesson"}) + "\n"
+        + json.dumps({"ts": now + 1, "role": "alice", "text": "I will keep the receipt and learn from it."}) + "\n",
+        encoding="utf-8",
+    )
+    (state / "memory_ledger.jsonl").write_text(
+        "".join(json.dumps({"ts": now + i, "raw_text": f"sleep lane memory row {i}"}) + "\n" for i in range(30)),
+        encoding="utf-8",
+    )
+    (state / "memory_fitness.json").write_text(
+        json.dumps({"schema_version": 1, "overlay": "memory_fitness_acmf_v1", "traces": {"m1": {"fitness": 1.0}}}),
+        encoding="utf-8",
+    )
+
+    jobs = []
+    expected_jobs = list(bwt.MEMORY_CONSOLIDATION_JOBS)
+    for _ in range(len(expected_jobs) + 1):
+        row = bwt.tick_writer_organs(
+            state_dir=state,
+            enable_basal_ganglia=False,
+            enable_fractal_pheromone=False,
+            enable_field_slo=False,
+            enable_body_brain_loop=False,
+            enable_metabolic_homeostasis=False,
+        )
+        assert row["producer_count"] == 1
+        producer = row["producers"][0]
+        assert producer["producer"] == "memory_consolidation"
+        assert producer["status"] == "ok"
+        jobs.append(producer["job"])
+
+    assert jobs[: len(expected_jobs)] == expected_jobs
+    assert (state / bwt.MEMORY_CONSOLIDATION_LEDGER).exists()
+    assert (state / "work_receipts.jsonl").exists()
+    assert (state / "long_term_memory.jsonl").exists()
+    assert (state / "memory_fitness_decay.jsonl").exists()
+    assert (state / "convo_term_index_runs.jsonl").exists()
+    assert (state / "convo_seal_runs.jsonl").exists()
+    assert (state / "memory_quarantine_sweeps.jsonl").exists()
+    assert (state / "swimmer_happiness.jsonl").exists()
+    assert (state / "alice_first_person_journal.jsonl").exists()
+
+
+def test_degraded_tick_does_not_run_memory_consolidation(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / bwt.TICK_LEDGER).write_text(
+        json.dumps(
+            {
+                "ts": 1.0,
+                "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
+                "overall_status": "all_failed",
+                "producer_count": 1,
+                "ok_count": 0,
+                "fail_count": 1,
+                "producers": [{"producer": "body_writer_supervisor", "status": "timeout"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    row = bwt.tick_writer_organs(
+        state_dir=state,
+        enable_basal_ganglia=False,
+        enable_fractal_pheromone=False,
+        enable_field_slo=False,
+        enable_body_brain_loop=False,
+        enable_metabolic_homeostasis=True,
+    )
+
+    assert row["degraded_mode"] is True
+    assert [p["producer"] for p in row["producers"]] == ["metabolic_homeostasis"]
+    assert not (state / bwt.MEMORY_CONSOLIDATION_LEDGER).exists()
 
 
 def test_guarded_tick_force_degraded_runs_light_without_timeout_pheromone(tmp_path: Path):
@@ -431,7 +583,7 @@ def test_guarded_tick_force_degraded_runs_light_without_timeout_pheromone(tmp_pa
 
     assert row["degraded_mode"] is True
     assert row["degraded_reason"] == "forced_light_breath"
-    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia"]
+    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
     fake_bg_module.select_action.assert_called_once()
 
 

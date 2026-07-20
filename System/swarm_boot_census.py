@@ -181,7 +181,7 @@ def _active_os_line() -> str:
 
         return str(active_palette().os_line)
     except Exception:
-        return "🐝 SIFTA BeeSon OS v8.0"
+        return "🧬 SIFTA OS v9.0 eXistenZ"
 
 
 def render_boot_banner(os_line: Optional[str] = None) -> str:

@@ -4,6 +4,11 @@
 This is a deterministic prior, not a claim of certainty. It looks at observed
 day segments, body events, and explicit schedule rows, then writes the next
 likely owner segment into the SIFTA state ledger.
+
+Feedback loop: learned weights from swarm_prediction_feedback.py adjust
+scoring coefficients over time. See prediction_feedback_weights.json in
+.sifta_state/ for the current calibration. Weights are HYPOTHESIS-class —
+inspectable, deterministic, reversible.
 """
 
 from __future__ import annotations
@@ -26,6 +31,34 @@ except Exception:  # pragma: no cover - import fallback for standalone probes
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(line)
+
+
+_FEEDBACK_WEIGHTS: dict[str, float] | None = None
+
+
+def _get_feedback_weights(state_dir: Path) -> dict[str, float]:
+    """Load learned weights from the feedback loop (cached per process)."""
+    global _FEEDBACK_WEIGHTS
+    if _FEEDBACK_WEIGHTS is not None:
+        return _FEEDBACK_WEIGHTS
+    try:
+        from System.swarm_prediction_feedback import _load_weights
+
+        _FEEDBACK_WEIGHTS = _load_weights(state_dir=state_dir)
+    except Exception:
+        _FEEDBACK_WEIGHTS = {
+            "recency_power": 1.0,
+            "proximity_scale_explicit": 90.0,
+            "proximity_scale_implicit": 260.0,
+            "explicit_boost": 2.8,
+            "source_weight_schedule": 0.55,
+            "confidence_share_coeff": 0.72,
+            "confidence_support_coeff": 0.18,
+            "confidence_volume_coeff": 0.10,
+            "confidence_support_cap": 6,
+            "confidence_volume_cap": 24,
+        }
+    return _FEEDBACK_WEIGHTS
 
 
 STATE_DIR = Path(__file__).resolve().parents[1] / ".sifta_state"
@@ -292,13 +325,30 @@ def _basis_days(samples: Iterable[EventSample], now_ts: float) -> int:
     return len(days)
 
 
-def _confidence(best_score: float, total_score: float, support: int, basis_count: int) -> float:
+def _confidence(
+    best_score: float,
+    total_score: float,
+    support: int,
+    basis_count: int,
+    *,
+    state_dir: Path | None = None,
+) -> float:
     if total_score <= 0.0 or best_score <= 0.0:
         return 0.0
+    weights = _get_feedback_weights(state_dir) if state_dir is not None else _get_feedback_weights(STATE_DIR)
     share = best_score / total_score
-    support_factor = min(1.0, math.log1p(max(0, support)) / math.log(6))
-    volume_factor = min(1.0, math.log1p(max(0, basis_count)) / math.log(24))
-    return round(max(0.05, min(0.95, 0.72 * share + 0.18 * support_factor + 0.10 * volume_factor)), 3)
+    support_factor = min(
+        1.0, math.log1p(max(0, support)) / math.log(weights["confidence_support_cap"])
+    )
+    volume_factor = min(
+        1.0, math.log1p(max(0, basis_count)) / math.log(weights["confidence_volume_cap"])
+    )
+    raw = (
+        weights["confidence_share_coeff"] * share
+        + weights["confidence_support_coeff"] * support_factor
+        + weights["confidence_volume_coeff"] * volume_factor
+    )
+    return round(max(0.05, min(0.95, raw)), 3)
 
 
 def build_prediction(
@@ -313,6 +363,7 @@ def build_prediction(
     now_ts = float(now if now is not None else time.time())
     now_minute = _minute_from_ts(now_ts)
     samples = _collect_samples(root, now_ts, window_days)
+    weights = _get_feedback_weights(root)
 
     label_scores: dict[str, float] = defaultdict(float)
     label_minutes: dict[str, list[int]] = defaultdict(list)
@@ -328,10 +379,12 @@ def build_prediction(
         age_days = 0.0
         if sample.ts:
             age_days = max(0.0, (now_ts - sample.ts) / 86400)
-        recency = 1.0 / (1.0 + min(age_days, max(1, window_days)))
-        proximity = math.exp(-distance / (90.0 if sample.explicit_future else 260.0))
-        explicit_boost = 2.8 if sample.explicit_future else 1.0
-        source_weight = 0.55 if sample.source == SCHEDULE_LEDGER_NAME and not sample.explicit_future else 1.0
+        recency = 1.0 / (1.0 + min(age_days, max(1, window_days))) ** weights["recency_power"]
+        proximity = math.exp(
+            -distance / (weights["proximity_scale_explicit"] if sample.explicit_future else weights["proximity_scale_implicit"])
+        )
+        explicit_boost = weights["explicit_boost"] if sample.explicit_future else 1.0
+        source_weight = weights["source_weight_schedule"] if sample.source == SCHEDULE_LEDGER_NAME and not sample.explicit_future else 1.0
         score = explicit_boost * source_weight * recency * proximity
         if score <= 0.0001:
             continue
@@ -374,7 +427,10 @@ def build_prediction(
 
     best = candidates[0] if candidates else {}
     best_score = float(best.get("score", 0.0) or 0.0)
-    confidence = _confidence(best_score, total_score, int(best.get("support_count", 0) or 0), len(samples))
+    confidence = _confidence(
+        best_score, total_score, int(best.get("support_count", 0) or 0), len(samples),
+        state_dir=root,
+    )
     segment = str(best.get("segment") or "unknown")
     expected_start_min = int(best.get("expected_start_min", 0) or 0)
 

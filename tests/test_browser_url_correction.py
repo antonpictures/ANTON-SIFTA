@@ -140,6 +140,31 @@ def test_browser_success_claim_is_repaired_when_page_state_is_error():
     assert "homepage" not in repaired.lower()
 
 
+def test_browser_success_claim_is_repaired_when_page_state_is_stale_home():
+    mod = _load_talk_module()
+    reply = (
+        "✅ **SUCCESS!** Google.com has successfully loaded and is displayed in our "
+        "active window. We are looking at the standard Google search page."
+    )
+    state = {
+        "trace_id": "home-state-1",
+        "url": "sifta://home",
+        "title": "Alice · SIFTA Browser",
+        "text_excerpt": "Alice Browser Stigmergic web access",
+    }
+
+    repaired = mod._browser_false_success_repair_for_state(
+        reply,
+        prior_user_text="it is a white page. try loading google.com",
+        state=state,
+    )
+
+    assert "freshest browser receipt is still sifta://home" in repaired
+    assert "will not claim the requested page loaded" in repaired
+    assert "home-state-1" in repaired
+    assert "standard Google search page" not in repaired
+
+
 def test_browser_honest_error_reply_is_not_rewritten_again():
     mod = _load_talk_module()
     reply = "I opened Alice Browser to https://nvidia.com/, but the browser receipt shows ERR_TIMED_OUT."

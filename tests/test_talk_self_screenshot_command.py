@@ -173,6 +173,50 @@ def test_self_camera_cortex_prompt_is_observation_context() -> None:
     assert not talk._is_attached_image_description_query(prompt)
 
 
+def test_self_camera_capture_uses_owner_selection_index_for_sx3(monkeypatch, tmp_path) -> None:
+    from System import swarm_camera_target as camera_target
+    from System import swarm_iris
+
+    widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
+    state = tmp_path / ".sifta_state"
+    captured_kwargs: dict[str, object] = {}
+
+    monkeypatch.setattr(talk, "_state_root", lambda: state)
+    monkeypatch.setattr(
+        talk,
+        "_self_camera_output_dir",
+        lambda: tmp_path / "Documentation" / "self_camera_screenshots",
+    )
+    monkeypatch.setattr(
+        camera_target,
+        "live_devices_for_owner_selection",
+        lambda: [
+            ("mac-uid", "MacBook Pro Camera"),
+            ("usb-uid", "USB Camera VID:1133 PID:2081"),
+            ("iphone-uid", "iPhone Camera"),
+        ],
+    )
+    monkeypatch.setattr(
+        camera_target,
+        "index_for_owner_selection",
+        lambda *, name=None, unique_id=None: 3 if name == "iPhone Camera" else None,
+    )
+
+    def fake_webcam_frame(**kwargs):
+        captured_kwargs.update(kwargs)
+        return None
+
+    monkeypatch.setattr(swarm_iris, "webcam_frame", fake_webcam_frame)
+
+    row = widget._capture_sifta_self_camera_screenshot(owner_text="/sx3")
+
+    assert row["camera_selection_policy"] == "explicit_owner_sx_slots_include_iphone"
+    assert row["camera_slot"] == 2
+    assert row["camera_name"] == "iPhone Camera"
+    assert row["one_shot_camera_index"] == 3
+    assert captured_kwargs["camera_index"] == 3
+
+
 def test_sc_command_meaning_fiction_guard_rewrites_scroll_down_claim() -> None:
     prior = talk._self_screenshot_cortex_prompt(
         "/sc",

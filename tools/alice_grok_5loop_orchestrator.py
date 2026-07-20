@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Grok terminal orchestrator for Alice's 5-loop stigmergic memory Q&A.
+"""Legacy Grok terminal orchestrator for Alice's 5-loop stigmergic memory Q&A.
 
-I stage. Alice's limbs execute in the live GUI. I wait for real receipts.
-I do NOT write fake browser results or fake global-chat transfers.
+Default behavior now runs the visible five-message Alice Browser Grok dialogue.
+Use ``--legacy-5loop`` only when deliberately debugging the old receipt drill.
 
-Flow per loop:
-  1. stage_grok_self_type_command -> Alice Browser types+send in Grok
-  2. wait for ALICE_BROWSER_GROK_SELF_TYPE_RESULT status=sent (source=alice_browser_widget)
-  3. read Grok answer from live page snapshot
-  4. stage_alice_self_type_to_talk_command -> Alice Talk self-types transfer to global chat
-  5. wait for ALICE_SELF_TYPE_TO_TALK_BOX receipt with sent=True
+TERMINAL GROK STAGES ONLY. Alice's limbs execute in the live GUI.
+I never read Grok answers from page snapshots. I never fabricate Global Chat posts.
+
+Correct embodiment per loop (orchestrator STOPS after step 4):
+  1. Alice types question in Grok browser composer → send
+  2. Alice waits for Grok reply on screen
+  3. Alice clicks Grok COPY button (small icon under message)
+  4. Alice mirrors clipboard into Global Chat (George watches — no brain, no Ioan label)
+  Alice continues the Grok browser conversation herself after that. Terminal Grok never pastes into Grok.
 
 Run from ANTON_SIFTA root:
   python3 tools/alice_grok_5loop_orchestrator.py
   python3 tools/alice_grok_5loop_orchestrator.py --loop 1
-  python3 tools/alice_grok_5loop_orchestrator.py --from-loop 3
 """
 from __future__ import annotations
 
@@ -29,19 +31,23 @@ from typing import Any, Dict, List, Optional
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from System.swarm_alice_browser_grok_copy import (  # noqa: E402
+    stage_grok_copy_last_reply_command,
+)
 from System.swarm_alice_browser_grok_self_type import (  # noqa: E402
     command_path as grok_command_path,
     stage_grok_self_type_command,
 )
-from System.swarm_alice_talk_self_type import (  # noqa: E402
-    stage_alice_self_type_to_talk_command,
+from System.swarm_alice_talk_paste_clipboard import (  # noqa: E402
+    stage_talk_paste_clipboard_command,
 )
 
 STATE = REPO / ".sifta_state"
 GROK_URL = "https://grok.com/c/3687cca1-203d-421a-8a4a-61a0b907a27b"
 PAGE_SNAPSHOT = STATE / "alice_browser_current_page.json"
 BROWSER_RESULTS = STATE / "alice_browser_grok_self_type_results.jsonl"
-TALK_SELF_TYPE = STATE / "alice_self_type_to_talk_box.jsonl"
+BROWSER_COPY_RESULTS = STATE / "alice_browser_grok_copy_results.jsonl"
+TALK_PASTE_RESULTS = STATE / "alice_talk_paste_clipboard_results.jsonl"
 
 QUESTIONS = [
     "How does my browser hand create stigmergic memory entries when I type and send "
@@ -82,34 +88,34 @@ def _page_text_hash() -> str:
         return ""
 
 
-def _read_page_text() -> str:
-    if not PAGE_SNAPSHOT.exists():
-        return ""
-    try:
-        data = json.loads(PAGE_SNAPSHOT.read_text(encoding="utf-8", errors="replace"))
-        return str(data.get("text") or "")
-    except Exception:
-        return ""
+def _wait_for_grok_page_ready(*, timeout_s: float = 90.0) -> bool:
+    """Wait until Alice Browser has a live grok.com chat page loaded."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if not PAGE_SNAPSHOT.exists():
+            time.sleep(1.5)
+            continue
+        try:
+            data = json.loads(PAGE_SNAPSHOT.read_text(encoding="utf-8", errors="replace"))
+            url = str(data.get("url") or "")
+            text = str(data.get("text") or "")
+            if "grok.com/c/" in url and len(text) > 400:
+                return True
+        except Exception:
+            pass
+        time.sleep(1.5)
+    return False
 
 
-def _extract_grok_reply(page_text: str, question: str) -> str:
-    """Best-effort extraction of Grok's latest reply from page snapshot text."""
-    text = " ".join((page_text or "").split())
-    q = " ".join((question or "").split())
-    if not text:
-        return ""
-    if q and q in text:
-        tail = text.split(q, 1)[-1].strip()
-    else:
-        tail = text[-1200:].strip()
-    for marker in ("Grok was unable to finish", "No response.", "Ask anything"):
-        if marker in tail:
-            tail = tail.split(marker)[0].strip()
-    # Drop obvious UI chrome tokens
-    for junk in ("Submit", "Think Harder", "Copy", "Regenerate", "Like", "Dislike"):
-        if tail.endswith(junk):
-            tail = tail[: -len(junk)].strip()
-    return tail[:500] if tail else text[-400:].strip()
+def _wait_for_page_change(baseline_hash: str, *, timeout_s: float = 120.0) -> bool:
+    """Detect Grok finished writing — hash change only, no text extraction."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        cur = _page_text_hash()
+        if cur and cur != baseline_hash:
+            return True
+        time.sleep(1.5)
+    return False
 
 
 def _wait_for_browser_sent(receipt_id: str, *, timeout_s: float = 180.0) -> Dict[str, Any]:
@@ -127,135 +133,176 @@ def _wait_for_browser_sent(receipt_id: str, *, timeout_s: float = 180.0) -> Dict
     return {"status": "timeout", "receipt_id": receipt_id}
 
 
-def _wait_for_page_change(baseline_hash: str, *, timeout_s: float = 120.0) -> str:
+def _wait_for_grok_copy(receipt_id: str, *, timeout_s: float = 90.0) -> Dict[str, Any]:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        cur = _page_text_hash()
-        if cur and cur != baseline_hash:
-            return _read_page_text()
-        time.sleep(1.5)
-    return _read_page_text()
-
-
-def _wait_for_talk_sent(from_grok_receipt: str, loop_num: int, *, timeout_s: float = 90.0) -> Dict[str, Any]:
-    deadline = time.time() + timeout_s
-    marker = f"Transfer from Grok (Alice read in browser loop {loop_num})"
-    while time.time() < deadline:
-        for row in reversed(_read_jsonl(TALK_SELF_TYPE)):
-            if not row.get("sent"):
+        for row in reversed(_read_jsonl(BROWSER_COPY_RESULTS)):
+            if row.get("receipt_id") != receipt_id:
                 continue
-            if row.get("from_grok_receipt") == from_grok_receipt:
-                return row
-            preview = str(row.get("text_preview") or "")
-            if marker in preview:
+            if row.get("source") != "alice_browser_widget":
+                continue
+            status = str(row.get("status") or "")
+            if status in {"copied", "clipboard_empty", "copy_click_failed", "copy_js_failed"}:
                 return row
         time.sleep(0.8)
-    return {"status": "timeout", "from_grok_receipt": from_grok_receipt}
+    return {"status": "timeout", "receipt_id": receipt_id}
+
+
+def _wait_for_talk_paste(receipt_id: str, *, timeout_s: float = 90.0) -> Dict[str, Any]:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        for row in reversed(_read_jsonl(TALK_PASTE_RESULTS)):
+            if row.get("receipt_id") != receipt_id:
+                continue
+            if row.get("source") != "talk_to_alice_widget":
+                continue
+            if row.get("sent") or str(row.get("status")) in {"pasted", "timeout"}:
+                return row
+        time.sleep(0.8)
+    return {"status": "timeout", "receipt_id": receipt_id}
 
 
 def run_loop(loop_num: int, question: str) -> Dict[str, Any]:
-    print(f"\n=== LOOP {loop_num}/5 ===")
-    print(f"[orchestrator] Alice: type this in Grok browser composer and send:")
+    print(f"\n=== LOOP {loop_num}/5 (embodied — Alice hands only) ===")
+    print(f"[orchestrator] Step 1: Alice types this in Grok browser composer:")
     print(f"  {question[:120]}{'...' if len(question) > 120 else ''}")
 
+    if not _wait_for_grok_page_ready():
+        print("[orchestrator] WARN: grok.com page not ready — staging anyway")
     baseline_hash = _page_text_hash()
-    cmd = stage_grok_self_type_command(
+    ask_cmd = stage_grok_self_type_command(
         question,
-        owner_text=f"ALICE 5-LOOP {loop_num} (orchestrator staged for your hand)",
+        owner_text=f"ALICE 5-LOOP {loop_num}: type this question yourself in Grok browser",
         url=GROK_URL,
         press_enter=True,
         source="grok_5loop_orchestrator",
         state_dir=STATE,
     )
-    rid = str(cmd.get("receipt_id") or "")
-    print(f"[orchestrator] Staged browser command {rid}. Waiting for Alice Browser hand...")
+    ask_rid = str(ask_cmd.get("receipt_id") or "")
+    print(f"[orchestrator] Staged browser type command {ask_rid}. Waiting for Alice hand send...")
 
-    browser_result = _wait_for_browser_sent(rid)
-    status = str(browser_result.get("status") or "missing")
-    print(f"[orchestrator] Browser result: {status} / {browser_result.get('reason', '')}")
+    ask_result = _wait_for_browser_sent(ask_rid)
+    ask_status = str(ask_result.get("status") or "missing")
+    print(f"[orchestrator] Browser ask: {ask_status}")
+    if ask_status != "sent":
+        if ask_status in {"unverified", "draft_still_in_composer", "timeout_no_js_callback"}:
+            print("[orchestrator] Retrying browser ask once after composer warm-up...")
+            time.sleep(8)
+            retry_cmd = stage_grok_self_type_command(
+                question,
+                owner_text=f"ALICE 5-LOOP {loop_num} retry",
+                url=GROK_URL,
+                press_enter=True,
+                source="grok_5loop_orchestrator",
+                state_dir=STATE,
+            )
+            ask_rid = str(retry_cmd.get("receipt_id") or ask_rid)
+            ask_result = _wait_for_browser_sent(ask_rid)
+            ask_status = str(ask_result.get("status") or "missing")
+            print(f"[orchestrator] Browser ask retry: {ask_status}")
+        if ask_status != "sent":
+            return {"loop": loop_num, "ok": False, "stage": "browser_ask", "browser_receipt_id": ask_rid}
 
-    if status != "sent":
-        return {
-            "loop": loop_num,
-            "ok": False,
-            "stage": "browser",
-            "browser_receipt_id": rid,
-            "browser_status": status,
-        }
+    print("[orchestrator] Step 2: Waiting for Grok reply on screen (page hash change)...")
+    grok_ready = _wait_for_page_change(baseline_hash, timeout_s=150.0)
+    print(f"[orchestrator] Grok reply detected: {grok_ready}")
 
-    page_text = _wait_for_page_change(baseline_hash)
-    grok_reply = _extract_grok_reply(page_text, question)
-    if not grok_reply or len(grok_reply) < 20:
-        grok_reply = (
-            f"(Grok reply on screen after loop {loop_num} — read CURRENT ALICE BROWSER PAGE TEXT "
-            f"in We Code Together; browser receipt {rid} is sent.)"
-        )
-    transfer_text = f"Transfer from Grok (Alice read in browser loop {loop_num}): {grok_reply}"
-    print(f"[orchestrator] Grok answer read from page ({len(grok_reply)} chars). Staging Talk transfer...")
-
-    talk_cmd = stage_alice_self_type_to_talk_command(
-        transfer_text,
-        owner_text=f"ALICE 5-LOOP {loop_num} transfer (orchestrator staged for your hand)",
-        from_grok_receipt=rid,
+    print("[orchestrator] Step 3: Alice clicks Grok COPY button under latest message...")
+    copy_cmd = stage_grok_copy_last_reply_command(
+        owner_text=f"ALICE 5-LOOP {loop_num}: click Grok COPY, read clipboard yourself",
+        url=GROK_URL,
+        from_grok_receipt=ask_rid,
         loop=loop_num,
-        reason="grok_5loop_browser_to_global_transfer",
+        source="grok_5loop_orchestrator",
         state_dir=STATE,
     )
-    print(f"[orchestrator] Staged Talk command {talk_cmd.get('receipt_id')}. Waiting for visible global chat post...")
-
-    talk_result = _wait_for_talk_sent(rid, loop_num)
-    talk_ok = bool(talk_result.get("sent")) or str(talk_result.get("status")) != "timeout"
+    copy_rid = str(copy_cmd.get("receipt_id") or "")
+    copy_result = _wait_for_grok_copy(copy_rid)
+    copy_ok = str(copy_result.get("status")) == "copied"
+    clip_sha = str(copy_result.get("clipboard_sha256") or "")
     print(
-        f"[orchestrator] Talk transfer: "
-        f"{'sent' if talk_ok else 'timeout/missing'} "
-        f"receipt={talk_result.get('receipt_id', '?')}"
+        f"[orchestrator] Grok COPY: {copy_result.get('status')} "
+        f"chars={copy_result.get('clipboard_chars', 0)} sha={clip_sha[:12]}"
     )
+    if not copy_ok:
+        return {"loop": loop_num, "ok": False, "stage": "grok_copy", "copy_receipt_id": copy_rid}
 
-    ok = status == "sent" and talk_ok
+    print("[orchestrator] Step 4: Alice pastes clipboard into Global Chat Talk box and sends...")
+    paste_cmd = stage_talk_paste_clipboard_command(
+        owner_text=f"ALICE 5-LOOP {loop_num}: paste Grok COPY into Talk, send to yourself",
+        from_grok_copy_receipt=copy_rid,
+        expected_clipboard_sha256=clip_sha,
+        loop=loop_num,
+        source="grok_5loop_orchestrator",
+        state_dir=STATE,
+    )
+    paste_rid = str(paste_cmd.get("receipt_id") or "")
+    paste_result = _wait_for_talk_paste(paste_rid)
+    paste_ok = bool(paste_result.get("sent")) or str(paste_result.get("status")) == "pasted"
+    print(f"[orchestrator] Talk paste+send: {'sent' if paste_ok else 'timeout/missing'} receipt={paste_rid}")
+    if not paste_ok:
+        return {"loop": loop_num, "ok": False, "stage": "talk_mirror", "talk_receipt_id": paste_rid}
+
+    ok = True
     print(
-        f"[orchestrator] Loop {loop_num} "
-        f"{'COMPLETE' if ok else 'INCOMPLETE'} — "
-        "check Alice Browser Grok tab + Global Chat for visible messages."
+        f"[orchestrator] Loop {loop_num} COMPLETE — "
+        "Grok COPY mirrored to Global Chat. Alice continues Grok browser herself; "
+        "terminal Grok does not paste into Grok."
     )
     return {
         "loop": loop_num,
         "ok": ok,
-        "browser_receipt_id": rid,
-        "browser_status": status,
-        "talk_receipt_id": talk_result.get("receipt_id"),
-        "transfer_preview": transfer_text[:200],
+        "browser_ask_receipt_id": ask_rid,
+        "grok_copy_receipt_id": copy_rid,
+        "talk_mirror_receipt_id": paste_rid,
+        "clipboard_sha256": clip_sha,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Alice 5-loop Grok orchestrator (terminal only)")
+    parser = argparse.ArgumentParser(description="Alice 5-loop orchestrator (stage-only, no cheating)")
     parser.add_argument("--loop", type=int, default=0, help="Run only this loop (1-5)")
     parser.add_argument("--from-loop", type=int, default=1, help="Start loop number")
     parser.add_argument("--to-loop", type=int, default=5, help="End loop number")
+    parser.add_argument("--legacy-5loop", action="store_true", help="Run the old five-receipt drill instead of the visible dialogue mission")
+    parser.add_argument("--mission-id", default="hello-world-visible", help="Visible dialogue mission id when not using --legacy-5loop")
     args = parser.parse_args()
 
     if not STATE.exists():
         print("ERROR: .sifta_state missing — is SIFTA running?", file=sys.stderr)
         return 2
+    if not args.legacy_5loop:
+        print("=== VISIBLE DIALOGUE MODE ===")
+        print("macOS Grok is the coding helper. Alice Browser Grok is the website conversation partner.")
+        print("Running five visible messages: Alice, Grok, Alice, Grok, Alice.")
+        try:
+            from tools.alice_visible_grok_dialogue_orchestrator import run_visible_dialogue
+
+            row = run_visible_dialogue(mission_id=str(args.mission_id or "hello-world-visible"))
+        except Exception as exc:
+            print(f"FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(row, ensure_ascii=False, sort_keys=True, indent=2))
+        return 0
     if grok_command_path(STATE).exists():
-        print("WARN: stale alice_browser_grok_self_type_command.json exists; browser may consume it first.")
+        print("WARN: stale browser command file exists; browser may consume it first.")
 
     start = max(1, args.loop or args.from_loop)
     end = min(5, args.loop or args.to_loop)
 
-    print("=== ORCHESTRATOR (terminal) — REAL 5-LOOP FOR ALICE ===")
-    print("I stage one command at a time. Alice Browser + Talk limbs execute in the GUI.")
-    print("No fake ledger rows. Receipts from alice_browser_widget + alice_type_in_own_box only.")
-    print("Alice: watch We Code Together → Stig Triple → VISUAL TRANSFERS + CURRENT PAGE TEXT.\n")
+    print("=== ORCHESTRATOR (terminal Grok) — STAGE ONLY, ALICE EXECUTES ===")
+    print("I never read Grok answers. I never post fabricated GROK 5-LOOP blocks.")
+    print("Alice: Grok browser = you ↔ Grok. Global Chat = you paste Grok COPY for George.")
+    print("Watch We Code Together → Stig Triple for mission pulses.\n")
 
     results: List[Dict[str, Any]] = []
     for i in range(start, end + 1):
         results.append(run_loop(i, QUESTIONS[i - 1]))
 
     ok_count = sum(1 for r in results if r.get("ok"))
-    print(f"\n=== DONE: {ok_count}/{len(results)} loops with live receipts ===")
+    print(f"\n=== DONE: {ok_count}/{len(results)} loops with embodied receipts ===")
     if ok_count < len(results):
-        print("Incomplete loops need IDE doctors to patch browser/talk limbs in We Code Together.")
+        print("Incomplete loops: patch browser/talk limbs in We Code Together until receipts green.")
         return 1
     return 0
 

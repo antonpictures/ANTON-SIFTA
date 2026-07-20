@@ -1,6 +1,7 @@
-version: "1.0.0"
-name: "SIFTA Living OS"
-description: "A stigmergic, biologically-inspired operating system substrate"
+version: "9.0.0"
+codename: "eXistenZ"
+name: "SIFTA OS eXistenZ"
+description: "A receipt-first, stigmergic, biologically-inspired operating system substrate"
 components:
   - name: "swarm_pheromone"
     type: "engine"

@@ -20,7 +20,7 @@ no leaving the machine — owner trust line).
 Mechanism:
 1. Receives a PCM burst (List[float] @ 48kHz from audio_ingress)
 2. Decimates to 16kHz (Whisper's native rate)
-3. Runs Whisper tiny.en model (lazy-loaded, single instance per process)
+3. Runs Whisper model (default large-v3, multilingual; auto language detect — GM2)
 4. Filters known silence-hallucinations ("Thanks for watching!" etc)
 5. Returns the transcribed text, or None if no real speech detected
 
@@ -33,8 +33,9 @@ Failure modes (all return None — Wernicke gracefully degrades to label):
   - Empty transcription
 
 Configuration:
-  SIFTA_WHISPER_MODEL   — model name (default: "tiny.en")
-                           options: tiny.en, base.en, small.en, medium.en
+  SIFTA_WHISPER_MODEL   — model name (default: "large-v3", multilingual)
+                           options include large-v3 (recommended), base, turbo, etc.
+                           language detection is now automatic (GM2)
   SIFTA_WHISPER_DISABLE — set to "1" to globally disable transcription
                            (useful for headless CI, or when the Architect
                            wants pure amplitude-bucket Wernicke)
@@ -94,11 +95,8 @@ _MIN_RMS_FOR_WHISPER = float(os.environ.get("SIFTA_WHISPER_MIN_RMS", "0.003"))
 _MAX_NO_SPEECH_PROB = float(os.environ.get("SIFTA_WHISPER_MAX_NO_SPEECH", "0.5"))
 _MIN_AVG_LOGPROB    = float(os.environ.get("SIFTA_WHISPER_MIN_LOGPROB", "-1.2"))
 
-# Hallucination blocklist — MINIMAL per Architect doctrine "hear everything
-# in english" (2026-04-19). We only block markup tokens Whisper emits when
-# it has literally nothing to transcribe. Real English words like "I'm sorry",
-# "come", "thank you" are kept because real humans actually say those; we
-# trust Layer 2-3 confidence filters above to reject the true hallucinations.
+# Hallucination blocklist — MINIMAL. We block only obvious non-speech tokens
+# that Whisper emits when it has nothing. We no longer force English (GM2).
 _HALLUCINATIONS = {
     "",
     ".",
@@ -281,15 +279,15 @@ def transcribe(
                 stride = max(1, sample_rate // 16000)
                 audio = arr[::stride]
 
-        # Whisper params chosen for short low-noise bursts:
-        #   language="en"             — Architect speaks English; skip detect
+        # Whisper params chosen for short low-noise bursts (GM2 multilingual):
+        #   language=None (auto-detect) — Whisper large-v3 knows ~99 langs; no English lock
         #   fp16=False                — CPU path is f32 (M-series w/o CoreML)
         #   no_speech_threshold=0.6   — aggressive silence rejection
         #   condition_on_previous_text=False — no context bleed across bursts
         #   temperature=0.0           — deterministic, no creative invention
         result = model.transcribe(
             audio,
-            language="en",
+            language=None,
             fp16=False,
             no_speech_threshold=0.6,
             condition_on_previous_text=False,
@@ -329,6 +327,24 @@ def transcribe(
             return None
 
         _TOTAL_TEXT_RETURNED += 1
+
+        # GM2: record the language Whisper actually detected (large-v3 knows ~99)
+        detected_lang = result.get("language") or "und"
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            append_line_locked(
+                _STATE / "stt_language.jsonl",
+                json.dumps({
+                    "ts": time.time(),
+                    "language": detected_lang,
+                    "text_preview": text[:120],
+                    "model": _MODEL_NAME,
+                }, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
         return text
 
     except Exception as exc:

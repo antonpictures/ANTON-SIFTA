@@ -46,6 +46,58 @@ def test_timeout_recovery_records_queue_and_reply(tmp_path):
     assert diag_rows[-1]["diagnostic_arm"] == rows[-1]["diagnostic_arm"]
 
 
+def test_rich_typed_turn_waits_but_spoken_noise_does_not():
+    from System.swarm_cortex_timeout_recovery import rich_typed_turn_needs_wait
+
+    rich = "George typed a detailed body-code request: please wire the memory and travel mode fully."
+    assert rich_typed_turn_needs_wait(rich, input_modality="TYPED", stt_conf=1.0) is True
+    assert rich_typed_turn_needs_wait(rich, input_modality="SPOKEN", stt_conf=0.42) is False
+    assert rich_typed_turn_needs_wait("okay", input_modality="TYPED", stt_conf=1.0) is False
+
+
+def test_queue_and_plan_reroute_writes_cortex_reroute_receipt(tmp_path, monkeypatch):
+    from System import swarm_metabolic_cortex_router as router
+    from System.swarm_cortex_timeout_recovery import queue_and_plan_reroute
+
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(
+        router,
+        "route_cortex",
+        lambda *_args, **_kwargs: {
+            "model": "alice-m5-cortex-8b-6.3gb:latest",
+            "reason": "test warm fallback",
+            "receipt_id": "route-test-1",
+        },
+    )
+
+    plan = queue_and_plan_reroute(
+        model="grok:grok-4.3",
+        owner_text="Please wire the cortex timeout queue and wait for this rich typed task.",
+        timeout_s=60,
+        cause="no_token_watchdog",
+        state_dir=state,
+    )
+
+    assert plan["model"] == "alice-m5-cortex-8b-6.3gb:latest"
+    assert "Body status: cortex thinking; waiting, not templating" in plan["wait_line"]
+    assert "My cortex is slow" not in plan["wait_line"]
+    recovery_rows = [
+        json.loads(line)
+        for line in (state / "cortex_timeout_recovery.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    reroute_rows = [
+        json.loads(line)
+        for line in (state / "cortex_reroute_receipts.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert recovery_rows[-1]["cause"] == "no_token_watchdog"
+    assert reroute_rows[-1]["kind"] == "CORTEX_REROUTE"
+    assert reroute_rows[-1]["from_model"] == "grok:grok-4.3"
+    assert reroute_rows[-1]["to_model"] == "alice-m5-cortex-8b-6.3gb:latest"
+    assert reroute_rows[-1]["route_receipt_id"] == "route-test-1"
+
+
 def test_grok_cli_timeout_recovers_without_error_event(tmp_path, monkeypatch):
     from System import swarm_gemini_brain as brain
 
@@ -65,11 +117,16 @@ def test_grok_cli_timeout_recovers_without_error_event(tmp_path, monkeypatch):
             timeout_s=120,
         )
     )
+    substantive = [
+        (kind, payload)
+        for kind, payload in events
+        if not (kind == "token" and payload == "\u200b")
+    ]
 
-    assert [kind for kind, _payload in events] == ["token", "done"]
-    assert "recovery receipt" in events[0][1]
-    assert "diagnostic receipt" in events[0][1]
-    assert "Try again" not in events[0][1]
+    assert [kind for kind, _payload in substantive] == ["token", "done"]
+    assert "recovery receipt" in substantive[0][1]
+    assert "diagnostic receipt" in substantive[0][1]
+    assert "Try again" not in substantive[0][1]
     assert (state / "cortex_timeout_recovery.jsonl").exists()
     assert (state / "parallel_cortex_arm_diagnostics.jsonl").exists()
     health_rows = [
@@ -95,7 +152,7 @@ def test_self_code_marker_timeout_recovers_packet_and_receipts(tmp_path):
         state_dir=state,
     )
 
-    assert "recovered the self-code packet" in reply
+    assert "Self-code packet recovered" in reply
     assert "r921-alice-browser-lag-probe" in reply
     assert "System/swarm_browser_lag_probe.py" in reply
 
@@ -131,7 +188,7 @@ def test_no_token_watchdog_self_code_recovery_uses_combined_marker_text(tmp_path
         state_dir=state,
     )
 
-    assert "recovered the self-code packet" in reply
+    assert "Self-code packet recovered" in reply
     assert "r921-alice-browser-lag-probe" in reply
 
     rows = [

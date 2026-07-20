@@ -1,5 +1,7 @@
 import sys
-sys.path.insert(0, "/Users/ioanganton/Music/ANTON_SIFTA")
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root (migrate to Kernel.path_resolver)
 
 from System.adaptation_lab.cognitive_light_cone import run_collective, run_isolated_agents
 

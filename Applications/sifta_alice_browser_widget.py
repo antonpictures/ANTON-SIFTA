@@ -1933,6 +1933,13 @@ class AliceBrowserWidget(QMainWindow):
             self._blank_render_probe_retry_by_url[str(url)] = 0
         except Exception:
             pass
+        # Time sense: navigation ordered — not finished until load_finished.
+        try:
+            from System.swarm_browser_time_sense import note_navigation_ordered as _bts_ord
+
+            _bts_ord(str(url), source="alice_browser_navigate")
+        except Exception:
+            pass
         self._view.load(QUrl(url))
         try:
             QTimer.singleShot(9000, lambda u=str(url): self._verify_rendered_after_navigation(u, source="navigate_timeout"))
@@ -2390,6 +2397,17 @@ class AliceBrowserWidget(QMainWindow):
                 self._page._recent_media_errors = []
             except Exception:
                 pass
+        # Browser time proprioception — limb feels "still loading"
+        try:
+            from System.swarm_browser_time_sense import note_load_started as _bts_start
+
+            _bts_start(
+                getattr(self, "_current_url", "") or "",
+                title=self._current_browser_title(),
+                source="alice_browser_load_started",
+            )
+        except Exception:
+            pass
         self._publish_browser_context(source="load_started")
         self._write_address_context(source="load_started")
         self._record_browser_context_shift(
@@ -2408,6 +2426,19 @@ class AliceBrowserWidget(QMainWindow):
         url = self._current_url
         title = self._view.title() if self._view else ""
         duration = round(time.time() - self._page_load_ts, 2)
+        # Browser time proprioception — limb feels "settled" with duration
+        try:
+            from System.swarm_browser_time_sense import note_load_finished as _bts_fin
+
+            _bts_fin(
+                url or "",
+                title=title or "",
+                ok=bool(ok),
+                duration_s=duration,
+                source="alice_browser_load_finished",
+            )
+        except Exception:
+            pass
         self._publish_browser_context(source="load_finished")
         self._write_address_context(source="load_finished", duration_s=duration)
         self._record_browser_context_shift(

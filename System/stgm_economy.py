@@ -52,6 +52,8 @@ class EconomySnapshot:
     inference_fee_volume: float = 0.0
     atp_mint_lines: int = 0
     atp_minted: float = 0.0
+    pulse_mint_lines: int = 0
+    pulse_minted: float = 0.0
     deprecated_mint_attempts: int = 0
     deprecated_would_have_minted: float = 0.0
     retired_utility_mint_lines: int = 0
@@ -113,6 +115,8 @@ class EconomySnapshot:
             "inference_fee_volume": round(self.inference_fee_volume, 4),
             "atp_mint_lines": self.atp_mint_lines,
             "atp_minted": round(self.atp_minted, 9),
+            "pulse_mint_lines": self.pulse_mint_lines,
+            "pulse_minted": round(self.pulse_minted, 9),
             "net_stgm": round(self.net_supply, 4),
             "spend": round(self.canonical_spent, 4),
             "halving_interval_rows": 10000,
@@ -392,13 +396,16 @@ def economy_matrix_snapshot(
         "schema": d.get("schema"),
         "ts": d.get("ts"),
         "spendable_wallet_source": d.get("spendable_wallet_source"),
-        "spendable_total_stgm": d.get("canonical_wallet_sum"),
+        "spendable_total_stgm": snap.canonical_wallet_sum,
         "alice_m5_spendable_stgm": round(alice_m5, 4),
         "canonical_wallet_balances": canonical_balances,
-        "net_supply_stgm": d.get("net_stgm"),
-        "canonical_minted_stgm": d.get("canonical_minted"),
-        "canonical_spent_stgm": d.get("canonical_spent"),
-        "atp_minted_stgm": d.get("atp_minted"),
+        "net_supply_stgm": snap.net_supply,
+        "canonical_minted_stgm": snap.canonical_minted,
+        "canonical_spent_stgm": snap.canonical_spent,
+        "atp_minted_stgm": snap.atp_minted,
+        "atp_mint_lines": d.get("atp_mint_lines"),
+        "pulse_minted_stgm": snap.pulse_minted,
+        "pulse_mint_lines": d.get("pulse_mint_lines"),
         "repair_lines": d.get("repair_lines"),
         "repair_parse_ok": d.get("repair_parse_ok"),
         "memory_rewards_source": d.get("reputation_source"),
@@ -414,40 +421,137 @@ def economy_matrix_snapshot(
         ),
         "cache_source": "computed",
     }
-    # Persist cheap cache for fast matrix / self-eval reads (out-of-band refresh recommended).
+
+
+def _write_stgm_economy_cache(data: Dict[str, Any], cache_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Persist the cheap STGM economy snapshot for HUD/self-query fast paths."""
+    cache_path = cache_path or STGM_CACHE
+    result = dict(data)
+    result["cache_source"] = "computed"
+    result["cache_generated_at"] = time.time()
+    result["cache_written"] = str(cache_path)
     try:
-        STGM_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        with open(STGM_CACHE, "w") as f:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
-        result["cache_written"] = str(STGM_CACHE)
     except Exception as _e:
         result.setdefault("warnings", []).append(f"cache_write_failed:{_e}")
     return result
 
 
-def load_stgm_economy_cache() -> Optional[Dict[str, Any]]:
+def load_stgm_economy_cache(cache_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """Fast path: read the last persisted layered snapshot (no scan).
 
     Matrix and self-eval use this so generation stays <2s even if the
     underlying scan_economy(repair_log) would be expensive.
     """
-    if not STGM_CACHE.exists():
+    cache_path = cache_path or STGM_CACHE
+    if not cache_path.exists():
         return None
     try:
-        with open(STGM_CACHE) as f:
+        with open(cache_path) as f:
             data = json.load(f)
         data = dict(data)
         data["source"] = "cache"
-        data["cache_path"] = str(STGM_CACHE)
+        data["cache_path"] = str(cache_path)
         return data
     except Exception:
         return None
+
+
+def _path_mtime_s(path: Path) -> float:
+    try:
+        return float(path.stat().st_mtime)
+    except OSError:
+        return 0.0
+
+
+def _jsonl_tail(path: Path, limit: int = 80, block_size: int = 65536) -> list[Dict[str, Any]]:
+    """Read a JSONL tail without loading the whole ledger into a UI refresh path."""
+    if not path.exists() or limit <= 0:
+        return []
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            pos = handle.tell()
+            chunks: list[bytes] = []
+            newline_count = 0
+            while pos > 0 and newline_count <= limit:
+                read_size = min(block_size, pos)
+                pos -= read_size
+                handle.seek(pos)
+                chunk = handle.read(read_size)
+                chunks.append(chunk)
+                newline_count += chunk.count(b"\n")
+    except OSError:
+        return []
+    data = b"".join(reversed(chunks))
+    rows: list[Dict[str, Any]] = []
+    for raw in data.splitlines()[-limit:]:
+        if not raw.strip():
+            continue
+        try:
+            row = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def latest_atp_pulse(repair_log: Optional[Path] = None, *, tail: int = 160) -> Dict[str, Any]:
+    """Latest canonical ATP mint pulse from repair_log without full economy replay."""
+    repair_log = repair_log or REPAIR_LOG
+    rows = _jsonl_tail(repair_log, limit=tail)
+    atp_rows = [r for r in rows if str(r.get("event_kind") or "") == "UTILITY_MINT_ATP"]
+    latest = atp_rows[-1] if atp_rows else {}
+    tail_amount = sum(_float(r.get("amount_stgm")) for r in atp_rows)
+    return {
+        "tail_rows_scanned": len(rows),
+        "tail_atp_rows": len(atp_rows),
+        "tail_atp_amount_stgm": round(tail_amount, 12),
+        "latest_event_id": latest.get("event_id"),
+        "latest_ts": latest.get("ts"),
+        "latest_amount_stgm": _float(latest.get("amount_stgm")),
+        "latest_watts_observed": latest.get("watts_observed"),
+        "latest_actual_joules_total": latest.get("actual_joules_total"),
+        "latest_policy": latest.get("policy"),
+        "latest_engine": latest.get("engine"),
+    }
+
+
+def latest_work_pulse(repair_log: Optional[Path] = None, *, tail: int = 160) -> Dict[str, Any]:
+    """Latest canonical receipted-work pulse from repair_log without full replay."""
+    repair_log = repair_log or REPAIR_LOG
+    rows = _jsonl_tail(repair_log, limit=tail)
+    pulse_candidates = [
+        r for r in rows
+        if str(r.get("event_kind") or "") == "UTILITY_MINT_POUW_PULSE"
+    ]
+    pulse_rows = [r for r in pulse_candidates if _ledger_row_valid(r)]
+    latest = pulse_rows[-1] if pulse_rows else {}
+    tail_amount = sum(_float(r.get("amount_stgm")) for r in pulse_rows)
+    return {
+        "tail_rows_scanned": len(rows),
+        "tail_pulse_candidate_rows": len(pulse_candidates),
+        "tail_pulse_rows": len(pulse_rows),
+        "tail_pulse_invalid_rows": len(pulse_candidates) - len(pulse_rows),
+        "tail_pulse_amount_stgm": round(tail_amount, 12),
+        "latest_event_id": latest.get("event_id"),
+        "latest_ts": latest.get("ts"),
+        "latest_amount_stgm": _float(latest.get("amount_stgm")),
+        "latest_pulse_kind": latest.get("pulse_kind"),
+        "latest_source_receipt_id": latest.get("source_receipt_id"),
+        "latest_policy": latest.get("policy"),
+        "latest_engine": latest.get("engine"),
+    }
 
 
 def refresh_stgm_economy_cache(
     repair_log: Optional[Path] = None,
     state_dir: Optional[Path] = None,
     memory_rewards: Optional[Path] = None,
+    cache_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Out-of-band: force a full scan and write the cheap cache file.
 
@@ -457,8 +561,92 @@ def refresh_stgm_economy_cache(
     data = economy_matrix_snapshot(
         repair_log=repair_log, state_dir=state_dir, memory_rewards=memory_rewards
     )
-    # economy_matrix_snapshot already wrote the cache; we just return the fresh dict.
     data["refreshed"] = True
+    return _write_stgm_economy_cache(data, cache_path=cache_path)
+
+
+def stgm_body_truth_snapshot(
+    *,
+    repair_log: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    memory_rewards: Optional[Path] = None,
+    cache_path: Optional[Path] = None,
+    max_cache_age_s: float = 300.0,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """One shared STGM truth object for Matrix, We Code Together, and HUD-adjacent reads.
+
+    Spendable wallet is canonical repair_log replay. PoUW memory rewards remain
+    reputation/stake. ATP pulses are pulled from the ledger tail so live UI can
+    show that the organism is beating even when 3-decimal wallet text does not
+    visibly change.
+    """
+    repair_log = repair_log or REPAIR_LOG
+    state_dir = state_dir or STATE_DIR
+    memory_rewards = memory_rewards or (state_dir / "stgm_memory_rewards.jsonl")
+    cache_path = cache_path or STGM_CACHE
+
+    cache_mtime = _path_mtime_s(cache_path)
+    cache_age_s = max(0.0, time.time() - cache_mtime) if cache_mtime else None
+    cache = load_stgm_economy_cache(cache_path=cache_path)
+    cache_is_fresh = (
+        cache is not None
+        and cache_age_s is not None
+        and cache_age_s <= max_cache_age_s
+        and not force_refresh
+    )
+    if cache_is_fresh:
+        data = dict(cache)
+        data["refreshed"] = False
+    else:
+        try:
+            data = refresh_stgm_economy_cache(
+                repair_log=repair_log,
+                state_dir=state_dir,
+                memory_rewards=memory_rewards,
+                cache_path=cache_path,
+            )
+            cache_mtime = _path_mtime_s(cache_path)
+            cache_age_s = max(0.0, time.time() - cache_mtime) if cache_mtime else None
+        except Exception as exc:
+            data = dict(cache or {})
+            data.setdefault("warnings", []).append(f"refresh_failed:{type(exc).__name__}:{exc}")
+            data["refreshed"] = False
+
+    spendable = _float(data.get("spendable_total_stgm") or data.get("canonical_wallet_sum"))
+    atp_pulse = latest_atp_pulse(repair_log)
+    work_pulse = latest_work_pulse(repair_log)
+    atp_total = _float(data.get("atp_minted_stgm"))
+    pulse_total = _float(data.get("pulse_minted_stgm"))
+    visible_3dp = f"STGM {spendable:,.3f}"
+    visible_9dp = f"STGM {spendable:,.9f}"
+    next_visible_delta = round(max(0.0, 0.001 - (abs(atp_total) % 0.001)), 12)
+    data.update(
+        {
+            "truth_label": "SIFTA_STGM_BODY_TRUTH_SNAPSHOT_V1",
+            "cache_path": str(cache_path),
+            "cache_mtime": cache_mtime,
+            "cache_age_s": round(cache_age_s, 3) if cache_age_s is not None else None,
+            "cache_is_fresh": cache_is_fresh,
+            "repair_log_mtime": _path_mtime_s(repair_log),
+            "memory_rewards_mtime": _path_mtime_s(memory_rewards),
+            "visible_topbar_text": visible_9dp,
+            "visible_topbar_text_3dp": visible_3dp,
+            "visible_topbar_text_9dp": visible_9dp,
+            "topbar_precision_digits": 9,
+            "latest_atp_pulse": atp_pulse,
+            "latest_work_pulse": work_pulse,
+            "atp_total_visible_at_3dp": abs(atp_total) >= 0.0005,
+            "atp_total_visible_at_topbar_precision": abs(atp_total) >= 0.0000000005,
+            "pulse_total_visible_at_topbar_precision": abs(pulse_total) >= 0.0000000005,
+            "atp_delta_to_next_001_stgm": next_visible_delta,
+            "same_organism_note": (
+                "Matrix, We Code Together, Finance, and the desktop topbar all read the same "
+                "canonical repair_log spendable wallet; PoUW memory rewards are reputation, "
+                "ATP pulses are physics, and receipted-work pulses are policy-labeled heartbeat."
+            ),
+        }
+    )
     return data
 
 
@@ -564,6 +752,19 @@ def scan_economy(
             out.canonical_minted += amt
             out.atp_minted += amt
             out.atp_mint_lines += 1
+            aid = str(row.get("miner_id") or row.get("agent_id") or "").upper()
+            if aid:
+                balances[aid] = balances.get(aid, 0.0) + amt
+        elif event_kind == "UTILITY_MINT_POUW_PULSE":
+            # r-stgm-pulse-20260705 (Architect direction): receipted-work pulse
+            # lane — small visible mints for verified useful work, one mint per
+            # source receipt id, daily-capped at the synthase. Canonical, but
+            # labeled separately from the Landauer ATP lane so auditors can
+            # always tell physics from policy.
+            amt = _float(row.get("amount_stgm"))
+            out.canonical_minted += amt
+            out.pulse_minted += amt
+            out.pulse_mint_lines += 1
             aid = str(row.get("miner_id") or row.get("agent_id") or "").upper()
             if aid:
                 balances[aid] = balances.get(aid, 0.0) + amt
@@ -714,9 +915,14 @@ __all__ = [
     "development_cost_row",
     "economy_matrix_snapshot",
     "investor_safe_summary",
+    "latest_atp_pulse",
+    "latest_work_pulse",
+    "load_stgm_economy_cache",
     "make_economic_attribution_key",
+    "refresh_stgm_economy_cache",
     "requires_economic_attribution",
     "scan_economy",
+    "stgm_body_truth_snapshot",
     "validate_economic_attribution",
     "wallet_file_claims",
 ]

@@ -258,3 +258,26 @@ Documentation/self_screenshots/
 WIN-WIN_Flyer/
 *.tmp
 
+# Private owner material and local handoff bundles are not public source.
+/Job_Applications/
+/Projects/
+/Documents/Projects/
+/Resume_*.pdf
+/Resume_*.docx
+/SIFTA_Response_to_*.pdf
+/PHILIPPE_*.pdf
+/PATENT*.pdf
+/logs/*
+/tmp/
+/output/
+
+
+# r1632: Kalshi API private material — Keychain only, never git
+*.pem
+*.key
+kalshi*.key
+**/kalshi*secret*
+.env.kalshi*
+
+# r1640: never commit Kalshi private material
+.sifta_state/secrets/

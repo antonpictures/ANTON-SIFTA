@@ -550,6 +550,18 @@ class StigmergicMemoryBus:
             app       = app_context
         )
 
+        # r-stgm-pulse-20260705 (Architect): _mint_stgm above writes REPUTATION
+        # (stgm_memory_rewards.jsonl) which the canonical wallet ignores by
+        # design — so George watched memory work happen while the topbar stayed
+        # frozen. Storing a memory is receipted useful work: pulse the CANONICAL
+        # wallet through the synthase lane too. One pulse per trace id, daily
+        # capped, never breaks the store.
+        try:
+            from System.swarm_atp_synthase import mint_receipted_work_pulse
+            mint_receipted_work_pulse("memory_store", str(tid))
+        except Exception:
+            pass
+
         # Pin to web surface so Claude/Grok/Gemini in any tab can find it
         try:
             from System.tab_heartbeat import HeartbeatBus

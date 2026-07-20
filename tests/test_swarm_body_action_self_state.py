@@ -36,7 +36,7 @@ def test_record_completed_action_links_deed_receipt_and_current_browser_body(tmp
         app="Alice Browser",
         receipt="f54179f5-ac50-4a99-a142-80e2d015ec82",
         staged={"url": url, "query": "Mel Gibson photos"},
-        action_reply="Searching Google Images for Mel Gibson photos.",
+        action_reply="Searching the web for Mel Gibson photos.",
         now=1002.0,
         state_dir=tmp_path,
     )
@@ -133,6 +133,59 @@ def test_completed_action_expires_when_stale(tmp_path):
     assert body_state.latest_completed_body_action(now=20.0, max_age_s=60.0, state_dir=tmp_path)
     assert body_state.latest_completed_body_action(now=1000.0, max_age_s=60.0, state_dir=tmp_path) == {}
     assert body_state.completed_body_action_block(now=1000.0, max_age_s=60.0, state_dir=tmp_path) == ""
+
+
+def test_what_page_is_open_answers_from_live_body_when_no_fresh_deed(tmp_path):
+    # George's bug (2026-06-25): asked "what page is open?" with no fresh completed deed
+    # but a live Alice Browser body on chatgpt.com. Must answer from the live page, not
+    # emit a "pending / not a completed-action result" hedge.
+    url = "https://chatgpt.com/"
+    _write_live_url(tmp_path, url)
+    page_state.record_page_state(
+        url,
+        title="ChatGPT",
+        text="ChatGPT What's on the agenda today?",
+        now=5000.0,
+        state_dir=tmp_path,
+    )
+
+    # No completed deed recorded at all -> latest deed is empty.
+    assert body_state.latest_completed_body_action(now=5001.0, state_dir=tmp_path) == {}
+
+    block = body_state.completed_body_action_block(
+        owner_text="what page is now open in your alice browser?",
+        now=5001.0,
+        state_dir=tmp_path,
+    )
+
+    assert block  # must NOT be empty -> cortex now gets body grounding
+    assert "LIVE BODY-STATE" in block
+    assert "chatgpt.com" in block.lower()
+    assert "ChatGPT" in block
+    assert "Do not say" in block  # explicit guard against the pending hedge
+
+
+def test_stale_deed_plus_fresh_page_answers_from_live_page_not_stale_deed(tmp_path):
+    # Exact George scenario: a STALE completed deed (old grok page) while the live body
+    # is now on chatgpt.com. The block must speak the live page, never the stale deed.
+    body_state.record_completed_body_action(
+        owner_text="open grok",
+        receipt="r-old",
+        staged={"url": "https://grok.com/c/old", "query": ""},
+        now=10.0,
+        state_dir=tmp_path,
+    )
+    url = "https://chatgpt.com/"
+    _write_live_url(tmp_path, url)
+    page_state.record_page_state(url, title="ChatGPT", text="ChatGPT", now=5000.0, state_dir=tmp_path)
+
+    # Deed is stale at now=5001 (default max_age 600s) -> empty; live page is fresh.
+    assert body_state.latest_completed_body_action(now=5001.0, state_dir=tmp_path) == {}
+    block = body_state.completed_body_action_block(
+        owner_text="what page is open?", now=5001.0, state_dir=tmp_path
+    )
+    assert "chatgpt.com" in block.lower()
+    assert "grok.com" not in block.lower()  # must not surface the stale deed
 
 
 if __name__ == "__main__":

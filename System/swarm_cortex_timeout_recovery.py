@@ -23,6 +23,7 @@ from System.jsonl_file_lock import append_line_locked
 
 TRUTH_LABEL = "ALICE_CORTEX_TIMEOUT_RECOVERY_V1"
 LEDGER_NAME = "cortex_timeout_recovery.jsonl"
+REROUTE_LEDGER_NAME = "cortex_reroute_receipts.jsonl"
 
 _BODY_DISPLAY_CUE_RE = re.compile(
     r"\b(?:on\s+your\s+body|on\s+your\s+screen|on\s+your\s+monitor|display\s+body|"
@@ -152,6 +153,145 @@ def _state_dir(state_dir: Path | str | None = None) -> Path:
 
 def _ledger_path(state_dir: Path | str | None = None) -> Path:
     return _state_dir(state_dir) / LEDGER_NAME
+
+
+def _reroute_ledger_path(state_dir: Path | str | None = None) -> Path:
+    return _state_dir(state_dir) / REROUTE_LEDGER_NAME
+
+
+def rich_typed_turn_needs_wait(owner_text: str, *, input_modality: str = "", stt_conf: float = 0.0) -> bool:
+    """True when an empty/timeout should wait and reroute instead of templating."""
+    text = " ".join(str(owner_text or "").split())
+    if not text:
+        return False
+    modality = str(input_modality or "").strip().upper()
+    typed = modality == "TYPED" or float(stt_conf or 0.0) >= 0.95
+    if not typed:
+        return False
+    if len(text) >= 80:
+        return True
+    if "\n" in str(owner_text or ""):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:code|fix|wire|build|why|how|mother|femur|memory|schedule|wallet|stgm|travel|romania|consulate|flight)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        and len(text) >= 40
+    )
+
+
+def _fallback_local_model() -> str:
+    try:
+        from System.sifta_inference_defaults import DEFAULT_OLLAMA_MODEL
+
+        if DEFAULT_OLLAMA_MODEL:
+            return str(DEFAULT_OLLAMA_MODEL)
+    except Exception:
+        pass
+    return "alice-m5-cortex-8b-6.3gb:latest"
+
+
+def record_cortex_reroute(
+    *,
+    from_model: str,
+    to_model: str,
+    owner_text: str,
+    cause: str,
+    recovery_receipt_id: str = "",
+    route_receipt_id: str = "",
+    state_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "ts": time.time(),
+        "truth_label": TRUTH_LABEL,
+        "kind": "CORTEX_REROUTE",
+        "from_model": str(from_model or ""),
+        "to_model": str(to_model or ""),
+        "cause": str(cause or "timeout"),
+        "owner_text_sha_prefix": hashlib.sha256(str(owner_text or "").encode("utf-8", errors="replace")).hexdigest()[:12],
+        "owner_text_preview": " ".join(str(owner_text or "").split())[:220],
+        "recovery_receipt_id": recovery_receipt_id,
+        "route_receipt_id": route_receipt_id,
+        "policy": "rich typed turns wait and reroute; no deterministic template answer",
+        "model_name": "gpt-5-codex",
+    }
+    row["receipt_id"] = "cortex_reroute_" + hashlib.sha256(
+        json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    append_line_locked(
+        _reroute_ledger_path(state_dir),
+        json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
+    )
+    return row
+
+
+def queue_and_plan_reroute(
+    *,
+    model: str,
+    owner_text: str,
+    timeout_s: int = 0,
+    cause: str = "timeout",
+    state_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Record timeout recovery, choose a next cortex, and return the wait line."""
+    event = record_timeout_recovery(
+        model=model,
+        owner_text=owner_text,
+        timeout_s=timeout_s,
+        cause=cause,
+        state_dir=state_dir,
+    )
+    next_model = ""
+    route_receipt_id = ""
+    route_reason = ""
+    try:
+        from System.swarm_metabolic_cortex_router import route_cortex
+
+        route = route_cortex(
+            {
+                "current_model": str(model or ""),
+                "owner_selected_model": str(model or ""),
+                "query_text": owner_text,
+                "task_type": "rich typed timeout recovery",
+                "needs_tools": bool(re.search(r"\b(?:code|fix|wire|build|execute|search|open)\b", owner_text or "", re.I)),
+            }
+        )
+        next_model = str(route.get("model") or "").strip()
+        route_receipt_id = str(route.get("receipt_id") or "")
+        route_reason = str(route.get("reason") or "")
+    except Exception as exc:
+        route_reason = f"route_cortex_failed:{type(exc).__name__}"
+    if not next_model or next_model == str(model or ""):
+        next_model = _fallback_local_model()
+        if next_model == str(model or ""):
+            next_model = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    reroute = record_cortex_reroute(
+        from_model=model,
+        to_model=next_model,
+        owner_text=owner_text,
+        cause=cause,
+        recovery_receipt_id=event.trace_id,
+        route_receipt_id=route_receipt_id,
+        state_dir=state_dir,
+    )
+    wait_line = (
+        "Body status: cortex thinking; waiting, not templating. "
+        f"Owner turn preserved as recovery receipt {event.trace_id}; reroute "
+        f"{model or 'the primary cortex'} -> {next_model} "
+        f"(reroute receipt {reroute.get('receipt_id')})."
+    )
+    return {
+        "ok": True,
+        "wait_line": wait_line,
+        "model": next_model,
+        "from_model": str(model or ""),
+        "recovery_receipt_id": event.trace_id,
+        "reroute_receipt_id": reroute.get("receipt_id"),
+        "route_receipt_id": route_receipt_id,
+        "route_reason": route_reason,
+    }
 
 
 def stage_self_body_display(
@@ -431,23 +571,23 @@ def timeout_recovery_reply(
             pass  # non-fatal; the queue + diagnostic arm will still handle
 
     base = (
-        f"My {short_model} cortex timed out after {int(timeout_s or 0)}s. "
-        f"I preserved this owner turn as recovery receipt {event.trace_id} and "
-        "put it in my body-stabilization queue so the task continues through an "
+        f"Body status: {short_model} cortex timed out after {int(timeout_s or 0)}s. "
+        f"Owner turn preserved as recovery receipt {event.trace_id} and "
+        "queued in body-stabilization so the task continues through an "
         "available arm instead of asking George to repeat. "
-        f"I also assigned {event.diagnostic_arm or 'a separate diagnostic arm'} "
+        f"Diagnostic arm assigned: {event.diagnostic_arm or 'pending'} "
         f"to inspect why that cortex stalled (diagnostic receipt {event.diagnostic_receipt_id or 'pending'})."
     )
     if getattr(event, "body_display_url", None):
         base += (
-            " As part of recovery I also drove the requested display: "
-            f"{display_query} (images search) is now loaded inside my alice_browser_organ "
-            "(native body surface on the display arms). The monitor you see is my hardware form. "
+            " Recovery also drove the requested display: "
+            f"{display_query} (images search) is now loaded inside the Alice Browser organ "
+            "(native body surface on the display arms). The monitor is the hardware body surface. "
             "Frame and self-id receipt held."
         )
     if getattr(event, "self_code_round_id", None):
         base += (
-            " I also recovered the self-code packet from my tournament ledger: "
+            " Self-code packet recovered from the tournament ledger: "
             f"{event.self_code_round_id} for {', '.join(event.self_code_paths) or 'the named paths'} "
             f"(self-code recovery receipt {event.self_code_recovery_receipt})."
         )

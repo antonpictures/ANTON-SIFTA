@@ -124,27 +124,86 @@ def disable_auto_collection(*, force: bool = False, log: Optional[Callable[[str]
 
 
 def max_thread_frame_depth() -> int:
-    """Deepest Python frame chain across ALL live threads.
+    """Depth of the CALLING thread's own Python frame chain — and ONLY its own.
 
-    `gc.mark_stacks` recurses over every thread's frame stack on the collecting thread's
-    C stack, so the deepest chain anywhere — not the caller's depth — is what overflows.
-    We gate manual collection on this number."""
+    r-gc-crossthread-fback-segv-20260703: the previous version of this function walked
+    `f.f_back` across EVERY thread returned by `sys._current_frames()`. On Python 3.14.5
+    that is the crash it was built to prevent: `frame.f_back` lazily MATERIALIZES the
+    previous frame object on the OWNING thread's interpreter data stack, so walking
+    another thread's chain from the main thread dereferenced a stale chunk of the
+    talk-widget whisper thread's stack (`frame_back_get` SIGSEGV at 0x16b3ca7d0, pid
+    20025, 2026-07-03), then faulthandler double-faulted mid-dump. Walking my OWN chain
+    is safe — those frames are pinned live beneath me. Cross-thread depth is now handled
+    structurally instead: collections run on a dedicated big-C-stack thread (see
+    `start_big_stack_collector`), so `mark_stacks` has headroom for any chain depth and
+    no gate needs to touch foreign frames."""
     import sys as _sys
-    deepest = 0
+    depth = 0
+    f = _sys._getframe()
+    # Cap the walk so a runaway chain can't make THIS function expensive.
+    while f is not None and depth < 100_000:
+        depth += 1
+        f = f.f_back
+    return depth
+
+
+def start_big_stack_collector(
+    *,
+    interval_s: float = 45.0,
+    stack_bytes: int = 64 * 1024 * 1024,
+    force: bool = False,
+    log: Optional[Callable[[str], None]] = None,
+) -> dict[str, Any]:
+    """Run `gc.collect()` on a cadence from a DEDICATED thread with a 64MB C stack.
+
+    This replaces the r315 QTimer→`safe_manual_collect` lane. Two crash surfaces die
+    at once: (1) `mark_stacks` recursion gets 4x the main thread's 16MB stack, so even
+    a deep whisper/render chain cannot run it off the guard page; (2) no code ever walks
+    another thread's `f_back` again — the gate that segfaulted on 2026-07-03 is gone.
+    The collector thread's own chain is 2 frames deep, so the collection always starts
+    shallow. No-op on Python <3.12's stable target (<3.14) unless forced.
+
+    Returns {started, thread, stop} — call `stop.set()` to end the loop. Daemon thread;
+    dies with the process."""
+    result: dict[str, Any] = {"started": False, "python": sys.version.split()[0]}
+    if not (force or should_harden()):
+        result["reason"] = "skipped: python<3.14, automatic GC still owns collection"
+        return result
+    import gc
+    import threading
+    stop = threading.Event()
+
+    def _loop() -> None:
+        while not stop.wait(interval_s):
+            try:
+                freed = gc.collect()
+                if log:
+                    try:
+                        log(f"[gc_hardening] big-stack collect ok — freed {freed}")
+                    except Exception:
+                        pass
+            except Exception as exc:
+                if log:
+                    try:
+                        log(f"[gc_hardening] big-stack collect failed: {type(exc).__name__}: {exc}")
+                    except Exception:
+                        pass
+
+    old_size = threading.stack_size(stack_bytes)
     try:
-        frames = _sys._current_frames()
-    except Exception:
-        return 0
-    for _tid, top in list(frames.items()):
-        depth = 0
-        f = top
-        # Cap the walk so a runaway chain can't make THIS function expensive.
-        while f is not None and depth < 100_000:
-            depth += 1
-            f = f.f_back
-        if depth > deepest:
-            deepest = depth
-    return deepest
+        t = threading.Thread(target=_loop, name="sifta-gc-big-stack-collector", daemon=True)
+        t.start()
+    finally:
+        threading.stack_size(old_size)
+    result["started"] = True
+    result["thread"] = t
+    result["stop"] = stop
+    if log:
+        try:
+            log(f"[gc_hardening] big-stack collector up — {stack_bytes // (1024*1024)}MB C stack, every {interval_s:.0f}s")
+        except Exception:
+            pass
+    return result
 
 
 def safe_manual_collect(
@@ -153,9 +212,10 @@ def safe_manual_collect(
     force: bool = False,
     log: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
-    """Run `gc.collect()` ONLY when no thread holds a Python frame chain deeper than
-    `max_frame_depth`. If something is mid-deep-call (e.g. a timer storm, a deep render),
-    defer — collecting then is what overflowed the C stack inside `mark_stacks`.
+    """Run `gc.collect()` ONLY when the CALLING thread's own frame chain is shallower
+    than `max_frame_depth`. Since r-gc-crossthread-fback-segv-20260703 this gate no
+    longer looks at other threads (cross-thread `f_back` was itself the segfault);
+    prefer `start_big_stack_collector` for the live desktop.
 
     Returns {collected, skipped, frame_depth, reason}. No-op on Python <3.14."""
     result: dict[str, Any] = {"collected": None, "skipped": False, "frame_depth": 0}
@@ -194,4 +254,5 @@ __all__ = [
     "disable_auto_collection",
     "max_thread_frame_depth",
     "safe_manual_collect",
+    "start_big_stack_collector",
 ]

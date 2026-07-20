@@ -36,10 +36,24 @@ _OWNER_DIRECT_RE = re.compile(
 )
 _AMBIENT_MEDIA_RE = re.compile(
     r"\b(?:podcast|youtube|phone\s+speaker|speakerphone|listening\s+to\s+a\s+youtube|"
-    r"listening\s+to\s+a\s+podcast|on\s+the\s+phone\s+speaker|speakers?)\b",
+    r"listening\s+to\s+a\s+podcast|listening\s+to\s+some\s+videos?|watching\s+videos?|"
+    r"videos?\s+(?:on|from|through)?\s*(?:my\s+phone|speaker|speakers?)|"
+    r"sound\s+comes?\s+from\s+(?:the\s+)?videos?|"
+    r"stt\s+speech\s+to\s+text|speech\s*(?:to|-)?\s*text.{0,80}\bnot\s+like\s+typing|"
+    r"on\s+the\s+phone\s+speaker|speakers?)\b",
     re.IGNORECASE,
 )
 _PHONE_RE = re.compile(r"\b(?:phone\s+call|make\s+a\s+phone\s+call|speakerphone|phone\s+speaker)\b", re.IGNORECASE)
+_REMOTE_SPEAKER_RE = re.compile(
+    r"\b(?:"
+    r"noise\s+from\s+(?:where|his|her|their)\b|"
+    r"(?:his|her|their)\s+work\s+location|"
+    r"work\s+location\s+on\s+the\s+(?:east|west)\s+coast|"
+    r"(?:he|she|they)\s+hear(?:s)?\s+you|"
+    r"(?:he|she|they)\s+(?:is|are)\s+at\s+work\b[^.!?\n]{0,80}\bnoise"
+    r")\b",
+    re.IGNORECASE,
+)
 _DOG_RE = re.compile(r"\b(?:dogs?|puppies?)\b", re.IGNORECASE)
 _COFFEE_RE = re.compile(r"\b(?:coffee|cofee|making\s+a\s+coffee|make\s+a\s+coffee)\b", re.IGNORECASE)
 _SLEEP_RE = re.compile(r"\b(?:go\s+to\s+bed|going\s+to\s+bed|go\s+to\s+sleep|good\s+night|enjoy\s+your\s+night)\b", re.IGNORECASE)
@@ -88,6 +102,7 @@ def _categories(text: str) -> tuple[list[str], dict[str, bool]]:
         "owner_direct": bool(_OWNER_DIRECT_RE.search(text)),
         "ambient_media": bool(_AMBIENT_MEDIA_RE.search(text)),
         "phone_speaker": bool(_PHONE_RE.search(text)),
+        "remote_speaker_audio": bool(_REMOTE_SPEAKER_RE.search(text)),
         "dog_room_event": bool(_DOG_RE.search(text)),
         "coffee_or_morning": bool(_COFFEE_RE.search(text)),
         "sleep_or_night": bool(_SLEEP_RE.search(text)),
@@ -102,11 +117,11 @@ def _categories(text: str) -> tuple[list[str], dict[str, bool]]:
 
 def route_for(categories: list[str], noise_score: float) -> str:
     cats = set(categories)
-    if "owner_direct" in cats and (cats & {"ambient_media", "phone_speaker"}):
+    if "owner_direct" in cats and (cats & {"ambient_media", "phone_speaker", "remote_speaker_audio"}):
         return "direct_owner_with_ambient_bleed"
     if "owner_direct" in cats:
         return "direct_owner"
-    if cats & {"ambient_media", "phone_speaker"}:
+    if cats & {"ambient_media", "phone_speaker", "remote_speaker_audio"}:
         return "ambient_media_bleed"
     if cats & {"dog_room_event", "coffee_or_morning", "sleep_or_night"}:
         return "owner_life_event"
@@ -123,9 +138,11 @@ def journal_lines_for(text: str, categories: list[str]) -> list[str]:
     if "coffee_or_morning" in cats:
         lines.append("George said he was making or drinking coffee and starting the work period.")
     if "ambient_media" in cats:
-        lines.append("George said podcast or YouTube audio was playing in the room; I should treat that sound as ambient unless he directly addresses me.")
+        lines.append("George said video, podcast, YouTube, or speaker audio may be playing into STT; I should treat that sound as ambient unless he directly addresses me.")
     if "phone_speaker" in cats:
         lines.append("George said phone or speakerphone audio may enter the room; I should not treat every speaker voice as George.")
+    if "remote_speaker_audio" in cats:
+        lines.append("George said remote work/speaker audio may enter the room; I should not treat every remote voice as George.")
     if "dog_room_event" in cats:
         lines.append("George said dogs came into the room and were happy.")
     if "existence_affirmation" in cats:
@@ -180,17 +197,21 @@ def triage_room_dirt(
                 witness(line, source="room_dirt_triage", source_hash=digest[:8], state_dir=state)
         except Exception:
             pass
-    if update_ambient_context and set(cats) & {"ambient_media", "phone_speaker"}:
+    if update_ambient_context and set(cats) & {"ambient_media", "phone_speaker", "remote_speaker_audio"}:
         try:
             from System.swarm_media_ingress_gate import record_ambient_media_context
 
-            source_tag = "room_dirt_phone_speaker" if "phone_speaker" in cats else "room_dirt_ambient_media"
+            source_tag = (
+                "phone_call_background"
+                if set(cats) & {"phone_speaker", "remote_speaker_audio"}
+                else "ambient_media_youtube"
+            )
             record_ambient_media_context(
                 source=source_tag,
                 note=(
-                    "Room-dirt triage heard owner-declared phone/speaker/podcast "
-                    "audio. Treat following room voices as ambient unless George "
-                    "directly addresses Alice or requests action."
+                    "Room-dirt triage heard owner-declared phone speaker / speakerphone / remote work audio. "
+                    "Treat following room voices as ambient unless George directly addresses Alice "
+                    "from near-field or verified voice."
                 ),
                 ttl_s=2 * 3600.0,
             )

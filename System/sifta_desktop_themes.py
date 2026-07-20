@@ -4,7 +4,8 @@ SIFTA Desktop Theme Engine
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 Visual identities for the same organism:
 
-  🐝  BeeSon v8.1     — current yellow meadow / bee wallpaper identity
+  🧬  eXistenZ v9.0   — current receipt-first release identity
+  🐝  BeeSon v8.1     — previous yellow meadow / bee wallpaper identity
   🐝  BeeSon v8       — warm charcoal + honey-gold accents (clean desktop default)
   🐾  Predator v7     — blood-red/amber neural mesh, hunting stance
   🧜‍♀️  Mermaid OS v6  — oceanic indigo, purple accents, serene
@@ -337,11 +338,27 @@ BEESON_V8_1 = replace(
     wallpaper_filename="BeeSon Yellow Meadow.jpg",
 )
 
+# ──────────────────────────────────────────────────────────────
+#  EXISTENZ PALETTE — v9.0
+#  The release identity keeps BeeSon's readable dark-gold clothing while
+#  making the current public version visible on a fresh node.
+# ──────────────────────────────────────────────────────────────
+
+EXISTENZ_V9 = replace(
+    BEESON_V8_1,
+    theme_id="existenz",
+    display_name="🧬 eXistenZ v9.0",
+    os_line="🧬 SIFTA OS v9.0 eXistenZ",
+    watermark_text="EXISTENZ",
+    watermark_sub="RECEIPTS · FIELD · ONE ALICE",
+)
+
 THEMES: dict[str, DesktopPalette] = {
     "mermaid": MERMAID,
     "predator": PREDATOR,
     "beeson": BEESON,
     "beeson_v8_1": BEESON_V8_1,
+    "existenz": EXISTENZ_V9,
 }
 
 
@@ -350,13 +367,13 @@ THEMES: dict[str, DesktopPalette] = {
 # ──────────────────────────────────────────────────────────────
 
 def load_active_theme_id() -> str:
-    """Read persisted theme choice, default to beeson (v8 is the canonical release)."""
+    """Read persisted theme choice, defaulting fresh v9 nodes to eXistenZ."""
     try:
         data = json.loads(_THEME_FILE.read_text(encoding="utf-8"))
-        tid = str(data.get("theme_id", "beeson")).strip().lower()
-        return tid if tid in THEMES else "predator"
+        tid = str(data.get("theme_id", "existenz")).strip().lower()
+        return tid if tid in THEMES else "existenz"
     except Exception:
-        return "predator"
+        return "existenz"
 
 
 def save_active_theme_id(theme_id: str) -> None:

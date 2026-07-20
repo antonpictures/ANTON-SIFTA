@@ -121,19 +121,21 @@ def test_ollama_stream_timeout_failure_is_not_reported_as_crash(monkeypatch):
     assert "Brain crashed" not in failed[0]
 
 
-def test_no_token_watchdog_bounds_local_cortex_wait(monkeypatch):
+def test_no_token_watchdog_bounds_local_cortex_wait(monkeypatch, tmp_path):
     from Applications import sifta_talk_to_alice_widget as talk
 
     monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path / ".sifta_state")
 
     assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 180.0
     assert talk._brain_no_token_watchdog_s(model="alice-m5-cortex-8b-6.3gb:latest") == 180.0
 
 
-def test_no_token_watchdog_covers_cloud_and_agent_cortexes(monkeypatch):
+def test_no_token_watchdog_covers_cloud_and_agent_cortexes(monkeypatch, tmp_path):
     from Applications import sifta_talk_to_alice_widget as talk
 
     monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path / ".sifta_state")
 
     for model in (
         "grok:grok-4.3",
@@ -176,6 +178,30 @@ def test_no_token_watchdog_env_override_is_clamped(monkeypatch):
 
     monkeypatch.setenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", "9000")
     assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 600.0
+
+
+def test_body_action_no_token_watchdog_learns_slow_first_token(monkeypatch, tmp_path):
+    from Applications import sifta_talk_to_alice_widget as talk
+    from System.swarm_stigmergic_timeout_policy import record_timeout_outcome
+
+    monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("SIFTA_BODY_ACTION_CORTEX_NO_TOKEN_TIMEOUT_S", raising=False)
+    state = tmp_path / ".sifta_state"
+    monkeypatch.setattr(talk, "_STATE_DIR", state)
+    record_timeout_outcome(
+        "grok:grok-4.3",
+        outcome="first_token",
+        timeout_s=45,
+        elapsed_s=20.0,
+        first_token_latency_s=20.0,
+        state_dir=state,
+    )
+
+    text = "display Madison Beer video on your hardware body"
+
+    assert talk._owner_effector_requires_cortex_first(text) is True
+    assert talk._is_fast_browser_action_cortex_turn(text) is False
+    assert talk._brain_no_token_watchdog_for_owner_turn_s(text, model="grok:grok-4.3") > 20.0
 
 
 def test_brain_worker_respects_local_first_candidate_order():
@@ -235,11 +261,17 @@ def test_ollama_failover_uses_next_model_when_primary_empty(monkeypatch):
     assert failed == []
 
 
-def test_ollama_failover_returns_empty_when_all_candidates_empty(monkeypatch):
+def test_ollama_failover_reports_failed_receipt_when_all_candidates_empty(monkeypatch, tmp_path):
     from Applications import sifta_talk_to_alice_widget as talk
 
     def fake_urlopen(req, timeout=None):
-        return _FakeFailoverResponse([json.dumps({"message": {"content": ""}, "done": True}).encode()])
+        return _FakeFailoverResponse([
+            json.dumps({
+                "message": {"content": ""},
+                "done": True,
+                "done_reason": "stop",
+            }).encode()
+        ])
 
     worker = talk._BrainWorker(
         "primary-empty",
@@ -251,9 +283,25 @@ def test_ollama_failover_returns_empty_when_all_candidates_empty(monkeypatch):
     worker.done.connect(done.append)
     worker.failed.connect(failed.append)
     monkeypatch.setenv("SIFTA_OLLAMA_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path / ".sifta_state")
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     worker.run()
 
-    assert done == [""]
-    assert failed == []
+    assert done == []
+    assert len(failed) == 1
+    assert failed[0].startswith("Body status: cortex returned empty after retries")
+    assert "no Alice voice was posted" in failed[0]
+    assert "context_chars=" in failed[0]
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / ".sifta_state" / "stigmergic_timeout_policy.jsonl").read_text().splitlines()
+    ]
+    row = rows[-1]
+    assert row["truth_label"] == "FAILED"
+    assert row["outcome"] == "empty_output_failed"
+    assert row["model"] == worker._model
+    assert row["model"] in failed[0]
+    assert row["context_chars"] >= len("Alice, can you hear me?")
+    assert row["context_messages"] == 1
+    assert row["finish_reason"] == "stop"

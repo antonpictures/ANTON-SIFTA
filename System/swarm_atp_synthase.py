@@ -419,6 +419,177 @@ def reset_atp_epoch_for_test() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Receipted-Work Pulse Lane — r-stgm-pulse-20260705 (Architect direction)
+# ═══════════════════════════════════════════════════════════════════════════════
+# George 2026-07-05: "I thought the STGM attached should be pulsating like life
+# — good executions, good memory storage and retrieval add some STGM, telling
+# the body it is healthy, the healthy way."
+#
+# OBSERVED before this lane: the wallet moved 5.4e-06 STGM in 48h. The ATP lane
+# is honest Landauer thermodynamics — real silicon runs ~1e9 above the Landauer
+# minimum, so eta ~ 1e-9 and every mint is nano-scale. Physics stays untouched.
+# This is a SECOND canonical lane: small, VISIBLE pulses for receipted useful
+# work, one mint per source receipt id (no double-spend), daily-capped, signed
+# and appended through the exact same crypto path as the ATP mint. Amounts are
+# Architect-visible policy constants, not physics claims.
+PULSE_EVENT_KIND = "UTILITY_MINT_POUW_PULSE"
+PULSE_POLICY = "STGM_POLICY_RECEIPTED_WORK_PULSE_v1"
+PULSE_AMOUNTS_STGM = {
+    "memory_store": 0.00002,          # a captured owner turn / stored memory
+    "memory_retrieval_hit": 0.0002,   # recall that actually found the rows
+    "verified_execution": 0.0005,     # effector action verified by field receipt
+    "novelty_capture": 0.0001,        # a novelty/idea receipted into the queue
+}
+PULSE_DAILY_CAP_STGM = 2.0
+_PULSE_STATE_FILE = _REPO / ".sifta_state" / "stgm_pulse_state.json"
+_PULSE_SEEN_MAX = 4096
+_PULSE_CACHE_REFRESH_MIN_S = 60.0
+
+
+def _read_pulse_state() -> Dict[str, Any]:
+    try:
+        data = json.loads(_PULSE_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {"day": "", "minted_today": 0.0, "seen": []}
+
+
+def _write_pulse_state(state: Dict[str, Any]) -> None:
+    try:
+        _PULSE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _PULSE_STATE_FILE.write_text(
+            json.dumps(state, sort_keys=True), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def _maybe_refresh_pulse_economy_cache(*, force: bool = False) -> Dict[str, Any]:
+    """Refresh the cheap STGM truth cache after a successful pulse mint.
+
+    The mint lane is canonical; UI panels should not wait for a five-minute
+    background refresh to feel the heartbeat. Best-effort only: mint success
+    must not depend on the cache writer.
+    """
+    now = time.time()
+    state = _read_pulse_state()
+    try:
+        last = float(state.get("last_cache_refresh_ts") or 0.0)
+    except Exception:
+        last = 0.0
+    if not force and last > 0.0 and now - last < _PULSE_CACHE_REFRESH_MIN_S:
+        return {"ok": True, "status": "throttled", "last_cache_refresh_ts": last}
+    try:
+        from System.stgm_economy import refresh_stgm_economy_cache
+
+        state_dir = _PULSE_STATE_FILE.parent
+        cache_path = state_dir / "stgm_economy_cache.json"
+        snap = refresh_stgm_economy_cache(
+            repair_log=_CANONICAL_LEDGER,
+            state_dir=state_dir,
+            cache_path=cache_path,
+        )
+        state = _read_pulse_state()
+        state["last_cache_refresh_ts"] = now
+        state["last_cache_refresh_status"] = "refreshed"
+        state["last_cache_refresh_path"] = str(cache_path)
+        _write_pulse_state(state)
+        return {
+            "ok": True,
+            "status": "refreshed",
+            "cache_path": str(cache_path),
+            "pulse_mint_lines": snap.get("pulse_mint_lines"),
+            "pulse_minted_stgm": snap.get("pulse_minted_stgm"),
+        }
+    except Exception as exc:
+        state["last_cache_refresh_ts"] = now
+        state["last_cache_refresh_status"] = f"failed:{type(exc).__name__}"
+        _write_pulse_state(state)
+        return {"ok": False, "status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def mint_receipted_work_pulse(
+    kind: str,
+    source_receipt_id: str,
+    beneficiary: str = CANONICAL_OS_BENEFICIARY,
+    amount_stgm: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Mint one small canonical STGM pulse for one receipted piece of work.
+
+    No-double-spend: one mint per source_receipt_id, enforced via the pulse
+    state sidecar. Daily cap keeps the lane a heartbeat, not a money printer.
+    Refusals are honest results, never exceptions."""
+    kind = str(kind or "").strip()
+    src = str(source_receipt_id or "").strip()
+    if kind not in PULSE_AMOUNTS_STGM:
+        return {"minted_stgm": 0.0, "refused": f"unknown_pulse_kind:{kind}"}
+    if not src:
+        return {"minted_stgm": 0.0, "refused": "missing_source_receipt_id"}
+    _validate_beneficiary(beneficiary)
+    amt = round(float(amount_stgm if amount_stgm is not None else PULSE_AMOUNTS_STGM[kind]), 9)
+    if amt <= 0.0:
+        return {"minted_stgm": 0.0, "refused": "non_positive_amount"}
+
+    state = _read_pulse_state()
+    today = time.strftime("%Y-%m-%d")
+    if state.get("day") != today:
+        state = {"day": today, "minted_today": 0.0, "seen": list(state.get("seen") or [])[-_PULSE_SEEN_MAX:]}
+    seen = state.get("seen") or []
+    dedup_key = f"{kind}::{src}"
+    if dedup_key in seen:
+        return {"minted_stgm": 0.0, "refused": "duplicate_source_receipt", "source_receipt_id": src}
+    minted_today = float(state.get("minted_today") or 0.0)
+    if minted_today + amt > PULSE_DAILY_CAP_STGM:
+        return {"minted_stgm": 0.0, "refused": "daily_cap_reached", "minted_today": minted_today}
+
+    import hashlib
+    event: Dict[str, Any] = {
+        "event_kind": PULSE_EVENT_KIND,
+        "event_id": f"POUW_PULSE_{int(time.time() * 1000)}",
+        "ts": time.time(),
+        "agent_id": beneficiary,
+        "miner_id": beneficiary,
+        "amount_stgm": amt,
+        "reason": f"receipted_work_pulse:{kind}",
+        "pulse_kind": kind,
+        "source_receipt_id": src,
+        "policy": PULSE_POLICY,
+        "engine": "ATP_SYNTHASE_v1",
+        "daily_cap_stgm": PULSE_DAILY_CAP_STGM,
+    }
+    signing_node = get_silicon_identity()
+    signature_body = (
+        f"UTILITY_MINT::{event['miner_id']}::{event['amount_stgm']}::"
+        f"{event['ts']}::{event['reason']}::NODE[{signing_node}]"
+    )
+    event["ed25519_sig"] = sign_block(signature_body)
+    event["signing_node"] = signing_node
+    event_str = json.dumps(event, sort_keys=True, separators=(",", ":"), default=float)
+    event["mint_sha256"] = hashlib.sha256(event_str.encode()).hexdigest()
+    try:
+        append_ledger_line(_CANONICAL_LEDGER, event)
+    except Exception as exc:
+        return {"minted_stgm": 0.0, "refused": f"ledger_append_failed:{type(exc).__name__}"}
+
+    seen.append(dedup_key)
+    state["seen"] = seen[-_PULSE_SEEN_MAX:]
+    state["minted_today"] = round(minted_today + amt, 9)
+    _write_pulse_state(state)
+    cache_refresh = _maybe_refresh_pulse_economy_cache()
+    return {
+        "minted_stgm": amt,
+        "pulse_kind": kind,
+        "beneficiary": beneficiary,
+        "source_receipt_id": src,
+        "ledger_event_id": event["event_id"],
+        "minted_today": state["minted_today"],
+        "cache_refresh": cache_refresh,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Surface phrase for Alice
 # ═══════════════════════════════════════════════════════════════════════════════
 def alice_phrase() -> str:

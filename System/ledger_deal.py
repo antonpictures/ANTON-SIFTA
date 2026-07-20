@@ -24,26 +24,30 @@ DEAL_FILE = "ledger_deal.json"
 EV_LOG = "kalshi_usd_ev_log.jsonl"
 TRUTH = "LEDGER_DEAL_V1"
 
-# r1702 owner: TWO concurrent bags · $2 AMMO each (2 contracts/ticket).
-# max 2 same direction still (both YES or both NO ok; no third stack).
-# r1709 owner: recover cash — prefer ONE bag (was 2); fewer double-death windows
-MAX_OPEN = 1
-MAX_SAME_DIR = 1
-TARGET_CONCURRENT_OPEN = 1
-# r1693 owner: AMMO default $2 each = 2 contracts per ticket (was 1)
+# r1726 owner: STIGMERGY not spray — STGM leads, US$ copies, no multi-YES rack
+# same-dir ≤2 (half/half risk) · max 4 open · ammo $2 · prefer ~50¢
+MAX_OPEN = 4
+MAX_SAME_DIR = 2
+TARGET_CONCURRENT_OPEN = 4
+# r1715/r1721: never all-in. Default $2 · max $2 · night −$3
 STAKE_USD = 2.0
 AMMO_FILE = "kalshi_usd_ammo.json"
 AMMO_DEFAULT = 2.0
 AMMO_MIN = 1.0
-AMMO_MAX = 5.0  # hard cap — cherish stash
+AMMO_MAX = 2.0  # hard cap — cherish stash
+# Preferred scalp pocket (soft); hard band still 40–65
+USD_PREFER_MIN_ENTRY = 0.45
+USD_PREFER_MAX_ENTRY = 0.55
 # r1649: match paper shelf so STGM ticket ⇒ US $ (owner: every round automatically)
 # r1691: field winners rarely stay under 55¢ — allow ≤65¢, prefer cheaper
 USD_MIN_ENTRY = 0.40
 USD_MAX_ENTRY = 0.65
 PAPER_MIN_ENTRY = 0.40
 PAPER_MAX_ENTRY = 0.65
-MAX_NIGHT_LOSS_USD = 5.0
-MAX_BUDGET_USD = 12.0  # room for 2 × ~$1.3 premium at 2 contracts
+MAX_NIGHT_LOSS_USD = 5.0  # room for multi-bag without instant halt
+MAX_BUDGET_USD = 12.0  # up to 4 bags · ammo $2 + premium headroom
+# Hard notional ceiling per ticket (blocks "entire pocket" lottery)
+MAX_TICKET_NOTIONAL_USD = 2.5
 # False = FIRE + THIN place dollars; only rainman SIT skips US $
 FIRE_ONLY_USD = False
 MIN_VOLUME = 0.0  # owner dual: don't dust-veto her paper tickets
@@ -104,7 +108,7 @@ def contracts_for_ammo(
     ammo_usd: Optional[float] = None,
     state_dir: Optional[Path | str] = None,
 ) -> int:
-    """Integer contract count from AMMO (min 1, max 5)."""
+    """Integer contract count from AMMO (min 1, max AMMO_MAX=2)."""
     a = float(ammo_usd) if ammo_usd is not None else get_ammo_usd(state_dir=state_dir)
     return max(1, min(int(AMMO_MAX), int(round(a))))
 
@@ -123,6 +127,7 @@ def caps_dict(*, state_dir: Optional[Path | str] = None) -> dict[str, Any]:
         "paper_band": [PAPER_MIN_ENTRY, PAPER_MAX_ENTRY],
         "max_night_loss_usd": MAX_NIGHT_LOSS_USD,
         "max_budget_usd": MAX_BUDGET_USD,
+        "max_ticket_notional_usd": MAX_TICKET_NOTIONAL_USD,
         "fire_only_usd": FIRE_ONLY_USD,
         "dual_every_paper_bet": DUAL_EVERY_PAPER_BET,
         "min_volume": MIN_VOLUME,
@@ -213,6 +218,7 @@ __all__ = [
     "PAPER_MAX_ENTRY",
     "MAX_NIGHT_LOSS_USD",
     "MAX_BUDGET_USD",
+    "MAX_TICKET_NOTIONAL_USD",
     "FIRE_ONLY_USD",
     "MIN_VOLUME",
     "caps_dict",

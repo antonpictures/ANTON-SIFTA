@@ -16,7 +16,7 @@ import math
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
@@ -63,9 +63,100 @@ def fitness_multiplier(record: Dict[str, Any] | None) -> float:
     return max(0.25, min(2.0, math.sqrt(max(0.01, fit))))
 
 
+def _fitness_path(state_dir: Optional[Path] = None) -> Path:
+    return Path(state_dir) / FITNESS_FILENAME if state_dir is not None else _REPO / ".sifta_state" / FITNESS_FILENAME
+
+
+def reinforce(
+    trace_or_hash: str,
+    source_receipt_id: str,
+    *,
+    weight: float = 1.0,
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Strengthen a recalled row in the overlay only.
+
+    The canonical memory ledgers stay append-only; this records the trail walked
+    by recall in memory_fitness.json.
+    """
+    tid = str(trace_or_hash or "").strip()
+    if not tid:
+        return {"ok": False, "reason": "missing_trace_id"}
+    receipt_id = str(source_receipt_id or "").strip()
+    now = time.time()
+    delta = 0.05 * max(0.0, float(weight))
+    path = _fitness_path(state_dir)
+
+    def _up(data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("schema_version", 1)
+        data.setdefault("overlay", "memory_fitness_acmf_v1")
+        data.setdefault("traces", {})
+        traces = data.get("traces")
+        if not isinstance(traces, dict):
+            traces = {}
+            data["traces"] = traces
+        row = traces.setdefault(
+            tid,
+            {
+                "fitness": 1.0,
+                "strength": 1.0,
+                "usage_count": 0,
+                "reinforcement_count": 0,
+                "last_used_ts": 0.0,
+            },
+        )
+        if not isinstance(row, dict):
+            row = {
+                "fitness": 1.0,
+                "strength": 1.0,
+                "usage_count": 0,
+                "reinforcement_count": 0,
+                "last_used_ts": 0.0,
+            }
+            traces[tid] = row
+        strength = float(row.get("strength", row.get("fitness", 1.0)))
+        fitness = float(row.get("fitness", strength))
+        row["strength"] = float(max(0.1, strength + delta))
+        row["fitness"] = float(max(0.1, fitness + delta))
+        row["usage_count"] = int(row.get("usage_count", 0)) + 1
+        row["reinforcement_count"] = int(row.get("reinforcement_count", 0)) + 1
+        row["last_used_ts"] = now
+        row["last_reinforced_ts"] = now
+        row["last_source_receipt_id"] = receipt_id
+        data["updated_ts"] = now
+        return data
+
+    read_write_json_locked(path, _up, encoding="utf-8")
+    return {
+        "ok": True,
+        "trace_id": tid,
+        "source_receipt_id": receipt_id,
+        "weight": float(weight),
+    }
+
+
+def strength_for(ids: Iterable[str], *, state_dir: Optional[Path] = None) -> Dict[str, float]:
+    """Return overlay strength for trace ids. Missing rows are neutral 1.0."""
+    table = load_trace_table(Path(state_dir) if state_dir is not None else _REPO / ".sifta_state")
+    out: Dict[str, float] = {}
+    for trace_id in ids:
+        tid = str(trace_id or "").strip()
+        if not tid:
+            continue
+        row = table.get(tid, {})
+        try:
+            out[tid] = float(row.get("strength", row.get("fitness", 1.0)))
+        except Exception:
+            out[tid] = 1.0
+    return out
+
+
 def bump_after_recall(trace_id: str, *, recall_delta: float = 0.05) -> None:
     """Successful recall: nudge fitness up, bump usage (atomic write)."""
-    path = _REPO / ".sifta_state" / FITNESS_FILENAME
+    path = _fitness_path()
     now = time.time()
     tid = str(trace_id)
 

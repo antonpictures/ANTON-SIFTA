@@ -349,5 +349,35 @@ def main(argv: List[str]) -> int:
     return 0
 
 
+# ── Hardening: manifest widget entry (H1) ───────────────────────────
+try:
+    from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+    from PyQt5.QtCore import Qt
+except Exception:
+    QWidget = object
+    QVBoxLayout = None
+    QLabel = None
+    Qt = None
+
+class AblationLabWidget(QWidget if 'QWidget' in globals() and QWidget is not object else object):
+    """GUI entry point declared in apps_manifest.json.
+    The real power is in the CLI (python -m Applications.sifta_ablation_lab).
+    This stub keeps the launcher happy and surfaces the tool in the matrix.
+    """
+    def __init__(self, parent=None):
+        if QWidget is not object:
+            super().__init__(parent)
+            if QVBoxLayout:
+                lay = QVBoxLayout(self)
+                lab = QLabel("Ablation Lab — persona vs control refusal/dissonance tester.\n"
+                             "Use CLI for full runs or embed the runner here.")
+                if Qt:
+                    lab.setAlignment(Qt.AlignCenter)
+                lay.addWidget(lab)
+        else:
+            pass  # non-GUI context
+
+
+
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

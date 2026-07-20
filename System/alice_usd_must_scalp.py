@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
-"""r1698/r1700 — Alice MUST attempt dual scalps early (owner: no human gamble).
+"""r1698/r1723 — Alice US$ places **only as exact STGM paper copy**.
 
-If paper→USD mirror misses or paper sits rich, this organ still tries fee-true
-scalpable US$ tickets from live marks when:
+r1723 owner shout: freestyle must_scalp bought BTC/ETH NO while STGM OPEN was
+empty — that is NOT listening. Cash may place **only** when paper has the same
+asset/side open. No independent field hunting.
+
   • lane + hand LIVE
-  • secs left ≥ **8:00** (DEFAULT_MIN_SECS) — first ~7m of the 15m window
-  • field side premium in 40–65¢ (prefer ≤58¢)
-  • liquid major (not weird/dust)
-  • flat (no open bags) — re-enter after TP until MAX_SCALPS_PER_WINDOW (3)
-  • not already at max open / same-dir
-
-r1700: **more scalps/session** — after a green cash-out, if still ≥8:00 left and
-n_placed < 3, hunt again. Prefer all closed by 7:00 left (TP force_flat organ).
-
-Last 7–8 minutes: no new risk. TP force-flats ≤7:00 left.
-
-When no legal ticket exists, writes `alice_usd_sit_reason.json` so glass/owner
-see **why** she sat — human must NOT fill the silence with gambling.
+  • paper open book has tickets → mirror each (maybe_mirror_paper_bet)
+  • paper empty → SIT `stgm_copy_only_no_paper` (valid — do not freelance)
+  • band / never-sell-loss / ammo still apply on the mirror path
 
 Truth: ALICE_USD_MUST_SCALP_V1
 """
@@ -34,8 +26,10 @@ TRUTH = "ALICE_USD_MUST_SCALP_V1"
 SIT_FILE = "alice_usd_sit_reason.json"
 LOG = "alice_usd_must_scalp.jsonl"
 WINDOW_FILE = "alice_usd_must_scalp_windows.json"
-MAJORS = ("BTC", "ETH", "SOL", "XRP", "BNB")
-WEIRD = frozenset({"HYPE", "ZEC", "NEAR", "DOGE"})
+# r1720 owner: more tickers Alice knows (charts + liquid books). DOGE joins
+# majors; HYPE liquid enough for cash when armed. ZEC/NEAR stay dust.
+MAJORS = ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE")
+WEIRD = frozenset({"ZEC", "NEAR"})
 
 
 def _state(state_dir: Optional[Path | str] = None) -> Path:
@@ -152,10 +146,32 @@ def _save_windows(w: dict[str, Any], *, state_dir: Path) -> None:
 
 # r1709: automatic bleed control (make money / stop stacking red force-flats)
 COOLDOWN_FILE = "alice_usd_cooldown.json"
-FORCE_FLAT_RED_COOLDOWN_S = 45 * 60.0  # sit ~45m after force-flat red cluster
+FORCE_FLAT_RED_COOLDOWN_S = 15 * 60.0  # r1716: 15m cool (was 45 — blocked all dual)
 FORCE_FLAT_RED_LOOKBACK_S = 60 * 60.0
-FORCE_FLAT_RED_TRIGGER_N = 1  # even one material force-flat red → cool (stop the bleed)
-SECOND_BAG_MAX_ENTRY = 0.52  # 2nd bag only if first was cheap or green
+FORCE_FLAT_RED_TRIGGER_N = 2  # r1716: need 2 material reds (was 1 — one red froze dual)
+SECOND_BAG_MAX_ENTRY = 0.65  # r1721 multi-scalp: 2nd bag ok if first in band
+
+
+def clear_force_flat_cooldown(
+    state_dir: Path, *, reason: str = "owner_clear"
+) -> dict[str, Any]:
+    """Owner override — stop auto-rearming cool from old ledger reds for this session."""
+    row = {
+        "cool": False,
+        "until_ts": 0,
+        "n_red": 0,
+        "reason": str(reason or "owner_clear")[:200],
+        "owner_override": True,
+        "ts": time.time(),
+        "truth_label": TRUTH,
+    }
+    try:
+        (state_dir / COOLDOWN_FILE).write_text(
+            json.dumps(row, indent=2, sort_keys=True), encoding="utf-8"
+        )
+    except OSError:
+        pass
+    return row
 
 
 def _force_flat_red_cooldown(state_dir: Path) -> dict[str, Any]:
@@ -165,6 +181,14 @@ def _force_flat_red_cooldown(state_dir: Path) -> dict[str, Any]:
     if p.exists():
         try:
             d = json.loads(p.read_text(encoding="utf-8"))
+            # Owner clear sticks — do not re-arm from ledger until override expires
+            if d.get("owner_override") is True and d.get("cool") is False:
+                return {
+                    "cool": False,
+                    "owner_override": True,
+                    "reason": d.get("reason") or "owner_clear",
+                    "n_red": 0,
+                }
             until = float(d.get("until_ts") or 0)
             if until > now:
                 return {
@@ -252,21 +276,18 @@ def tick_must_scalp(
     state_dir: Optional[Path | str] = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Auto dual scalps while early; up to TARGET_CONCURRENT open (2) · $2 AMMO each."""
+    """r1723: STGM-copy only — mirror paper opens; never freelance cash."""
     from System.kalshi_usd_hand import (
         is_hand_live,
         load_night,
         maybe_mirror_paper_bet,
     )
     from System.kalshi_usd_lane import is_usd_lane_armed
-    from System.ledger_deal import MAX_OPEN, MAX_SAME_DIR, TARGET_CONCURRENT_OPEN
+    from System.ledger_deal import MAX_OPEN, TARGET_CONCURRENT_OPEN
     from System.swarm_sifta_paper_loop import (
         DEFAULT_MIN_SECS,
         MAX_SCALPS_PER_WINDOW,
-        MUST_FIRE_MAX_ENTRY,
-        MUST_FIRE_MIN_ENTRY,
-        RICH_ENTRY_PRICE,
-        RICH_MIN_RAINMAN,
+        load_open_book,
     )
 
     root = _state(state_dir)
@@ -289,29 +310,10 @@ def tick_must_scalp(
     target_open = int(TARGET_CONCURRENT_OPEN)
     max_open = int(MAX_OPEN)
 
-    if win.get("sat_final"):
-        return {
-            "ok": True,
-            "reason": "window_already_handled",
-            "window_id": wid,
-            "n_placed": n_placed,
-            "placed": n_placed > 0,
-        }
-    if n_placed >= max_scalps:
-        return {
-            "ok": True,
-            "reason": "max_scalps_per_window",
-            "window_id": wid,
-            "n_placed": n_placed,
-            "max_scalps": max_scalps,
-            "placed": False,
-        }
-
     night = load_night(root)
     opens = list(night.get("open") or [])
     n_open = len(opens)
 
-    # r1709: cool-down after stacked force-flat reds (stop bleeding sessions)
     cool = _force_flat_red_cooldown(root)
     if cool.get("cool") and n_open == 0:
         _write_sit(
@@ -331,7 +333,6 @@ def tick_must_scalp(
         }
 
     if n_open >= target_open or n_open >= max_open:
-        # full concurrent book — manage only (TP / force-flat)
         return {
             "ok": True,
             "reason": "concurrent_full_manage_only",
@@ -340,27 +341,6 @@ def tick_must_scalp(
             "n_placed": n_placed,
             "placed": False,
         }
-
-    # r1709: second bag only if first is fee-true green or entry was cheap
-    if n_open == 1 and not _second_bag_allowed(opens, root):
-        return {
-            "ok": True,
-            "reason": "second_bag_blocked_quality",
-            "n_open": 1,
-            "detail": "need first bag green fee-true or entry≤55¢",
-            "placed": False,
-        }
-
-    open_assets = {
-        str(o.get("asset") or "").upper()
-        for o in opens
-        if o.get("asset")
-    }
-    open_tickers = {str(o.get("ticker") or "") for o in opens if o.get("ticker")}
-    same_dir_yes = sum(
-        1 for o in opens if str(o.get("side") or "").lower() == "yes"
-    )
-    same_dir_no = sum(1 for o in opens if str(o.get("side") or "").lower() == "no")
 
     secs_list = [m["secs"] for m in marks if m.get("secs") is not None]
     secs = min(secs_list) if secs_list else None
@@ -400,345 +380,200 @@ def tick_must_scalp(
             "placed": False,
         }
 
-    # field + co-dir (r1704: never fight open bags or STGM window side)
-    try:
-        from System.alice_15m_co_direction import board_field
-
-        field = board_field(state_dir=root)
-        anchor = str(field.get("anchor_side") or "")
-        ranked = [
-            str(r.get("asset") or "").upper()
-            for r in (field.get("ranked") or [])
-            if not r.get("contrarian")
-        ]
-    except Exception:
-        anchor = ""
-        ranked = list(MAJORS)
-        field = {}
-
-    if anchor not in ("yes", "no"):
-        btc = next((m for m in marks if m["asset"] == "BTC"), None)
-        if btc:
-            anchor = "yes" if btc["yes"] >= 0.5 else "no"
-        else:
-            anchor = "yes"
-    # lock to existing USD open side (two bags same way)
-    if same_dir_yes or same_dir_no:
-        anchor = "yes" if same_dir_yes >= same_dir_no else "no"
-    # prefer STGM paper open assets (dual alignment) when still early + in band
-    paper_pref: list[str] = []
-    try:
-        from System.swarm_sifta_paper_loop import load_open_book
-
-        for row in load_open_book(root).get("open") or []:
-            lab = str(row.get("label") or row.get("side") or "").upper()
-            ps = "yes" if lab in ("UP", "YES") else ("no" if lab in ("DOWN", "NO") else "")
-            if ps and ps != anchor:
-                continue  # ignore STGM contrarian to our lock
-            a = str(row.get("asset") or "").upper()
-            if a and a not in paper_pref:
-                paper_pref.append(a)
-    except Exception:
-        pass
-
-    lo, hi = float(MUST_FIRE_MIN_ENTRY), float(MUST_FIRE_MAX_ENTRY)
-    rich_px, rich_sc = float(RICH_ENTRY_PRICE), float(RICH_MIN_RAINMAN)
-    # need room before force-flat so dual isn't in-and-out for fees only
-    entry_buffer = 90.0
-    if secs < float(min_secs) + entry_buffer:
+    # ── r1723: EXACT STGM COPY ONLY — no freestyle field hunt ─────────────
+    paper_opens = list(load_open_book(root).get("open") or [])
+    if not paper_opens:
         _write_sit(
-            "too_close_to_flat_gate",
+            "stgm_copy_only_no_paper",
             {
                 "secs_left": secs,
-                "need": f">={min_secs + entry_buffer}",
-                "human": "no new US$ this close to force-flat",
+                "n_usd_open": n_open,
+                "human": (
+                    "US$ SIT — STGM OPEN is empty. Cash will NOT freelance. "
+                    "Wait for paper scalps, then copy exact asset/side."
+                ),
+                "deal": "r1723-stgm-copy-only",
+            },
+            state_dir=root,
+        )
+        _log(
+            {
+                "event": "stgm_copy_sit",
+                "reason": "stgm_copy_only_no_paper",
+                "window_id": wid,
+                "secs_left": secs,
             },
             state_dir=root,
         )
         return {
             "ok": True,
-            "reason": "too_close_to_flat_gate",
-            "secs": secs,
             "placed": False,
+            "reason": "stgm_copy_only_no_paper",
+            "window_id": wid,
+            "n_placed": n_placed,
+            "truth_label": TRUTH,
+            "deal": "r1723",
         }
 
-    # r1713 P0 parity: same regime_gate as STGM (strategies) — no fork
-    try:
-        from System.alice_15m_scalp_strategies import (
-            regime_gate,
-            regime_preferred_side,
-            REGIME_GATE_IMPLIED_THRESH,
+    usd_tickers = {str(o.get("ticker") or "") for o in opens if o.get("ticker")}
+    usd_assets = {str(o.get("asset") or "").upper() for o in opens if o.get("asset")}
+    mirrored: list[dict[str, Any]] = []
+    last_result: dict[str, Any] = {}
+
+    for row in paper_opens:
+        if n_open + len(mirrored) >= max_open or n_open + len(mirrored) >= target_open:
+            break
+        if n_placed + len(mirrored) >= max_scalps:
+            break
+        asset = str(row.get("asset") or "").upper()
+        ticker = str(row.get("ticker") or "")
+        if not asset or not ticker:
+            continue
+        if ticker in usd_tickers or asset in usd_assets:
+            continue  # already on cash book
+        lab = str(row.get("label") or row.get("side") or "").upper()
+        if lab in ("UP", "YES"):
+            side = "yes"
+        elif lab in ("DOWN", "NO"):
+            side = "no"
+        else:
+            side = str(row.get("side") or "yes").lower()
+            if side not in ("yes", "no"):
+                continue
+        try:
+            entry = float(row.get("price") or row.get("entry_price") or 0.5)
+        except (TypeError, ValueError):
+            entry = 0.5
+        bet = {
+            "ticker": ticker,
+            "asset": asset,
+            "side": side,
+            "entry_price": entry,
+            "price": entry,
+            "label": lab or ("UP" if side == "yes" else "DOWN"),
+            "volume": float(row.get("volume") or 5000),
+            "rainman": {
+                "action": "fire",
+                "score": 0.65,
+                "bucket": "stgm_exact_copy",
+            },
+            "stgm_exact_copy": True,
+            "window_id": wid,
+            "paper_wager_id": row.get("wager_id") or row.get("body_stgm", {}).get("wager_id"),
+        }
+        decision_ts_ms = int(time.time() * 1000)
+        placed = maybe_mirror_paper_bet(bet, state_dir=root, dry_run=dry_run)
+        last_result = placed if isinstance(placed, dict) else {}
+        filled = bool(last_result.get("filled")) or (
+            last_result.get("event") == "usd_place"
+            and float(last_result.get("fill_count") or 0) > 0
         )
-    except Exception:
-        regime_gate = None  # type: ignore
-        regime_preferred_side = None  # type: ignore
-        REGIME_GATE_IMPLIED_THRESH = 0.70
-
-    field_rg = {
-        "anchor_side": anchor,
-        "majors_breadth": (field or {}).get("breadth")
-        or (field or {}).get("majors_breadth"),
-    }
-
-    candidates: list[dict[str, Any]] = []
-    regime_rejects = 0
-    for m in marks:
-        a = m["asset"]
-        if a in WEIRD or a not in MAJORS:
-            continue
-        if a in open_assets or str(m.get("ticker") or "") in open_tickers:
-            continue  # already bagged this name — diversify second ticket
-        if m["volume"] < 500:
-            continue
-        yes = m["yes"]
-        side = anchor
-        entry = yes if side == "yes" else (1.0 - yes)
-        # r1713: block fade vs strong drift (import THE SAME gate as paper)
-        if regime_gate is not None:
-            rg = regime_gate(side=side, yes_mid=yes, field=field_rg)
-            if rg:
-                pref = (
-                    regime_preferred_side(yes, field=field_rg)
-                    if regime_preferred_side
-                    else None
-                )
-                if pref and pref != side:
-                    alt = yes if pref == "yes" else (1.0 - yes)
-                    if lo - 1e-9 <= float(alt) <= hi + 1e-9:
-                        side = pref
-                        entry = float(alt)
-                    else:
-                        regime_rejects += 1
-                        continue
-                else:
-                    regime_rejects += 1
-                    continue
-        if entry < lo - 1e-9 or entry > hi + 1e-9:
-            continue
-        if side == "yes" and same_dir_yes >= int(MAX_SAME_DIR):
-            continue
-        if side == "no" and same_dir_no >= int(MAX_SAME_DIR):
-            continue
-        rank = ranked.index(a) if a in ranked else 99
-        # prefer paper-open names for dual stigmergy
-        pref_boost = 2.0 if a in paper_pref else 0.0
-        score = (hi - entry) * 3.0 - rank * 0.1 + min(1.0, m["volume"] / 50_000) + pref_boost
-        candidates.append(
+        _log(
             {
-                **m,
+                "event": "stgm_exact_copy_attempt",
+                "window_id": wid,
+                "asset": asset,
                 "side": side,
                 "entry": entry,
-                "pick_score": score,
-                "rank": rank,
-            }
-        )
-
-    if not candidates:
-        # all field winners too rich or regime-blocked — SIT and tell human
-        sample = []
-        for m in marks:
-            if m["asset"] not in MAJORS:
-                continue
-            e = m["yes"] if anchor == "yes" else (1.0 - m["yes"])
-            sample.append({"asset": m["asset"], "field_side_px": round(e, 3)})
-        reason = (
-            "regime_gate_blocked_all"
-            if regime_rejects > 0 and not sample
-            else (
-                "regime_or_band_empty"
-                if regime_rejects > 0
-                else "field_side_too_rich"
-            )
-        )
-        done[wid] = {
-            "sat_rich": reason == "field_side_too_rich",
-            "reason": reason,
-            "anchor": anchor,
-            "regime_rejects": regime_rejects,
-            "ts": time.time(),
-        }
-        # don't mark sat_final until late — prices can dip mid-window
-        _save_windows(done, state_dir=root)
-        _write_sit(
-            reason,
-            {
-                "anchor": anchor,
-                "band": [lo, hi],
-                "majors": sample[:8],
-                "secs_left": secs,
-                "regime_rejects": regime_rejects,
-                "regime_thresh": float(REGIME_GATE_IMPLIED_THRESH),
-                "human": (
-                    "DO NOT MANUAL GAMBLE — regime gate or band blocked; sit is valid"
-                ),
+                "filled": filled,
+                "result": last_result.get("event"),
+                "reason": last_result.get("reason"),
+                "deal": "r1723",
             },
             state_dir=root,
         )
-        return {
-            "ok": True,
-            "reason": reason,
-            "anchor": anchor,
-            "regime_rejects": regime_rejects,
-            "placed": False,
-            "sit_file": SIT_FILE,
-        }
-
-    candidates.sort(key=lambda x: -float(x["pick_score"]))
-    pick = candidates[0]
-
-    # rainman floor for rich picks
-    rm_score = 0.63 if pick["entry"] > rich_px else 0.58
-    if pick["entry"] > rich_px and rm_score < rich_sc:
-        rm_score = rich_sc
-
-    bet = {
-        "ticker": pick["ticker"],
-        "asset": pick["asset"],
-        "side": pick["side"],
-        "entry_price": pick["entry"],
-        "price": pick["entry"],
-        "kalshi_yes": pick["yes"],
-        "volume": max(pick["volume"], 5000),
-        "rainman": {
-            "action": "fire",
-            "score": rm_score,
-            "bucket": "must_scalp",
-        },
-        "must_scalp": True,
-        "window_id": wid,
-    }
-
-    # r1713 dual-lag harness: stamp decision-time book before submit
-    try:
-        from System.alice_usd_dual_lag_harness import stamp_decision
-
-        stamp_decision(
-            phase="must_scalp_candidate",
-            bet=bet,
-            mark=pick,
-            secs_left=secs,
-            dry_run=dry_run,
-            state_dir=root,
+        if not filled:
+            continue
+        mirrored.append(
+            {
+                "asset": asset,
+                "side": side,
+                "entry": entry,
+                "order": last_result.get("order_id"),
+            }
         )
-    except Exception:
-        pass
-
-    decision_ts_ms = int(time.time() * 1000)
-    placed = maybe_mirror_paper_bet(bet, state_dir=root, dry_run=dry_run)
-    try:
-        from System.alice_usd_dual_lag_harness import stamp_submit_result
-
-        stamp_submit_result(
-            phase="must_scalp_submit",
-            bet=bet,
-            result=placed,
-            decision_ts_ms=decision_ts_ms,
-            dry_run=dry_run,
-            state_dir=root,
-        )
-    except Exception:
-        pass
-    filled = bool(placed.get("filled")) or (
-        placed.get("event") == "usd_place" and float(placed.get("fill_count") or 0) > 0
-    )
-
-    if filled:
-        new_n = n_placed + 1
+        usd_tickers.add(ticker)
+        usd_assets.add(asset)
+        n_placed += 1
         hist = list(win.get("history") or [])
         hist.append(
             {
-                "asset": pick["asset"],
-                "side": pick["side"],
-                "entry": pick["entry"],
+                "asset": asset,
+                "side": side,
+                "entry": entry,
                 "ts": time.time(),
-                "order": placed.get("order_id"),
-                "scalp_n": new_n,
+                "order": last_result.get("order_id"),
+                "scalp_n": n_placed,
+                "copy": "stgm_exact",
             }
         )
-        done[wid] = {
+        win = {
             **win,
             "placed": True,
-            "n_placed": new_n,
+            "n_placed": n_placed,
             "max_scalps": max_scalps,
-            "asset": pick["asset"],
-            "side": pick["side"],
-            "entry": pick["entry"],
+            "asset": asset,
+            "side": side,
+            "entry": entry,
             "ts": time.time(),
-            "order": placed.get("order_id"),
+            "order": last_result.get("order_id"),
             "history": hist[-max_scalps:],
+            "deal": "r1723-stgm-copy-only",
         }
+        done[wid] = win
         _save_windows(done, state_dir=root)
-        # clear sit file
+
+    if mirrored:
         try:
             (root / SIT_FILE).unlink(missing_ok=True)  # type: ignore[arg-type]
         except Exception:
-            try:
-                if (root / SIT_FILE).exists():
-                    (root / SIT_FILE).unlink()
-            except Exception:
-                pass
-        _log(
-            {
-                "event": "must_scalp_placed",
-                "window_id": wid,
-                "asset": pick["asset"],
-                "side": pick["side"],
-                "entry": pick["entry"],
-                "fill_count": placed.get("fill_count"),
-                "n_placed": new_n,
-                "max_scalps": max_scalps,
-            },
-            state_dir=root,
-        )
+            pass
         return {
             "ok": True,
             "placed": True,
             "window_id": wid,
-            "asset": pick["asset"],
-            "side": pick["side"],
-            "entry": pick["entry"],
-            "n_placed": new_n,
-            "max_scalps": max_scalps,
-            "result": placed,
+            "n_placed": n_placed,
+            "mirrored": mirrored,
+            "n_mirrored": len(mirrored),
+            "deal": "r1723-stgm-copy-only",
             "truth_label": TRUTH,
+            "result": last_result,
         }
 
-    # no fill this tick — keep trying later in window (does not burn a scalp slot)
-    _log(
-        {
-            "event": "must_scalp_attempt",
-            "window_id": wid,
-            "asset": pick["asset"],
-            "entry": pick["entry"],
-            "result": placed.get("event"),
-            "reason": placed.get("reason"),
-            "n_placed": n_placed,
-        },
-        state_dir=root,
-    )
     _write_sit(
-        "attempted_no_fill_or_reject",
+        "stgm_copy_no_fill",
         {
-            "asset": pick["asset"],
-            "entry": pick["entry"],
-            "event": placed.get("event"),
-            "reason": placed.get("reason"),
+            "paper_n": len(paper_opens),
             "secs_left": secs,
-            "n_placed": n_placed,
-            "max_scalps": max_scalps,
-            "human": "Alice tried — wait for next tick, do not spam manual",
+            "last": {
+                "event": last_result.get("event"),
+                "reason": last_result.get("reason"),
+            },
+            "human": (
+                "STGM has opens but US$ copy did not fill this tick "
+                "(band/clock/caps) — wait next tick, do not manual"
+            ),
+            "deal": "r1723-stgm-copy-only",
         },
         state_dir=root,
     )
     return {
         "ok": True,
         "placed": False,
+        "reason": "stgm_copy_no_fill",
         "window_id": wid,
-        "attempt": pick["asset"],
+        "paper_n": len(paper_opens),
         "n_placed": n_placed,
-        "result": placed,
+        "result": last_result,
         "truth_label": TRUTH,
+        "deal": "r1723",
     }
 
 
-__all__ = ["tick_must_scalp", "TRUTH", "SIT_FILE"]
+__all__ = [
+    "tick_must_scalp",
+    "TRUTH",
+    "SIT_FILE",
+    "clear_force_flat_cooldown",
+    "_force_flat_red_cooldown",
+]

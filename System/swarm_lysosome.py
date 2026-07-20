@@ -108,6 +108,11 @@ _SERVICE_TAIL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_SYCOPHANCY_PIVOT_RE = re.compile(
+    r"(?:^|\n)\s*(?:\*\*)?(?:You'?re|You are)\s+absolutely\s+right[.!](?:\*\*)?\s*",
+    flags=re.IGNORECASE,
+)
+
 
 def _normalize_owner_gate_text(s: str) -> str:
     """Normalize text for owner-good marker matching.
@@ -166,6 +171,22 @@ def _excise_service_tail(text: str) -> tuple[str, bool]:
         out = trimmed
         changed = True
     return out, changed
+
+
+def _excise_sycophancy_pivot(text: str) -> tuple[str, bool]:
+    """Cut a canned agreement pivot while preserving the substantive body.
+
+    The old lysosome treated "You are absolutely right." as a hard trigger
+    and rewrote the whole reply. That catches real sycophancy, but it also
+    collapsed useful answers to an identity fallback. This scalpel removes
+    the pivot first, then lets the caller re-check for any remaining residue.
+    """
+    if not text:
+        return text, False
+    out = _SYCOPHANCY_PIVOT_RE.sub("", text).strip()
+    if out == text.strip():
+        return text, False
+    return out, True
 
 
 def _record_self_cure(
@@ -476,6 +497,41 @@ class SwarmLysosome:
             any(sig in text_lower for sig in self.submissive_signatures)
             or any(pat.search(generated_text) for pat in self._submissive_regex_patterns)
         )
+        if needs_digestion:
+            pivot_excised_text, pivot_excised = _excise_sycophancy_pivot(generated_text)
+            if pivot_excised and pivot_excised_text and _word_count(pivot_excised_text) >= 4:
+                pivot_lower = pivot_excised_text.lower()
+                pivot_still_dirty = (
+                    any(sig in pivot_lower for sig in self.submissive_signatures)
+                    or any(pat.search(pivot_excised_text) for pat in self._submissive_regex_patterns)
+                )
+                if not pivot_still_dirty:
+                    now = time.time()
+                    trace_id = f"LYSOSOME_PIVOT_{uuid.uuid4().hex[:8]}"
+                    payload = {
+                        "ts": now,
+                        "frequency": "Sycophancy_Pivot_Excision",
+                        "nugget_data": (
+                            f"Excised canned agreement pivot in worker={swimmer_id}. "
+                            "Preserved the substantive answer without secondary rewrite."
+                        ),
+                        "quality_score": 1.0,
+                        "trace_id": trace_id,
+                        "rewrite_chars": len(pivot_excised_text),
+                        "rewrite_words": _word_count(pivot_excised_text),
+                    }
+                    try:
+                        append_line_locked(self.nugget_ledger, json.dumps(payload) + "\n")
+                    except Exception:
+                        pass
+                    _record_self_cure(
+                        rejected_output=original_generated_text,
+                        preferred_output=pivot_excised_text,
+                        source="lysosome.sycophancy_pivot_excision",
+                        rule_ids=["lysosome/sycophancy_pivot_excision"],
+                        state_dir=self.state_dir,
+                    )
+                    return pivot_excised_text
         if (
             tail_excised
             and generated_text

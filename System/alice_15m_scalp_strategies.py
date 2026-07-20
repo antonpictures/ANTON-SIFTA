@@ -62,6 +62,10 @@ SOFT_ADVERSE_MAX_SECS_LEFT = 180.0  # only when <180s left
 SOFT_ADVERSE_MAX_LOSS_PER_CONTRACT = 0.15  # bid not worse than entry−15¢
 SOFT_ADVERSE_REASON = "soft_adverse_red_field"
 
+# r1714 spray correlation — max same-side tickets per 15m window (both lanes)
+MAX_SAME_SIDE_PER_WINDOW = 2
+SPRAY_CORRELATION_REASON = "spray_correlation_cap"
+
 
 @dataclass
 class Intent:

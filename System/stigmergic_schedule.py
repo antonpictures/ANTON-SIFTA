@@ -337,6 +337,7 @@ def add_task(
     repeat: str = "",
     source: str = "System.stigmergic_schedule",
     path: Path = _SCHEDULE,
+    claim_backfilled_by_gate: bool = False,
 ) -> Dict[str, Any]:
     row: Dict[str, Any] = {
         "text": text.strip(),
@@ -351,6 +352,8 @@ def add_task(
         row["due"] = due
     if repeat:
         row["repeat"] = repeat
+    if claim_backfilled_by_gate:
+        row["claim_backfilled_by_gate"] = True
     row["schedule_id"] = _stable_id(row)
     _append_row(row, path)
     # Tool Truth: schedule writes are effector actions. Every successful write

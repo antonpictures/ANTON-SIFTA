@@ -24,14 +24,21 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QPoint, QRect, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut, QIcon, QPixmap, QPainter
 
-_REPO = Path(__file__).resolve().parent
+from Kernel.path_resolver import get_repo_root as _get_repo_root
+_REPO = _get_repo_root()
 _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 _MDI_APP_START_MODE_ENV = "SIFTA_MDI_APP_START_MODE"
 _DESKTOP_HARDWARE_HEART_INTERVAL_S = 15.0
 _DESKTOP_ATP_MINT_INTERVAL_S = 60.0
+_DESKTOP_STGM_HUD_REFRESH_S = 30.0
+_DESKTOP_STGM_HUD_PRECISION_DIGITS = 9
 _DESKTOP_JOURNAL_DEFECATION_INTERVAL_S = 86400.0  # 24h base; actual trigger is stigmergic (density + decay)
+_DESKTOP_CRASH_RECEIPTS_PATH = _REPO / ".sifta_state" / "desktop_crash_receipts.jsonl"
+_DESKTOP_FAULTHANDLER_LOG_PATH = _REPO / ".sifta_state" / "desktop_faulthandler.log"
+_DESKTOP_CRASH_BLACKBOX_INSTALLED = False
+_DESKTOP_FAULTHANDLER_FILE = None
 
 
 def _sifta_mdi_app_start_mode() -> str:
@@ -82,17 +89,154 @@ def _sifta_mdi_widget_should_start_maximized(widget) -> bool:
 # and MLX/VLM tooling stay available. This protects launches made via ad-hoc
 # `python3 sifta_os_desktop.py` from silently using a global interpreter.
 if (
-    os.environ.get("SIFTA_SKIP_VENV_REEXEC", "").strip() != "1"
+    __name__ == "__main__"
+    and os.environ.get("SIFTA_SKIP_VENV_REEXEC", "").strip() != "1"
     and _VENV_PYTHON.exists()
     and Path(sys.executable).resolve() != _VENV_PYTHON.resolve()
 ):
     os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+def _desktop_utc_iso(ts: float) -> str:
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _write_desktop_crash_receipt(kind: str, *, receipt_path=None, exc_info=None, **fields):
+    """Append a desktop crash/exception receipt without depending on Qt."""
+    try:
+        import traceback as _traceback
+
+        now = time.time()
+        path = Path(receipt_path) if receipt_path is not None else _DESKTOP_CRASH_RECEIPTS_PATH
+        row = {
+            "schema": "SIFTA_DESKTOP_CRASH_BLACKBOX_V1",
+            "truth_label": "SIFTA_DESKTOP_CRASH_BLACKBOX_V1",
+            "kind": str(kind),
+            "ts": now,
+            "iso_utc": _desktop_utc_iso(now),
+            "pid": os.getpid(),
+            "ppid": os.getppid(),
+            "executable": sys.executable,
+            "python_version": sys.version.split()[0],
+            "argv": list(sys.argv),
+            "repo": str(_REPO),
+            "faulthandler_log": str(_DESKTOP_FAULTHANDLER_LOG_PATH),
+        }
+        if exc_info and exc_info[0] is not None:
+            exc_type, exc_value, exc_tb = exc_info
+            tb_text = "".join(_traceback.format_exception(exc_type, exc_value, exc_tb))
+            row.update(
+                {
+                    "exception_type": getattr(exc_type, "__name__", str(exc_type)),
+                    "exception_message": str(exc_value),
+                    "traceback_tail": tb_text[-12000:],
+                }
+            )
+        row.update(fields)
+        seed = json.dumps(row, sort_keys=True, default=str)
+        row["receipt_id"] = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, sort_keys=True, default=str) + "\n")
+        return row
+    except Exception:
+        return {}
+
+
+def _install_desktop_crash_blackbox():
+    """Install earliest practical crash receipts for the PyQt desktop body."""
+    global _DESKTOP_CRASH_BLACKBOX_INSTALLED, _DESKTOP_FAULTHANDLER_FILE
+    if _DESKTOP_CRASH_BLACKBOX_INSTALLED:
+        return {"already_installed": True}
+
+    fault_log_status = "not_started"
+    try:
+        import faulthandler as _faulthandler
+
+        _DESKTOP_FAULTHANDLER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _DESKTOP_FAULTHANDLER_FILE = _DESKTOP_FAULTHANDLER_LOG_PATH.open(
+            "a",
+            encoding="utf-8",
+            buffering=1,
+        )
+        _DESKTOP_FAULTHANDLER_FILE.write(
+            f"\n=== SIFTA desktop boot {_desktop_utc_iso(time.time())} pid={os.getpid()} ===\n"
+        )
+        _DESKTOP_FAULTHANDLER_FILE.flush()
+        _faulthandler.enable(file=_DESKTOP_FAULTHANDLER_FILE, all_threads=True)
+        fault_log_status = "enabled"
+    except Exception as exc:
+        fault_log_status = f"failed:{type(exc).__name__}:{exc}"
+
+    previous_excepthook = sys.excepthook
+
+    def _desktop_excepthook(exc_type, exc_value, exc_tb):
+        _write_desktop_crash_receipt(
+            "unhandled_python_exception",
+            exc_info=(exc_type, exc_value, exc_tb),
+        )
+        try:
+            previous_excepthook(exc_type, exc_value, exc_tb)
+        except Exception:
+            try:
+                sys.__excepthook__(exc_type, exc_value, exc_tb)
+            except Exception:
+                pass
+
+    sys.excepthook = _desktop_excepthook
+
+    thread_hook_status = "unavailable"
+    try:
+        import threading as _threading
+
+        previous_thread_hook = getattr(_threading, "excepthook", None)
+
+        def _desktop_thread_excepthook(args):
+            thread = getattr(args, "thread", None)
+            _write_desktop_crash_receipt(
+                "unhandled_thread_exception",
+                exc_info=(
+                    getattr(args, "exc_type", None),
+                    getattr(args, "exc_value", None),
+                    getattr(args, "exc_traceback", None),
+                ),
+                thread_name=getattr(thread, "name", None),
+                thread_ident=getattr(thread, "ident", None),
+                thread_daemon=getattr(thread, "daemon", None),
+            )
+            if previous_thread_hook is not None:
+                try:
+                    previous_thread_hook(args)
+                except Exception:
+                    pass
+
+        _threading.excepthook = _desktop_thread_excepthook
+        thread_hook_status = "installed"
+    except Exception as exc:
+        thread_hook_status = f"failed:{type(exc).__name__}:{exc}"
+
+    _DESKTOP_CRASH_BLACKBOX_INSTALLED = True
+    return _write_desktop_crash_receipt(
+        "crash_blackbox_installed",
+        faulthandler_status=fault_log_status,
+        sys_excepthook="installed",
+        threading_excepthook=thread_hook_status,
+    )
 
 # Owner heartbeat mode sensor. The single event spine remains swarm_behavior_clock.
 try:
     from System import owner_heartbeat as _owner_heartbeat
 except Exception:
     _owner_heartbeat = None
+
+
+# Apps that should not be sacrificed when Alice Browser opens (owner dual-glass)
+_PROTECTED_APP_TITLES = frozenset(
+    {
+        "Stigmergic Predictions",
+        "Talk to Alice",
+    }
+)
 
 
 def _max_open_apps() -> int:
@@ -102,11 +246,12 @@ def _max_open_apps() -> int:
 
         return resolve_max_open_apps()
     except Exception:
-        raw = os.environ.get("SIFTA_MAX_OPEN_APPS", "1").strip()
+        # r1639: default 2 so Predictions + Browser (or Talk) can co-exist
+        raw = os.environ.get("SIFTA_MAX_OPEN_APPS", "2").strip()
         try:
             return max(1, min(8, int(raw)))
         except ValueError:
-            return 1
+            return 2
 
 
 def _mark_owner_activity_from_behavior_clock(source: str) -> None:
@@ -221,6 +366,59 @@ def _economy_hud_full_scan_enabled() -> bool:
     if q == "offscreen":
         return False
     return True
+
+
+def _float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_stgm_balance_for_hud(value) -> str:
+    val = _float_or_none(value)
+    if val is None:
+        return "STGM --"
+    digits = max(3, min(9, int(_DESKTOP_STGM_HUD_PRECISION_DIGITS)))
+    return f"STGM {val:,.{digits}f}"
+
+
+def _latest_atp_pulse_for_topbar():
+    """Cheap ledger-tail pulse for the tooltip; the spendable number remains canonical."""
+    try:
+        from System.stgm_economy import latest_atp_pulse
+
+        return latest_atp_pulse()
+    except Exception:
+        return {}
+
+
+def _cached_stgm_balance_for_topbar():
+    """Fast path for Alice's one visible spendable STGM body balance."""
+    try:
+        from System.stgm_economy import load_stgm_economy_cache
+
+        data = load_stgm_economy_cache() or {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        return None, "cache_unavailable"
+    for key in ("spendable_total_stgm", "canonical_wallet_sum"):
+        val = _float_or_none(data.get(key))
+        if val is not None:
+            return val, f"stgm_economy_cache:{key}"
+    return None, "cache_missing_balance"
+
+
+def _scan_stgm_balance_for_topbar():
+    """Canonical spendable STGM from repair_log quorum; memory rewards stay out."""
+    try:
+        from System.stgm_economy import scan_economy
+
+        snap = scan_economy()
+        return float(getattr(snap, "canonical_wallet_sum", 0.0) or 0.0), "scan_economy:canonical_wallet_sum"
+    except Exception as exc:
+        return None, f"scan_failed:{type(exc).__name__}"
 
 
 def _load_widget_class(entry_point: str, class_name: str):
@@ -1354,7 +1552,7 @@ class SiftaMdiArea(QMdiArea):
         except Exception:
             pal = None
 
-        os_tag = getattr(pal, "os_line", "🐝 SIFTA BeeSon OS v8.0") if pal else "🐝 SIFTA BeeSon OS v8.0"
+        os_tag = getattr(pal, "os_line", "🧬 SIFTA OS v9.0 eXistenZ") if pal else "🧬 SIFTA OS v9.0 eXistenZ"
         lines = list(self._pred_data.get("census_lines") or [])
         if not lines:
             # Fallback if pre-render didn't populate (first paint before
@@ -1375,7 +1573,7 @@ class SiftaMdiArea(QMdiArea):
             _neon = QColor(130, 95, 45)
             _dim_neon = QColor(130, 95, 45, int(180 + 50 * pulse))
 
-        # Header — "🐝 SIFTA BeeSon OS v8.0" big bold neon
+        # Header — "🧬 SIFTA OS v9.0 eXistenZ" big bold neon
         header_font = QFont("Menlo", 22, QFont.Weight.Bold)
         header_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         painter.setFont(header_font)
@@ -2250,6 +2448,8 @@ class SiftaDesktop(QMainWindow):
             except Exception:
                 self._restore_gc_on_close = False
         self.setWindowTitle("SIFTA Python GUI OS")
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         # Architect 2026-05-14 ~18:00 PDT: "the OS a little bit bigger
         # like 30% bigger the window because I observed myself that I
         # resize it every time I make it bigger so let's make it 1080P
@@ -2296,11 +2496,15 @@ class SiftaDesktop(QMainWindow):
 
         # Central layout
         central = QWidget()
+        central.setMouseTracking(True)
+        central.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         self.mdi = SiftaMdiArea()
+        self.mdi.setMouseTracking(True)
+        self.setMouseTracking(True)
         self.mdi.subWindowActivated.connect(self._on_subwindow_activated)
         _desktop_init_trace("after SiftaMdiArea()")
         
@@ -2397,21 +2601,21 @@ class SiftaDesktop(QMainWindow):
             def _post_boot_gc_harden() -> None:
                 try:
                     from System.swarm_gc_stack_hardening import (
-                        harden_runtime_for_gc, disable_auto_collection, safe_manual_collect,
+                        harden_runtime_for_gc, disable_auto_collection, start_big_stack_collector,
                     )
                     harden_runtime_for_gc(log=print)
                     # r315 (George approved "Both", 2026-06-01): r246's freeze shrank the mark
                     # surface but auto-GC still fired inside a QTimer slot and overflowed the C
-                    # stack. Turn OFF automatic collection so it can never fire mid-slot, then
-                    # collect on our OWN timer whose slot is shallow — and only when no thread
-                    # holds a deep frame chain (the surface mark_stacks recurses over).
+                    # stack. Turn OFF automatic collection so it can never fire mid-slot.
                     disable_auto_collection(log=print)
-                    self._gc_safe_collect_timer = QTimer(self)
-                    self._gc_safe_collect_timer.setInterval(45000)
-                    self._gc_safe_collect_timer.timeout.connect(
-                        lambda: safe_manual_collect(log=print)
-                    )
-                    self._gc_safe_collect_timer.start()
+                    # r-gc-crossthread-fback-segv-20260703: the r315 QTimer→safe_manual_collect
+                    # lane segfaulted on 3.14.5 — its depth gate walked other threads' `f_back`,
+                    # which lazily materializes frames on the OWNING thread's data stack
+                    # (frame_back_get SIGSEGV, pid 20025). Collections now run on a dedicated
+                    # daemon thread with a 64MB C stack: mark_stacks gets 4x the main thread's
+                    # headroom and no code touches foreign frame chains. Real fix is still
+                    # Python 3.12.
+                    self._gc_big_stack_collector = start_big_stack_collector(log=print)
                 except Exception as _gc_exc:
                     print(f"[gc_hardening] skipped: {type(_gc_exc).__name__}: {_gc_exc}")
             QTimer.singleShot(16000, _post_boot_gc_harden)
@@ -2628,6 +2832,7 @@ class SiftaDesktop(QMainWindow):
         self._attention_director_next_ts = now + 0.8
         self._life_journal_next_ts = now + 5.0
         self._last_journal_defecation_ts = 0.0
+        self._last_reality_coherence_defecation_ts = 0.0
         self._hot_ledger_rotation_next_ts = now + 8.0
         self._metabolism_governor_next_ts = now + 5.0
         self._reload_continuity_probe_next_ts = now + 30.0
@@ -2854,12 +3059,17 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             ambient = {}
 
-        if sampling_policy == "engage":
-            attention_interval_s = 1.5
-        elif sampling_policy == "sample":
-            attention_interval_s = 3.0
-        else:
-            attention_interval_s = 6.0
+        # Need-driven attention cadence — not hardcoded 1.5/3.0/6.0 kitchen tiers.
+        try:
+            from System.swarm_need_driven_cadence import attention_interval_s as _need_attention_s
+
+            _sal = float(ambient.get("salience_score") or 0.0) if isinstance(ambient, dict) else 0.0
+            attention_interval_s = float(
+                _need_attention_s(policy=sampling_policy, salience=_sal, pending_count=0)
+            )
+        except Exception:
+            # Cold fallback only: rest-biased, still not a fixed 3s thrash.
+            attention_interval_s = 8.0 if sampling_policy == "idle" else 2.0
 
         if now >= float(getattr(self, "_attention_director_next_ts", 0.0)):
             self._tick_attention_director()
@@ -3034,6 +3244,12 @@ class SiftaDesktop(QMainWindow):
         Launcher tab = apps grid, fixed (no chat panel).
         Alice's witness organ keeps writing across both tabs."""
         if not force and mode == getattr(self, "_desktop_mode", "chat"):
+            # r1639b: re-click Swarm App Store must re-open launchpad grid
+            if mode == "launcher":
+                try:
+                    self._ensure_swarm_app_store_visible()
+                except Exception:
+                    pass
             return
         self._desktop_mode = mode
         if mode == "launcher":
@@ -3070,7 +3286,7 @@ class SiftaDesktop(QMainWindow):
                 pass
             try:
                 self._desktop_mode_label.setText(
-                    "Alice is docked beside the open app — one global chat, still listening."
+                    "Swarm App Store — pick an app. Alice stays docked and listening."
                 )
                 self._desktop_mode_label.setStyleSheet(
                     "color: rgb(120,210,180); font-size: 11px; font-family: Menlo;"
@@ -3083,6 +3299,17 @@ class SiftaDesktop(QMainWindow):
                 self._set_alice_quiet_for_desktop(False)
             except Exception:
                 pass
+            # CRITICAL: show the icon grid (Launchpad). Mode switch alone left
+            # George with no store when launchpad stayed hidden.
+            try:
+                from PyQt6.QtCore import QTimer as _QT
+
+                _QT.singleShot(0, self._ensure_swarm_app_store_visible)
+            except Exception:
+                try:
+                    self._ensure_swarm_app_store_visible()
+                except Exception:
+                    pass
         else:  # chat — full-width single chat, no camera, no MDI apps
             self._mark_active_app_idle_for_chat(reason="chat_desktop_selected")
             try:
@@ -3515,6 +3742,47 @@ class SiftaDesktop(QMainWindow):
                     tail_and_compile_once()
                 except Exception as e:
                     print(f"[SiftaDesktop] alice witness tick failed: {e}")
+                # r1522: sample visual/electrical proprioception to emit distress receipts.
+                # This is the metabolic pressure signal for human-limb directives (no governor).
+                try:
+                    from System.alice_body_diary_timeline_awareness import get_current_body_state
+                    get_current_body_state()  # side-effect: records PROPRIOCEPTIVE_LOSS if thresholds met
+                except Exception as e:
+                    print(f"[SiftaDesktop] proprioception pressure sample failed: {e}")
+
+                # Centralized reflex: single call into the shared WebReflexLoop (the one nerve).
+                # Deletes all ad-hoc RealityLedger + FailureAbstractor + one-off heartbeat appends here.
+                # reconcile() drives PHANTOM -> METABOLIC_DISTRESS_V1 + qualia, SETTLED -> RELIEF_TRUST_V1.
+                # All V1 events auto-fan via append_line_locked to the 4 canonical ledgers.
+                # Limb switch / element failure logic lives only inside the loop now.
+                try:
+                    from System.swarm_web_reflex_loop import get_web_reflex_loop
+                    loop = get_web_reflex_loop()
+                    # One call centralizes the entire reality/failure/metabolic reflex for this tick.
+                    _ = loop.reconcile()
+                    coherence = loop.reality_coherence_score(window_s=86400)
+                    if coherence < 0.5:
+                        # r1529: low-reality pressure compresses failures into RULEs.
+                        # Gate with its own interval so we don't run defecation every 60s
+                        # while the same low score remains until recovery.
+                        try:
+                            coherence_interval = float(
+                                os.environ.get("SIFTA_REALITY_COHERENCE_DEFECATION_INTERVAL_S", "900").strip()
+                            )
+                        except Exception:
+                            coherence_interval = 900.0
+                        if coherence_interval <= 0:
+                            coherence_interval = 900.0
+                        if (now - float(getattr(self, "_last_reality_coherence_defecation_ts", 0.0))) >= coherence_interval:
+                            try:
+                                coherence_res = journal_defecation_once(window_hours=24)
+                                self._last_reality_coherence_defecation_ts = now
+                                if coherence_res.get("consolidated_groups", 0) > 0:
+                                    print(f"[SiftaDesktop] reality-coherence defecation: {coherence_res}")
+                            except Exception as e:
+                                print(f"[SiftaDesktop] reality-coherence defecation failed: {e}")
+                except Exception as e:
+                    print(f"[SiftaDesktop] web reflex reconcile failed: {e}")
             finally:
                 self._journal_tick_running = False
 
@@ -3612,6 +3880,47 @@ class SiftaDesktop(QMainWindow):
             [str(_REPO / "Applications" / "sifta_clock_settings.py"), str(x), str(y)],
             str(_REPO),
         )
+
+    def _topbar_stgm_balance(self, *, force: bool = False):
+        now_mono = time.monotonic()
+        last = float(getattr(self, "_stgm_hud_last_refresh_mono", 0.0) or 0.0)
+        cached = getattr(self, "_stgm_hud_cached_balance", None)
+        source = str(getattr(self, "_stgm_hud_source", "not_loaded") or "not_loaded")
+        if not force and cached is not None and (now_mono - last) < _DESKTOP_STGM_HUD_REFRESH_S:
+            return cached, source
+
+        value, source = _cached_stgm_balance_for_topbar()
+        if _economy_hud_full_scan_enabled():
+            scanned, scan_source = _scan_stgm_balance_for_topbar()
+            if scanned is not None:
+                value, source = scanned, scan_source
+
+        self._stgm_hud_cached_balance = value
+        self._stgm_hud_source = source
+        self._stgm_hud_last_refresh_mono = now_mono
+        return value, source
+
+    def _update_stgm_balance_hud(self, *, force: bool = False):
+        label = getattr(self, "_stgm_balance_label", None)
+        if label is None:
+            return
+        value, source = self._topbar_stgm_balance(force=force)
+        label.setText(_format_stgm_balance_for_hud(value))
+        pulse = _latest_atp_pulse_for_topbar()
+        pulse_line = ""
+        if isinstance(pulse, dict) and pulse.get("latest_event_id"):
+            pulse_line = (
+                "\nLatest ATP pulse: "
+                f"{pulse.get('latest_event_id')} "
+                f"+{_float_or_none(pulse.get('latest_amount_stgm')) or 0.0:.12f} STGM"
+            )
+        label.setToolTip(
+            "Canonical spendable STGM body balance from repair_log quorum. "
+            "Memory rewards are reputation; IDE mana is separate. "
+            f"Source: {source}. "
+            f"Displayed with {_DESKTOP_STGM_HUD_PRECISION_DIGITS} decimals so sub-milli-STGM ATP is visible."
+            f"{pulse_line}"
+        )
     
     def _update_clock(self):
         settings = {}
@@ -3655,6 +3964,7 @@ class SiftaDesktop(QMainWindow):
 
         if hasattr(self, "clock_label"):
             self.clock_label.setText(time_str)
+        self._update_stgm_balance_hud()
         if not (
             "pytest" in sys.modules
             or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
@@ -4123,16 +4433,18 @@ class SiftaDesktop(QMainWindow):
         title_layout.addWidget(title_label)
         title_layout.addStretch()
 
-        # ── ? Help button (AG31) ───────────────────────────────────────────
+        # ── ? Help button (AG31 / r1640) ───────────────────────────────────
         # Non-BaseWidget apps need wrapper help; SiftaBaseWidget apps already
         # expose their own contextual help button inside the app chrome.
+        # George 2026-07: NEVER auto-open help (Alice Browser help was the
+        # thrash). Click-only. Also ignore open-under-cursor mouse-ups for a
+        # short arm window after the MDI subwindow is created.
         _help_app_name = title  # capture for closure
         _manifest_cache = self._apps_manifest_cache
 
         def _make_help_popup(app_name: str) -> None:
-            """Show a styled help popup for `app_name`."""
+            """Show a styled help popup for `app_name` (explicit ? click only)."""
             from PyQt6.QtWidgets import QTextBrowser, QDialog, QVBoxLayout as _VBox, QHBoxLayout as _HBox, QPushButton as _Btn
-            from PyQt6.QtCore import QUrl
 
             from System.sifta_base_widget import _load_help_text, help_manifest_key_from_mdi_title
 
@@ -4213,13 +4525,31 @@ class SiftaDesktop(QMainWindow):
             btn_help = QPushButton("?")
             btn_help.setObjectName("mdiTitleHelpButton")
             btn_help.setFixedSize(22, 22)
-            btn_help.setToolTip(f"Help — {_help_app_name}")
+            btn_help.setToolTip(f"Help — {_help_app_name} (click only; never auto-opens)")
             btn_help.setStyleSheet(
                 "QPushButton { background: #1a1b26; color: #00ffc8; border: 1px solid #2a2f3a;"
                 " border-radius: 5px; font-weight: bold; font-size: 13px; padding: 0; }"
                 " QPushButton:hover { background: #24283b; border-color: #00ffc8; }"
             )
-            btn_help.clicked.connect(lambda _=False, n=_help_app_name: _make_help_popup(n))
+            # Click-only: no keyboard default/focus steal; arm after open settles.
+            btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            try:
+                btn_help.setAutoDefault(False)
+                btn_help.setDefault(False)
+            except Exception:
+                pass
+            _help_armed = {"ok": False}
+
+            def _arm_help() -> None:
+                _help_armed["ok"] = True
+
+            def _on_help_clicked(_checked: bool = False, n: str = _help_app_name) -> None:
+                if not _help_armed["ok"]:
+                    return  # r1640: suppress open-under-cursor / autostart race
+                _make_help_popup(n)
+
+            btn_help.clicked.connect(_on_help_clicked)
+            QTimer.singleShot(800, _arm_help)
             title_layout.addWidget(btn_help)
 
         # QMdiSubWindow has no setTitleBarWidget in PyQt6. We inject it inside.
@@ -4248,13 +4578,28 @@ class SiftaDesktop(QMainWindow):
         # Leave an inset lane in the MDI viewport so large apps can still cascade
         # visibly instead of every oversized window clamping to (0, 0).
         vp = self.mdi.viewport().rect()
-        max_w = max(360, vp.width() - 80) if vp.width() > 160 else int(w)
-        max_h = max(300, vp.height() - 80) if vp.height() > 160 else int(h)
+        # Prefer a usable MDI pane (chat dock steals width — still give apps room)
+        max_w = max(360, vp.width() - 40) if vp.width() > 160 else int(w)
+        max_h = max(300, vp.height() - 40) if vp.height() > 160 else int(h)
+        # Predictions is dense — open near-max and allow owner to grow further
+        if "Prediction" in str(title or "") or "Stigmergic Predictions" in str(title or ""):
+            w = max(int(w), min(int(max_w), 1600))
+            h = max(int(h), min(int(max_h), 1000))
+            try:
+                sub.setMinimumSize(min(1100, max_w), min(700, max_h))
+            except Exception:
+                pass
         w = min(int(w), int(max_w))
         h = min(int(h), int(max_h))
         sub.setWidget(wrapper)
         sub.setWindowTitle(title)
         sub.resize(w, h)
+        if "Prediction" in str(title or "") and max_w >= 1000 and max_h >= 700:
+            try:
+                # Maximize inside MDI so owner does not hand-resize every open
+                sub.showMaximized()
+            except Exception:
+                pass
 
         sub.setStyleSheet(f"""
             QMdiSubWindow {{
@@ -4808,6 +5153,51 @@ class SiftaDesktop(QMainWindow):
         self._spotlight.search_bar.clear()
         self._spotlight._update_list()
 
+    def _ensure_swarm_app_store_visible(self) -> None:
+        """Show Swarm App Store (Launchpad grid). Fixes 'Store does nothing'."""
+        try:
+            if getattr(self, "_launchpad", None) is None:
+                self._launchpad = LaunchpadWidget(self)
+                self._launchpad.hide()
+            if hasattr(self, "_spotlight") and self._spotlight is not None:
+                try:
+                    self._spotlight.hide()
+                except Exception:
+                    pass
+            surface = self.centralWidget() or self
+            try:
+                rect = (
+                    surface.geometry()
+                    if surface is self.centralWidget()
+                    else surface.rect()
+                )
+            except Exception:
+                rect = self.rect()
+            if rect.width() < 640 or rect.height() < 400:
+                try:
+                    rect = self.rect().adjusted(20, 60, -20, -20)
+                except Exception:
+                    pass
+            self._launchpad.setGeometry(rect)
+            try:
+                self._launchpad.reset_view()
+            except Exception:
+                pass
+            self._launchpad.show()
+            self._launchpad.raise_()
+            self._launchpad.activateWindow()
+            try:
+                self._launchpad.search_bar.setFocus()
+            except Exception:
+                pass
+        except Exception as exc:
+            try:
+                sys.stderr.write(
+                    f"[APPSTORE] ensure visible failed: {type(exc).__name__}: {exc}\n"
+                )
+            except Exception:
+                pass
+
     def _toggle_launchpad(self):
         if getattr(self, "_launchpad", None) is None:
             self._launchpad = LaunchpadWidget(self)
@@ -4815,17 +5205,7 @@ class SiftaDesktop(QMainWindow):
         if self._launchpad.isVisible():
             self._launchpad.hide()
             return
-        if hasattr(self, "_spotlight"):
-            self._spotlight.hide()
-        surface = self.centralWidget() or self
-        rect = surface.geometry() if surface is self.centralWidget() else surface.rect()
-        self._launchpad.setGeometry(rect)
-
-        self._launchpad.reset_view()
-        self._launchpad.show()
-        self._launchpad.raise_()
-        self._launchpad.activateWindow()
-        self._launchpad.search_bar.setFocus()
+        self._ensure_swarm_app_store_visible()
 
 
     def _cycle_windows(self):
@@ -5272,8 +5652,31 @@ class SiftaDesktop(QMainWindow):
         max_apps = _max_open_apps()
         open_titles = [t for t in self.currently_open_app_titles() if t != next_title]
         closed: list[str] = []
-        while len(open_titles) + 1 > max_apps:
-            victim = open_titles.pop(0)
+        # Prefer closing non-protected apps first (never sacrifice Predictions for Browser)
+        def _victim_order(titles: list[str]) -> list[str]:
+            soft = [t for t in titles if t not in _PROTECTED_APP_TITLES]
+            hard = [t for t in titles if t in _PROTECTED_APP_TITLES]
+            return soft + hard
+
+        ordered = _victim_order(open_titles)
+        while len(open_titles) + 1 > max_apps and ordered:
+            victim = ordered.pop(0)
+            if victim not in open_titles:
+                continue
+            # Last resort: if only protected left and next is Browser, still keep Predictions
+            if (
+                victim in _PROTECTED_APP_TITLES
+                and str(next_title or "") == "Alice Browser"
+                and any(t not in _PROTECTED_APP_TITLES for t in open_titles)
+            ):
+                continue
+            if (
+                victim == "Stigmergic Predictions"
+                and str(next_title or "") == "Alice Browser"
+            ):
+                # Owner dual-glass: never close Predictions for Browser — bump capacity instead
+                break
+            open_titles = [t for t in open_titles if t != victim]
             sub = self._open_windows.get(victim)
             if sub is None or sub == "_LOADING_":
                 self._open_windows.pop(victim, None)
@@ -5577,6 +5980,21 @@ class SiftaDesktop(QMainWindow):
         self._alice_status_label.setFixedHeight(22)
         layout.addWidget(self._alice_status_label)
 
+        # ── Canonical STGM body balance ───────────────────────────────────
+        self._stgm_balance_label = QLabel("STGM --")
+        self._stgm_balance_label.setStyleSheet(
+            "color: #e0af68; font-family: 'Menlo', 'Monaco', 'Consolas', monospace;"
+            " font-size: 12px; font-weight: bold; background: transparent;"
+            " padding: 0 18px 0 14px;"
+        )
+        self._stgm_balance_label.setFixedHeight(22)
+        self._stgm_balance_label.setMinimumWidth(190)
+        self._stgm_balance_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        self._stgm_balance_label.setToolTip(
+            "Canonical spendable STGM body balance from repair_log quorum."
+        )
+        layout.addWidget(self._stgm_balance_label)
+
         # ── Clock button ────────────────────────────────────────────────────
         self.clock_label = QPushButton()
         self.clock_label.setFlat(True)
@@ -5758,9 +6176,15 @@ _SCHEDULER_ALLOCATOR_PID = "desktop_body_001"
 _SCHEDULER_MAX_ALLOCATIONS_PER_TICK = 4
 _SCHEDULER_MAX_SPEND_PER_TICK = 0.08
 _SCHEDULER_MAX_SLICE_SPEND = 0.03
-_ATTENTION_DIRECTOR_INTERVAL_MS = 3000
+# r-need-cadence-20260710: was hardcoded 3000ms kitchen thrash.
+# Body law lives in System/swarm_need_driven_cadence.py — interval from need,
+# not "do this every 3 seconds no matter what". Kept as DEFAULT floor only
+# for callers that still pass interval_ms=… (tests pin small values).
+_ATTENTION_DIRECTOR_INTERVAL_MS = 200  # refractory floor, NOT a life schedule
 _SEARCH_INPUT_MAX_CHARS = 96
 _SEARCH_REBUILD_DEBOUNCE_MS = 120
+# Maintenance / allocation still use policy buckets as *relative* spacing
+# between need-gated work (not a free-running 3s pulse). Safety peek = 180s.
 _KERNEL_MAINTENANCE_INTERVAL_S = {
     "engage": 12.0,
     "sample": 25.0,
@@ -6057,27 +6481,57 @@ def _install_kernel_scheduler_timer(
         except Exception as exc:
             sys.stderr.write(f"[BOOT] kernel scheduler tick skipped: {exc}\n")
 
-    # Adaptive interval — Architect 00:14 fan-drop. When the kernel
-    # reports policy='engage' or 'sample', the scheduler runs at the base
-    # 3 s cadence (it has real pending work). When policy='idle' nobody
-    # is asking for cycles, so we slow to 30 s — still well within the
-    # 60 s idle-maintenance interval and the 180 s safety heartbeat.
-    _IDLE_INTERVAL_MS = 30_000
-    _ENGAGE_INTERVAL_MS = max(50, int(interval_ms))
+    # Need-driven interval — George 2026-07-10: not a deterministic 3s thrash.
+    # Body law: interval = t_min + (t_rest − t_min)·(1 − need)²
+    # (System/swarm_need_driven_cadence.py). Owner ACTIVE still short-circuits
+    # the whole tick via should_be_event_driven_only() above.
+    _FLOOR_MS = max(50, int(interval_ms))
 
     def _adapt_interval() -> None:
         try:
-            policy, _ = _scheduler_policy_from_kernel(kernel_table)
+            policy, salience = _scheduler_policy_from_kernel(kernel_table)
         except Exception:
-            policy = "idle"
+            policy, salience = "idle", 0.0
         try:
-            has_pending_work = bool(_pending_work_from_kernel(kernel_table))
+            pending = _pending_work_from_kernel(kernel_table)
+            pending_count = len(pending)
+            need_signal = _kernel_need_signal(policy, salience, pending)
         except Exception:
-            has_pending_work = False
-        target = _IDLE_INTERVAL_MS if policy == "idle" and not has_pending_work else _ENGAGE_INTERVAL_MS
+            pending_count = 0
+            need_signal = False
+        try:
+            from System.swarm_need_driven_cadence import scheduler_interval_ms as _need_ms
+
+            target = int(
+                _need_ms(
+                    policy=policy,
+                    salience=salience,
+                    pending_count=pending_count,
+                    need_signal=need_signal,
+                    floor_ms=_FLOOR_MS,
+                )
+            )
+        except Exception:
+            # Cold fallback: rest when quiet, floor when need — never pin 3000.
+            target = _FLOOR_MS if need_signal else 30_000
+        target = max(50, int(target))
         if scheduler_timer.interval() != target:
             scheduler_timer.setInterval(target)
             app.setProperty("sifta_kernel_scheduler_interval_ms", target)
+        try:
+            from System.swarm_need_driven_cadence import explain_cadence as _explain
+
+            app.setProperty(
+                "sifta_kernel_scheduler_cadence",
+                _explain(
+                    policy=policy,
+                    salience=salience,
+                    pending_count=pending_count,
+                    need_signal=need_signal,
+                ),
+            )
+        except Exception:
+            pass
 
     def _kernel_scheduler_tick_with_adapt() -> None:
         _kernel_scheduler_tick()
@@ -6113,7 +6567,7 @@ if __name__ == "__main__":
         _n_swimmers = int(os.environ.get("SIFTA_VISION_SWIMMERS", "1800"))
     except Exception:
         class _pal:
-            os_line = "🐝 SIFTA BeeSon OS v8.0"
+            os_line = "🧬 SIFTA OS v9.0 eXistenZ"
         # Dynamic fallback: count System/*.py organ modules
         try:
             _sys_dir = Path(__file__).resolve().parent / "System"
@@ -6124,6 +6578,7 @@ if __name__ == "__main__":
 
     # Shell script already printed the full banner with live theme+organ data.
     # Python only emits the app path so crash logs are traceable.
+    _install_desktop_crash_blackbox()
     sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
     sys.stderr.flush()
 
@@ -6292,7 +6747,8 @@ if __name__ == "__main__":
     if kernel_table is not None:
         if _install_kernel_scheduler_timer(app, kernel_table, desktop_body=desktop) is not None:
             sys.stderr.write(
-                f"  [BOOT] kernel : scheduler/attention director active @ {_ATTENTION_DIRECTOR_INTERVAL_MS}ms\n"
+                "  [BOOT] kernel : scheduler/attention need-driven "
+                f"(floor {_ATTENTION_DIRECTOR_INTERVAL_MS}ms, rest formula — not 3s thrash)\n"
             )
 
     # ── Alice body autopilot (CC2F / C47H 2026-04-23) ───────────────────

@@ -200,9 +200,20 @@ class MediaShazamApp(QWidget):
         self.guess_btn.clicked.connect(self.refresh)
         header.addWidget(self.guess_btn)
 
+        # r1640: click-only help — never auto-open on app launch.
         btn_help = QPushButton("?")
         btn_help.setFixedWidth(28)
-        btn_help.setToolTip("Help — SIFTA Media Shazam")
+        btn_help.setToolTip("Help — SIFTA Media Shazam (click only; never auto-opens)")
+        try:
+            from PyQt6.QtCore import Qt as _Qt, QTimer as _QTimer
+
+            btn_help.setFocusPolicy(_Qt.FocusPolicy.NoFocus)
+            btn_help.setAutoDefault(False)
+            btn_help.setDefault(False)
+            self._help_armed = False
+            _QTimer.singleShot(800, lambda: setattr(self, "_help_armed", True))
+        except Exception:
+            self._help_armed = True
         btn_help.clicked.connect(self._show_help)
         header.addWidget(btn_help)
 
@@ -404,7 +415,9 @@ class MediaShazamApp(QWidget):
 
     # ── Help ────────────────────────────────────────────────────────────────
     def _show_help(self) -> None:
-        """Load help text from APP_HELP.md and display in a popup."""
+        """Load help text from APP_HELP.md and display in a popup (click-only)."""
+        if not getattr(self, "_help_armed", True):
+            return
         help_file = _REPO / "Documents" / "APP_HELP.md"
         text = f"Help — SIFTA Media Shazam\n\nNo APP_HELP.md found at {help_file}"
         if help_file.exists():

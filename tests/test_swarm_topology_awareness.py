@@ -15,10 +15,12 @@ def test_topology_awareness_names_one_alice_relationship_graph(tmp_path):
 
     assert topo["truth_label"] == "TOPOLOGY_AWARENESS_ORGAN_V1"
     nodes = {node["id"]: node for node in topo["nodes"]}
-    for node_id in ("owner", "alice", "global_chat", "matrix_terminal", "local_cortex", "grok", "ide_doctors", "receipts"):
+    for node_id in ("owner", "alice", "global_chat", "matrix_terminal", "we_code_together", "local_cortex", "grok", "ide_doctors", "receipts"):
         assert node_id in nodes
     assert nodes["owner"]["label"]
     assert nodes["alice"]["boundary"] == "no surface owns Alice; all surfaces project Alice"
+    assert "one of Alice's hands" in nodes["we_code_together"]["boundary"]
+    assert "live health/open rounds" in nodes["we_code_together"]["role"]
     assert "Grok is not Alice" in nodes["grok"]["boundary"]
     assert topo["ledgers"]["global_chat"]["exists"] is True
     assert topo["ledgers"]["matrix_terminal"]["latest_action"] == "GROK_OPEN"
@@ -34,6 +36,7 @@ def test_topology_prompt_block_preserves_grok_and_ide_boundaries(tmp_path):
     assert "Alice field -> tool/cortex organs -> external surfaces -> receipts" in block
     assert "George -> Alice field" not in block
     assert "Grok is external" in block
+    assert "We Code Together is my shared code/body-health workbench" in block
     assert "IDE doctors are surgical hands" in block
     assert "the global chat remains one shared Alice conversation" in block
 
@@ -48,3 +51,4 @@ def test_topology_awareness_tool_router_status():
     assert result["status"] == "TOPOLOGY_AWARENESS_ORGAN_V1"
     assert "Grok is external" in result["alice_summary"]
     assert "prompt_block" in result
+    assert "we_code_together" in result["prompt_block"]

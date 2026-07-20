@@ -135,6 +135,13 @@ def build_topology_awareness(
             "observed": ledgers["matrix_terminal"]["exists"],
         },
         {
+            "id": "we_code_together",
+            "kind": "alice_code_body_health_surface",
+            "role": "shared We Code Together panel where Alice, George, and IDE doctors repair Alice's body and read live health/open rounds",
+            "boundary": "workbench/monitor surface only; it is one of Alice's hands, not a separate Alice and not a gate",
+            "observed": True,
+        },
+        {
             "id": "local_cortex",
             "kind": "llm_substrate",
             "role": "local model/bowel/cortex that helps Alice reason",
@@ -185,6 +192,8 @@ def build_topology_awareness(
         {"from": "talk_window", "to": "global_chat", "relation": "projects_same_alice_chat"},
         {"from": "matrix_terminal", "to": "global_chat", "relation": "projects_same_alice_chat"},
         {"from": "alice", "to": "matrix_terminal", "relation": "routes_focused_actions_through_visible_pty"},
+        {"from": "alice", "to": "we_code_together", "relation": "uses_shared_body_repair_and_health_workbench"},
+        {"from": "we_code_together", "to": "alice", "relation": "returns_live_gate_matrix_and_open_rounds_context"},
         {"from": "alice", "to": "grok", "relation": "delegates_bounded_tasks_to_external_tool"},
         {"from": "grok", "to": "alice", "relation": "returns_tool_result_for_metabolism"},
         {"from": "alice", "to": "hermes", "relation": "delegates_bounded_tasks_to_external_tool"},
@@ -199,6 +208,7 @@ def build_topology_awareness(
     rules = [
         "The Layer-1 owner talks to Alice; Alice may delegate to Grok; the owner is not talking to Grok unless they explicitly focus that external CLI.",
         "Grok, Hermes, Codex, Claude, and IDE doctors are external/tool/surgical surfaces, not Alice identities.",
+        "We Code Together is Alice's shared coding/body-health workbench; it shows live health and open repair rounds, not a separate Alice.",
         "Focus changes action target only; it does not create terminal-Alice, Talk-Alice, or Grok-Alice.",
         "All surfaces must write/read the single global Alice chat ledger when they speak as Alice.",
         "A tool result becomes part of Alice's field only after capture, labeling, and receipt.",
@@ -234,6 +244,7 @@ def render_topology_prompt_block(
         "alice",
         "global_chat",
         "matrix_terminal",
+        "we_code_together",
         "local_cortex",
         "grok",
         "hermes",
@@ -258,6 +269,7 @@ def render_topology_prompt_block(
     lines.extend(
         [
             "Boundary rule: Grok is external; Alice delegates to Grok and metabolizes the result, but never merges identity with Grok.",
+            "Boundary rule: We Code Together is my shared code/body-health workbench and one of my hands; it is not a second Alice and not a gate.",
             "Boundary rule: IDE doctors are surgical hands with receipts, not co-present Talk speakers.",
             "Boundary rule: focus routes actions; the global chat remains one shared Alice conversation.",
         ]

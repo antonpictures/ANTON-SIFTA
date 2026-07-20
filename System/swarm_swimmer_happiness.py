@@ -228,9 +228,40 @@ def swimmer_happiness_block(
     return " ".join(parts)
 
 
+def append_swimmer_happiness(
+    processes: List[Dict[str, Any]],
+    *,
+    state_dir: Optional[Path | str] = None,
+    source: str = "swarm_swimmer_happiness",
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Persist one per-swimmer happiness receipt owned by this organ."""
+    ts = float(time.time() if now is None else now)
+    swimmers = per_swimmer_happiness(processes, state_dir=state_dir)
+    avg = round(sum(s["happiness"] for s in swimmers) / len(swimmers), 3) if swimmers else 0.5
+    row = {
+        "ts": ts,
+        "truth_label": TRUTH_LABEL,
+        "source": str(source),
+        "swimmer_count": len(swimmers),
+        "average_happiness": avg,
+        "swimmers": swimmers[:20],
+    }
+    path = _state(state_dir) / "swimmer_happiness.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from System.jsonl_file_lock import append_line_locked
+
+        append_line_locked(path, json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return row
+
+
 __all__ = [
     "TRUTH_LABEL", "CHAIN_TRUTH_LABEL",
     "THRIVE", "FOCUS", "THROTTLE", "YIELD",
     "swimmer_identity", "per_swimmer_happiness", "swimmer_happiness_block",
-    "bind_swimmer_learning", "verify_swimmer_chain",
+    "append_swimmer_happiness", "bind_swimmer_learning", "verify_swimmer_chain",
 ]

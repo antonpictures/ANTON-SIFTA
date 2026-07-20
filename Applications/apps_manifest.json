@@ -92,7 +92,7 @@
     "category": "Research",
     "icon": "🧪",
     "entry_point": "Applications/sifta_colloid_sim.py",
-    "widget_class": "ColloidSimulator",
+    "widget_class": "SIFTAColloidSimulation",
     "window_width": 1000,
     "window_height": 800,
     "doctor": "mimo_cli_cortex",
@@ -184,21 +184,6 @@
     "_retired": true,
     "_retired_reason": "AG31 2026-04-27 Event 71: absorbed into Alice Perception Observatory. Math preserved in what_alice_sees_widget Tab 2.",
     "icon": "📷"
-  },
-  "Apex Predator Perceiver": {
-    "category": "Simulations",
-    "entry_point": "Applications/sifta_apex_predator_widget.py",
-    "widget_class": "ApexPredatorWidget",
-    "window_width": 1100,
-    "window_height": 700,
-    "signature": "AG31_EVENT71_2026-04-27+C55M_MATH_AUDIT",
-    "doctor": "AG31",
-    "co_doctors": [
-      "C55M"
-    ],
-    "math_contract": "deterministic sparsemax cross-attention over block-compressed local telemetry; not a learned Perceiver checkpoint",
-    "description": "Event 71: Cross-modal attention bottleneck. AG31 visual concept with C55M math audit: measured entropy, block compression, sparsemax attention, live-ledger hydration, and proof hashes. Replaces raw telemetry flooding with an auditable 32-latent focus map.",
-    "icon": "🦁"
   },
   "Urban Resilience Simulator": {
     "category": "Simulations",
@@ -1347,15 +1332,16 @@
   },
   "_consolidation_note_2026-05-14": {
     "category": "Internal",
-    "entry_point": null,
-    "widget_class": null,
-    "description": "Consolidation 2026-05-14: Applications/sifta_stigmergic_mammal_canvas.py (StigmergicMammalCanvasApp) and Applications/sifta_mammal_unified_field_widget.py (MammalUnifiedFieldApp) were merged into Tabs 2 and 3 of the Stigmergic MAMMAL widget per architect direction (one app, all the help, top-tier). Standalone files remain on disk for reuse but are not surfaced in the launcher.",
+    "entry_point": "",
+    "widget_class": "",
+    "description": "Consolidation 2026-05-14 (retired note): MAMMAL files merged. Kept for history only.",
     "icon": "ℹ️",
     "enabled": false,
     "hidden": true,
     "autostart": false,
     "_hidden_from_launcher": true,
     "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-14-MAMMAL-CONSOLIDATION",
+    "_retired": true,
     "doctor": "Cowork (claude-opus-4-7)",
     "doctor_protocol_version": "v4_PREDATOR_GATE"
   },
@@ -1782,7 +1768,7 @@
   "What Alice Sees": {
     "category": "Perception",
     "entry_point": "Applications/sifta_what_alice_sees_widget.py",
-    "widget_class": "VideoCanvas",
+    "widget_class": "WhatAliceSeesWidget",
     "icon": "👁",
     "description": "Live camera feed showing what Alice sees through her eye."
   },
@@ -1799,13 +1785,6 @@
     "widget_class": "MatrixTerminalApp",
     "icon": "💻",
     "description": "Matrix terminal for direct Alice body inspection and command."
-  },
-  "Apex Predator Background": {
-    "category": "System",
-    "entry_point": "Applications/sifta_predator_desktop_bg.py",
-    "widget_class": "PredatorDesktopBg",
-    "icon": "🦁",
-    "description": "Organ status panel and predator background visualization."
   },
   "YouTube Shazam": {
     "category": "Creative",
@@ -1832,7 +1811,7 @@
     "category": "Research",
     "icon": "🔬",
     "entry_point": "Applications/sifta_ablation_lab.py",
-    "widget_class": "AblationLab",
+    "widget_class": "AblationLabWidget",
     "window_width": 900,
     "window_height": 700,
     "doctor": "mimo_cli_cortex",
@@ -1848,7 +1827,8 @@
     "window_height": 600,
     "doctor": "mimo_cli_cortex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Read-only viewer for Alice first-person journal entries and stigmergic schedule rows."
+    "hidden": true,
+    "description": "Compatibility/CLI wrapper for Alice Journal. Hidden from Swarm App Store so the canonical Alice Journal is the only visible journal surface."
   },
   "Stigmergic Shared Experience Anchors": {
     "category": "Memory",
@@ -1876,11 +1856,68 @@
     "category": "Research",
     "icon": "🔥",
     "entry_point": "Applications/sifta_crucible_swarm_sim.py",
-    "widget_class": "CrucibleSwarmSim",
+    "widget_class": "CrucibleSim",
     "window_width": 1000,
     "window_height": 800,
     "doctor": "mimo_cli_cortex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Crucible stress-test simulation for swarm resilience under extreme conditions."
+  },
+  "Stigmergic Carpenter Pong": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_stigmergic_pong.py",
+    "widget_class": "StigmergicCarpenterPongWidget",
+    "window_width": 1080,
+    "window_height": 760,
+    "signature": "WCT-R1625-CARPENTER-PONG-V3-2026-07-11",
+    "doctor": "Grok (xAI) + Claude + Codex GPT-5 + owner vision Carpenter hall",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Carpenter Pong (SIGGRAPH 1991 to Alice body). Two autonomous swarms deposit into evaporating fields and cast local votes; only aggregate votes move paddles. V3 adds deterministic Ed25519 swimmer identities and signed ballot checkpoints, optional asynchronous whole-swarm local Ollama advice with think=false, GAME_STGM sandbox stakes, and a read-only canonical body STGM display. No body-wallet spend or mint occurs.",
+    "truth_label": "STIGMERGIC_CARPENTER_PONG_V3",
+    "autostart": false,
+    "icon": "🏓",
+    "wct_rounds": [
+      "R1625",
+      "R1625-demo"
+    ]
+  },
+  "Stigmergic Predictions": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_prediction_market.py",
+    "widget_class": "SiftaPredictionMarketWidget",
+    "window_width": 1600,
+    "window_height": 1000,
+    "signature": "WCT-R1639B-PREDICTIONS-SIZE-APPSTORE-FIX-2026-07-12",
+    "doctor": "Grok (xAI) · plan Cowork Claude · owner George",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "r1632: bigger defaults 1480x980; glass + Rainman + IF REAL $; Kalshi DEMO client scaffold (mock only). Kalshi USD OFF. gate70 hard lane.",
+    "truth_label": "SIFTA_PREDICTION_MARKET_V3",
+    "autostart": false,
+    "icon": "📈",
+    "wct_rounds": [
+      "R1626",
+      "R1625-adjacent"
+    ]
+  },
+  "Apex Predator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_double_apex_predator.py",
+    "widget_class": "DoubleApexPredatorWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "APEX_PREDATOR_UNITED_V1",
+    "doctor": "grok",
+    "co_doctors": [
+      "AG31",
+      "C55M"
+    ],
+    "icon": "🦅",
+    "description": "ONE Apex Predator — Event 71 Perceiver + Predator v7 field + dual doctors (Codex/Claude local launch). United surfaces; no duplicate icons.",
+    "truth_label": "APEX_PREDATOR_UNITED_V1",
+    "unites": [
+      "Apex Predator Perceiver",
+      "Apex Predator Background",
+      "Double Apex Predator"
+    ]
   }
 }

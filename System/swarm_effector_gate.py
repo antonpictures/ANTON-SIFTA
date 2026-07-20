@@ -224,14 +224,34 @@ def bind_owner_ingress(
     return ctx
 
 
+FRESH_OWNER_SLOT_PROTECT_S = 180.0
+
+
 def bind_recovery_context(
     *,
     source: str = "cortex_timeout_recovery",
     linked_receipt: str = "",
     state_dir: Path | str | None = None,
 ) -> Dict[str, Any]:
-    """Timeout/recovery may resume cognition — never spend effectors."""
+    """Timeout/recovery may resume cognition — never spend effectors.
+
+    r-execution-truth-20260703: recovery replay must NOT stomp a fresh live owner
+    slot. OBSERVED incident 2026-07-03 05:46: George typed 'search maisie williams
+    photos' (spendable nonce minted), the body-stabilization replay re-bound a
+    recovery context 0.3s later, and the browser navigate was refused with
+    recovery_context_no_effector on a DIRECT owner command — a blind gate on the
+    Architect (§0.0). If the active context is a fresh spendable owner ingress
+    (bound within FRESH_OWNER_SLOT_PROTECT_S), keep it; append the recovery bind
+    as a deferred shadow row. Recovery cognition spends no effectors, so it loses
+    nothing by not holding the active slot."""
     sd = _state_dir(state_dir)
+    active = read_active_context(state_dir=sd)
+    now = time.time()
+    owner_slot_fresh = bool(
+        active.get("effector_spend_allowed")
+        and not active.get("recovery_only")
+        and (now - float(active.get("bound_ts") or 0.0)) <= FRESH_OWNER_SLOT_PROTECT_S
+    )
     ctx = {
         "schema": TRUTH_LABEL,
         "nonce": "",
@@ -239,15 +259,27 @@ def bind_recovery_context(
         "recovery_only": True,
         "source": source,
         "linked_receipt": linked_receipt,
-        "bound_ts": time.time(),
+        "bound_ts": now,
         "incident_class": INCIDENT_245FCB4E,
     }
+    if owner_slot_fresh:
+        row = {
+            "schema": TRUTH_LABEL,
+            "action": "recovery_bind_deferred_owner_slot_fresh",
+            "receipt_id": str(uuid.uuid4()),
+            "ts": now,
+            "owner_slot_bound_ts": active.get("bound_ts"),
+            "owner_text_preview": active.get("owner_text_preview", ""),
+            **ctx,
+        }
+        _append(sd, row)
+        return {**ctx, "deferred": True, "kept_active": "owner_ingress"}
     _write_active(sd, ctx)
     row = {
         "schema": TRUTH_LABEL,
         "action": "recovery_bind",
         "receipt_id": str(uuid.uuid4()),
-        "ts": time.time(),
+        "ts": now,
         **ctx,
     }
     _append(sd, row)
@@ -282,6 +314,46 @@ def _refuse(
     }
     _append(sd, row)
     return {"ok": False, "reason": reason, "gate_receipt_id": row["receipt_id"], **row}
+
+
+def read_recent_refusal(
+    *,
+    effector: str = "browser",
+    since_ts: float | None = None,
+    window_s: float = 15.0,
+    state_dir: Path | str | None = None,
+) -> Dict[str, Any]:
+    """Latest gate refusal for this effector within the window — the field truth
+    an execution loop must read after acting (r-execution-truth-20260703).
+
+    Returns {} when no refusal landed; otherwise the refusal row. Reads only the
+    ledger tail so it stays cheap on the hot path."""
+    sd = _state_dir(state_dir)
+    path = sd / LEDGER_NAME
+    if not path.exists():
+        return {}
+    floor = float(since_ts) if since_ts is not None else (time.time() - float(window_s))
+    latest: Dict[str, Any] = {}
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            f.seek(max(0, size - 200_000))
+            tail = f.read().decode("utf-8", "replace")
+    except Exception:
+        return {}
+    for line in tail.splitlines():
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict) or row.get("action") != "refused":
+            continue
+        if str(row.get("effector") or "") != effector:
+            continue
+        ts = float(row.get("ts") or 0.0)
+        if ts >= floor and ts >= float(latest.get("ts") or 0.0):
+            latest = row
+    return latest
 
 
 def _repo_root() -> Path:
@@ -424,9 +496,15 @@ def record_incident_closed(
     incident_to: str = INCIDENT_91E01405,
     verdict: str = "REFUSED",
     probe: str = "",
+    root_cause: str = "",
     state_dir: Path | str | None = None,
 ) -> Dict[str, Any]:
-    """Formal incident-closed row after probe-before-claim replay (r1018)."""
+    """Formal incident-closed row after probe-before-claim replay (r1018).
+
+    root_cause: honest description of why the incident class is now addressed
+    (e.g. the watchdog root cause being repaired in A1). Required for live closes
+    per r1569 B3 / r1568 carry.
+    """
     sd = _state_dir(state_dir)
     row = {
         "schema": TRUTH_LABEL,
@@ -438,6 +516,7 @@ def record_incident_closed(
         "incident_chain": f"{incident_from}→{incident_to}",
         "verdict": verdict,
         "probe": probe,
+        "root_cause": root_cause,
         "incident_closed": True,
     }
     _append(sd, row)

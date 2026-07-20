@@ -276,7 +276,8 @@ def test_cortex_llm_includes_mimo_attached_models(tmp_path, monkeypatch):
     assert "Kimi K2.6 (fireworks-api kimi-k2p6)" in reply
     assert "krisha-g4u (local Ollama)" in reply
     assert "DiffusionGemma 26B (local diffusion)" in reply
-    assert "GPT-5.3-Codex-Spark" in reply
+    assert "Ornith 1.0 9B (local Ollama coding agent)" in reply
+    assert "GPT-5.4-Mini" in reply
     assert "GPT-5.5" not in reply
     assert "Live default" in reply
 
@@ -329,7 +330,7 @@ def test_mimo_dispatch_lane_local_krisha_default(monkeypatch, tmp_path):
         default_attached="krishairnd/Gemma-4-Uncensored:latest",
         state_dir=state,
     )
-    assert mimo_attached_dispatch_lane("krishairnd/Gemma-4-Uncensored:latest") == "mimo_cli_ollama_bridge"
+    assert mimo_attached_dispatch_lane("krishairnd/Gemma-4-Uncensored:latest") == "local_ollama_direct"
     assert mimo_attached_dispatch_lane("GPT-5.3-Codex-Spark") == "mimo_cli_codex_bridge"
     assert mimo_attached_dispatch_lane("grok-composer-2.5-fast") == "mimo_cli_grok_bridge"
     assert mimo_attached_dispatch_lane("grok-build") == "mimo_cli_grok_bridge"
@@ -337,7 +338,7 @@ def test_mimo_dispatch_lane_local_krisha_default(monkeypatch, tmp_path):
     assert mimo_attached_dispatch_lane("mimo-auto") == "mimo_native"
 
 
-def test_mimo_stream_routes_codex_spark_attached_default(monkeypatch, tmp_path):
+def test_mimo_stream_routes_codex_mini_attached_default(monkeypatch, tmp_path):
     import subprocess
 
     from System import swarm_gemini_brain as brain
@@ -351,8 +352,8 @@ def test_mimo_stream_routes_codex_spark_attached_default(monkeypatch, tmp_path):
     state = tmp_path / ".sifta_state"
     record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", "mimo-v2.5-pro-ultraspeed", "GPT-5.3-Codex-Spark"],
-        default_attached="GPT-5.3-Codex-Spark",
+        ["mimo-auto", "mimo-v2.5-pro-ultraspeed", "GPT-5.4-Mini"],
+        default_attached="GPT-5.4-Mini",
         state_dir=state,
     )
     captured = {}
@@ -374,8 +375,8 @@ def test_mimo_stream_routes_codex_spark_attached_default(monkeypatch, tmp_path):
     assert captured["cmd"][captured["cmd"].index("-m") + 1] == "mimo/mimo-auto"
     prompt = captured["cmd"][-1]
     assert "CODEX_CLI_DOWNSTREAM_BRIDGE" in prompt
-    assert "--model gpt-5.3-codex-spark" in prompt
-    assert "DOWNSTREAM_MODEL=GPT-5.3-Codex-Spark" in prompt
+    assert "--model gpt-5.4-mini" in prompt
+    assert "DOWNSTREAM_MODEL=GPT-5.4-Mini" in prompt
     trace_path = state / "mimo_stigmergic_traces.jsonl"
     assert trace_path.exists()
     trace = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[-1])
@@ -430,16 +431,11 @@ def test_mimo_stream_routes_grok_composer_through_mimo_cli_bridge(monkeypatch, t
     assert "DOWNSTREAM_MODEL=grok-composer-2.5-fast" in prompt
 
 
-def test_mimo_stream_local_attached_routes_ollama_through_mimo_cli_bridge(monkeypatch, tmp_path):
+def test_mimo_stream_local_attached_routes_directly_to_ollama(monkeypatch, tmp_path):
     import subprocess
 
     from System import swarm_gemini_brain as brain
     from System.swarm_cortex_capabilities import record_attached_models
-
-    class _Proc:
-        returncode = 0
-        stdout = '{"type":"text","part":{"type":"text","text":"OLLAMA_BRIDGE_OK"}}\n'
-        stderr = ""
 
     state = tmp_path / ".sifta_state"
     record_attached_models(
@@ -453,21 +449,28 @@ def test_mimo_stream_local_attached_routes_ollama_through_mimo_cli_bridge(monkey
     def fake_run(cmd, *args, **kwargs):
         if cmd and cmd[0] == "/tmp/mimo":
             captured["cmd"] = cmd
-        return _Proc()
+        raise AssertionError("local Ollama attached defaults must not call MiMo CLI")
+
+    def fake_local_stream(model, messages, **kwargs):
+        captured["local_model"] = model
+        captured["local_messages"] = messages
+        captured["local_kwargs"] = kwargs
+        yield ("token", "OLLAMA_DIRECT_OK")
+        yield ("done", "OLLAMA_DIRECT_OK")
 
     monkeypatch.setattr(brain, "_STATE", state)
     monkeypatch.setattr(brain, "_mimo_cli_binary", lambda: "/tmp/mimo")
     monkeypatch.setattr(brain, "_cloud_inference_blocked_by_metabolism", lambda: (False, ""))
     monkeypatch.setattr(subprocess, "run", fake_run)
+    from System import swarm_local_brain
+
+    monkeypatch.setattr(swarm_local_brain, "stream_chat", fake_local_stream)
 
     events = list(brain.stream_chat("mimo:mimo-cli-default", [{"role": "user", "content": "ping"}]))
-    assert events[-1] == ("done", "OLLAMA_BRIDGE_OK")
-    assert captured["cmd"][:2] == ["/tmp/mimo", "run"]
-    assert captured["cmd"][captured["cmd"].index("-m") + 1] == "mimo/mimo-auto"
-    prompt = captured["cmd"][-1]
-    assert "OLLAMA_CLI_DOWNSTREAM_BRIDGE" in prompt
-    assert "ollama run krishairnd/Gemma-4-Uncensored:latest <task_prompt>" in prompt
-    assert "DOWNSTREAM_MODEL=krishairnd/Gemma-4-Uncensored:latest" in prompt
+    assert events[-1] == ("done", "OLLAMA_DIRECT_OK")
+    assert "cmd" not in captured
+    assert captured["local_model"] == "krishairnd/Gemma-4-Uncensored:latest"
+    assert captured["local_messages"] == [{"role": "user", "content": "ping"}]
 
 
 def test_stream_grok_coerces_to_mimo_hub_not_direct_grok(monkeypatch, tmp_path):

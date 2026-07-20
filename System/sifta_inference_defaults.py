@@ -8,9 +8,11 @@ Architect policy (2026-05-15 update, see ide_stigmergic_trace
 25billion as fallback"):
 
   - **Default local Ollama cortex:** choose from the live `ollama list`
-    inventory by smallest on-disk model size first. This is the low-metabolism
-    default George set on 2026-06-19: a resident 1.9 GB model beats a resident
-    6.3/15/16/21 GB model unless the owner explicitly pins another cortex.
+    inventory by smallest on-disk model size first, after pruning known
+    non-dialogue engines from automatic Talk/default routing. r1560 verified
+    `kaelri/qwen3.5-mt:2b` is a translation-only model, so small-bytes no
+    longer outranks runnable dialogue; the policy remains low-metabolism, not
+    lowest-bytes-at-any-cost.
     Legacy SIFTA-owned tags below remain receipt/history constants and manual
     picker options, not automatic default claims.
   - **Small student cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`
@@ -408,6 +410,13 @@ def _lookup_size_bytes(tag: str, size_by_name: dict[str, int]) -> int:
     return _size_bytes_from_tag_hint(tag)
 
 
+def _is_non_dialogue_ollama_default_candidate(tag: str) -> bool:
+    low = str(tag or "").strip().lower()
+    if not low:
+        return False
+    return "kaelri" in low or "qwen3.5-mt" in low or "machine-translation" in low
+
+
 def _rank_installed_ollama_tags(
     tags: Sequence[str],
     *,
@@ -415,9 +424,10 @@ def _rank_installed_ollama_tags(
 ) -> list[str]:
     sizes = size_by_name if isinstance(size_by_name, dict) else _size_map_from_inventory()
 
-    def _score(tag: str) -> tuple[int, int, int, str]:
+    def _score(tag: str) -> tuple[int, int, int, int, int, int, str]:
         low = str(tag or "").lower()
         size_bytes = _lookup_size_bytes(tag, sizes)
+        non_dialogue_rank = 1 if _is_non_dialogue_ollama_default_candidate(tag) else 0
         size_known_rank = 0 if size_bytes > 0 else 1
         size_rank = size_bytes if size_bytes > 0 else 2 ** 63 - 1
         pref_idx = len(_LEGACY_LOCAL_PREFERENCE) + 10
@@ -427,7 +437,7 @@ def _rank_installed_ollama_tags(
                 break
         alice_rank = 0 if low.startswith("alice-") else 1
         gemma_rank = 0 if "gemma" in low else 1
-        return (size_known_rank, size_rank, pref_idx, alice_rank, gemma_rank, low)
+        return (non_dialogue_rank, size_known_rank, size_rank, pref_idx, alice_rank, gemma_rank, low)
 
     return sorted(dict.fromkeys(str(t) for t in tags if t), key=_score)
 
@@ -537,7 +547,7 @@ def persist_ollama_boot_inventory(
         "tags": tags,
         "models": models,
         "resolved_daily_local": resolved,
-        "selection_policy": "smallest_live_ollama_model_by_on_disk_size",
+        "selection_policy": "smallest_live_dialogue_ollama_model_by_on_disk_size",
         "missing_legacy_canonical": missing_legacy,
         "truth_label": "OBSERVED" if tags else "OLLAMA_OFFLINE_OR_EMPTY",
     }
@@ -565,10 +575,11 @@ def _default_assignments_dict() -> Dict[str, Any]:
             "lysosome": CANONICAL_OLLAMA_REFLEX,
         },
         "notes": (
-            "default_ollama_model is the smallest live local Ollama model by on-disk size "
-            "unless the owner explicitly pins a cortex. per_swimmer / per_app override "
-            "for testing or app-specific UX. Use inference_router for node selection — "
-            "do not hardcode M1 URL on M5."
+            "default_ollama_model is the smallest live local Ollama dialogue model by "
+            "on-disk size unless the owner explicitly pins a cortex. Known translation-only "
+            "tags are not automatic Talk defaults. per_swimmer / per_app override for "
+            "testing or app-specific UX. Use inference_router for node selection — do not "
+            "hardcode M1 URL on M5."
         ),
     }
 
@@ -680,7 +691,10 @@ def _candidate_models_for_bucket(
     if ctx == "talk_to_alice":
         # r343: the demoted 4.4GB Gemma remains installed/selectable for
         # explicit probes, but it must not be Alice's automatic Talk fallback.
-        if _normalize_owner_facing_cortex(active) == CANONICAL_OLLAMA_GEMMA4_SMALL:
+        if (
+            _normalize_owner_facing_cortex(active) == CANONICAL_OLLAMA_GEMMA4_SMALL
+            or _is_non_dialogue_ollama_default_candidate(active)
+        ):
             active = CANONICAL_OLLAMA_DAILY
         candidates = _filter_to_installed_ollama(_dedupe([active, CANONICAL_OLLAMA_DAILY]))
         return candidates or list_live_local_ollama_fallbacks()
@@ -699,9 +713,19 @@ def normalize_talk_to_alice_model(model_name: str) -> str:
     must not be the Talk worker model after George corrected the live M5 path.
     """
     model = _normalize_owner_facing_cortex(str(model_name or ""))
-    if model == CANONICAL_OLLAMA_GEMMA4_SMALL:
-        return coerce_to_installed_ollama_model(CANONICAL_OLLAMA_DAILY)
-    return coerce_to_installed_ollama_model(model or CANONICAL_OLLAMA_DAILY)
+    return _coerce_to_talk_dialogue_model(model or CANONICAL_OLLAMA_DAILY)
+
+
+def _coerce_to_talk_dialogue_model(model_name: str) -> str:
+    resolved = coerce_to_installed_ollama_model(model_name)
+    if (
+        resolved == CANONICAL_OLLAMA_GEMMA4_SMALL
+        or _is_non_dialogue_ollama_default_candidate(resolved)
+    ):
+        daily = coerce_to_installed_ollama_model(CANONICAL_OLLAMA_DAILY)
+        if daily != resolved:
+            return daily
+    return resolved
 
 
 def choose_stigmergic_ollama_model(
@@ -936,6 +960,8 @@ def resolve_ollama_model(
             else:
                 if _is_non_ollama_runtime_tag(per_app_val):
                     return per_app_val
+                if app_context == "talk_to_alice":
+                    return _coerce_to_talk_dialogue_model(per_app_val)
                 return coerce_to_installed_ollama_model(per_app_val)
 
     # Round 49 (2026-05-27): cloud cortex short-circuit.
@@ -973,11 +999,15 @@ def resolve_ollama_model(
                 selected_s = str(selected)
                 if _is_non_ollama_runtime_tag(selected_s):
                     return selected_s
+                if app_context == "talk_to_alice":
+                    return _coerce_to_talk_dialogue_model(selected_s)
                 return coerce_to_installed_ollama_model(selected_s)
         except Exception:
             pass
     if _is_non_ollama_runtime_tag(default_model):
         return default_model
+    if app_context == "talk_to_alice":
+        return _coerce_to_talk_dialogue_model(default_model)
     return coerce_to_installed_ollama_model(default_model)
 
 

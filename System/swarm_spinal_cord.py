@@ -73,6 +73,7 @@ class PatchResult:
     tests_passed: bool
     ast_clean: bool
     governor_ok: bool
+    target_files: list[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -546,7 +547,8 @@ def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
         diff_summary = text[:500]
 
     # Determine which files were changed
-    target_files = [f.strip() for f in changed_files.split(",") if f.strip()] if changed_files else task.target_files
+    # Preserve CHANGED_FILES from MiMo even when task had no pre-known targets (owner_correction case)
+    resolved_targets = [f.strip() for f in changed_files.split(",") if f.strip()] if changed_files else list(task.target_files or [])
 
     return PatchResult(
         task_id=task.task_id,
@@ -558,6 +560,7 @@ def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
         tests_passed=tests_passed,
         ast_clean=False,  # verified later
         governor_ok=False,  # verified later
+        target_files=resolved_targets,
     )
 
 
@@ -613,7 +616,11 @@ def gate_and_apply(
         return receipt
 
     # 1. AST check
-    target_file = task.target_files[0] if task.target_files else ""
+    # Prefer the file MiMo actually named in CHANGED_FILES (result.target_files)
+    # over the (possibly empty) pre-known list from the originating signal/task.
+    # This closes the owner-correction + "MiMo identifies" self-evolution path.
+    candidates = getattr(result, "target_files", None) or task.target_files or []
+    target_file = candidates[0] if candidates else ""
     if not target_file or (REPO / target_file).is_dir() or not (REPO / target_file).is_file():
         receipt["status"] = "NO_VALID_TARGET_FILE"
         receipt["error"] = f"target_file invalid or directory: {target_file}"

@@ -146,6 +146,14 @@ def clamp_for_env(parts: list[str]) -> tuple[list[str], dict[str, Any]]:
             "LIVE HUMAN CONVERSATION STYLE",
             "STIGMERGIC APP ATTENTION BIAS",
             "GENERIC APP AWARENESS",
+            # r1621/r1623 soul blocks — never water-fill these away on local diet
+            "HOST TEACHING",
+            "BODY FROM RECEIPTS",
+            "LIVE ALICE BROWSER RECEIPT",
+            "NUMBERED OWNER QUESTIONS",
+            "BODY CODE FROM DISK",
+            "SELF-CODING HAND",
+            "THIS TURN IS ALICE SELF-CODING",
         ),
     )
 

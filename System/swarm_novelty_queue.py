@@ -28,6 +28,7 @@ talk over each other. Read-only over the bar; the only writes are the queue + di
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import time
 from pathlib import Path
@@ -80,6 +81,12 @@ def _norm(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (text or "").lower()))[:160]
 
 
+def _receipt_id(row: dict) -> str:
+    stable = {k: v for k, v in row.items() if k not in {"stgm_pulse"}}
+    raw = json.dumps(stable, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return "novelty_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
 def recently_captured(insight: str, *, window_s: float = 1800.0) -> bool:
     """True if a near-identical novelty was captured in the last `window_s` seconds.
 
@@ -126,6 +133,7 @@ def capture_novelty(insight: str, *, trigger: str = "witnessing life", source: s
         "doctrine": "useful novelty (changes my SIFTA model) or a genuine question — never a summary; pause media, write the diary, tell George when I can",
         "source": str(source or "swarm_novelty_queue")[:80],
     }
+    row["receipt_id"] = _receipt_id(row)
     if not c["useful"]:
         row["dropped_reason"] = "narration/summary — does not change my model (Bayesian-surprise bar)"
         return row
@@ -141,6 +149,12 @@ def capture_novelty(insight: str, *, trigger: str = "witnessing life", source: s
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
         with _DIARY.open("a", encoding="utf-8") as f:
             f.write(json.dumps({**row, "kind": "novelty_insight_from_witnessing_life"}, ensure_ascii=False) + "\n")
+        try:
+            from System.swarm_atp_synthase import mint_receipted_work_pulse
+
+            row["stgm_pulse"] = mint_receipted_work_pulse("novelty_capture", str(row.get("receipt_id") or ""))
+        except Exception as exc:
+            row["stgm_pulse_error"] = f"{type(exc).__name__}: {exc}"
     except Exception:
         pass
     return row

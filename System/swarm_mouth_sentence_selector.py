@@ -44,6 +44,15 @@ _RECEIPT_WORD_RE = re.compile(
 )
 _LIST_OR_HEADER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)]|#{1,6}\s+|[A-Z][A-Z0-9 _/-]{8,}:)")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_JOURNAL_TEXT_FIELD_KEYS = ("text", "content", "line", "entry", "summary", "snippet", "message")
+_JOURNAL_RAW_SHAPE_RE = re.compile(
+    r"\bfrom my journal\b|[\"'](?:ts|timestamp)[\"']\s*:.*[\"'](?:text|content|snippet|message)[\"']\s*:",
+    re.IGNORECASE | re.DOTALL,
+)
+_JOURNAL_TEXT_FIELD_RE = re.compile(
+    r"[\"'](?:text|content|line|entry|summary|snippet|message)[\"']\s*:\s*[\"']",
+    re.IGNORECASE,
+)
 
 
 def _state_dir(path: Optional[Path | str] = None) -> Path:
@@ -79,6 +88,92 @@ def _normalize_text(text: str) -> str:
     out = out.replace("`", "")
     out = re.sub(r"\s+", " ", out)
     return out.strip()
+
+
+def _clean_journal_talk(value: Any) -> str:
+    text = str(value or "")
+    text = text.replace("\\n", " ")
+    text = re.sub(r"\\u[0-9a-fA-F]{4}", " ", text)
+    text = re.sub(r"\s*📋\s*Copy\b.*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*From my journal\s*[—-]\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[{}\\]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" ;,.-")
+    if not text or re.fullmatch(r"[\d\s:.,-]+", text):
+        return ""
+    return text
+
+
+def _journal_text_from_dict(value: Dict[str, Any]) -> str:
+    for key in _JOURNAL_TEXT_FIELD_KEYS:
+        human = _clean_journal_talk(value.get(key))
+        if human:
+            return human
+    return ""
+
+
+def _extract_malformed_journal_fields(raw: str) -> List[str]:
+    parts: List[str] = []
+    for match in _JOURNAL_TEXT_FIELD_RE.finditer(raw):
+        start = match.end()
+        tail = raw[start:]
+        stop = len(tail)
+        for boundary in (
+            r"\s*;\s*\{[\"'](?:ts|timestamp|role|text|content|snippet|message)[\"']\s*:",
+            r"\s*\{[\"'](?:ts|timestamp|role)[\"']\s*:",
+            r"[\"']\s*,\s*[\"'](?:ts|timestamp|role|speaker|model|stt_confidence|input_source)[\"']\s*:",
+            r"[\"']\s*\}",
+            r"\s*📋\s*Copy\b",
+        ):
+            boundary_match = re.search(boundary, tail, flags=re.IGNORECASE | re.DOTALL)
+            if boundary_match:
+                stop = min(stop, boundary_match.start())
+        human = _clean_journal_talk(tail[:stop])
+        if human:
+            parts.append(human)
+    return parts
+
+
+def _extract_raw_journal_talk(text: str) -> str:
+    raw = str(text or "").strip()
+    if not raw or not _JOURNAL_RAW_SHAPE_RE.search(raw):
+        return ""
+
+    parts: List[str] = []
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(raw):
+        start = raw.find("{", idx)
+        if start < 0:
+            break
+        try:
+            obj, end = decoder.raw_decode(raw[start:])
+        except Exception:
+            idx = start + 1
+            continue
+        if isinstance(obj, dict):
+            human = _journal_text_from_dict(obj)
+            if human:
+                parts.append(human)
+        idx = start + max(end, 1)
+
+    for human in _extract_malformed_journal_fields(raw):
+        if human not in parts:
+            parts.append(human)
+    if not parts:
+        return ""
+    spoken = " ".join(parts)
+    spoken = re.sub(r"\s+", " ", spoken).strip(" ;,.-")
+    return spoken[:520].strip(" ;,.")
+
+
+def _write_selector_row(row: Dict[str, Any], state_dir: Optional[Path | str]) -> None:
+    try:
+        base = _state_dir(state_dir)
+        base.mkdir(parents=True, exist_ok=True)
+        with (base / LEDGER_NAME).open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def _sentences(text: str) -> List[str]:
@@ -181,6 +276,33 @@ def select_mouth_sentences(
     printed = str(printed_text or "")
     if not printed.strip():
         return {"ok": False, "spoken_text": "", "changed": False, "reason": "empty"}
+    journal_talk = _extract_raw_journal_talk(printed)
+    if journal_talk:
+        changed = journal_talk != _normalize_text(printed)
+        row = {
+            "ts": float(now if now is not None else time.time()),
+            "truth_label": TRUTH_LABEL,
+            "source": source,
+            "changed": bool(changed),
+            "selected_indices": [],
+            "sentence_count": 0,
+            "printed_sha16": hashlib.sha256(printed.encode("utf-8", errors="ignore")).hexdigest()[:16],
+            "spoken_sha16": hashlib.sha256(journal_talk.encode("utf-8", errors="ignore")).hexdigest()[:16],
+            "spoken_preview": journal_talk[:220],
+            "print_text_unchanged": True,
+            "reason": "raw_journal_json_to_talk",
+        }
+        _write_selector_row(row, state_dir)
+        return {
+            "ok": True,
+            "spoken_text": journal_talk,
+            "changed": bool(changed),
+            "selected_indices": [],
+            "sentence_count": 0,
+            "print_text_unchanged": True,
+            "reason": row["reason"],
+            "ledger_name": LEDGER_NAME,
+        }
     if owner_requested_full_aloud(owner_text):
         return {"ok": True, "spoken_text": printed, "changed": False, "reason": "owner_requested_full_aloud"}
     if _owner_requested_receipt_aloud(owner_text):
@@ -216,10 +338,7 @@ def select_mouth_sentences(
         ],
     }
     try:
-        base = _state_dir(state_dir)
-        base.mkdir(parents=True, exist_ok=True)
-        with (base / LEDGER_NAME).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        _write_selector_row(row, state_dir)
     except Exception:
         pass
 

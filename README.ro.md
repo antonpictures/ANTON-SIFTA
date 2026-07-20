@@ -1,4 +1,4 @@
-# SIFTA — sistem de operare viu (Living OS)
+# SIFTA OS v9.0 — eXistenZ (sistem de operare viu)
 
 **Cadrul de inteligență stigmergică pentru autonomie transparentă**
 
@@ -15,14 +15,21 @@ Fără dependențe de cloud. Fără API-uri corporatiste. Siliciul tău, regulil
 
 ## Pornire rapidă
 
-### Distribuția publică (v1.0.0) — 🐜⚡
+### Distribuția publică v9.0 eXistenZ — 🧬⚡
 Dacă ai ajuns aici de pe Twitter sau GitHub, copiază acest bloc de comenzi într-un terminal macOS / Linux.
 
 ```bash
-git clone https://github.com/antonpictures/ANTON-SIFTA.git
+git clone --recurse-submodules https://github.com/antonpictures/ANTON-SIFTA.git
 cd ANTON-SIFTA
-chmod +x \!PowertotheSwarm.command
-./\!PowertotheSwarm.command
+git submodule update --init --recursive
+bash scripts/install_sifta_v9.sh --smoke
+```
+
+Pentru pornire manuală după instalare:
+
+```bash
+cp "SIFTA OS.command" ~/Desktop/
+chmod +x ~/Desktop/"SIFTA OS.command"
 ```
 
 > **Notă despre amnezie:** o instalare nouă începe cu *amnezie biologică*. SIFTA învață obiceiurile tale operaționale exacte (prin jurnalele stigmergice JSONL). Intenționat, nu vine preîncărcat cu starea de memorie istorică a Arhitectului.

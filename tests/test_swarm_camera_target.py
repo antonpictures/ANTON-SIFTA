@@ -541,6 +541,58 @@ def test_live_devices_strict_allowlist_ignores_virtual_override(monkeypatch):
     assert names == ["MacBook Pro Camera", "USB Camera VID:1133 PID:2081"]
 
 
+def test_owner_selection_devices_include_iphone_after_body_eyes(monkeypatch):
+    monkeypatch.setattr(target, "_qt_live_devices", lambda: [])
+    monkeypatch.setattr(target, "_avfoundation_live_devices", lambda: [])
+
+    def fake_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["system_profiler"],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "SPCameraDataType": [
+                        {
+                            "_name": "MacBook Pro Camera",
+                            "spcamera_unique-id": "mac-uid",
+                        },
+                        {
+                            "_name": "USB Camera VID:1133 PID:2081",
+                            "spcamera_unique-id": "usb-uid",
+                        },
+                        {
+                            "_name": "OBS Virtual Camera",
+                            "spcamera_unique-id": "obs-uid",
+                        },
+                        {
+                            "_name": "iPhone Camera",
+                            "spcamera_unique-id": "iphone-uid",
+                        },
+                        {
+                            "_name": "Ioan's iPhone Camera",
+                            "spcamera_unique-id": "ioan-iphone-uid",
+                        },
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(target.subprocess, "run", fake_run)
+
+    assert target.live_devices() == [
+        ("mac-uid", "MacBook Pro Camera"),
+        ("usb-uid", "USB Camera VID:1133 PID:2081"),
+    ]
+    assert target.live_devices_for_owner_selection() == [
+        ("mac-uid", "MacBook Pro Camera"),
+        ("usb-uid", "USB Camera VID:1133 PID:2081"),
+        ("iphone-uid", "iPhone Camera"),
+        ("ioan-iphone-uid", "Ioan's iPhone Camera"),
+    ]
+    assert target.index_for_owner_selection(name="iPhone Camera", unique_id="iphone-uid") == 3
+
+
 def test_is_allowed_owner_body_camera_allowlist(monkeypatch):
     assert target.is_allowed_owner_body_camera("MacBook Pro Camera")
     assert target.is_allowed_owner_body_camera("USB Camera VID:1133 PID:2081")

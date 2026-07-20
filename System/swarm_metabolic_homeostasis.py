@@ -368,12 +368,23 @@ class MetabolicHomeostat:
             local = 0.0
             recent_burn = 0.0
             
+        # r-metabolism-heartbeat-unchain-20260703: raw scan_economy() replays the
+        # full repair_log in EVERY fresh subprocess (13.4s probed) — that is what
+        # pushed the isolated body writer tick past its timeout and starved this
+        # ledger for 15 days. Read the shared body-truth snapshot instead: disk
+        # cache when fresh (<=300s), honest full refresh when stale. Same canonical
+        # spendable wallet, same organ, no rival accounting.
         try:
-            from System.stgm_economy import scan_economy
-            report = scan_economy().as_dict()
-            stgm = float(report.get("canonical_wallet_sum", 0.0) or 0.0)
+            from System.stgm_economy import stgm_body_truth_snapshot
+            snap = stgm_body_truth_snapshot(max_cache_age_s=300.0)
+            stgm = float(snap.get("spendable_total_stgm") or snap.get("canonical_wallet_sum") or 0.0)
         except Exception:
-            stgm = 0.0
+            try:
+                from System.stgm_economy import scan_economy
+                report = scan_economy().as_dict()
+                stgm = float(report.get("canonical_wallet_sum", 0.0) or 0.0)
+            except Exception:
+                stgm = 0.0
 
         # Opt-in Tab Consciousness carries a live STGM pressure while active.
         # The organ returns only the cost delta since the last sample, so this

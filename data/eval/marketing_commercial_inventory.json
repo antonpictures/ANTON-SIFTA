@@ -1,6 +1,6 @@
 {
   "schema": "MARKETING_COMMERCIAL_INVENTORY_V1",
-  "ts": 1782071539.174572,
+  "ts": 1784563293.8083699,
   "philippe_report": {
     "buyer": "Philippe",
     "demo_script": "demo/alice_demo_for_philippe.py",
@@ -8,10 +8,10 @@
     "one_pager_pdf": "outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf",
     "demo_present": true,
     "readme_present": true,
-    "pdf_present": true,
+    "pdf_present": false,
     "pytest_green": true,
-    "pytest_tail": "3 passed, 1 skipped, 5 warnings in 1.40s",
-    "spinal_cycle_rows": 7,
+    "pytest_tail": "3 passed, 1 skipped, 5 warnings in 1.37s",
+    "spinal_cycle_rows": 8,
     "truth_summary": "OPERATIONAL: demo + README + one-pager + pytest (steps 1\u20135). HYPOTHESIS: full kept spinal patch until MiMo provider auth completes.",
     "receipt_ids": [
       "r1127-codex-philippe-commercial-response-pdf",
@@ -20,8 +20,8 @@
   },
   "summary": {
     "total_assets": 30,
-    "on_disk": 29,
-    "missing": 1,
+    "on_disk": 27,
+    "missing": 3,
     "categories": [
       "agent_trust",
       "apps_tour",
@@ -56,7 +56,7 @@
       "path": "outputs/PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-14.pdf",
       "product": "Philippe commercial-viability one-pager",
       "label": "OPERATIONAL",
-      "on_disk": true
+      "on_disk": false
     },
     {
       "category": "philippe_packet",
@@ -189,7 +189,7 @@
       "path": "outputs/WIN-WIN_10x10_sebastian_final.pdf",
       "product": "WIN-WIN Solution flyer (Sebastian final)",
       "label": "OPERATIONAL",
-      "on_disk": true
+      "on_disk": false
     },
     {
       "category": "winwin_flyer",

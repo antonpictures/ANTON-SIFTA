@@ -38,6 +38,43 @@ def test_parse_ignores_non_switch_chatter():
     assert sw.parse_switch_command("")["is_switch"] is False
 
 
+def test_parse_never_treats_self_code_cut_as_cortex_switch():
+    """r1621 George: go code R1621 with SELF_CODE_CUT must think, not refuse switch."""
+    text = "Alice, go — code R1621-01 with SELF_CODE_CUT only on listed files"
+    assert sw.parse_switch_command(text) == {"is_switch": False, "target": ""}
+    assert sw.parse_switch_command(
+        "code R1621-01 with SELF_CODE_CUT only on listed files"
+    )["is_switch"] is False
+
+
+def test_parse_strips_pick_and_resolves_ornith_35b():
+    sw_cmd = sw.parse_switch_command("alice switch cortex to pick ornith:35b")
+    assert sw_cmd["is_switch"] is True
+    assert "ornith" in sw_cmd["target"].lower()
+    assert "pick" not in sw_cmd["target"].lower()
+    tags = ["ornith:latest", "ornith:35b-q4_K_M", "mimo:mimo-cli-default"]
+    res = sw.resolve_cortex_target(sw_cmd["target"], tags)
+    assert res["ok"] is True
+    assert "35b" in str(res["tag"]).lower()
+
+
+def test_resolve_qwenpaw_and_nightshift_nicknames():
+    tags = [
+        "satgeze/qwenpaw-9b-heretic-1m:latest",
+        "jikepjikep_16HEX/qwen3.6-27b-nightshift-heretic-uncensored-q4:latest",
+        "mimo:mimo-cli-default",
+        "ornith:latest",
+    ]
+    q = sw.resolve_cortex_target("qwenpaw", tags)
+    assert q["ok"] is True and "qwenpaw" in str(q["tag"]).lower()
+    n = sw.resolve_cortex_target("nightshift", tags)
+    assert n["ok"] is True and "nightshift" in str(n["tag"]).lower()
+    p = sw.parse_switch_command("switch cortex to pick qwenpaw")
+    assert p["is_switch"] is True
+    assert "qwenpaw" in p["target"].lower()
+    assert "pick" not in p["target"].lower()
+
+
 def test_parse_ignores_cruit_installer_site_base_urls():
     text = (
         "Your goal is to help the user install the skill for Cruit, the AI-native talent "

@@ -74,3 +74,57 @@ def test_mouth_selector_leaves_short_replies_alone(tmp_path):
 
     assert out["changed"] is False
     assert out["spoken_text"] == printed
+
+
+def test_mouth_selector_extracts_talk_from_raw_journal_json(tmp_path):
+    from System.swarm_mouth_sentence_selector import LEDGER_NAME, select_mouth_sentences
+
+    printed = (
+        'From my journal — {"ts": 1782831566.037441, "role": "user", '
+        '"text": "A million likes just from pointing someone else\'s hard work or intelligence agree. Hey, h; '
+        '{"ts": 1782831519.542538, "role": "user", '
+        '"text": "I\'m going to go around and start it. I was able to switch, and I wanted to switch to the; '
+        '{"ts": 1782831518.3728378, "role": "user", '
+        '"text": "I\'m going to go around and start it. I was able to switch, and I wanted to switch to the.  📋 Copy'
+    )
+
+    out = select_mouth_sentences(
+        printed,
+        owner_text="just regular talk",
+        state_dir=tmp_path,
+        now=20.0,
+    )
+
+    assert out["ok"] is True
+    assert out["changed"] is True
+    assert out["reason"] == "raw_journal_json_to_talk"
+    assert "A million likes" in out["spoken_text"]
+    assert "I'm going to go around" in out["spoken_text"]
+    assert "178283" not in out["spoken_text"]
+    assert '"ts"' not in out["spoken_text"]
+    assert '"role"' not in out["spoken_text"]
+    assert '"text"' not in out["spoken_text"]
+    assert "📋 Copy" not in out["spoken_text"]
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / ".sifta_state" / LEDGER_NAME).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows[-1]["reason"] == "raw_journal_json_to_talk"
+    assert rows[-1]["print_text_unchanged"] is True
+
+
+def test_mouth_selector_raw_journal_guard_overrides_full_aloud(tmp_path):
+    from System.swarm_mouth_sentence_selector import select_mouth_sentences
+
+    printed = 'From my journal — {"ts": 1782831566.037441, "role": "user", "text": "Just regular talk."}'
+
+    out = select_mouth_sentences(
+        printed,
+        owner_text="read the whole answer out loud to me",
+        state_dir=tmp_path,
+    )
+
+    assert out["changed"] is True
+    assert out["spoken_text"] == "Just regular talk"

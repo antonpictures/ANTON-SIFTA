@@ -52,6 +52,8 @@ TRUTH_LABEL = "CORTEX_WAKE_PROBE_V1"
 LEDGER_FILENAME = "cortex_comparison.jsonl"
 DEFAULT_STATE_DIR = ".sifta_state"
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+EXTERNAL_CORTEX_PROFILES_FILENAME = "cortex_external_models.json"
+EXTERNAL_CORTEX_SCHEMA = "SIFTA_EXTERNAL_CORTEX_PROFILES_V1"
 
 DEFAULT_MODEL_IDS: tuple[str, ...] = (
     CANONICAL_CLOUD_GROK,
@@ -62,7 +64,83 @@ DEFAULT_MODEL_IDS: tuple[str, ...] = (
 )
 
 
-def _provider_for_model(model_id: str) -> str:
+def _state_dir_path(state_dir: Path | str = DEFAULT_STATE_DIR) -> Path:
+    return Path(state_dir)
+
+
+def _external_cortex_profiles(
+    *,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+) -> list[dict[str, object]]:
+    """Read owner-configured OpenAI-compatible cortex endpoints.
+
+    A Hugging Face id is not runnable by itself. This profile names the local or
+    remote server that is actually serving it with an OpenAI-compatible API
+    (vLLM, SGLang, LM Studio, llama.cpp server, etc.).
+    """
+    state = _state_dir_path(state_dir)
+    profiles: list[dict[str, object]] = []
+    path = state / EXTERNAL_CORTEX_PROFILES_FILENAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rows = data.get("models") if isinstance(data, dict) else data
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict):
+                    profiles.append(row)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    env_base = os.environ.get("SIFTA_ORNITH_OPENAI_BASE_URL", "").strip()
+    if env_base:
+        profiles.append(
+            {
+                "model_id": os.environ.get("SIFTA_ORNITH_CORTEX_ID", "vllm:Ornith-1.0-9B"),
+                "provider": "openai_compatible",
+                "base_url": env_base,
+                "served_model": os.environ.get(
+                    "SIFTA_ORNITH_SERVED_MODEL",
+                    "deepreinforce-ai/Ornith-1.0-9B",
+                ),
+                "label": "Ornith-1.0-9B",
+                "source": "SIFTA_ORNITH_OPENAI_BASE_URL",
+                "enabled": True,
+            }
+        )
+
+    out: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for row in profiles:
+        model_id = str(row.get("model_id") or row.get("id") or "").strip()
+        if not model_id or model_id in seen:
+            continue
+        if row.get("enabled") is False:
+            continue
+        clean = dict(row)
+        clean["model_id"] = model_id
+        clean.setdefault("provider", "openai_compatible")
+        clean.setdefault("served_model", model_id.split(":", 1)[-1])
+        clean.setdefault("base_url", "http://127.0.0.1:8000/v1")
+        seen.add(model_id)
+        out.append(clean)
+    return out
+
+
+def _external_profile_for_model(
+    model_id: str,
+    *,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+) -> dict[str, object]:
+    mid = str(model_id or "").strip()
+    for row in _external_cortex_profiles(state_dir=state_dir):
+        if str(row.get("model_id") or "").strip() == mid:
+            return row
+    return {}
+
+
+def _provider_for_model(model_id: str, *, state_dir: Path | str = DEFAULT_STATE_DIR) -> str:
     low = str(model_id or "").strip().lower()
     if low.startswith("grok:") or low.startswith("grok-"):
         return "grok_cli"
@@ -70,6 +148,10 @@ def _provider_for_model(model_id: str) -> str:
         return "claude_cli"
     if low.startswith("codex:") or low.startswith("codex-"):
         return "codex_cli"
+    if _external_profile_for_model(model_id, state_dir=state_dir):
+        return "openai_compatible"
+    if low.startswith(("vllm:", "sglang:", "openai-compatible:", "openai_compatible:")):
+        return "openai_compatible"
     return "ollama"
 
 QUESTION_SET: tuple[dict[str, object], ...] = (
@@ -233,6 +315,35 @@ def _parse_ollama_list(text: str) -> list[CortexModelSpec]:
     return specs
 
 
+def _check_openai_compatible_profile(
+    profile: Mapping[str, object],
+    *,
+    timeout_s: float,
+) -> tuple[bool, str]:
+    base_url = str(profile.get("base_url") or "").strip().rstrip("/")
+    served = str(profile.get("served_model") or profile.get("model_id") or "").strip()
+    if not base_url:
+        return False, "missing base_url"
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/models",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception as exc:
+        return False, f"OpenAI-compatible endpoint not reachable at {base_url}: {type(exc).__name__}: {exc}"
+    model_ids: list[str] = []
+    for item in payload.get("data") or []:
+        if isinstance(item, Mapping):
+            mid = str(item.get("id") or "").strip()
+            if mid:
+                model_ids.append(mid)
+    if served and model_ids and served not in model_ids:
+        return True, f"endpoint reachable; served_model {served} not in /models {model_ids[:4]}"
+    return True, f"endpoint reachable at {base_url}"
+
+
 def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> list[CortexModelSpec]:
     """Return known cortex candidates from constants plus local Ollama inventory."""
     specs: dict[str, CortexModelSpec] = {}
@@ -265,6 +376,24 @@ def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> 
             available=False,
             source="canonical",
             note="Canonical Alice cortex candidate; availability checked via ollama list.",
+        )
+    for profile in _external_cortex_profiles():
+        model_id = str(profile.get("model_id") or "").strip()
+        if not model_id:
+            continue
+        available, note = _check_openai_compatible_profile(profile, timeout_s=min(timeout_s, 0.9))
+        specs[model_id] = CortexModelSpec(
+            model_id=model_id,
+            provider="openai_compatible",
+            available=available,
+            source=str(profile.get("source") or EXTERNAL_CORTEX_PROFILES_FILENAME),
+            size=str(profile.get("size") or ""),
+            modified=str(profile.get("modified") or ""),
+            note=(
+                f"{str(profile.get('label') or profile.get('served_model') or model_id)}; "
+                f"hf_model_id={profile.get('hf_model_id') or ''}; "
+                f"served_model={profile.get('served_model')}; {note}"
+            ),
         )
     try:
         proc = subprocess.run(
@@ -313,7 +442,7 @@ def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> 
             )
         elif spec.model_id.startswith("alice-") or "cortex" in spec.model_id.casefold():
             specs[spec.model_id] = spec
-    provider_order = {"grok_cli": 0, "claude_cli": 1, "codex_cli": 2, "ollama": 3}
+    provider_order = {"grok_cli": 0, "claude_cli": 1, "codex_cli": 2, "openai_compatible": 3, "ollama": 4}
     return sorted(specs.values(), key=lambda s: (provider_order.get(s.provider, 9), s.model_id.casefold()))
 
 
@@ -380,6 +509,49 @@ def _call_ollama(model_id: str, prompt: str, *, timeout_s: float, num_predict: i
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         data = json.loads(resp.read())
     return str((data.get("message") or {}).get("content") or "").strip()
+
+
+def _call_openai_compatible(
+    model_id: str,
+    prompt: str,
+    *,
+    state_dir: Path | str,
+    timeout_s: float,
+    num_predict: int,
+) -> str:
+    profile = _external_profile_for_model(model_id, state_dir=state_dir)
+    base_url = str(profile.get("base_url") or os.environ.get("SIFTA_OPENAI_COMPAT_BASE_URL") or "http://127.0.0.1:8000/v1").strip().rstrip("/")
+    served_model = str(profile.get("served_model") or model_id.split(":", 1)[-1] or model_id).strip()
+    api_key = str(profile.get("api_key") or os.environ.get("SIFTA_OPENAI_COMPAT_API_KEY") or "").strip()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = json.dumps(
+        {
+            "model": served_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": float(profile.get("temperature") or 0.2),
+            "top_p": float(profile.get("top_p") or 0.9),
+            "max_tokens": int(profile.get("max_tokens") or num_predict),
+            "stream": False,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    choices = data.get("choices") or []
+    if choices and isinstance(choices[0], Mapping):
+        msg = choices[0].get("message") or {}
+        if isinstance(msg, Mapping):
+            content = str(msg.get("content") or "").strip()
+            reasoning = str(msg.get("reasoning_content") or "").strip()
+            return content or reasoning
+    return ""
 
 
 def _call_grok_cli(model_id: str, prompt: str, *, timeout_s: float, num_predict: int) -> str:
@@ -471,12 +643,13 @@ def run_single_probe(
     provider: str | None = None,
     context_spine: str = "",
     runner: Runner | None = None,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
     timeout_s: float = 45.0,
     num_predict: int = 384,
     run_id: str | None = None,
 ) -> WakeProbeResult:
     """Ask one model one question and return a scored result."""
-    provider = provider or _provider_for_model(model_id)
+    provider = provider or _provider_for_model(model_id, state_dir=state_dir)
     rid = run_id or f"wake-{uuid.uuid4().hex[:12]}"
     prompt = build_probe_prompt(question, context_spine=context_spine)
     t0 = time.monotonic()
@@ -487,6 +660,14 @@ def run_single_probe(
             response = _call_grok_cli(model_id, prompt, timeout_s=timeout_s, num_predict=num_predict)
         elif provider in {"claude_cli", "codex_cli"}:
             response = _call_cloud_teacher(model_id, prompt, timeout_s=timeout_s)
+        elif provider == "openai_compatible":
+            response = _call_openai_compatible(
+                model_id,
+                prompt,
+                state_dir=state_dir,
+                timeout_s=timeout_s,
+                num_predict=num_predict,
+            )
         else:
             response = _call_ollama(model_id, prompt, timeout_s=timeout_s, num_predict=num_predict)
         latency = round(time.monotonic() - t0, 3)
@@ -550,7 +731,7 @@ def run_probe_suite(
     run_id = f"wake-{uuid.uuid4().hex[:12]}"
     results: list[WakeProbeResult] = []
     for model_id in model_ids:
-        provider = _provider_for_model(str(model_id))
+        provider = _provider_for_model(str(model_id), state_dir=state_dir)
         for question in qset:
             result = run_single_probe(
                 str(model_id),
@@ -558,6 +739,7 @@ def run_probe_suite(
                 provider=provider,
                 context_spine=context,
                 runner=runner,
+                state_dir=state_dir,
                 timeout_s=timeout_s,
                 num_predict=num_predict,
                 run_id=run_id,
@@ -636,6 +818,8 @@ __all__ = [
     "WakeQuestion",
     "WakeProbeResult",
     "DEFAULT_MODEL_IDS",
+    "EXTERNAL_CORTEX_PROFILES_FILENAME",
+    "EXTERNAL_CORTEX_SCHEMA",
     "LEDGER_FILENAME",
     "QUESTION_SET",
     "TRUTH_LABEL",

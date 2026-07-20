@@ -185,8 +185,6 @@ def completed_body_action_block(
 ) -> str:
     """Prompt block for the cortex: last deed + current body-state first."""
     row = latest_completed_body_action(now=now, max_age_s=max_age_s, state_dir=state_dir)
-    if not row:
-        return ""
 
     t = float(now if now is not None else time.time())
     current_page = _latest_page_state(_state(state_dir), t)
@@ -198,6 +196,29 @@ def completed_body_action_block(
             current_source = "current-page"
         elif current_page.get("fresh"):
             current_source = "fresh-page"
+
+    if not row:
+        # No fresh completed *deed*, but my live browser body may still be open on a
+        # known page. Answer "what page is open / what site is this / what do you see"
+        # from the live current-page body-state instead of emitting a "pending / not a
+        # completed action" hedge. This is live proprioception of my display body, not a
+        # staged-action claim, so it never goes stale behind an old deed.
+        if current_source and (current_title or current_url):
+            visible = current_title or current_url
+            return "\n".join(
+                [
+                    "MY ALICE BROWSER LIVE BODY-STATE — read this BEFORE calling anything 'pending' or 'not completed':",
+                    f"- My Alice Browser is open right now ({current_source}): {visible}"
+                    + (f" — {current_url}" if current_url else "")
+                    + ".",
+                    "- If George asks what page is open, what site this is, or what I see, answer from this "
+                    "live current-page read: name the page/title and the URL plainly.",
+                    "- This is a live body-state read (source: browser_page_state), not a staged or uncompleted "
+                    "action. Do not say 'pending browser/body action' or 'not a completed-action result' — the "
+                    "page is open in my body right now.",
+                ]
+            )
+        return ""
 
     text = _one_line(owner_text, 500)
     praise_or_proof = bool(_PRAISE_PROOF_RE.search(text))

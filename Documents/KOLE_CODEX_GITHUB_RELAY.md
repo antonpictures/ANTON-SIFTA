@@ -35,10 +35,10 @@ current BeeSon installer behavior:
 - create a Desktop launcher named `SIFTA OS.command`
 - verify with receipts
 
-Current known good commit from George's Mac:
+Current known good commit from George's Mac (update this on reruns):
 
 ```text
-115c13b6c Update BeeSon install model set
+115c13b6c (or newer on main when verified on George's checkout)
 ```
 
 ## Run On Kole's Mac

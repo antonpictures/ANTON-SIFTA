@@ -1,5 +1,7 @@
 import sys
-sys.path.insert(0, "/Users/ioanganton/Music/ANTON_SIFTA")
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # use repo root via relative; prefer Kernel.path_resolver in new code
 
 from System.adaptation_lab.stigmergic_pathfind import StigmergicGrid, random_baseline
 

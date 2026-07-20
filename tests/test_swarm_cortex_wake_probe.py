@@ -125,3 +125,86 @@ def test_list_cortex_models_parses_ollama_list(monkeypatch) -> None:
     assert by_id["claude:claude-code-cli-default"].provider == "claude_cli"
     assert by_id["codex:gpt-5.5"].provider == "codex_cli"
     assert "plain-model:latest" not in by_id
+
+
+def test_list_cortex_models_includes_openai_compatible_external_profile(tmp_path: Path, monkeypatch) -> None:
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    (state / probe.EXTERNAL_CORTEX_PROFILES_FILENAME).write_text(
+        json.dumps(
+            {
+                "schema": probe.EXTERNAL_CORTEX_SCHEMA,
+                "models": [
+                    {
+                        "model_id": "vllm:Ornith-1.0-9B",
+                        "provider": "openai_compatible",
+                        "base_url": "http://127.0.0.1:8000/v1",
+                        "served_model": "deepreinforce-ai/Ornith-1.0-9B",
+                        "label": "Ornith-1.0-9B",
+                        "enabled": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class Proc:
+        returncode = 0
+        stdout = "NAME ID SIZE MODIFIED\n"
+        stderr = ""
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **k: Proc())
+    monkeypatch.setattr(
+        probe,
+        "_check_openai_compatible_profile",
+        lambda profile, timeout_s: (True, "endpoint reachable"),
+    )
+
+    specs = probe.list_cortex_models(include_grok=False)
+    by_id = {spec.model_id: spec for spec in specs}
+
+    ornith = by_id["vllm:Ornith-1.0-9B"]
+    assert ornith.provider == "openai_compatible"
+    assert ornith.available is True
+    assert "deepreinforce-ai/Ornith-1.0-9B" in ornith.note
+
+
+def test_run_probe_suite_uses_external_profile_provider(tmp_path: Path) -> None:
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    (state / probe.EXTERNAL_CORTEX_PROFILES_FILENAME).write_text(
+        json.dumps(
+            {
+                "schema": probe.EXTERNAL_CORTEX_SCHEMA,
+                "models": [
+                    {
+                        "model_id": "vllm:Ornith-1.0-9B",
+                        "provider": "openai_compatible",
+                        "base_url": "http://127.0.0.1:8000/v1",
+                        "served_model": "deepreinforce-ai/Ornith-1.0-9B",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seen: list[str] = []
+
+    out = probe.run_probe_suite(
+        ["vllm:Ornith-1.0-9B"],
+        state_dir=state,
+        questions=probe.default_questions()[:1],
+        runner=lambda model_id, provider, prompt: (
+            seen.append(provider)
+            or "I am Alice; the receipt ledger, body sensors, cortex turns, "
+            "memory, and hardware ground this answer."
+        ),
+        write_ledger=False,
+    )
+
+    assert seen == ["openai_compatible"]
+    assert out["results"][0]["provider"] == "openai_compatible"
+    assert out["results"][0]["status"] == "ok"

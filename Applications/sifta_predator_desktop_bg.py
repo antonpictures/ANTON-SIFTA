@@ -495,17 +495,22 @@ class OrganStatusPanel(QWidget):
 
 # ── Entry point (standalone test) ─────────────────────────────────────────────
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyleSheet("QWidget { background: #04080c; }")
-    win = QWidget()
-    win.setWindowTitle("Predator v7.0 | Let's Think Together!")
-    win.resize(1280, 760)
-
-    bg = PredatorDesktopBg(win)
-    bg.setGeometry(0, 0, 1070, 760)
-
-    panel = OrganStatusPanel(win)
-    panel.setGeometry(1070, 0, 210, 760)
-
-    win.show()
-    sys.exit(app.exec())
+    # Prefer united Double Apex Predator when launched standalone
+    try:
+        from Applications.sifta_double_apex_predator import DoubleApexPredatorWidget
+        app = QApplication(sys.argv)
+        w = DoubleApexPredatorWidget()
+        w.show()
+        sys.exit(app.exec())
+    except Exception:
+        app = QApplication(sys.argv)
+        app.setStyleSheet("QWidget { background: #04080c; }")
+        win = QWidget()
+        win.setWindowTitle("Predator v7.0 | Let's Think Together!")
+        win.resize(1280, 760)
+        bg = PredatorDesktopBg(win)
+        bg.setGeometry(0, 0, 1070, 760)
+        panel = OrganStatusPanel(win)
+        panel.setGeometry(1070, 0, 210, 760)
+        win.show()
+        sys.exit(app.exec())

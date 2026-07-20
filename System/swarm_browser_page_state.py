@@ -861,7 +861,13 @@ def page_state_block(
                 "just opened or has not reported its contents; I cannot describe a page "
                 "I have not perceived. I should read the page.")
     title = s.get("title") or s.get("url")
-    prov = "the rendered DOM" if s.get("source") == _SRC_DOM else "a viewport screenshot"
+    src = s.get("source", "")
+    if src == "kimi_webbridge":
+        prov = "Kimi WebBridge (external Chrome limb, full rendered page)"
+    elif src == _SRC_DOM:
+        prov = "the rendered DOM"
+    else:
+        prov = "a viewport screenshot"
     fresh = s.get("fresh")
     age = s.get("age_s")
     stamp = (f" (read ~{int(age)}s ago)" if age is not None else "")

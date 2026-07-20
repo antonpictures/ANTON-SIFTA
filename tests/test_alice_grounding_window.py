@@ -518,6 +518,25 @@ def test_voice_context_repair_leaves_clean_text_unchanged(monkeypatch):
     assert feel_free_choice["app_name"] == "Alice Browser"
 
 
+def test_youtube_open_search_then_play_routes_to_search_autoplay():
+    mod = _load_widget_module()
+    command = mod._extract_sifta_app_command(
+        'ok let\'s try. open https://www.youtube.com and search for the video '
+        '"Elons SpaceX leads global stock crash" THEN play it -- this includes 3 steps. '
+        "you are trained to solve it by shortcutting, i as human i would do it step by step.",
+        ["Alice Browser"],
+    )
+
+    assert command == {
+        "kind": "browser_url",
+        "app_name": "Alice Browser",
+        "url": "https://www.youtube.com/results?search_query=Elons+SpaceX+leads+global+stock+crash",
+        "search_site": "youtube.com",
+        "query": "Elons SpaceX leads global stock crash",
+        "autoplay_youtube_query": "Elons SpaceX leads global stock crash",
+    }
+
+
 def test_voice_context_repair_normalizes_sign_uin():
     mod = _load_widget_module()
     repaired, reasons = mod._repair_voice_context_text("i forgot to sign uin", stt_conf=0.9)
@@ -1630,6 +1649,21 @@ def test_body_parallel_false_action_gag_gets_body_answer_not_generic_receipt():
     assert "I will not claim an action ran" not in rewritten
 
 
+def test_generic_fake_action_guard_is_pending_not_old_canned_receipt_line():
+    mod = _load_widget_module()
+
+    prior = "she did a good job, but this line appeared before the action"
+    rewritten = mod._domain_boilerplate_rewrite(
+        prior,
+        "lysosome/fake-system-action-no-receipt",
+    )
+
+    assert "Bad action receipt" in rewritten
+    assert "pre-action speech" in rewritten
+    assert "completed body result" in rewritten
+    assert "effector receipt" not in rewritten
+
+
 def test_unreceipted_action_strip_preserves_honest_failure_report():
     mod = _load_widget_module()
     exact_r740_row = (
@@ -1637,8 +1671,8 @@ def test_unreceipted_action_strip_preserves_honest_failure_report():
         "It’s a massive jump, but they are connected: **If we are moving toward a world where "
         "we \"design\" the human experience, the question of what it means to \"experience\" "
         "anything becomes the most important question of all.** Here’s\n\n"
-        "After thinking, I executed the real body action: I looked for a visible Google Images "
-        "photo tile, but I could not click it: no_visible_google_image_tile."
+        "After thinking, I executed the real body action: I looked for a visible page element, "
+        "but I could not click it: no_visible_element."
     )
 
     rule = mod._domain_boilerplate_rule_id(exact_r740_row, prior_user_text="")
@@ -1646,7 +1680,7 @@ def test_unreceipted_action_strip_preserves_honest_failure_report():
 
     assert rule == "lysosome/fake-system-action-no-receipt"
     assert salvaged == exact_r740_row
-    assert "no_visible_google_image_tile" in salvaged
+    assert "no_visible_element" in salvaged
 
 
 def test_unreceipted_action_strip_drops_only_false_action_sentence():

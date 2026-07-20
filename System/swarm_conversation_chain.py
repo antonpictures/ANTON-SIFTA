@@ -193,6 +193,14 @@ def seal_chain(charge_stgm: bool = True, agent_id: str = "ALICE_M5") -> Dict[str
     }
 
 
+def seal_tail(charge_stgm: bool = True, agent_id: str = "ALICE_M5") -> Dict[str, Any]:
+    """G4 incremental: seals *only* the tail of newly appended rows since last head.
+    No full reseal. Call this after every chat turn / stamp to keep verify green.
+    Delegates to seal_chain (already tail-aware) for the logic.
+    """
+    return seal_chain(charge_stgm=charge_stgm, agent_id=agent_id)
+
+
 # ── Verify the seal by replay ─────────────────────────────────────────────────
 def verify_chain() -> Tuple[bool, Dict[str, Any]]:
     """Re-derives the entire chain from the source log + seal sidecar.

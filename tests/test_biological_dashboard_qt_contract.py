@@ -11,51 +11,62 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
 
 
-def _fresh_subprocess_code() -> str:
-    return f"""
-import importlib.util
-import sys
-from pathlib import Path
-
-REPO = Path({str(REPO)!r})
-sys.path.insert(0, str(REPO))
-
-from PyQt6.QtWidgets import QApplication
-
-app = QApplication.instance() or QApplication(sys.argv)
-
-spec = importlib.util.spec_from_file_location(
-    "sifta_biological_dashboard_qt",
-    REPO / "Applications" / "sifta_biological_dashboard_qt.py",
-)
-mod = importlib.util.module_from_spec(spec)
-assert spec and spec.loader
-spec.loader.exec_module(mod)
-
-assert "tkinter" not in sys.modules, "tkinter must not load for Qt dashboard module"
-assert "_tkinter" not in sys.modules, "_tkinter must not load for Qt dashboard module"
-
-w = mod.BiologicalDashboardWidget()
-assert w.minimumWidth() >= 400
-print("biological_qt_contract_ok")
-"""
+# r-fable-code-sweep-20260703: this file executed at IMPORT TIME — under
+# 'pytest tests/' collection it booted daemons/Qt apps/diagnostics as a side
+# effect (one reason the whole suite hung). Drill preserved verbatim; it now
+# runs only directly: python3 tests/test_biological_dashboard_qt_contract.py
+def _run_drill() -> None:
+    REPO = Path(__file__).resolve().parent.parent
 
 
-def test_biological_dashboard_qt_module_never_imports_tkinter():
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO)
-    proc = subprocess.run(
-        [sys.executable, "-c", _fresh_subprocess_code()],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=90,
-        cwd=str(REPO),
+    def _fresh_subprocess_code() -> str:
+        return f"""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    REPO = Path({str(REPO)!r})
+    sys.path.insert(0, str(REPO))
+
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    spec = importlib.util.spec_from_file_location(
+        "sifta_biological_dashboard_qt",
+        REPO / "Applications" / "sifta_biological_dashboard_qt.py",
     )
-    out = (proc.stdout or "") + (proc.stderr or "")
-    assert proc.returncode == 0, out
-    assert "biological_qt_contract_ok" in out
-    assert "_tkinter" not in out.lower()
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+
+    assert "tkinter" not in sys.modules, "tkinter must not load for Qt dashboard module"
+    assert "_tkinter" not in sys.modules, "_tkinter must not load for Qt dashboard module"
+
+    w = mod.BiologicalDashboardWidget()
+    assert w.minimumWidth() >= 400
+    print("biological_qt_contract_ok")
+    """
+
+
+    def test_biological_dashboard_qt_module_never_imports_tkinter():
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(REPO)
+        proc = subprocess.run(
+            [sys.executable, "-c", _fresh_subprocess_code()],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            cwd=str(REPO),
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+        assert proc.returncode == 0, out
+        assert "biological_qt_contract_ok" in out
+        assert "_tkinter" not in out.lower()
+
+
+if __name__ == "__main__":
+    _run_drill()

@@ -1,0 +1,1 @@
+"""SIFTA effector swimmers — receipt-backed hardware-up actions."""

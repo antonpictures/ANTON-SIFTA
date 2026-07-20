@@ -41,6 +41,40 @@ def _clean(q: str) -> str:
     return q.strip(" ,.;:\"'").strip()
 
 
+def _first_youtube_command_segment(text: str) -> str:
+    """Return the first sentence/segment that actually carries the YouTube command."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    parts = [p.strip() for p in re.split(r'\.\s+|[!?\n]', t) if p.strip()]
+    for part in parts:
+        if "youtube" in part.lower():
+            return part
+    return t
+
+
+def _trim_youtube_query_tail(q: str) -> str:
+    """Strip follow-on instructions ("then play it") and teaching prose from a query."""
+    q = (q or "").strip()
+    quoted = re.search(r'"([^"]{2,220})"', q)
+    if quoted:
+        return quoted.group(1).strip()
+    q = re.split(r"\s+--\s+", q, maxsplit=1)[0]
+    q = re.split(
+        r"\b(?:then|and)\s+(?:play|open|watch|start)\s+(?:it|this|that|the\s+(?:video|clip|result|first\s+result|first\s+video))\b",
+        q,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    q = re.split(
+        r"\b(?:this\s+includes|you\s+are\s+trained|i\s+as\s+human|as\s+a\s+human)\b",
+        q,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return q.strip()
+
+
 def parse_explicit_youtube_search(text: str) -> Dict[str, object]:
     """Return {'is_search': bool, 'query': str}. is_search is True only for an explicit
     'search youtube for X' style command; query is X taken VERBATIM from the owner's words
@@ -49,11 +83,10 @@ def parse_explicit_youtube_search(text: str) -> Dict[str, object]:
     low = t.lower()
     if "youtube" not in low:
         return {"is_search": False, "query": ""}
-    # Only the first sentence — drop trailing teaching context ("I want to teach you ...").
-    # Split on sentence terminators, but protect dots inside domains like youtube.com .
-    # Use a simple approach: split on ". " (dot space), "!", "?", or \n .
-    parts = re.split(r'\.\s+|[!?\n]', t)
-    first = parts[0].strip() if parts else t.strip()
+    # Use the first segment that actually contains the YouTube command. Owners often
+    # lead with "ok let's try." before the real command, so blindly taking sentence
+    # one drops the effector target.
+    first = _first_youtube_command_segment(t)
     q = ""
     is_video_play = False
     # "search [on|in|for|the] youtube [for|the] X"
@@ -63,7 +96,8 @@ def parse_explicit_youtube_search(text: str) -> Dict[str, object]:
         q = m.group(1)
     if not q:
         # "youtube ... search [for|the] X"  (e.g. "open youtube and search X")
-        m2 = re.search(r"\byoutube\b.*?\bsearch(?:es|ed|ing)?\b(?:\s+(?:for|the))*\s*(.*)",
+        m2 = re.search(r"\byoutube(?:\.com)?\b\s*(?:(?:,|\band\b|\bthen\b)\s*)?"
+                       r"\bsearch(?:es|ed|ing)?\b(?:\s+(?:for|the))*\s*(.*)",
                        first, re.IGNORECASE)
         if m2 and m2.group(1).strip():
             q = m2.group(1)
@@ -94,17 +128,6 @@ def parse_explicit_youtube_search(text: str) -> Dict[str, object]:
             q = m5.group(1)
             is_video_play = True
     if not q:
-        # "OPEN ON YOUTUBE.COM Swim Swimwear Fashion Show - Miami Swim Week"
-        # is a site-scoped search/open request, not a bare homepage load.
-        m5b = re.search(
-            r"\b(?:open|load|show|display)\s+(?:on|in|at)\s+youtube(?:\.com)?\s+(.+)$",
-            first,
-            re.IGNORECASE,
-        )
-        if m5b and m5b.group(1).strip():
-            q = m5b.group(1)
-
-    if not q:
         # r499: "search exact phrase on youtube.com" or "look for "X" search exact phrase on youtube.com"
         # (user: "pls look for "gemma 4 12b: unifies, encoder-free," search exact phrase on youtube.com")
         # Take the quoted string if present, else text before the marker.
@@ -131,7 +154,9 @@ def parse_explicit_youtube_search(text: str) -> Dict[str, object]:
         if m6 and m6.group(1).strip():
             q = m6.group(1)
 
-    q = _clean(q)
+    if q and re.search(r"\b(?:then|and)\s+(?:play|open|watch|start)\s+(?:it|this|that|the\s+(?:video|clip|result|first\s+result|first\s+video))\b", q, re.IGNORECASE):
+        is_video_play = True
+    q = _clean(_trim_youtube_query_tail(q))
     if not q:
         return {"is_search": False, "query": ""}
 

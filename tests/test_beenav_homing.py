@@ -27,8 +27,11 @@ from swarmrl.beenav_homing import (
     HomingHint,
     PanoramicSignature,
     TRUTH_LABEL,
+    compensate_direction_for_time,
     hamming_distance,
     perceptual_hash,
+    sun_compass_phase,
+    sun_compass_phase_delta,
 )
 
 
@@ -176,6 +179,40 @@ def test_find_homing_hint_confidence_decays_with_distance():
     # An unrelated query will have non-zero hamming → confidence < 1.0
     hint = hive.find_homing_hint({"completely_different": "view"})
     assert 0.0 <= hint.confidence < 1.0
+
+
+def test_sun_compass_phase_wraps_one_day():
+    assert sun_compass_phase(0.0) == 0.0
+    assert sun_compass_phase(86_400.0) == 0.0
+    assert math.isclose(sun_compass_phase(43_200.0), math.pi)
+
+
+def test_time_compensated_direction_shifts_by_half_day():
+    adjusted = compensate_direction_for_time(
+        0.0,
+        recorded_ts=6 * 3600.0,
+        query_ts=18 * 3600.0,
+    )
+    assert math.isclose(abs(adjusted), math.pi)
+    assert math.isclose(
+        abs(sun_compass_phase_delta(6 * 3600.0, 18 * 3600.0)),
+        math.pi,
+    )
+
+
+def test_find_time_compensated_homing_hint_keeps_distance_and_confidence():
+    hive = Hive()
+    sample = {"panorama": "thread-door"}
+    hive.record_view(sample, direction_to_hive=0.25, distance_to_hive=12.0, now=0.0)
+
+    base = hive.find_homing_hint(sample)
+    adjusted = hive.find_time_compensated_homing_hint(sample, now=6 * 3600.0)
+
+    assert adjusted.phase_compensated is True
+    assert adjusted.confidence == base.confidence == 1.0
+    assert adjusted.distance_to_hive == base.distance_to_hive == 12.0
+    assert math.isclose(adjusted.phase_delta, math.pi / 2.0)
+    assert math.isclose(adjusted.direction_to_hive, 0.25 + math.pi / 2.0)
 
 
 # ── decay ────────────────────────────────────────────────────────────────

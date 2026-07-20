@@ -304,7 +304,11 @@ _OWNER_SELF_CODE_EXECUTE_RE = re.compile(
     r"\btry\s+to\s+code\b|"
     r"\bcode\s+(?:now|something|it|this)\b|"
     r"\b(?:self[\s_-]?code|self[\s_-]?edit)\b|"
-    r"\bSELF_CODE_(?:CUT|EDIT)\b|\bSELF_READ\b"
+    r"\bSELF_CODE_(?:CUT|EDIT)\b|\bSELF_READ\b|"
+    # r1621: "Alice, go — code R1621-01 with SELF_CODE_CUT only on listed files"
+    r"\bgo\b.{0,60}\bcode\b.{0,80}\bR\d{3,4}\b|"
+    r"\bcode\s+R\d{3,4}\b|"
+    r"\bonly\s+on\s+listed\s+files\b"
     r")",
     re.IGNORECASE,
 )

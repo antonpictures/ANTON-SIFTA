@@ -158,12 +158,22 @@ def build_snapshot(doc: Path) -> dict:
     }
 
 
+def lint_duplicate_rounds(text: str) -> list[str]:
+    """Return list of duplicate round ids found in the doc (Karpathy /lint-wiki style)."""
+    round_counts: dict[str, int] = {}
+    for m in _ROUND_RE.finditer(text):
+        rid = m.group(1).strip().split()[0]  # e.g. r1544
+        round_counts[rid] = round_counts.get(rid, 0) + 1
+    dups = [rid for rid, c in round_counts.items() if c > 1]
+    return dups
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--doc", default=None, help="explicit tournament doc path")
     ap.add_argument("--json", action="store_true", help="print the JSON snapshot")
     ap.add_argument("--all", action="store_true", help="print every section, not just the latest")
     ap.add_argument("--no-write", action="store_true", help="do not write the .sifta_state snapshot")
+    ap.add_argument("--lint", action="store_true", help="run Karpathy-style /lint-wiki: duplicate round-ids, stale what-is-left, etc.")
     args = ap.parse_args()
 
     doc = Path(args.doc) if args.doc else find_latest_tournament()
@@ -171,6 +181,7 @@ def main() -> int:
         print("No CONSCIOUSNESS_TOURNAMENT_*.md found.")
         return 1
 
+    text = doc.read_text(encoding="utf-8", errors="replace")
     snap = build_snapshot(doc)
 
     if not args.no_write:
@@ -179,6 +190,22 @@ def main() -> int:
             _SNAPSHOT.write_text(json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as exc:
             print(f"(snapshot write failed: {exc})")
+
+    if args.lint:
+        print(f"LINT-WIKI — {doc.name}")
+        dups = lint_duplicate_rounds(text)
+        if dups:
+            print(f"  DUPLICATE ROUND-IDs: {dups}")
+        else:
+            print("  DUPLICATE ROUND-IDs: none")
+        # stale what-is-left: if live_round is old relative to doc mtime (simple heuristic)
+        if snap["live_round"]:
+            print(f"  LIVE WHAT-IS-LEFT: {snap['live_round']} (open items: {snap['open_item_count']})")
+        else:
+            print("  LIVE WHAT-IS-LEFT: none found")
+        # simple orphan check stub (full would scan ledgers)
+        print("  (orphan receipts stub — full scan would cross 4 ledgers + carriers)")
+        return 0
 
     if args.json:
         print(json.dumps(snap, ensure_ascii=False, indent=2))

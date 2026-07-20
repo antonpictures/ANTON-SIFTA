@@ -669,8 +669,23 @@ def _guess_image_mime(raw_b64: str, fallback: str = "image/png") -> str:
     return fallback
 
 
+# r-fix (George 2026-07-03): silent / cut-off replies. Gemini 2.5 "thinking"
+# cortexes spend output tokens on hidden thoughts. With no explicit ceiling the
+# thoughts can consume the whole budget, so the visible reply streams back empty
+# ("(silent)") or dies mid-sentence (finish_reason=MAX_TOKENS). We pin an
+# explicit visible-output ceiling AND bound the thinking budget so a real answer
+# always has room. Both are env-tunable without a code edit.
+_GEMINI_MAX_OUTPUT_TOKENS = int(
+    os.environ.get("SIFTA_GEMINI_MAX_OUTPUT_TOKENS", "8192") or "8192"
+)
+_GEMINI_THINKING_BUDGET = int(
+    os.environ.get("SIFTA_GEMINI_THINKING_BUDGET", "2048") or "2048"
+)
+
+
 def _to_gemini_payload(messages: List[Dict[str, Any]],
-                       *, temperature: float = 0.7) -> Dict[str, Any]:
+                       *, temperature: float = 0.7,
+                       model: str = "") -> Dict[str, Any]:
     """Translate the [{role, content}] history the widget already builds
     into the {systemInstruction, contents:[{role, parts:[{text}]}]}
     shape Gemini's REST API expects.
@@ -712,11 +727,22 @@ def _to_gemini_payload(messages: List[Dict[str, Any]],
                 "role": gemini_role,
                 "parts": parts,
             })
+    gen_cfg: Dict[str, Any] = {"temperature": float(temperature)}
+    if _GEMINI_MAX_OUTPUT_TOKENS and _GEMINI_MAX_OUTPUT_TOKENS > 0:
+        gen_cfg["maxOutputTokens"] = int(_GEMINI_MAX_OUTPUT_TOKENS)
+    # thinkingConfig is only valid on the 2.5 "thinking" cortexes; sending it to
+    # 2.0-flash / 1.5 would 400. Bound the budget so thoughts can't eat the reply.
+    bare_model = strip_prefix(model).lower() if model else ""
+    if "2.5" in bare_model:
+        tb = int(_GEMINI_THINKING_BUDGET)
+        # 2.5-pro cannot fully disable thinking (min 128 when enabled); clamp up.
+        if "pro" in bare_model and 0 < tb < 128:
+            tb = 128
+        if tb >= 0:
+            gen_cfg["thinkingConfig"] = {"thinkingBudget": tb}
     payload: Dict[str, Any] = {
         "contents": contents,
-        "generationConfig": {
-            "temperature": float(temperature),
-        },
+        "generationConfig": gen_cfg,
     }
     if sys_chunks:
         payload["systemInstruction"] = {
@@ -2101,6 +2127,14 @@ def _to_mimo_downstream_cli_bridge_prompt(
 def _cloud_inference_blocked_by_metabolism() -> tuple[bool, str]:
     """True when battery/metabolism says local-only — block OAuth/cloud arms."""
     try:
+        from System.swarm_travel_mode import cloud_blocked_by_travel
+
+        blocked, reason = cloud_blocked_by_travel()
+        if blocked:
+            return True, reason or "travel_mode_local_only"
+    except Exception:
+        pass
+    try:
         from System.swarm_battery_metabolism_organ import read_battery, battery_to_metabolic_signal
 
         batt = read_battery()
@@ -2129,6 +2163,7 @@ def _stream_mimo_chat_via_cli(
     messages: List[Dict[str, str]],
     request_tag: Optional[str] = None,
     timeout_s: int = 180,
+    temperature: float = 0.7,
     attached_override: Optional[str] = None,
     source_cortex: Optional[str] = None,
 ) -> Iterator[Tuple[str, Any]]:
@@ -2154,13 +2189,26 @@ def _stream_mimo_chat_via_cli(
             "(owner default = local Gemma krisha).",
         )
         return
+    if lane == "local_ollama_direct":
+        try:
+            from System import swarm_local_brain
+
+            yield from swarm_local_brain.stream_chat(
+                attached,
+                messages,
+                request_tag=request_tag,
+                temperature=temperature,
+                timeout_s=int(timeout_s) if timeout_s else 180,
+            )
+        except Exception as exc:
+            yield ("error", f"Local Ollama attached LLM failed: {type(exc).__name__}: {exc}")
+        return
 
     if lane in {
         "mimo_cli_codex_bridge",
         "mimo_cli_grok_bridge",
         "mimo_cli_claude_bridge",
         "mimo_cli_qwen_bridge",
-        "mimo_cli_ollama_bridge",
         "mimo_native",
     }:
         blocked, reason = _cloud_inference_blocked_by_metabolism()
@@ -2210,13 +2258,6 @@ def _stream_mimo_chat_via_cli(
         prompt = _to_mimo_downstream_cli_bridge_prompt(
             messages,
             downstream_cli="claude",
-            downstream_model=attached,
-        )
-        upstream = _mimo_cli_bridge_front_model()
-    elif lane == "mimo_cli_ollama_bridge":
-        prompt = _to_mimo_downstream_cli_bridge_prompt(
-            messages,
-            downstream_cli="ollama",
             downstream_model=attached,
         )
         upstream = _mimo_cli_bridge_front_model()
@@ -2322,7 +2363,6 @@ def _stream_mimo_chat_via_cli(
                 "mimo_cli_grok_bridge": "grok",
                 "mimo_cli_claude_bridge": "claude",
                 "mimo_cli_qwen_bridge": "qwen",
-                "mimo_cli_ollama_bridge": "ollama",
             }.get(lane, ""),
             "mimo_downstream_model": attached if lane.startswith("mimo_cli_") else "",
             "mimo_source_cortex": str(source_cortex or "").strip() or None,
@@ -2568,6 +2608,7 @@ def stream_chat(
             messages=messages,
             request_tag=request_tag,
             timeout_s=timeout_s or 180,
+            temperature=temperature,
             attached_override=mimo_attached_override or None,
             source_cortex=mimo_source_cortex or None,
         )
@@ -2586,7 +2627,7 @@ def stream_chat(
         return
 
     tag = request_tag or f"talk-{uuid.uuid4().hex[:8]}"
-    payload = _to_gemini_payload(messages, temperature=temperature)
+    payload = _to_gemini_payload(messages, temperature=temperature, model=model)
     body = json.dumps(payload).encode("utf-8")
 
     # `streamGenerateContent?alt=sse` returns one `data: {json}` line per

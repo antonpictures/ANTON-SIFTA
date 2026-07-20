@@ -67,6 +67,7 @@ DEFAULT_BUDGET_BYTES = 42_000  # the bee's 42 KB neural network footprint
 DEFAULT_SIGNATURE_BITS = 64    # 8 bytes per perceptual hash → 0.2% of budget per memory
 DEFAULT_MIN_REINFORCEMENT = 1
 DEFAULT_DECAY_HALF_LIFE_S = 7 * 86400.0  # one week; reinforced memories persist
+DEFAULT_SUN_COMPASS_CYCLE_S = 86400.0
 
 
 # ── perceptual hash (deterministic, stdlib-only) ──────────────────────────
@@ -106,6 +107,51 @@ def hamming_distance(a: str, b: str) -> int:
             xor = 0
         d += bin(xor).count("1")
     return d
+
+
+def _wrap_angle_radians(angle: float) -> float:
+    """Normalize an angle to [-pi, pi)."""
+    return (float(angle) + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def sun_compass_phase(timestamp_s: float, *, cycle_s: float = DEFAULT_SUN_COMPASS_CYCLE_S) -> float:
+    """Phase angle for a timestamp in a repeating sun-compass day."""
+    cycle = float(cycle_s or DEFAULT_SUN_COMPASS_CYCLE_S)
+    if cycle <= 0:
+        cycle = DEFAULT_SUN_COMPASS_CYCLE_S
+    return (float(timestamp_s or 0.0) % cycle) / cycle * (2.0 * math.pi)
+
+
+def sun_compass_phase_delta(
+    recorded_ts: float,
+    query_ts: float,
+    *,
+    cycle_s: float = DEFAULT_SUN_COMPASS_CYCLE_S,
+) -> float:
+    """Smallest phase delta from a stored orientation time to a query time."""
+    return _wrap_angle_radians(
+        sun_compass_phase(query_ts, cycle_s=cycle_s)
+        - sun_compass_phase(recorded_ts, cycle_s=cycle_s)
+    )
+
+
+def compensate_direction_for_time(
+    direction_to_hive: float,
+    *,
+    recorded_ts: float,
+    query_ts: float,
+    cycle_s: float = DEFAULT_SUN_COMPASS_CYCLE_S,
+) -> float:
+    """Bee-style time compensation for a remembered homing bearing.
+
+    A memory learned at one time of day should not be replayed as if the
+    sky/time phase were unchanged. The phase delta is added to the stored
+    direction and wrapped, giving a cheap clock-corrected return vector.
+    """
+    return _wrap_angle_radians(
+        float(direction_to_hive)
+        + sun_compass_phase_delta(recorded_ts, query_ts, cycle_s=cycle_s)
+    )
 
 
 # ── data classes ──────────────────────────────────────────────────────────
@@ -157,6 +203,8 @@ class HomingHint:
     distance_to_hive: float
     confidence: float
     note: str = ""
+    phase_delta: float = 0.0
+    phase_compensated: bool = False
 
 
 # ── Hive ──────────────────────────────────────────────────────────────────
@@ -327,6 +375,42 @@ class Hive:
             note="nearest memory by perceptual hamming distance",
         )
 
+    def find_time_compensated_homing_hint(
+        self,
+        sample: Any,
+        *,
+        now: Optional[float] = None,
+        cycle_s: float = DEFAULT_SUN_COMPASS_CYCLE_S,
+    ) -> HomingHint:
+        """Return a homing hint corrected for time-of-day phase drift.
+
+        This is the missing field-bee "solar compass" piece: the nearest
+        panoramic memory still chooses the landmark, but the return bearing is
+        phase-corrected using the stored memory timestamp and the current time.
+        """
+        query_ts = float(time.time() if now is None else now)
+        base = self.find_homing_hint(sample)
+        if base.matched_signature is None:
+            return base
+        recorded_ts = float(base.matched_signature.last_seen_ts)
+        delta = sun_compass_phase_delta(recorded_ts, query_ts, cycle_s=cycle_s)
+        adjusted = compensate_direction_for_time(
+            base.matched_signature.direction_to_hive,
+            recorded_ts=recorded_ts,
+            query_ts=query_ts,
+            cycle_s=cycle_s,
+        )
+        return HomingHint(
+            matched_signature=base.matched_signature,
+            hamming_distance=base.hamming_distance,
+            direction_to_hive=adjusted,
+            distance_to_hive=base.distance_to_hive,
+            confidence=base.confidence,
+            note="nearest memory with sun-compass time compensation",
+            phase_delta=delta,
+            phase_compensated=True,
+        )
+
     # ── decay / housekeeping ──────────────────────────────────────
 
     def _eviction_candidate(self) -> Optional[str]:
@@ -439,10 +523,14 @@ __all__ = [
     "DEFAULT_DECAY_HALF_LIFE_S",
     "DEFAULT_MIN_REINFORCEMENT",
     "DEFAULT_SIGNATURE_BITS",
+    "DEFAULT_SUN_COMPASS_CYCLE_S",
     "Hive",
     "HomingHint",
     "PanoramicSignature",
     "TRUTH_LABEL",
+    "compensate_direction_for_time",
     "hamming_distance",
     "perceptual_hash",
+    "sun_compass_phase",
+    "sun_compass_phase_delta",
 ]

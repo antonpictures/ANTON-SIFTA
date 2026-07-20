@@ -88,6 +88,13 @@ DEFAULT_TOOL_ROWS: tuple[Dict[str, Any], ...] = (
         "writes_ledger": True,
         "external_spend": True,
     },
+    {
+        "tool": "grok.bridge",
+        "category": "external_agent",
+        "world_touch": True,
+        "writes_ledger": True,
+        "external_spend": True,
+    },
 )
 
 

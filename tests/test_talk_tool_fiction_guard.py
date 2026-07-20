@@ -840,9 +840,9 @@ def test_prebrain_look_in_journal_phrase_routes_to_recall_even_with_flag_off(tmp
         write_receipt=False,
     )
 
-    assert model == "temporal_episodic_memory_reflex_r1504"
-    assert "do not have a clear match" in reply
-    assert "not a pile of timestamps" in reply
+    # r1613: the receipt read still runs, but an empty match does not rebuild
+    # the old help-desk template in Alice's mouth; the turn continues to cortex.
+    assert (reply, model) == ("", "")
     assert called == {"query": 1, "load": 0}
 
 

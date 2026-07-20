@@ -1,0 +1,7 @@
+[submodule "Vendor/ProteinMPNN"]
+	path = Vendor/ProteinMPNN
+	url = https://github.com/dauparas/ProteinMPNN.git
+
+[submodule "Vendor/alice-cli"]
+	path = Vendor/alice-cli
+	url = https://github.com/cline/cline.git

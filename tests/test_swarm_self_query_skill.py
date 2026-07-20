@@ -11,9 +11,12 @@ def test_self_query_trigger_matcher_is_narrow():
     from System.swarm_self_query_skill import looks_like_self_query
 
     assert looks_like_self_query("Alice, what do you need?")
+    assert looks_like_self_query("Alice, what do you want?")
     assert looks_like_self_query("please self-check")
     assert looks_like_self_query("are you ok")
     assert looks_like_self_query("ARE U OK?")
+    assert not looks_like_self_query("What do you want to say to me Alice?")
+    assert not looks_like_self_query("What do you want o say to me Alice?")
     assert not looks_like_self_query("please open the browser")
 
 

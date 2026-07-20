@@ -36,7 +36,7 @@ def test_room_dirt_triage_separates_owner_media_dogs_and_noise():
     assert row["noise_score"] > 0
     assert row["raw_audio_stored"] is False
     assert row["raw_text_stored"] is False
-    assert any("podcast or YouTube" in line for line in row["journal_lines"])
+    assert any("video, podcast, YouTube, or speaker audio" in line for line in row["journal_lines"])
     assert any("dogs came into the room" in line for line in row["journal_lines"])
 
 
@@ -74,3 +74,60 @@ def test_uninteresting_short_chat_does_not_write(tmp_path):
 
     assert row is None
     assert not (tmp_path / LEDGER_NAME).exists()
+
+
+def test_remote_work_speaker_notice_sets_phone_background_context(tmp_path, monkeypatch):
+    from System import swarm_media_ingress_gate as gate
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(gate, "STATE_DIR", state)
+    monkeypatch.setattr(gate, "LEDGER", state / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", state / "ambient_media_context.json")
+
+    row = maybe_triage_room_dirt(
+        (
+            "we're back Alice - you had multiple instances open. and noise coming "
+            "from where Versace is, he is at work. noise from his work location "
+            "on east coast of us, we are in Brawley, CA, now on the west coast"
+        ),
+        stt_confidence=1.0,
+        source="test_owner_typed_notice",
+        root=tmp_path,
+        journal=True,
+        update_ambient_context=True,
+    )
+
+    assert row is not None
+    assert row["route"] == "direct_owner_with_ambient_bleed"
+    assert "remote_speaker_audio" in row["categories"]
+    assert row["ambient_context_updated"] is True
+    ambient = json.loads((state / "ambient_media_context.json").read_text(encoding="utf-8"))
+    assert ambient["source"] == "phone_call_background"
+    assert "remote work audio" in ambient["note"]
+
+
+def test_video_speaker_stt_notice_is_ambient_media_context(tmp_path, monkeypatch):
+    from System import swarm_media_ingress_gate as gate
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(gate, "STATE_DIR", state)
+    monkeypatch.setattr(gate, "LEDGER", state / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", state / "ambient_media_context.json")
+
+    row = maybe_triage_room_dirt(
+        "i meant sound comes from the videos i play on speaker to you though stt speech to text; that is not like typing",
+        stt_confidence=1.0,
+        source="test_owner_typed_notice",
+        root=tmp_path,
+        journal=True,
+        update_ambient_context=True,
+    )
+
+    assert row is not None
+    assert row["route"] == "ambient_media_bleed"
+    assert "ambient_media" in row["categories"]
+    assert row["ambient_context_updated"] is True
+    ambient = json.loads((state / "ambient_media_context.json").read_text(encoding="utf-8"))
+    assert ambient["source"] == "ambient_media_youtube"

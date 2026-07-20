@@ -468,32 +468,41 @@ _MIMO_FIREWORKS_ATTACHABLE_MODELS: tuple[str, ...] = (
 )
 _MIMO_LOCAL_QWEN_OLLAMA = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
 _MIMO_LOCAL_QWEN35_MT = "kaelri/qwen3.5-mt:2b"
+# Removed from desk 2026-07-11 (not in ollama list) — keep constants for alias/migrate only.
 _MIMO_LOCAL_GEMMA26_OLLAMA = "justingtzk/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL_128K"
-# George 2026-06-28: Ornith 1.0 (deep-reinforce, MIT) — self-improving open-source
-# coding agent, 256K context, autoregressive TEXT. Safe as a Talk dialogue default
-# (unlike DiffusionGemma). George has 24 GB RAM and pulled only `ollama run ornith`
-# (= ornith:latest, the 9B / ~5.6 GB). The 35B (21 GB) is NOT added — it will not fit.
 _MIMO_LOCAL_ORNITH_9B = "ornith:latest"
+_MIMO_LOCAL_ORNITH_9B_Q8 = "baytout3/Ornith-1.0-9B-uncensored-GGUF:Q8_0"
+_MIMO_LOCAL_ULTRAGEMMA4_12B = "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0"
+_MIMO_LOCAL_KRISHA = "krishairnd/Gemma-4-Uncensored:latest"
+_MIMO_LOCAL_QWENPAW_9B = "satgeze/qwenpaw-9b-heretic-1m:latest"
+_MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B = (
+    "jikepjikep_16HEX/qwen3.6-27b-nightshift-heretic-uncensored-q4:latest"
+)
+_MIMO_LOCAL_NORTH_MINI_CODE = "north-mini-code-1.0:latest"
+_MIMO_LOCAL_QWEN35_HAUHAU_4B = "dzgg/Qwen3.5-Uncensored-HauhauCS-Aggressive:4b"
 _MIMO_LEGACY_LOCAL_OLLAMA_ALIASES: dict[str, str] = {
-    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_GEMMA26_OLLAMA,
+    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_QWENPAW_9B,
 }
+# George 2026-07-11 live `ollama list` — only tags still installed on this Mac.
+# Deleted models (gemma-4-26B, diffusiongemma, kaelri-mt, balanced 27B, ornith:35b)
+# stay off the MiMo attached picker.
 _MIMO_LOCAL_OLLAMA_MODELS: tuple[str, ...] = (
-    "krishairnd/Gemma-4-Uncensored:latest",
-    _MIMO_LOCAL_GEMMA26_OLLAMA,
+    _MIMO_LOCAL_QWENPAW_9B,
+    _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B,
+    _MIMO_LOCAL_NORTH_MINI_CODE,
+    _MIMO_LOCAL_QWEN35_HAUHAU_4B,
+    _MIMO_LOCAL_ORNITH_9B_Q8,
+    _MIMO_LOCAL_ULTRAGEMMA4_12B,
     _MIMO_LOCAL_ORNITH_9B,
+    _MIMO_LOCAL_KRISHA,
 )
-_MIMO_LOCAL_DIFFUSION_MODELS: tuple[str, ...] = (
-    "diffusion:diffusiongemma-26b",
-)
+_MIMO_LOCAL_DIFFUSION_MODELS: tuple[str, ...] = ()
 # r1560/r1731: the MiMo dialogue default must be a runnable chat/text lane.
-# kaelri/qwen3.5-mt:2b is translation-only, and DiffusionGemma is an
-# experimental diffusion cortex that is not text-CLI routable for Talk. Both
-# produced the same owner-visible failure shape: blank/empty dialogue turns.
-_MIMO_DEFAULT_ATTACHED = "krishairnd/Gemma-4-Uncensored:latest"
+_MIMO_DEFAULT_ATTACHED = _MIMO_LOCAL_KRISHA
 _MIMO_NON_DIALOGUE_ATTACHED_DEFAULT_IDS: frozenset[str] = frozenset(
     {
         _MIMO_LOCAL_QWEN35_MT,
-        *_MIMO_LOCAL_DIFFUSION_MODELS,
+        "diffusion:diffusiongemma-26b",
     }
 )
 _MIMO_CORTEX_ID = "mimo:mimo-cli-default"
@@ -507,6 +516,9 @@ _MIMO_REMOVED_ATTACHABLE_IDS: frozenset[str] = frozenset(
         "mimo-v2.5",
         _MIMO_LOCAL_QWEN35_MT,
         _MIMO_LOCAL_QWEN_OLLAMA,
+        _MIMO_LOCAL_GEMMA26_OLLAMA,
+        "diffusion:diffusiongemma-26b",
+        "ornith:35b-q4_K_M",
     }
 )
 # Neutral shared catalog: every model attachable over an OAuth / upstream
@@ -532,9 +544,60 @@ _MIMO_ATTACHABLE_VIA_UPSTREAM: tuple[str, ...] = (
     *_MIMO_NATIVE_MODELS,
     *_MIMO_FIREWORKS_ATTACHABLE_MODELS,
     *_MIMO_LOCAL_OLLAMA_MODELS,
-    *_MIMO_LOCAL_DIFFUSION_MODELS,
     *_MIMO_OWNER_KEPT_ATTACHABLE_MODELS,
 )
+
+
+def _live_ollama_tag_set() -> set[str]:
+    """Installed Ollama tags (best-effort). Empty set if daemon unavailable."""
+    try:
+        from System.sifta_inference_defaults import probe_installed_ollama_tags
+
+        return {str(t).strip() for t in (probe_installed_ollama_tags() or ()) if str(t).strip()}
+    except Exception:
+        return set()
+
+
+def mimo_local_ollama_models_for_picker() -> list[str]:
+    """Local Ollama rows for MiMo: catalog intersected with live install when possible."""
+    catalog = list(_MIMO_LOCAL_OLLAMA_MODELS)
+    live = _live_ollama_tag_set()
+    if not live:
+        return catalog
+    # Prefer exact live tags; keep catalog order.
+    out = [t for t in catalog if t in live]
+    # Also surface any live tag that matches a catalog prefix (e.g. :Q4_K_M sibling).
+    for tag in sorted(live):
+        if tag in out:
+            continue
+        low = tag.lower()
+        if any(
+            key in low
+            for key in (
+                "qwenpaw",
+                "nightshift",
+                "north-mini-code",
+                "hauhau",
+                "ornith",
+                "ultragemma",
+                "gemma-4-uncensored",
+            )
+        ):
+            out.append(tag)
+    return out or catalog
+
+
+def mimo_attachable_models_for_sync() -> list[str]:
+    """Full MiMo attach list for /cortex llm: natives + fireworks + live locals + owner cloud keeps."""
+    local = mimo_local_ollama_models_for_picker()
+    return _dedupe(
+        [
+            *_MIMO_NATIVE_MODELS,
+            *_MIMO_FIREWORKS_ATTACHABLE_MODELS,
+            *local,
+            *_MIMO_OWNER_KEPT_ATTACHABLE_MODELS,
+        ]
+    )
 
 
 def is_mimo_non_dialogue_attached_default(model_id: str) -> bool:
@@ -583,11 +646,17 @@ _ATTACHED_MODEL_LABELS: dict[str, str] = {
     "mimo-v2.5": "MiMo-V2.5",
     FIREWORKS_KIMI_K2P6_MODEL: "Kimi K2.6 (fireworks-api kimi-k2p6)",
     "mimo-auto": "MiMo Auto (free)",
-    "krishairnd/Gemma-4-Uncensored:latest": "krisha-g4u (local Ollama)",
-    _MIMO_LOCAL_GEMMA26_OLLAMA: "Gemma 4 26B A4B QAT GGUF (local Ollama)",
+    _MIMO_LOCAL_KRISHA: "krisha-g4u (local Ollama)",
     _MIMO_LOCAL_ORNITH_9B: "Ornith 1.0 9B (local Ollama coding agent)",
+    _MIMO_LOCAL_ORNITH_9B_Q8: "Ornith 1.0 9B Q8 uncensored (local Ollama)",
+    _MIMO_LOCAL_ULTRAGEMMA4_12B: "UltraGemma4 12B heretic (local Ollama)",
+    _MIMO_LOCAL_QWENPAW_9B: "QwenPaw 9B heretic 1M (local Ollama)",
+    _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B: "Qwen3.6 27B nightshift heretic (local Ollama)",
+    _MIMO_LOCAL_NORTH_MINI_CODE: "North Mini Code 1.0 (local Ollama)",
+    _MIMO_LOCAL_QWEN35_HAUHAU_4B: "Qwen3.5 Hauhau aggressive 4B (local Ollama)",
     _MIMO_LOCAL_QWEN35_MT: "kaelri-q3.5-mt-2b (local Ollama)",
     _MIMO_LOCAL_QWEN_OLLAMA: "Qwen3.6 27B Uncensored Balanced (local Ollama)",
+    _MIMO_LOCAL_GEMMA26_OLLAMA: "Gemma 4 26B A4B QAT GGUF (local Ollama)",
     "diffusion:diffusiongemma-26b": "DiffusionGemma 26B (local diffusion)",
     "claude-fable-5": "Fable 5",
     "claude-opus-4-8": "Opus 4.8",
@@ -625,32 +694,42 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
         "qwen:accounts/fireworks/models/kimi-k2p6 (fireworks-api kimi-k2p6)."
     ),
     "mimo-auto": "Free MiMo Auto route observed in George's MiMo picker.",
-    "krishairnd/Gemma-4-Uncensored:latest": (
-        "Local Ollama Gemma 4 Uncensored tag observed on GTH4921YP3: "
-        "8B, Q4_K_M, 131072 context, vision/audio/tools/thinking."
-    ),
-    _MIMO_LOCAL_GEMMA26_OLLAMA: (
-        "Local Ollama Gemma 4 26B A4B QAT GGUF tag kept by George: "
-        "UD-Q4_K_XL_128K quant, about 15 GB on disk."
+    _MIMO_LOCAL_KRISHA: (
+        "Local Ollama Gemma 4 Uncensored (krisha-g4u): ~6.3 GB, dialogue-safe default."
     ),
     _MIMO_LOCAL_ORNITH_9B: (
-        "Local Ollama Ornith 1.0 9B (deep-reinforce, MIT): self-improving open-source "
-        "coding agent, 256K context, ~5.6 GB (fits 24 GB RAM). Autoregressive TEXT-ONLY — "
-        "safe as a Talk dialogue default unlike DiffusionGemma, but it has NO vision: it "
-        "cannot decode camera/screenshot images itself. Pulled via `ollama run ornith`."
+        "Local Ollama Ornith 1.0 9B: coding agent, ~5.6 GB, text/tools. No vision tower."
+    ),
+    _MIMO_LOCAL_ORNITH_9B_Q8: (
+        "Local Ollama Ornith 1.0 9B Q8 uncensored GGUF (~9.5 GB)."
+    ),
+    _MIMO_LOCAL_ULTRAGEMMA4_12B: (
+        "Local Ollama UltraGemma4 12B heretic uncensored Q8 (~12 GB)."
+    ),
+    _MIMO_LOCAL_QWENPAW_9B: (
+        "Local Ollama QwenPaw 9B heretic 1M: agent-tuned, tools, vision, long-ctx meta "
+        "(~10 GB). Probe num_ctx on 24 GB RAM; MTP dormant in Ollama until speculative decode."
+    ),
+    _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B: (
+        "Local Ollama Qwen3.6 27B nightshift heretic uncensored Q4 (~16 GB)."
+    ),
+    _MIMO_LOCAL_NORTH_MINI_CODE: (
+        "Local Ollama North Mini Code 1.0 (~18 GB) — coding-oriented."
+    ),
+    _MIMO_LOCAL_QWEN35_HAUHAU_4B: (
+        "Local Ollama Qwen3.5 HauhauCS aggressive uncensored 4B (~3.4 GB) — light/fast."
     ),
     _MIMO_LOCAL_QWEN35_MT: (
-        "Local Ollama kaelri/qwen3.5-mt:2b on GTH4921YP3: Qwen3.5 2.3B, Q4_K_M, "
-        "262144 context, 1.9 GB, vision/tools/thinking/completion, pulled 2026-06-19."
+        "Local Ollama kaelri/qwen3.5-mt:2b — translation-only; not Talk dialogue default."
     ),
     _MIMO_LOCAL_QWEN_OLLAMA: (
-        "Local Ollama Qwen3.6 27B Uncensored HauhauCS Balanced IQ4_XS on GTH4921YP3: "
-        "27.4B, 262144 context, 16 GB, digest e5630341d1d8, vision/tools/thinking, pulled 2026-06-18."
+        "Removed from desk — old balanced 27B tag (not in ollama list)."
+    ),
+    _MIMO_LOCAL_GEMMA26_OLLAMA: (
+        "Removed from desk — Gemma 4 26B A4B QAT tag (not in ollama list)."
     ),
     "diffusion:diffusiongemma-26b": (
-        "Experimental local DiffusionGemma / Gemma 4 26B A4B diffusion cortex. "
-        "Not a MiMo native cloud model and not an Ollama tag; requires the "
-        "DiffusionGemma GGUF plus the dedicated llama-diffusion-cli runner before it is runnable."
+        "Experimental diffusion cortex — not on current MiMo local attach list."
     ),
     "claude-fable-5": "For toughest challenges; owner screenshot says included until June 22.",
     "claude-opus-4-8": "For complex tasks.",
@@ -796,15 +875,21 @@ def sync_cortex_attached_models_catalog(
     elif is_mimo_non_dialogue_attached_default(mimo_raw_default):
         mimo_source = "owner_pruned_non_dialogue_translation_default_2026-06-23"
     else:
-        mimo_source = "owner_default_2026-06-23_mimo_local_dialogue_gemma"
+        mimo_source = "owner_default_2026-07-11_mimo_local_ollama_live_inventory"
+    mimo_models = mimo_attachable_models_for_sync()
+    # If preserved default was deleted from ollama, fall back to krisha/catalog default.
+    if mimo_preserved_default not in mimo_models and mimo_preserved_default not in _MIMO_OWNER_KEPT_ATTACHABLE_MODELS:
+        if mimo_preserved_default not in _MIMO_NATIVE_MODELS and mimo_preserved_default not in _MIMO_FIREWORKS_ATTACHABLE_MODELS:
+            mimo_preserved_default = _resolve_mimo_default_attached(_MIMO_DEFAULT_ATTACHED)
+            mimo_source = "owner_live_ollama_pruned_stale_default_2026-07-11"
     record_attached_models(
         _MIMO_CORTEX_ID,
-        list(_MIMO_ATTACHABLE_VIA_UPSTREAM),
+        mimo_models,
         default_attached=mimo_preserved_default,
         source=mimo_source,
         routes_any_provider=True,
         picker_is_upstream=True,
-        live=bool(mimo_default),
+        live=bool(mimo_default) or bool(_live_ollama_tag_set()),
         state_dir=sd,
     )
     results["synced"].append("mimo:mimo-cli-default")

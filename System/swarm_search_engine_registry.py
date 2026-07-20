@@ -42,6 +42,12 @@ _ENGINES: Dict[str, Dict[str, Any]] = {
         "images": "https://www.google.com/search?tbm=isch&q={q}",
         "aliases": ["google", "googl", "g", "google search"],
     },
+    "google_news": {
+        "name": "Google News", "home": "https://news.google.com/home?hl=en-US&gl=US&ceid=US:en",
+        "web": "https://news.google.com/search?q={q}&hl=en-US&gl=US&ceid=US:en",
+        "images": "https://news.google.com/search?q={q}&hl=en-US&gl=US&ceid=US:en",
+        "aliases": ["google news", "news google", "gnews"],
+    },
     "bing": {
         "name": "Bing", "home": "https://www.bing.com",
         "web": "https://www.bing.com/search?q={q}",
@@ -267,6 +273,8 @@ def _extract_ordinal(low: str) -> int:
         return int(m.group(1))
     tokens = re.findall(r"[a-z0-9']+", low)
     for tok in tokens:
+        if tok == "top" and re.search(r"\btop[-\s]?k\b", low):
+            continue
         if tok in _ORDINAL_WORDS:
             return _ORDINAL_WORDS[tok]
     # typo tolerance for the common words ("forst"->first, "secund"->second)
@@ -303,6 +311,9 @@ def parse_select_result_intent(text: str) -> Dict[str, Any]:
         return {"is_select": False, "ordinal": 0}
     if not noun and ordinal == 0:
         return {"is_select": False, "ordinal": 0}
+    if not noun and ordinal == 1 and re.search(r"\btop[-\s]?k\b", low):
+        if not re.search(r"\b(?:first|1st|#\s*1)\b", low):
+            return {"is_select": False, "ordinal": 0}
     # never hijack a fresh search / explicit URL open unless the owner named an ordinal
     looks_like_navigation = bool(
         re.search(r"\bsearch\b|\bgo\s+to\b|https?://|www\.|\.com\b|\.org\b|\.net\b", low)
@@ -314,7 +325,7 @@ def parse_select_result_intent(text: str) -> Dict[str, Any]:
 
 # r383: "SLIDESHOW IMAGES OF CATS" — George (2026-06-02): default the slideshow on
 # DuckDuckGo, one image every 3.5s; but if she is already on a search engine (e.g.
-# google.com) run it there (Google Images). So the slideshow target engine = the
+# google.com) run it there as image results. So the slideshow target engine = the
 # current site's engine if she is on one, else the slideshow default (DuckDuckGo).
 SLIDESHOW_DEFAULT_ENGINE = "duckduckgo"
 SLIDESHOW_DEFAULT_INTERVAL_S = 3.5
@@ -393,7 +404,8 @@ def _host_of(url: str) -> str:
 
 def slideshow_engine_for(current_url: Optional[str] = None) -> str:
     """If she is already on a known engine's results page, slideshow THERE; else the
-    slideshow default (DuckDuckGo). 'if the user is on google.com -> Google Images.'"""
+    slideshow default (DuckDuckGo). If the user is already on an image-capable engine,
+    keep that engine."""
     host = _host_of(current_url or "")
     if host:
         for key, spec in _ENGINES.items():
@@ -413,7 +425,7 @@ def slideshow_images_url(subject: str, *, current_url: Optional[str] = None,
 
 def build_image_slideshow_js(interval_ms: int = 3500) -> str:
     """Self-contained JS: harvest the page's own image tiles and cycle them fullscreen
-    every `interval_ms` (one image at a time). Engine-agnostic — works on Google Images,
+    every `interval_ms` (one image at a time). Engine-agnostic — works on image-result pages,
     DuckDuckGo, Bing, etc. because it uses the page's own <img> srcs, not the site's
     lightbox. Click or Esc to stop. Returns {ok,count,interval_ms} when run."""
     interval = int(interval_ms or 3500)

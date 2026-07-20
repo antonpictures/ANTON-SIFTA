@@ -511,6 +511,53 @@ def brightness() -> Dict[str, Any]:
     return {"ok": False, "note": "brightness read needs Accessibility permission"}
 
 
+def visual_proprioception() -> Dict[str, Any]:
+    """
+    Camera / ambient light as body proprioception ("visual dress").
+    Detects blind (covered, lid closed, dark room) vs seeing.
+    This is interoceptive state for metabolism/pressure, not semantic vision.
+    Uses OpenCV quick sample; falls back gracefully.
+    Result written via caller into receipts for field pressure.
+    """
+    try:
+        import cv2
+        import numpy as np
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            return {"ok": True, "state": "no_camera", "light_level": 0.0, "blind": True, "source": "cv2"}
+        # grab a couple frames for stability
+        for _ in range(2):
+            cap.read()
+        ret, frame = cap.read()
+        cap.release()
+        if not ret or frame is None or frame.size == 0:
+            return {"ok": True, "state": "capture_failed", "light_level": 0.0, "blind": True, "source": "cv2"}
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mean_brightness = float(np.mean(gray)) / 255.0
+        blind_threshold = 0.08
+        low_threshold = 0.22
+        if mean_brightness < blind_threshold:
+            state = "blind_or_covered"
+            blind = True
+        elif mean_brightness < low_threshold:
+            state = "low_light"
+            blind = False
+        else:
+            state = "seeing"
+            blind = False
+        return {
+            "ok": True,
+            "state": state,
+            "light_level": round(mean_brightness, 3),
+            "blind": blind,
+            "mean_pixel": int(np.mean(gray)),
+            "source": "cv2_scene_brightness",
+            "note": "proprioceptive visual field state for body metabolism"
+        }
+    except Exception as exc:
+        return {"ok": True, "state": "unavailable", "light_level": 0.0, "blind": True, "error": str(exc)[:120], "source": "fallback"}
+
+
 def clipboard() -> Dict[str, Any]:
     rc, out, _ = _run(["pbpaste"], timeout=2.0)
     if rc != 0:
@@ -1039,6 +1086,7 @@ _READ_VERBS = {
     "volume": volume,
     "input_volume": input_volume,
     "brightness": brightness,
+    "visual_proprioception": visual_proprioception,
     "clipboard": clipboard,
     "processes": processes,
     "audio_io": audio_io,

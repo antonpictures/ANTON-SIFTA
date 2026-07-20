@@ -52,6 +52,17 @@ def parse_switch_command(text: str) -> Dict[str, object]:
     t = " ".join(str(text or "").split())
     if not t:
         return {"is_switch": False, "target": ""}
+    # r1621 George live: "code R1621-01 with SELF_CODE_CUT" must NEVER be a cortex switch.
+    # SELF_CODE_* is Alice's surgery syntax, not a model name. Deterministic switch failures
+    # here steal the turn and look like "cheating" (no cortex thinking).
+    if re.search(
+        r"\bSELF_CODE_(?:CUT|EDIT)\b|\bSELF_READ\b|"
+        r"\bcode\s+R\d{3,4}\b|\bgo\b.{0,40}\bcode\b.{0,40}\bR\d{3,4}\b|"
+        r"\bonly\s+on\s+listed\s+files\b",
+        t,
+        re.IGNORECASE,
+    ):
+        return {"is_switch": False, "target": ""}
     m = _SWITCH_RE.search(t)
     if not m:
         m = _SWITCH_TO_RE.search(t)
@@ -110,7 +121,16 @@ def parse_switch_command(text: str) -> Dict[str, object]:
     )[0]
     cleaned = _FILLER.sub(" ", raw)
     cleaned = " ".join(cleaned.split()).strip(" .,:;-")
+    # "pick ornith:35b" / "use ornith 35b" — keep the model token, drop picker verbs.
+    cleaned = re.sub(
+        r"^(?:pick|choose|select|use|bind)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
     if not cleaned:
+        return {"is_switch": False, "target": ""}
+    if re.search(r"^SELF_CODE_|^SELF_READ$", cleaned, re.IGNORECASE):
         return {"is_switch": False, "target": ""}
     return {"is_switch": True, "target": cleaned}
 
@@ -131,6 +151,8 @@ def resolve_cortex_target(
     Returns {'ok', 'tag', 'score', 'reason', 'candidates'}. ok=False when nothing is close enough,
     so the caller can read the real list back to the owner instead of guessing."""
     want = " ".join(str(spoken or "").lower().split()).strip()
+    # normalize "ornith 35b" / "ornith:35b" for tag matching
+    want_compact = re.sub(r"\s+", "", want)
     tags = [str(t) for t in (available or []) if str(t or "").strip()]
     if not want or not tags:
         return {"ok": False, "tag": "", "score": 0.0, "reason": "empty", "candidates": tags}
@@ -139,10 +161,31 @@ def resolve_cortex_target(
     best_score = 0.0
     for tag in tags:
         low = tag.lower()
+        low_compact = re.sub(r"\s+", "", low)
         prov = _provider(tag)
         # 1) exact substring of the spoken word anywhere in the tag (e.g. "kimi" in the qwen tag,
         #    "claude" in the claude tag) — strong signal.
-        sub = 1.0 if want in low else 0.0
+        sub = 1.0 if want in low or want_compact in low_compact else 0.0
+        # 1b) "ornith:35b" vs "ornith:35b-q4_K_M" / "ornith 35b"
+        if want_compact and want_compact in low_compact:
+            sub = max(sub, 0.95)
+        if "35b" in want and "35b" in low and "ornith" in want and "ornith" in low:
+            sub = max(sub, 0.98)
+        # r1624 / George live ollama: short nicknames for long heretic tags
+        if "qwenpaw" in want and "qwenpaw" in low:
+            sub = max(sub, 0.99)
+        if "nightshift" in want and "nightshift" in low:
+            sub = max(sub, 0.99)
+        if "north" in want and "mini" in want and "north-mini" in low:
+            sub = max(sub, 0.98)
+        if "hauhau" in want and "hauhau" in low:
+            sub = max(sub, 0.98)
+        if "ultragemma" in want and "ultragemma" in low:
+            sub = max(sub, 0.98)
+        if ("krisha" in want or "krishairnd" in want) and (
+            "krisha" in low or "gemma-4-uncensored" in low
+        ):
+            sub = max(sub, 0.97)
         # 2) similarity of the spoken word to the provider head (handles STT homophones:
         #    client~cline) and to the whole tag.
         prov_ratio = difflib.SequenceMatcher(None, want, prov).ratio()

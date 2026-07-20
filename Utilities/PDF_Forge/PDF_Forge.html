@@ -23,6 +23,7 @@
   #forge:hover{filter:brightness(1.07)}
   .ghost{background:#2a3641;color:#cdd9e3}
   .ghost:hover{background:#34424f}
+  select{font-family:inherit;background:#0e151b;color:#dce6ee;border:1px solid #31404d;border-radius:9px;padding:9px 12px;font-weight:700;font-size:13px}
   .hint{font-size:12.5px;color:var(--muted);padding:8px 18px;background:#0c1218;border-bottom:1px solid #232f3a}
   .hint b{color:#cfe0ee}
 
@@ -121,6 +122,10 @@
 <div class="topbar">
   <div class="brand">🐜⚡ SIFTA PDF Forge <span>Utilities</span></div>
   <div class="actions">
+    <select id="preset" title="Project preset">
+      <option value="winwin">Win-Win data center</option>
+      <option value="farmerSupport">Imperial Valley farmer support</option>
+    </select>
     <button id="reset" class="ghost">Reset copy</button>
     <button id="forge">Forge PDF &rarr;</button>
   </div>
@@ -300,6 +305,36 @@ var DEFAULTS={
   gc3:"View to the East — commercial / retail frontage."
 };
 
+var FARMER_SUPPORT={
+  kicker:"Farmer Support Brief - Verify With Counsel",
+  title:"IMPERIAL VALLEY FARMER BENEFIT PLAN",
+  loc:"350MW AI DATA CENTER - IMPERIAL COUNTY",
+  sub:"Draft outreach language for growers: explain how a fair water and electric process could protect agriculture first, create optional farmer upside, and put project benefits in writing.",
+  heroCap:"Use a project map, site rendering, farmland image, or meeting photo as the hero.",
+  c1t:"Protect Agriculture First",
+  c1b:"Any support message starts with a hard guardrail: existing farm water users should not carry hidden risk, cost, or uncertainty. The water plan must be measured, transparent, and verified before public claims are made.",
+  c2t:"Fair Legal Process",
+  c2b:"Sebastian's litigation challenges IID's denial/application process. The farmer-facing question is not politics; it is whether rules for water and electric service are applied evenly while protecting existing agricultural priorities.",
+  c3t:"Farmer Upside To Evaluate",
+  c3b:"If the process opens clearer industrial-service rules, participating farmers may have voluntary options around land leases, fallowing/conserved-water value, infrastructure participation, or new local demand. Every term must be written and optional.",
+  c4t:"Benefits In Writing",
+  c4b:"Jobs, tax base, grid upgrades, reclaimed-water work, Salton Sea benefits, and no ratepayer cost shift should become enforceable commitments before outreach asks farmers for support.",
+  d1:"Farm water rights protected in writing",
+  d2:"No hidden cost shift to IID customers",
+  d3:"Voluntary compensation paths for participating landowners",
+  d4:"Public benefits verified before claims go out",
+  ctaBig:"ASK FOR A FAIR PROCESS AND A WRITTEN BENEFIT PLAN",
+  ctaL2:"Support a review that protects farmers first and gives Imperial Valley a clear, enforceable upside.",
+  ctaL3:"Draft for Sebastian, Hector, George, and counsel review.",
+  foot:"Imperial Valley farmer-support draft - verify all legal, water, power, and economic claims before distribution.",
+  galTitle:"Project + Farmer Benefit Exhibits",
+  galIntro:"Suggested exhibits: project site map, water-service/fallowing diagram, grid/interconnection map, and a one-page farmer benefit term sheet.",
+  gc1:"Project location and nearby agricultural context.",
+  gc2:"Water-service / fallowing / conservation concept to verify.",
+  gc3:"Power-service and community-benefit commitments to verify."
+};
+
+var PRESETS={winwin:DEFAULTS,farmerSupport:FARMER_SUPPORT};
 var F=Object.assign({},DEFAULTS);
 var images=[]; // {id,url}
 var uid=0;
@@ -403,7 +438,15 @@ function syncInputs(){
 
 // ---- buttons ----
 $("#forge").addEventListener("click",function(){ window.print(); });
-$("#reset").addEventListener("click",function(){ F=Object.assign({},DEFAULTS); syncInputs(); renderText(); renderImages(); });
+$("#preset").addEventListener("change",function(){
+  F=Object.assign({},PRESETS[this.value]||DEFAULTS);
+  syncInputs(); renderText(); renderImages();
+});
+$("#reset").addEventListener("click",function(){
+  var p=$("#preset") ? $("#preset").value : "winwin";
+  F=Object.assign({},PRESETS[p]||DEFAULTS);
+  syncInputs(); renderText(); renderImages();
+});
 
 // ---- zoom ----
 var zoom=$("#zoom");

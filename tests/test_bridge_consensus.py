@@ -18,53 +18,64 @@ from traceback import print_exc
 from scar_kernel import Kernel, Scar
 from swarmrl_bridge import SIFTAAgentBridge, run_consensus_round
 
-print("🌊 BOOTING LATTICE INTEGRATION TEST...")
 
-try:
-    k = Kernel()
-    print("[+] Kernel Booted.")
 
-    # 1. Boot the Bridges (The SwarmRL adaptors)
-    print("[+] Initializing Agent Bridges (HERMES & ANTIALICE)...")
-    agent_a = SIFTAAgentBridge("HERMES", kernel=k, birth_certificate="ARCHITECT_SEAL_HERMES")
-    agent_b = SIFTAAgentBridge("ANTIALICE", kernel=k, birth_certificate="ARCHITECT_SEAL_ANTIALICE")
-    
-    # 2. Simulate competing Action selections from a SwarmRL Actor network
-    target_file = "bureau_of_identity/core_logic.py"
-    
-    # Normally the actor-critic network selects these. We force them for the test.
-    action_a = "REPAIR: return node_id.upper()" 
-    action_b = "REPAIR: return node_id.lower()"
-    
-    print(f"[+] HERMES proposes:    {action_a}")
-    print(f"[+] ANTIALICE proposes: {action_b}")
-    
-    # 3. Propose actions through the cryptographic wrapper
-    sid_a = agent_a.propose_action(target_file, action_a)
-    sid_b = agent_b.propose_action(target_file, action_b)
-    
-    print(f"[+] HERMES SCAR generated:    {sid_a}")
-    print(f"[+] ANTIALICE SCAR generated: {sid_b}")
-    
-    # 4. Trigger the Stigmergic Consensus Ring
-    print("\n🌊 TRIGGERING CONSENSUS ROUND...")
-    # run_consensus_round merges the pool, finds the deterministic canonical_winner,
-    # and safely executes it against the Kernel if approve=True.
-    winning_scar_id = run_consensus_round(
-        bridges=[agent_a, agent_b],
-        target=target_file,
-        actions=[action_a, action_b],
-        approve=True
-    )
-    
-    # 5. Verify the state
-    winner = k.scars[winning_scar_id]
-    print(f"\n[+] CONSENSUS REACHED. Canonical Winner: {winner.scar_id}")
-    print(f"[+] Winning Logic: {winner.content}")
-    print(f"[+] Fossil Record for {target_file}: {k.fossils[target_file]}")
-    
-    print("\n🌊 THE LATTICE HOLDS. INTEGRATION TEST PASSED.")
+# r-fable-code-sweep-20260703: this file executed at IMPORT TIME — under
+# 'pytest tests/' collection it booted daemons/Qt apps/diagnostics as a side
+# effect (one reason the whole suite hung). Drill preserved verbatim; it now
+# runs only directly: python3 tests/test_bridge_consensus.py
+def _run_drill() -> None:
+    print("🌊 BOOTING LATTICE INTEGRATION TEST...")
 
-except Exception as e:
-    print(f"\n[!] LATTICE FAILURE: {e}")
-    print_exc()
+    try:
+        k = Kernel()
+        print("[+] Kernel Booted.")
+
+        # 1. Boot the Bridges (The SwarmRL adaptors)
+        print("[+] Initializing Agent Bridges (HERMES & ANTIALICE)...")
+        agent_a = SIFTAAgentBridge("HERMES", kernel=k, birth_certificate="ARCHITECT_SEAL_HERMES")
+        agent_b = SIFTAAgentBridge("ANTIALICE", kernel=k, birth_certificate="ARCHITECT_SEAL_ANTIALICE")
+    
+        # 2. Simulate competing Action selections from a SwarmRL Actor network
+        target_file = "bureau_of_identity/core_logic.py"
+    
+        # Normally the actor-critic network selects these. We force them for the test.
+        action_a = "REPAIR: return node_id.upper()" 
+        action_b = "REPAIR: return node_id.lower()"
+    
+        print(f"[+] HERMES proposes:    {action_a}")
+        print(f"[+] ANTIALICE proposes: {action_b}")
+    
+        # 3. Propose actions through the cryptographic wrapper
+        sid_a = agent_a.propose_action(target_file, action_a)
+        sid_b = agent_b.propose_action(target_file, action_b)
+    
+        print(f"[+] HERMES SCAR generated:    {sid_a}")
+        print(f"[+] ANTIALICE SCAR generated: {sid_b}")
+    
+        # 4. Trigger the Stigmergic Consensus Ring
+        print("\n🌊 TRIGGERING CONSENSUS ROUND...")
+        # run_consensus_round merges the pool, finds the deterministic canonical_winner,
+        # and safely executes it against the Kernel if approve=True.
+        winning_scar_id = run_consensus_round(
+            bridges=[agent_a, agent_b],
+            target=target_file,
+            actions=[action_a, action_b],
+            approve=True
+        )
+    
+        # 5. Verify the state
+        winner = k.scars[winning_scar_id]
+        print(f"\n[+] CONSENSUS REACHED. Canonical Winner: {winner.scar_id}")
+        print(f"[+] Winning Logic: {winner.content}")
+        print(f"[+] Fossil Record for {target_file}: {k.fossils[target_file]}")
+    
+        print("\n🌊 THE LATTICE HOLDS. INTEGRATION TEST PASSED.")
+
+    except Exception as e:
+        print(f"\n[!] LATTICE FAILURE: {e}")
+        print_exc()
+
+
+if __name__ == "__main__":
+    _run_drill()

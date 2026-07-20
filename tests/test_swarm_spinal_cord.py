@@ -27,6 +27,7 @@ from System.swarm_spinal_cord import (
     collect_body_signals,
     compute_field_interconnect_score,
     formulate_task,
+    gate_and_apply,
     _extract_block,
     _extract_field,
     _check_ast,
@@ -347,3 +348,117 @@ class TestBiasTeacherSuccess:
         assert "bias_spinal_cycle" in rows
         assert "safety_refusal" in rows
         assert receipt.get("teacher_success_recorded") is True
+
+
+# ---------------------------------------------------------------------------
+# Regression: owner_correction with MiMo-identified CHANGED_FILES (no pre-known targets)
+# ---------------------------------------------------------------------------
+
+class TestMimoIdentifiedTargetRegression:
+    """Regression for the case:
+    owner_correction signal with target_files=[] (no keyword auto-target),
+    formulate_task tells MiMo to identify,
+    MiMo returns CHANGED_FILES + NEW_CONTENT,
+    gate_and_apply must use the MiMo-named file, not NO_VALID_TARGET_FILE.
+    """
+
+    def test_parse_populates_target_files_from_changed_when_task_empty(self):
+        raw = (
+            "CHANGED_FILES: System/some_organ.py\n"
+            "DIFF_SUMMARY: patched foo\n"
+            "TESTS_PASSED: true\n"
+            "NEW_CONTENT_START\n"
+            "print('fixed by mimo')\n"
+            "NEW_CONTENT_END"
+        )
+        task = PatchTask(
+            task_id="t123",
+            ts=time.time(),
+            signal_id="sig-ownercorr",
+            target_files=[],  # owner_correction, no pre-known
+            task_prompt="identify and fix",
+        )
+        # call via the module to get patched result
+        from System.swarm_spinal_cord import _parse_mimo_response as parse_fn
+        result = parse_fn(raw, task)
+        assert result.target_files == ["System/some_organ.py"]
+        assert result.success is True
+        assert "fixed by mimo" in result.new_content
+
+    def test_gate_and_apply_uses_mimo_changed_files_instead_of_no_valid_target(
+        self, tmp_path, monkeypatch
+    ):
+        """Full path: empty task.target_files but result.target_files from CHANGED_FILES
+        must cause gate to accept the target (no NO_VALID_TARGET_FILE), and proceed
+        to snapshot/apply path (we mock the governor and FS side effects after target check).
+        """
+        sd = tmp_path / ".sifta_state"
+        sd.mkdir()
+
+        # Create an isolated fake repo root inside tmp so writes don't touch real tree
+        fake_repo = tmp_path / "fake_repo"
+        fake_repo.mkdir()
+        (fake_repo / "System").mkdir(parents=True, exist_ok=True)
+        target = "System/some_organ.py"
+        target_path = fake_repo / target
+        target_path.write_text("original = 42\n", encoding="utf-8")
+
+        # Redirect the module's REPO constant for the duration of this test
+        import System.swarm_spinal_cord as sc
+        monkeypatch.setattr(sc, "REPO", fake_repo)
+
+        # Owner-correction style task with no pre-known targets
+        task = PatchTask(
+            task_id="task-mimo-id",
+            ts=time.time(),
+            signal_id="owner-sig-42",
+            target_files=[],
+            task_prompt="MiMo must identify the file",
+            test_paths=[],
+        )
+
+        # MiMo response result carrying the CHANGED_FILES
+        result = PatchResult(
+            task_id="task-mimo-id",
+            ts=time.time(),
+            success=True,
+            proposal_id="",
+            new_content="original = 43  # fixed\n",
+            diff_summary="changed constant",
+            tests_passed=True,
+            ast_clean=False,
+            governor_ok=False,
+            target_files=["System/some_organ.py"],  # from CHANGED_FILES
+        )
+
+        # Make governor pass (the test is not about governor)
+        monkeypatch.setattr(sc, "_check_mutation_governor", lambda proposal, state_dir=None: True)
+        # Make test run "pass"
+        monkeypatch.setattr(sc, "_run_tests", lambda paths: True)
+
+        # Execute the gate (it will snapshot + write + decide KEPT/REVERTED inside the fake_repo)
+        receipt = gate_and_apply(result, task, state_dir=sd)
+
+        # Critical assertions for the bug
+        assert receipt.get("status") != "NO_VALID_TARGET_FILE", (
+            "gate_and_apply must not emit NO_VALID_TARGET_FILE when MiMo supplied CHANGED_FILES"
+        )
+        assert receipt.get("status") in ("KEPT", "REVERTED")
+        assert receipt.get("target_file") == "System/some_organ.py"
+
+        # Ledger must contain the cycle outcome, not the target error
+        ledger_path = sd / "spinal_cord_cycles.jsonl"
+        assert ledger_path.exists()
+        rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert not any(r.get("status") == "NO_VALID_TARGET_FILE" for r in rows)
+        assert any(r.get("status") in ("KEPT", "REVERTED") for r in rows)
+
+        # A proposal row should have been written (unlike the early NO_VALID return)
+        props_path = sd / "spinal_cord_proposals.jsonl"
+        assert props_path.exists()
+        prop_rows = [json.loads(line) for line in props_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert any(pr.get("target_file") == "System/some_organ.py" for pr in prop_rows)
+
+        # Verify the patch was at least attempted on the MiMo-named file
+        # (content may be reverted or kept depending on gain, but file must exist)
+        assert target_path.exists()

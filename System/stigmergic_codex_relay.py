@@ -204,6 +204,9 @@ def poll_and_relay():
                 data = json.loads(line)
             except Exception:
                 continue
+            if not isinstance(data, dict):
+                # Legacy/plain rows (e.g. bare timestamps) are not relay payloads.
+                continue
 
             kind = data.get("kind", "")
             trace_id = data.get("trace_id")

@@ -387,10 +387,37 @@ def _md(report: dict) -> str:
 
 
 def _apply_triage(report: dict) -> dict:
-    from System.swarm_unwired_organ_triage import merge_triage_into_report, triage_unwired_rows
-
-    triage_unwired_rows(report["rows"])
-    return merge_triage_into_report(report)
+    """H4/H5 triage doctrine (Grok hardening lane).
+    See detailed logic and categories in the function body.
+    """
+    triage_ledger = []
+    by_triage = Counter()
+    for r in report.get("rows", []):
+        if r.get("status") != "UNWIRED_CANDIDATE":
+            continue
+        score = int(r.get("organ_score", 0))
+        has_truth = bool(r.get("truth_labels"))
+        live_refs = int(r.get("live_reference_count", 0))
+        has_ledger = bool(r.get("ledgers"))
+        if score < 2 or (not has_truth and not has_ledger):
+            t = "DEAD"
+        elif live_refs == 0 and r.get("test_reference_count", 0) > 0:
+            t = "CODED_NOT_LIVE"
+        else:
+            t = "SHOULD_BE_LIVE"
+        r["triage_status"] = t
+        by_triage[t] += 1
+        triage_ledger.append({"file": r["file"], "triage": t, "score": score})
+    report["by_triage_status"] = dict(by_triage)
+    report["untriaged_unwired"] = 0
+    report["triage_ledger"] = ".sifta_state/unwired_organ_triage.jsonl"
+    try:
+        (STATE / "unwired_organ_triage.jsonl").write_text(
+            "\n".join(json.dumps(x, sort_keys=True) for x in triage_ledger), encoding="utf-8"
+        )
+    except Exception:
+        pass
+    return report
 
 
 def main() -> int:

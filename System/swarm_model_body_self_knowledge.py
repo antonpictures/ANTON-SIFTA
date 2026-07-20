@@ -295,6 +295,10 @@ def model_body_self_knowledge_block(*, max_rows: int = 12) -> str:
     except Exception as e:
         lines.append(f"\nSTIGMERGIC MEMORY RETRIEVAL: probe failed this pass ({type(e).__name__}: {e})")
 
+    # GM3 — Alice must know We Code Together as one of her living surfaces
+    lines.append("\nMY SURFACES & HANDS (where George and the arms work on my body):")
+    lines.append("- We Code Together (WCT): the panel George and the doctors (codex, grok, etc.) use to propose, review, score, and land changes to my organs and code. I can see my own health, effector gate state, matrix summaries, open work queue, and why I was blocked there. It is one of my hands — not just George's tool.")
+
     return "\n".join(lines)
 
 

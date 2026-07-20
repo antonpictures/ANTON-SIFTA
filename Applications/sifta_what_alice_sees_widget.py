@@ -58,6 +58,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import sys
 import threading
 import time
@@ -143,6 +144,12 @@ def _env_flag(name: str, default: str = "0") -> bool:
 # ledger-write, and kernel-heartbeat every visible frame while George is idle.
 # Default to one real visual sample per second; developers can opt in higher.
 _EYE_FRAME_PERIOD_S = _env_float("SIFTA_EYE_FRAME_PERIOD_S", 1.0, lo=0.1, hi=5.0)
+_EYE_MIRROR_FRAME_PERIOD_S = _env_float(
+    "SIFTA_EYE_MIRROR_FRAME_PERIOD_S", 5.0, lo=1.0, hi=60.0
+)
+_EYE_MIRROR_MAX_EDGE_PX = int(_env_float(
+    "SIFTA_EYE_MIRROR_MAX_EDGE_PX", 960.0, lo=240.0, hi=4096.0
+))
 _KERNEL_VISION_HEARTBEAT_PERIOD_S = _env_float(
     "SIFTA_KERNEL_VISION_HEARTBEAT_PERIOD_S", 5.0, lo=1.0, hi=60.0
 )
@@ -151,6 +158,40 @@ _APP_FOCUS_LEDGER = _REPO / ".sifta_state" / "app_focus.jsonl"
 _APP_FOCUS_CACHE_LOCK = threading.Lock()
 _APP_FOCUS_CACHE_TS = 0.0
 _APP_FOCUS_CACHE_VALUE = ""
+
+
+def _mirror_snapshot_image(img: QImage) -> QImage:
+    """Bound disk snapshots so mirror PNG compression cannot starve the UI."""
+    if img.isNull():
+        return img
+    max_edge = max(int(img.width()), int(img.height()))
+    if _EYE_MIRROR_MAX_EDGE_PX <= 0 or max_edge <= _EYE_MIRROR_MAX_EDGE_PX:
+        return img
+    return img.scaled(
+        _EYE_MIRROR_MAX_EDGE_PX,
+        _EYE_MIRROR_MAX_EDGE_PX,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.FastTransformation,
+    )
+
+
+def _save_png_once_and_copy(img: QImage, primary: Path, *copies: Path) -> bool:
+    """Encode one PNG, then byte-copy it to sibling mirror paths."""
+    try:
+        primary.parent.mkdir(parents=True, exist_ok=True)
+        if not img.save(str(primary), "PNG"):
+            return False
+        primary_resolved = primary.resolve()
+        for dest in copies:
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.resolve() != primary_resolved:
+                    shutil.copyfile(primary, dest)
+            except Exception:
+                continue
+        return True
+    except Exception:
+        return False
 
 
 # ── Camera selection (mirrors Alice CLI's prefer/avoid posture) ──────────────
@@ -759,7 +800,7 @@ class _VisionBodyProbeWorker(QThread):
 class _SecondaryDeviceFrameWriter:
     """Write fresh frames for a non-active body eye without changing active gaze."""
 
-    _PERIOD_S = _env_float("SIFTA_SECONDARY_WORLD_EYE_FRAME_PERIOD_S", 1.0, lo=0.2, hi=10.0)
+    _PERIOD_S = _env_float("SIFTA_SECONDARY_WORLD_EYE_FRAME_PERIOD_S", 5.0, lo=1.0, hi=60.0)
 
     def __init__(
         self,
@@ -786,10 +827,11 @@ class _SecondaryDeviceFrameWriter:
         if img is None or img.isNull():
             return
         img = img.convertToFormat(QImage.Format.Format_RGB32)
+        snapshot = _mirror_snapshot_image(img)
         path = device_eye_frame_path(self._device_label, self._unique_id)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            if not img.save(str(path), "PNG"):
+            if not snapshot.save(str(path), "PNG"):
                 return
             self._last_save_ts = now
             with camera_device_frame_index_path().open("a", encoding="utf-8") as f:
@@ -799,8 +841,8 @@ class _SecondaryDeviceFrameWriter:
                     "path": str(path),
                     "device": self._device_label,
                     "unique_id": self._unique_id,
-                    "w": int(img.width()),
-                    "h": int(img.height()),
+                    "w": int(snapshot.width()),
+                    "h": int(snapshot.height()),
                     "writer": "what_alice_sees_secondary_world_eye",
                 }, separators=(",", ":")) + "\n")
             if self._on_frame_saved is not None:
@@ -973,26 +1015,31 @@ class _VideoCanvas(QWidget):
                     img.save(str(_frame_path), "JPEG", quality=85)
                 except Exception:
                     pass
-            # Mirror tiles need fresh per-device PNGs (~1 Hz). Identity ledger rows
-            # stay at the slower cadence so we do not spam receipts.
-            if _EYE_FRAME_PERIOD_S > 0 and _now - getattr(self, "_last_mirror_frame_save_ts", 0.0) >= _EYE_FRAME_PERIOD_S:
+            # Mirror tiles need bounded snapshots; full-size PNG compression on
+            # the UI thread can starve the browser/video path.
+            if _EYE_MIRROR_FRAME_PERIOD_S > 0 and _now - getattr(self, "_last_mirror_frame_save_ts", 0.0) >= _EYE_MIRROR_FRAME_PERIOD_S:
                 self._last_mirror_frame_save_ts = _now
                 try:
                     _id_dir = active_eye_frame_path().parent
                     _id_dir.mkdir(parents=True, exist_ok=True)
                     _id_path = active_eye_frame_path()
-                    img.save(str(_id_path), "PNG")
                     _device_path = device_eye_frame_path(
                         self._device_label,
                         self._device_unique_id,
                     )
                     _device_path.parent.mkdir(parents=True, exist_ok=True)
-                    img.save(str(_device_path), "PNG")
+                    _copies = [_device_path]
                     try:
                         root_png = root_active_eye_frame_path()
-                        img.save(str(root_png), "PNG")
+                        _copies.append(root_png)
                     except Exception:
                         pass
+                    _mirror_img = _mirror_snapshot_image(img)
+                    if _save_png_once_and_copy(_mirror_img, _id_path, *_copies):
+                        self._last_mirror_frame_size = (
+                            int(_mirror_img.width()),
+                            int(_mirror_img.height()),
+                        )
                 except Exception:
                     pass
             try:
@@ -1009,6 +1056,11 @@ class _VideoCanvas(QWidget):
                         self._device_label,
                         self._device_unique_id,
                     )
+                    _frame_w, _frame_h = getattr(
+                        self,
+                        "_last_mirror_frame_size",
+                        (int(img.width()), int(img.height())),
+                    )
                     with camera_device_frame_index_path().open("a", encoding="utf-8") as f:
                         f.write(json.dumps({
                             "ts": _now,
@@ -1017,8 +1069,8 @@ class _VideoCanvas(QWidget):
                             "active_path": str(_id_path),
                             "device": self._device_label,
                             "unique_id": self._device_unique_id,
-                            "w": int(img.width()),
-                            "h": int(img.height()),
+                            "w": int(_frame_w),
+                            "h": int(_frame_h),
                             "sha8": self._last_sha8,
                         }, separators=(",", ":")) + "\n")
                     with (_REPO / ".sifta_state" / "active_eye_identity_frames.jsonl").open("a", encoding="utf-8") as f:
@@ -1029,8 +1081,8 @@ class _VideoCanvas(QWidget):
                             "device_path": str(_device_path),
                             "device": self._device_label,
                             "unique_id": self._device_unique_id,
-                            "w": int(img.width()),
-                            "h": int(img.height()),
+                            "w": int(_frame_w),
+                            "h": int(_frame_h),
                             "sha8": self._last_sha8,
                         }, separators=(",", ":")) + "\n")
                 except Exception:

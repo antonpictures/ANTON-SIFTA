@@ -365,6 +365,44 @@ def test_mimo_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
     assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
 
 
+def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_state_root", lambda: state)
+    monkeypatch.setattr(
+        mod,
+        "list_live_local_ollama_fallbacks",
+        lambda **_kw: [
+            "kaelri/qwen3.5-mt:2b",
+            "krishairnd/Gemma-4-Uncensored:latest",
+            "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS",
+        ],
+    )
+    from System import swarm_cortex_capabilities as cap
+
+    small = "kaelri/qwen3.5-mt:2b"
+    big = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+    cap.record_attached_models(
+        "mimo:mimo-cli-default",
+        [
+            "mimo-auto",
+            "krishairnd/Gemma-4-Uncensored:latest",
+            small,
+            big,
+        ],
+        default_attached=small,
+        state_dir=state,
+    )
+
+    candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
+
+    assert candidates[:2] == ["mimo:mimo-cli-default", "krishairnd/Gemma-4-Uncensored:latest"]
+    assert small not in candidates
+    assert big not in candidates
+
+
 def test_mimo_vision_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
     mod = _load_widget_module()
     state = tmp_path / ".sifta_state"

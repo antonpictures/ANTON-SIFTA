@@ -60,6 +60,20 @@ def test_rich_spoken_low_confidence_marks_noise_risk():
     assert "repeat" in c.guidance.lower()
 
 
+def test_world_stt_high_confidence_is_still_mixed_sensor_not_typed():
+    c = classify_user_turn_rich(
+        "Done, George. I read the transcript and screenshot.",
+        input_modality="WORLD_STT",
+        typed_turn=False,
+        stt_conf=1.0,
+    )
+
+    assert c.lane is InputRealityLane.SPOKEN_STT_NOISY_OR_AMBIENT
+    assert c.modality == "WORLD_STT"
+    assert c.owner_intent_weight < 0.3
+    assert "not as typed owner text" in c.guidance
+
+
 def test_rich_long_typed_text_without_paste_marker_stays_typed():
     c = classify_user_turn_rich(
         "This is a long typed question about Alice's input boundary. " * 20,

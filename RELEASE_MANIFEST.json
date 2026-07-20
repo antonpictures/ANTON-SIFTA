@@ -1,0 +1,22 @@
+{
+  "product": "SIFTA OS",
+  "version": "9.0.0",
+  "codename": "eXistenZ",
+  "archive": "SIFTA_OS_v9.0_eXistenZ.zip",
+  "entrypoint": "SIFTA OS.command",
+  "installer": "scripts/install_sifta_v9.sh",
+  "smoke_test": "scripts/beeson_smoke_test.sh",
+  "public_repository": "https://github.com/antonpictures/ANTON-SIFTA",
+  "runtime_state_excluded": [
+    ".sifta_state/",
+    ".sifta_directives/",
+    ".sifta_reputation/",
+    "logs/",
+    "tmp/",
+    "output/",
+    ".venv/",
+    "models/",
+    "personal owner documents"
+  ],
+  "download_note": "Clone with --recurse-submodules when the optional Vendor integrations are needed."
+}

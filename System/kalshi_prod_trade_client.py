@@ -366,19 +366,9 @@ class KalshiProdTradeClient:
         p = float(price)
         if not math.isfinite(p):
             raise CapRejected("price must be finite")
-        # r1683: align with paper must-fire dual band when armed
+        # r1726: US$ hard scalp band only (ledger 40–65¢). Paper may use
+        # MUST_FIRE 20–80¢; cash must NOT inherit that lottery window.
         band_lo, band_hi = float(MIN_ENTRY), float(MAX_ENTRY)
-        try:
-            from System.swarm_sifta_paper_loop import (
-                MUST_FIRE_EVERY_WINDOW,
-                MUST_FIRE_MIN_ENTRY,
-                MUST_FIRE_MAX_ENTRY,
-            )
-
-            if MUST_FIRE_EVERY_WINDOW:
-                band_lo, band_hi = float(MUST_FIRE_MIN_ENTRY), float(MUST_FIRE_MAX_ENTRY)
-        except Exception:
-            pass
         if p < band_lo - 1e-9 or p > band_hi + 1e-9:
             raise CapRejected(f"price_band {p} outside {band_lo}-{band_hi}")
         count_f = float(count)

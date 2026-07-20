@@ -149,50 +149,51 @@ def test_mimo_bare_two_sets_local_default_not_claude_after_pruned_list(
     )
     assert listed["handled"] and not listed["error"]
     assert "Attached LLMs for MiMo" in listed["reply"]
+    assert "QwenPaw 9B heretic 1M (local Ollama)" in listed["reply"]
+    assert "Ornith 1.0 9B (local Ollama coding agent) (ornith:latest)" in listed["reply"]
+    assert "justingtzk/gemma-4-26B" not in listed["reply"]
+    assert "diffusion:diffusiongemma-26b" not in listed["reply"]
+    assert "kaelri/qwen3.5-mt:2b" not in listed["reply"]
+
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state_dir)
+    models = list(rec.get("attached_models") or [])
+    krisha = "krishairnd/Gemma-4-Uncensored:latest"
+    qwenpaw = "satgeze/qwenpaw-9b-heretic-1m:latest"
+    assert krisha in models
+    assert qwenpaw in models
 
     r = handle_slash_command(
-        "/cortex llm 3",
+        f"/cortex llm {models.index(krisha) + 1}",
         state_dir=state_dir,
         current_cortex="mimo:mimo-cli-default",
     )
-
     assert r["handled"] and not r["error"]
-    assert "krishairnd/Gemma-4-Uncensored:latest" in r["reply"]
+    assert krisha in r["reply"]
     assert "MiMo attached LLM default" in r["reply"]
     assert "Claude arm untouched" in r["reply"]
     assert "SIFTA_CLAUDE_ARM_MODEL" not in os.environ
 
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state_dir)
-    assert rec.get("default_attached") == "krishairnd/Gemma-4-Uncensored:latest"
+    assert rec.get("default_attached") == krisha
 
-    rerendered = handle_slash_command(
-        "/cortex llm",
+    selected_qwenpaw = handle_slash_command(
+        f"/cortex llm {models.index(qwenpaw) + 1}",
         state_dir=state_dir,
         current_cortex="mimo:mimo-cli-default",
     )
-    assert "1. MiMo Auto (free) (mimo-auto)" in rerendered["reply"]
-    assert (
-        "2. Kimi K2.6 (fireworks-api kimi-k2p6) (accounts/fireworks/models/kimi-k2p6)"
-        in rerendered["reply"]
-    )
-    assert (
-        "●  3. krisha-g4u (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)"
-        in rerendered["reply"]
-    )
-    assert "4. kaelri-q3.5-mt-2b (local Ollama) (kaelri/qwen3.5-mt:2b)" in rerendered["reply"]
-    assert (
-        "5. Qwen3.6 27B Uncensored Balanced (local Ollama) "
-        "(baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS)"
-    ) in rerendered["reply"]
-    assert "6. DiffusionGemma 26B (local diffusion) (diffusion:diffusiongemma-26b)" in rerendered["reply"]
+    assert selected_qwenpaw["handled"] and not selected_qwenpaw["error"]
+    assert qwenpaw in selected_qwenpaw["reply"]
+
+    rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state_dir)
+    assert rec.get("default_attached") == qwenpaw
 
     rows = [
         json.loads(ln)
         for ln in (state_dir / "cortex_llm_binding_receipts.jsonl").read_text(encoding="utf-8").splitlines()
         if ln.strip()
     ]
-    assert rows[-1]["action"] == "mimo_local_default_set"
-    assert rows[-1]["to_default"] == "krishairnd/Gemma-4-Uncensored:latest"
+    set_rows = [row for row in rows if row.get("action") == "mimo_local_default_set"]
+    assert set_rows[-1]["to_default"] == qwenpaw
 
 
 def test_mimo_direct_removed_paid_pro_model_id_refuses_pruned_row(
@@ -218,11 +219,10 @@ def test_mimo_direct_removed_paid_pro_model_id_refuses_pruned_row(
         "",
         None,
         "krishairnd/Gemma-4-Uncensored:latest",
-        cap._MIMO_LOCAL_QWEN35_MT,
     )
 
 
-def test_mimo_direct_qwen_local_ollama_model_id_sets_local_default(
+def test_mimo_direct_qwen_local_ollama_model_id_refuses_pruned_row(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from System import swarm_cortex_capabilities as cap
@@ -237,13 +237,11 @@ def test_mimo_direct_qwen_local_ollama_model_id_sets_local_default(
         current_cortex="mimo:mimo-cli-default",
     )
 
-    assert r["handled"] and not r["error"]
-    assert "MiMo attached LLM default" in r["reply"]
-    assert model_id in r["reply"]
+    assert r["handled"] and r["error"] == "unknown_model_id"
     assert "SIFTA_CLAUDE_ARM_MODEL" not in os.environ
 
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state_dir)
-    assert rec.get("default_attached") == model_id
+    assert rec.get("default_attached") != model_id
 
 
 def test_cortex_pin_claude_namespaced(state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

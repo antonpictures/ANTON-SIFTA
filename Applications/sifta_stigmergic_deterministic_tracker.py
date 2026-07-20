@@ -138,7 +138,7 @@ BYPASS_TYPES = {
     },
     "deterministic_browser_without_owner": {
         "color": "#ff6d00", "label": "BROWSER HAND WITHOUT OWNER",
-        "reroute": "George r840: /sc and consciousness turns are not image-grid clicks. No click_google_image_result or ad landing navigate without a cortex TOOL_CALL on the same owner turn. Effectors with trigger_input=no recent input_modality must not fire.",
+        "reroute": "George r840/r1541: /sc and consciousness turns are not browser clicks or ad landing navigations without a cortex TOOL_CALL on the same owner turn. Effectors with trigger_input=no recent input_modality must not fire.",
     },
     "voice_stigma_amputation": {
         "color": "#ff1744", "label": "VOICE STIGMA AMPUTATION",
@@ -551,7 +551,8 @@ _SELF_SCREENSHOT_OWNER = re.compile(
     re.I,
 )
 _BROWSER_EFFECTOR_WITHOUT_OWNER_ACTIONS = {
-    "click_google_image_result",
+    "click_element",
+    "select_result",
     "open_browser_url",
     "navigate_or_spa_change",
 }
@@ -1246,8 +1247,8 @@ class StigmergicDeterministicTracker(QWidget):
             if action not in _BROWSER_EFFECTOR_WITHOUT_OWNER_ACTIONS:
                 continue
             owner_query = str(row.get("owner_query") or row.get("note") or "")
-            if action == "click_google_image_result" and _SELF_SCREENSHOT_OWNER.search(owner_query):
-                _add(ts, action, "/sc turn fired image-grid click without owner browse intent")
+            if action in {"click_element", "select_result"} and _SELF_SCREENSHOT_OWNER.search(owner_query):
+                _add(ts, action, "/sc turn fired browser click without owner browse intent")
                 continue
             if action == "describe_browser_page":
                 claimed_url = str(row.get("url") or "")

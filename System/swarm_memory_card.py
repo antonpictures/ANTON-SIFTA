@@ -27,6 +27,8 @@ Swimmer registration for this edit: grok-4.3-doctor (tournament start).
 from __future__ import annotations
 
 import json
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -41,15 +43,17 @@ _DEFAULT_BUDGET = 2000
 # Reallocated shares remain bounded at sum=1.00.
 _SECTION_ORDER = [
     ("active_plan_block", 0.05),  # Round 110 (§2.H) — survives cortex flap.
-    ("recent_actions_block", 0.15),
+    ("recalled_body_block", 0.10),  # M5 — rich turns think with body recall.
+    ("travel_mode_block", 0.04),  # M6 — travel/offline/power state reaches cortex.
+    ("recent_actions_block", 0.10),
     ("receipt_ecology_block", 0.03),
-    ("app_limb_context_block", 0.07),
+    ("app_limb_context_block", 0.06),
     ("browser_context_block", 0.04),
-    ("taste_consequence_block", 0.04),
-    ("engram_block", 0.09),
-    ("episodic_block", 0.10),
-    ("arm_session_block", 0.10),
-    ("body_stabilization_queue_block", 0.07),
+    ("taste_consequence_block", 0.03),
+    ("engram_block", 0.07),
+    ("episodic_block", 0.08),
+    ("arm_session_block", 0.08),
+    ("body_stabilization_queue_block", 0.06),
     ("love_field_block", 0.04),
     ("owner_somatic_block", 0.04),
     ("owner_carbon_body_block", 0.04),  # Owner body + behaviour as Alice's data
@@ -84,6 +88,8 @@ def _truncate_to_budget(text: str, token_cap: int) -> str:
 
 @dataclass
 class MemoryCard:
+    recalled_body_block: str = ""  # M5 — top content recall from body ledgers.
+    travel_mode_block: str = ""  # M6 — travel/offline/power routing pressure.
     recent_actions_block: str = ""
     receipt_ecology_block: str = ""  # r289/r290: receipt strength/reinforcement living-memory view
     episodic_block: str = ""
@@ -132,6 +138,87 @@ def _fetch_receipt_ecology(state_dir: Path) -> str:
         from System.swarm_receipt_memory_ecology import receipt_ecology_block
 
         return (receipt_ecology_block(state_dir=state_dir, top=4) or "").strip()
+    except Exception:
+        return ""
+
+
+_BODY_RECALL_STOPWORDS = {
+    "remember", "recall", "memory", "memories", "look", "looking", "lookup",
+    "still", "your", "yours", "what", "when", "where", "which", "did", "does",
+    "have", "from", "just", "about", "tell", "know", "please", "this", "that",
+    "with", "into", "then", "them", "they", "will", "would", "could", "should",
+    "there", "their", "because", "while", "alice", "george",
+}
+
+
+def _body_recall_terms(text: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in re.findall(r"[a-zA-Z0-9]+", (text or "").lower()):
+        if len(term) <= 3 or term in _BODY_RECALL_STOPWORDS or term in seen:
+            continue
+        seen.add(term)
+        out.append(term)
+    return out[:8]
+
+
+def _body_recall_hits(snippet: str, terms: list[str]) -> list[str]:
+    blob = " ".join(str(snippet or "").lower().split())
+    return [
+        term for term in terms
+        if re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", blob)
+    ]
+
+
+def _fetch_recalled_body_memory(state_dir: Path, user_text: str) -> str:
+    """M5: bring recalled body facts into rich cortex turns, not only reflex answers."""
+    terms = _body_recall_terms(user_text or "")
+    if len(terms) < 2:
+        return ""
+    try:
+        from System.swarm_temporal_episodic_memory import recall_facts_for_query
+
+        recall = recall_facts_for_query(
+            user_text or "",
+            keywords=terms,
+            state_dir=state_dir,
+        )
+    except Exception:
+        return ""
+    facts = recall.get("facts") if isinstance(recall, dict) else []
+    if not isinstance(facts, list):
+        return ""
+    selected: list[tuple[list[str], dict]] = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        hits = _body_recall_hits(str(fact.get("snippet", "")), terms)
+        if len(set(hits)) >= 2:
+            selected.append((hits, fact))
+        if len(selected) >= 3:
+            break
+    if not selected:
+        return ""
+    lines = ["RECALLED FROM MY BODY (receipts; evidence for this turn):"]
+    for hits, fact in selected:
+        try:
+            ts_label = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(fact.get("matched_ts") or 0.0)))
+        except Exception:
+            ts_label = "ts=?"
+        snippet = re.sub(r"\s+", " ", str(fact.get("snippet", ""))).strip()[:180]
+        lines.append(
+            f"- source={fact.get('source','?')} ts={ts_label} "
+            f"hits={','.join(sorted(set(hits)))} :: {snippet}"
+        )
+    return "\n".join(lines)[:600]
+
+
+def _fetch_travel_mode(state_dir: Path) -> str:
+    """M6: travel/offline/power mode as a prompt-visible body receipt."""
+    try:
+        from System.swarm_travel_mode import travel_prompt_block
+
+        return (travel_prompt_block(state_dir=state_dir, max_chars=700) or "").strip()
     except Exception:
         return ""
 
@@ -652,6 +739,8 @@ def compose_memory_card(
     fetchers: list[tuple[str, Callable[[], str]]] = [
         # Round 110 (§2.H) — active plan rides every cortex turn so failover resumes.
         ("active_plan_block", lambda: _fetch_active_plan(ledgers_dir)),
+        ("recalled_body_block", lambda: _fetch_recalled_body_memory(ledgers_dir, user_text)),
+        ("travel_mode_block", lambda: _fetch_travel_mode(ledgers_dir)),
         ("recent_actions_block", lambda: _fetch_recent_actions(ledgers_dir, user_text)),
         ("receipt_ecology_block", lambda: _fetch_receipt_ecology(ledgers_dir)),
         ("engram_block", lambda: _fetch_engrams(user_text, ledgers_dir)),
@@ -715,6 +804,8 @@ def compose_memory_card(
                 used += gained
 
     return MemoryCard(
+        recalled_body_block=allocated.get("recalled_body_block", ""),
+        travel_mode_block=allocated.get("travel_mode_block", ""),
         recent_actions_block=allocated.get("recent_actions_block", ""),
         receipt_ecology_block=allocated.get("receipt_ecology_block", ""),
         episodic_block=allocated.get("episodic_block", ""),
@@ -754,6 +845,10 @@ def format_for_prompt(card: MemoryCard) -> str:
     # than redoing or hallucinating.
     if card.active_plan_block:
         sections.append(card.active_plan_block)
+    if card.recalled_body_block:
+        sections.append(card.recalled_body_block)
+    if card.travel_mode_block:
+        sections.append(card.travel_mode_block)
     if card.recent_actions_block:
         sections.append(card.recent_actions_block)
     if card.receipt_ecology_block:

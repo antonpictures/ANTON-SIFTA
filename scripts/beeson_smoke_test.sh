@@ -72,7 +72,8 @@ from pathlib import Path
 row = {
     "ts": time.time(),
     "trace_id": str(uuid.uuid4()),
-    "kind": "BEESON_V8_SMOKE_RECEIPT",
+    "kind": "SIFTA_OS_V9_SMOKE_RECEIPT",
+    "release": "9.0.0-eXistenZ",
     "status": "PASS",
     "scope": "focused_release_gate",
 }

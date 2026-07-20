@@ -504,6 +504,15 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     except Exception:
         _awareness = ""
         _body = {}
+    # r1657: Alice knows her Predictions / Kalshi dual book (owner: not a metaphor)
+    try:
+        from System.alice_prediction_market_awareness import prompt_block as _pm_prompt
+
+        _pm = _pm_prompt()
+        if _pm:
+            _awareness = (_awareness + "\n\n" + _pm) if _awareness else _pm
+    except Exception:
+        pass
 
     # 0. Rate limit
     if not check_rate(session_id):

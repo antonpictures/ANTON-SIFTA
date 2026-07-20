@@ -69,5 +69,14 @@ def test_open_youtube_uses_default_browser(monkeypatch, tmp_path):
     result = music.open_youtube("https://youtu.be/abc123", mood="mellow")
 
     assert result["ok"] is True
-    assert result["status"] == "YOUTUBE_OPENED"
-    assert calls["args"] == ["open", "https://youtu.be/abc123"]
+    # r-fable-code-sweep-20260703: the organ now routes YouTube through Alice's
+    # OWN browser hand first (One-Alice doctrine — her body, her receipts), with
+    # the OS default browser as fallback. Accept the honest status for whichever
+    # hand actually opened it.
+    assert result["status"] in (
+        "YOUTUBE_OPENED_VIA_ALICE_BROWSER",
+        "YOUTUBE_OPENED_VIA_KIMI",
+        "YOUTUBE_OPENED",
+    )
+    if result["status"] == "YOUTUBE_OPENED":
+        assert calls["args"] == ["open", "https://youtu.be/abc123"]

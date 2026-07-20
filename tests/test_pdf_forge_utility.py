@@ -23,3 +23,10 @@ def test_pdf_forge_widget_imports():
     from Applications.sifta_pdf_forge_widget import PdfForgeWidget
 
     assert PdfForgeWidget.APP_NAME == "SIFTA PDF Forge"
+
+
+def test_pdf_forge_has_imperial_valley_farmer_support_preset():
+    html = HTML.read_text(encoding="utf-8")
+    assert 'value="farmerSupport"' in html
+    assert "IMPERIAL VALLEY FARMER BENEFIT PLAN" in html
+    assert "Farm water rights protected in writing" in html

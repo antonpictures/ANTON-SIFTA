@@ -48,6 +48,20 @@ def test_play_the_video_on_youtube_phrasing():
     assert "halsey" in out["query"].lower()
 
 
+def test_open_youtube_search_for_quoted_video_then_play_keeps_title_verbatim():
+    text = (
+        'ok let\'s try. open https://www.youtube.com and search for the video '
+        '"Elons SpaceX leads global stock crash" THEN play it -- this includes 3 steps. '
+        "you are trained to solve it by shortcutting, i as human i would do it step by step."
+    )
+
+    out = parse_explicit_youtube_search(text)
+
+    assert out["is_search"] is True
+    assert out.get("is_video_play") is True
+    assert out["query"] == "Elons SpaceX leads global stock crash"
+
+
 def test_plain_search_command_is_not_a_video_play():
     # The happy first turn from the transcript: a pure search must NOT auto-play.
     out = parse_explicit_youtube_search("search on youtube Victoria Secret fashion show")

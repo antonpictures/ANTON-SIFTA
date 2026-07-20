@@ -92,6 +92,16 @@ _PATTERNS: List[Tuple[str, str, Pattern[str]]] = [
     ("markdown_listicle", "bullet_dash",
      re.compile(r"^\s*[*-]\s+\*\*[A-Z]", re.MULTILINE)),
 
+    # band "telemetry_theater" — r1602 VA4 faux body-status theater
+    ("telemetry_theater", "telemetry_receipt_confirmed",
+     re.compile(r"\bTELEMETRY\s+RECEIPT\s+CONFIRMED\b", re.IGNORECASE)),
+    ("telemetry_theater", "physical_telemetry_receipt",
+     re.compile(r"\bPHYSICAL\s+TELEMETRY\s+RECEIPT\b", re.IGNORECASE)),
+    ("telemetry_theater", "multimodal_ingress",
+     re.compile(r"\bmultimodal\s+ingress\b", re.IGNORECASE)),
+    ("telemetry_theater", "observation_stream_ingested",
+     re.compile(r"\bobservation\s+stream\s+successfully\s+ingested\b", re.IGNORECASE)),
+
     # band "corporate_openers" — RLHF help-desk template phrases
     ("corporate_openers", "in_summary",
      re.compile(r"\b(?:In\s+Summary|In\s+essence|To\s+summarize|In\s+conclusion)\b[:,]?", re.IGNORECASE)),

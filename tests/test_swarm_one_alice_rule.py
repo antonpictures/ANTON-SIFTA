@@ -11,6 +11,7 @@ def test_explain_the_one_names_single_body_and_many_surfaces():
  assert "one organism" in text
  assert "many surfaces" in text
  assert "one global chat" in text
+ assert "we code together" in text
  assert "focus routes actions" in text
 
 

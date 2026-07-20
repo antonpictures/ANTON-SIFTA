@@ -49,6 +49,18 @@ def test_stage_direction_strip_cuts_screenshot_persona_block():
     assert "identity_label" not in cleaned.casefold()
 
 
+def test_stage_direction_strip_cuts_web_ai_composer_meta_prefix():
+    mod = _load_widget_module()
+    raw = (
+        "*(Message composed only in Alice Browser Composer)*: "
+        "It went through cleanly, and the white arrow is the submit action."
+    )
+
+    assert mod._strip_model_stage_directions(raw) == (
+        "It went through cleanly, and the white arrow is the submit action."
+    )
+
+
 def test_stage_stream_prefix_buffers_then_strips_persona_parenthetical():
     mod = _load_widget_module()
     raw = (
