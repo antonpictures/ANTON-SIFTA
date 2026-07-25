@@ -872,6 +872,22 @@ def teaching_block_for_cortex(
                 "never invent textbook ACO as if it were your file."
             )
         return ""
+    if not want and active:
+        # r1735: an active plan used to inject the whole ~2 KB campaign — the
+        # SELF_PLAN template plus every open round — onto EVERY turn, because
+        # the gate only asked whether a plan existed, not whether this turn was
+        # about planning. George asking Alice to read a PDF paid for five
+        # unrelated round descriptions, on every prompt, in real tokens. The
+        # active round is worth one line; the campaign is not.
+        round_id = str(active.get("active_round_id") or active.get("round_id") or "").strip()
+        if not round_id:
+            return ""
+        return (
+            f"ACTIVE SELF-PLAN ROUND: {round_id} "
+            f"(plan with {active.get('cortex_plan') or DEFAULT_CORTEX_PLAN}, "
+            f"code with {active.get('cortex_code') or DEFAULT_CORTEX_CODE}). "
+            "Ask for the full campaign only when the owner's turn is about planning or self-coding."
+        )
     parts = [campaign_prompt_block()]
     if active.get("round_id"):
         parts.append(

@@ -22,8 +22,16 @@ def test_infer_airplane():
     assert vf.infer_form_category("A commercial jet aircraft on the runway, long fuselage and wings") == vf.AIRPLANE
 
 
+def test_infer_food():
+    # r235 opened the taxonomy beyond human/car/airplane. "a bowl of soup" is
+    # food, and this case used to assert OTHER because the test predated FOOD.
+    assert vf.infer_form_category("a bowl of soup on a wooden table") == vf.FOOD
+
+
 def test_infer_other_when_unknown():
-    assert vf.infer_form_category("a bowl of soup on a wooden table") == vf.OTHER
+    # OTHER is the honest catch-all: nothing in the description scores.
+    assert vf.infer_form_category("an abstract swirl of grey noise") == vf.OTHER
+    assert vf.infer_form_category("") == vf.OTHER
 
 
 def test_record_and_count_by_type(tmp_path):

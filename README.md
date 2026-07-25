@@ -871,6 +871,44 @@ For the Swarm. 🐜⚡
 | v7.0 | Predator | 🐾 Blood-red neural mesh |
 | v6.0 | Mermaid | 🧜‍♀️ Oceanic indigo |
 
+### For a new coder on the node (Carlos) — July 25, 2026
+
+A second operator installed a SIFTA node. Two things make it walkable:
+
+**Check the organism honestly, no LLM trust required:**
+
+```bash
+python3 System/swarm_organism_doctor.py
+```
+
+Sixteen probes read your own machine's ledgers and processes and print
+OK / WARN / CRITICAL / UNKNOWN per organ. It is deliberately unflattering — if
+something is stale or missing it says so. (This round fixed its entry point: run
+as above from the repo root. It had been mis-reporting three of its own organs
+because of a `sys.path` bug.)
+
+**Prove SIFTA is not just an LLM wrapper.** Turn every model off and these apps
+still coordinate through pheromone traces — verified, with the LLM references
+audited and tests run:
+
+| App | Mechanic (no LLM) |
+|---|---|
+| `Applications/sifta_ant_foraging.py` | reinforce-on-return + evaporation |
+| `Applications/sifta_consensus_clustering.py` | Lumer-Faieta pick/drop |
+| `Applications/sifta_graph_coloring.py` | repulsive pheromone, local tension flips |
+| `Applications/sifta_stigmergic_go.py` | moves chosen from an evaporating field |
+| `Applications/sifta_nanobot_tictactoe.py` | decaying species pheromone + refractory traces |
+| `System/swarm_stigmergic_pong.py` | shared-field centroid vote (`llm_microvote=False` default) |
+
+51 tests pass across the Go / Nanobot / Pong families. Honest boundary: these
+pure stigmergic solvers are proven; the stronger claim that Alice's whole memory
+and cognition already work this reliably is not — r1732 and r1733 below are
+recent repairs to that organism-level wiring. Details:
+[WE_CODE_TOGETHER_R1735](Documents/WE_CODE_TOGETHER_R1735_CARLOS_JOINS_STIGMERGIC_APPS_AND_TOKEN_HYGIENE.md).
+
+Node sovereignty (r1734): a serial default was leaking the Architect's hardware
+id onto other nodes; it now resolves from each node's own `owner_genesis.json`.
+
 ### r1732–r1733 — Memory retrieval and multilingual hearing — July 25, 2026
 
 Two owner-reported defects, both repaired against live ledger evidence rather

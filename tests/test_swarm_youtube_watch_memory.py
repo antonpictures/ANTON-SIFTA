@@ -70,7 +70,11 @@ def test_latest_watch_context_includes_dialogue_boundary(tmp_path: Path):
 
     ctx = mem.latest_watch_context(state_dir=tmp_path)
 
-    assert "watched_with=George" in ctx
+    # The owner name resolves from this node's own genesis (covenant §3), so
+    # asserting the literal "George" would fail on any other operator's node.
+    from System.swarm_kernel_identity import owner_display_name
+
+    assert f"watched_with={owner_display_name('the primary operator')}" in ctx
     assert "frame=FICTIONAL_MEDIA_CLIP" in ctx
     assert "director=Guy Ritchie" in ctx
     assert "fictional media clip" in ctx
