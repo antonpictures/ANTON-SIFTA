@@ -31,6 +31,40 @@ from typing import Any
 _REPO = Path(__file__).resolve().parent.parent
 _TRACE = _REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl"
 _REGISTRY = _REPO / ".sifta_state" / "ide_model_registry.jsonl"
+_GENESIS = _REPO / ".sifta_state" / "owner_genesis.json"
+
+
+def local_homeworld_serial() -> str:
+    """Resolve THIS node's serial from layer 1, never another node's literal.
+
+    Covenant §3: every install is a sovereign organism. This fallback used to
+    be the hardcoded string "GTH4921YP3" — the Architect's M5 — so a registry
+    row written on anyone else's machine stamped his hardware identity into
+    their ledger. Carlos Nevarez installing a node on 2026-07-24 is exactly
+    the case that makes it wrong. Unknown is honest; borrowed is not.
+    """
+    try:
+        genesis = json.loads(_GENESIS.read_text(encoding="utf-8"))
+        serial = str(genesis.get("silicon") or "").strip()
+        if serial:
+            return serial
+    except (OSError, ValueError):
+        pass
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["system_profiler", "SPHardwareDataType"],
+            capture_output=True,
+            text=True,
+            timeout=4,
+        )
+        for line in out.stdout.splitlines():
+            if "Serial Number" in line:
+                return line.split(":")[-1].strip() or "UNKNOWN_SERIAL"
+    except Exception:
+        pass
+    return "UNKNOWN_SERIAL"
 
 # Canonical IDE → trigger prefix mapping (from swarm_ide_boot_identity.py)
 _IDE_TRIGGER: dict[str, str] = {
@@ -130,7 +164,7 @@ def bootstrap_registry(*, dry_run: bool = False) -> list[dict[str, Any]]:
             "currently_active": True,
             "seen_at_ts": float(row.get("ts", now)),
             "source_ide": source_ide,
-            "homeworld_serial": str(row.get("homeworld_serial") or "GTH4921YP3"),
+            "homeworld_serial": str(row.get("homeworld_serial") or local_homeworld_serial()),
             "bootstrapped_from_trace_id": str(row.get("trace_id", "")),
             "intent": str(payload.get("intent", ""))[:200],
         }

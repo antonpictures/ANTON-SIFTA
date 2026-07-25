@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from System.bootstrap_ide_model_registry import local_homeworld_serial as _local_homeworld_serial
 from System.swarm_skill_library import _parse_skill_markdown, build_skill_index
 from System.swarm_skill_validator import validate_skill_file
 
@@ -236,7 +237,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("skill", nargs="?", help="Skill name to package. Omit for all skills.")
     parser.add_argument("--output", default=str(_EXPORT_ROOT))
-    parser.add_argument("--homeworld-serial", default="GTH4921YP3")
+    # §3 node sovereignty: default to THIS machine, not the Architect's M5.
+    # A packaged skill exported from another node used to carry his serial.
+    parser.add_argument(
+        "--homeworld-serial",
+        default=_local_homeworld_serial(),
+        help="Defaults to this node's own serial from owner_genesis.json.",
+    )
     parser.add_argument("--trace-id", default=None)
     args = parser.parse_args()
 

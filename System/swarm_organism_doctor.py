@@ -68,6 +68,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -76,6 +77,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 _REPO = Path(__file__).resolve().parent.parent
+# Run as `python System/swarm_organism_doctor.py` and sys.path[0] is System/,
+# so every `from System.x import ...` inside a probe raises ModuleNotFoundError
+# and the doctor reports three of its own organs as UNKNOWN. A new node
+# operator reads that as a broken install rather than a broken entry point.
+# Same bootstrap the rest of System/ already uses.
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 _STATE = _REPO / ".sifta_state"
 
 TRUTH_LABEL = "SIFTA_ORGANISM_DOCTOR_V1"
