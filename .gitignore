@@ -255,6 +255,8 @@ Voices/
 # Generated screenshots and demo flyers (often recreated, large binaries)
 outputs/
 Documentation/self_screenshots/
+# /sx self-camera captures are private photos of the owner — never publish.
+Documentation/self_camera_screenshots/
 WIN-WIN_Flyer/
 *.tmp
 

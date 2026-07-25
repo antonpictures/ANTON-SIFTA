@@ -11227,6 +11227,12 @@ def _is_attached_image_description_query(text: str) -> bool:
     clean = " ".join((text or "").strip().split()).lower()
     if not clean:
         return False
+    # A /sc or /sx capture rewrites the owner turn into a cortex prompt that
+    # says "describe... screenshot" as its own instruction. That is a self-turn,
+    # not the owner attaching an image to describe, and it must not be routed
+    # as one — otherwise /sc bypasses the cortex it was built for.
+    if _is_self_screenshot_cortex_turn(text) or _is_self_camera_cortex_turn(text):
+        return False
     try:
         if _is_local_image_path_context_query(text):
             return True
@@ -24297,7 +24303,11 @@ class _BrainWorker(QThread):
                     # one immediate, synchronous retry with "think" removed first.
                     # This must NOT consume an outer max_attempts slot (often just 1)
                     # since it is a payload fix, not a transient-failure wait.
-                    last_exc_msg = f"HTTP {exc.code}: {exc.reason}"
+                    try:
+                        _error_body = exc.read().decode("utf-8", errors="replace").strip()[:800]
+                    except Exception:
+                        _error_body = ""
+                    last_exc_msg = f"HTTP {exc.code}: {_error_body or exc.reason}"
                     if exc.code == 400 and not _retried_without_think and "think" in payload:
                         _retried_without_think = True
                         payload.pop("think", None)
@@ -24335,6 +24345,18 @@ class _BrainWorker(QThread):
                                             self.last_empty_finish_reason = _done_reason
                                         break
                             return "".join(full).strip(), None
+                        except urllib.error.HTTPError as _retry_exc:
+                            try:
+                                _retry_body = _retry_exc.read().decode(
+                                    "utf-8", errors="replace"
+                                ).strip()[:800]
+                            except Exception:
+                                _retry_body = ""
+                            _retry_detail = _retry_body or str(_retry_exc)
+                            last_exc_msg = (
+                                "HTTP 400 (and retry without 'think' also failed: "
+                                f"{_retry_detail})"
+                            )
                         except Exception as _retry_exc:
                             last_exc_msg = f"HTTP 400 (and retry without 'think' also failed: {_retry_exc})"
                     if 500 <= exc.code < 600 and attempt < max_attempts - 1:
@@ -27483,6 +27505,50 @@ def _talk_ollama_model_candidates(
             continue
         if name and name not in names:
             names.append(name)
+
+    if prefer_local_vision_first:
+        try:
+            from System.swarm_cortex_capabilities import (
+                _rank_native_image_models,
+                active_attached_model_for_cortex,
+                is_vision_capable_model,
+                list_known_cortexes,
+            )
+
+            verified: list[str] = []
+            for name in names:
+                low = str(name or "").strip().lower()
+                if low.startswith(("mimo:", "mimo-")):
+                    attached = mimo_attached_default or active_attached_model_for_cortex(
+                        name,
+                        state_dir=_state_root(),
+                    )
+                    if attached and is_vision_capable_model(
+                        attached,
+                        require_native_image_payload=True,
+                    ):
+                        verified.append(name)
+                    continue
+                if is_vision_capable_model(name, require_native_image_payload=True):
+                    verified.append(name)
+                    continue
+                if _is_cloud_model(name) and is_vision_capable_model(name):
+                    verified.append(name)
+
+            native_fallbacks = _rank_native_image_models(
+                [
+                    name
+                    for name in list_known_cortexes()
+                    if is_vision_capable_model(name, require_native_image_payload=True)
+                ]
+            )
+            for name in native_fallbacks:
+                if name not in verified:
+                    verified.append(name)
+            if verified:
+                return verified
+        except Exception:
+            pass
 
     return names
 
@@ -36881,7 +36947,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             evidence_lines.append(f"- {a}: {t}" if a else f"- {t}")
         return "\n".join(evidence_lines)
 
-    def _execute_live_current_page(self) -> Tuple[str, str]:
+    def _execute_live_current_page(self, owner_text: str = "") -> Tuple[str, str]:
         """Answer 'what page am I on / describe this page' from the LIVE browser.
 
         George's rule (2026-05-30): browser closed => no page; browser open => there is
@@ -38594,7 +38660,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     if (
                         not typed_turn
                         and not _is_browser_page_cortex_description_query(text or "")
-                        and not _should_suppress_voice_drop_owner_nag(self, ignore_busy=True)
+                        and not _should_suppress_voice_drop_owner_nag(self)
                     ):
                         self._append_system_line(
                             _empty_msg,
@@ -40156,6 +40222,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _typed_turn = bool(typed_turn)
         _web_turn = bool(web_turn or _active_web_turn_context())
         text = (text or "").strip()
+        owner_surface_text = text
+        if _typed_turn:
+            # Typed submit historically passed 1.0 as a generic confidence,
+            # which made the durable ledger falsely classify typed turns as voice.
+            conf = 0.0
         chat_reflexes_enabled = False if _web_turn else _allow_pre_cortex_chat_reflexes()
         if text and not _web_turn:
             try:
@@ -42281,7 +42352,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Browser open => there is always a page, knowable now (George 2026-05-30).
         if chat_reflexes_enabled and _is_current_page_query(text) and not _is_browser_page_cortex_description_query(text):
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
-            _spoken, _printed = self._execute_live_current_page()
+            _spoken, _printed = self._execute_live_current_page(owner_text=text)
             self._history.append({"role": "assistant", "content": _printed})
             _log_turn("alice", _printed, model="alice_browser_current_page_live")
             self._append_alice_line(_printed)   # the print (a little more, clean)
@@ -43231,7 +43302,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
-        _log_turn("user", text if text else "[Image]", stt_conf=conf)
+        _log_turn("user", owner_surface_text if owner_surface_text else "[Image]", stt_conf=conf)
 
         # ── Owner Direct Read Tool Reflex ────────────────────────────────
         # Test/probe turns such as "List installed ollama models using the
@@ -43414,8 +43485,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # The grounding banner (from ingest) is only for the *current* model input this turn
         # so the cortex sees "this is literal local physical reality" instead of third-party drift.
         # We never want the banner to travel forward in _history or alice_conversation.jsonl.
-        original_owner_text = text if text else ""
-        processed_text = original_owner_text if original_owner_text else ""
+        original_owner_text = owner_surface_text if owner_surface_text else ""
+        processed_text = text if text else ""
         if image_path or len(processed_text) > 150 or "]" in processed_text or "http" in processed_text:
             try:
                 from System.swarm_multimodal_grounding_gate import ingest_multimodal_reality

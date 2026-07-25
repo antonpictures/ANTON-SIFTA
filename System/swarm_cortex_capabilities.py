@@ -185,6 +185,29 @@ def _keeps_selected_cloud_speaker_for_vision(model: str) -> bool:
     return low.startswith(("grok:", "grok-", "mimo:", "mimo-"))
 
 
+def _rank_native_image_models(models: list[str]) -> list[str]:
+    """Prefer the smallest installed native eye without inventing a tag."""
+
+    size_by_name: dict[str, int] = {}
+    try:
+        from System.sifta_inference_defaults import probe_installed_ollama_inventory
+
+        for row in probe_installed_ollama_inventory():
+            name = str(row.get("name") or "").strip()
+            if name:
+                size_by_name[name] = int(row.get("size_bytes") or 0)
+    except Exception:
+        pass
+
+    original_order = {model: index for index, model in enumerate(models)}
+
+    def _score(model: str) -> tuple[int, int, int]:
+        size = int(size_by_name.get(model, 0) or 0)
+        return (0 if size > 0 else 1, size if size > 0 else 2**63 - 1, original_order[model])
+
+    return sorted(models, key=_score)
+
+
 def _capability_row(model: str) -> dict[str, Any]:
     return {
         "model": model,
@@ -216,17 +239,47 @@ def select_cortex_for_need(
     selected = current_model
     reason = "current_model_kept"
     switched = False
+    attached_model = ""
+    attached_native_image_payload: bool | None = None
     if need_key in {"image", "image_pixels", "vision", "vision_grounding"}:
-        if _keeps_selected_cloud_speaker_for_vision(current_model):
+        keep_selected_speaker = _keeps_selected_cloud_speaker_for_vision(current_model)
+        if str(current_model or "").strip().lower().startswith(("mimo:", "mimo-")):
+            try:
+                attached_model = active_attached_model_for_cortex(
+                    current_model,
+                    state_dir=state_dir,
+                )
+            except Exception:
+                attached_model = ""
+            if attached_model:
+                attached_native_image_payload = is_vision_capable_model(
+                    attached_model,
+                    require_native_image_payload=True,
+                )
+                # MiMo is a transport, not proof that the attached model has eyes.
+                # Sending image bytes to a text-only attached Ollama model yields 400.
+                if not attached_native_image_payload:
+                    keep_selected_speaker = False
+
+        if keep_selected_speaker:
             selected = current_model
             reason = "current_owner_selected_cloud_speaker_kept"
             switched = False
-        elif not is_vision_capable_model(current_model):
-            native = [row["model"] for row in rows if row.get("native_image_payload")]
+        elif not is_vision_capable_model(current_model) or attached_native_image_payload is False:
+            native = _rank_native_image_models(
+                [row["model"] for row in rows if row.get("native_image_payload")]
+            )
             capable = [row["model"] for row in rows if row.get("vision_capable")]
+            if CANONICAL_CLOUD_QWEN_PREMIUM_KIMI in capable:
+                capable.remove(CANONICAL_CLOUD_QWEN_PREMIUM_KIMI)
+                capable.insert(0, CANONICAL_CLOUD_QWEN_PREMIUM_KIMI)
             if native:
                 selected = native[0]
-                reason = "selected_native_image_payload_cortex"
+                reason = (
+                    "mimo_attached_text_only_selected_native_image_cortex"
+                    if attached_native_image_payload is False
+                    else "selected_native_image_payload_cortex"
+                )
                 switched = selected != current_model
             elif capable:
                 selected = capable[0]
@@ -243,6 +296,8 @@ def select_cortex_for_need(
         "selected_model": selected,
         "switched": switched,
         "reason": reason,
+        "attached_model": attached_model,
+        "attached_native_image_payload": attached_native_image_payload,
         "query_preview": str(query_text or "")[:240],
         "candidates": rows,
     }

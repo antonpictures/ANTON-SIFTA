@@ -111,6 +111,45 @@ def test_keeps_selected_mimo_as_speaking_cortex_for_vision(monkeypatch, tmp_path
     assert row["switched"] is False
 
 
+def test_mimo_with_text_only_attached_model_routes_image_to_smallest_native_eye(
+    monkeypatch, tmp_path
+):
+    from System import swarm_cortex_capabilities as cap
+
+    large_eye = "vendor/gemma-4-26b-vision:latest"
+    small_eye = "vendor/gemma-4-6b-vision:latest"
+    text_only = "baytout3/Ornith-1.0-9B-uncensored-GGUF:Q8_0"
+    monkeypatch.setattr(cap, "_ollama_tags", lambda: [large_eye, text_only, small_eye])
+    monkeypatch.setattr(cap, "list_available_cortexes_with_canonical_fallback", lambda: [])
+    monkeypatch.setattr(cap, "active_attached_model_for_cortex", lambda *args, **kwargs: text_only)
+
+    from System import sifta_inference_defaults as defaults
+
+    monkeypatch.setattr(
+        defaults,
+        "probe_installed_ollama_inventory",
+        lambda: (
+            {"name": large_eye, "size_bytes": 26_000_000_000},
+            {"name": text_only, "size_bytes": 9_000_000_000},
+            {"name": small_eye, "size_bytes": 6_000_000_000},
+        ),
+    )
+
+    row = cap.select_cortex_for_need(
+        "image_pixels",
+        current_model="mimo:mimo-cli-default",
+        query_text="/sx",
+        state_dir=tmp_path,
+        write=False,
+    )
+
+    assert row["selected_model"] == small_eye
+    assert row["reason"] == "mimo_attached_text_only_selected_native_image_cortex"
+    assert row["attached_model"] == text_only
+    assert row["attached_native_image_payload"] is False
+    assert row["switched"] is True
+
+
 def test_alice_m5_cortex_is_native_multimodal_after_ollama_show_receipt():
     from System import swarm_cortex_capabilities as cap
 
