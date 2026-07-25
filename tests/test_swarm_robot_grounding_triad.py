@@ -1,6 +1,7 @@
 """r1614 — robot grounding triad + history-swimmer epoch pins."""
 from __future__ import annotations
 
+import json
 import time
 
 from System.swarm_concept_human_anchor import (
@@ -11,6 +12,7 @@ from System.swarm_robot_grounding_triad import (
     TRIAD_QUESTIONS,
     TRUTH_LABEL,
     build_grounding_triad,
+    capture_owner_place_assertion,
     concept_orientation_prompt_block,
     orient_concept_turn,
     pin_owner_place,
@@ -141,6 +143,42 @@ def test_kitchen_source_defaults_four_hour_ttl(tmp_path):
     assert pin["expires_ts"] > now
     # ~4 hours default for kitchen/photo observations
     assert abs((pin["expires_ts"] - now) - 4 * 3600) < 2.0
+
+
+def test_owner_bucharest_correction_supersedes_negated_brawley(tmp_path):
+    pin_owner_place("Brawley, California", state_dir=tmp_path, source="owner_declared", now=10.0)
+
+    row = capture_owner_place_assertion(
+        "nu mai suntem in Brawley, California. Acum suntem in Buucuresti, Romania.",
+        state_dir=tmp_path,
+        now=20.0,
+    )
+    grounded = build_grounding_triad(state_dir=tmp_path)
+
+    assert row["write_status"] == "written"
+    assert row["place_label"] == "Bucharest, Romania"
+    assert grounded["where_am_i"]["place_label"] == "Bucharest, Romania"
+
+
+def test_newer_romania_travel_receipt_overrides_stale_brawley_pin(tmp_path):
+    pin_owner_place("Brawley, California", state_dir=tmp_path, source="owner_declared", now=10.0)
+    state = tmp_path / ".sifta_state"
+    (state / "travel_mode_latest.json").write_text(
+        json.dumps(
+            {
+                "ts": 20.0,
+                "status": "landed_romania_timezone",
+                "territory": "romania",
+                "receipt_id": "travel-test-romania",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    grounded = build_grounding_triad(state_dir=tmp_path)
+
+    assert grounded["where_am_i"]["place_label"].startswith("Romania")
+    assert grounded["where_am_i"]["place_source"] == "travel-test-romania"
 
 
 def test_spoken_grounding_answers_time_day_place_and_troy_dual_clock(tmp_path):

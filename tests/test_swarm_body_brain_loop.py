@@ -52,6 +52,9 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert "value" in result
             assert "metabolic_mode" in result
             assert result["metabolic_mode"] == "GREEN_GROW"
+            assert result["result"]["status"] == "simulated"
+            assert result["result"]["effect_verified"] is False
+            assert result["value"] == 0.0
             
             # Verify action execution: the motor cortex sleep (0.1s) fired and a
             # healthy tick does NOT enforce a metabolic rest. We count only the
@@ -70,6 +73,7 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert row["event"] == "body_brain_tick"
             assert "action" in row
             assert "result" in row
+            assert row["result"]["truth_label"] == "SIMULATED_BODY_ACTION"
             assert "td_value" in row
             assert row.get("drive_state")
             assert row.get("metabolic_mode")
@@ -89,6 +93,96 @@ def test_body_brain_tick_normal_cycle(clean_state):
                 "FAMILIAR",
                 "MIXED",
             )
+
+
+def test_injected_effector_moves_then_waits_for_natural_sensory_feedback(clean_state):
+    calls = []
+
+    def execute(action):
+        calls.append(action)
+        return {"ok": True}
+
+    physiology = SwarmPhysiology(
+        enable_george_prior=False,
+        action_executor=execute,
+    )
+
+    with patch("System.swarm_body_brain_loop._STATE_DIR", clean_state):
+        result = physiology._execute_action(
+            {
+                "type": "move",
+                "target": "test_limb",
+                "expected_observation": {"encoder_position": 0.5},
+            }
+        )
+
+    assert result["status"] == "executed_pending_feedback"
+    assert result["effect_verified"] is None
+    assert result["verification_status"] == "PENDING_SENSORY_FEEDBACK"
+    assert calls == [
+        {
+            "type": "move",
+            "target": "test_limb",
+            "expected_observation": {"encoder_position": 0.5},
+        }
+    ]
+    receipt = json.loads(
+        (clean_state / ".sifta_state" / "effect_verified_actions.jsonl")
+        .read_text()
+        .splitlines()[-1]
+    )
+    assert receipt["expected_observation"] == {"encoder_position": 0.5}
+    assert receipt["phantom_disease"] is False
+    assert physiology._compute_value(result, {"is_critical": False}) == 0.0
+
+
+def test_injected_effector_closes_execute_probe_receipt_loop(clean_state):
+    observed = []
+
+    def execute(action):
+        observed.append(("execute", action["type"]))
+        return {"ok": True, "energy_used": 0.12, "command_id": "motor-1"}
+
+    def probe(action):
+        observed.append(("probe", action["type"]))
+        return {"effect_verified": True, "encoder_position": 0.5}
+
+    physiology = SwarmPhysiology(
+        enable_george_prior=False,
+        action_executor=execute,
+        action_probe=probe,
+    )
+
+    with patch("System.swarm_body_brain_loop._STATE_DIR", clean_state):
+        result = physiology._execute_action({"type": "move", "target": "test_limb"})
+
+    assert observed == [("execute", "move"), ("probe", "move")]
+    assert result["status"] == "completed"
+    assert result["effect_verified"] is True
+    assert result["energy_used"] == pytest.approx(0.12)
+    assert result["effect_receipt_id"]
+    receipt = json.loads(
+        (clean_state / ".sifta_state" / "effect_verified_actions.jsonl")
+        .read_text()
+        .splitlines()[-1]
+    )
+    assert receipt["effect_verified"] is True
+    assert receipt["context"]["motor_command"]["target"] == "test_limb"
+
+
+def test_unverified_effect_does_not_earn_positive_td_value(clean_state):
+    physiology = SwarmPhysiology(
+        enable_george_prior=False,
+        action_executor=lambda action: {"ok": True, "command_id": "motor-2"},
+        action_probe=lambda action: {"effect_verified": False, "encoder_position": 0.0},
+    )
+
+    with patch("System.swarm_body_brain_loop._STATE_DIR", clean_state):
+        result = physiology._execute_action({"type": "move", "target": "test_limb"})
+
+    assert result["status"] == "unverified"
+    assert result["effect_verified"] is False
+    assert physiology._compute_value(result, {"is_critical": False}) == -1.0
 
 
 def test_body_brain_tick_writes_prompt_visible_organ_heartbeats(clean_state):

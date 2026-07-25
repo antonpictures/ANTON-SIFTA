@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/ioanganton</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.sifta.sifta-web-tunnel</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/cloudflared</string>
+		<string>tunnel</string>
+		<string>--config</string>
+		<string>/Users/ioanganton/.cloudflared/sifta-web.yml</string>
+		<string>run</string>
+		<string>sifta-web</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/sifta-web-tunnel.launchd.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/sifta-web-tunnel.launchd.log</string>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+</dict>
+</plist>

@@ -2,7 +2,9 @@
 """Effect-verified action wrapper — Plan A1 (r909).
 
 Generalizes r897/r901 honest-receipt law across every effector hand:
-  act → re-probe within window → receipt carries effect_verified true/false.
+  act → observe the next natural sensory state → receipt carries verified,
+  disproven, or pending. Observation can be synchronous or asynchronous and
+  does not require an LLM call.
 
 §6 effector immunity: Alice must not claim an external action unless a verified
 receipt proves it. The 44,700 phantom YouTube skips are founding evidence for
@@ -82,6 +84,8 @@ def is_phantom_effect_receipt(row: Mapping[str, Any] | None) -> bool:
     """A receipt that claims success without effect_verified true."""
     if not isinstance(row, Mapping):
         return False
+    if row.get("verification_status") == "PENDING_SENSORY_FEEDBACK":
+        return False
     effect = row.get("effect")
     if not isinstance(effect, Mapping):
         effect = row
@@ -92,6 +96,56 @@ def is_phantom_effect_receipt(row: Mapping[str, Any] | None) -> bool:
     if row.get("effect_verified") is True:
         return False
     return True
+
+
+def record_pending_effect_action(
+    *,
+    organ: str,
+    action: str,
+    effect: Mapping[str, Any] | None,
+    method: str = "async",
+    context: Mapping[str, Any] | None = None,
+    expected_observation: Mapping[str, Any] | None = None,
+    state_dir: Optional[Path | str] = None,
+    now: Optional[float] = None,
+    trace_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Record an action that moved before the normal sensory stream caught up.
+
+    Pending is neither success nor failure and does not count as a phantom
+    claim. A later body/sensor tick may close it with
+    :func:`complete_async_verified_action`.
+    """
+    ts = float(now if now is not None else time.time())
+    enriched = enrich_effect(
+        effect,
+        method=method,
+        organ=organ,
+        action=action,
+    )
+    row = {
+        "trace_id": trace_id or str(uuid.uuid4()),
+        "ts": ts,
+        "truth_label": TRUTH_LABEL,
+        "organ": organ,
+        "action": action,
+        "method": method,
+        "effect": enriched,
+        "probe": {},
+        "effect_verified": None,
+        "verification_status": "PENDING_SENSORY_FEEDBACK",
+        "effect_cleared_ms": None,
+        "verification_pass": 0,
+        "phantom_streak": 0,
+        "phantom_disease": False,
+        "expected_observation": dict(expected_observation or {}),
+        "context": dict(context or {}),
+    }
+    base = _state(state_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    with (base / LEDGER).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return row
 
 
 @dataclass
@@ -318,12 +372,16 @@ def complete_async_verified_action(
     verification_pass: int = 1,
     context: Optional[Mapping[str, Any]] = None,
     state_dir: Optional[Path | str] = None,
+    pending_trace_id: str = "",
 ) -> EffectVerifiedActionResult:
     """Finish an async hand after the deferred probe returns."""
     effect = dict(initial_effect or {})
     probe_row = dict(probe or {})
     verified = bool(success_from_probe(effect, probe_row))
     elapsed_ms = max(0.0, (time.time() - float(started_at)) * 1000.0)
+    completion_context = dict(context or {})
+    if pending_trace_id:
+        completion_context["pending_trace_id"] = str(pending_trace_id)
     row = record_effect_verified_action(
         organ=organ,
         action=action,
@@ -333,7 +391,7 @@ def complete_async_verified_action(
         method=method,
         effect_cleared_ms=elapsed_ms,
         verification_pass=verification_pass,
-        context=context,
+        context=completion_context,
         state_dir=state_dir,
         now=time.time(),
     )
@@ -364,6 +422,7 @@ __all__ = [
     "effect_claimed_success",
     "enrich_effect",
     "is_phantom_effect_receipt",
+    "record_pending_effect_action",
     "record_effect_verified_action",
     "run_sync_verified_action",
 ]

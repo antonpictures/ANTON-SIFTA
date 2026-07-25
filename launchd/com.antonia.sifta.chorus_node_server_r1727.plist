@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/ioanganton</string>
+		<key>M5_CHORUS_PORT</key>
+		<string>8100</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>PYTHONPATH</key>
+		<string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.antonia.sifta.chorus_node_server_r1727</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/python3</string>
+		<string>/Users/ioanganton/Music/ANTON_SIFTA/System/chorus_node_server.py</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/chorus_node_server.launchd.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/chorus_node_server.launchd.log</string>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+</dict>
+</plist>

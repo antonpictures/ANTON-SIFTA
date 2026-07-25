@@ -871,6 +871,44 @@ For the Swarm. 🐜⚡
 | v7.0 | Predator | 🐾 Blood-red neural mesh |
 | v6.0 | Mermaid | 🧜‍♀️ Oceanic indigo |
 
+### r1732–r1733 — Memory retrieval and multilingual hearing — July 25, 2026
+
+Two owner-reported defects, both repaired against live ledger evidence rather
+than synthetic fixtures.
+
+**Alice invented a memory (r1732).** Asked to search her memory for a plane
+ticket, she answered `[Retrieval Complete] May 14, 2026, 11:35 AM, Milan
+Malpensa` — a flight in no ledger. Root cause: `System/memory_search.py` held
+real BM25 ranking over the ledgers and nothing in the chat path ever imported
+it, while `swarm_hard_recall` correctly covers only verbatim last-turn recall.
+`System/swarm_memory_search_recall.py` now runs deterministic content search
+before the cortex speaks: it reports "nothing" with a row-count denominator,
+drops rows that are the question echoed back, separates owner-authored rows
+from room audio, and replaces an answer that asserts a concrete record when
+retrieval found none. See
+[WE_CODE_TOGETHER_R1732](Documents/WE_CODE_TOGETHER_R1732_MEMORY_SEARCH_NOT_INVENTION.md),
+including its correction of record.
+
+**Alice could not hear Romanian (r1733).** Both live ears passed a hardcoded
+`language="en"` to faster-whisper, and the configured checkpoint was `tiny.en`
+— English-only weights, so the parameter fix alone would have changed nothing.
+Romanian speech came out as `"the kumos ronati shipo esa as tafo estudat"` at
+confidence 0.263. `System/swarm_stt_language.py` now defaults to auto-detect,
+swaps an `.en` checkpoint for its multilingual sibling unless the owner pins
+English, falls back safely when a model cannot load, and receipts the language
+actually detected to `.sifta_state/stt_language.jsonl`. Verified on real
+Romanian audio: `Bună Alice, sunt George, vorbesc românește cu tine acum.`,
+detected `ro` at probability 1.00. See
+[WE_CODE_TOGETHER_R1733](Documents/WE_CODE_TOGETHER_R1733_ALICE_HEARS_ROMANIAN.md).
+
+Restart SIFTA after updating — a running GUI holds the old modules.
+
+| Setting | Effect |
+|---|---|
+| `SIFTA_STT_LANGUAGE` unset / `auto` | Detect the spoken language (default). |
+| `SIFTA_STT_LANGUAGE=ro` | Pin Romanian. |
+| `SIFTA_STT_LANGUAGE=en` | Pin English; keeps the faster English-only model. |
+
 ### SIFTA OS v9.0 eXistenZ — July 20, 2026
 
 This release packages the current public body as a reproducible source

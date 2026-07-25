@@ -39,6 +39,7 @@ _PLACE_LEDGER = "owner_place_pin.jsonl"
 _LEDGER = "robot_grounding_triad.jsonl"
 _ORIENTATION_LEDGER = "concept_orientation.jsonl"
 ORIENTATION_TRUTH_LABEL = "CONCEPT_ORIENTATION_V1"
+_TRAVEL_LATEST = "travel_mode_latest.json"
 
 # Humans' top grounding questions — not theater, operational triad.
 TRIAD_QUESTIONS = (
@@ -79,6 +80,17 @@ def _tail_place(state_dir: Path) -> dict[str, Any]:
                 continue
             return row
     return {}
+
+
+def _travel_place_receipt(state_dir: Path) -> dict[str, Any]:
+    path = state_dir / _TRAVEL_LATEST
+    try:
+        row = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+    if not isinstance(row, dict) or row.get("status") != "landed_romania_timezone":
+        return {}
+    return row
 
 
 def _clock_reading() -> dict[str, Any]:
@@ -139,6 +151,18 @@ def _day_parts(reading: dict[str, Any]) -> dict[str, str]:
 def _place_from_receipts(state_dir: Path, reading: dict[str, Any]) -> dict[str, Any]:
     """Place is receipt-backed when known — never invent GPS from chat theater."""
     pin = _tail_place(state_dir)
+    travel = _travel_place_receipt(state_dir)
+    try:
+        travel_is_newer = float(travel.get("ts") or 0.0) > float(pin.get("ts") or 0.0)
+    except Exception:
+        travel_is_newer = False
+    if travel_is_newer:
+        return {
+            "place_label": "Romania (country-level travel receipt; city not proven)",
+            "place_source": str(travel.get("receipt_id") or "travel_mode_latest"),
+            "place_confidence": 0.7,
+            "place_truth": "RECEIPT_BACKED_COUNTRY_LEVEL",
+        }
     if pin:
         return {
             "place_label": str(pin.get("place_label") or "").strip(),
@@ -274,6 +298,56 @@ def pin_owner_place(
             fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     except Exception:
         pass
+    return row
+
+
+_PLACE_ASSERTION_RE = re.compile(
+    r"\b(?:now\s+|currently\s+|acum\s+)?(?:i\s+am|i'm|we\s+are|we're|sunt|suntem)"
+    r"\s+(?:now\s+|acum\s+)?(?:in|at|la|în)\s+([^.!?;\n]{2,100})",
+    re.IGNORECASE,
+)
+_PLACE_ALIASES = {
+    "bucuresti": "Bucharest",
+    "buucuresti": "Bucharest",
+}
+
+
+def capture_owner_place_assertion(
+    owner_text: str,
+    *,
+    state_dir: Optional[Path | str] = None,
+    now: Optional[float] = None,
+    source: str = "owner_declared_live_turn",
+) -> dict[str, Any]:
+    """Append a place pin from an explicit owner statement, never from cortex prose."""
+    clean = " ".join(str(owner_text or "").split())
+    matches: list[str] = []
+    for match in _PLACE_ASSERTION_RE.finditer(clean):
+        prefix = clean[max(0, match.start() - 16):match.start()].casefold()
+        if re.search(r"(?:not|no\s+longer|nu\s+mai)\s*$", prefix):
+            continue
+        place = match.group(1).strip(" ,:-")
+        place = re.split(r"\b(?:and|but|iar|dar)\b", place, maxsplit=1, flags=re.IGNORECASE)[0].strip(" ,:-")
+        for raw, canonical in _PLACE_ALIASES.items():
+            place = re.sub(rf"\b{re.escape(raw)}\b", canonical, place, flags=re.IGNORECASE)
+        if place:
+            matches.append(place)
+    if not matches:
+        return {}
+
+    root = _state_dir(state_dir)
+    place = matches[-1]
+    prior = _tail_place(root)
+    if str(prior.get("place_label") or "").casefold() == place.casefold():
+        return {**prior, "write_status": "unchanged"}
+    row = pin_owner_place(
+        place,
+        source=source,
+        confidence=0.95,
+        now=now,
+        state_dir=root,
+    )
+    row["write_status"] = "written"
     return row
 
 

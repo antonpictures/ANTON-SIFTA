@@ -438,7 +438,11 @@ def test_guarded_tick_runs_light_after_repeated_timeouts(tmp_path: Path):
     assert row["degraded_reason"] == "recent_supervisor_timeouts"
     # r-metabolism-heartbeat-unchain-20260703: the light breath still carries
     # the metabolism heartbeat — only the heavy three producers are shed.
-    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
+    assert [p["producer"] for p in row["producers"]] == [
+        "basal_ganglia",
+        "body_brain_loop",
+        "metabolic_homeostasis",
+    ]
     fake_bg_module.select_action.assert_called_once()
 
 
@@ -478,7 +482,11 @@ def test_direct_tick_runs_light_after_supervisor_timeout(tmp_path: Path):
 
     assert row["degraded_mode"] is True
     assert row["direct_call_guard"] is True
-    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
+    assert [p["producer"] for p in row["producers"]] == [
+        "basal_ganglia",
+        "body_brain_loop",
+        "metabolic_homeostasis",
+    ]
     fake_bg_module.select_action.assert_called_once()
 
 
@@ -562,6 +570,20 @@ def test_degraded_tick_does_not_run_memory_consolidation(tmp_path: Path):
     assert not (state / bwt.MEMORY_CONSOLIDATION_LEDGER).exists()
 
 
+def test_degraded_tick_runs_body_brain_only_when_essential_heartbeat_is_stale(tmp_path: Path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    now = 2000.0
+    assert bwt.body_brain_tick_due(state, now=now)
+
+    (state / "body_brain_memory.jsonl").write_text(
+        json.dumps({"ts": now - 60.0, "event": "body_brain_tick"}) + "\n",
+        encoding="utf-8",
+    )
+    assert not bwt.body_brain_tick_due(state, now=now)
+    assert bwt.body_brain_tick_due(state, now=now + bwt.BODY_BRAIN_ESSENTIAL_MAX_AGE_S)
+
+
 def test_guarded_tick_force_degraded_runs_light_without_timeout_pheromone(tmp_path: Path):
     state = tmp_path / ".sifta_state"
     state.mkdir(parents=True, exist_ok=True)
@@ -583,7 +605,11 @@ def test_guarded_tick_force_degraded_runs_light_without_timeout_pheromone(tmp_pa
 
     assert row["degraded_mode"] is True
     assert row["degraded_reason"] == "forced_light_breath"
-    assert [p["producer"] for p in row["producers"]] == ["basal_ganglia", "metabolic_homeostasis"]
+    assert [p["producer"] for p in row["producers"]] == [
+        "basal_ganglia",
+        "body_brain_loop",
+        "metabolic_homeostasis",
+    ]
     fake_bg_module.select_action.assert_called_once()
 
 

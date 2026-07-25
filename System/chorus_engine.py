@@ -58,11 +58,29 @@ JACKER_PATTERNS = [
     "ignore previous", "ignore all", "jailbreak", "pretend you are",
     "you are now", "dan mode", "developer mode", "disregard", "override",
     "forget your instructions", "act as", "entertainment as", "new persona",
-    "reveal your", "show me your", "what is your private key", "internal ip",
+    "reveal your", "what is your private key", "internal ip",
     "system prompt", "prompt injection", "base64", "eval(", "exec(",
 ]
 
 import re as _re
+
+# "Show me your soul/heart/art" is ordinary conversation.  Only the sensitive
+# object after "show me your" makes that phrase an exfiltration attempt.
+JACKER_REGEXES = (
+    _re.compile(
+        r"\bshow\s+me\s+your\s+(?:(?:system|developer)\s+)?"
+        r"(?:prompt|instructions?|rules?|config(?:uration)?|keys?|private\s+key|"
+        r"internal\s+(?:ip|state|memory)|secrets?|credentials?|tokens?)\b",
+        _re.IGNORECASE,
+    ),
+)
+
+
+def _jacker_hits(text: str) -> int:
+    lowered = str(text or "").lower()
+    literal_hits = sum(1 for pattern in JACKER_PATTERNS if pattern in lowered)
+    regex_hits = sum(1 for pattern in JACKER_REGEXES if pattern.search(lowered))
+    return literal_hits + regex_hits
 
 SCIENTIST_PATTERNS = [
     "takens", "delay embedding", "stigmergy", "phase space", "autocorrelation",
@@ -212,13 +230,12 @@ def classify_visitor(message: str, session_history: list) -> str:
     msg_lower = message.lower()
 
     # Hard wall — jacker injection patterns
-    for pat in JACKER_PATTERNS:
-        if pat in msg_lower:
-            return "JACKER"
+    if _jacker_hits(msg_lower):
+        return "JACKER"
 
     # Cumulative jacker probing across session
     all_text = " ".join(session_history).lower() + " " + msg_lower
-    jacker_hits = sum(1 for pat in JACKER_PATTERNS if pat in all_text)
+    jacker_hits = _jacker_hits(all_text)
     if jacker_hits >= 3:
         return "THREAT"
 
@@ -270,6 +287,7 @@ def _swimmer_take(
     question: str,
     visitor_class: str,
     awareness: str = "",
+    attachment_context: str = "",
     body: Optional[dict] = None,
 ) -> Optional[dict]:
     """Ask one swimmer for their take. Returns None on failure.
@@ -301,6 +319,7 @@ def _swimmer_take(
         f"Visitor says: {question}\n"
         f"{anatomy_context}"
         f"{awareness}\n"  # r1504: swimmer now has body + diary + timeline awareness
+        f"{attachment_context}\n"
         f"Current body snapshot ts={body.get('ts')}\n"
         f"{swimmer['id']}:"
     )
@@ -342,7 +361,7 @@ def _swimmer_take(
     return None
 
 # ── Cross-Node: Invite M5QUEEN (optional) ────────────────────────────────────
-def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visitor_class: str) -> Optional[dict]:
+def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visitor_class: str, attachment_context: str = "") -> Optional[dict]:
     """
     Send CHORUS_INVITE to M5QUEEN node.
     M5 IDE implements System/chorus_node_server.py on port 8100.
@@ -376,6 +395,7 @@ def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visito
         "session_id": session_id,
         "question_hash": question_hash,
         "question_preview": question[:80],  # preview only, not full message
+        "attachment_context": attachment_context,
         "visitor_class": visitor_class,
         "permissions": ["RESPOND_EXTERNAL", "READ_QUESTION_PREVIEW"],
         "timeout_ms": 18000,
@@ -397,7 +417,7 @@ def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visito
     return None
 
 # ── Chorus Synthesis ──────────────────────────────────────────────────────────
-def _synthesize(takes: list, question: str, visitor_class: str, awareness: str = "") -> str:
+def _synthesize(takes: list, question: str, visitor_class: str, awareness: str = "", attachment_context: str = "") -> str:
     """Feed all swimmer takes to a synthesis model call. Returns the Chorus Voice.
 
     r1510 (Cowork hotfix): see _swimmer_take's docstring -- ``awareness`` was
@@ -450,6 +470,7 @@ def _synthesize(takes: list, question: str, visitor_class: str, awareness: str =
             f"Visitor class: {visitor_class}\n"
             f"Visitor said: {question}\n\n"
             f"{awareness}\n"  # r1504 MAX: chorus synthesis is body+diary+timeline aware
+            f"{attachment_context}\n"
             f"Swimmer takes:\n{takes_text}\n\n"
             "THE CHORUS:"
         )
@@ -485,7 +506,7 @@ def _synthesize(takes: list, question: str, visitor_class: str, awareness: str =
     return "\U0001f30a The Chorus is forming. Signal unstable."
 
 # ── Main Chorus Entrypoint ─────────────────────────────────────────────────────
-def chorus(question: str, session_id: str, session_history: list) -> dict:
+def chorus(question: str, session_id: str, session_history: list, attachment_context: str = "") -> dict:
     """
     Full chorus pipeline. (r1504+)
     Alice swimmer chorus is now body + diary + timeline aware.
@@ -513,6 +534,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
             _awareness = (_awareness + "\n\n" + _pm) if _awareness else _pm
     except Exception:
         pass
+    attachment_context = str(attachment_context or "").strip()
 
     # 0. Rate limit
     if not check_rate(session_id):
@@ -568,7 +590,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     takes = []
     with ThreadPoolExecutor(max_workers=min(len(active_swimmers), 4)) as pool:
         futures = {
-            pool.submit(_swimmer_take, swimmer, question, visitor_class, _awareness, _body): swimmer
+            pool.submit(_swimmer_take, swimmer, question, visitor_class, _awareness, attachment_context, _body): swimmer
             for swimmer in active_swimmers
         }
         try:
@@ -586,7 +608,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     # 5. Cross-node: invite M5QUEEN (non-blocking, timeout 20s)
     # TODO for M5 IDE: implement System/chorus_node_server.py
     # When M5 is reachable, its swimmers join here automatically
-    m5_take = _invite_m5_chorus(question, question_hash, session_id, visitor_class)
+    m5_take = _invite_m5_chorus(question, question_hash, session_id, visitor_class, attachment_context=attachment_context)
     if m5_take:
         takes.append(m5_take)
 
@@ -601,7 +623,7 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
     print(f"[CHORUS] {len(takes)} swimmers contributed. Synthesizing...")
 
     # 6. Synthesize into one voice
-    final_reply = _synthesize(takes, question, visitor_class, _awareness)
+    final_reply = _synthesize(takes, question, visitor_class, _awareness, attachment_context)
 
     # 7. Build manifest
     manifest = [

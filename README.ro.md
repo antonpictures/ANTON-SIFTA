@@ -13,6 +13,43 @@ Fără dependențe de cloud. Fără API-uri corporatiste. Siliciul tău, regulil
 
 ---
 
+## Alice aude din nou româneşte (r1733) — 25 iulie 2026
+
+Proprietarul a întrebat: *„nu mai înţelege româna din vorbire? doar engleză?”*
+Răspunsul era deja în jurnalul ei: **da**, iar cauza erau două zăvoare, nu unul.
+
+1. **Parametrul.** Ambele urechi active trimiteau `language="en"` fix în cod
+   către faster-whisper — atât urechea Talk, cât şi urechea camerei.
+2. **Ponderile.** Modelul configurat era `tiny.en`. Sufixul `.en` înseamnă
+   ponderi exclusiv englezeşti: româna pur şi simplu nu există în acel model,
+   deci ştergerea parametrului singură nu ar fi schimbat nimic.
+
+Rezultatul, în jurnalul ei la ora 19:02, cu încrederea 0,263:
+`„the kumos ronati shipo esa as tafo estudat”` — română forţată prin fonetică
+englezească.
+
+`System/swarm_stt_language.py` trece implicit pe detecţie automată, înlocuieşte
+un model `.en` cu echivalentul multilingv (dacă proprietarul nu a fixat engleza),
+revine în siguranţă la modelul configurat dacă cel nou nu poate fi încărcat, şi
+scrie în `.sifta_state/stt_language.jsonl` limba efectiv detectată.
+
+Verificat pe audio real în limba română:
+`Bună Alice, sunt George, vorbesc românește cu tine acum. Memoria ta trebuie
+reparată.` — limbă detectată `ro`, probabilitate 1,00, diacritice păstrate.
+
+**Reporneşte SIFTA** după actualizare: interfaţa care rulează încă ţine în
+memorie modulele vechi.
+
+| Setare | Efect |
+|---|---|
+| `SIFTA_STT_LANGUAGE` nesetat / `auto` | Detectează limba vorbită (implicit). |
+| `SIFTA_STT_LANGUAGE=ro` | Fixează româna. |
+| `SIFTA_STT_LANGUAGE=en` | Fixează engleza; păstrează modelul englezesc, mai rapid. |
+
+Detalii: [WE_CODE_TOGETHER_R1733](Documents/WE_CODE_TOGETHER_R1733_ALICE_HEARS_ROMANIAN.md).
+
+---
+
 ## Pornire rapidă
 
 ### Distribuția publică v9.0 eXistenZ — 🧬⚡

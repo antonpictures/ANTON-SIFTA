@@ -61,6 +61,7 @@ TICK_LEDGER = "body_writer_tick.jsonl"
 TICK_LOCK = "body_writer_tick.lock"
 DEFAULT_STATE_DIR = ".sifta_state"
 MEMORY_CONSOLIDATION_LEDGER = "memory_consolidation_tick.jsonl"
+BODY_BRAIN_ESSENTIAL_MAX_AGE_S = 300.0
 MEMORY_CONSOLIDATION_STATE = "memory_consolidation_state.json"
 MEMORY_CONSOLIDATION_JOBS = (
     "hippocampal_consolidation",
@@ -202,6 +203,25 @@ def should_run_degraded_tick(
 ) -> bool:
     """After repeated timeout pheromones, run a light breath tick first."""
     return recent_supervisor_timeout_count(state_dir, max_rows=max_rows) >= max(1, int(timeout_threshold))
+
+
+def body_brain_tick_due(
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+    *,
+    now: float | None = None,
+    max_age_s: float = BODY_BRAIN_ESSENTIAL_MAX_AGE_S,
+) -> bool:
+    """Keep the feeling-to-action heartbeat alive while shedding maintenance.
+
+    The body-brain row is large, so degraded mode does not run it every minute.
+    It is nevertheless essential and must not remain starved behind optional
+    fractal, SLO, or consolidation work.
+    """
+    last = _ledger_last_ts(Path(state_dir) / "body_brain_memory.jsonl")
+    if last is None:
+        return True
+    current = time.time() if now is None else float(now)
+    return max(0.0, current - last) >= max(1.0, float(max_age_s))
 
 
 def _tick_basal_ganglia(state_dir: Path, *, candidate_loops) -> dict:
@@ -713,6 +733,7 @@ def tick_writer_organs(
     state.mkdir(parents=True, exist_ok=True)
     ts = time.time()
     degraded_direct_call = False
+    body_brain_requested = bool(enable_body_brain_loop)
     if (
         (enable_fractal_pheromone or enable_field_slo or enable_body_brain_loop or enable_memory_consolidation)
         and should_run_degraded_tick(state, timeout_threshold=1)
@@ -720,11 +741,15 @@ def tick_writer_organs(
         degraded_direct_call = True
         enable_fractal_pheromone = False
         enable_field_slo = False
-        enable_body_brain_loop = False
+        enable_body_brain_loop = body_brain_requested and body_brain_tick_due(state)
         enable_memory_consolidation = False
     producers: list[dict] = []
     if enable_basal_ganglia:
         producers.append(_tick_basal_ganglia(state, candidate_loops=candidate_loops))
+    # Feeling -> choice is an essential producer. Run it before degradable
+    # maintenance so a slow fractal/consolidation job cannot starve the body.
+    if enable_body_brain_loop:
+        producers.append(_tick_body_brain_loop(state))
     if enable_fractal_pheromone:
         producers.append(_tick_fractal_pheromone(state, walker_params=walker_params or DEFAULT_WALKER_PARAMS))
     # Round 91 — extend with the two aggregate producers Alice was watching
@@ -732,8 +757,6 @@ def tick_writer_organs(
     # is heavier; gate it behind a flag so callers can skip it on tight cadences.
     if enable_field_slo:
         producers.append(_tick_field_slo(state))
-    if enable_body_brain_loop:
-        producers.append(_tick_body_brain_loop(state))
     if enable_memory_consolidation:
         producers.append(_tick_memory_consolidation(state))
     # r-metabolism-heartbeat-unchain-20260703 — the metabolism heartbeat is NOT
@@ -844,7 +867,7 @@ def tick_writer_organs_guarded(
                     enable_basal_ganglia=True,
                     enable_fractal_pheromone=not degraded,
                     enable_field_slo=not degraded,
-                    enable_body_brain_loop=not degraded,
+                    enable_body_brain_loop=(not degraded) or body_brain_tick_due(state),
                     enable_memory_consolidation=not degraded,
                 )
                 if degraded:
@@ -880,7 +903,7 @@ def tick_writer_organs_guarded(
         enable_basal_ganglia=True,
         enable_fractal_pheromone=not degraded,
         enable_field_slo=not degraded,
-        enable_body_brain_loop=not degraded,
+        enable_body_brain_loop=(not degraded) or body_brain_tick_due(state),
         enable_memory_consolidation=not degraded,
     )
     if degraded:
@@ -940,6 +963,8 @@ __all__ = [
     "SUPERVISOR_TRUTH_LABEL",
     "recent_supervisor_timeout_count",
     "should_run_degraded_tick",
+    "body_brain_tick_due",
+    "BODY_BRAIN_ESSENTIAL_MAX_AGE_S",
     "summary_for_prompt",
     "tick_writer_organs",
     "tick_writer_organs_guarded",

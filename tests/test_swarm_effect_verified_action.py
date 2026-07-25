@@ -10,6 +10,7 @@ from System.swarm_effect_verified_action import (
     effect_claimed_success,
     enrich_effect,
     is_phantom_effect_receipt,
+    record_pending_effect_action,
     record_effect_verified_action,
     run_sync_verified_action,
 )
@@ -39,6 +40,26 @@ def test_phantom_receipt_detects_unverified_success():
     assert is_phantom_effect_receipt(row) is True
     row["effect"]["effect_verified"] = True
     assert is_phantom_effect_receipt(row) is False
+
+
+def test_pending_natural_feedback_is_neither_success_nor_phantom(tmp_path):
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    row = record_pending_effect_action(
+        organ="desk_limb",
+        action="close_window",
+        effect={"ok": True, "command_id": "motor-1"},
+        expected_observation={"window_open": False, "temperature_rising": True},
+        state_dir=state,
+        now=1000.0,
+    )
+    assert row["effect_verified"] is None
+    assert row["verification_status"] == "PENDING_SENSORY_FEEDBACK"
+    assert row["expected_observation"]["window_open"] is False
+    assert is_phantom_effect_receipt(row) is False
+    assert count_consecutive_unverified(
+        organ="desk_limb", action="close_window", state_dir=state, before_ts=1001.0
+    ) == 0
 
 
 def test_sync_verified_action_writes_honest_receipt(tmp_path):
@@ -123,9 +144,14 @@ def test_async_completion_records_verified_skip(tmp_path):
         started_at=started,
         method="js",
         state_dir=state,
+        pending_trace_id="pending-motor-1",
     )
     assert result.effect_verified is True
     assert effect_claimed_success(result.effect)
+    row = json.loads(
+        (state / "effect_verified_actions.jsonl").read_text().splitlines()[-1]
+    )
+    assert row["context"]["pending_trace_id"] == "pending-motor-1"
 
 
 def test_record_resets_streak_after_verified_success(tmp_path):

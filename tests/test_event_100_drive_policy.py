@@ -114,7 +114,7 @@ class TestLedgerFields:
             "drive_bias_score": 0.15,
             "drive_bias_goal": "Read about neurons.",
         }
-        result = {"status": "completed"}
+        result = {"status": "completed", "effect_verified": True}
         now_state = {}
 
         row = p._write_memory(

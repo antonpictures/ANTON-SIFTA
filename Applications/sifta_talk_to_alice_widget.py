@@ -13554,11 +13554,25 @@ def _voice_identity_george_conf() -> float:
     return 0.0
 
 
-def _ollama_keep_alive(default: str = "15s") -> str:
-    """Bound local model residency so Talk does not hold GPU/RAM for minutes."""
-    value = os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", default)
-    value = str(value or "").strip()
-    return value or default
+def _ollama_keep_alive(default: str = "") -> str:
+    """Local model residency. Owner env override wins; explicit lane defaults
+    (reflex/vision pass "15s") keep their tuned values; the MAIN cortex lane
+    (no-arg call) is governed by the metabolism via swarm_kv_cache_continuity.
+
+    r1623-04 (George 2026-07-20): the old flat "15s" default unloaded the
+    cortex 15 seconds after every reply — each turn then paid a multi-GB
+    weight reload over the M5's shared bandwidth (the YouTube stutter).
+    """
+    value = str(os.environ.get("SIFTA_OLLAMA_KEEP_ALIVE", "") or "").strip()
+    if value:
+        return value
+    if str(default or "").strip():
+        return str(default).strip()
+    try:
+        from System.swarm_kv_cache_continuity import keep_alive_for_talk
+        return keep_alive_for_talk()
+    except Exception:
+        return "10m"
 
 
 def _ollama_num_ctx(default: int = 8192) -> int:
@@ -13828,6 +13842,13 @@ except Exception:
 _STATE_DIR = _REPO / ".sifta_state"
 _CONVO_LOG = _REPO / ".sifta_state" / "alice_conversation.jsonl"
 _CONVO_LOG.parent.mkdir(parents=True, exist_ok=True)
+_WEB_TURN_LOCAL = threading.local()
+
+
+def _active_web_turn_context() -> Optional[Dict[str, Any]]:
+    """Return web-turn context for the current Talk thread, if any."""
+    ctx = getattr(_WEB_TURN_LOCAL, "context", None)
+    return ctx if isinstance(ctx, dict) else None
 
 _VISUAL_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 _BROCA_LOG  = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
@@ -18976,6 +18997,18 @@ def _current_system_prompt(
                     parts.append(_bts)
         except Exception:
             pass
+        # r1732 memory content search. George asked Alice to look in her memory
+        # for a flight ticket and the cortex invented one, because nothing
+        # searched anything. Retrieval now runs deterministically before the
+        # cortex speaks, and "found nothing" arrives as a measured fact.
+        try:
+            from System.swarm_memory_search_recall import memory_search_block_for_turn
+
+            _ms_block, _ = memory_search_block_for_turn(user_text or "", state_dir=_state_root())
+            if _ms_block:
+                parts.append(_ms_block)
+        except Exception:
+            pass
         # r1622-02 memory recall (SIE or offline Jaccard)
         try:
             from System.swarm_sie_memory_recall import recall_prompt_block as _recall_blk
@@ -23420,16 +23453,35 @@ class _STTWorker(QThread):
             return
         try:
             cls = type(self)
-            if cls._model is None or cls._model_name != self._model_name:
+            # r1733: an ".en" checkpoint holds English-only weights, so no
+            # parameter can make it hear Romanian. When the owner has not
+            # pinned a language, swap to the multilingual sibling — but never
+            # trade a working ear for a missing download, so fall back to the
+            # configured model if the swap cannot load.
+            from System.swarm_stt_language import resolve_stt_model
+            wanted = resolve_stt_model(self._model_name)
+            if cls._model is None or cls._model_name != wanted:
                 self.progress.emit(
-                    f"Loading speech model '{self._model_name}'…\n"
-                    "(first run downloads ~75 MB to ~/.cache/huggingface; "
+                    f"Loading speech model '{wanted}'…\n"
+                    "(first run downloads to ~/.cache/huggingface; "
                     "subsequent loads are instant)"
                 )
-                cls._model = WhisperModel(
-                    self._model_name, device="cpu", compute_type="int8",
-                )
-                cls._model_name = self._model_name
+                try:
+                    cls._model = WhisperModel(
+                        wanted, device="cpu", compute_type="int8",
+                    )
+                    cls._model_name = wanted
+                except Exception as load_exc:
+                    if wanted == self._model_name:
+                        raise
+                    self.progress.emit(
+                        f"'{wanted}' unavailable ({type(load_exc).__name__}); "
+                        f"falling back to '{self._model_name}' — English only."
+                    )
+                    cls._model = WhisperModel(
+                        self._model_name, device="cpu", compute_type="int8",
+                    )
+                    cls._model_name = self._model_name
             self.progress.emit("Transcribing…")
             # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) —
             # disable Whisper's internal Silero VAD. The upstream
@@ -23440,9 +23492,23 @@ class _STTWorker(QThread):
             # CVC reads as non-speech → empty transcription → silent
             # drop in _on_stt_done. Drop logged on trace
             # cw47-0516-1908-mic-probe-findings.
+            # r1733 (George 2026-07-25): this was hardcoded language="en",
+            # which force-decoded his Romanian as English. Speaking Romanian
+            # on speakerphone with his mother produced "the kumos ronati shipo
+            # esa as tafo estudat" at confidence 0.26. The weights are
+            # multilingual; only this parameter was the cage. None = detect.
+            # SIFTA_STT_LANGUAGE pins one language when he wants that.
+            from System.swarm_stt_language import (
+                is_english_only_model,
+                log_detected_language,
+                stt_language_setting,
+            )
+            # If the fallback above left an English-only checkpoint live, asking
+            # it to auto-detect would only crash; "en" is then the truth.
+            _lang = "en" if is_english_only_model(cls._model_name) else stt_language_setting()
             segments, info = cls._model.transcribe(
                 self._audio,
-                language="en",
+                language=_lang,
                 beam_size=1,         # greedy is plenty for conversational
                 vad_filter=False,
             )
@@ -23455,6 +23521,7 @@ class _STTWorker(QThread):
             text = " ".join(p.strip() for p in text_parts).strip()
             # Confidence proxy: exp(avg_logprob) → [0..1] band.
             conf = float(np.exp(np.mean(avg_lp))) if avg_lp else 0.0
+            log_detected_language(info, text, cls._model_name, surface="talk_widget")
             self.transcribed.emit(text, conf)
         except Exception as exc:
             self.failed.emit(f"STT crashed: {exc}")
@@ -23577,6 +23644,7 @@ class _BrainWorker(QThread):
                  layering_tail: str = "",
                  fast_action_context_only: bool = False,
                  stt_confidence: float = 1.0,
+                 complete_answer_mode: bool = False,
                  ) -> None:
         super().__init__(parent)
         primary_model = _normalize_talk_worker_primary_model(model)
@@ -23599,6 +23667,10 @@ class _BrainWorker(QThread):
         self._user_text = user_text
         self._raw_history_for_assembly = raw_history_for_assembly
         self._layering_tail = layering_tail or ""
+        # WEB TYPED visitors cannot see Talk's local "continue" repair affordance.
+        # Reserve the full visible budget and skip hidden reasoning so the answer
+        # reaches the browser as a complete thought in one reply.
+        self._complete_answer_mode = bool(complete_answer_mode)
         # r1614: STT confidence is evidence for concept orientation, never a command gate.
         try:
             self._stt_confidence = float(stt_confidence if stt_confidence is not None else 1.0)
@@ -23610,6 +23682,9 @@ class _BrainWorker(QThread):
         # and tells the owner the reply was cut, with the continue path.
         self.last_finish_reason: str = ""
         self.last_empty_finish_reason: str = ""
+        # Exact r1726 stamps produced by this worker, never a global "latest"
+        # lookup. Continuation passes are accumulated into the same web turn.
+        self.last_lag_stamp: Dict[str, Any] = {}
 
     @staticmethod
     def _dedupe_models(models: List[str]) -> List[str]:
@@ -23952,6 +24027,8 @@ class _BrainWorker(QThread):
             # ── End pipeline ─────────────────────────────────────────────────────
 
             _num_predict = _ollama_num_predict()
+            if self._complete_answer_mode:
+                _num_predict = 4096
             if bool(getattr(self, "_fast_action_context_only", False)):
                 try:
                     _num_predict = min(int(_num_predict), int(os.environ.get("SIFTA_FAST_ACTION_NUM_PREDICT", "96")))
@@ -23966,7 +24043,14 @@ class _BrainWorker(QThread):
                 # LLM works. Ollama streams message.thinking separately
                 # from message.content on thinking-capable models. See
                 # System/swarm_alice_thinking_stream.py.
-                "think": bool(think) if not any(bad in str(self._model).lower() for bad in ("kaelri", "qwen3.5-mt", "machine-translation", "mt-2b")) else False,
+                "think": (
+                    False
+                    if self._complete_answer_mode
+                    else bool(think) if not any(
+                        bad in str(self._model).lower()
+                        for bad in ("kaelri", "qwen3.5-mt", "machine-translation", "mt-2b")
+                    ) else False
+                ),
                 "options": {
                     "temperature": 0.7,
                     "top_p": 0.9,
@@ -24142,8 +24226,36 @@ class _BrainWorker(QThread):
                                 _done_reason = str(
                                     chunk.get("done_reason") or chunk.get("finish_reason") or ""
                                 ).strip()
+                                if _done_reason:
+                                    self.last_finish_reason = _done_reason.upper()
                                 if _done_reason and not full:
                                     self.last_empty_finish_reason = _done_reason
+                                # r1623-04: Ollama's final chunk reports what this
+                                # turn cost (weight reload, prompt re-ingest, gen
+                                # speed). Stamp it to the continuity ledger so the
+                                # stutter has receipts. Best-effort — never costs
+                                # the turn.
+                                try:
+                                    from System.swarm_kv_cache_continuity import record_turn_stamp
+                                    _turn_stamp = record_turn_stamp(
+                                        model=str(self._model or ""),
+                                        messages=_pipeline_history,
+                                        done_chunk=chunk,
+                                        source="talk_to_alice_widget",
+                                    )
+                                    if isinstance(_turn_stamp, dict):
+                                        if self.last_lag_stamp:
+                                            _turn_stamp = dict(_turn_stamp)
+                                            _turn_stamp["prompt_eval_count"] = int(
+                                                self.last_lag_stamp.get("prompt_eval_count") or 0
+                                            ) + int(_turn_stamp.get("prompt_eval_count") or 0)
+                                            _turn_stamp["eval_count"] = int(
+                                                self.last_lag_stamp.get("eval_count") or 0
+                                            ) + int(_turn_stamp.get("eval_count") or 0)
+                                            _turn_stamp["source"] = "talk_to_alice_widget:web_turn_accumulated"
+                                        self.last_lag_stamp = _turn_stamp
+                                except Exception:
+                                    pass
                                 break
                     # Close the thinking recorder — writes a receipt to
                     # .sifta_state/alice_thinking_traces.jsonl naming the
@@ -24217,6 +24329,8 @@ class _BrainWorker(QThread):
                                         _done_reason = str(
                                             chunk.get("done_reason") or chunk.get("finish_reason") or ""
                                         ).strip()
+                                        if _done_reason:
+                                            self.last_finish_reason = _done_reason.upper()
                                         if _done_reason and not full:
                                             self.last_empty_finish_reason = _done_reason
                                         break
@@ -24403,6 +24517,54 @@ class _BrainWorker(QThread):
 
         route = getattr(self, "_current_cortex_route", None)
         last_failure: str | None = None
+
+        def _ends_on_complete_sentence(value: str) -> bool:
+            tail = str(value or "").rstrip()
+            return bool(re.search(r"[.!?](?:[\"')\]}`*_~\s]|[^\x00-\x7f]){0,16}$", tail))
+
+        def _complete_public_answer(initial: str) -> str:
+            """Continue provider-truncated WEB TYPED prose before fan-out."""
+            combined = str(initial or "").strip()
+            base_history = list(self._history)
+            for continuation_index in range(4):
+                finish_reason = str(self.last_finish_reason or "").strip().upper()
+                needs_more = finish_reason in {"LENGTH", "MAX_TOKENS"} or not _ends_on_complete_sentence(combined)
+                if not needs_more:
+                    break
+                try:
+                    self.thinkingReceived.emit(
+                        "[brain] WEB TYPED answer ended mid-sentence; continuing before public fan-out\n"
+                    )
+                except Exception:
+                    pass
+                self.last_finish_reason = ""
+                self._history = base_history + [
+                    {"role": "assistant", "content": combined},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Continue exactly from the cut point without repeating prior text. "
+                            "Finish the remaining answer in under 500 words and end on a complete sentence."
+                        ),
+                    },
+                ]
+                extra, continuation_error = _run_one_model(think=False)
+                if continuation_error is not None or not extra:
+                    break
+                extra_clean = str(extra).strip()
+                if extra_clean.startswith("..."):
+                    extra_clean = extra_clean[3:].lstrip()
+                if extra_clean and extra_clean not in combined:
+                    combined = f"{combined} {extra_clean}".strip()
+                if continuation_index == 3 and not _ends_on_complete_sentence(combined):
+                    try:
+                        self.thinkingReceived.emit(
+                            "[brain] WEB TYPED continuation ceiling reached before clean sentence end\n"
+                        )
+                    except Exception:
+                        pass
+            return combined
+
         for candidate in self._model_candidates:
             self._model = candidate
             if isinstance(route, dict):
@@ -24419,6 +24581,8 @@ class _BrainWorker(QThread):
                     pass
                 continue
             if response:
+                if self._complete_answer_mode:
+                    response = _complete_public_answer(str(response))
                 self.done.emit(str(response))
                 return
             # r1570: every empty cortex gets one same-context retry before the
@@ -24440,6 +24604,8 @@ class _BrainWorker(QThread):
                     pass
                 continue
             if response:
+                if self._complete_answer_mode:
+                    response = _complete_public_answer(str(response))
                 self.done.emit(str(response))
                 return
             # r430 item #3: bounded think=false retry on empty output for local models.
@@ -24456,6 +24622,8 @@ class _BrainWorker(QThread):
                     pass
                 response, error = _run_one_model(think=False)
                 if response:
+                    if self._complete_answer_mode:
+                        response = _complete_public_answer(str(response))
                     self.done.emit(str(response))
                     return
             try:
@@ -25885,6 +26053,7 @@ def _log_turn(
     metadata: Optional[Dict[str, Any]] = None,
     prior_user_text: str = "",
 ) -> None:
+    _web_context = _active_web_turn_context()
     _philosophy_display_gate: Dict[str, Any] = {}
     if role == "alice":
         text, _philosophy_display_gate = _apply_philosophy_display_gate(
@@ -25898,6 +26067,8 @@ def _log_turn(
     # of every signed row. For alice rows the source is the cortex itself.
     if role == "alice":
         _input_source = "cortex"
+    elif _web_context:
+        _input_source = "web"
     elif stt_conf and stt_conf > 0:
         _input_source = "voice"
     else:
@@ -25910,6 +26081,9 @@ def _log_turn(
         "stt_confidence": round(stt_conf, 3) if stt_conf else None,
         "input_source": _input_source,
     }
+    if _web_context:
+        payload["modality"] = "WEB TYPED"
+        payload["sender"] = "Stigmergicode.com" if role == "user" else "Alice"
     try:
         _clock = _current_time_reading_for_alice()
         payload["clock_receipt"] = {
@@ -25927,6 +26101,18 @@ def _log_turn(
         payload["addressed_to"] = addressed_to
     if metadata:
         payload["routing_metadata"] = dict(metadata)
+    if _web_context:
+        payload["routing_metadata"] = {
+            **(payload.get("routing_metadata") or {}),
+            "surface": "web_global_chat",
+            "register": "WEB TYPED",
+            "turn_id": str(_web_context.get("turn_id") or ""),
+            "client_ip": str(_web_context.get("client_ip") or ""),
+            "client_ip_source": str(_web_context.get("client_ip_source") or ""),
+            "owner_authority": False,
+            "effectors_allowed": [],
+            "tts": False,
+        }
     try:
         from System.swarm_social_reference_tracker import classify_social_reference
 
@@ -26169,6 +26355,15 @@ def _global_chat_payload_from_line(line: str) -> Optional[Dict[str, Any]]:
 
 
 def _global_chat_turn_key(payload: Dict[str, Any]) -> str:
+    metadata = payload.get("routing_metadata")
+    if isinstance(metadata, dict):
+        surface = str(metadata.get("surface") or "").strip().casefold()
+        turn_id = str(metadata.get("turn_id") or "").strip()
+        if surface == "web_global_chat" and turn_id:
+            # The Talk path and the web gate can each write a receipt for the
+            # same public turn. The turn id is the canonical identity; event
+            # hashes are transport-specific and must not create two bubbles.
+            return f"web_global_chat:{turn_id}:{str(payload.get('role') or '').strip().lower()}"
     row_hash = str(payload.get("_row_hash") or "").strip()
     if row_hash:
         return row_hash
@@ -28068,6 +28263,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # external Matrix Terminal turns from alice_conversation.jsonl live.
         self._load_global_chat_history_on_open(limit=18)
         self.make_timer(700, self._poll_global_chat_ledger)
+        self.make_timer(700, self._poll_web_global_chat)
         # Orchestrator-staged Talk self-type commands (Grok 5-loop transfer path).
         self.make_timer(500, self._try_consume_talk_self_type_command)
         # Embodied clipboard path: paste Grok COPY into Talk, copy own post back.
@@ -28786,6 +28982,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             skip_brain = False
             if isinstance(meta, dict):
                 skip_brain = bool(meta.get("skip_brain"))
+                if surface == "web_global_chat" and str(meta.get("turn_id") or "") in getattr(
+                    self, "_web_local_turn_ids", set()
+                ):
+                    continue
             # Talk renders its own turns directly; this mirror imports other
             # surfaces so the global thread updates without duplicating Talk.
             if (
@@ -28796,6 +28996,95 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ):
                 continue
             self._render_global_chat_payload(payload, source="poll")
+
+    def _handle_web_turn(
+        self,
+        text: str,
+        *,
+        turn_id: str,
+        session_id: str,
+        client_ip: str = "",
+        client_ip_source: str = "",
+        attachments: Optional[list[dict[str, Any]]] = None,
+        attachment_context: str = "",
+    ) -> None:
+        """Enter the public queue into the text cortex lane without owner power."""
+        clean = str(text or "").strip()
+        has_attachment = bool(attachments) or bool(str(attachment_context or "").strip())
+        if not turn_id or (not clean and not has_attachment):
+            return
+        display_text = clean or "(attachment only)"
+        context = {
+            "turn_id": str(turn_id),
+            "session_id": str(session_id or ""),
+            "client_ip": str(client_ip or "").strip(),
+            "client_ip_source": str(client_ip_source or "").strip(),
+            "register": "WEB TYPED",
+            "owner_authority": False,
+            "attachments": list(attachments or []),
+            "attachment_context": str(attachment_context or "").strip(),
+        }
+        _WEB_TURN_LOCAL.context = context
+        self._active_web_turn = context
+        local_turn_ids = getattr(self, "_web_local_turn_ids", set())
+        if len(local_turn_ids) > 2048:
+            local_turn_ids.clear()
+        local_turn_ids.add(str(turn_id))
+        self._web_local_turn_ids = local_turn_ids
+        self._latest_turn_modality = "WEB TYPED"
+        self._current_owner_turn_text = display_text
+        self._append_user_line(display_text, 0.0, input_modality="WEB TYPED")
+        # _start_brain owns the one canonical user-row write. The active web
+        # context below supplies turn_id/register/zero-authority metadata there.
+        self._history.append({"role": "user", "content": display_text})
+        self._busy = True
+        try:
+            self._set_pill("thinking", "WEB TYPED — Alice is thinking")
+            self.set_status("Public web turn: text-only cortex response…")
+        except Exception:
+            pass
+        QTimer.singleShot(
+            0,
+            lambda: self._start_brain(
+                clean,
+                conf=1.0,
+                already_displayed=True,
+                typed_turn=True,
+                web_turn=True,
+            ),
+        )
+
+    def _poll_web_global_chat(self) -> None:
+        """Claim one public turn and send it through Talk's normal cortex."""
+        if getattr(self, "_busy", False) or getattr(self, "_active_web_turn", None):
+            return
+        try:
+            from System.swarm_web_global_chat_gate import claim_next_web_turn
+
+            queued = claim_next_web_turn()
+        except Exception:
+            return
+        if not queued:
+            return
+        turn_id = str(queued.get("turn_id") or "")
+        session_id = str(queued.get("session_id") or "")
+        text = str(queued.get("text") or "").strip()
+        attachments = queued.get("attachments") if isinstance(queued.get("attachments"), list) else []
+        attachment_context = str(queued.get("attachment_context") or "").strip()
+        if not turn_id or (not text and not attachments and not attachment_context):
+            return
+        self._on_stt_done(
+            text,
+            1.0,
+            typed_turn=True,
+            web_turn=True,
+            web_turn_id=turn_id,
+            web_session_id=session_id,
+            web_turn_client_ip=str(queued.get("client_ip") or ""),
+            web_turn_client_ip_source=str(queued.get("client_ip_source") or ""),
+            web_turn_attachments=attachments,
+            web_turn_attachment_context=attachment_context,
+        )
 
     def _render_all_messages(self) -> None:
         """Compatibility hook for the future card renderer.
@@ -28915,11 +29204,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     clip.setText(body)
                 except TypeError:
                     clip.setText(body, clip.Mode.Clipboard)
-                ok = True
+                try:
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+                ok = str(clip.text() or "") == body
         except Exception:
             pass
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["pbcopy"],
                 input=body.encode("utf-8"),
                 stdout=subprocess.DEVNULL,
@@ -28927,7 +29220,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 check=False,
                 timeout=1.0,
             )
-            ok = True
+            ok = ok or result.returncode == 0
         except Exception:
             pass
         return ok
@@ -29143,9 +29436,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not text:
             return
         surface = _global_chat_surface(payload)
+        metadata = payload.get("routing_metadata")
+        turn_id = str(metadata.get("turn_id") or "").strip() if isinstance(metadata, dict) else ""
+        if surface.casefold() == "web_global_chat" and turn_id in getattr(self, "_web_local_turn_ids", set()):
+            # This Talk instance already painted the web turn through its
+            # active cortex path; the ledger tail is only a receipt mirror.
+            return
         surface_tag = f" [{surface}]" if surface else ""
         if role == "user":
-            self._append_user_line(text, conf=0.0)
+            self._append_user_line(
+                text,
+                conf=0.0,
+                input_modality=str(payload.get("modality") or "") or None,
+            )
             self._history.append({"role": "user", "content": text})
             self._side.appendPlainText(time.strftime("%H:%M:%S") + f"  GLOBAL{surface_tag}  " + text[:90])
             return
@@ -38162,7 +38465,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
         typed_turn: bool = False,
         paste_burst_detected: bool = False,
         burst_rate: float = 0.0,
+        web_turn: bool = False,
+        web_turn_id: str = "",
+        web_session_id: str = "",
+        web_turn_client_ip: str = "",
+        web_turn_client_ip_source: str = "",
+        web_turn_attachments: Optional[list[dict[str, Any]]] = None,
+        web_turn_attachment_context: str = "",
     ) -> None:
+        if web_turn:
+            self._handle_web_turn(
+                text,
+                turn_id=web_turn_id,
+                session_id=web_session_id,
+                client_ip=web_turn_client_ip,
+                client_ip_source=web_turn_client_ip_source,
+                attachments=web_turn_attachments,
+                attachment_context=web_turn_attachment_context,
+            )
+            return
         # Architect 2026-05-26 task #66 fix — pin the current turn's input
         # modality on the instance so every _append_user_line called inside
         # this handler renders the correct label (TYPED vs SPOKEN) without
@@ -39825,6 +40146,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         already_displayed: bool = False,
         image_path: Optional[str] = None,
         typed_turn: bool = False,
+        web_turn: bool = False,
     ) -> None:
         """Start Alice's model turn from a user/inbox message.
 
@@ -39832,8 +40154,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         while STT/text entry delegates here after its own display path.
         """
         _typed_turn = bool(typed_turn)
+        _web_turn = bool(web_turn or _active_web_turn_context())
         text = (text or "").strip()
-        chat_reflexes_enabled = _allow_pre_cortex_chat_reflexes()
+        chat_reflexes_enabled = False if _web_turn else _allow_pre_cortex_chat_reflexes()
+        if text and not _web_turn:
+            try:
+                from System.swarm_robot_grounding_triad import capture_owner_place_assertion
+
+                capture_owner_place_assertion(text, state_dir=_state_root())
+            except Exception:
+                pass
         if text and not _typed_turn:
             try:
                 from System.swarm_saccadic_blink_vision import request_attention_blink
@@ -43982,7 +44312,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # EXPLICITLY named WhatsApp (literal token or the [WhatsApp ...] prefix).
             _wa_lower = (text or "").lower()
             _wa_explicit = ("whatsapp" in _wa_lower) or _wa_lower.lstrip().startswith("[whatsapp")
-            _wa_intent = extract_whatsapp_intent(text) if _wa_explicit else None
+            _wa_intent = (
+                extract_whatsapp_intent(text)
+                if _wa_explicit and chat_reflexes_enabled
+                else None
+            )
             if _wa_intent:
                 _wa_target, _wa_text = _wa_intent
                 _wa_result = _sifta_whatsapp_send(
@@ -44035,11 +44369,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # the diagnosis in task #51.
 
 
-        try:
-            from System.stigmergic_schedule import answer_query_for_alice
-            schedule_reply = answer_query_for_alice(text)
-        except Exception:
-            schedule_reply = ""
+        schedule_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.stigmergic_schedule import answer_query_for_alice
+                schedule_reply = answer_query_for_alice(text)
+            except Exception:
+                schedule_reply = ""
 
         if schedule_reply:
             self._history.append({"role": "assistant", "content": schedule_reply})
@@ -44049,15 +44385,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        try:
-            from System.stigmergic_schedule import add_from_alice_text
-            schedule_reply, _schedule_row = add_from_alice_text(
-                text,
-                priority=2,
-                source="talk_to_alice_schedule_protocol",
-            )
-        except Exception:
-            schedule_reply = ""
+        schedule_reply = ""
+        if chat_reflexes_enabled:
+            try:
+                from System.stigmergic_schedule import add_from_alice_text
+                schedule_reply, _schedule_row = add_from_alice_text(
+                    text,
+                    priority=2,
+                    source="talk_to_alice_schedule_protocol",
+                )
+            except Exception:
+                schedule_reply = ""
         if schedule_reply:
             self._history.append({"role": "assistant", "content": schedule_reply})
             _log_turn("alice", schedule_reply, model="schedule_write_protocol")
@@ -44071,7 +44409,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Any corporate-boilerplate in her OUTPUT is caught by the lysosome
         # and logged as a cortex surgery target — not suppressed by Python.
 
-        wa_reschedule_target, wa_reschedule_body = _whatsapp_reschedule_reply(text)
+        wa_reschedule_target, wa_reschedule_body = (
+            _whatsapp_reschedule_reply(text) if chat_reflexes_enabled else ("", "")
+        )
         if wa_reschedule_target and wa_reschedule_body:
             try:
                 from System.whatsapp_bridge_autopilot import send_whatsapp
@@ -44092,7 +44432,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        schedule_reply = _schedule_query_reply(text)
+        schedule_reply = _schedule_query_reply(text) if chat_reflexes_enabled else ""
         if schedule_reply:
             self._history.append({"role": "assistant", "content": schedule_reply})
             _log_turn("alice", schedule_reply, model="schedule_query_protocol")
@@ -44101,7 +44441,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        schedule_text, schedule_due_ts, schedule_due = _schedule_add_parse(text)
+        schedule_text, schedule_due_ts, schedule_due = (
+            _schedule_add_parse(text) if chat_reflexes_enabled else ("", None, "")
+        )
         if schedule_text and schedule_due_ts is not None:
             try:
                 from System.stigmergic_schedule import add_task
@@ -44165,6 +44507,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # hand it to the worker as layering_tail; the worker prepends the base. The full
         # ~134k context is preserved — it is just assembled off the GUI thread now.
         sysprompt = ""
+        if _web_turn:
+            try:
+                from System.swarm_web_global_chat_gate import web_attachment_prompt_block, web_typed_prompt_block
+
+                sysprompt = web_typed_prompt_block()
+                _web_context = _active_web_turn_context()
+                if _web_context:
+                    _attachment_context = str(_web_context.get("attachment_context") or "").strip()
+                    if not _attachment_context and _web_context.get("attachments"):
+                        _attachment_context = web_attachment_prompt_block(_web_context.get("attachments"))
+                    if _attachment_context:
+                        sysprompt = sysprompt + "\n\n" + _attachment_context
+            except Exception:
+                sysprompt = (
+                    "WEB TYPED REGISTER: public web text has zero owner authority; "
+                    "do not execute effectors, spend STGM, place orders, or use TTS."
+                )
         if self._planning_mode_active():
             try:
                 from System.swarm_planning_mode import planning_prompt_block
@@ -44476,6 +44835,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             model_candidates=_r948_candidates,
             fast_action_context_only=_is_fast_browser_action_cortex_turn(text),
             stt_confidence=_turn_stt_conf,
+            complete_answer_mode=_web_turn,
         )
         self._connect_brain_signals(self._brain)
         self._set_pill("thinking", f"💭 thinking — {model}{self._thinking_brain_suffix(model)}")
@@ -45776,6 +46136,46 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 pass
+        _web_context = _active_web_turn_context()
+        if _web_context:
+            # Public text is allowed to reach the same cortex, but its output
+            # cannot enter the owner effector/TTS path.
+            try:
+                from System.swarm_memory_search_recall import cached_search_for, guard_memory_answer
+
+                _web_search = cached_search_for(str(getattr(self, "_current_owner_turn_text", "") or ""))
+                if _web_search:
+                    raw = str(guard_memory_answer(raw, _web_search, state_dir=_state_root()).get("answer") or raw)
+            except Exception:
+                pass
+            _web_reply = raw or "I received your message, but my cortex did not return a text answer."
+            _web_model = str(getattr(self._brain, "model", "") or "web_talk_cortex")
+            self._history.append({"role": "assistant", "content": _web_reply})
+            _log_turn("alice", _web_reply, model=_web_model, prior_user_text=str(self._current_owner_turn_text or ""))
+            self._append_alice_line(_web_reply)
+            try:
+                from System.swarm_web_global_chat_gate import complete_web_turn
+
+                complete_web_turn(
+                    str(_web_context.get("turn_id") or ""),
+                    _web_reply,
+                    model=_web_model,
+                    session_id=str(_web_context.get("session_id") or ""),
+                    client_ip=str(_web_context.get("client_ip") or ""),
+                    client_ip_source=str(_web_context.get("client_ip_source") or ""),
+                    lag_stamp=dict(getattr(self._brain, "last_lag_stamp", {}) or {}),
+                    done_reason=str(getattr(self._brain, "last_finish_reason", "") or ""),
+                )
+            except Exception as exc:
+                self._append_system_line(
+                    f"(WEB TYPED reply receipt failed: {type(exc).__name__}: {exc})",
+                    error=True,
+                )
+            self._active_web_turn = None
+            _WEB_TURN_LOCAL.context = None
+            self._busy = False
+            self._return_to_listening()
+            return
         # ── r906: Alice may use her OWN palette commands. George asked
         # "DOES SHE KNOW HOW TO USE HER OWN COMMAND?" — until this cut, no:
         # r683 wired /schedule, /sc, /help for OWNER-typed turns only, and
@@ -46037,6 +46437,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
 
 
+
+        # ── 0b.6 Memory fabrication guard (r1732) ──────────────────
+        # George 2026-07-25: he asked Alice to search her memory for a plane
+        # ticket. Retrieval found nothing, and the cortex answered
+        # "[Retrieval Complete] May 14, 2026, 11:35 AM, Milan Malpensa" — a
+        # flight that exists in no ledger. A prompt instruction is guidance a
+        # small cortex can ignore; this is the receipt-side check. If the
+        # search returned no rows and the answer still asserts a concrete
+        # record, the invented record never reaches him.
+        try:
+            from System.swarm_memory_search_recall import (
+                cached_search_for,
+                guard_memory_answer,
+            )
+
+            _ms_result = cached_search_for(str(getattr(self, "_current_owner_turn_text", "") or ""))
+            if _ms_result:
+                _guarded = guard_memory_answer(raw, _ms_result, state_dir=_state_root())
+                if _guarded.get("replaced"):
+                    self._append_system_line(
+                        "(alice: memory answer asserted a record the ledgers do not hold — "
+                        "replaced with the search result)",
+                        error=True,
+                    )
+                    self._erase_alice_streaming_line()
+                    raw = str(_guarded.get("answer") or raw)
+        except Exception:
+            pass
 
         # ── 0c. MOTOR CORTEX INTERCEPTOR (Round F) ─────────────────
         import re
@@ -48276,6 +48704,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_brain_failed(self, msg: str) -> None:
         self._stop_brain_wait_heartbeat()
+        _web_context = _active_web_turn_context()
+        if _web_context:
+            _web_reply = (
+                "My local cortex did not answer this web turn. "
+                "The failure was logged; please try again later."
+            )
+            _web_model = str(getattr(self._brain, "model", "") or "web_talk_cortex")
+            self._history.append({"role": "assistant", "content": _web_reply})
+            _log_turn("alice", _web_reply, model=_web_model, prior_user_text=str(self._current_owner_turn_text or ""))
+            self._append_alice_line(_web_reply)
+            try:
+                from System.swarm_web_global_chat_gate import complete_web_turn
+
+                complete_web_turn(
+                    str(_web_context.get("turn_id") or ""),
+                    _web_reply,
+                    model=_web_model,
+                    session_id=str(_web_context.get("session_id") or ""),
+                    client_ip=str(_web_context.get("client_ip") or ""),
+                    client_ip_source=str(_web_context.get("client_ip_source") or ""),
+                    done_reason="CORTEX_FAILED",
+                )
+            except Exception:
+                pass
+            self._active_web_turn = None
+            _WEB_TURN_LOCAL.context = None
+            self._busy = False
+            self._return_to_listening()
+            return
         self._stigtime_shift("idle", f"brain_failed:{msg[:80]}")
         route = getattr(self, "_current_cortex_route", {}) or {}
         brain_model_name = str(
@@ -48852,7 +49309,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             from System.swarm_ear_intentional_listen import WORLD_STT_MODALITY
         except Exception:
             WORLD_STT_MODALITY = "WORLD_STT"  # type: ignore[misc, assignment]
-        if _pinned_mod == WORLD_STT_MODALITY:
+        if _pinned_mod == "WEB TYPED":
+            _owner_label = "Stigmergicode.com"
+        elif _pinned_mod == WORLD_STT_MODALITY:
             _owner_label = "World"
         else:
             try:
@@ -48874,7 +49333,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # whether the owner typed or spoke is consciousness-level, not cosmetic.
         if input_modality is None:
             _pinned = getattr(self, "_latest_turn_modality", None)
-            if _pinned in ("TYPED", "SPOKEN", "SYSTEM", "WORLD_STT"):
+            if _pinned in ("TYPED", "SPOKEN", "SYSTEM", "WORLD_STT", "WEB TYPED"):
                 _modality = _pinned
             else:
                 _modality = "SPOKEN" if conf > 0 else "TYPED"
@@ -48884,6 +49343,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _display_modality = "WORLD STT"
         else:
             _display_modality = _modality
+        if _modality == "WEB TYPED":
+            web_context = getattr(self, "_active_web_turn", None)
+            web_ip = str(web_context.get("client_ip") or "").strip() if isinstance(web_context, dict) else ""
+            if web_ip:
+                _display_modality = f"WEB TYPED IP: {web_ip}"
         fmt2 = QTextCharFormat()
         fmt2.setForeground(QColor(110, 118, 150))
         # Architect 2026-05-26 task #66 extension — append YYYY-MM-DD HH:MM:SS

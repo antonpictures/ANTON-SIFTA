@@ -1080,13 +1080,24 @@ class AmbientConsciousnessOrgan:
             return 0.0
 
         try:
+            # r1733 (George 2026-07-25): hardcoded language="en" force-decoded
+            # his Romanian through English phonetics. The room hears whoever
+            # is in it, in whatever language they speak. SIFTA_STT_LANGUAGE
+            # pins one language when the owner wants that.
+            from System.swarm_stt_language import (
+                is_english_only_model,
+                log_detected_language,
+                stt_language_setting,
+            )
+            _lang = "en" if is_english_only_model(self._model_name) else stt_language_setting()
             segments, _info = self._whisper.transcribe(
                 window,
-                language="en",
+                language=_lang,
                 vad_filter=True,
                 beam_size=1,
             )
             text = " ".join(seg.text for seg in segments).strip()
+            log_detected_language(_info, text, self._model_name, surface="ambient_room")
         except Exception as e:
             print(f"[ambient] whisper transcribe error: {type(e).__name__}: {e}")
             return 0.0

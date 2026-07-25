@@ -305,3 +305,61 @@ def test_ollama_failover_reports_failed_receipt_when_all_candidates_empty(monkey
     assert row["context_chars"] >= len("Alice, can you hear me?")
     assert row["context_messages"] == 1
     assert row["finish_reason"] == "stop"
+
+
+def test_web_complete_answer_uses_visible_budget_and_records_length(monkeypatch, tmp_path):
+    from Applications import sifta_talk_to_alice_widget as talk
+    from System import swarm_kv_cache_continuity
+
+    payloads: list[dict] = []
+
+    def fake_urlopen(req, timeout=None):
+        payloads.append(json.loads((req.data or b"{}").decode("utf-8")))
+        if len(payloads) == 1:
+            return _FakeFailoverResponse([
+                json.dumps({
+                    "message": {"content": "A visible answer that was cut"},
+                    "done": False,
+                }).encode(),
+                json.dumps({"done": True, "done_reason": "length"}).encode(),
+            ])
+        return _FakeFailoverResponse([
+            json.dumps({
+                "message": {"content": "and now ends cleanly."},
+                "done": False,
+            }).encode(),
+            json.dumps({"done": True, "done_reason": "stop"}).encode(),
+        ])
+
+    worker = talk._BrainWorker(
+        "alice-m5-cortex-8b-6.3gb:latest",
+        [{"role": "user", "content": "Are you stigmergic?"}],
+        complete_answer_mode=True,
+    )
+    done: list[str] = []
+    worker.done.connect(done.append)
+    monkeypatch.setenv("SIFTA_OLLAMA_NUM_PREDICT", "64")
+    monkeypatch.setenv("SIFTA_OLLAMA_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr(swarm_kv_cache_continuity, "_STATE", tmp_path / ".sifta_state")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    worker.run()
+
+    assert done == ["A visible answer that was cut and now ends cleanly."]
+    assert len(payloads) == 2
+    assert all(payload["think"] is False for payload in payloads)
+    assert all(payload["options"]["num_predict"] == 4096 for payload in payloads)
+    assert payloads[-1]["messages"][-1]["content"].startswith("Continue exactly")
+    assert worker.last_finish_reason == "STOP"
+
+
+def test_web_turn_has_one_canonical_log_owner_and_skips_its_own_mirror():
+    import inspect
+
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    handler_source = inspect.getsource(talk.TalkToAliceWidget._handle_web_turn)
+    poll_source = inspect.getsource(talk.TalkToAliceWidget._poll_global_chat_ledger)
+    assert "_log_turn(" not in handler_source
+    assert "_web_local_turn_ids" in handler_source
+    assert "_web_local_turn_ids" in poll_source

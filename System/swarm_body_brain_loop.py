@@ -18,7 +18,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 
 from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicState
 from System.swarm_stability_to_homeostasis_bridge import read_latest_clamp_signal
@@ -251,11 +251,26 @@ def _apply_novelty_metabolic_gate(
     return out
 
 class SwarmPhysiology:
-    def __init__(self, dream_engine: Optional[Any] = None, enable_george_prior: bool = True):
+    def __init__(
+        self,
+        dream_engine: Optional[Any] = None,
+        enable_george_prior: bool = True,
+        *,
+        action_executor: Optional[Callable[[Dict[str, Any]], Mapping[str, Any]]] = None,
+        action_probe: Optional[Callable[[Dict[str, Any]], Mapping[str, Any]]] = None,
+        action_success_test: Optional[
+            Callable[[Mapping[str, Any], Mapping[str, Any]], bool]
+        ] = None,
+        action_verify_delay_s: float = 0.0,
+    ):
         self.homeostat = MetabolicHomeostat()
         self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
         self.dream_engine = dream_engine or SwarmDreamEngine(_STATE_DIR)
         self.value_history = []
+        self._action_executor = action_executor
+        self._action_probe = action_probe
+        self._action_success_test = action_success_test
+        self._action_verify_delay_s = max(0.0, float(action_verify_delay_s))
         self._last_sleep_consolidation_ts = 0.0
         try:
             self._sleep_consolidation_cooldown_s = max(
@@ -449,20 +464,174 @@ class SwarmPhysiology:
                 "action_intensity": action_intensity, **drive_bias}
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """Motor cortex/effectors. Simulated for the loop skeleton."""
-        # In a full run, this bridges to the Agent/Swimmer execution.
-        time.sleep(0.1) # Simulate physical time cost
+        """Execute through an injected hand and verify its sensed consequence.
+
+        The daemon's default remains a harmless simulation. A real hand may move
+        immediately from the current drive. If no synchronous probe is supplied,
+        the action remains pending until the normal sensory stream observes its
+        consequence; execution alone never becomes a successful body action.
+        """
+        if self._action_executor is None:
+            time.sleep(0.1)
+            return {
+                "status": "simulated",
+                "action": action,
+                "latency": 0.1,
+                "energy_used": 0.0,
+                "effect_verified": False,
+                "truth_label": "SIMULATED_BODY_ACTION",
+                "reason": "no_action_executor_injected",
+            }
+
+        from System.swarm_effect_verified_action import (
+            effect_claimed_success,
+            record_pending_effect_action,
+            record_effect_verified_action,
+            run_sync_verified_action,
+        )
+
+        def execute() -> Mapping[str, Any]:
+            return self._action_executor(dict(action)) or {}
+
+        def verify() -> Mapping[str, Any]:
+            return self._action_probe(dict(action)) or {}
+
+        success_test = self._action_success_test or (
+            lambda _effect, probe: probe.get("effect_verified") is True
+        )
+        started = time.time()
+        if self._action_probe is None:
+            try:
+                effect = dict(execute() or {})
+            except Exception as exc:
+                elapsed_ms = max(0.0, (time.time() - started) * 1000.0)
+                receipt = record_effect_verified_action(
+                    organ="swarm_body_brain_loop",
+                    action=str(action.get("type") or action.get("name") or "unknown"),
+                    effect={"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                    probe={},
+                    effect_verified=False,
+                    method="body_brain_injected_effector",
+                    effect_cleared_ms=elapsed_ms,
+                    verification_pass=0,
+                    context={"motor_command": dict(action)},
+                    state_dir=_STATE_DIR,
+                )
+                return {
+                    "status": "failed",
+                    "action": action,
+                    "latency": elapsed_ms / 1000.0,
+                    "energy_used": 0.0,
+                    "effect_verified": False,
+                    "truth_label": receipt.get("truth_label"),
+                    "effect_receipt_id": receipt.get("trace_id"),
+                    "reason": "effector_exception",
+                }
+            elapsed_ms = max(0.0, (time.time() - started) * 1000.0)
+            if not effect_claimed_success(effect):
+                receipt = record_effect_verified_action(
+                    organ="swarm_body_brain_loop",
+                    action=str(action.get("type") or action.get("name") or "unknown"),
+                    effect=effect,
+                    probe={},
+                    effect_verified=False,
+                    method="body_brain_injected_effector",
+                    effect_cleared_ms=elapsed_ms,
+                    verification_pass=0,
+                    context={"motor_command": dict(action)},
+                    state_dir=_STATE_DIR,
+                )
+                return {
+                    "status": "failed",
+                    "action": action,
+                    "latency": elapsed_ms / 1000.0,
+                    "energy_used": float(effect.get("energy_used") or 0.0),
+                    "effect_verified": False,
+                    "truth_label": receipt.get("truth_label"),
+                    "effect_receipt_id": receipt.get("trace_id"),
+                    "effect": effect,
+                    "reason": "effector_did_not_claim_execution",
+                }
+            receipt = record_pending_effect_action(
+                organ="swarm_body_brain_loop",
+                action=str(action.get("type") or action.get("name") or "unknown"),
+                effect=effect,
+                method="body_brain_natural_sensor_feedback",
+                context={"motor_command": dict(action)},
+                expected_observation=dict(action.get("expected_observation") or {}),
+                state_dir=_STATE_DIR,
+            )
+            return {
+                "status": "executed_pending_feedback",
+                "action": action,
+                "latency": elapsed_ms / 1000.0,
+                "energy_used": float(effect.get("energy_used") or 0.0),
+                "effect_verified": None,
+                "truth_label": receipt.get("truth_label"),
+                "effect_receipt_id": receipt.get("trace_id"),
+                "verification_status": receipt.get("verification_status"),
+                "effect": effect,
+                "reason": "awaiting_normal_sensory_stream",
+            }
+
+        try:
+            verified = run_sync_verified_action(
+                organ="swarm_body_brain_loop",
+                action=str(action.get("type") or action.get("name") or "unknown"),
+                execute=execute,
+                verify=verify,
+                success_from_probe=success_test,
+                state_dir=_STATE_DIR,
+                verify_delay_s=self._action_verify_delay_s,
+                method="body_brain_injected_effector",
+                context={"motor_command": dict(action)},
+            )
+        except Exception as exc:
+            elapsed_ms = max(0.0, (time.time() - started) * 1000.0)
+            receipt = record_effect_verified_action(
+                organ="swarm_body_brain_loop",
+                action=str(action.get("type") or action.get("name") or "unknown"),
+                effect={"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                probe={},
+                effect_verified=False,
+                method="body_brain_injected_effector",
+                effect_cleared_ms=elapsed_ms,
+                verification_pass=0,
+                context={"motor_command": dict(action)},
+                state_dir=_STATE_DIR,
+            )
+            return {
+                "status": "failed",
+                "action": action,
+                "latency": elapsed_ms / 1000.0,
+                "energy_used": 0.0,
+                "effect_verified": False,
+                "truth_label": receipt.get("truth_label"),
+                "effect_receipt_id": receipt.get("trace_id"),
+                "reason": "effector_or_probe_exception",
+            }
+
+        effect = dict(verified.effect or {})
         return {
-            "status": "completed",
+            "status": "completed" if verified.effect_verified else "unverified",
             "action": action,
-            "latency": 0.1,
-            "energy_used": 0.05
+            "latency": verified.effect_cleared_ms / 1000.0,
+            "energy_used": float(effect.get("energy_used") or 0.0),
+            "effect_verified": bool(verified.effect_verified),
+            "truth_label": verified.truth_label,
+            "effect_receipt_id": verified.trace_id,
+            "effect": effect,
+            "probe": dict(verified.probe or {}),
         }
 
     def _compute_value(self, result: Dict[str, Any], danger: Dict[str, Any]) -> float:
         """TD-Learning value assignment: was this good for the organism?"""
         val = -1.0
-        if result.get("status") == "completed":
+        if result.get("status") == "simulated":
+            val = 0.0
+        elif result.get("status") == "executed_pending_feedback":
+            val = 0.0
+        elif result.get("status") == "completed" and result.get("effect_verified") is True:
             # Survival value is higher when executed under danger
             val = 1.0 if not danger["is_critical"] else 2.5
         
@@ -904,6 +1073,38 @@ class SwarmPhysiology:
                 "tab_consciousness_tab_count": tab_consciousness_update.get("tab_count", 0),
                 "tab_consciousness_collect_urls": bool(tab_consciousness_update.get("collect_urls", False)),
             })
+
+        # Phase 2 — one fused view of everything that arrived since the last
+        # tick: local owner text, public web text, ambient world sound, and my
+        # own organ readings. This only reads receipts the body already left on
+        # disk, so it costs no cortex tokens and asks the world nothing.
+        observation_snapshot: Dict[str, Any] = {}
+        try:
+            from System.swarm_observation_fusion import (
+                fuse_recent,
+                fusion_snapshot,
+                lane_freshness,
+            )
+
+            observation_snapshot = fusion_snapshot(
+                fuse_recent(state_dir=_STATE_DIR, max_age_s=900.0)
+            )
+            observation_snapshot["lane_freshness"] = lane_freshness(state_dir=_STATE_DIR)
+            lanes = observation_snapshot.get("lanes") or {}
+            freshness = observation_snapshot["lane_freshness"].get("lanes") or {}
+            memory_extra.update({
+                "observation_count": observation_snapshot.get("observation_count", 0),
+                "observation_lanes": sorted(lanes.keys()),
+                "observation_commanding_count": observation_snapshot.get("commanding_count", 0),
+                "observation_newest_commanding": observation_snapshot.get(
+                    "newest_commanding_event_id", ""
+                ),
+                "observation_lane_age_s": {
+                    lane: row.get("age_s") for lane, row in freshness.items()
+                },
+            })
+        except Exception:
+            logger.debug("Observation fusion snapshot skipped (non-fatal)")
 
         mem_row = self._write_memory(
             action,
@@ -1498,6 +1699,8 @@ class SwarmPhysiology:
         
         return {
             "action":             action,
+            "result":             result,
+            "effect_verified":    bool(result.get("effect_verified")),
             "value":              value,
             "metabolic_mode":     danger["mode"],
             "drive_state":        attention,
@@ -1512,6 +1715,7 @@ class SwarmPhysiology:
             "novelty_gate":       novelty_frame.as_dict() if novelty_frame else None,
             "orienting_reflex":    orienting_row,
             "tab_consciousness":   tab_consciousness_update,
+            "observation_fusion":  observation_snapshot,
             "stability_clamp":     _clamp_receipt,
             "causal_probe":        _causal_probe_receipt,
             "viability":           _viability_receipt,
