@@ -19003,6 +19003,21 @@ def _current_system_prompt(
                     parts.append(_bts)
         except Exception:
             pass
+        # r1737 reply language. George spoke English and Alice answered in
+        # Brazilian Portuguese, then offered to keep going in it. He speaks
+        # English and Romanian only. Hearing another language (TV, phone,
+        # overheard room) must never make Alice speak one the owner does not.
+        # Pin the reply to the owner's own language before the cortex composes.
+        try:
+            from System.swarm_reply_language import reply_language_prompt_block
+
+            _rl_block = reply_language_prompt_block(
+                user_text or "", owner_label=_owner_label()
+            )
+            if _rl_block:
+                parts.append(_rl_block)
+        except Exception:
+            pass
         # r1732 memory content search. George asked Alice to look in her memory
         # for a flight ticket and the cortex invented one, because nothing
         # searched anything. Retrieval now runs deterministically before the
@@ -23145,6 +23160,13 @@ try:
     _STT_TURN_TIMEOUT_S = float(os.environ.get("SIFTA_STT_TURN_TIMEOUT_S", "45") or "45")
 except Exception:
     _STT_TURN_TIMEOUT_S = 45.0
+try:
+    _STT_TIMEOUT_COOLDOWN_S = max(
+        15.0,
+        float(os.environ.get("SIFTA_STT_TIMEOUT_COOLDOWN_S", "90") or "90"),
+    )
+except Exception:
+    _STT_TIMEOUT_COOLDOWN_S = 90.0
 
 
 
@@ -28193,6 +28215,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._listener: Optional[_ContinuousListener] = None
         self._stt: Optional[_STTWorker] = None
         self._stt_started_ts: float = 0.0
+        self._stt_consecutive_timeouts: int = 0
+        self._stt_cooldown_until: float = 0.0
         self._brain: Optional[_BrainWorker] = None
         self._direct_tool_worker: Optional[_DirectToolWorker] = None
         self._direct_tool_heartbeat_timer: Optional[QTimer] = None
@@ -32796,6 +32820,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._deferred_utterance_ts = 0.0
             self.set_status("Ear off — WORLD STT blocked.")
             return
+        cooldown_remaining = TalkToAliceWidget._stt_cooldown_remaining(self)
+        if cooldown_remaining > 0.0:
+            TalkToAliceWidget._clear_pending_voice_audio(self)
+            self.set_status(
+                f"STT cooling down after timeout ({int(cooldown_remaining + 0.999)}s); "
+                "typed input is available."
+            )
+            return
         audio = np.asarray(audio, dtype=np.float32)
 
         # If a previous turn is still running, keep the newest completed clip
@@ -32895,12 +32927,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._stt = None
         self._busy = False
         self._pending_acoustic_fingerprint = {}
+        self._stt_consecutive_timeouts = int(
+            getattr(self, "_stt_consecutive_timeouts", 0) or 0
+        ) + 1
+        self._stt_cooldown_until = time.time() + _STT_TIMEOUT_COOLDOWN_S
+        TalkToAliceWidget._clear_pending_voice_audio(self)
         self._append_system_line(
-            f"STT timed out after {int(max(5.0, _STT_TURN_TIMEOUT_S))}s; I reset the ear path and kept listening.",
+            f"STT timed out after {int(max(5.0, _STT_TURN_TIMEOUT_S))}s. "
+            f"I discarded queued room audio and paused voice transcription for "
+            f"{int(_STT_TIMEOUT_COOLDOWN_S)}s; typed input still works.",
             error=True,
         )
-        self.set_status("STT timed out; listening again.")
+        self.set_status("STT timed out; voice transcription is cooling down.")
         self._return_to_listening()
+        try:
+            QTimer.singleShot(
+                int(_STT_TIMEOUT_COOLDOWN_S * 1000) + 50,
+                self._return_to_listening,
+            )
+        except Exception:
+            pass
 
     def _on_stt_failed(self, msg: str) -> None:
         self._busy = False
@@ -38550,6 +38596,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 attachment_context=web_turn_attachment_context,
             )
             return
+        if not typed_turn:
+            self._stt_consecutive_timeouts = 0
+            self._stt_cooldown_until = 0.0
         # Architect 2026-05-26 task #66 fix — pin the current turn's input
         # modality on the instance so every _append_user_line called inside
         # this handler renders the correct label (TYPED vs SPOKEN) without
@@ -49156,6 +49205,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         self._return_to_listening()
 
+    def _stt_cooldown_remaining(self) -> float:
+        return max(
+            0.0,
+            float(getattr(self, "_stt_cooldown_until", 0.0) or 0.0) - time.time(),
+        )
+
+    def _clear_pending_voice_audio(self) -> None:
+        self._pending_wake_audio = None
+        self._pending_wake_ts = 0.0
+        self._deferred_utterance_audio = None
+        self._deferred_utterance_ts = 0.0
+
     def _process_deferred_utterance_if_any(self) -> bool:
         audio = self._deferred_utterance_audio
         if audio is None:
@@ -49164,6 +49225,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._deferred_utterance_audio = None
             self._deferred_utterance_ts = 0.0
             self.set_status("Ear off — dropped queued WORLD STT.")
+            return False
+        cooldown_remaining = TalkToAliceWidget._stt_cooldown_remaining(self)
+        if cooldown_remaining > 0.0:
+            TalkToAliceWidget._clear_pending_voice_audio(self)
+            self.set_status(
+                f"Dropped queued voice during STT cooldown "
+                f"({int(cooldown_remaining + 0.999)}s remaining)."
+            )
             return False
         age_s = time.time() - float(self._deferred_utterance_ts or 0.0)
         self._deferred_utterance_audio = None
@@ -49200,6 +49269,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._deferred_utterance_ts = 0.0
             self._set_pill("muted", "🔇 Ear off — not listening to world")
             self.set_status("Ear off — click the listening pill to enable world STT.")
+            return
+        cooldown_remaining = TalkToAliceWidget._stt_cooldown_remaining(self)
+        if cooldown_remaining > 0.0:
+            TalkToAliceWidget._clear_pending_voice_audio(self)
+            self._set_pill(
+                "error",
+                f"STT cooling down — typed input works "
+                f"({int(cooldown_remaining + 0.999)}s)",
+            )
+            self.set_status("Voice transcription paused after timeout; typed input is available.")
             return
         if self._process_deferred_utterance_if_any():
             return

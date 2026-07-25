@@ -50,7 +50,7 @@ def test_english_only_checkpoints_are_recognized():
 
 def test_english_only_model_is_swapped_for_a_multilingual_one():
     # No parameter can make tiny.en produce Romanian; the weights lack it.
-    assert resolve_stt_model("tiny.en", {}) == "small"
+    assert resolve_stt_model("tiny.en", {}) == "tiny"
     for english_only, multilingual in MULTILINGUAL_EQUIVALENT.items():
         assert resolve_stt_model(english_only, {}) == multilingual
         assert is_english_only_model(multilingual) is False
@@ -67,7 +67,7 @@ def test_pinned_english_keeps_the_english_only_model():
 
 
 def test_pinning_romanian_still_swaps_the_model():
-    assert resolve_stt_model("tiny.en", {"SIFTA_STT_LANGUAGE": "ro"}) == "small"
+    assert resolve_stt_model("tiny.en", {"SIFTA_STT_LANGUAGE": "ro"}) == "tiny"
 
 
 def test_detected_language_reads_faster_whisper_info():

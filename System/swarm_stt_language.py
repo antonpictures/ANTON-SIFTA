@@ -59,12 +59,12 @@ def is_english_locked(env: Optional[dict[str, str]] = None) -> bool:
 # setting was "tiny.en", so the parameter fix alone would have changed nothing.
 _ENGLISH_ONLY_SUFFIX = ".en"
 
-# Multilingual replacement for each English-only checkpoint. Same family, so
-# speed stays in the same class; "small" is what the ambient organ already
-# asked for.
+# Multilingual replacement for each English-only checkpoint. Keep the same
+# parameter family so enabling language detection does not silently make a
+# latency-sensitive ear several times heavier.
 MULTILINGUAL_EQUIVALENT: dict[str, str] = {
-    "tiny.en": "small",
-    "base.en": "small",
+    "tiny.en": "tiny",
+    "base.en": "base",
     "small.en": "small",
     "medium.en": "medium",
 }

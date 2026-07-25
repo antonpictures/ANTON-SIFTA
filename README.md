@@ -909,6 +909,22 @@ recent repairs to that organism-level wiring. Details:
 Node sovereignty (r1734): a serial default was leaking the Architect's hardware
 id onto other nodes; it now resolves from each node's own `owner_genesis.json`.
 
+### r1737 — Alice replies in the owner's language — July 26, 2026
+
+George spoke English and Alice answered in Brazilian Portuguese, then offered to
+keep going in it. He speaks English and Romanian only. The r1733 STT unlock let
+her *hear* many languages (correct — the room is multilingual), but nothing
+pinned the language she *speaks*, so the cortex drifted. `System/swarm_reply_language.py`
+now pins the reply to the language of the owner's own message and forbids
+switching to Spanish, Portuguese, or anything else because of overheard room
+audio, a TV, a phone call, or a previous turn — unless the owner explicitly asks.
+`SIFTA_OWNER_LANGUAGES` sets the owner's languages per node (§3 sovereignty;
+default English + Romanian). With the reply pinned, the existing voice router
+already speaks the matching voice. See
+[WE_CODE_TOGETHER_R1737](Documents/WE_CODE_TOGETHER_R1737_REPLY_IN_OWNERS_LANGUAGE.md).
+Still open: ambient audio can be answered as if it were the owner (wrong speaker,
+now at least the right language). Restart SIFTA to load the fix.
+
 ### r1732–r1733 — Memory retrieval and multilingual hearing — July 25, 2026
 
 Two owner-reported defects, both repaired against live ledger evidence rather
