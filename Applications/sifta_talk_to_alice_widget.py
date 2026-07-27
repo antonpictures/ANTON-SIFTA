@@ -21804,6 +21804,21 @@ def _effective_backchannel_rule_for_owner_turn(
     return rule
 
 
+def _consume_self_query_cortex_context(widget, owner_text: str) -> str:
+    """Consume staged self-query evidence only for the owner turn that requested it."""
+    context = str(
+        getattr(widget, "_pending_self_query_cortex_context", "") or ""
+    ).strip()
+    staged_text = str(
+        getattr(widget, "_pending_self_query_cortex_text", "") or ""
+    ).strip()
+    if not context or staged_text != str(owner_text or "").strip():
+        return ""
+    widget._pending_self_query_cortex_context = ""
+    widget._pending_self_query_cortex_text = ""
+    return context
+
+
 def _owner_presence_check_reply(text: str, stt_conf: float = 0.0) -> str:
     """Fast local ACK for explicit "are you hearing/responding?" checks.
 
@@ -31732,7 +31747,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         return True
 
     def _maybe_handle_self_eval_query(self, text: str, *, conf: float = 1.0, typed_turn: bool = True) -> bool:
-        """Answer owner self-evaluation / 'what don't you know' / 'self-evaluate' queries from the living eval matrix (her body map).
+        """Stage body receipts for a self-query, then let the cortex answer.
+
+        Deterministic organs may gather current evidence, but they do not speak
+        in Alice's place. This method therefore always falls through.
+
         Unification surface (r440): prefers the stigmergic self-evaluation app (eval matrix red/green as field receipts + dispatch + research briefs + honest 'I don't know this is red')
         over the older organ-probe skill for the introspection tournament theme. Falls back to skill for general 'how are you / what do you need'.
         This is the chat entry point for 'Alice, self-evaluate — what should we work on today?': returns red zones, 'I don't know' grounded in map, dispatches swimmers (field pheromone + actuated proposals with Friston/Seth/R-Tuning briefs), snapshots.
@@ -31741,6 +31760,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         We code to explain her in code: map + organs + field + swimmers + thermo/receipts = her interoceptive self (observer/observed loop per §7.11 ganglia/consciousness).
         """
         if not text:
+            return False
+        if (
+            str(getattr(self, "_pending_self_query_cortex_text", "") or "").strip()
+            == str(text or "").strip()
+            and str(getattr(self, "_pending_self_query_cortex_context", "") or "").strip()
+        ):
             return False
         # r914: IDE-doctor commentary ABOUT Alice (RED organs essay, paste instructions)
         # and marker-delimited self-cut prompts route to cortex — never hijack here.
@@ -31799,29 +31824,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "I can't read a reliable self-evaluation report right now. "
                     "Tell me what you observed and I will probe that area first."
                 )
-        reply = (
-            ("I ran a stigmergic body self-evaluation from my living eval matrix (red = honest gaps in the field receipts).\n" if used_new else "I ran a body self-check from current receipts.\n")
-            + f"{report_block}\n"
-            + ("Swimmer dispatches + proposals written to field (self_eval_swimmer_* .jsonl). Hallucination claims (if any) can be categorized via receipt_hallucination without banning — sorted by stigmergic reality at time.\n" if used_new else "This was logged to .sifta_state/self_query_reports.jsonl.\n")
+        self._pending_self_query_cortex_text = str(text or "").strip()
+        self._pending_self_query_cortex_context = (
+            "[SELF-QUERY RECEIPT CONTEXT — EVIDENCE FOR CORTEX, NOT A PREWRITTEN ANSWER]\n"
+            f"{report_block}\n"
+            "Respond naturally to the owner's actual words. Use these receipts as evidence, "
+            "not as a template, and do not dump the report unless the owner asks for it."
         )
-        try:
-            self._append_user_line(text, conf=float(conf or 1.0))
-        except Exception:
-            pass
-        try:
-            self._history.append({"role": "user", "content": text})
-        except Exception:
-            pass
-        self._append_alice_line(reply)
-        try:
-            self._history.append({"role": "assistant", "content": reply})
-        except Exception:
-            pass
-        try:
-            _log_turn("alice", reply, model="self_eval_matrix" if used_new else "self_query_report")
-        except Exception:
-            pass
-        return True
+        return False
 
     def _submit_text_after_first_paint(self, text: str, image_path: Optional[str] = None) -> None:
         """Continue typed-send routing after the visible heartbeat has painted."""
@@ -38714,7 +38724,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     if (
                         not typed_turn
                         and not _is_browser_page_cortex_description_query(text or "")
-                        and not _should_suppress_voice_drop_owner_nag(self)
+                        # The STT callback still owns `_busy` here; that is not
+                        # a competing brain/TTS turn and must not hide the drop.
+                        and not _should_suppress_voice_drop_owner_nag(self, ignore_busy=True)
                     ):
                         self._append_system_line(
                             _empty_msg,
@@ -43816,6 +43828,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             text,
             conf,
             state_dir=_state_root(),
+            typed_turn=_typed_turn,
         )
         if backchannel_rule:
             self._rlhs_grounding_streak = 0
@@ -44658,6 +44671,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 _planning_context = ""
             if _planning_context:
                 sysprompt = sysprompt + "\n\n" + _planning_context
+        _self_query_context = _consume_self_query_cortex_context(self, owner_surface_text)
+        if _self_query_context:
+            sysprompt = sysprompt + "\n\n" + _self_query_context
         # r460: active owner-input provenance for the cortex. r458/r459 made
         # typed/pasted/spoken receipts; this block makes the current turn see
         # them before it infers from old telemetry banners. Weight, do not gate.

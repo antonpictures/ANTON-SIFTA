@@ -51,6 +51,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -115,20 +116,48 @@ def _emit_sleep_pulse() -> None:
         pass
 
 
+def _compose_farewell_line(
+    topic: str,
+    *,
+    max_wait_s: float = 2.0,
+    composer=None,
+) -> str:
+    """Bound optional dialogue composition so it can never block a restart."""
+    result: dict[str, str] = {}
+
+    def _work() -> None:
+        try:
+            active_composer = composer
+            if active_composer is None:
+                from System.swarm_stigmergic_dialogue import compose_line
+
+                active_composer = compose_line
+            result["line"] = str(
+                active_composer(
+                    occasion="ack",
+                    topic=topic,
+                    max_words=18,
+                    timeout_s=max_wait_s,
+                )
+                or ""
+            )
+        except Exception:
+            result["line"] = ""
+
+    worker = threading.Thread(target=_work, daemon=True, name="restart-farewell-compose")
+    worker.start()
+    worker.join(timeout=max(0.05, float(max_wait_s)))
+    return result.get("line", "") if not worker.is_alive() else ""
+
+
 def _speak_farewell(scope: str, reason: str) -> None:
     """One Stigmergic Line from Alice as she goes down. Best-effort."""
-    line = ""
-    try:
-        from System.swarm_stigmergic_dialogue import compose_line
-        topic = (
-            f"about to restart the SIFTA app (reason: {reason or 'self-initiated'})"
-            if scope == "app"
-            else f"about to restart the whole Mac (reason: {reason or 'self-initiated'})"
-        )
-        line = compose_line(occasion="ack", topic=topic,
-                            max_words=18, timeout_s=6.0) or ""
-    except Exception:
-        line = ""
+    topic = (
+        f"about to restart the SIFTA app (reason: {reason or 'self-initiated'})"
+        if scope == "app"
+        else f"about to restart the whole Mac (reason: {reason or 'self-initiated'})"
+    )
+    line = _compose_farewell_line(topic, max_wait_s=2.0)
     if not line:
         line = ("I'm restarting the SIFTA app — back in a moment."
                 if scope == "app"

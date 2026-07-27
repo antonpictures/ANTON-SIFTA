@@ -11,6 +11,7 @@ CLI surface. Never actually restart anything.
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from unittest.mock import patch
 
 import pytest
@@ -65,6 +66,22 @@ def test_spawn_launcher_uses_macos_open_for_tcc_launch_path(tmp_path, monkeypatc
     assert restart._spawn_launcher() == 555
     assert calls[0][0] == ["/usr/bin/open", str(launcher)]
     assert "env" not in calls[0][1]
+
+
+def test_farewell_composition_cannot_block_restart():
+    def blocked_composer(**_kwargs):
+        time.sleep(1.0)
+        return "too late"
+
+    started = time.monotonic()
+    line = restart._compose_farewell_line(
+        "restart test",
+        max_wait_s=0.05,
+        composer=blocked_composer,
+    )
+
+    assert line == ""
+    assert time.monotonic() - started < 0.3
 
 
 def test_restart_app_dry_run_logs_and_returns_zero(tmp_path, monkeypatch):

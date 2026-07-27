@@ -106,6 +106,34 @@ def test_typed_turn_bypasses_backchannel_silencer() -> None:
     assert rule is None
 
 
+def test_typed_owner_criticism_never_becomes_low_confidence_noise() -> None:
+    from Applications import sifta_talk_to_alice_widget as tw
+
+    text = (
+        "that was some deterministic crap answer. i told you to not answer "
+        "without cortex.. that is not time saved that is time wasted. "
+        "deterministic is garbage"
+    )
+
+    assert tw._effective_backchannel_rule_for_owner_turn(
+        text,
+        0.0,
+        typed_turn=True,
+    ) is None
+
+
+def test_start_brain_passes_typed_modality_to_late_silence_gate() -> None:
+    import inspect
+
+    from Applications.sifta_talk_to_alice_widget import TalkToAliceWidget
+
+    source = inspect.getsource(TalkToAliceWidget._start_brain)
+    call_start = source.index("backchannel_rule = _effective_backchannel_rule_for_owner_turn")
+    call = source[call_start : call_start + 260]
+
+    assert "typed_turn=_typed_turn" in call
+
+
 def test_interrogative_spoken_high_conf_bypasses_backchannel() -> None:
     from Applications import sifta_talk_to_alice_widget as tw
 

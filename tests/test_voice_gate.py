@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from System import swarm_media_ingress_gate as mig
@@ -202,8 +203,8 @@ def test_direct_owner_speech_passes_mandatory_gate_helper(monkeypatch):
     assert result is None, "Direct owner speech must pass the mandatory gate"
 
 
-def test_owner_self_eval_query_short_circuits_to_receipt_backed_body_report(monkeypatch, tmp_path):
-    """Owner introspection questions should route through self_query_prompt_block without cortex."""
+def test_owner_self_eval_query_stages_receipts_but_routes_through_cortex(monkeypatch, tmp_path):
+    """Body receipts are cortex evidence, never a deterministic answer in Alice's place."""
     from Applications import sifta_talk_to_alice_widget as tw
     import System.swarm_self_query_skill as self_query
 
@@ -242,18 +243,34 @@ def test_owner_self_eval_query_short_circuits_to_receipt_backed_body_report(monk
     monkeypatch.setattr(tw, "_polarity_asr_clarification_reply", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(tw, "_log_turn", lambda *args, **kwargs: None)
     monkeypatch.setattr(tw, "_STATE_DIR", tmp_path / ".sifta_state")
+    monkeypatch.setattr(
+        tw,
+        "QTimer",
+        SimpleNamespace(singleShot=lambda _delay, callback: callback()),
+    )
 
     widget = DummyTalk()
     tw.TalkToAliceWidget._on_stt_done(widget, "Alice, what do you need right now?", 0.94, typed_turn=True)
 
-    assert widget._start_brain.call_count == 0
-    assert widget.returned is True
-    assert widget._busy is False
-    assert widget.user_lines
-    assert "Alice, what do you need right now?" in widget.user_lines[0][0]
-    assert widget.alice_lines
-    assert "I ran a body self-check from current receipts." in widget.alice_lines[0]
-    assert "I need more confidence" in widget.alice_lines[0]
+    assert widget._start_brain.call_count == 1
+    assert widget.alice_lines == []
+    assert "I need more confidence" in widget._pending_self_query_cortex_context
+    assert "not a prewritten answer" in widget._pending_self_query_cortex_context.lower()
+
+
+def test_self_query_receipts_are_consumed_once_by_the_matching_cortex_turn():
+    from Applications import sifta_talk_to_alice_widget as tw
+
+    widget = SimpleNamespace(
+        _pending_self_query_cortex_text="Are you ok alice?",
+        _pending_self_query_cortex_context="receipt-backed body evidence",
+    )
+
+    assert tw._consume_self_query_cortex_context(widget, "different owner turn") == ""
+    assert tw._consume_self_query_cortex_context(widget, "Are you ok alice?") == (
+        "receipt-backed body evidence"
+    )
+    assert tw._consume_self_query_cortex_context(widget, "Are you ok alice?") == ""
 
 
 def test_widget_direct_owner_input_reaches_brain(monkeypatch):

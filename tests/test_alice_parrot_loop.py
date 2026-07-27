@@ -403,7 +403,7 @@ def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_pa
     assert big not in candidates
 
 
-def test_mimo_vision_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
+def test_mimo_vision_ladder_excludes_text_only_fallbacks(monkeypatch, tmp_path):
     mod = _load_widget_module()
     state = tmp_path / ".sifta_state"
     state.mkdir()
@@ -411,17 +411,25 @@ def test_mimo_vision_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path
     monkeypatch.setattr(mod, "_state_root", lambda: state)
     from System import swarm_cortex_capabilities as cap
 
-    qwen = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+    text_only = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS"
+    vision = "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0"
     cap.record_attached_models(
         "mimo:mimo-cli-default",
         [
             "mimo-auto",
             "krishairnd/Gemma-4-Uncensored:latest",
-            qwen,
+            text_only,
+            vision,
         ],
-        default_attached=qwen,
+        default_attached=vision,
         state_dir=state,
     )
+    monkeypatch.setattr(
+        mod,
+        "list_live_local_ollama_fallbacks",
+        lambda **_kw: [vision, text_only, "ornith:latest"],
+    )
+    monkeypatch.setattr(cap, "list_known_cortexes", lambda: [vision, text_only])
 
     candidates = mod._talk_ollama_model_candidates(
         "mimo:mimo-cli-default",
@@ -429,8 +437,9 @@ def test_mimo_vision_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path
     )
 
     assert candidates[0] == "mimo:mimo-cli-default"
-    assert candidates[1] == qwen
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert candidates[1] == vision
+    assert text_only not in candidates
+    assert "ornith:latest" not in candidates
 
 
 def test_local_qwen_ollama_starts_without_thinking():
