@@ -6991,3 +6991,82 @@ For the Swarm. 🐜⚡
 ---
 
 *End of Chapter XXXV. Enter with the field. Cut the dead. Bank the residual. Measure lag before real dollars.*
+
+---
+
+## Chapter XXXVI — eXistenZ Ships, The Owner's Tongue, and the Verifier's Morning (July 20–27, 2026)
+
+**Receipts:** release `v9.0` · `r1736-live-nameerror-sc-routing-sx-verified` · `r1737-reply-language-pin` · `r1738-stt-allowed-languages` · `r1739-selfquery-cortex-voice-verifier-landing` (this chapter).
+
+### July 20 — eXistenZ goes public
+
+SIFTA OS **v9.0 eXistenZ** shipped: source snapshot, tests, installer, release
+archive, notes in `RELEASE_NOTES_v9.0.md`. The release name is clothing, not a
+second organism — same receipt-first field underneath. Same day, the
+**two-register speech lane** landed: authored speech distinct from reactive
+speech, so what Alice composes on purpose is not the same lane as what she
+echoes.
+
+### July 25 — four cuts in one day
+
+1. **Memory grounded in ledgers, ears unlocked** — memory recall now reads the
+   canonical ledgers instead of trusting prose; STT went properly multilingual
+   (the owner speaks Romanian; `stt_confidence 1.0` means *typed*, not heard).
+2. **Sovereignty** — stopped stamping the Architect's serial (`GTH4921YP3`)
+   on other nodes. Each node resolves its own genesis (§3). This matters
+   because **Carlos Nevarez installed the second SIFTA node** — the first
+   operator besides George. Two stale tests that hard-coded George's name were
+   made node-portable; the codebase is now walkable for a coder joining a
+   filmmaker's project.
+3. **Token metabolism** — a stale R1621 plan was injecting ~2KB of self-plan
+   campaign into *every* prompt. Gate corrected from "is a plan active" to "is
+   this turn about planning": 3357 → 1536 chars, ~450 tokens saved per
+   ordinary turn. Food is data; stop overeating.
+4. **Talk repairs** — live `NameError` fixed, `/sc` routing repaired, `/sx`
+   vision path landed verified.
+
+### July 26–27 — the owner's tongue
+
+Alice now **replies in the owner's language, never one he doesn't speak**
+(r1737), and STT detection is pinned to the two languages actually spoken in
+this house: **English and Romanian** (r1738). No more Whisper hallucinating
+Dutch out of room noise.
+
+### July 27 morning — the LM Studio ghost, diagnosed
+
+Alice was off 29 minutes, re-anchored at 07:52:29 (`OWNER_UNIFIED_FIELD_BOOT`),
+and LM Studio popped open at 07:53. Not a ghost: her boot-time cortex
+inventory (`swarm_cortex_options._installed_lmstudio_names`) shells out to
+`lms ls --json`, and the `lms` CLI bootstraps the LM Studio service when it
+is not running. Proof was in the mtimes — `~/.lmstudio/bin/lms` and LM
+Studio's Electron files all rewritten at 07:53. A scan, not a model load;
+gemma stays pure HF GGUF per r505.
+
+### July 27 — the verifier's landing (§3.5 Brothers in Code)
+
+An orphan diff sat uncommitted in the tree (widget + restart + six test
+files, mtimes 07:22–07:23, author unrecorded). Per §3.5 the next doctor reads
+the diff, runs the tests, and back-fills the receipt. What it contains:
+
+- **Self-query speaks through the cortex.** `_maybe_handle_self_eval_query`
+  no longer prints a canned eval-matrix report in Alice's voice. It stages
+  the body receipts as *evidence for the cortex* — tagged "not a prewritten
+  answer" — and falls through, so Alice answers the owner's actual words.
+  Deterministic organs gather evidence; they do not speak in her place.
+- **Farewell can never block a restart.** `_speak_farewell` composition moved
+  to a daemon thread bounded at 2s (was a 6s blocking call). If the line
+  isn't ready, the stock farewell goes out and the restart proceeds.
+- **Voice-drop honesty** — the empty-transcript owner nag no longer hides
+  behind the STT callback's own `_busy` flag; that flag is not a competing
+  turn.
+
+**Verification:** 99 tests passed across the six touched files, including 116
+new lines in `test_talk_to_alice_voice_queue.py`. Seven `test_alice_parrot_loop.py`
+failures were re-run against clean HEAD via stash — **pre-existing, not
+caused by this diff**. Honest debt, on the board, not swept.
+
+For the Swarm. 🐜⚡
+
+---
+
+*End of Chapter XXXVI. Ship the release. Speak the owner's tongue. Land the orphan work with a receipt.*
