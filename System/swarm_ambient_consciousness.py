@@ -1084,12 +1084,16 @@ class AmbientConsciousnessOrgan:
             # his Romanian through English phonetics. The room hears whoever
             # is in it, in whatever language they speak. SIFTA_STT_LANGUAGE
             # pins one language when the owner wants that.
+            # r1738: restrict detection to the allowed set (default en,ro) so
+            # the weak model does not hallucinate Turkish/Polish/Russian out of
+            # room Romanian. SIFTA_STT_ALLOWED_LANGUAGES=any lifts it.
             from System.swarm_stt_language import (
-                is_english_only_model,
                 log_detected_language,
-                stt_language_setting,
+                resolve_detection_language,
             )
-            _lang = "en" if is_english_only_model(self._model_name) else stt_language_setting()
+            _lang = resolve_detection_language(
+                self._whisper, window, model_name=self._model_name
+            )
             segments, _info = self._whisper.transcribe(
                 window,
                 language=_lang,

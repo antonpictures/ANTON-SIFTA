@@ -28,8 +28,9 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -47,6 +48,91 @@ def stt_language_setting(env: Optional[dict[str, str]] = None) -> Optional[str]:
     if raw in _AUTO_VALUES:
         return None
     return raw
+
+
+# The languages Alice is allowed to HEAR. George 2026-07-27: the multilingual
+# tiny model, given full 99-language auto-detect, hallucinated Turkish, Polish,
+# and Russian out of his Romanian ("Bu arada kurhan", "Чего? Разбука"). He asked
+# to stick to English and Romanian "until we get these two languages detected
+# and spit out properly." Restricting detection to this set stops the cross-
+# language garbage; SIFTA_STT_ALLOWED_LANGUAGES overrides it, and "any" lifts it.
+_DEFAULT_ALLOWED_LANGUAGES = ("en", "ro")
+
+
+def allowed_languages(env: Optional[dict[str, str]] = None) -> tuple[str, ...]:
+    """Languages detection may choose from. Empty tuple means no restriction."""
+    source = os.environ if env is None else env
+    raw = str(source.get("SIFTA_STT_ALLOWED_LANGUAGES", "") or "").strip().lower()
+    if not raw:
+        return _DEFAULT_ALLOWED_LANGUAGES
+    if raw in {"any", "all", "*", "auto"}:
+        return ()
+    langs = tuple(part.strip() for part in re.split(r"[,;\s]+", raw) if part.strip())
+    return langs or _DEFAULT_ALLOWED_LANGUAGES
+
+
+def best_allowed_language(
+    all_language_probs: Any,
+    allowed: Sequence[str],
+    *,
+    fallback: str = "en",
+) -> str:
+    """Pick the highest-probability language that is inside the allowed set.
+
+    all_language_probs is faster-whisper's ranked [(lang, prob), ...]. When the
+    model's own top pick is a language the owner does not speak, this quietly
+    reaches down the ranking to the best one he does, instead of transcribing
+    his Romanian as Turkish.
+    """
+    allowed_set = {str(a).strip().lower() for a in (allowed or ()) if str(a).strip()}
+    best_lang = ""
+    best_prob = -1.0
+    try:
+        for item in all_language_probs or ():
+            lang = str(item[0]).strip().lower()
+            prob = float(item[1])
+            if lang in allowed_set and prob > best_prob:
+                best_lang, best_prob = lang, prob
+    except (TypeError, ValueError, IndexError):
+        pass
+    if best_lang:
+        return best_lang
+    if allowed_set:
+        return fallback if fallback in allowed_set else sorted(allowed_set)[0]
+    return fallback
+
+
+def resolve_detection_language(
+    model: Any,
+    audio: Any,
+    *,
+    env: Optional[dict[str, str]] = None,
+    model_name: str = "",
+) -> Optional[str]:
+    """Decide which language to force on transcribe, honoring the allowed set.
+
+    Order: an explicit SIFTA_STT_LANGUAGE pin wins; an English-only checkpoint
+    can only be English; with no restriction, return None (full auto); otherwise
+    detect among all languages and force the best one inside the allowed set.
+    Never raises into the audio path — falls back to auto on any failure.
+    """
+    pinned = stt_language_setting(env)
+    if pinned:
+        return pinned
+    if model_name and is_english_only_model(model_name):
+        return "en"
+    allowed = allowed_languages(env)
+    if not allowed:
+        return None
+    if len(allowed) == 1:
+        return allowed[0]
+    try:
+        _lang, _prob, all_probs = model.detect_language(audio)
+        return best_allowed_language(all_probs, allowed)
+    except Exception:
+        # Detection failed; force the first allowed language rather than let the
+        # model roam all 99 and emit another language's garbage.
+        return allowed[0]
 
 
 def is_english_locked(env: Optional[dict[str, str]] = None) -> bool:
@@ -137,10 +223,13 @@ __all__ = [
     "LEDGER_NAME",
     "MULTILINGUAL_EQUIVALENT",
     "TRUTH_LABEL",
+    "allowed_languages",
+    "best_allowed_language",
     "detected_language",
     "is_english_locked",
     "is_english_only_model",
     "log_detected_language",
+    "resolve_detection_language",
     "resolve_stt_model",
     "stt_language_setting",
 ]

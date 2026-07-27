@@ -23527,13 +23527,18 @@ class _STTWorker(QThread):
             # multilingual; only this parameter was the cage. None = detect.
             # SIFTA_STT_LANGUAGE pins one language when he wants that.
             from System.swarm_stt_language import (
-                is_english_only_model,
                 log_detected_language,
-                stt_language_setting,
+                resolve_detection_language,
             )
-            # If the fallback above left an English-only checkpoint live, asking
-            # it to auto-detect would only crash; "en" is then the truth.
-            _lang = "en" if is_english_only_model(cls._model_name) else stt_language_setting()
+            # r1738 (George 2026-07-27): full 99-language auto-detect on the
+            # weak tiny model turned his Romanian into Turkish/Polish/Russian
+            # ("Bu arada kurhan", "Чего? Разбука"). Restrict detection to the
+            # allowed set (default en,ro) so it stays in the two languages he
+            # speaks; SIFTA_STT_LANGUAGE still pins one, SIFTA_STT_ALLOWED_
+            # LANGUAGES=any lifts the restriction.
+            _lang = resolve_detection_language(
+                cls._model, self._audio, model_name=cls._model_name
+            )
             segments, info = cls._model.transcribe(
                 self._audio,
                 language=_lang,

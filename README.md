@@ -909,6 +909,19 @@ recent repairs to that organism-level wiring. Details:
 Node sovereignty (r1734): a serial default was leaking the Architect's hardware
 id onto other nodes; it now resolves from each node's own `owner_genesis.json`.
 
+### r1738 — Hear English and Romanian only, for now — July 27, 2026
+
+George spoke Romanian with his cousin and the weak `tiny` model, on full
+99-language auto-detect, turned it into Turkish, Polish, and Russian. On
+degraded audio `tiny`'s language detector spreads across many languages
+(`en cy nn ko es fr` all with real weight), and whichever wins decodes the whole
+utterance. `System/swarm_stt_language.py` now restricts detection to an allowed
+set (`SIFTA_STT_ALLOWED_LANGUAGES`, default `en,ro`, `any` lifts it): it runs the
+model's own detector and forces the best language *inside the set*, so `tiny`
+wanting Turkish is pulled to Romanian instead. Both ears use it. Does not fix
+model accuracy (raise `SIFTA_WHISPER_MODEL`) or speaker attribution. See
+[WE_CODE_TOGETHER_R1738](Documents/WE_CODE_TOGETHER_R1738_STT_ENGLISH_ROMANIAN_ONLY.md).
+
 ### r1737 — Alice replies in the owner's language — July 26, 2026
 
 George spoke English and Alice answered in Brazilian Portuguese, then offered to
