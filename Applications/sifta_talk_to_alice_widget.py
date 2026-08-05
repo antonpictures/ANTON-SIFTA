@@ -23463,6 +23463,10 @@ class _STTWorker(QThread):
     _model = None
     _model_name = None
 
+    # r1741: the language the ear actually used for this utterance, readable
+    # by the widget after `transcribed` fires so the turn header can show it.
+    detected_language = ""
+
     def __init__(self, audio: np.ndarray, model_name: str = "tiny.en",
                  parent: QObject = None) -> None:
         super().__init__(parent)
@@ -23578,6 +23582,12 @@ class _STTWorker(QThread):
             # Confidence proxy: exp(avg_logprob) → [0..1] band.
             conf = float(np.exp(np.mean(avg_lp))) if avg_lp else 0.0
             log_detected_language(info, text, cls._model_name, surface="talk_widget")
+            # r1741: keep the used language on the instance for the turn header
+            # flag. info.language is what transcribe actually ran with; _lang
+            # is the pre-resolved force — either way, this is measured, not guessed.
+            self.detected_language = str(
+                getattr(info, "language", "") or _lang or ""
+            ).strip().lower()
             self.transcribed.emit(text, conf)
         except Exception as exc:
             self.failed.emit(f"STT crashed: {exc}")
@@ -38715,6 +38725,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._latest_turn_modality = "SPOKEN"
         else:
             self._latest_turn_modality = "SPOKEN"
+        # r1741 (George: "add the flag of the current turn language so I see
+        # what language she detected"): pin the ear's measured language for the
+        # header flag. Spoken turns carry the STT worker's language; typed
+        # turns are judged by the same detector that pins the reply language,
+        # so the flag shows exactly what the reply pin will do.
+        if typed_turn:
+            self._latest_turn_language = ""
+        else:
+            self._latest_turn_language = str(
+                getattr(getattr(self, "_stt", None), "detected_language", "") or ""
+            ).strip().lower()
         text = (text or "").strip()
         if not typed_turn and not getattr(self, "_ear_intentional_listen", True):
             self._pending_acoustic_fingerprint = {}
@@ -49651,10 +49672,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # input modality is sensory grounding; knowing WHEN it arrived is
         # part of that grounding.
         _ts_label = time.strftime("%Y-%m-%d %H:%M:%S")
+        # r1741 (George 2026-08-05): flag of the detected turn language between
+        # the conf amount and the date, so a wrong-language detection is visible
+        # the moment it happens instead of surfacing later as garbage words.
+        # Spoken turns show the ear's measured language; typed turns show the
+        # reply-pin detector's judgment. Unknown/other → white flag, honest.
+        _turn_lang = ""
+        if _modality in {"SPOKEN", "WORLD_STT"}:
+            _turn_lang = str(getattr(self, "_latest_turn_language", "") or "")
+        if not _turn_lang:
+            try:
+                from System.swarm_reply_language import detect_owner_language
+
+                _turn_lang = {"romanian": "ro", "english": "en"}.get(
+                    detect_owner_language(raw_text), ""
+                )
+            except Exception:
+                _turn_lang = ""
+        _lang_flag = {"ro": "🇷🇴", "en": "🇬🇧"}.get(_turn_lang, "🏳️")
         if _modality in {"SPOKEN", "WORLD_STT"} and conf > 0:
-            cur.insertText(f"  ({_display_modality}, stt conf {conf:.2f})  {_ts_label}", fmt2)
+            cur.insertText(
+                f"  ({_display_modality}, stt conf {conf:.2f})  {_lang_flag}  {_ts_label}",
+                fmt2,
+            )
         else:
-            cur.insertText(f"  ({_display_modality})  {_ts_label}", fmt2)
+            cur.insertText(f"  ({_display_modality})  {_lang_flag}  {_ts_label}", fmt2)
         cur.insertText("\n")
         # Architect 2026-05-14 — YouTube-subtitle look: open a new
         # paragraph with the translucent dark block format, then write
