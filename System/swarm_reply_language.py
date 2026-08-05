@@ -122,6 +122,27 @@ def reply_language_prompt_block(owner_text: str, *, owner_label: str = "George")
     )
 
 
+def reply_language_mismatch(owner_text: str, reply_text: str) -> str:
+    """Return the expected language when the reply drifted off the owner's turn.
+
+    r1740: George typed "mama mea intelege numai romaneste" and the cortex
+    answered in English — the r1737 pin was advice with no measurement behind
+    it. This is the measurement: '' means the reply matches; a language name
+    means the reply missed and names what it should have been. The caller
+    writes the receipt; this function only judges.
+    """
+    reply = str(reply_text or "").strip()
+    if not reply:
+        return ""
+    expected = detect_owner_language(owner_text)
+    got = detect_owner_language(reply)
+    if expected == "romanian" and got != "romanian":
+        return "romanian"
+    if not is_owner_language(reply):
+        return expected
+    return ""
+
+
 def is_owner_language(text: str) -> bool:
     """True when text reads as one of the owner's languages (English or Romanian).
 
@@ -172,5 +193,6 @@ __all__ = [
     "TRUTH_LABEL",
     "detect_owner_language",
     "is_owner_language",
+    "reply_language_mismatch",
     "reply_language_prompt_block",
 ]

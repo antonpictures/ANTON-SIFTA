@@ -14672,7 +14672,11 @@ def _cowatch_owner_reaction_kind(owner_text: str) -> str:
 _DEFAULT_MIC_GAIN  = 2.0
 _MIN_MIC_GAIN      = 0.5
 _MAX_MIC_GAIN      = 8.0
-_DEFAULT_WHISPER_MODEL = os.environ.get("SIFTA_WHISPER_MODEL", "tiny.en").strip() or "tiny.en"
+# r1740 (George: "urechea pe small"): the default ear is the multilingual
+# `small` checkpoint. `tiny` knew his speech was Romanian but mangled the
+# words ("glăr să Tele visul"); his mother speaks only Romanian, so accuracy
+# outranks the latency. SIFTA_WHISPER_MODEL still overrides per node.
+_DEFAULT_WHISPER_MODEL = os.environ.get("SIFTA_WHISPER_MODEL", "small").strip() or "small"
 
 
 _GAIN_STATE_FILE   = _REPO / ".sifta_state" / "talk_to_alice_audio_gain.json"
@@ -19003,21 +19007,11 @@ def _current_system_prompt(
                     parts.append(_bts)
         except Exception:
             pass
-        # r1737 reply language. George spoke English and Alice answered in
-        # Brazilian Portuguese, then offered to keep going in it. He speaks
-        # English and Romanian only. Hearing another language (TV, phone,
-        # overheard room) must never make Alice speak one the owner does not.
-        # Pin the reply to the owner's own language before the cortex composes.
-        try:
-            from System.swarm_reply_language import reply_language_prompt_block
-
-            _rl_block = reply_language_prompt_block(
-                user_text or "", owner_label=_owner_label()
-            )
-            if _rl_block:
-                parts.append(_rl_block)
-        except Exception:
-            pass
+        # r1740: the r1737 reply-language pin used to be appended here, mid-way
+        # among ~40 builder blocks, and the cortex answered George's Romanian in
+        # English anyway. It now lands as the LAST lines of the finished prompt
+        # (see the end of this function) where no budget governor can trim it
+        # and recency keeps it loud.
         # r1732 memory content search. George asked Alice to look in her memory
         # for a flight ticket and the cortex invented one, because nothing
         # searched anything. Retrieval now runs deterministically before the
@@ -20326,6 +20320,20 @@ def _current_system_prompt(
                   f"{_dedup_report['orig_chars']}→{_dedup_report['final_chars']}")
     except Exception as _dedup_exc:
         print(f"[sysprompt dedupe] skipped: {_dedup_exc}")
+    # r1740 (George 2026-08-05, typed "mama mea intelege numai romaneste" and
+    # the reply came back in English): the reply-language pin must be the last
+    # thing the cortex reads. Appended after the diet, clamp, and dedupe so no
+    # governor can trim it, and last so recency weighs it hardest.
+    try:
+        from System.swarm_reply_language import reply_language_prompt_block
+
+        _rl_block = reply_language_prompt_block(
+            user_text or "", owner_label=_owner_label()
+        )
+        if _rl_block:
+            _joined = _joined + "\n\n" + _rl_block
+    except Exception:
+        pass
     return _scrub_prompt_trigger_terms(_joined)
 
 def _homunculus_context_block() -> str:
@@ -28374,6 +28382,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._load_global_chat_history_on_open(limit=18)
         self.make_timer(700, self._poll_global_chat_ledger)
         self.make_timer(700, self._poll_web_global_chat)
+        self.make_timer(700, self._poll_web_global_chat_speech)
         # Orchestrator-staged Talk self-type commands (Grok 5-loop transfer path).
         self.make_timer(500, self._try_consume_talk_self_type_command)
         # Embodied clipboard path: paste Grok COPY into Talk, copy own post back.
@@ -29111,6 +29120,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self,
         text: str,
         *,
+        prompt_text: str = "",
+        speak_requested: bool = False,
         turn_id: str,
         session_id: str,
         client_ip: str = "",
@@ -29119,11 +29130,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         attachment_context: str = "",
     ) -> None:
         """Enter the public queue into the text cortex lane without owner power."""
-        clean = str(text or "").strip()
+        clean = str(prompt_text or text or "").strip()
+        original_text = str(text or "").strip()
         has_attachment = bool(attachments) or bool(str(attachment_context or "").strip())
         if not turn_id or (not clean and not has_attachment):
             return
-        display_text = clean or "(attachment only)"
+        display_text = original_text or clean or "(attachment only)"
         context = {
             "turn_id": str(turn_id),
             "session_id": str(session_id or ""),
@@ -29133,6 +29145,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "owner_authority": False,
             "attachments": list(attachments or []),
             "attachment_context": str(attachment_context or "").strip(),
+            "speak_requested": bool(speak_requested),
+            "prompt_text": clean,
+            "display_text": display_text,
         }
         _WEB_TURN_LOCAL.context = context
         self._active_web_turn = context
@@ -29190,11 +29205,75 @@ class TalkToAliceWidget(SiftaBaseWidget):
             web_turn=True,
             web_turn_id=turn_id,
             web_session_id=session_id,
+            web_turn_prompt_text=str(queued.get("prompt_text") or text),
+            web_turn_speak_requested=bool(queued.get("speak_requested")),
             web_turn_client_ip=str(queued.get("client_ip") or ""),
             web_turn_client_ip_source=str(queued.get("client_ip_source") or ""),
             web_turn_attachments=attachments,
             web_turn_attachment_context=attachment_context,
         )
+
+    def _poll_web_global_chat_speech(self) -> None:
+        """Consume one explicit public ``/speak`` reply through Talk TTS.
+
+        The request is separate from the WEB TYPED cortex queue so this still
+        works when the overnight responder completed the text turn first.
+        Public web input can reach this method only through the narrow,
+        rate-limited ``/speak`` marker recorded by the web gate.
+        """
+        if getattr(self, "_busy", False) or getattr(self, "_active_web_turn", None):
+            return
+        try:
+            from System.swarm_web_global_chat_gate import claim_next_web_speech_request
+
+            request = claim_next_web_speech_request()
+        except Exception:
+            return
+        if not request:
+            return
+        request_id = str(request.get("request_id") or request.get("turn_id") or "").strip()
+        speech_text = str(request.get("text") or "").strip()
+        if not request_id or not speech_text:
+            try:
+                from System.swarm_web_global_chat_gate import complete_web_speech_request
+
+                complete_web_speech_request(request_id, ok=False, error="empty_speech_text")
+            except Exception:
+                pass
+            return
+        self._active_web_speech_request = {
+            "request_id": request_id,
+            "session_id": str(request.get("session_id") or ""),
+        }
+        self._busy = True
+        try:
+            self._tts = _TTSWorker(
+                speech_text,
+                voice=self._selected_voice_name() or None,
+                parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._start_tts_with_browser_video_pause()
+        except Exception as exc:
+            self._close_active_web_speech_request(False, f"{type(exc).__name__}: {exc}")
+            self._busy = False
+
+    def _close_active_web_speech_request(self, ok: bool, error: str = "") -> None:
+        active = getattr(self, "_active_web_speech_request", None)
+        if not isinstance(active, dict):
+            return
+        self._active_web_speech_request = None
+        try:
+            from System.swarm_web_global_chat_gate import complete_web_speech_request
+
+            complete_web_speech_request(
+                str(active.get("request_id") or ""),
+                ok=bool(ok),
+                error=str(error or ""),
+            )
+        except Exception:
+            pass
 
     def _render_all_messages(self) -> None:
         """Compatibility hook for the future card renderer.
@@ -38595,6 +38674,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         web_turn: bool = False,
         web_turn_id: str = "",
         web_session_id: str = "",
+        web_turn_prompt_text: str = "",
+        web_turn_speak_requested: bool = False,
         web_turn_client_ip: str = "",
         web_turn_client_ip_source: str = "",
         web_turn_attachments: Optional[list[dict[str, Any]]] = None,
@@ -38603,6 +38684,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if web_turn:
             self._handle_web_turn(
                 text,
+                prompt_text=web_turn_prompt_text,
+                speak_requested=web_turn_speak_requested,
                 turn_id=web_turn_id,
                 session_id=web_session_id,
                 client_ip=web_turn_client_ip,
@@ -44649,8 +44732,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             try:
                 from System.swarm_web_global_chat_gate import web_attachment_prompt_block, web_typed_prompt_block
 
-                sysprompt = web_typed_prompt_block()
                 _web_context = _active_web_turn_context()
+                sysprompt = web_typed_prompt_block(
+                    speak_requested=bool((_web_context or {}).get("speak_requested"))
+                )
                 if _web_context:
                     _attachment_context = str(_web_context.get("attachment_context") or "").strip()
                     if not _attachment_context and _web_context.get("attachments"):
@@ -46277,6 +46362,39 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
             except Exception:
                 pass
+        # r1740: measure reply-language misses instead of only advising against
+        # them. George's Romanian turn got an English reply and nothing in the
+        # body noticed. Now the miss leaves a ledger row and a visible line;
+        # the end-of-prompt pin in _current_system_prompt is the cure, this
+        # receipt is the thermometer that proves whether it holds.
+        try:
+            from System.swarm_reply_language import reply_language_mismatch
+
+            _last_owner_text = ""
+            for _h in reversed(self._history or []):
+                if _h.get("role") == "user":
+                    _last_owner_text = str(_h.get("content") or "")
+                    break
+            _expected_rl = reply_language_mismatch(_last_owner_text, raw)
+            if _expected_rl:
+                _row = {
+                    "ts": time.time(),
+                    "kind": "REPLY_LANGUAGE_MISMATCH",
+                    "expected": _expected_rl,
+                    "owner_text_head": _last_owner_text[:120],
+                    "reply_head": raw[:120],
+                    "truth_label": "OBSERVED_REPLY_LANGUAGE_V1",
+                }
+                _mismatch_path = _state_root() / "reply_language_mismatch.jsonl"
+                with open(_mismatch_path, "a", encoding="utf-8") as _f:
+                    _f.write(json.dumps(_row, ensure_ascii=False) + "\n")
+                self._append_system_line(
+                    f"(reply-language guard: the owner's turn was {_expected_rl} "
+                    "and this reply drifted off it — receipt written to "
+                    "reply_language_mismatch.jsonl)"
+                )
+        except Exception:
+            pass
         _web_context = _active_web_turn_context()
         if _web_context:
             # Public text is allowed to reach the same cortex, but its output
@@ -46306,6 +46424,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     client_ip_source=str(_web_context.get("client_ip_source") or ""),
                     lag_stamp=dict(getattr(self._brain, "last_lag_stamp", {}) or {}),
                     done_reason=str(getattr(self._brain, "last_finish_reason", "") or ""),
+                    speak_requested=bool(_web_context.get("speak_requested")),
                 )
             except Exception as exc:
                 self._append_system_line(
@@ -48866,6 +48985,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     client_ip=str(_web_context.get("client_ip") or ""),
                     client_ip_source=str(_web_context.get("client_ip_source") or ""),
                     done_reason="CORTEX_FAILED",
+                    speak_requested=bool(_web_context.get("speak_requested")),
                 )
             except Exception:
                 pass
@@ -49187,6 +49307,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
 
     def _on_tts_done(self, ok: bool) -> None:
+        self._close_active_web_speech_request(bool(ok))
         self._busy = False
         self._resume_browser_video_after_speech()
         mark_end = getattr(self, "_mark_speech_time_end", None)
@@ -49201,6 +49322,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._return_to_listening()
 
     def _on_tts_failed(self, msg: str) -> None:
+        self._close_active_web_speech_request(False, str(msg or ""))
         self._busy = False
         self._resume_browser_video_after_speech()
         mark_end = getattr(self, "_mark_speech_time_end", None)

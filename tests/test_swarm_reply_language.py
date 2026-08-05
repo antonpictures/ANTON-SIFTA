@@ -10,6 +10,7 @@ from System.swarm_reply_language import (
     detect_owner_language,
     is_owner_language,
     owner_languages,
+    reply_language_mismatch,
     reply_language_prompt_block,
 )
 
@@ -89,3 +90,38 @@ def test_is_owner_language_accepts_english_and_romanian():
 def test_is_owner_language_flags_portuguese_drift():
     # The exact drift that must be caught if the prompt pin ever fails.
     assert is_owner_language(ALICE_PORTUGUESE) is False
+
+
+# r1740: the verbatim typed turn that got an English answer anyway.
+GEORGE_MAMA_ROMANIAN = (
+    "vorbeste romaneste. mama mea intelege numai romaneste, ea nu vorbeste engleza."
+)
+ALICE_ENGLISH_REPLY = (
+    "Thank you so much for letting me know. That is completely understandable! "
+    "There is no need to worry about the language barrier at all."
+)
+ALICE_ROMANIAN_REPLY = (
+    "Multumesc ca mi-ai spus. Bineinteles, vorbim romaneste — spune-i mamei tale "
+    "ca ma poate intreba orice."
+)
+
+
+def test_mismatch_flags_english_reply_to_romanian_turn():
+    # The exact miss from George's screen, 2026-08-05 21:42.
+    assert reply_language_mismatch(GEORGE_MAMA_ROMANIAN, ALICE_ENGLISH_REPLY) == "romanian"
+
+
+def test_mismatch_accepts_romanian_reply_to_romanian_turn():
+    assert reply_language_mismatch(GEORGE_MAMA_ROMANIAN, ALICE_ROMANIAN_REPLY) == ""
+
+
+def test_mismatch_accepts_english_reply_to_english_turn():
+    assert reply_language_mismatch(GEORGE_ENGLISH, "That is a fair point about the base.") == ""
+
+
+def test_mismatch_flags_portuguese_reply_to_english_turn():
+    assert reply_language_mismatch(GEORGE_ENGLISH, ALICE_PORTUGUESE) == "english"
+
+
+def test_mismatch_ignores_empty_reply():
+    assert reply_language_mismatch(GEORGE_MAMA_ROMANIAN, "") == ""
