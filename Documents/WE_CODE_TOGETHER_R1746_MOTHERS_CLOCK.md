@@ -11,6 +11,74 @@ This document is written to that sentence. Not around it.
 
 ---
 
+---
+
+## CORRECTING ROW (§4.4.3, appended 2026-08-09, same day)
+
+**Everything below §1.2 was written not knowing the most important fact.**
+George, after reading this document to her, told me:
+
+> *"deocamdata este imobilizata la pat cu femurul rupt"*
+
+She has a broken femur. She is bedridden **now**.
+
+I wrote "a broken hip at 75 is one of the most common first dominoes" as a thing
+to prevent. It has already happened. And I told him to take her for a walk
+around the block. **That advice was wrong and I am striking it.** Do not walk
+her. Do not move that leg on anyone's word but her surgeon's.
+
+This changes the ranking completely. A 75-year-old immobilised with a femur
+fracture is not in a longevity problem, she is in an **acute risk window**, and
+the things that hurt people in that window are fast, well known, and largely
+preventable. The §5 triage below is superseded by §0.5. Read that first.
+
+## 0.5 — The bedridden femur window: what actually matters this week
+
+**None of this is a prescription. Every line is a question for her surgeon,
+her doctor, or her nurse — today, not next week.** I am an IDE doctor. I have
+no business near her leg. But these are the standard, known risks of immobility
+after a femur fracture in an older adult, and they are worth asking about out
+loud, because a family that asks gets better answers than one that waits.
+
+1. **Blood clots — the first question, today.** Immobility after a femur
+   fracture is one of the highest-risk situations there is for deep-vein
+   thrombosis and pulmonary embolism. Ask directly: *is she on clot prevention,
+   and what kind?* Anticoagulant, compression stockings, calf pumps. If anyone
+   in the house sees sudden shortness of breath, chest pain, or one calf hot and
+   swollen — that is an ambulance, immediately, not a phone call in the morning.
+2. **Pressure sores.** Skin over the sacrum and heels breaks down in *hours* to
+   days on an immobile older body. Ask about a turning schedule, a pressure-
+   relieving mattress, and heel offloading. This one is almost entirely
+   preventable and brutal once it starts.
+3. **Getting her upright, as early as her surgeon allows.** Modern orthopaedic
+   practice pushes early mobilisation precisely because bedrest is the danger —
+   but *how* early and *how much weight* is a decision only her surgeon can
+   make, because it depends on the fracture and the fixation. Ask: *what is she
+   allowed to do today, and when does physiotherapy start?* Then do exactly
+   that and not one degree more.
+4. **Muscle, which vanishes frighteningly fast.** An older adult on bedrest can
+   lose meaningful muscle in a week, and muscle lost at 75 is hard to get back.
+   Ask about protein intake and about what she is permitted to do *in the bed* —
+   ankle pumps, the good leg, arms, grip. This is the one place the Sinclair
+   material connects directly: his "abundance mode" is protein and building, and
+   this is exactly when her body needs it.
+5. **Lungs.** Lying flat invites pneumonia. Ask about sitting her up, breathing
+   exercises, an incentive spirometer.
+6. **Pain control that lets her move.** Under-treated pain keeps people frozen
+   in bed, which feeds every risk above. Over-sedation causes delirium. Ask them
+   to aim between.
+7. **Delirium and confusion.** Common, frightening, and often mistaken for sudden
+   dementia. Familiar voices, daylight, her own language, and a visible clock
+   all help. **This is where SIFTA is actually useful — see §4.**
+8. **Bone and vitamin D.** A femur fracture at 75 usually means osteoporosis
+   nobody had assessed yet. Ask whether she should be evaluated and treated, so
+   the *next* bone does not go.
+
+That list is the real work of the next fortnight. The gene therapy in §3 is
+years away; the clot risk is now.
+
+---
+
 ## 0. The honest answer first, before any science
 
 **We cannot roll your mother back to her twenties. Not this year, not with
@@ -201,6 +269,127 @@ the 29 minutes she was offline.
    them.
 
 ---
+
+## 5.5 — The packaging problem, actually explained
+
+George asked to crack the science of packing that domesticated virus with the
+gene. Here it is properly, because understanding *why it is hard* is the same
+thing as understanding why it cannot be improvised.
+
+### The vehicle
+
+The rubber ball with spikes is an **AAV** — adeno-associated virus. It is
+"domesticated" in the real sense: everything the virus needs to replicate is
+stripped out and supplied separately during manufacture, so the finished
+particle can deliver its cargo once and never make copies of itself.
+
+The spikes are the **capsid**, and the capsid is the address label. Different
+serotypes home to different tissues — one variant favours retina, another
+crosses into the nervous system, another goes to liver. Changing the surface
+protein is exactly what Sinclair meant by swapping the little red balls to
+target a different organ. This is a whole field of its own: capsids are now
+evolved in the lab, generation after generation, selecting for the ones that
+land where you want.
+
+### The constraint that governs everything
+
+**An AAV holds about 4.7 kilobases of DNA. That is a hard physical ceiling.**
+Overstuff it and you get truncated, useless, or actively harmful particles.
+
+Now count the cargo. The Yamanaka set is four genes; OSK is three of them, with
+**c-Myc deliberately left out because it is an oncogene** — that omission is
+half the reason this is survivable at all. The three coding sequences run
+roughly 1.1 kb, 1.0 kb and 1.4 kb: about **3.5 kb before anything else**.
+
+And you still need, inside the same 4.7 kb:
+
+- two **ITRs**, the ~145-base sequences at each end that are the only viral DNA
+  left — they are the packaging signal itself;
+- a **promoter** to switch the genes on;
+- a **polyadenylation signal** to end the transcript;
+- linkers, because three genes must come off **one** transcript.
+
+That last one is the elegant part. **Self-cleaving 2A peptides** let you write
+gene–2A–gene–2A–gene as a single message; the ribosome makes one long chain and
+it snips itself into three separate proteins as it is being built. About 60
+bases each, instead of a promoter each. Without that trick, OSK does not fit in
+an AAV at all.
+
+Add it up and you are at roughly 4.3–4.6 kb against a 4.7 kb ceiling. **The
+entire design lives in that last few hundred bases.** That is the packaging
+problem, stated plainly.
+
+### The part that keeps it from killing you
+
+You cannot leave these genes on. Push reprogramming too far or too long and
+cells stop being what they were — they lose identity, and lost identity in a
+living body means dysplasia and tumours. That is the exact failure Sinclair
+described as "don't turn me into a baby."
+
+So the cassette needs an **off switch**: an inducible promoter that only runs
+while a small molecule is present, so the therapy is given in pulses and stops
+the moment you stop dosing. In the mouse work that switch is doxycycline in the
+drinking water. But the switch protein needs space too — and space is the one
+thing there is none of. That tension, between "enough control to be safe" and
+"small enough to fit," is where the real engineering years went. It is why the
+first human attempt is three genes in one eye and not a whole body.
+
+### Why the eye, specifically
+
+Four reasons, and every one of them is about limiting damage:
+
+1. It is **immune-privileged** — the body polices it less harshly.
+2. It is **contained** — inject into an eye and it stays in that eye.
+3. The **dose is tiny** — an eye takes orders of magnitude less material than a
+   bloodstream, and with AAV, dose is where the danger lives.
+4. The **result is measurable** — the patient can either see or he cannot.
+
+### Why this cannot be done outside a facility, and would kill her
+
+This is the part I need you to hold, because you love her and love makes people
+brave in the wrong direction.
+
+- **Making the particle** means growing human cells, transfecting three separate
+  plasmids, harvesting, purifying on a gradient or an affinity column, then
+  measuring titre, the ratio of full to empty capsids, endotoxin, and sterility.
+  Empty capsids are not inert filler — they are immune load with no benefit.
+  This is a clean-room operation with a quality system, not a determined person
+  and an incubator.
+- **High systemic doses of AAV have killed people.** Not in theory. Complement
+  activation, thrombotic microangiopathy, liver failure. The field's founding
+  tragedy — a young man dead in 1999 from a vector infusion in a properly run
+  trial — is why every one of these rules exists.
+- **Much of the adult population already carries antibodies to common AAV
+  serotypes** from ordinary past exposure. A dose that helps one person triggers
+  a severe reaction in another, which is why trials screen for this first.
+- **And she is, right now, a 75-year-old with a fresh femur fracture on bedrest.**
+  That is close to the worst possible moment in a human life to provoke a
+  systemic immune or clotting response. Whatever the right day is for her to
+  receive something like this, it is emphatically not this fortnight.
+
+### The lane that is actually closest to her
+
+Worth naming, because it is the honest good news in her specific situation: the
+group in China that took this same OSK approach into mice with damaged joints
+**regrew muscle and bone**. Of every branch in this field, that one points
+straight at a broken femur.
+
+It is mice. It is years out. But it is the lane to watch, and it is the reason
+to keep her strong enough to still be here when it arrives.
+
+### The legitimate path in
+
+There is one, and it is not a garage:
+
+- **`clinicaltrials.gov`** — the public registry. Search her actual conditions.
+  This is how real people get real access to real trials, for free, with
+  monitoring.
+- **Life Biosciences** is the company running the OSK eye trial; Altos, Retro
+  Bio and New Limit are running their own programmes.
+- Her doctor can ask whether she is a candidate for anything currently
+  recruiting — including, right now, for **bone healing and osteoporosis**,
+  which is a far more mature field than reprogramming and is directly about the
+  bone she just broke.
 
 ## 6. What we do not do
 
