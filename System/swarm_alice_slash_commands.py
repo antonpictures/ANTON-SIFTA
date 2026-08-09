@@ -343,6 +343,15 @@ def registered_slash_commands() -> List[Dict[str, str]]:
             "detail": "/speech budget <seconds> — change spoken-time budget for the mouth selector",
         },
         {
+            "cmd": "/speak",
+            "summary": "public WEB TYPED feature: queue the message text for Alice's local speakers",
+            "detail": (
+                "/speak <message> is typed on the public web surface; Alice says the exact message after "
+                "the marker. It is not a web button, does not grant owner authority, and is only complete "
+                "when the local speech receipt is ok=true."
+            ),
+        },
+        {
             "cmd": "/field",
             "summary": "render unified organ vitals from organ_field.jsonl",
             "detail": "one line per organ: health, load, staleness, top signal",
@@ -511,7 +520,7 @@ def _write_palette_diary_row(*, state_dir: Path, owner_text: str) -> bool:
                 "owner_text": str(owner_text or "")[:500],
                 "note": (
                     "George asked for my SIFTA OS global chat slash palette (/help, /?, "
-                    "/cortex, /schedule, /sc, /p). I displayed the live registry. "
+                    "/cortex, /schedule, /sc, /sx, /speak, /p). I displayed the live registry. "
                     "My next thinking turn knows these levers exist, and that Matrix "
                     "Terminal/cortex natural-language commands are separate OS surfaces."
                 ),
@@ -1828,6 +1837,15 @@ def handle_slash_command(
         or re.match(r"^/sx[1-9]$", cmd)
     ):
         out["handled"] = False
+        return out
+
+    if cmd == "/speak":
+        out["reply"] = (
+            "`/speak <message>` is a public WEB TYPED feature. "
+            "Type it on stigmergicode.com; I queue the exact message for my local speakers. "
+            "It is not an owner Talk command, and I only confirm speech after an ok=true receipt."
+        )
+        out["error"] = "web_typed_only"
         return out
 
     if cmd in ("/", "/?", "/help", "/commands"):

@@ -188,6 +188,7 @@ Gate-file proposals (e.g. `System/swarm_predator_gate_writer.py`) stay `proposed
 | `/grok` | Grok OAuth health + fast/build pins |
 | `/heart` | Hardware heart ledger (timer + power/thermal when exposed) |
 | `/speech` | Speech-lane weights; `/speech budget <s>` |
+| `/speak <message>` | Public WEB TYPED feature: queue the exact message for Alice's local speakers; completion is only confirmed by an `ok=true` speech receipt |
 | `/field` | Organ vitals from `organ_field.jsonl` |
 | `/ask-fable` | Show/append `questions_for_fable.jsonl` |
 | `/improve` | Self-improvement proposals/outcomes |
@@ -238,6 +239,37 @@ Gate-file proposals (e.g. `System/swarm_predator_gate_writer.py`) stay `proposed
 | Trace quarantine | — | **OPEN** — quarantine ledger missing; count unverified |
 
 **Section receipt:** Fable rows OBSERVED from jsonl; tournament wounds from `CONSCIOUSNESS_TOURNAMENT_2026-06-11.md` tail.
+
+---
+
+## 7. Continuity receipt — 2026-08-09 (web global chat and Romanian reply repair)
+
+**Scope:** This section is an append-only continuation, not a claim that the June
+inventory above is current. It records the live surfaces probed during the August
+web/speech repair so the next doctor can restart from evidence.
+
+| Surface | Observed state | Verification / next action |
+|---|---|---|
+| Romanian reply guard | `.sifta_state/reply_language_mismatch.jsonl` was present and empty at the probe. | Keep the reply-language pin at the prompt tail; investigate any new mismatch row rather than narrating a language switch. |
+| WEB TYPED `/speak` | A message that **begins** with `/speak` queues only the text after the marker for local TTS. Prose and URLs containing `/speak` remain ordinary text. | `System/swarm_web_global_chat_gate.py`; 41 focused web-chat/speech tests passed. |
+| Speech completion | Request, claim, and done ledgers are distinct. A request is only spoken after `web_global_chat_speech_done.jsonl` records `ok: true`. | `System/swarm_web_global_chat_speech_worker.py` and Talk's `_poll_web_global_chat_speech()` both consume the same leased queue. |
+| Headless mouth | `com.sifta.web-global-chat-speech-worker` was loaded and `running` through the user LaunchAgent when probed. | Inspect with `launchctl print gui/$(id -u)/com.sifta.web-global-chat-speech-worker`; runtime logs live under `.sifta_state/`. |
+| Web code verification | `py_compile`, `plutil -lint`, and `bash -n` passed. | Focused suite: `41 passed` for r1727–r1730, night worker, and speech worker. |
+| Spinal correction | `spinal_cord_cycle()` selected an existing red Kalshi receipt and returned `NO_PATCH`; it did not claim a repair. | Cycle `fd895072-4883-4593-90c3-4efe5cc847b2`; inspect the actual Kalshi evidence before any money-related change. |
+
+### Live debts at this receipt
+
+1. `tools/whats_left.py` still selects an older June carrier (`r1568`); its
+   selector needs a separate, evidence-backed carrier refresh.
+2. The worktree contains uncommitted shared edits in the web/chat, handoff,
+   marketing-inventory, and `Vendor/alice-cli` lanes. Review the diff before a
+   commit; do not treat this handoff as proof that every dirty line is ours.
+3. The paper/Kalshi spinal alert remains unresolved. Do not enable real-money
+   action from the reported win rate alone; the current red signal names
+   unverified fill/fee/position reconciliation.
+
+**Section receipt:** Codex registration `c27c2dd3-60ad-41c9-89d6-05e434fad069`;
+IDE coordination trace only, forgeable local JSONL, not a swimmer or economic receipt.
 
 ---
 

@@ -86,7 +86,10 @@ def session_messages(
     replies_path: Path,
     limit: int = 10,
 ) -> list[dict[str, str]]:
-    from System.swarm_web_global_chat_gate import web_attachment_prompt_block, web_typed_prompt_block
+    from System.swarm_web_global_chat_gate import (
+        web_attachment_prompt_block,
+        web_typed_prompt_block,
+    )
 
     def _merge_attachment_context(text: str, attachments: Any) -> str:
         block = web_attachment_prompt_block(attachments)
@@ -100,7 +103,7 @@ def session_messages(
         "Be warm, direct, thoughtful, and honest. Do not narrate hidden telemetry, ledgers, "
         "routing, models, or gate machinery to the visitor. Do not claim speed or senses you "
         "do not have. Markdown is welcome when it improves readability.\n\n"
-        + web_typed_prompt_block()
+        + web_typed_prompt_block(speak_requested=bool(queued.get("speak_requested")))
     )
     session_id = str(queued.get("session_id") or "")
     ingress = [
@@ -114,7 +117,7 @@ def session_messages(
     }
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for row in ingress[-max(1, int(limit)):]:
-        text = str(row.get("text") or "").strip()
+        text = str(row.get("prompt_text") or row.get("text") or "").strip()
         attachments = row.get("attachments")
         merged = _merge_attachment_context(text, attachments)
         if merged:
@@ -122,7 +125,7 @@ def session_messages(
         prior_reply = reply_by_turn.get(str(row.get("turn_id") or ""), "").strip()
         if prior_reply:
             messages.append({"role": "assistant", "content": prior_reply})
-    current_text = str(queued.get("text") or "").strip()
+    current_text = str(queued.get("prompt_text") or queued.get("text") or "").strip()
     current_attachments = queued.get("attachments")
     current_merged = _merge_attachment_context(current_text, current_attachments)
     queued_context = str(queued.get("attachment_context") or "").strip()
@@ -265,6 +268,7 @@ def process_one(
             done_reason=done_reason,
             scrub_path=scrub_path,
             metabolism_path=metabolism_path,
+            speak_requested=bool(queued.get("speak_requested")),
         )
         _append_health(
             "answered",
@@ -289,6 +293,7 @@ def process_one(
             done_reason="CORTEX_FAILED",
             scrub_path=scrub_path,
             metabolism_path=metabolism_path,
+            speak_requested=bool(queued.get("speak_requested")),
         )
         _append_health("answer_failed", turn_id=turn_id, error=type(exc).__name__)
         return row

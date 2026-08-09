@@ -194,7 +194,7 @@ button{border:0;cursor:pointer}
       <div class="composer-tools">
         <button id="attach" class="attach-btn" type="button">Attach file</button>
         <input id="files" class="file-input" type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.json,.pdf,image/*,text/plain,application/pdf">
-        <span id="attach-note" class="attach-note">Images, text, and PDF files. Up to 3 attachments.</span>
+        <span id="attach-note" class="attach-note">Images, text, and PDF files.</span>
       </div>
     </div>
     <button id="send" class="send-btn">Send</button>
@@ -224,7 +224,7 @@ function clearWall(){wall.querySelectorAll('.msg').forEach(n=>n.remove());render
 function escapeHtml(value){return String(value||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function formatBytes(bytes){const n=Number(bytes)||0;if(n<1024)return`${n} B`;if(n<1024*1024)return`${(n/1024).toFixed(n<10*1024?1:0)} KB`;return`${(n/1024/1024).toFixed(n<1024*1024?1:0)} MB`}
 function attachmentMeta(file){return{name:file.name,mime:file.type||'application/octet-stream',size_bytes:file.size,data_url:file.data_url||'',storage_relpath:file.storage_relpath||''}}
-function renderComposerAttachments(){attachmentsEl.innerHTML='';if(!stagedAttachments.length){attachNote.textContent='Images, text, and PDF files. Up to 3 attachments.';return;}attachNote.textContent=`${stagedAttachments.length} attachment${stagedAttachments.length===1?'':'s'} selected.`;stagedAttachments.forEach((file,index)=>{const info=attachmentMeta(file);const chip=document.createElement('span');chip.className='attachment-chip';const strong=document.createElement('strong');strong.textContent=info.name||`attachment-${index+1}`;const meta=document.createElement('span');meta.className='size';meta.textContent=`${info.mime||'file'} · ${formatBytes(info.size_bytes)}`;const remove=document.createElement('button');remove.type='button';remove.className='remove';remove.setAttribute('aria-label',`Remove ${info.name||'attachment'}`);remove.textContent='×';remove.addEventListener('click',()=>{stagedAttachments=stagedAttachments.filter((_,i)=>i!==index);renderComposerAttachments()});chip.append(strong,meta,remove);attachmentsEl.append(chip)})}
+function renderComposerAttachments(){attachmentsEl.innerHTML='';if(!stagedAttachments.length){attachNote.textContent='Images, text, and PDF files.';return;}attachNote.textContent=`${stagedAttachments.length} attachment${stagedAttachments.length===1?'':'s'} selected.`;stagedAttachments.forEach((file,index)=>{const info=attachmentMeta(file);const chip=document.createElement('span');chip.className='attachment-chip';const strong=document.createElement('strong');strong.textContent=info.name||`attachment-${index+1}`;const meta=document.createElement('span');meta.className='size';meta.textContent=`${info.mime||'file'} · ${formatBytes(info.size_bytes)}`;const remove=document.createElement('button');remove.type='button';remove.className='remove';remove.setAttribute('aria-label',`Remove ${info.name||'attachment'}`);remove.textContent='×';remove.addEventListener('click',()=>{stagedAttachments=stagedAttachments.filter((_,i)=>i!==index);renderComposerAttachments()});chip.append(strong,meta,remove);attachmentsEl.append(chip)})}
 function renderMessageAttachments(host,attachments){const list=Array.isArray(attachments)?attachments.filter(Boolean):[];if(!list.length)return;const wrap=document.createElement('div');wrap.className='attachments message-attachments';list.forEach(item=>{const chip=document.createElement('span');chip.className='attachment-chip';const strong=document.createElement('strong');strong.textContent=item.name||item.original_name||'attachment';const meta=document.createElement('span');meta.className='size';meta.textContent=`${item.mime||'file'} · ${formatBytes(item.size_bytes||item.size||0)}`;chip.append(strong,meta);wrap.append(chip)});host.append(wrap)}
 function fileToAttachment(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,mime:file.type||'application/octet-stream',size_bytes:file.size,data_url:String(reader.result||'')});reader.onerror=()=>reject(reader.error||new Error(`Failed to read ${file.name}`));reader.readAsDataURL(file)})}
 function markdown(value){let s=escapeHtml(value);const blocks=[];s=s.replace(/```([\s\S]*?)```/g,(_,code)=>`@@BLOCK${blocks.push('<pre><code>'+code.trim()+'</code></pre>')-1}@@`);s=s.replace(/^###\s+(.+)$/gm,'<h3>$1</h3>').replace(/^##\s+(.+)$/gm,'<h2>$1</h2>').replace(/^#\s+(.+)$/gm,'<h1>$1</h1>');s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*([^*\n]+)\*/g,'<em>$1</em>');s=s.replace(/^[-*]\s+(.+)$/gm,'<li>$1</li>').replace(/(?:<li>.*<\/li>\n?)+/g,m=>'<ul>'+m+'</ul>');s=s.split(/\n{2,}/).map(p=>/^<(?:h\d|ul|pre)/.test(p)?p:'<p>'+p.replace(/\n/g,'<br>')+'</p>').join('');return s.replace(/@@BLOCK(\d+)@@/g,(_,i)=>blocks[Number(i)]||'')}
@@ -773,6 +773,7 @@ class ChorusHandler(BaseHTTPRequestHandler):
                         "status": "answered",
                         "turn_id": result["turn_id"],
                         "session_id": result["session_id"],
+                        "speak_requested": bool(result.get("speak_requested")),
                     },
                 )
                 return
@@ -783,6 +784,7 @@ class ChorusHandler(BaseHTTPRequestHandler):
                     "status": "queued",
                     "turn_id": result["turn_id"],
                     "session_id": result["session_id"],
+                    "speak_requested": bool(result.get("speak_requested")),
                 },
             )
         except Exception as exc:
@@ -876,6 +878,18 @@ def main():
     for s in M5_SWIMMERS:
         print(f"  {s['face']} {s['id']:12s} — {s['capability']}")
     print()
+
+    # Recover requests completed by a pre-/speak worker before the speech
+    # queue existed. This is idempotent and keeps a web restart from losing a
+    # visitor's explicit request.
+    try:
+        from System.swarm_web_global_chat_gate import repair_web_speech_requests
+
+        repaired = repair_web_speech_requests()
+        if repaired:
+            _log(f"Recovered {len(repaired)} explicit web speech request(s)")
+    except Exception as exc:
+        _log(f"Web speech recovery skipped: {type(exc).__name__}")
 
     _log(f"Listening on 0.0.0.0:{LISTEN_PORT} for CHORUS_INVITE...")
     _log("Endpoints: POST /chorus/invite | GET /chorus/ping | GET /chorus/roster")

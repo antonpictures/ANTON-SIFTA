@@ -139,6 +139,9 @@ RELOADABLE: Dict[str, str] = {
     # _OllamaWorker class definition; the long-lived TalkToAliceWidget
     # instance will instantiate the NEW class on the next user turn.
     "talk_widget":      "Applications.sifta_talk_to_alice_widget",
+    # Slash-command registry is pure data + formatting; reload it so Alice's
+    # next prompt learns newly documented command meanings without a desktop restart.
+    "slash_commands":   "System.swarm_alice_slash_commands",
     # Voice-boundary selector: pure functions + receipt append only. Safe to
     # swap so speech-lane fixes apply without relaunching the desktop.
     "mouth_selector":   "System.swarm_mouth_sentence_selector",
