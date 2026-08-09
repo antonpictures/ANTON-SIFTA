@@ -92,3 +92,72 @@ def test_score_panel_evidence_requires_all_green(tmp_path):
 
     assert scored["ok"] is False
     assert scored["green_count"] == 1
+
+
+# ── r1744 cut #1 (WCT r1743 §2, the jewel-beetle failure) ────────────────────
+# Hoffman's beetle mates with a beer bottle because "dimpled, glossy, brown"
+# was the only icon it had. A ledger that exists and has a fresh mtime is the
+# same kind of icon; rows inside it are the reality. A green cell must prove
+# it holds evidence, not merely that a file with the right name is on disk.
+
+
+def _cell(tmp_path, ledger_body: str, *, suffix: str = ".jsonl"):
+    code = tmp_path / "System" / "organ.py"
+    ledger = tmp_path / ".sifta_state" / f"organ_receipts{suffix}"
+    code.parent.mkdir(parents=True, exist_ok=True)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    code.write_text("# organ\n", encoding="utf-8")
+    ledger.write_text(ledger_body, encoding="utf-8")
+    now = time.time()
+    os.utime(code, (now, now))
+    os.utime(ledger, (now, now))
+    return evidence_score_for_row(
+        {
+            "panel": "organ",
+            "path": "System/organ.py",
+            "ledger": f".sifta_state/organ_receipts{suffix}",
+        },
+        repo_root=tmp_path,
+        now=now,
+    )
+
+
+def test_empty_but_freshly_touched_ledger_cannot_be_green(tmp_path):
+    """The exact live shape of .sifta_state/reply_language_mismatch.jsonl."""
+    scored = _cell(tmp_path, "")
+
+    assert scored["evidence_rows"] == 0
+    assert "empty_ledger" in scored["problems"]
+    assert scored["status"] != "green", "zero rows is a bottle, not evidence"
+
+
+def test_evidence_rows_are_counted_and_exposed(tmp_path):
+    scored = _cell(tmp_path, '{"a":1}\n{"a":2}\n{"a":3}\n')
+
+    assert scored["evidence_rows"] == 3
+    assert scored["status"] == "green"
+
+
+def test_final_line_without_newline_still_counts(tmp_path):
+    scored = _cell(tmp_path, '{"a":1}\n{"a":2}')
+
+    assert scored["evidence_rows"] == 2
+
+
+def test_snapshot_artifact_counts_as_one_piece_of_evidence(tmp_path):
+    """.json/.html panels are not append ledgers; non-empty is one evidence."""
+    scored = _cell(tmp_path, "<html>matrix</html>", suffix=".html")
+
+    assert scored["evidence_rows"] == 1
+    assert scored["status"] == "green"
+
+
+def test_live_matrix_reports_a_row_count_for_every_cell():
+    """No panel may hide how much evidence stands behind it."""
+    from System.swarm_eval_matrix_evidence import validate_panel_evidence
+
+    verdict = validate_panel_evidence()
+    for scored in verdict["scores"]:
+        assert "evidence_rows" in scored, scored["panel"]
+        if scored["status"] == "green":
+            assert scored["evidence_rows"], f"{scored['panel']} is green with no rows"

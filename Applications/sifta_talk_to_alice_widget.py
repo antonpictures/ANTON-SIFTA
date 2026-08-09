@@ -38737,6 +38737,42 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 getattr(getattr(self, "_stt", None), "detected_language", "") or ""
             ).strip().lower()
         text = (text or "").strip()
+        # r1744 (WCT r1743 §10, ostensive definition): when George types "bitch
+        # was a stt error" one turn after the ear produced "BITCH!", that is a
+        # free labelled training pair — the exact failure, named by the owner,
+        # while the bad output is still one turn away. It used to evaporate.
+        # Keep it: this ledger is the fine-tuning set for the next ear.
+        try:
+            from System.swarm_ostensive_correction import observe_owner_turn
+
+            _prior = getattr(self, "_prior_owner_turn", None)
+            if text and isinstance(_prior, dict):
+                _kept = observe_owner_turn(
+                    text,
+                    prior_transcript=str(_prior.get("text") or ""),
+                    prior_was_spoken=bool(_prior.get("spoken")),
+                    prior_ts=float(_prior.get("ts") or 0.0),
+                    prior_conf=float(_prior.get("conf") or 0.0),
+                    prior_language=str(_prior.get("language") or ""),
+                    state_dir=_state_root(),
+                )
+                if _kept:
+                    self._append_system_line(
+                        "(kept your correction: the ear heard "
+                        f"“{str(_kept.get('heard') or '')[:60]}” and you named it "
+                        "a mis-hearing — written to ostensive_corrections.jsonl "
+                        "as a labelled example for the next ear.)"
+                    )
+            if text:
+                self._prior_owner_turn = {
+                    "text": text,
+                    "spoken": not typed_turn,
+                    "ts": time.time(),
+                    "conf": float(conf or 0.0),
+                    "language": str(getattr(self, "_latest_turn_language", "") or ""),
+                }
+        except Exception:
+            pass
         if not typed_turn and not getattr(self, "_ear_intentional_listen", True):
             self._pending_acoustic_fingerprint = {}
             self._pending_wake_audio = None

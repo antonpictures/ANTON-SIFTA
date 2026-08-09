@@ -47,6 +47,44 @@ def _path_age_s(path: Path, *, now: float | None = None) -> float | None:
         return None
 
 
+# r1744 cut #1 from WCT r1743 §2 (the jewel-beetle failure). Hoffman's male
+# beetle mates with a beer bottle because "dimpled, glossy, brown" was the only
+# icon it ever had. This scorer had the same shape of bug: it asked whether a
+# ledger FILE exists and how fresh its mtime is, never whether the ledger holds
+# a single row. An empty-but-freshly-touched ledger scored green while proving
+# nothing — .sifta_state/reply_language_mismatch.jsonl is exactly that today:
+# 0 bytes, mtime hours old. Existence is the icon; rows are the evidence.
+def ledger_evidence_rows(path: Path) -> int | None:
+    """Count the rows of evidence a ledger actually holds.
+
+    Append ledgers (.jsonl) are counted by non-blank lines. Snapshot artifacts
+    (.json, .html, …) are not row-structured, so a non-empty file counts as one
+    piece of evidence and an empty one as zero. None means unreadable — unknown
+    is never silently treated as evidence.
+    """
+    try:
+        if not path.is_file():
+            return None
+        size = path.stat().st_size
+    except OSError:
+        return None
+    if size == 0:
+        return 0
+    if path.suffix.lower() != ".jsonl":
+        return 1
+    rows = 0
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                rows += chunk.count(b"\n")
+            handle.seek(max(0, size - 1))
+            if handle.read(1) not in (b"\n", b""):
+                rows += 1  # final line without a trailing newline
+    except OSError:
+        return None
+    return rows
+
+
 def evidence_score_for_row(
     row: Dict[str, Any],
     *,
@@ -78,6 +116,11 @@ def evidence_score_for_row(
     if not ledger:
         problems.append("missing_named_receipt_or_ledger")
 
+    # An existing ledger with zero rows is a bottle, not a female beetle.
+    evidence_rows = ledger_evidence_rows(ledger_obj) if ledger_ok else None
+    if ledger_ok and evidence_rows == 0:
+        problems.append("empty_ledger")
+
     age_s = _path_age_s(ledger_obj or path_obj, now=now) if (ledger_ok or path_ok) else None
     decay = 1.0
     if age_s is not None and half_life_s > 0:
@@ -88,6 +131,10 @@ def evidence_score_for_row(
     if ledger_ok:
         base_score += 0.65
     if not ledger_ok:
+        base_score = min(base_score, 0.35)
+    # A ledger that holds nothing cannot carry its 0.65 — the cell falls back to
+    # what the code path alone proves, which is never enough to be green.
+    if evidence_rows == 0:
         base_score = min(base_score, 0.35)
     score = round(max(0.0, min(1.0, base_score * decay)), 4)
     status = "red"
@@ -101,6 +148,7 @@ def evidence_score_for_row(
         "status": status,
         "path_ok": path_ok,
         "ledger_ok": ledger_ok,
+        "evidence_rows": evidence_rows,
         "age_s": None if age_s is None else round(age_s, 3),
         "decay": round(decay, 4),
         "problems": problems,
