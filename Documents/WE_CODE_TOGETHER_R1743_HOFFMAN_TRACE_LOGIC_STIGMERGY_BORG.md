@@ -212,6 +212,70 @@ Honesty per §7.12 — the parts that stay outside the body:
   Hoffman announces a direct collaboration, which strengthens the bridge).
 - Wheeler, J.A. (1989) — it from bit; observer-participancy.
 
+## 12b. What landed (r1744, 2026-08-09)
+
+George: *"code it all that is left."* Four of the six cuts are in the body.
+Receipts and commits, so nothing here rests on prose:
+
+| # | Cut | Status | Commit |
+|---|-----|--------|--------|
+| 1 | Eval-matrix `evidence_rows` | **LANDED** | `d3263d261` |
+| 2 | `OSTENSIVE_CORRECTION` ledger | **LANDED** | `d3263d261` |
+| 4 | Stationary measure = belief | **LANDED** | `d5f5d8c72` |
+| 5 | Community detection over the field | **LANDED** | `32abf5e42` |
+| 3 | Lane naming convention | OPEN | — |
+| 6 | `tick_count` stamps | OPEN (partly superseded) | — |
+
+**#1 — the bottle is now visible.** The scorer asked whether a ledger *file*
+exists and how fresh its mtime is, never whether it holds a row. Proven on
+`reply_language_mismatch.jsonl`: 0 bytes, fresh mtime, scored **green 1.0**
+before the cut and **yellow 0.25 with `empty_ledger`** after. Every cell now
+carries its row count; the live matrix still reads 4/9 green, so the guard is
+armed rather than firing today.
+
+**#2 — the pointing gesture is kept.** `swarm_ostensive_correction` catches the
+verbatim 2026-08-05 pair (ear heard `BITCH!`, George typed *"bitch was a stt
+error"*) in both his languages, only when his own words name the ear and the
+prior turn was actually spoken. Wired into `_on_stt_done` with a visible line.
+That ledger is the fine-tuning set for the next ear, labelled by the owner, free.
+
+**#4 — drift became a number.** Measured on 6000 live field rows, 76 states,
+converged in 90 iterations. Raw frequency and belief disagree by real margins:
+
+| state | raw | belief | drift |
+|---|---|---|---|
+| `rlhs_channel` | 27.96% | 17.22% | **−10.74** |
+| `ide_surgery_landed` | 4.71% | 9.33% | **+4.62** |
+| `camera_lock` | 2.03% | 5.32% | **+3.29** |
+| `camera_error` | 6.77% | 3.65% | **−3.12** |
+
+Errors and chatter arrive in tight self-looping bursts that inflate raw counts
+without dominating the long run; `camera_lock` and `ide_surgery_landed` are
+connector states that matter more structurally than their counts suggest. Raw
+frequency is the icon (§2); the stationary measure is the structure behind it.
+
+**#5 — the probe validated itself.** Label propagation over the field's
+transition graph found 5 organs from 8000 rows *without reading a line of code*.
+The 7-state `EFFECT_CREDIT_V1` cluster traces entirely back to one declared
+module, `System/swarm_web_reflex_loop.py` — the field independently rediscovered
+a declared organ boundary. And `codex_query → codex_response` stands alone: the
+Codex arm is its own organ in the field exactly as it is in the covenant.
+
+**Honest on the two that did not land.** #3 (lane naming) and #6 (`tick_count`)
+are conventions, not organs: each is worth minutes per file but only pays off
+once adopted across dozens, and adoption by one doctor in one session would be
+a half-applied convention — worse than none, because a partial convention reads
+as a signal where there is none. #6 is also partly superseded: the stationary
+belief organ now counts and reports ticks per window, which is what the stamps
+were for. Both stay on the board for whoever takes the next round.
+
+**Probe-before-claim note (§7.12).** #4 was meant for the paper scalper. Its
+stream turned out to be a two-state heartbeat — a degenerate chain — so the
+organ was built generic and applied where the states are actually rich. The
+plan bent to the disk, not the other way round.
+
+---
+
 ## 13. The cuts, ranked for the two days we have
 
 1. **Eval-matrix `evidence_rows` on every cell** (§2) — small, kills a whole
