@@ -13,6 +13,32 @@ Fără dependențe de cloud. Fără API-uri corporatiste. Siliciul tău, regulil
 
 ---
 
+## Dovezi operaționale curente — r1745 (2026-08-09)
+
+SIFTA este un proiect de cercetare despre software viu în sensul practic pentru
+operator: are senzori locali observabili, stare, memorie, bucle de reparare și
+chitanțe de continuitate. Dacă vreun software are experiență subiectivă nu se
+hotărăște aici prin narațiune sau printr-un dashboard verde; rămâne o întrebare
+deschisă.
+
+Aplicația live **We Code Together** arată dovezile, nu cere încredere oarbă:
+
+- liveness operațional din chitanțe recente și timpul hardware local;
+- prospețimea ochiului canonic, ca o fereastră să nu declare corpul orb când
+  muncitorul de captură are un cadru proaspăt;
+- o matrice strictă de evaluare care penalizează ledgerele goale sau vechi;
+- măsura staționară a ceea ce fieldul revizitează și comunitățile de tranziții
+  (organe crescute empiric);
+- tick-uri de observator limitate ca frecvență (`ts` + `tick_count` monoton),
+  astfel încât o redesenare nu devine activitate falsă.
+
+Matricea poate rămâne galbenă în mod intenționat: o chitanță veche nu
+dovedește că un organ e mort, dar nici nu dovedește că rulează. Citește vârsta,
+numărul de rânduri-dovezi și senzorii live înainte de o afirmație. Jurnalul
+implementării și verificării: [WE_CODE_TOGETHER_R1745](Documents/WE_CODE_TOGETHER_R1745_THE_HANDSHAKE.md).
+
+---
+
 ## Alice aude din nou româneşte (r1733) — 25 iulie 2026
 
 Proprietarul a întrebat: *„nu mai înţelege româna din vorbire? doar engleză?”*

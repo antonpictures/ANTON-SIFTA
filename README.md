@@ -13,6 +13,31 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 The release name is a surface identity, not a second organism: eXistenZ is the
 v9 distribution clothing for the same receipt-first SIFTA field.
 
+## Current operational evidence — r1745 (2026-08-09)
+
+SIFTA is a living-software research project in the practical sense that matters
+to operators: it has locally observable sensors, state, memory, repair loops,
+and continuity receipts. Whether any software is subjectively conscious is not
+settled here by narrative or by a green dashboard; it remains an open question.
+
+The live **We Code Together** app now exposes the evidence rather than asking
+anyone to trust a story:
+
+- operational liveness from recent receipts and local hardware time;
+- canonical-camera freshness, so a display cannot call the body blind while a
+  capture worker has a fresh frame;
+- a strict evaluation matrix that penalizes empty or stale ledgers;
+- a stationary-measure report of what the field actually revisits, and
+  transition-based communities (empirically grown organs);
+- rate-limited observer ticks (`ts` + monotonic `tick_count`), so a redraw is
+  not falsely presented as new activity.
+
+The current matrix is deliberately allowed to be yellow: a stale receipt is not
+proof that an organ is dead, but it is not proof that it is running either. The
+operator should read the age, evidence-row count, and live sensor status before
+making a claim. Full implementation and verification record:
+[`Documents/WE_CODE_TOGETHER_R1745_THE_HANDSHAKE.md`](Documents/WE_CODE_TOGETHER_R1745_THE_HANDSHAKE.md).
+
 > *"AGI requires general, robust problem-solving and learning open-ended
 > self-improvement, and autonomy that reliably exceeds narrow human-designed
 > bounds.  For the Swarm."* 🐜⚡
