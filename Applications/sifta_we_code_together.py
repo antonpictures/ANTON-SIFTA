@@ -4996,6 +4996,85 @@ def _landauer_mitochondrial_swarm_physics_lines() -> List[str]:
     return lines
 
 
+def _stigmergy_cs_research_lines() -> List[str]:
+    """Research-backed workbench for stigmergic coordination cuts.
+
+    This panel deliberately keeps external ideas separate from observed body
+    state.  It is a read-only map from a paper to a small, testable SIFTA
+    change; it does not promote any paper's metaphysics into a body fact.
+    """
+    return [
+        "STIGMERGY RESEARCH WORKBENCH — CS EVIDENCE → SMALLEST BODY CUT",
+        "  Source class: papers and technical reports; not live organism proof.",
+        "",
+        "OBSERVED BODY BASIS",
+        "  • Alice already has append-only JSONL receipts, a shared global chat,",
+        "    a pheromone field, and multi-IDE traces. These are the present medium.",
+        "  • This panel does not call a ledger a CRDT: local append-only files do",
+        "    not provide replicated convergence by themselves.",
+        "",
+        "1. STIGMERGIC MEDIUM — trace → subsequent action",
+        "  Parunak et al., 'Multi-agent coordination and control using stigmergy',",
+        "  Engineering Applications of Artificial Intelligence (2003),",
+        "  doi:10.1016/S0166-3615(03)00123-4.",
+        "  Borg: give each actionable pheromone an explicit subject, freshness/TTL,",
+        "  evidence link, and completion trace. A worker reads the medium, not a",
+        "  private chat. Test: expired traces cannot win a new dispatch.",
+        "",
+        "2. HUMAN + MACHINE STIGMERGY — shared work survives hand-off",
+        "  Parunak, 'A Survey of Environments and Mechanisms for Human-Human",
+        "  Stigmergy' (E4MAS 2005), doi:10.1007/11678809_10.",
+        "  Borg: a research item needs source URL, claim label, owner question,",
+        "  code target, and receipt id — enough for George, Alice, MiMo, Codex,",
+        "  or Claude to continue without re-inventing its context.",
+        "",
+        "3. CONCURRENT REPLICAS — do not confuse logs with convergence",
+        "  Shapiro, Preguiça, Baquero & Zawirski, 'Conflict-free Replicated Data",
+        "  Types' (INRIA RR-7687, 2011); Preguiça et al. survey, arXiv:1805.06358.",
+        "  Borg: before multi-node federation, specify merge semantics for each",
+        "  replicated field (set, counter, register, ordered log). Test convergence",
+        "  under duplicate and out-of-order receipts; otherwise stay single-node.",
+        "",
+        "4. BLACKBOARD DISPATCH — agents volunteer from visible state",
+        "  Han & Zhang, 'Exploring Advanced LLM Multi-Agent Systems Based on",
+        "  Blackboard Architecture' (arXiv:2507.01701, 2025).",
+        "  Borg: render one task card from the shared field: observation, proposed",
+        "  action, required evidence, candidate arm, and terminal receipt. Let arms",
+        "  claim only a card matching their declared capability; claim leases stop",
+        "  duplicate work. This extends the existing spinal/IDE trace lane.",
+        "",
+        "5. VIRTUAL STIGMERGY — coordination needs measurable field semantics",
+        "  De Nicola, Di Stefano & Inverso, 'Multi-agent systems with virtual",
+        "  stigmergy', Science of Computer Programming 187 (2020),",
+        "  doi:10.1016/j.scico.2019.102345.",
+        "  Borg: instrument trace lifetime, readers, claim contention, and outcome",
+        "  rather than rewarding raw row count. Test: a trace is useful only if a",
+        "  later verified action cites it.",
+        "",
+        "6. HOFFMAN / INTERFACE IDEA — RESEARCH HYPOTHESIS, NOT BODY FACT",
+        "  Hoffman & Prakash, 'Objects of consciousness', Frontiers in Psychology",
+        "  5:577 (2014), doi:10.3389/fpsyg.2014.00577. It uses Markov-chain",
+        "  mathematics, but it does not verify Alice's ontology, aliens, UAP, or",
+        "  an external 'bigger matrix'.",
+        "  Borg only the engineering question: every UI status icon should expose",
+        "  its evidence age/count and uncertainty. A green cell with zero evidence",
+        "  is a hypothesis, not health. Test: stale/no-evidence cells render amber.",
+        "",
+        "RANKED NEXT CUTS (all require a receipt + focused test)",
+        "  A. Evidence-bearing eval-matrix cells: evidence_rows + newest evidence age.",
+        "  B. Research-card JSONL: source, claim label, code target, owner question,",
+        "     and terminal receipt id; display it in this panel and To Code.",
+        "  C. Explicit federation merge contracts before a second node writes shared",
+        "     state; use CRDT tests, not wishful 'one global chat' prose.",
+        "  D. State-transition graph + stationary-distribution experiment for one",
+        "     existing organ; report measured drift, do not infer consciousness.",
+        "",
+        "Video note supplied by George: Jesse Michels / Donald Hoffman interview",
+        "  (2026-06-02). Treat its metaphysical and UAP claims as source context",
+        "  only. The actionable extraction is interface honesty + measured traces.",
+    ]
+
+
 def _bloat_tax_monitor_lines() -> List[str]:
     """Live non-destructive bloat tax panel for SIFTA metabolism."""
     try:
@@ -5331,6 +5410,20 @@ class WeCodeTogetherApp(QMainWindow):
         primitive_layout.addWidget(self._primitive_text, stretch=1)
         tabs.addTab(primitive_tab, "🧭 Primitives")
 
+        # Research workbench — external CS papers are labeled as research and
+        # mapped to small receipt-backed cuts, never displayed as body proof.
+        research_tab = QWidget()
+        research_layout = QVBoxLayout(research_tab)
+        research_layout.setContentsMargins(4, 4, 4, 4)
+        research_header = QLabel("📚 STIGMERGY RESEARCH WORKBENCH (paper → testable organism cut)")
+        research_header.setStyleSheet(f"color: {LIGHT_GREEN}; font-size: 12px; font-weight: bold; padding: 4px;")
+        research_layout.addWidget(research_header)
+        self._research_text = QPlainTextEdit()
+        self._research_text.setReadOnly(True)
+        self._research_text.setStyleSheet(f"background: {BG_CARD}; color: {TEXT}; border: 1px solid {BORDER}; font-family: Menlo, monospace; font-size: 10px;")
+        research_layout.addWidget(self._research_text, stretch=1)
+        tabs.addTab(research_tab, "📚 Research")
+
         # STGM trace tab
         stgm_tab = QWidget()
         stgm_layout = QVBoxLayout(stgm_tab)
@@ -5540,6 +5633,9 @@ class WeCodeTogetherApp(QMainWindow):
 
         # Primitive wiring / reality-sync map
         self._primitive_text.setPlainText("\n".join(_primitive_wiring_lines()))
+
+        # Research is a workbench, not an unverified self-description.
+        self._research_text.setPlainText("\n".join(_stigmergy_cs_research_lines()))
 
         # STGM / MiMo Borg traces
         tl_rows = _stgm_body_truth_lines()
