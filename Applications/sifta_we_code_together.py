@@ -5551,14 +5551,14 @@ class WeCodeTogetherApp(QMainWindow):
         why_tab = QWidget()
         why_layout = QVBoxLayout(why_tab)
         why_layout.setContentsMargins(4, 4, 4, 4)
-        why_header = QLabel("🚧 WHY BLOCKED (why Alice couldn't act — so she can push the button herself)")
+        why_header = QLabel("🚧 WHY BLOCKED + LIVE BODY (why Alice couldn't act; liveness and matrix evidence)")
         why_header.setStyleSheet(f"color: {YELLOW}; font-size: 12px; font-weight: bold; padding: 4px;")
         why_layout.addWidget(why_header)
         self._why_blocked_text = QPlainTextEdit()
         self._why_blocked_text.setReadOnly(True)
         self._why_blocked_text.setStyleSheet(f"background: {BG_CARD}; color: {TEXT}; border: 1px solid {BORDER}; font-family: Menlo, monospace; font-size: 10px;")
         why_layout.addWidget(self._why_blocked_text, stretch=1)
-        tabs.addTab(why_tab, "🚧 Why Blocked")
+        tabs.addTab(why_tab, "🚧 Blocked + Live")
 
         right_layout.addWidget(tabs, stretch=1)
         splitter.addWidget(right)
@@ -5717,9 +5717,19 @@ class WeCodeTogetherApp(QMainWindow):
             self._success_cascade_text.setPlainText("Success cascade error.")
         try:
             from System.swarm_we_code_together_clarity import why_blocked_lines, matrix_and_gate_health_lines
+            from System.swarm_observer_window import record_observer_tick
+            # The monitor has a natural 5s paint cycle, but only one counted
+            # observer tick per minute.  The receipt makes a stalled surface
+            # visible without turning redraws into synthetic activity.
+            record_observer_tick(
+                "we_code_together_live_monitor",
+                state_dir=STATE,
+                min_interval_s=60.0,
+                detail="WCT live body/matrix/gate monitor refresh",
+            )
             why_lines = why_blocked_lines(limit=8, state_dir=STATE)
             health_lines = matrix_and_gate_health_lines(limit=6, state_dir=STATE)
-            combined = why_lines + ["", "— LIVE MATRIX + GATE (G2: eval health where Alice works) —"] + health_lines
+            combined = why_lines + ["", "— LIVE BODY + LIVENESS + MATRIX + GATE (G2: evidence where Alice works) —"] + health_lines
             self._why_blocked_text.setPlainText("\n".join(combined))
         except Exception as exc:
             self._why_blocked_text.setPlainText(f"Why-blocked + matrix/gate panel error: {type(exc).__name__}: {exc}")

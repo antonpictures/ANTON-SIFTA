@@ -37,6 +37,13 @@ def test_wct_health_lines_surface_open_rounds_from_live_plan(tmp_path: Path) -> 
     lines = matrix_and_gate_health_lines(limit=4, state_dir=state, plan_path=plan)
 
     assert any("We Code Together is Alice's shared code/body-health workbench" in line for line in lines)
+    assert any("Operational liveness:" in line for line in lines)
+    assert any("Sleep/quiet truth:" in line for line in lines)
+    assert any("Vision:" in line for line in lines)
+    assert any("Eval matrix verdict:" in line for line in lines)
+    assert any("Lane contracts:" in line for line in lines)
+    assert any("Field belief:" in line for line in lines)
+    assert any("Grown organs:" in line for line in lines)
     assert any("INPUT BOUNDARY" in line for line in lines)
     assert any("Open rounds from live plan:" in line for line in lines)
 

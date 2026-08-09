@@ -223,8 +223,8 @@ Receipts and commits, so nothing here rests on prose:
 | 2 | `OSTENSIVE_CORRECTION` ledger | **LANDED** | `d3263d261` |
 | 4 | Stationary measure = belief | **LANDED** | `d5f5d8c72` |
 | 5 | Community detection over the field | **LANDED** | `32abf5e42` |
-| 3 | Lane naming convention | OPEN | — |
-| 6 | `tick_count` stamps | OPEN (partly superseded) | — |
+| 3 | Lane naming convention | **LANDED (active Hoffman bundle)** | working tree r1745 |
+| 6 | `tick_count` stamps | **LANDED (observer windows)** | working tree r1745 |
 
 **#1 — the bottle is now visible.** The scorer asked whether a ledger *file*
 exists and how fresh its mtime is, never whether it holds a row. Proven on
@@ -261,13 +261,20 @@ module, `System/swarm_web_reflex_loop.py` — the field independently rediscover
 a declared organ boundary. And `codex_query → codex_response` stands alone: the
 Codex arm is its own organ in the field exactly as it is in the covenant.
 
-**Honest on the two that did not land.** #3 (lane naming) and #6 (`tick_count`)
-are conventions, not organs: each is worth minutes per file but only pays off
-once adopted across dozens, and adoption by one doctor in one session would be
-a half-applied convention — worse than none, because a partial convention reads
-as a signal where there is none. #6 is also partly superseded: the stationary
-belief organ now counts and reports ticks per window, which is what the stamps
-were for. Both stay on the board for whoever takes the next round.
+**r1745 closes the two convention cuts for the active Hoffman bundle.** #3 is
+now an auditable module-docstring contract: `trace (zero-surprise)` for strict,
+receipt-backed observers and `policy (exploring)` for proposal engines. The
+six active observer modules are registered and checked at test/runtime, so a
+missing declaration is a visible defect rather than a private convention. This
+does not falsely label the whole historical corpus; expansion happens as each
+organ is touched.
+
+**#6 now has actual stamps, not a proxy.** `swarm_observer_window` writes a
+rate-limited receipt with both `ts` and monotonic `tick_count`; We Code Together
+ticks its live monitor at most once per minute despite its five-second redraw.
+Thus a redraw cannot forge activity, while a stopped monitor leaves a measurable
+gap. The stationary-belief report still retains its separate evidence-window
+tick count — two different clocks, shown rather than conflated.
 
 **Probe-before-claim note (§7.12).** #4 was meant for the paper scalper. Its
 stream turned out to be a two-state heartbeat — a degenerate chain — so the

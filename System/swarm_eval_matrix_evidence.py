@@ -1,4 +1,6 @@
-"""Eval matrix panel evidence pointers — real paths only (r1021 C7)."""
+"""Eval matrix panel evidence pointers — real paths only (r1021 C7).
+Lane contract: trace (zero-surprise).
+"""
 from __future__ import annotations
 
 import math

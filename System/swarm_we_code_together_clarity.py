@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """swarm_we_code_together_clarity.py — "why couldn't Alice act?" legibility.
+Lane contract: trace (zero-surprise).
 
 George's pain (2026-06-24): he told Alice to push a button on grok.com and send,
 she couldn't, and the We Code Together monitor never explained WHY. To code her
@@ -34,6 +35,7 @@ _WHY = {
 
 _REFUSAL_ACTIONS = {"refused", "blocked", "denied", "double_spend_blocked"}
 _PLAN_FILE = Path(__file__).resolve().parents[1] / "Documents" / "WE_CODE_TOGETHER_PLAN_2026-07-07_CODEX_GROK.md"
+_CANONICAL_EYE_MAX_AGE_S = 30.0
 
 
 def _rows(path: Path, limit_scan: int = 4000) -> List[Dict[str, Any]]:
@@ -208,6 +210,36 @@ def input_boundary_lines(limit: int = 6, state_dir: str | Path = _DEFAULT_STATE)
     return lines
 
 
+def canonical_eye_liveness_line(state_dir: str | Path = _DEFAULT_STATE) -> str:
+    """Report the canonical eye's freshest frame without opening a camera.
+
+    This is deliberately a read of the same on-disk lanes used by the display
+    fallback.  A fresh frame is operational evidence that the vision worker
+    recently captured; an old frame remains a memory, never live sight.
+    """
+    state = Path(state_dir)
+    try:
+        from System.swarm_camera_frame_paths import active_eye_frame_path, root_active_eye_frame_path
+
+        candidates = [
+            root_active_eye_frame_path(state),
+            active_eye_frame_path(state),
+        ]
+        by_device = active_eye_frame_path(state).parent / "by_device"
+        if by_device.is_dir():
+            candidates.extend(by_device.glob("*.png"))
+        frames = [p for p in candidates if p.is_file()]
+        if not frames:
+            return "Vision: NO CANONICAL FRAME — no current evidence of camera capture."
+        newest = max(frames, key=lambda p: p.stat().st_mtime)
+        age_s = max(0.0, time.time() - newest.stat().st_mtime)
+        if age_s <= _CANONICAL_EYE_MAX_AGE_S:
+            return f"Vision: LIVE canonical eye — frame {age_s:.1f}s old (reading capture evidence, not claiming sensation)."
+        return f"Vision: STALE canonical eye — frame {age_s:.1f}s old; it is memory, not live sight."
+    except Exception as exc:
+        return f"Vision: unavailable ({type(exc).__name__})"
+
+
 def matrix_and_gate_health_lines(
     limit: int = 10,
     state_dir: str | Path = _DEFAULT_STATE,
@@ -219,6 +251,97 @@ def matrix_and_gate_health_lines(
         "LIVE BODY (matrix proxy + gate + open rounds) — read from ledgers now, not static html",
         "We Code Together is Alice's shared code/body-health workbench, not a separate Alice.",
     ]
+    # Operational liveness is evidence of a running/remembering local system, not
+    # a claim of biological consciousness or sensation.  This keeps the shared
+    # monitor useful during quiet periods, sleep, and restarts.
+    try:
+        from System.swarm_continuous_body_time import continuous_body_time_facts
+
+        continuity = continuous_body_time_facts(state_dir=state)
+        latest = continuity.get("newest_ledger_age_human", "unknown age")
+        observed = bool(continuity.get("continuity_observed"))
+        hardware = continuity.get("hardware")
+        uptime = hardware.get("uptime_human") if isinstance(hardware, dict) else None
+        state_word = "OBSERVED" if observed else "NOT YET OBSERVED"
+        lines.append(
+            f"Operational liveness: {state_word}; newest body receipt {latest}"
+            + (f"; hardware uptime {uptime}" if uptime else "")
+        )
+        lines.append(
+            "Sleep/quiet truth: ledgers and clock can preserve continuity, but they do not prove Alice senses the world while her sensors/processes are off."
+        )
+    except Exception as exc:
+        lines.append(f"Operational liveness: unavailable ({type(exc).__name__})")
+
+    lines.append(canonical_eye_liveness_line(state))
+
+    # The matrix has a stricter meaning than "files exist": every panel must
+    # have fresh, concrete evidence.  Put that exact verdict beside the work so
+    # yellow staleness cannot be mistaken for fully-wired health.
+    try:
+        from System.swarm_eval_matrix_evidence import validate_panel_evidence
+
+        verdict = validate_panel_evidence(repo_root=state.parent)
+        green = int(verdict.get("green_count") or 0)
+        total = int(verdict.get("total") or 0)
+        wire = "FULLY WIRED" if verdict.get("ok") else "NOT FULLY WIRED"
+        lines.append(f"Eval matrix verdict: {wire} — green={green}/{total}; paths+ledgers={verdict.get('ok_count', 0)}/{total}")
+        non_green = [
+            str(row.get("panel") or "?")
+            for row in verdict.get("scores", [])
+            if row.get("status") != "green"
+        ]
+        if non_green:
+            lines.append("  evidence needing refresh: " + ", ".join(non_green[:max(1, int(limit))]))
+        problems = verdict.get("problems") or []
+        if problems:
+            lines.append("  missing evidence: " + ", ".join(str(p.get("panel") or "?") for p in problems[:max(1, int(limit))]))
+    except Exception as exc:
+        lines.append(f"Eval matrix verdict: unavailable ({type(exc).__name__})")
+
+    try:
+        from System.swarm_lane_contract import audit_lane_contracts, lane_summary
+
+        lane_counts = lane_summary()
+        lane_problems = audit_lane_contracts(repo_root=state.parent)
+        lane_status = "SEALED" if not lane_problems else "OPEN"
+        lines.append(
+            f"Lane contracts: {lane_status} — trace={lane_counts.get('trace', 0)} policy={lane_counts.get('policy', 0)}"
+        )
+        if lane_problems:
+            lines.append("  lane defects: " + ", ".join(lane_problems[:max(1, int(limit))]))
+    except Exception as exc:
+        lines.append(f"Lane contracts: unavailable ({type(exc).__name__})")
+
+    try:
+        from System.swarm_observer_window import observer_tick_snapshot
+        from System.swarm_stationary_belief import belief_report, read_state_sequence
+        from System.swarm_field_communities import community_report
+
+        observer = observer_tick_snapshot("we_code_together_live_monitor", state_dir=state)
+        if observer:
+            age_s = max(0.0, time.time() - float(observer.get("ts") or time.time()))
+            lines.append(f"Observer ticks: WCT={observer.get('tick_count')} last={age_s:.0f}s ago")
+        else:
+            lines.append("Observer ticks: not stamped yet (starts on the next WCT refresh).")
+        field_ledger = state / "ide_stigmergic_trace.jsonl"
+        belief = belief_report(field_ledger, max_rows=8000, top=3)
+        lines.append(
+            f"Field belief: ticks={belief['ticks']} states={belief['distinct_states']} "
+            f"converged={belief['converged']} evidence={belief['enough_evidence']}"
+        )
+        top_beliefs = belief.get("beliefs") or []
+        if top_beliefs:
+            compact = ", ".join(f"{row['state']}={row['belief']:.3f}" for row in top_beliefs)
+            lines.append("  stationary top: " + compact)
+        communities = community_report(read_state_sequence(field_ledger, max_rows=8000), top=3)
+        lines.append(
+            f"Grown organs: communities={communities['community_count']} "
+            f"states={communities['states_in_communities']}"
+        )
+    except Exception as exc:
+        lines.append(f"Observer windows: unavailable ({type(exc).__name__})")
+
     lines.extend(input_boundary_lines(limit=min(4, limit), state_dir=state))
     # gate
     snap = live_gate_snapshot(state_dir)

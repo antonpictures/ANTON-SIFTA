@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """System/swarm_stationary_belief.py — what the body actually believes it does.
+Lane contract: trace (zero-surprise).
 
 r1744 cut #4 from WCT r1743 §3. Hoffman's primitive is an observer window: a
 Markov matrix over the experiences that window can have, plus a counter that

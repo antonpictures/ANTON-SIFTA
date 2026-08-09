@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """System/swarm_field_communities.py — the organs the body actually grew.
+Lane contract: trace (zero-surprise).
 
 r1744 cut #5 from WCT r1743 §5, the §0-grade self-identity probe.
 

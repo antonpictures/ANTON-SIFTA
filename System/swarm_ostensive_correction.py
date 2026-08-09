@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """System/swarm_ostensive_correction.py — the owner points, the body keeps it.
+Lane contract: trace (zero-surprise).
 
 r1744 cut #2 from WCT r1743 §10. Hoffman's point about ostensive definition:
 almost nothing anyone knows arrived through theory. A parent points and says
