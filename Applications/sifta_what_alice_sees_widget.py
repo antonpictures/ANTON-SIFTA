@@ -1655,8 +1655,14 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._cam_combo.addItem("(no cameras detected — check macOS Camera permission)", None)
             self._cam_combo.blockSignals(False)
             self._stop_secondary_world_eye()
+            # r1744: hardware enumeration came up empty for THIS process. That is
+            # not the same as the body being blind. Before claiming blindness,
+            # look at what the canonical camera worker has on disk — with one
+            # on-board eye and no USB camera, that lane is the only sight left.
+            if self._show_canonical_eye_fallback("videoInputs_empty"):
+                return
             err_text = (
-                "No cameras detected.\n\n"
+                "No cameras detected, and no fresh frame from the canonical eye.\n\n"
                 "Open System Settings → Privacy & Security → Camera "
                 "and enable Python (or your terminal app), then click ↻ refresh."
             )
@@ -1666,12 +1672,15 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 append_jsonl_line(_REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl", {
                     "system": "what_alice_sees",
                     "event": "camera_error",
-                    "reason": "open_failed: no_cameras_detected",
+                    "reason": "open_failed: no_cameras_detected_and_no_fresh_canonical_frame",
                     "ts": time.time()
                 })
             except Exception:
                 pass
             return
+        # Hardware is back for this process — stop reading the canonical lane and
+        # capture again, so the widget never paints a disk frame over live sight.
+        self._stop_canonical_eye_fallback()
         
         # Keep an explicit OFF state for manual/yield cases, but do not make it
         # the boot default. AliceWidget's contract says the eye starts live
@@ -1695,6 +1704,112 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._cam_combo.setCurrentIndex(default_idx)
             self._on_cam_changed(default_idx)
         self._refresh_secondary_world_eye()
+
+    # r1744 (George 2026-08-09, "sa fim sigur ca daca nu aude, VEDE"): the ear
+    # was off for days and this surface reported total blindness — 199 of the
+    # last 200 eye receipts said "no_cameras_detected" — while the canonical
+    # camera worker was writing fresh frames to disk the whole time. Two lanes,
+    # one body: swarm_camera_frame_paths states the contract plainly, "the
+    # canonical camera worker owns hardware capture; display widgets read these
+    # files." This widget owns hardware when it can, but it must never claim the
+    # body is blind while the body has a fresh frame on disk.
+    # Measured on this node 2026-08-09, not guessed: the canonical worker's frame
+    # gaps ran median 10.7s with normal gaps up to 19.5s. A 12s threshold flapped
+    # between "sight" and "blind" during healthy operation. 30s clears the worst
+    # normal gap while still catching a worker that actually died (those go stale
+    # for minutes). The measured age is always painted, so the number is never hidden.
+    CANONICAL_FRAME_MAX_AGE_S = 30.0
+
+    def _canonical_eye_frame(self) -> "tuple[Optional[QImage], float, str]":
+        """Freshest frame the canonical worker wrote, with its measured age.
+
+        Returns (image, age_seconds, path). image is None when no frame exists
+        or the newest one is staler than CANONICAL_FRAME_MAX_AGE_S — a stale
+        frame is a memory, not sight, and must never be painted as live.
+        """
+        now = time.time()
+        best_path = None
+        best_age = float("inf")
+        candidates = []
+        try:
+            candidates.append(root_active_eye_frame_path())
+            candidates.append(active_eye_frame_path())
+            by_device = active_eye_frame_path().parent / "by_device"
+            if by_device.is_dir():
+                candidates.extend(by_device.glob("*.png"))
+        except Exception:
+            pass
+        for path in candidates:
+            try:
+                if not path.is_file():
+                    continue
+                age = now - path.stat().st_mtime
+            except Exception:
+                continue
+            if age < best_age:
+                best_age, best_path = age, path
+        if best_path is None or best_age > self.CANONICAL_FRAME_MAX_AGE_S:
+            return None, best_age, str(best_path or "")
+        try:
+            img = QImage(str(best_path))
+        except Exception:
+            return None, best_age, str(best_path)
+        if img.isNull():
+            return None, best_age, str(best_path)
+        return img, best_age, str(best_path)
+
+    def _show_canonical_eye_fallback(self, reason: str) -> bool:
+        """Paint the canonical worker's frame when this widget cannot open hardware.
+
+        True means the body still sees and the picture is live. The receipt says
+        which lane produced it, so nobody later mistakes a read for a capture.
+        """
+        img, age, path = self._canonical_eye_frame()
+        if img is None:
+            return False
+        try:
+            self._canvas.set_error(None)
+            self._canvas._image = img
+            self._canvas.update()
+        except Exception:
+            return False
+        try:
+            self._canvas.set_chyron(
+                f"canonical eye · frame {age:.1f}s old · this surface is reading, not capturing",
+                QColor(122, 162, 247),
+            )
+        except Exception:
+            pass
+        try:
+            from System.ledger_append import append_jsonl_line
+
+            append_jsonl_line(_REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl", {
+                "system": "what_alice_sees",
+                "event": "camera_canonical_fallback",
+                "reason": reason,
+                "frame_age_s": round(float(age), 3),
+                "frame_path": path,
+                "truth_label": "OBSERVED_CANONICAL_EYE_READ",
+                "ts": time.time(),
+            })
+        except Exception:
+            pass
+        if not getattr(self, "_canonical_fallback_timer", None):
+            self._canonical_fallback_timer = QTimer(self)
+            self._canonical_fallback_timer.timeout.connect(
+                lambda: self._show_canonical_eye_fallback("canonical_fallback_poll")
+            )
+            self._canonical_fallback_timer.start(1000)
+        return True
+
+    def _stop_canonical_eye_fallback(self) -> None:
+        timer = getattr(self, "_canonical_fallback_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+            self._canonical_fallback_timer = None
 
     def _stop_secondary_world_eye(self) -> None:
         if hasattr(self, "_secondary_world_pulse_timer"):
