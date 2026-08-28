@@ -27,13 +27,25 @@ def test_monitor_process_lock_allows_only_one_instance(tmp_path) -> None:
 
 def test_scalp_lab_tournament_is_throttled_off_control_hot_path() -> None:
     previous = paper_loop._LAST_SCALP_LAB_TOURNAMENT_TS
+    previous_enabled = paper_loop.SCALP_LAB_TOURNAMENT_ENABLED
     try:
+        paper_loop.SCALP_LAB_TOURNAMENT_ENABLED = True
         paper_loop._LAST_SCALP_LAB_TOURNAMENT_TS = 0.0
         assert paper_loop._scalp_lab_tournament_due(now=100.0) is True
-        assert paper_loop._scalp_lab_tournament_due(now=159.9) is False
-        assert paper_loop._scalp_lab_tournament_due(now=160.0) is True
+        assert paper_loop._scalp_lab_tournament_due(now=999.9) is False
+        assert paper_loop._scalp_lab_tournament_due(now=1000.0) is True
     finally:
         paper_loop._LAST_SCALP_LAB_TOURNAMENT_TS = previous
+        paper_loop.SCALP_LAB_TOURNAMENT_ENABLED = previous_enabled
+
+
+def test_scalp_lab_tournament_defaults_off() -> None:
+    previous = paper_loop.SCALP_LAB_TOURNAMENT_ENABLED
+    try:
+        paper_loop.SCALP_LAB_TOURNAMENT_ENABLED = False
+        assert paper_loop._scalp_lab_tournament_due(now=100.0) is False
+    finally:
+        paper_loop.SCALP_LAB_TOURNAMENT_ENABLED = previous
 
 
 def _append(path: Path, row: dict) -> None:

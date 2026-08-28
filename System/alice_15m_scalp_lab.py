@@ -333,7 +333,9 @@ def run_live_shadow_tournament(
             state_dir=root,
             strategy_id=strat.strategy_id,
             policy_hash=ph,
-            persist=True,
+            # The tournament report is the durable proof. Persisting every
+            # intermediate simulated order caused an unbounded hot ledger.
+            persist=False,
         )
         states: dict[str, ArmState] = {}
         n_no_trade = 0

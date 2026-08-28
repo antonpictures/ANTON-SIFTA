@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 import uuid
 from datetime import datetime
@@ -112,13 +113,21 @@ PAPER_UNIT = 1.0
 PAPER_MAX_OPEN = int(STGM_PAPER_MAX_OPEN)
 PAPER_MAX_SAME_DIR = int(STGM_PAPER_MAX_SAME_DIR)
 STGM_SCALP_COUNT_FILE = "alice_15m_stgm_scalp_counts.json"
-SCALP_LAB_TOURNAMENT_INTERVAL_S = 60.0
+# The tournament replays thousands of tape events across every strategy arm.
+# Keep it off the 10-second control path; one research sample per 15 minutes is
+# enough while entries, exits, and settlements continue at their normal cadence.
+SCALP_LAB_TOURNAMENT_INTERVAL_S = 15 * 60.0
+SCALP_LAB_TOURNAMENT_ENABLED = os.environ.get(
+    "SIFTA_SCALP_LAB_TOURNAMENT_ENABLE", "0"
+).strip().lower() in ("1", "true", "yes", "on")
 _LAST_SCALP_LAB_TOURNAMENT_TS = 0.0
 
 
 def _scalp_lab_tournament_due(*, now: Optional[float] = None) -> bool:
     """Keep the research tournament from delaying 10-second control ticks."""
     global _LAST_SCALP_LAB_TOURNAMENT_TS
+    if not SCALP_LAB_TOURNAMENT_ENABLED:
+        return False
     current = float(time.time() if now is None else now)
     elapsed = current - _LAST_SCALP_LAB_TOURNAMENT_TS
     if _LAST_SCALP_LAB_TOURNAMENT_TS > 0.0 and 0.0 <= elapsed < SCALP_LAB_TOURNAMENT_INTERVAL_S:

@@ -7095,3 +7095,65 @@ For the Swarm. 🐜⚡
 ---
 
 *End of Chapter XXXVI. Ship the release. Speak the owner's tongue. Land the orphan work with a receipt.*
+
+---
+
+## Chapter XXXVII — The 99 GB Fever and the Clean Cortex Restart (August 27–28, 2026)
+
+**Observed incident:** Alice's local conversation cortex repeatedly timed out
+after **197–278 seconds**. The owner turns were preserved in the recovery queue,
+but the reply path was no longer healthy. The desktop process had been alive for
+more than two days and reached roughly **500% CPU / 29% memory**; the paper
+monitor was also hot.
+
+### The measured cause
+
+`.sifta_state` had grown to **115 GB**. One paper-only execution ledger,
+`alice_15m_scalp_orders.jsonl`, accounted for about **99 GB**. The scalp lab was
+replaying every strategy arm once per minute and persisting every intermediate
+simulated order. This was laboratory traffic, not owner conversation history and
+not real Kalshi execution.
+
+### The bounded repair
+
+| Cut | Operational effect |
+|-----|--------------------|
+| `KalshiExecutionSim(..., persist=False)` in the shadow tournament | Keeps aggregate reports and in-memory reconciliation without an unbounded per-order ledger |
+| Tournament interval raised from 60s to 15m | Removes the research replay from the 10-second control hot path |
+| `SIFTA_SCALP_LAB_TOURNAMENT_ENABLE` defaults OFF | Heavy replay runs only when explicitly requested; tape capture, paper entries, exits, and settlement continue |
+| Oversized ledger moved to `.sifta_quarantine/` | Removes 99 GB from active state scans without deleting the historical artifact |
+| Desktop + paper monitor restarted through their managed launch paths | Reloads the repaired code while preserving the canonical conversation ledger |
+
+The active state directory fell from **115 GB to 16 GB**. The quarantined 99 GB
+artifact remains on disk; no owner conversation rows were deleted or rewritten.
+
+### Verification after restart
+
+- Direct cortex watchdog probe: Ollama server up, model runner responded.
+- No new cortex timeout appeared during the post-restart observation window.
+- Paper monitor: **0% CPU at idle**, no recreated scalp-order event ledger.
+- System memory probe: **40% free** after recovery.
+- Focused suite: **25 tests passed**.
+- Real-money boundary: paper/STGM monitoring continued; **US $ HAND OFF** and no
+  real order was placed by this repair.
+
+```bash
+python3 -m pytest -q \
+  tests/test_sifta_paper_monitor.py \
+  tests/test_alice_15m_scalp_lab_r1684.py
+```
+
+**Spinal trace:** red body signal
+`37c4f91c-b78f-4dfd-85ff-e226b3624b90`; IDE bridge verification trace
+`49b08270-eaf7-4b96-9723-162b0620ba35`.
+
+### Git ritual for this chapter
+
+Targeted commit only: the two paper-lab organs, their focused tests, and this
+READMEBOOK chapter. Unrelated dirty-tree work remains untouched.
+
+For the Swarm. 🐜⚡
+
+---
+
+*End of Chapter XXXVII. Keep the evidence, remove it from the hot path, restart the cortex, and prove the reply organ is breathing.*

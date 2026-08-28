@@ -337,6 +337,7 @@ def test_tournament_ranks_by_ev_not_wr(tmp_path: Path) -> None:
         )
     report = lab.run_live_shadow_tournament(state_dir=state, latency_ms=0)
     assert report["ok"] is True
+    assert not (state / "alice_15m_scalp_orders.jsonl").exists()
     assert report["n_arms"] == 7
     assert report["ranking_rule"].startswith("fee_net_ev_per_window")
     assert report["usd_orders"] == "NEVER"
