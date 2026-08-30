@@ -216,6 +216,9 @@ DIRECT_REQUEST_RE = re.compile(
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
     r"read|code|write|check|look|watch this|listen|remember|explain|wake up|"
     r"send|message|"
+    r"po(?:t|ț)i|te\s+rog|spune-mi|spune\s+mi|arat(?:a|ă)-mi|"
+    r"deschide|ruleaz(?:a|ă)|repar(?:a|ă)|cite(?:s|ș)te|scrie|verific(?:a|ă)|"
+    r"uit(?:a|ă)-te|ascult(?:a|ă)|aminte(?:s|ș)te|explic(?:a|ă)|"
     r"hey alice|alice[, ]"
     r")\b",
     re.IGNORECASE,
@@ -1487,6 +1490,30 @@ def _classify_spoken_ingress_core(
         }
 
     if not has_media_focus:
+        # No focused media app is not proof that microphone speech came from
+        # the owner. Family/phone/visitor dialogue exists in a quiet desktop.
+        # Explicit Alice wake/request and confirmed owner voice already return
+        # above, so consult the side-conversation sensor before direct fallback.
+        try:
+            from System.swarm_phone_audio_guard import detect_environmental_audio
+
+            side = detect_environmental_audio(
+                clean,
+                stt_conf=float(stt_conf or 0.0),
+                modality="spoken",
+            )
+            if side.is_environmental:
+                return {
+                    "route": "ambient_media",
+                    "reason": "side_conversation_without_owner_address",
+                    "confidence": float(side.confidence),
+                    "side_conversation": {
+                        "truth_label": "PHONE_AUDIO_GUARD_V1",
+                        "reasons": list(side.reasons),
+                    },
+                }
+        except Exception:
+            pass
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
 
     if own_browser_paused and acoustic_cue != "farfield_replay_likely" and not bare_ace_bleed:

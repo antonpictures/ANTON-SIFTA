@@ -109,6 +109,40 @@ def test_prompt_block_names_zero_owner_authority():
     assert "under 900 words" in prompt
 
 
+def test_prompt_block_reads_only_owner_approved_public_guidance(tmp_path):
+    memory = tmp_path / "memory_ledger.jsonl"
+    rows = [
+        {
+            "architect_id": "IOAN_M5",
+            "app_context": "codex_desktop_owner_handoff",
+            "epistemic_label": "ARCHITECT_DOCTRINE",
+            "raw_text": "PRIVATE INVESTOR DETAIL MUST STAY PRIVATE",
+        },
+        {
+            "architect_id": "IOAN_M5",
+            "app_context": "web_public_owner_guidance",
+            "epistemic_label": "HYPOTHESIS",
+            "raw_text": "UNAPPROVED PUBLIC HYPOTHESIS",
+        },
+        {
+            "architect_id": "IOAN_M5",
+            "app_context": "web_public_owner_guidance",
+            "epistemic_label": "ARCHITECT_DOCTRINE",
+            "raw_text": "Explain Alice as a living experience field.",
+        },
+    ]
+    memory.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    prompt = web_typed_prompt_block(state_dir=tmp_path)
+
+    assert "Explain Alice as a living experience field." in prompt
+    assert "PRIVATE INVESTOR DETAIL" not in prompt
+    assert "UNAPPROVED PUBLIC HYPOTHESIS" not in prompt
+
+
 def test_web_metabolism_uses_lag_stamp_and_mints_nothing(tmp_path, monkeypatch):
     from Kernel import inference_economy
 

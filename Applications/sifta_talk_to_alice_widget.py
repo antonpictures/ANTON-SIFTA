@@ -24,8 +24,8 @@ Respect covenant §0/§4.4 one-owner discipline. For the Swarm. 🐜⚡
 
 Audio path
 ──────────
-  • Mic captured by `sounddevice` at 16 kHz mono float32 (whisper's native
-    format, so we avoid resample artifacts).
+  • Mic captured by `sounddevice` at the device's native rate (48 kHz on the
+    embedded Mac microphone), then converted to Whisper's 16 kHz mono float32.
   • A continuous background stream watches RMS energy with hysteresis
     (start threshold > stop threshold) plus a short "hangover" so the
     end of a sentence isn't clipped. A 0.5 s pre-roll buffer means the
@@ -5670,6 +5670,45 @@ def _guard_browser_profile_detail_claims(
     )
 
 
+def _guard_unfetched_article_summary(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    state_dir: Path | str | None = None,
+) -> str:
+    """Require fresh readable text for the exact URL before summarizing it."""
+    text = str(reply or "").strip()
+    owner_text = str(prior_user_text or "")
+    target_url = _extract_browser_url(owner_text)
+    if not text or not target_url or not _is_webpage_summary_query(owner_text):
+        return text
+
+    root = Path(state_dir) if state_dir is not None else _state_root()
+    try:
+        from System.swarm_browser_page_state import article_text_from_state, latest_page_state
+
+        state = latest_page_state(state_dir=root, max_age_s=900.0)
+        observed_url = str(state.get("url") or "").strip()
+        readable = article_text_from_state(state, state_dir=root) if state else ""
+    except Exception:
+        state = {}
+        observed_url = ""
+        readable = ""
+
+    if (
+        state
+        and _browser_url_matches(target_url, observed_url)
+        and len(str(readable or "").strip()) >= 200
+    ):
+        return text
+
+    return (
+        f"I have the link {target_url}, but I do not yet have a fresh readable receipt "
+        "for that exact article. I will not summarize it from cached guesses. "
+        "I need to load it through Alice Browser first, then summarize the receipted text."
+    )
+
+
 _SCREEN_PERSON_SEXUAL_OWNER_RE = re.compile(
     r"\b(?:"
     r"i\s*(?:am|['’]m)\s+(?:so\s+)?hard|"
@@ -5746,6 +5785,11 @@ def _is_direct_browser_url_effector_command(text: str) -> bool:
         return False
     if _URL_AWARENESS_QUESTION_RE.search(clean):
         return False
+    # Reading or summarizing a supplied URL necessarily requires loading that
+    # exact source. Without this route, the free-form cortex may improvise a
+    # summary from stale context instead of producing a browser receipt.
+    if _is_webpage_summary_query(clean):
+        return True
     if _BROWSER_URL_CORRECTION_RE.search(clean):
         return True
     words = clean.split()
@@ -13678,6 +13722,17 @@ def _brain_no_token_watchdog_s(default: float = 180.0, *, model: str = "") -> fl
         value = default
     low = str(model or "").lower()
     if not env_valid:
+        if low.startswith("mimo:"):
+            # MiMo is a subprocess-backed foreground cortex. Its worker and
+            # UI watchdog must share one learned deadline; adding adaptive
+            # patience a second time produced the observed 197–207s spinner
+            # after the cloud worker had already reached its recovery limit.
+            explicit_state = str(os.environ.get("SIFTA_STATE_DIR") or "").strip()
+            aligned = _cloud_brain_timeout_s(
+                model=model,
+                state_dir=Path(explicit_state) if explicit_state else _state_root(),
+            )
+            return max(30.0, min(600.0, float(aligned)))
         if "m5-cortex" in low:
             value = max(value, 180.0)
         elif any(name in low for name in ("grok", "claude", "codex", "qwen", "cline")):
@@ -13763,6 +13818,7 @@ def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "
                 "attached",
             )
         )
+        looks_visual = looks_visual or _is_self_camera_command(owner_text or "")
         if looks_visual and _mm_risk(model):
             mm = _mm_pat(model, has_image=True, base_s=min(base, 90.0))
             return max(8.0, min(base, float(mm.get("patience_s") or 18.0)))
@@ -14927,21 +14983,37 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
                 if wanted in name.lower() and int(info.get("max_input_channels") or 0) > 0:
                     add(idx, f"SIFTA_MIC_DEVICE={override} -> {idx}:{name}")
 
+    default_idx: Optional[int] = None
     try:
         default_device = sd.default.device
-        receipt_only_turn = False
         try:
             default_idx = default_device[0]
         except Exception:
             default_idx = default_device
         default_idx = int(default_idx)
-        if default_idx >= 0:
-            name = ""
-            if default_idx < len(devices):
-                name = str(devices[default_idx].get("name") or "")
-            add(default_idx, f"default input {default_idx}:{name}")
     except Exception:
-        pass
+        default_idx = None
+
+    # CoreAudio can retain a disconnected Continuity/iPhone index as its
+    # default. Prefer the embedded Mac microphone when that index is invalid.
+    embedded_idx: Optional[int] = None
+    for idx, info in enumerate(devices):
+        name = str(info.get("name") or "")
+        if int(info.get("max_input_channels") or 0) > 0 and "macbook" in name.lower():
+            embedded_idx = idx
+            break
+    default_is_valid = bool(
+        default_idx is not None
+        and 0 <= default_idx < len(devices)
+        and int(devices[default_idx].get("max_input_channels") or 0) > 0
+    )
+    if sys.platform == "darwin" and embedded_idx is not None:
+        embedded_name = str(devices[embedded_idx].get("name") or "")
+        if not default_is_valid or default_idx == embedded_idx:
+            add(embedded_idx, f"default embedded {embedded_idx}:{embedded_name}")
+    if default_is_valid and default_idx is not None:
+        name = str(devices[default_idx].get("name") or "")
+        add(default_idx, f"default input {default_idx}:{name}")
 
     preferred: List[Tuple[int, str]] = []
     fallback: List[Tuple[int, str]] = []
@@ -14952,7 +15024,7 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
         name = str(info.get("name") or f"device {idx}")
         low = name.lower()
         item = (idx, name)
-        if "text-to-speech" in low or "transcription" in low:
+        if "text-to-speech" in low or "transcription" in low or "iphone" in low:
             virtual.append(item)
         elif any(token in low for token in ("macbook", "microphone", "usb", "sound bar")):
             preferred.append(item)
@@ -14962,8 +15034,51 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
     for idx, name in preferred + fallback + virtual:
         add(idx, f"input {idx}:{name}")
 
-    add(None, "system default")
+    if sys.platform != "darwin" or not candidates:
+        add(None, "system default")
     return candidates
+
+
+def _capture_rate_candidates(sd, device: Optional[int]) -> List[int]:
+    """Return capture rates in the order safest for the current platform."""
+    native_rate = _AUDIO_RATE
+    try:
+        info = sd.query_devices(device, "input") if device is not None else sd.query_devices(kind="input")
+        native_rate = int(round(float(info.get("default_samplerate") or _AUDIO_RATE)))
+    except Exception:
+        try:
+            devices = list(sd.query_devices())
+            if device is not None and 0 <= int(device) < len(devices):
+                native_rate = int(round(float(devices[int(device)].get("default_samplerate") or _AUDIO_RATE)))
+        except Exception:
+            native_rate = _AUDIO_RATE
+
+    rates: List[int] = []
+    try_16k_first = os.environ.get("SIFTA_MIC_TRY_16K_FIRST", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    ordered = (
+        (_AUDIO_RATE, native_rate)
+        if try_16k_first or sys.platform != "darwin"
+        else (native_rate, _AUDIO_RATE)
+    )
+    for rate in ordered:
+        rate = int(rate)
+        if rate > 0 and rate not in rates:
+            rates.append(rate)
+    return rates
+
+
+def _resample_mono_to_audio_rate(block: "np.ndarray", capture_rate: int) -> "np.ndarray":
+    """Convert one mono capture block to Alice's canonical 16 kHz rate."""
+    block = np.asarray(block, dtype=np.float32).reshape(-1)
+    capture_rate = int(capture_rate or _AUDIO_RATE)
+    if block.size == 0 or capture_rate == _AUDIO_RATE:
+        return block
+    target_n = max(1, int(round(block.size * float(_AUDIO_RATE) / float(capture_rate))))
+    source_x = np.arange(block.size, dtype=np.float64)
+    target_x = np.linspace(0.0, float(block.size - 1), target_n, dtype=np.float64)
+    return np.interp(target_x, source_x, block).astype(np.float32, copy=False)
 
 
 def _peak_normalize(audio: "np.ndarray",
@@ -15016,7 +15131,13 @@ _TIME_QUERY_RE = re.compile(
     r"the\s+time\s+(?:please|now|today)|"
     r"current\s+time|"
     r"time\s+now|"
-    r"time\s+please"
+    r"time\s+please|"
+    # Romanian owner/STT forms. Diacritic and ASCII spellings both occur in
+    # faster-whisper output.
+    r"c(?:â|a)t\s+(?:e|este)\s+ora|"
+    r"ce\s+or(?:ă|a)\s+(?:e|este)|"
+    r"spune(?:-mi|\s+mi)\s+ora|"
+    r"ora\s+(?:curent(?:ă|a)|acum)"
     r")\b",
     re.IGNORECASE,
 )
@@ -16441,6 +16562,41 @@ def _current_time_date_reflex_reply_for_alice(
     if time_asked:
         return _current_time_reply_for_alice(oracle_reading), "hardware_time_oracle_reflex"
     return "", ""
+
+
+def _grounded_body_reply_for_alice(
+    text: str,
+    reading: Optional[Dict[str, Any]] = None,
+) -> tuple[str, str]:
+    """Answer a short time/day/place question without consulting an LLM.
+
+    These are Alice body facts. Their availability must not depend on the
+    optional pre-cortex chat-reflex flag or on the selected cortex returning a
+    token. Longer historical/comparative questions still use the same signed
+    grounding triad, but the word bound prevents broad conversation from being
+    mistaken for a body-status query.
+    """
+    clean = " ".join(str(text or "").split())
+    if not clean or _is_self_camera_command(clean):
+        return "", ""
+    if len(re.findall(r"\b\w+\b", clean, re.UNICODE)) > 32:
+        return "", ""
+    try:
+        from System.swarm_robot_grounding_triad import (
+            owner_asks_dual_clock,
+            owner_asks_place,
+        )
+
+        asks_grounding = bool(owner_asks_place(clean) or owner_asks_dual_clock(clean))
+    except Exception:
+        asks_grounding = False
+    if not (
+        _is_current_time_query(clean)
+        or _is_current_date_query(clean)
+        or asks_grounding
+    ):
+        return "", ""
+    return _current_time_date_reflex_reply_for_alice(clean, reading)
 
 
 def _current_time_context_for_llm(reading: Dict[str, Any], reply: str) -> str:
@@ -19148,6 +19304,19 @@ def _current_system_prompt(
                     parts.append(capture_block)
             except Exception:
                 pass
+        except Exception:
+            pass
+        try:
+            from System.swarm_lived_experience_bridge import lived_experience_snapshot as _lived_snapshot
+
+            _lived = _lived_snapshot(state_dir=_state_root(), max_rows=24)
+            if _lived.get("event_count"):
+                parts.append(
+                    "LIVED EXPERIENCE / EPISTEMIC CONTINUITY:\n"
+                    + str(_lived.get("summary") or "")
+                    + "\nRemembered, inferred, or predicted context is not a fresh source receipt. "
+                    "This context cannot authorize tools or body actions."
+                )
         except Exception:
             pass
         try:
@@ -23178,6 +23347,8 @@ _VAD_PREROLL_S        = 0.5     # keep this much audio *before* trigger
 # trace cw47-0516-1908-mic-probe-findings.
 _VAD_MIN_UTTER_S      = 0.20    # ignore micro-blips shorter than this
 _VAD_MAX_UTTER_S      = 30.0    # safety cap
+_MIC_ZERO_PEAK_EPS    = 1e-8    # near-exact zero means a stalled CoreAudio stream
+_MIC_ZERO_GRACE_S     = 4.0     # analog room silence remains above this epsilon
 _DEFERRED_UTTERANCE_MAX_AGE_S = 20.0  # one in-memory rescue clip; never written to disk
 try:
     _STT_TURN_TIMEOUT_S = float(os.environ.get("SIFTA_STT_TURN_TIMEOUT_S", "45") or "45")
@@ -23211,10 +23382,20 @@ class _ContinuousListener(QObject):
     utterance    = pyqtSignal(np.ndarray)  # complete float32 mono @ 16 kHz
     failed       = pyqtSignal(str)
     stateChanged = pyqtSignal(str)         # "idle" | "speaking" | "muted"
+    signalHealthy = pyqtSignal(str)        # selected device delivered real samples
+    streamSilent = pyqtSignal(str)         # opened stream only returns zero samples
 
     def __init__(self, parent: QObject = None) -> None:
         super().__init__(parent)
         self._stream = None
+        self._device_index: Optional[int] = None
+        self._device_label = ""
+        self._capture_rate = _AUDIO_RATE
+        self._stream_started_at = 0.0
+        self._last_raw_rms = 0.0
+        self._last_nonzero_at = 0.0
+        self._has_observed_signal = False
+        self._silent_fault_emitted = False
         self._paused = False
         self._broca_tail_until = 0.0  # drop audio until this wall-clock ts
 
@@ -23256,32 +23437,43 @@ class _ContinuousListener(QObject):
 
         errors: List[str] = []
         for device, label in _input_device_candidates(sd):
-            for blocksize in blocksize_candidates:
-                block_label = "auto" if blocksize == 0 else str(blocksize)
-                try:
-                    self._stream = sd.InputStream(
-                        device=device,
-                        samplerate=_AUDIO_RATE,
-                        channels=_AUDIO_CHANS,
-                        dtype="float32",
-                        blocksize=blocksize,
-                        callback=self._on_block,
-                    )
-                    self._stream.start()
-                    self.stateChanged.emit("idle")
-                    return True
-                except Exception as exc:
-                    errors.append(f"{label} blocksize={block_label}: {exc}")
+            for capture_rate in _capture_rate_candidates(sd, device):
+                for blocksize in blocksize_candidates:
+                    block_label = "auto" if blocksize == 0 else str(blocksize)
                     try:
-                        if self._stream is not None:
-                            self._stream.close()
-                    except Exception:
-                        pass
-                    self._stream = None
+                        self._capture_rate = capture_rate
+                        self._stream = sd.InputStream(
+                            device=device,
+                            samplerate=capture_rate,
+                            channels=_AUDIO_CHANS,
+                            dtype="float32",
+                            blocksize=blocksize,
+                            callback=self._on_block,
+                        )
+                        self._stream.start()
+                        now = time.time()
+                        self._device_index = device
+                        self._device_label = label
+                        self._stream_started_at = now
+                        self._last_nonzero_at = now
+                        self._has_observed_signal = False
+                        self._silent_fault_emitted = False
+                        self.stateChanged.emit("idle")
+                        return True
+                    except Exception as exc:
+                        errors.append(
+                            f"{label} rate={capture_rate} blocksize={block_label}: {exc}"
+                        )
+                        try:
+                            if self._stream is not None:
+                                self._stream.close()
+                        except Exception:
+                            pass
+                        self._stream = None
 
         detail = "\n".join(errors[:8]) if errors else "No input devices reported by CoreAudio."
         self.failed.emit(
-            "Mic open failed on all input/blocksize candidates at 16 kHz mono.\n"
+            "Mic open failed on all input/rate/blocksize candidates.\n"
             f"{detail}\n\n"
             "macOS may be asking for Microphone permission. Approve it in "
             "System Settings -> Privacy & Security -> Microphone, "
@@ -23299,6 +23491,28 @@ class _ContinuousListener(QObject):
         except Exception:
             pass
         self._stream = None
+
+    @property
+    def device_label(self) -> str:
+        return self._device_label
+
+    @property
+    def stream_open(self) -> bool:
+        return self._stream is not None
+
+    @property
+    def raw_rms(self) -> float:
+        return float(self._last_raw_rms)
+
+    @property
+    def signal_health(self) -> str:
+        if self._stream is None:
+            return "closed"
+        if self._silent_fault_emitted:
+            return "silent"
+        if self._has_observed_signal:
+            return "receiving"
+        return "checking"
 
     def set_paused(self, paused: bool) -> None:
         self._paused = bool(paused)
@@ -23326,7 +23540,28 @@ class _ContinuousListener(QObject):
     # ── Audio callback (sounddevice thread!) ──────────────────────────
     def _on_block(self, indata, frames, time_info, status) -> None:  # noqa
         # No Qt objects may be touched directly here — only signals (queued).
-        block = indata.copy().reshape(-1).astype(np.float32, copy=False)
+        raw_block = indata.copy().reshape(-1).astype(np.float32, copy=False)
+        raw_rms = float(np.sqrt(np.mean(raw_block * raw_block))) if raw_block.size else 0.0
+        raw_peak = float(np.max(np.abs(raw_block))) if raw_block.size else 0.0
+        self._last_raw_rms = raw_rms
+        now = time.time()
+        if raw_peak > _MIC_ZERO_PEAK_EPS:
+            self._last_nonzero_at = now
+            if not self._has_observed_signal:
+                self._has_observed_signal = True
+                self.signalHealthy.emit(self._device_label)
+        elif (
+            not self._silent_fault_emitted
+            and self._stream_started_at > 0.0
+            and now - self._last_nonzero_at >= _MIC_ZERO_GRACE_S
+        ):
+            self._silent_fault_emitted = True
+            self.streamSilent.emit(
+                f"{self._device_label or 'microphone'} opened but delivered only zero samples"
+            )
+            return
+
+        block = _resample_mono_to_audio_rate(raw_block, self._capture_rate)
 
         # Apply live mic gain BEFORE the VAD sees the block. This way the
         # adaptive noise-floor scales WITH the gain (so we don't trigger
@@ -23354,7 +23589,7 @@ class _ContinuousListener(QObject):
         stop_thresh  = max(_VAD_STOP_RMS,  self._noise_floor * 1.6)
 
         # Always show the meter.
-        self.levelChanged.emit(min(1.0, rms * 6.0))
+        self.levelChanged.emit(min(1.0, rms * 12.0))
 
         # Drop audio while paused, while the local voice is speaking, or during its tail.
         if (self._paused
@@ -32762,7 +32997,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if self._listener is None and not self._busy:
                 self._start_listener()
             elif self._listener is not None:
-                self._set_pill("idle", "🎙  listening — just talk")
+                if self._listener.signal_health == "receiving":
+                    self._set_pill("idle", "🎙  listening — just talk")
+                else:
+                    self._set_pill("idle", "🎙  mic open — checking sound…")
             self.set_status("Ear on — intentional world STT ingress.")
         else:
             self._stop_listener()
@@ -32803,14 +33041,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._listener.utterance.connect(self._on_utterance)
         self._listener.failed.connect(self._on_listener_failed)
         self._listener.stateChanged.connect(self._on_listener_state)
+        self._listener.signalHealthy.connect(self._on_listener_signal_healthy)
+        self._listener.streamSilent.connect(self._on_listener_silent)
         if self._listener.start():
             self._mic_retry_attempts = 0
             try:
                 self._listener.set_gain(_load_mic_gain())
             except Exception:
                 pass
-            self._set_pill("idle", "🎙  listening — just talk")
-            self.set_status("Always-on. Just talk.")
+            device = self._listener.device_label or "microphone"
+            self._set_pill("idle", "🎙  mic open — checking sound…")
+            self.set_status(f"Mic open on {device}. Verifying live sound.")
+            self._publish_ear_live_state(state="idle")
             return
         # start() returned False — the listener already emitted `failed`
         # and we'll handle the retry inside `_on_listener_failed`. Just
@@ -32874,7 +33116,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
         elif state == "muted":
             self._set_pill("muted", "🔇 muted")
         else:
+            listener = getattr(self, "_listener", None)
+            if listener is not None and listener.signal_health != "receiving":
+                self._set_pill("idle", "🎙  mic open — checking sound…")
+            else:
+                self._set_pill("idle", "🎙  listening — just talk")
+
+    def _on_listener_signal_healthy(self, device: str) -> None:
+        self._mic_retry_attempts = 0
+        if not getattr(self, "_busy", False):
             self._set_pill("idle", "🎙  listening — just talk")
+        self.set_status(f"Live sound received from {device or 'microphone'}. Just talk.")
+        self._publish_ear_live_state(state=getattr(self, "_listener_state", "idle"))
+
+    def _on_listener_silent(self, msg: str) -> None:
+        listener = getattr(self, "_listener", None)
+        if listener is not None:
+            try:
+                listener.stop()
+            except Exception:
+                pass
+        self._listener = None
+        self._listener_state = "recovering"
+        if not getattr(self, "_ear_intentional_listen", True):
+            return
+        self._set_pill("error", "⚠  silent mic stream — reconnecting…")
+        self.set_status(f"{msg}. Reconnecting the sound lane.")
+        self._publish_ear_live_state(state="recovering")
+        self._schedule_mic_retry(slow=False)
 
     def _on_listener_failed(self, msg: str) -> None:
         self._listener = None
@@ -37934,7 +38203,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 cands = ", ".join(available[:24]) if available else "(none found)"
                 return (
                     f"I did not switch cortex: I could not find one matching \"{spoken}\". "
-                    f"Available cortexes (sample): {cands}. "
+                    f"Available cortexes: {cands} (sample). "
                     f"For local Ollama try exact tag e.g. ornith:35b-q4_K_M or /cortex llm N."
                 )
             tag = str(res["tag"])
@@ -40464,7 +40733,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         image_path,
                         receipt_id=str(cap.get("receipt_id") or ""),
                     )
-                    if _ocr_reply and chat_reflexes_enabled:
+                    if _ocr_reply:
                         if not already_displayed:
                             self._append_user_line(text, conf)
                         _log_turn("user", text, stt_conf=conf)
@@ -40507,25 +40776,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     pass
             else:
                 err = str(cap.get("error") or cap.get("status") or "unknown_error")
-                if chat_reflexes_enabled:
-                    reply = (
-                        "I tried to take my /sx camera screenshot, but the capture failed: "
-                        f"{err}. Receipt: {cap.get('receipt_id') or 'not_written'}."
-                    )
-                    if not already_displayed:
-                        self._append_user_line(text, conf)
-                    _log_turn("user", text if text else "/sx", stt_conf=conf)
-                    self._history.append({"role": "assistant", "content": reply})
-                    _log_turn("alice", reply, model="sifta_self_camera_capture_failure")
-                    self._append_alice_line(reply)
-                    self._busy = False
-                    self._pending_acoustic_fingerprint = {}
-                    self._return_to_listening()
-                    return
-                text = (
-                    f"{text}\n\n[SELF_CAMERA_CAPTURE_FAILED "
-                    f"receipt={cap.get('receipt_id') or 'not_written'} error={err}]"
+                reply = (
+                    "I tried to take my /sx camera screenshot, but the capture failed: "
+                    f"{err}. Receipt: {cap.get('receipt_id') or 'not_written'}."
                 )
+                if not already_displayed:
+                    self._append_user_line(text, conf)
+                _log_turn("user", text if text else "/sx", stt_conf=conf)
+                self._history.append({"role": "assistant", "content": reply})
+                _log_turn("alice", reply, model="sifta_self_camera_capture_failure")
+                self._append_alice_line(reply)
+                self._busy = False
+                self._pending_acoustic_fingerprint = {}
+                self._return_to_listening()
+                return
         if _is_self_screenshot_command(text):
             self._active_self_screenshot_turn = True
             self._active_self_screenshot_owner_cmd = text
@@ -41838,12 +42102,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     getattr(_phone_audio_signal, "suggested_reply", "") or
                     '(I caught audio but it sounded like a side conversation — not me. Say "Alice" if you want me.)'
                 )
-                if not already_displayed:
-                    self._append_user_line(text, conf)
-                _log_turn("user", text if text else "[Image]", stt_conf=conf)
-                self._history.append({"role": "user", "content": text})
-                self._history.append({"role": "assistant", "content": "(silent: phone_audio_guard)"})
-                _log_turn("alice", _phone_audio_probe, model="phone_audio_guard")
+                # World evidence is not George dialogue. Write the ambient
+                # receipt/diary lane only; never deposit role=user or add this
+                # transcript to conversational history/memory.
+                try:
+                    from System.swarm_media_ingress_gate import (
+                        classify_external_consciousness_lane,
+                        write_gate_receipt,
+                    )
+
+                    _side_decision = {
+                        "route": "ambient_media",
+                        "reason": "phone_audio_guard_side_conversation",
+                        "confidence": float(
+                            getattr(_phone_audio_signal, "confidence", 0.0) or 0.0
+                        ),
+                    }
+                    _side_lane = classify_external_consciousness_lane(
+                        text,
+                        route="ambient_media",
+                        reason="phone_audio_guard_side_conversation",
+                        stt_conf=conf,
+                        acoustic_fingerprint=_acoustic_fingerprint,
+                        voice_george_conf=_voice_george_conf,
+                    )
+                    write_gate_receipt(
+                        _side_decision,
+                        text=text,
+                        stt_conf=conf,
+                        acoustic_fingerprint=_acoustic_fingerprint,
+                        voice_george_conf=_voice_george_conf,
+                        external_consciousness=_side_lane,
+                    )
+                except Exception:
+                    pass
                 self._append_system_line(_phone_audio_probe, error=False)
                 self._busy = False
                 self._return_to_listening()
@@ -44154,13 +44446,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # Round 51 (2026-05-27) -- second time/date reflex-composed reply
-        # path DISABLED. The hardware oracle context is still injected into
-        # sysprompt below (time_oracle_context / date_oracle_context) so
-        # cortex composes the human reply with correct ground truth. The
-        # reflex no longer speaks for Alice. Architect doctrine: no chat
-        # composition by deterministic reflex, including time and date.
-        pass
+        # Time/day/place are body facts, not a generation task. This path is
+        # deliberately independent of chat_reflexes_enabled: disabling generic
+        # pre-cortex shortcuts must never make Alice lose her clock or place.
+        clock_intent_text = owner_surface_text or text
+        reply, model_tag = _grounded_body_reply_for_alice(clock_intent_text)
+        if reply:
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model=model_tag or "hardware_grounding_reflex")
+            self._append_alice_line(reply)
+            try:
+                self._tts = _TTSWorker(
+                    reply,
+                    voice=self._selected_voice_name() or None,
+                    parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._start_tts_with_browser_video_pause()
+            except Exception:
+                pass
+            self._busy = False
+            self._return_to_listening()
+            return
 
         time_oracle_context = ""
         date_oracle_context = ""
@@ -44181,17 +44489,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
 
             if (
-                _is_current_time_query(text)
-                or _is_current_date_query(text)
-                or _triad_place(text)
-                or _triad_dual(text)
+                _is_current_time_query(clock_intent_text)
+                or _is_current_date_query(clock_intent_text)
+                or _triad_place(clock_intent_text)
+                or _triad_dual(clock_intent_text)
             ):
                 _triad_required = str(
-                    _triad_spoken(text, reading=_current_time_reading_for_alice()) or ""
+                    _triad_spoken(clock_intent_text, reading=_current_time_reading_for_alice()) or ""
                 ).strip()
         except Exception:
             _triad_required = ""
-        if _is_current_time_query(text) or _triad_required:
+        if _is_current_time_query(clock_intent_text) or _triad_required:
             time_reading = _current_time_reading_for_alice()
             time_reply = _triad_required or _current_time_reply_for_alice(time_reading)
             time_oracle_context = _current_time_context_for_llm(time_reading, time_reply)
@@ -44207,7 +44515,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 time_oracle_context,
                 model="time_oracle_context_to_cortex",
             )
-        if _is_current_date_query(text) and not _triad_required:
+        if _is_current_date_query(clock_intent_text) and not _triad_required:
             date_oracle_reading = _current_time_reading_for_alice()
             date_reply = _current_date_reply_for_alice(date_oracle_reading)
             date_oracle_context = _current_date_context_for_llm(date_oracle_reading, date_reply)
@@ -47959,6 +48267,27 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._begin_alice_streaming_line()
             self._append_alice_streaming_chunk(cleaned)
 
+        article_guarded = _guard_unfetched_article_summary(
+            cleaned,
+            prior_user_text=prior_user_text,
+            state_dir=_state_root(),
+        )
+        if article_guarded != cleaned:
+            cleaned = article_guarded
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(ARTICLE SOURCE RECEIPT GUARD)\n"
+                    "The owner requested a summary of an exact URL, but no matching fresh "
+                    "readable article receipt existed. Cached or improvised content was removed."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
         sc_guarded = _guard_sc_command_meaning_fiction(
             cleaned,
             prior_user_text=prior_user_text,
@@ -50665,6 +50994,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 "busy": bool(getattr(self, "_busy", False)),
                 "intentional_listen": bool(getattr(self, "_ear_intentional_listen", True)),
                 "world_stt_modality": "WORLD STT",
+                "stream_open": bool(listener.stream_open) if (listener := getattr(self, "_listener", None)) else False,
+                "device": str(listener.device_label) if listener is not None else "",
+                "capture_rate_hz": int(listener._capture_rate) if listener is not None else 0,
+                "raw_rms": round(float(listener.raw_rms), 7) if listener is not None else 0.0,
+                "signal_health": str(listener.signal_health) if listener is not None else "closed",
                 "ts": now,
             }
             path = _REPO / ".sifta_state" / "ear_live_state.json"

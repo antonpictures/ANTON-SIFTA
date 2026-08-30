@@ -64,6 +64,39 @@ def test_url_awareness_question_does_not_reload_page():
     assert mod._extract_sifta_app_command(owner_text, ["Alice Browser"]) == {}
 
 
+def test_summary_of_explicit_url_loads_exact_source_before_cortex_summary():
+    mod = _load_talk_module()
+    owner_text = (
+        "Can you please summarize this article for me? "
+        "https://www.dwarkesh.com/p/openai-huggingface"
+    )
+
+    assert mod._is_direct_browser_url_effector_command(owner_text)
+    command = mod._extract_sifta_app_command(owner_text, ["Alice Browser"])
+    assert command["kind"] == "browser_url"
+    assert command["url"] == "https://www.dwarkesh.com/p/openai-huggingface"
+    assert command["summarize_after_open"] == "1"
+
+
+def test_article_summary_claim_is_replaced_without_matching_source_receipt(tmp_path):
+    mod = _load_talk_module()
+    owner_text = (
+        "Summarize this article: "
+        "https://www.dwarkesh.com/p/openai-huggingface"
+    )
+    invented = "My cached knowledge retrieved it. The core thesis is proprietary versus open AI."
+
+    repaired = mod._guard_unfetched_article_summary(
+        invented,
+        prior_user_text=owner_text,
+        state_dir=tmp_path,
+    )
+
+    assert "fresh readable receipt" in repaired
+    assert "will not summarize it from cached guesses" in repaired
+    assert "core thesis" not in repaired
+
+
 def test_explicit_domain_handle_opens_profile_without_person_hardcode():
     mod = _load_talk_module()
     owner_text = "instagram.com @kylinmilan"

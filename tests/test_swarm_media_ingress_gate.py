@@ -72,6 +72,32 @@ def test_movie_dialogue_is_ambient_when_youtube_is_frontmost():
     assert decision["reason"] == "media_focus_plus_narration_shape"
 
 
+def test_room_dialogue_is_ambient_without_any_media_focus():
+    decision = classify_spoken_ingress(
+        (
+            "Bună mama, bună dimineața. Ce faci? Ce faci? Ai vorbit cu doctorul? "
+            "Mai stai în spital? Te pup. Te pup și eu. Pa, pa."
+        ),
+        stt_conf=0.44,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "side_conversation_without_owner_address"
+    assert decision["side_conversation"]["truth_label"] == "PHONE_AUDIO_GUARD_V1"
+
+
+def test_romanian_direct_request_remains_owner_lane_without_media_focus():
+    decision = classify_spoken_ingress(
+        "Te rog spune-mi cât este ora acum",
+        stt_conf=0.52,
+        focus_context="",
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "direct_address_or_request"
+
+
 def test_external_consciousness_lane_categorizes_owner_media_phone_room_and_appliance():
     owner = classify_external_consciousness_lane(
         "Alice, listen to me.",

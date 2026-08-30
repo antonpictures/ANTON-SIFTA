@@ -124,6 +124,52 @@ def test_clean_owner_spoken_turn_does_not_fire():
     assert sig.is_environmental is False
 
 
+@pytest.mark.parametrize(
+    ("transcript", "confidence"),
+    [
+        (
+            "Doar de dimineața asta. Nu-mi trebuie ca? Vrei să treceți pe aici? "
+            "Nu vreau să treceți pe aici. A venit Lili pe la Simona? Ce faci? "
+            "Cum ai venit? Ai mai vorbit? Nu știu dacă v-ați întâlnit?",
+            0.46,
+        ),
+        (
+            "Mama era bine, nu mai doare piciorul, am fost la hospital. "
+            "Am trimis video, nu ai văzut? Nu am fost prea bine. Am vorbit de "
+            "doctor și de spital. Da.",
+            0.55,
+        ),
+        (
+            "Da, clar. Bine, mama. Am înțeles. Te pup. Te pup și eu. "
+            "Pa, pa. Pa.",
+            0.47,
+        ),
+    ],
+)
+def test_romanian_room_dialogue_is_environmental(transcript, confidence):
+    """Production park/family speech is world audio, not owner memory."""
+    sig = pag.detect_environmental_audio(
+        transcript,
+        stt_conf=confidence,
+        modality="spoken",
+        owner_label="George",
+    )
+
+    assert sig.is_environmental is True
+    assert sig.confidence >= 0.55
+
+
+def test_romanian_alice_wake_word_still_wins_over_room_dialogue_shape():
+    sig = pag.detect_environmental_audio(
+        "Alice, bună. Mama e la spital; te rog ascultă-mă și ajută-mă.",
+        stt_conf=0.48,
+        modality="spoken",
+    )
+
+    assert sig.is_environmental is False
+    assert sig.has_wake_word is True
+
+
 def test_owner_label_in_text_lowers_score():
     """Even spoken with low STT, if 'George' is in the text, lower the score."""
     high_score_text = (

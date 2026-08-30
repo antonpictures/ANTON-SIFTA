@@ -180,6 +180,18 @@ def test_no_token_watchdog_env_override_is_clamped(monkeypatch):
     assert talk._brain_no_token_watchdog_s(model="krishairnd/Gemma-4-Uncensored:latest") == 600.0
 
 
+def test_self_camera_turn_gets_multimodal_fail_fast_watchdog(monkeypatch, tmp_path):
+    from Applications import sifta_talk_to_alice_widget as talk
+
+    monkeypatch.delenv("SIFTA_BRAIN_NO_TOKEN_TIMEOUT_S", raising=False)
+    monkeypatch.setattr(talk, "_STATE_DIR", tmp_path / ".sifta_state")
+
+    assert talk._brain_no_token_watchdog_for_owner_turn_s(
+        "/sx",
+        model="krishairnd/Gemma-4-Uncensored:latest",
+    ) == 18.0
+
+
 def test_body_action_no_token_watchdog_learns_slow_first_token(monkeypatch, tmp_path):
     from Applications import sifta_talk_to_alice_widget as talk
     from System.swarm_stigmergic_timeout_policy import record_timeout_outcome

@@ -3,6 +3,7 @@ from Applications.sifta_talk_to_alice_widget import (
     _current_turn_datetime_context_for_cortex,
     _current_date_reply_for_alice,
     _current_date_time_reply_for_alice,
+    _grounded_body_reply_for_alice,
     _current_time_date_reflex_reply_for_alice,
     _current_time_reply_for_alice,
     _is_current_time_query,
@@ -49,6 +50,12 @@ def test_alice_prefixed_time_query_is_direct_time_query():
     assert _is_current_time_query("Alice, what time is it?")
 
 
+def test_romanian_time_queries_use_the_hardware_time_intent():
+    assert _is_current_time_query("Alice, cât este ora?")
+    assert _is_current_time_query("Ce oră este acum?")
+    assert _is_current_time_query("Spune-mi ora curentă")
+
+
 def test_reflex_reply_handles_alice_prefixed_time_query(monkeypatch):
     monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
     reply, model = _current_time_date_reflex_reply_for_alice(
@@ -70,6 +77,24 @@ def test_reflex_reply_handles_date_and_time_together():
     assert "Wednesday, May 13, 2026" in reply
     assert "The time is 9:40 AM PDT" in reply
     assert model == "hardware_date_time_oracle_reflex"
+
+
+def test_grounded_body_reply_does_not_require_reflex_flag(monkeypatch):
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    reply, model = _grounded_body_reply_for_alice(
+        "Alice, what time is it?",
+        _reading(),
+    )
+
+    assert "9:40 AM PDT" in reply
+    assert model == "hardware_time_oracle_reflex"
+
+
+def test_grounded_body_reply_never_confuses_sx_with_clock(monkeypatch):
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
+
+    assert _grounded_body_reply_for_alice("/sx use history", _reading()) == ("", "")
 
 
 def test_time_reply_repair_catches_wrong_literal_time():

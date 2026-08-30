@@ -67,7 +67,7 @@ def test_self_camera_slot_from_command() -> None:
 
 
 def test_start_brain_inline_sx_turn_uses_self_camera_fast_ocr_path(monkeypatch) -> None:
-    monkeypatch.setenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", "1")
+    monkeypatch.delenv("SIFTA_ALLOW_PRE_CORTEX_CHAT_REFLEXES", raising=False)
     widget = talk.TalkToAliceWidget.__new__(talk.TalkToAliceWidget)
     widget._history = []
     widget._busy = True

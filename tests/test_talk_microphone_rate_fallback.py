@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import types
 
 import numpy as np
@@ -132,3 +133,39 @@ def test_native_rate_audio_blocks_downsample_to_alice_audio_rate():
     assert out.shape == (160,)
     assert float(np.max(out)) <= 0.5
     assert float(np.min(out)) >= -0.5
+
+
+def test_listener_reports_real_samples_before_claiming_signal_health():
+    listener = talk._ContinuousListener()
+    listener._device_label = "MacBook Pro Microphone"
+    listener._capture_rate = 48000
+    listener._stream = object()
+    listener._stream_started_at = time.time()
+    listener._last_nonzero_at = listener._stream_started_at
+    healthy: list[str] = []
+    listener.signalHealthy.connect(healthy.append)
+
+    block = np.full((480, 1), 0.001, dtype=np.float32)
+    listener._on_block(block, 480, None, None)
+
+    assert healthy == ["MacBook Pro Microphone"]
+    assert listener.signal_health == "receiving"
+    assert listener.raw_rms > 0.0
+
+
+def test_listener_flags_a_stream_that_only_delivers_zero_samples():
+    listener = talk._ContinuousListener()
+    listener._device_label = "MacBook Pro Microphone"
+    listener._capture_rate = 48000
+    listener._stream = object()
+    listener._stream_started_at = time.time() - talk._MIC_ZERO_GRACE_S - 1.0
+    listener._last_nonzero_at = listener._stream_started_at
+    silent: list[str] = []
+    listener.streamSilent.connect(silent.append)
+
+    block = np.zeros((480, 1), dtype=np.float32)
+    listener._on_block(block, 480, None, None)
+
+    assert len(silent) == 1
+    assert "zero samples" in silent[0]
+    assert listener.signal_health == "silent"

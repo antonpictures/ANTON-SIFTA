@@ -71,6 +71,7 @@ Constants
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -100,6 +101,21 @@ _PHONE_GREETING_PATTERNS = (
     re.compile(r"\b(?:i was|i'm) watching\b", re.IGNORECASE),
     re.compile(r"\b(?:i was|i'm)\s+on\s+(?:a|the)\s+(?:call|phone)\b", re.IGNORECASE),
     re.compile(r"\bgood (?:morning|afternoon|evening),?\s+\w+\b", re.IGNORECASE),
+)
+
+# Multilingual room-dialogue cues. These detect the shape of a two-body
+# conversation, not a topic. A single cue is never enough to silence a turn;
+# the composite score below still requires independent evidence and always
+# yields to an explicit Alice wake word.
+_ROOM_DIALOGUE_PATTERNS = (
+    re.compile(r"\b(?:buna|salut)\b"),
+    re.compile(r"\bce\s+faci\b"),
+    re.compile(r"\b(?:mama|mami|tata|tati)\b"),
+    re.compile(r"\b(?:doctor(?:ul|ului)?|spital(?:ul|ului)?|hospital)\b"),
+    re.compile(r"\b(?:te\s+pup|pupici)\b"),
+    re.compile(r"\b(?:pa\s*,?\s*pa|la\s+revedere)\b"),
+    re.compile(r"\b(?:ai\s+vazut|ti-am\s+trimis|am\s+trimis)\b"),
+    re.compile(r"\b(?:acasa|in\s+spital|din\s+spital)\b"),
 )
 
 # Fragmentation signal: many short sentences separated by ".", ",", or
@@ -195,6 +211,17 @@ def _phone_greeting_hits(text: str) -> int:
     return sum(1 for pat in _PHONE_GREETING_PATTERNS if pat.search(text))
 
 
+def _pattern_fold(text: str) -> str:
+    """Case/diacritic fold for multilingual acoustic pattern matching."""
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
+def _room_dialogue_hits(text: str) -> int:
+    folded = _pattern_fold(text)
+    return sum(1 for pat in _ROOM_DIALOGUE_PATTERNS if pat.search(folded))
+
+
 def detect_environmental_audio(
     text: str,
     *,
@@ -258,6 +285,7 @@ def detect_environmental_audio(
         clean, owner_label=owner_label, extra_non_owner_names=extra_non_owner_names,
     )
     greet_hits = _phone_greeting_hits(clean)
+    room_dialogue_hits = _room_dialogue_hits(clean)
     frag = _fragmentation_score(clean)
     low_conf = stt < stt_conf_low
 
@@ -281,6 +309,19 @@ def detect_environmental_audio(
         delta = min(0.40, 0.20 * greet_hits)
         score += delta
         reasons.append(f"phone_greeting_hits={greet_hits}")
+
+    if room_dialogue_hits >= 2:
+        delta = min(0.55, 0.18 * room_dialogue_hits)
+        score += delta
+        reasons.append(f"room_dialogue_hits={room_dialogue_hits}")
+
+    question_fragments = len(re.findall(r"\?", clean))
+    word_count = len(re.findall(r"\b\w+\b", clean, re.UNICODE))
+    if word_count >= 28 and question_fragments >= 3 and stt < stt_conf_low:
+        score += 0.30
+        reasons.append(
+            f"long_multi_question_dialogue=words:{word_count},questions:{question_fragments}"
+        )
 
     if frag >= 0.4:
         # Heavy fragmentation adds up to 0.25.
