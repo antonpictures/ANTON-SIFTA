@@ -99,6 +99,19 @@
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Colloid particle simulation for stigmergic swarm behavior research."
   },
+  "Model Silicon Foundry": {
+    "category": "Developer",
+    "icon": "▦",
+    "entry_point": "Applications/sifta_model_silicon_foundry.py",
+    "widget_class": "ModelSiliconFoundryWidget",
+    "window_width": 1200,
+    "window_height": 820,
+    "doctor": "Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "truth_label": "PRE_SILICON_DEVELOPMENT_ONLY",
+    "autostart": false,
+    "description": "Receipted pre-silicon workbench for one exact local Ollama model. Verifies the model digest and architecture, generates a vendor intake and numerical verification plan, and keeps license, compiler/RTL, tapeout, foundry, packaging, and physical-chip stages explicitly blocked until external evidence exists. It never claims that a software export fabricated a chip."
+  },
   "C55M Dr Codex - Physarum Contradiction Lab": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
