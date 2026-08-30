@@ -174,6 +174,62 @@ def test_page_affordance_command_passes_through_to_talk(tmp_path):
     assert res["handled"] is False
 
 
+def test_cortex_llm_restores_stable_four_model_local_menu(tmp_path, monkeypatch):
+    from System import swarm_primary_cortex_switcher as switcher
+
+    models = list(slash._OWNER_LOCAL_CORTEX_MENU)
+    monkeypatch.setattr(
+        switcher,
+        "installed_ollama_models",
+        lambda timeout=3.0: [{"name": model} for model in models],
+    )
+    res = slash.handle_slash_command(
+        "/cortex llm",
+        state_dir=tmp_path,
+        current_cortex=models[3],
+        set_cortex_fn=lambda _tag: None,
+    )
+
+    assert res["handled"] and not res["error"]
+    positions = [res["reply"].index(f"{index}. {model}") for index, model in enumerate(models, 1)]
+    assert positions == sorted(positions)
+    assert "orcarouter/Qwen3.8-27B-Uncensored:iq2_xxs" not in res["reply"]
+    assert "Switch with /cortex llm <1-4>" in res["reply"]
+
+
+def test_cortex_llm_number_switches_using_stable_local_order(tmp_path, monkeypatch):
+    from System import swarm_primary_cortex_switcher as switcher
+
+    models = list(slash._OWNER_LOCAL_CORTEX_MENU)
+    monkeypatch.setattr(
+        switcher,
+        "installed_ollama_models",
+        lambda timeout=3.0: [{"name": model} for model in models],
+    )
+    unloaded: list[str] = []
+    monkeypatch.setattr(
+        switcher,
+        "unload_ollama_model",
+        lambda model: unloaded.append(model) or {"ok": True, "model": model},
+    )
+    calls: list[str] = []
+    res = slash.handle_slash_command(
+        "/cortex llm 1",
+        state_dir=tmp_path,
+        current_cortex=models[3],
+        set_cortex_fn=calls.append,
+    )
+
+    assert res["switched"] and not res["error"]
+    assert res["to_tag"] == "ornith-1.5:9b"
+    assert calls == ["ornith-1.5:9b"]
+    assert unloaded == ["krishairnd/Gemma-4-Uncensored:latest"]
+    assert "Previous weights unloaded" in res["reply"]
+    rows = _diary_rows(tmp_path)
+    assert rows[-1]["owner_text"] == "/cortex llm 1"
+    assert rows[-1]["to_cortex"] == "ornith-1.5:9b"
+
+
 def test_cortex_llm_lane_r943(tmp_path, monkeypatch):
     # George 2026-06-11: /cortex llm lists the claude-arm models and pins one
     # live via SIFTA_CLAUDE_ARM_MODEL — honored by the r943 launcher cut.

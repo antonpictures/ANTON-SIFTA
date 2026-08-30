@@ -75,23 +75,47 @@ def test_set_primary_cortex_persists_app_override_and_receipt(tmp_path, monkeypa
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(switcher, "_STATE", tmp_path)
     monkeypatch.setattr(switcher, "_LEDGER", tmp_path / "primary_cortex_switches.jsonl")
+    monkeypatch.setattr(defaults, "coerce_to_installed_ollama_model", lambda model: model)
+
+    candidate = "test-primary-dialogue-cortex:latest"
 
     receipt = switcher.set_primary_cortex(
-        "alice-Q-m1-scout-2.3b-2.7gb:latest",
-        installed=["alice-m5-cortex-8b-6.3gb:latest", "alice-Q-m1-scout-2.3b-2.7gb:latest"],
+        candidate,
+        installed=["test-current-dialogue-cortex:latest", candidate],
         source="pytest",
     )
 
-    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-Q-m1-scout-2.3b-2.7gb:latest"
-    assert defaults.get_default_ollama_model() == "alice-Q-m1-scout-2.3b-2.7gb:latest"
-    assert receipt["selected_model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"
-    assert receipt["default_model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == candidate
+    assert defaults.get_default_ollama_model() == candidate
+    assert receipt["selected_model"] == candidate
+    assert receipt["default_model"] == candidate
     rows = [
         json.loads(line)
         for line in (tmp_path / "primary_cortex_switches.jsonl").read_text().splitlines()
     ]
     assert rows[-1]["truth_label"] == "PRIMARY_CORTEX_SWITCH_RECEIPT"
     assert rows[-1]["source"] == "pytest"
+
+
+def test_local_snapshot_drops_stale_cloud_auth(tmp_path, monkeypatch):
+    from System import swarm_primary_cortex_switcher as switcher
+
+    monkeypatch.setattr(switcher, "_STATE", tmp_path)
+    monkeypatch.setattr(switcher, "_PRIMARY_CORTEX_JSON", tmp_path / "primary_cortex.json")
+    switcher._PRIMARY_CORTEX_JSON.write_text(
+        json.dumps({"model": "mimo:mimo-cli-default", "auth": "paid-cloud-token"}),
+        encoding="utf-8",
+    )
+
+    row = switcher.persist_active_cortex_snapshot(
+        "krishairnd/Gemma-4-Uncensored:latest",
+        source="pytest_local",
+    )
+
+    assert row["provider"] == "ollama"
+    assert row["auth"] == "local_ollama_no_api_key"
+    saved = json.loads(switcher._PRIMARY_CORTEX_JSON.read_text(encoding="utf-8"))
+    assert saved["auth"] == "local_ollama_no_api_key"
 
 
 def test_set_primary_cortex_rejects_missing_model(tmp_path, monkeypatch):
@@ -153,12 +177,15 @@ def test_set_primary_cortex_blocks_failed_required_verification(tmp_path, monkey
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(switcher, "_STATE", tmp_path)
     monkeypatch.setattr(switcher, "_LEDGER", tmp_path / "primary_cortex_switches.jsonl")
-    defaults.set_app_ollama_model("talk_to_alice", "alice-m5-cortex-8b-6.3gb:latest")
+    monkeypatch.setattr(defaults, "coerce_to_installed_ollama_model", lambda model: model)
+    current = "test-current-dialogue-cortex:latest"
+    candidate = "test-candidate-dialogue-cortex:latest"
+    defaults.set_app_ollama_model("talk_to_alice", current)
 
     try:
         switcher.set_primary_cortex(
-            "alice-Q-m1-scout-2.3b-2.7gb:latest",
-            installed=["alice-m5-cortex-8b-6.3gb:latest", "alice-Q-m1-scout-2.3b-2.7gb:latest"],
+            candidate,
+            installed=[current, candidate],
             verification_results={"vision": 0.9, "audio": 0.9},
             require_verification=True,
         )
@@ -167,7 +194,7 @@ def test_set_primary_cortex_blocks_failed_required_verification(tmp_path, monkey
     else:
         raise AssertionError("failed verification should block promotion")
 
-    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-m5-cortex-8b-6.3gb:latest"
+    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == current
     assert not (tmp_path / "primary_cortex_switches.jsonl").exists()
     assert (tmp_path / "cortex_verification.jsonl").exists()
     assert (tmp_path / "governance_ledger.jsonl").exists()
@@ -181,15 +208,17 @@ def test_set_primary_cortex_allows_passing_required_verification(tmp_path, monke
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(switcher, "_STATE", tmp_path)
     monkeypatch.setattr(switcher, "_LEDGER", tmp_path / "primary_cortex_switches.jsonl")
+    monkeypatch.setattr(defaults, "coerce_to_installed_ollama_model", lambda model: model)
+    candidate = "test-candidate-dialogue-cortex:latest"
 
     receipt = switcher.set_primary_cortex(
-        "alice-Q-m1-scout-2.3b-2.7gb:latest",
-        installed=["alice-m5-cortex-8b-6.3gb:latest", "alice-Q-m1-scout-2.3b-2.7gb:latest"],
+        candidate,
+        installed=["test-current-dialogue-cortex:latest", candidate],
         verification_results={"vision": 0.87, "audio": 0.91, "tool": 0.79, "owner_continuity": 0.95},
         require_verification=True,
     )
 
-    assert receipt["selected_model"] == "alice-Q-m1-scout-2.3b-2.7gb:latest"
+    assert receipt["selected_model"] == candidate
     assert receipt["cortex_verification"]["pass"] is True
 
 
@@ -199,11 +228,13 @@ def test_current_primary_cortex_truth_separates_native_multimodal_from_organs(tm
 
     monkeypatch.setattr(defaults, "_STATE", tmp_path)
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
-    defaults.set_app_ollama_model("talk_to_alice", "alice-m5-cortex-8b-6.3gb:latest")
+    monkeypatch.setattr(defaults, "coerce_to_installed_ollama_model", lambda model: model)
+    active = "test-primary-dialogue-cortex:latest"
+    defaults.set_app_ollama_model("talk_to_alice", active)
 
-    truth = switcher.current_primary_cortex_truth(installed=["alice-m5-cortex-8b-6.3gb:latest"])
+    truth = switcher.current_primary_cortex_truth(installed=[active])
 
-    assert truth["active_model"] == "alice-m5-cortex-8b-6.3gb:latest"
+    assert truth["active_model"] == active
     assert truth["installed"] is True
     assert truth["multimodal_native_known"] is None
     assert "external camera/audio organs remain separate" in truth["note"]

@@ -38,6 +38,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 _DIARY_NAME = "episodic_diary.jsonl"
 
+# Owner-local Talk cortex menu. This is deliberately curated rather than an
+# alias for every tag in `ollama list`: specialist/experimental pulls must not
+# silently renumber George's four familiar /cortex llm choices.
+_OWNER_LOCAL_CORTEX_MENU: tuple[str, ...] = (
+    "ornith-1.5:9b",
+    "sifta-qwenpaw-coder:latest",
+    "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0",
+    "krishairnd/Gemma-4-Uncensored:latest",
+)
+_OWNER_LOCAL_LLM_NAMESPACE = "owner_local_ollama"
+
 
 def is_slash_command(text: str) -> bool:
     """True for typed turns that are a palette command.
@@ -561,6 +572,121 @@ def _write_switch_diary_row(
         return True
     except Exception:
         return False
+
+
+def _handle_owner_local_llm_menu(
+    out: Dict[str, Any],
+    arg: str,
+    *,
+    state_dir: Path,
+    owner_text: str,
+    current_cortex: str,
+    set_cortex_fn: Optional[Callable[[str], Any]],
+) -> Dict[str, Any]:
+    """Render or switch the stable four-row local Ollama cortex menu."""
+    try:
+        from System.swarm_primary_cortex_switcher import installed_ollama_models
+
+        installed = {
+            str(row.get("name") or "").strip()
+            for row in installed_ollama_models(timeout=3.0)
+            if str(row.get("name") or "").strip()
+        }
+    except Exception:
+        installed = set()
+
+    models = list(_OWNER_LOCAL_CORTEX_MENU)
+    value = str(arg or "").strip()
+    if not value:
+        from System.swarm_cortex_llm_list_binding import record_rendered_list
+
+        lines = ["My local Ollama cortexes:"]
+        labels: List[str] = []
+        for index, model in enumerate(models, start=1):
+            marker = "●" if model == current_cortex else " "
+            availability = "" if model in installed else "  (not installed)"
+            label = f"{model}{availability}"
+            labels.append(label)
+            lines.append(f"  {marker} {index}. {label}")
+        lines.append("Switch with /cortex llm <1-4>.")
+        lines.append("Other Ollama pulls are not added or allowed to renumber this menu automatically.")
+        record_rendered_list(
+            namespace=_OWNER_LOCAL_LLM_NAMESPACE,
+            items=models,
+            labels=labels,
+            selected_cortex=current_cortex,
+            is_primary=True,
+            owner_text=owner_text,
+            state_dir=state_dir,
+        )
+        out["reply"] = "\n".join(lines)
+        return out
+
+    if value.isdigit():
+        index = int(value)
+        if not 1 <= index <= len(models):
+            out["error"] = "local_llm_index_out_of_range"
+            out["reply"] = f"My local cortex menu has four rows; there is no number {index}. Run /cortex llm."
+            return out
+        target = models[index - 1]
+    else:
+        target = next((model for model in models if model.lower() == value.lower()), "")
+        if not target:
+            out["error"] = "local_llm_not_in_owner_menu"
+            out["reply"] = f"{value!r} is not in my four-model local cortex menu. Run /cortex llm."
+            return out
+
+    if target not in installed:
+        out["error"] = "local_llm_not_installed"
+        out["to_tag"] = target
+        out["reply"] = f"I did not switch: {target} is in your menu but is not installed in Ollama now."
+        return out
+    if target == current_cortex:
+        out["to_tag"] = target
+        out["reply"] = f"I am already on local cortex {target}; no switch was needed."
+        return out
+    if set_cortex_fn is None:
+        out["error"] = "no_effector"
+        out["to_tag"] = target
+        out["reply"] = f"I resolved local cortex {target}, but this surface has no switch hand."
+        return out
+
+    out["diary_ok"] = _write_switch_diary_row(
+        state_dir=state_dir,
+        from_tag=current_cortex,
+        to_tag=target,
+        owner_text=owner_text,
+    )
+    try:
+        set_cortex_fn(target)
+    except Exception as exc:
+        out["error"] = f"switch_failed: {type(exc).__name__}: {exc}"
+        out["to_tag"] = target
+        out["reply"] = f"The local cortex switch to {target} failed: {type(exc).__name__}: {exc}."
+        return out
+
+    unload_note = ""
+    if current_cortex in installed:
+        try:
+            from System.swarm_primary_cortex_switcher import unload_ollama_model
+
+            unloaded = unload_ollama_model(current_cortex)
+            unload_note = (
+                f" Previous weights unloaded: {current_cortex}."
+                if unloaded.get("ok")
+                else f" Previous-weight unload failed: {unloaded.get('reason') or 'unknown error'}."
+            )
+        except Exception as exc:
+            unload_note = f" Previous-weight unload failed: {type(exc).__name__}: {exc}."
+
+    out["switched"] = True
+    out["to_tag"] = target
+    diary = "diary updated" if out["diary_ok"] else "diary write FAILED"
+    out["reply"] = (
+        f"Local cortex switched: {current_cortex or '(unset)'} -> {target} ({diary})."
+        f"{unload_note}"
+    )
+    return out
 
 
 def _latest_grok_failover(state_dir: Path) -> Dict[str, Any]:
@@ -2016,9 +2142,29 @@ def handle_slash_command(
                 ingress_kind=ingress_kind,
             )
         if _llm_parts and _llm_parts[0].lower() in ("llm", "llms", "model", "models"):
+            llm_arg = _llm_parts[1] if len(_llm_parts) > 1 else ""
+            llm_value = llm_arg.strip()
+            owner_local_mode = current_cortex in _OWNER_LOCAL_CORTEX_MENU
+            owner_local_target = any(
+                llm_value.lower() == model.lower()
+                for model in _OWNER_LOCAL_CORTEX_MENU
+            )
+            if owner_local_mode and (
+                not llm_value
+                or llm_value.isdigit()
+                or owner_local_target
+            ):
+                return _handle_owner_local_llm_menu(
+                    out,
+                    llm_value,
+                    state_dir=Path(state_dir),
+                    owner_text=clean,
+                    current_cortex=current_cortex,
+                    set_cortex_fn=set_cortex_fn,
+                )
             return _handle_cortex_llm(
                 out,
-                _llm_parts[1] if len(_llm_parts) > 1 else "",
+                llm_arg,
                 state_dir=Path(state_dir),
                 owner_text=clean,
                 current_cortex=current_cortex,

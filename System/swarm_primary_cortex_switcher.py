@@ -112,6 +112,32 @@ def installed_ollama_models(*, timeout: float = 10.0) -> List[Dict[str, Any]]:
     return rows
 
 
+def unload_ollama_model(model: str, *, timeout: float = 6.0) -> Dict[str, Any]:
+    """Unload one warm Ollama model so a cortex switch does not hold two weights."""
+    target = str(model or "").strip()
+    if not target:
+        return {"ok": False, "model": target, "reason": "empty_model"}
+    try:
+        result = subprocess.run(
+            ["ollama", "stop", target],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "model": target,
+            "reason": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "ok": result.returncode == 0,
+        "model": target,
+        "reason": (result.stderr or result.stdout or "").strip(),
+    }
+
+
 def _env_candidates() -> List[str]:
     raw = os.environ.get("SIFTA_PRIMARY_CORTEX_CANDIDATES", "")
     return [x.strip() for x in raw.split(",") if x.strip()]
@@ -235,9 +261,10 @@ def persist_active_cortex_snapshot(
     model = str(model_name or "").strip()
     if not model:
         return {}
+    provider = _provider_for_model(model)
     row: Dict[str, Any] = {
         "primary_cortex": model.replace(":", "_").replace("/", "_")[:96],
-        "provider": _provider_for_model(model),
+        "provider": provider,
         "model": model,
         "set_by": str(source or "talk_cortex_switch"),
         "changed_at": time.time(),
@@ -249,10 +276,12 @@ def persist_active_cortex_snapshot(
         "global_chat": True,
         "truth_label": "PRIMARY_CORTEX_SNAPSHOT_V1",
     }
+    if provider == "ollama":
+        row["auth"] = "local_ollama_no_api_key"
     try:
         if _PRIMARY_CORTEX_JSON.exists():
             prev = json.loads(_PRIMARY_CORTEX_JSON.read_text(encoding="utf-8"))
-            if isinstance(prev, dict) and prev.get("auth"):
+            if provider == "cloud_bridge" and isinstance(prev, dict) and prev.get("auth"):
                 row["auth"] = prev["auth"]
     except Exception:
         pass

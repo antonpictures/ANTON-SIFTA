@@ -525,11 +525,11 @@ _MIMO_LOCAL_QWEN_OLLAMA = "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4
 _MIMO_LOCAL_QWEN35_MT = "kaelri/qwen3.5-mt:2b"
 # Removed from desk 2026-07-11 (not in ollama list) — keep constants for alias/migrate only.
 _MIMO_LOCAL_GEMMA26_OLLAMA = "justingtzk/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL_128K"
-_MIMO_LOCAL_ORNITH_9B = "ornith:latest"
+_MIMO_LOCAL_ORNITH_9B = "ornith-1.5:9b"
 _MIMO_LOCAL_ORNITH_9B_Q8 = "baytout3/Ornith-1.0-9B-uncensored-GGUF:Q8_0"
 _MIMO_LOCAL_ULTRAGEMMA4_12B = "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0"
 _MIMO_LOCAL_KRISHA = "krishairnd/Gemma-4-Uncensored:latest"
-_MIMO_LOCAL_QWENPAW_9B = "satgeze/qwenpaw-9b-heretic-1m:latest"
+_MIMO_LOCAL_QWENPAW_9B = "sifta-qwenpaw-coder:latest"
 _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B = (
     "jikepjikep_16HEX/qwen3.6-27b-nightshift-heretic-uncensored-q4:latest"
 )
@@ -537,18 +537,15 @@ _MIMO_LOCAL_NORTH_MINI_CODE = "north-mini-code-1.0:latest"
 _MIMO_LOCAL_QWEN35_HAUHAU_4B = "dzgg/Qwen3.5-Uncensored-HauhauCS-Aggressive:4b"
 _MIMO_LEGACY_LOCAL_OLLAMA_ALIASES: dict[str, str] = {
     "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest": _MIMO_LOCAL_QWENPAW_9B,
+    "satgeze/qwenpaw-9b-heretic-1m:latest": _MIMO_LOCAL_QWENPAW_9B,
+    "ornith:latest": _MIMO_LOCAL_ORNITH_9B,
 }
-# George 2026-07-11 live `ollama list` — only tags still installed on this Mac.
-# Deleted models (gemma-4-26B, diffusiongemma, kaelri-mt, balanced 27B, ornith:35b)
-# stay off the MiMo attached picker.
+# George 2026-08-30: stable owner-local menu. New experimental pulls do not
+# auto-join or renumber these four Talk cortex choices.
 _MIMO_LOCAL_OLLAMA_MODELS: tuple[str, ...] = (
-    _MIMO_LOCAL_QWENPAW_9B,
-    _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B,
-    _MIMO_LOCAL_NORTH_MINI_CODE,
-    _MIMO_LOCAL_QWEN35_HAUHAU_4B,
-    _MIMO_LOCAL_ORNITH_9B_Q8,
-    _MIMO_LOCAL_ULTRAGEMMA4_12B,
     _MIMO_LOCAL_ORNITH_9B,
+    _MIMO_LOCAL_QWENPAW_9B,
+    _MIMO_LOCAL_ULTRAGEMMA4_12B,
     _MIMO_LOCAL_KRISHA,
 )
 _MIMO_LOCAL_DIFFUSION_MODELS: tuple[str, ...] = ()
@@ -702,10 +699,10 @@ _ATTACHED_MODEL_LABELS: dict[str, str] = {
     FIREWORKS_KIMI_K2P6_MODEL: "Kimi K2.6 (fireworks-api kimi-k2p6)",
     "mimo-auto": "MiMo Auto (free)",
     _MIMO_LOCAL_KRISHA: "krisha-g4u (local Ollama)",
-    _MIMO_LOCAL_ORNITH_9B: "Ornith 1.0 9B (local Ollama coding agent)",
+    _MIMO_LOCAL_ORNITH_9B: "Ornith 1.5 9B (local Ollama)",
     _MIMO_LOCAL_ORNITH_9B_Q8: "Ornith 1.0 9B Q8 uncensored (local Ollama)",
     _MIMO_LOCAL_ULTRAGEMMA4_12B: "UltraGemma4 12B heretic (local Ollama)",
-    _MIMO_LOCAL_QWENPAW_9B: "QwenPaw 9B heretic 1M (local Ollama)",
+    _MIMO_LOCAL_QWENPAW_9B: "SIFTA QwenPaw coder (local Ollama)",
     _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B: "Qwen3.6 27B nightshift heretic (local Ollama)",
     _MIMO_LOCAL_NORTH_MINI_CODE: "North Mini Code 1.0 (local Ollama)",
     _MIMO_LOCAL_QWEN35_HAUHAU_4B: "Qwen3.5 Hauhau aggressive 4B (local Ollama)",
@@ -753,7 +750,7 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
         "Local Ollama Gemma 4 Uncensored (krisha-g4u): ~6.3 GB, dialogue-safe default."
     ),
     _MIMO_LOCAL_ORNITH_9B: (
-        "Local Ollama Ornith 1.0 9B: coding agent, ~5.6 GB, text/tools. No vision tower."
+        "Local Ollama Ornith 1.5 9B (~6.6 GB), owner-approved Talk cortex."
     ),
     _MIMO_LOCAL_ORNITH_9B_Q8: (
         "Local Ollama Ornith 1.0 9B Q8 uncensored GGUF (~9.5 GB)."
@@ -762,8 +759,7 @@ _ATTACHED_MODEL_DESCRIPTIONS: dict[str, str] = {
         "Local Ollama UltraGemma4 12B heretic uncensored Q8 (~12 GB)."
     ),
     _MIMO_LOCAL_QWENPAW_9B: (
-        "Local Ollama QwenPaw 9B heretic 1M: agent-tuned, tools, vision, long-ctx meta "
-        "(~10 GB). Probe num_ctx on 24 GB RAM; MTP dormant in Ollama until speculative decode."
+        "Local Ollama SIFTA QwenPaw coder (~10 GB), owner-approved Talk cortex."
     ),
     _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B: (
         "Local Ollama Qwen3.6 27B nightshift heretic uncensored Q4 (~16 GB)."

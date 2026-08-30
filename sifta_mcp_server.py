@@ -36,6 +36,13 @@ _CLAUDE_COWORK_LOCAL_ALIASES = {
     "claude-opus-4-8": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest",
 }
 
+_OLLAMA_ONLY_TOOL_NAMES = {
+    "ollama.list_local_models",
+    "ollama.running_models",
+    "ollama.chat_local",
+}
+_OLLAMA_ONLY = "--ollama-only" in sys.argv
+
 
 def generate_scar(action_description, target_file=None):
     """Generates the cryptographic STGM hallucination guard hash."""
@@ -230,6 +237,23 @@ def _ollama_list_local_models() -> dict:
             "gateway_auth_schema": "Bearer",
             "truth_note": "Use Claude Developer > Configure third-party inference. These aliases route inference to local Ollama.",
         },
+    }
+
+
+def _ollama_running_models() -> dict:
+    """Return the live Ollama process inventory without relying on cached UI state."""
+    try:
+        data = _ollama_json("/api/ps", timeout=5)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "ollama_host": _OLLAMA_HOST,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "ok": True,
+        "ollama_host": _OLLAMA_HOST,
+        "models": data.get("models", []),
     }
 
 
@@ -443,7 +467,87 @@ def _claude_cowork_local_setup() -> dict:
     }
 
 
+def _ollama_only_tools():
+    return [
+        {
+            "name": "ollama.list_local_models",
+            "description": "List the exact models currently installed in the local Ollama daemon. This is live inventory, not cached Claude UI state.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "ollama.running_models",
+            "description": "Show the models currently loaded and running in the local Ollama daemon.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "ollama.chat_local",
+            "description": "Run one local-only chat request against an installed Ollama model. This does not call Anthropic, a cloud provider, or external tools.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "model": {"type": "string", "description": "Exact model name returned by ollama.list_local_models."},
+                    "timeout_s": {"type": "integer", "minimum": 1, "maximum": 900},
+                },
+                "required": ["prompt", "model"],
+            },
+        },
+    ]
+
+
+def _ollama_only_process_request(req):
+    """Least-privilege MCP surface for Claude Cowork's local Ollama connection."""
+    req_id = req.get("id")
+    method = req.get("method")
+    params = req.get("params", {}) or {}
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "SIFTA_OLLAMA_MODELS_MCP", "version": "1.0.0"},
+            },
+        }
+    if method == "notifications/initialized":
+        return None
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": _ollama_only_tools()}}
+    if method == "tools/call":
+        tool_name = params.get("name")
+        tool_args = params.get("arguments", {}) or {}
+        if tool_name not in _OLLAMA_ONLY_TOOL_NAMES:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32601, "message": f"Tool not available in Ollama-only mode: {tool_name}"},
+            }
+        if tool_name == "ollama.list_local_models":
+            result = _ollama_list_local_models()
+        elif tool_name == "ollama.running_models":
+            result = _ollama_running_models()
+        else:
+            result = _ollama_chat_local(
+                tool_args.get("prompt", ""),
+                tool_args.get("model", ""),
+                tool_args.get("timeout_s", 180),
+            )
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(result)}],
+                "isError": not bool(result.get("ok")),
+            },
+        }
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Method not available: {method}"}}
+
+
 def process_request(req):
+    if _OLLAMA_ONLY:
+        return _ollama_only_process_request(req)
     req_id = req.get("id")
     method = req.get("method")
     params = req.get("params", {})
@@ -622,7 +726,7 @@ def process_request(req):
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "include_ascii": {"type": "boolean", "default": false, "description": "Include a compact ASCII rendering of the current field."}
+                                "include_ascii": {"type": "boolean", "default": False, "description": "Include a compact ASCII rendering of the current field."}
                             }
                         }
                     },

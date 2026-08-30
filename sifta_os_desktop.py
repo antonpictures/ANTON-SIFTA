@@ -352,20 +352,19 @@ _OFFSCREEN_CLOSED_DESKTOPS: list[object] = []
 
 def _economy_hud_full_scan_enabled() -> bool:
     """
-    Full wallet/HUD path in _update_clock runs scan_repair_log + treasuries (heavy).
-    Skip on offscreen and typical CI so smoke/tests stay fast; normal interactive
-    sessions are unchanged. Override with SIFTA_FORCE_ECONOMY_SCAN=1 for headless checks.
+    Allow an explicit diagnostic replay of the canonical wallet ledger.
+
+    The visible clock/HUD must stay cache-only by default.  ``repair_log.jsonl``
+    is an append-only cryptographic history and can take tens of seconds to
+    replay; doing that from ``_update_clock`` blocks the Qt event loop and makes
+    Alice's whole desktop beachball.  Producers already refresh the validated
+    ``stgm_economy_cache.json`` after canonical economy events.  A doctor can
+    still request a foreground full replay for a bounded diagnostic with
+    ``SIFTA_FORCE_ECONOMY_SCAN=1``.
     """
     if os.environ.get("SIFTA_FORCE_ECONOMY_SCAN", "").strip().lower() in ("1", "true", "yes"):
         return True
-    if os.environ.get("SIFTA_SKIP_ECONOMY_SCAN", "").strip().lower() in ("1", "true", "yes"):
-        return False
-    if os.environ.get("CI", "").strip().lower() in ("1", "true", "yes"):
-        return False
-    q = os.environ.get("QT_QPA_PLATFORM", "").strip().lower()
-    if q == "offscreen":
-        return False
-    return True
+    return False
 
 
 def _float_or_none(value):
@@ -3998,8 +3997,8 @@ class SiftaDesktop(QMainWindow):
                 
                 QProcess.startDetached("say", say_args)
 
-        # ── Swarm economy HUD (heavy: scan_repair_log, treasuries). Gated; see
-        #    _economy_hud_full_scan_enabled() — offscreen/CI skip; live default on.
+        # ── Swarm economy HUD. The live path is cache-only. A full canonical
+        #    ledger replay is an explicit diagnostic, never a clock-timer job.
 
 
     def _update_alice_status(self):
@@ -6721,9 +6720,12 @@ if __name__ == "__main__":
         log_path = _REPO / ".sifta_state" / "body_matrix_boot_refresh.log"
         code = (
             "import json, signal, sys\n"
-            "signal.alarm(45)\n"
+            "signal.alarm(90)\n"
             "from tools.generate_organ_eval_matrix_v2 import refresh_body_matrix\n"
-            "print(json.dumps(refresh_body_matrix(force=False), sort_keys=True))\n"
+            "from tools.prepare_sol_landing_zone import write_landing_zone\n"
+            "matrix = refresh_body_matrix(force=False)\n"
+            "landing = write_landing_zone()\n"
+            "print(json.dumps({'matrix': matrix, 'sol_landing_zone': {'schema': landing.get('schema'), 'truth_label': landing.get('truth_label')}}, sort_keys=True))\n"
         )
         argv = [_PYTHON_BIN, "-c", code]
         nice = "/usr/bin/nice"

@@ -150,14 +150,14 @@ def test_beeson_alice_eye_chrome_defaults_are_low_stress():
     assert "default desktop hot path" in swimmer_field
 
 
-def test_economy_hud_scan_gated_for_offscreen_and_ci(monkeypatch):
+def test_economy_hud_full_replay_is_explicit_diagnostic_only(monkeypatch):
     from sifta_os_desktop import _economy_hud_full_scan_enabled
 
     monkeypatch.delenv("SIFTA_FORCE_ECONOMY_SCAN", raising=False)
     monkeypatch.delenv("SIFTA_SKIP_ECONOMY_SCAN", raising=False)
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
-    assert _economy_hud_full_scan_enabled() is True
+    assert _economy_hud_full_scan_enabled() is False
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     assert _economy_hud_full_scan_enabled() is False
     monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
@@ -612,7 +612,7 @@ def test_launchpad_and_spotlight_show_real_app_results(monkeypatch):
         app.processEvents()
 
 
-def test_make_sub_enforces_single_visible_app_slot(monkeypatch):
+def test_make_sub_enforces_configured_visible_app_capacity(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
@@ -633,8 +633,8 @@ def test_make_sub_enforces_single_visible_app_slot(monkeypatch):
         ]
         app.processEvents()
         visible = [sub for sub in subs if not sub.isHidden()]
-        assert visible == [subs[-1]]
-        assert desktop.current_app_state()["open_apps"] == ["Window 2"]
+        assert visible == subs[-2:]
+        assert desktop.current_app_state()["open_apps"] == ["Window 1", "Window 2"]
 
         for sub in subs:
             sub.close()
@@ -646,8 +646,8 @@ def test_make_sub_enforces_single_visible_app_slot(monkeypatch):
         ]
         app.processEvents()
         large_visible = [sub for sub in large_subs if not sub.isHidden()]
-        assert large_visible == [large_subs[-1]]
-        assert desktop.current_app_state()["open_apps"] == ["Large 2"]
+        assert large_visible == large_subs[-2:]
+        assert desktop.current_app_state()["open_apps"] == ["Large 1", "Large 2"]
     finally:
         desktop.close()
         app.processEvents()
@@ -706,7 +706,7 @@ def test_switch_to_chat_marks_open_app_idle_and_diary(monkeypatch, tmp_path):
         rows = [json.loads(line) for line in diary.read_text(encoding="utf-8").splitlines()]
         assert rows[-1]["truth_label"] == "ALICE_APP_IDLE_AWARENESS_V1"
         assert rows[-1]["app_name"] == "Idle Test"
-        assert rows[-1]["single_app_policy"] is True
+        assert rows[-1]["single_app_policy"] is False
     finally:
         desktop.close()
         app.processEvents()

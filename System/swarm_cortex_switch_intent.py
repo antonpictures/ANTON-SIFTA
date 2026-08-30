@@ -44,6 +44,48 @@ _SWITCH_TO_RE = re.compile(
     re.IGNORECASE,
 )
 
+_DIRECT_SWITCH_REQUEST_PREFIX_RE = re.compile(
+    r"^\s*(?:hey\s+)?(?:alice[,:]?\s*)?"
+    r"(?:"
+    r"(?:(?:please|pls|now)(?:\s+|$))*"
+    r"|(?:can|could|would|will)\s+you(?:\s+(?:please|pls))?\s*"
+    r"|i\s+(?:want|need|would\s+like)\s+you\s+to\s*"
+    r"|(?:let['’]?s|lets)\s*"
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def _match_is_direct_switch_request(text: str, match: re.Match[str]) -> bool:
+    """Require the switch verb to live in an owner-request-shaped clause.
+
+    The raw regex intentionally accepts STT variants, but it also used to find
+    descriptive prose such as ``Alice can change ... model to a stronger
+    external model``.  That sentence describes architecture; it is not an
+    effector command.  Evaluate only the current sentence/clause prefix so a
+    long pasted document may still end with an explicit ``Alice, switch ...``
+    command while ordinary model comparisons remain inert.
+    """
+    prefix = str(text or "")[: match.start()]
+    clause_start = max(
+        prefix.rfind("."),
+        prefix.rfind("?"),
+        prefix.rfind("!"),
+        prefix.rfind("\n"),
+        prefix.rfind(";"),
+    )
+    clause_prefix = prefix[clause_start + 1 :].strip()
+    if not clause_prefix:
+        return True  # bare imperative: ``switch cortex to krisha``
+    if _DIRECT_SWITCH_REQUEST_PREFIX_RE.match(clause_prefix):
+        return True
+    # Conditional lead-ins remain natural commands: ``when ready, switch ...``.
+    if "," in clause_prefix:
+        tail = clause_prefix.rsplit(",", 1)[-1].strip()
+        if not tail or _DIRECT_SWITCH_REQUEST_PREFIX_RE.match(tail):
+            return True
+    return False
+
 
 def parse_switch_command(text: str) -> Dict[str, object]:
     """Return {'is_switch': bool, 'target': str}. Recognises a cortex-switch command even with the
@@ -67,6 +109,8 @@ def parse_switch_command(text: str) -> Dict[str, object]:
     if not m:
         m = _SWITCH_TO_RE.search(t)
     if not m:
+        return {"is_switch": False, "target": ""}
+    if not _match_is_direct_switch_request(t, m):
         return {"is_switch": False, "target": ""}
     raw = (m.group("target") or "").strip()
     verb = str((m.groupdict().get("verb") if hasattr(m, "groupdict") else "") or "").lower()

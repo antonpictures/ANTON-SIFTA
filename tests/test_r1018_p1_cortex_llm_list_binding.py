@@ -149,8 +149,8 @@ def test_mimo_bare_two_sets_local_default_not_claude_after_pruned_list(
     )
     assert listed["handled"] and not listed["error"]
     assert "Attached LLMs for MiMo" in listed["reply"]
-    assert "QwenPaw 9B heretic 1M (local Ollama)" in listed["reply"]
-    assert "Ornith 1.0 9B (local Ollama coding agent) (ornith:latest)" in listed["reply"]
+    assert "SIFTA QwenPaw coder (local Ollama)" in listed["reply"]
+    assert "Ornith 1.5 9B (local Ollama) (ornith-1.5:9b)" in listed["reply"]
     assert "justingtzk/gemma-4-26B" not in listed["reply"]
     assert "diffusion:diffusiongemma-26b" not in listed["reply"]
     assert "kaelri/qwen3.5-mt:2b" not in listed["reply"]
@@ -158,7 +158,7 @@ def test_mimo_bare_two_sets_local_default_not_claude_after_pruned_list(
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=state_dir)
     models = list(rec.get("attached_models") or [])
     krisha = "krishairnd/Gemma-4-Uncensored:latest"
-    qwenpaw = "satgeze/qwenpaw-9b-heretic-1m:latest"
+    qwenpaw = "sifta-qwenpaw-coder:latest"
     assert krisha in models
     assert qwenpaw in models
 

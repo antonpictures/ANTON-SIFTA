@@ -38,6 +38,27 @@ def test_parse_ignores_non_switch_chatter():
     assert sw.parse_switch_command("")["is_switch"] is False
 
 
+def test_parse_ignores_descriptive_cortex_change_in_pasted_pitch():
+    sentence = (
+        "Alice can change cortexes—from a small private local model to a stronger "
+        "external model—without losing the continuity stored in her own field."
+    )
+    pitch = (
+        "Most AI products are temporary conversations with a large model. "
+        + sentence
+        + " We are building a memory-and-experience layer for real-world partners."
+    )
+
+    assert sw.parse_switch_command(sentence) == {"is_switch": False, "target": ""}
+    assert sw.parse_switch_command(pitch) == {"is_switch": False, "target": ""}
+
+
+def test_parse_keeps_polite_and_explicit_switch_requests():
+    assert sw.parse_switch_command("Alice, can you please switch your cortex to Claude")["target"] == "Claude"
+    assert sw.parse_switch_command("I want you to switch your cortex to krisha")["target"] == "krisha"
+    assert sw.parse_switch_command("When you are ready, switch your cortex to cline")["target"] == "cline"
+
+
 def test_parse_never_treats_self_code_cut_as_cortex_switch():
     """r1621 George: go code R1621 with SELF_CODE_CUT must think, not refuse switch."""
     text = "Alice, go — code R1621-01 with SELF_CODE_CUT only on listed files"
