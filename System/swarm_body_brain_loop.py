@@ -26,6 +26,7 @@ from System.swarm_consciousness_engine import ConsciousnessEngine, Consciousness
 from System.swarm_dream_engine import SwarmDreamEngine
 from System.jsonl_file_lock import append_line_locked
 from System.swarm_now_state import build_now_state
+from System import swarm_context
 from System.swarm_biology_drive_plasticity import (
     plasticity_danger_token,
     update_drive_plasticity,
@@ -684,6 +685,7 @@ class SwarmPhysiology:
             row["plasticity_danger"] = plasticity_danger
         if extra_fields:
             row.update(extra_fields)
+        row = swarm_context.stamp_context(row)
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
         append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
         return row
@@ -763,7 +765,18 @@ class SwarmPhysiology:
 
     def body_brain_tick(self) -> Dict[str, Any]:
         """The master unified cycle."""
-        
+        activation_id = swarm_context.new_activation_id()
+        with (
+            swarm_context.initiator_scope("body_brain_loop"),
+            swarm_context.activation_scope(activation_id),
+        ):
+            result = self._body_brain_tick()
+        result.setdefault("initiator_id", "body_brain_loop")
+        result.setdefault("activation_id", activation_id)
+        return result
+
+    def _body_brain_tick(self) -> Dict[str, Any]:
+        """Run one body cycle inside the current causal activation scope."""
         # 0. Spacetime / Circadian Context
         now_state = build_now_state()
 
@@ -901,6 +914,58 @@ class SwarmPhysiology:
         # 3b. Attention selection from consciousness state
         attention = self._select_attention(consc_state)
 
+        # 3b2. Persistent drive economy. All 38 pressures compete here, but the
+        # winner remains an attention target only; existing motor/safety gates
+        # still decide what action, if any, can occur.
+        drive_economy_snapshot: Optional[Any] = None
+        drive_neuromodulation: Optional[Any] = None
+        drive_interoception: Optional[str] = None
+        drive_goal_proposal: Optional[Any] = None
+        economy: Optional[Any] = None
+        try:
+            from System.swarm_drive_economy import DriveEconomy, body_context
+
+            novelty_score = (
+                float(getattr(novelty_frame, "novelty_score", 0.0) or 0.0)
+                if novelty_frame is not None else 0.0
+            )
+            identity_drift = max(
+                0.0,
+                1.0 - float(_identity_receipt.get("revival_score", 1.0) or 1.0),
+            )
+            economy = DriveEconomy(_STATE_DIR)
+            drive_economy_snapshot = economy.tick(
+                context=body_context(
+                    energy_sufficiency=1.0 - float(danger.get("pressure", 0.0) or 0.0),
+                    danger_pressure=float(danger.get("pressure", 0.0) or 0.0),
+                    novelty=novelty_score,
+                    prediction_error=float(getattr(consc_state, "prediction_error", 0.0) or 0.0),
+                    identity_drift=identity_drift,
+                )
+            )
+            attention = drive_economy_snapshot.dominant
+            # Sensitive analogues can shape attention but only project to an
+            # established reflective/social target, never a reproductive act.
+            attention = {
+                "reproduction": "generativity",
+                "partner_selection": "affiliation",
+                "sexual_analogue": "affiliation",
+            }.get(attention, attention)
+            from System.swarm_artificial_endocrinology import (
+                ArtificialEndocrinology,
+                interoceptive_summary,
+            )
+            from System.swarm_drive_valuation import form_goal
+
+            drive_neuromodulation = ArtificialEndocrinology(_STATE_DIR).tick(
+                drive_economy_snapshot,
+                arousal_event=float(danger.get("pressure", 0.0) or 0.0),
+            )
+            drive_interoception = interoceptive_summary(drive_economy_snapshot)
+            drive_goal_proposal = form_goal(drive_economy_snapshot)
+        except Exception:
+            logger.debug("Drive economy tick skipped (non-fatal)")
+
         # 3c_pre. George Prior — read the latest spontaneous drive receipt (non-blocking)
         intrinsic_receipt: Optional[Any] = None
         if _GEORGE_PRIOR_AVAILABLE:
@@ -961,9 +1026,35 @@ class SwarmPhysiology:
             reset_recovery=reset_recovery,
             novelty_frame=novelty_frame,
         )
+        if economy is not None and drive_economy_snapshot is not None:
+            try:
+                economy.record_arbitration(
+                    winner_drive=drive_economy_snapshot.dominant,
+                    considered_drives=drive_economy_snapshot.top_drives,
+                )
+            except Exception:
+                logger.debug("Drive frustration update skipped")
 
         # 5. Execution
         result = self._execute_action(action)
+        if (
+            economy is not None
+            and drive_economy_snapshot is not None
+            and result.get("effect_verified") is True
+            and isinstance((result.get("effect") or {}).get("satisfaction"), dict)
+        ):
+            try:
+                economy.record_outcome(
+                    action=str(action.get("type") or action.get("name") or "unknown"),
+                    observed_satisfaction=result["effect"]["satisfaction"],
+                    predicted_satisfaction=dict(action.get("predicted_satisfaction") or {}),
+                    learning_rate_gain=(
+                        float(drive_neuromodulation.learning_rate_gain)
+                        if drive_neuromodulation is not None else 1.0
+                    ),
+                )
+            except Exception:
+                logger.debug("Drive satisfaction plasticity update skipped")
 
         # 5b. Efference Copy / Agency (Event 143) — predicted vs observed effect
         # Corollary discharge for tool/body actions: self-generated vs external PE.
@@ -1105,6 +1196,24 @@ class SwarmPhysiology:
             })
         except Exception:
             logger.debug("Observation fusion snapshot skipped (non-fatal)")
+
+        # Semantic continuity remains read-only here. It can inform the body
+        # model but cannot authorize a tool or motor action.
+        lived_experience_snapshot: Dict[str, Any] = {}
+        try:
+            from System.swarm_lived_experience_bridge import lived_experience_snapshot as _lived_snapshot
+
+            lived_experience_snapshot = _lived_snapshot(state_dir=_STATE_DIR)
+            memory_extra.update({
+                "lived_experience_event_count": lived_experience_snapshot.get("event_count", 0),
+                "lived_experience_latest": lived_experience_snapshot.get("latest_event_label", ""),
+                "lived_experience_status": lived_experience_snapshot.get(
+                    "latest_epistemic_status", "UNKNOWN"
+                ),
+                "lived_experience_summary": lived_experience_snapshot.get("summary", ""),
+            })
+        except Exception:
+            logger.debug("Lived-experience snapshot skipped (non-fatal)")
 
         mem_row = self._write_memory(
             action,
@@ -1707,6 +1816,19 @@ class SwarmPhysiology:
             "dream_cycle":        dream_cycle,
             "now_state":          now_state,
             "drive_plasticity":   drive_plasticity,
+            "drive_economy":      (
+                drive_economy_snapshot.as_dict()
+                if drive_economy_snapshot is not None else None
+            ),
+            "drive_interoception": drive_interoception,
+            "drive_neuromodulation": (
+                drive_neuromodulation.as_dict()
+                if drive_neuromodulation is not None else None
+            ),
+            "drive_goal_proposal": (
+                drive_goal_proposal.as_dict()
+                if drive_goal_proposal is not None else None
+            ),
             "intrinsic_drive":    _receipt_as_dict(intrinsic_receipt),
             "homeostatic_frame":  homeostatic_frame.as_dict() if homeostatic_frame else None,
             "allostatic_load":    allostatic_row.get("allostatic_load", 0.0) if allostatic_row else 0.0,
@@ -1716,6 +1838,7 @@ class SwarmPhysiology:
             "orienting_reflex":    orienting_row,
             "tab_consciousness":   tab_consciousness_update,
             "observation_fusion":  observation_snapshot,
+            "lived_experience":    lived_experience_snapshot,
             "stability_clamp":     _clamp_receipt,
             "causal_probe":        _causal_probe_receipt,
             "viability":           _viability_receipt,
@@ -1757,6 +1880,7 @@ class SwarmPhysiology:
         hw_serial = owner_silicon()
 
         def _append_jsonl(name: str, row: Dict[str, Any]) -> None:
+            row = swarm_context.stamp_context(row)
             append_line_locked(
                 _state / name,
                 json.dumps(row, ensure_ascii=False) + "\n",
@@ -1764,6 +1888,7 @@ class SwarmPhysiology:
             )
 
         def _write_json(name: str, row: Dict[str, Any]) -> None:
+            row = swarm_context.stamp_context(row)
             path = _state / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")

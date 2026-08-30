@@ -573,6 +573,7 @@ def stgm_body_truth_snapshot(
     cache_path: Optional[Path] = None,
     max_cache_age_s: float = 300.0,
     force_refresh: bool = False,
+    allow_stale_cache: bool = False,
 ) -> Dict[str, Any]:
     """One shared STGM truth object for Matrix, We Code Together, and HUD-adjacent reads.
 
@@ -595,7 +596,8 @@ def stgm_body_truth_snapshot(
         and cache_age_s <= max_cache_age_s
         and not force_refresh
     )
-    if cache_is_fresh:
+    cache_is_usable = cache is not None and not force_refresh and (cache_is_fresh or allow_stale_cache)
+    if cache_is_usable:
         data = dict(cache)
         data["refreshed"] = False
     else:
@@ -628,6 +630,7 @@ def stgm_body_truth_snapshot(
             "cache_mtime": cache_mtime,
             "cache_age_s": round(cache_age_s, 3) if cache_age_s is not None else None,
             "cache_is_fresh": cache_is_fresh,
+            "cache_stale_allowed": bool(allow_stale_cache and cache is not None and not cache_is_fresh),
             "repair_log_mtime": _path_mtime_s(repair_log),
             "memory_rewards_mtime": _path_mtime_s(memory_rewards),
             "visible_topbar_text": visible_9dp,

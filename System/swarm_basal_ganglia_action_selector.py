@@ -112,6 +112,34 @@ def select_action(
         stability_signal = {}
         somatic_signal = {}
 
+    drive_economy_meta: Dict[str, Any] = {
+        "status": "unavailable",
+        "action_policy": "bounded_bias_only_requires_existing_gate",
+    }
+    try:
+        from System.swarm_drive_economy import DriveEconomy
+
+        economy = DriveEconomy(state_dir(root))
+        owner_energy = somatic_signal.get("energy_score")
+        economy_snapshot = economy.tick(
+            context={
+                "energy_deficit": (
+                    max(0.0, 1.0 - float(owner_energy))
+                    if somatic_signal.get("is_fatigued") and owner_energy is not None
+                    else 0.0
+                ),
+            }
+        )
+        available_loops = economy.bias_named_loops(available_loops, economy_snapshot)
+        drive_economy_meta = {
+            "status": "applied",
+            "dominant": economy_snapshot.dominant,
+            "top_drives": list(economy_snapshot.top_drives),
+            "action_policy": economy_snapshot.action_policy,
+        }
+    except Exception:
+        pass
+
     best_name = "idle"
     best_score = float("-inf")
     scored: List[Tuple[str, float, Dict[str, Any]]] = []
@@ -181,6 +209,7 @@ def select_action(
                 "is_high_energy": bool(somatic_signal.get("is_high_energy")),
                 "age_s": somatic_signal.get("age_s"),
             },
+            "drive_economy": drive_economy_meta,
         },
         "candidates": [
             {"name": n, "net_score": round(s, 4)} for n, s, _ in scored

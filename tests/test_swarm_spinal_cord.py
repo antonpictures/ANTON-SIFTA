@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -34,6 +35,7 @@ from System.swarm_spinal_cord import (
     _record_bias_teacher_success_if_kept,
     spinal_cord_status,
     format_spinal_cord_reply,
+    dispatch_to_local_cortex,
     TRUTH_LABEL,
     DOCTOR,
 )
@@ -211,7 +213,7 @@ class TestFormulateTask:
             target_files=[],
         )
         task = formulate_task(signal)
-        assert "MiMo must identify" in task.task_prompt
+        assert "local cortex must identify" in task.task_prompt
 
     def test_task_finds_test_files(self, tmp_path):
         # Create a fake test file
@@ -260,6 +262,109 @@ class TestParseMimoResponse:
         text = "I fixed the issue by updating the regex pattern."
         assert _extract_field(text, "CHANGED_FILES") == ""
         assert _extract_block(text, "NEW_CONTENT_START", "NEW_CONTENT_END") == ""
+
+    def test_json_error_event_is_not_reported_as_success(self):
+        from System.swarm_spinal_cord import _parse_mimo_response
+
+        raw = json.dumps({
+            "type": "error",
+            "error": {
+                "name": "APIError",
+                "data": {"message": "Unsupported model mimo-auto", "statusCode": 400},
+            },
+        })
+        task = PatchTask(
+            task_id="task-error",
+            ts=time.time(),
+            signal_id="signal-error",
+            target_files=["System/swarm_cortex_switch_intent.py"],
+            task_prompt="fix it",
+        )
+
+        result = _parse_mimo_response(raw, task)
+
+        assert result.success is False
+        assert result.new_content == ""
+        assert "Unsupported model mimo-auto" in result.error
+        assert result.diff_summary == ""
+
+    def test_unstructured_prose_without_content_block_is_not_a_patch(self):
+        from System.swarm_spinal_cord import _parse_mimo_response
+
+        task = PatchTask(
+            task_id="task-prose",
+            ts=time.time(),
+            signal_id="signal-prose",
+            target_files=["System/swarm_cortex_switch_intent.py"],
+            task_prompt="fix it",
+        )
+
+        result = _parse_mimo_response("I inspected the bug but made no patch.", task)
+
+        assert result.success is False
+        assert result.error == "Local cortex returned no NEW_CONTENT block"
+
+
+class TestLocalCortexDispatch:
+    def test_dispatch_uses_loopback_ollama_and_parses_patch(self, tmp_path, monkeypatch):
+        import System.swarm_spinal_cord as sc
+
+        task = PatchTask(
+            task_id="local-task",
+            ts=time.time(),
+            signal_id="local-signal",
+            target_files=["System/swarm_foo.py"],
+            task_prompt="fix it",
+        )
+        body = json.dumps({
+            "response": (
+                "CHANGED_FILES: System/swarm_foo.py\n"
+                "DIFF_SUMMARY: local fix\n"
+                "TESTS_PASSED: true\n"
+                "NEW_CONTENT_START\nprint('local')\nNEW_CONTENT_END"
+            ),
+            "done": True,
+        }).encode()
+
+        class Response(BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+
+        seen = {}
+
+        def fake_urlopen(request, timeout):
+            seen["url"] = request.full_url
+            seen["payload"] = json.loads(request.data)
+            return Response(body)
+
+        monkeypatch.setattr(sc.urllib.request, "urlopen", fake_urlopen)
+        result = dispatch_to_local_cortex(task, state_dir=tmp_path)
+
+        assert result.success is True
+        assert result.new_content == "print('local')"
+        assert seen["url"].startswith("http://127.0.0.1:")
+        assert seen["payload"]["model"] == "krishairnd/Gemma-4-Uncensored:latest"
+        assert seen["payload"]["stream"] is False
+
+    def test_dispatch_refuses_non_loopback_endpoint(self, tmp_path, monkeypatch):
+        import System.swarm_spinal_cord as sc
+
+        monkeypatch.setattr(sc, "LOCAL_OLLAMA_GENERATE_URL", "https://api.example.com/generate")
+        task = PatchTask(
+            task_id="remote-task",
+            ts=time.time(),
+            signal_id="remote-signal",
+            target_files=["System/swarm_foo.py"],
+            task_prompt="fix it",
+        )
+
+        result = dispatch_to_local_cortex(task, state_dir=tmp_path)
+
+        assert result.success is False
+        assert "Refused non-loopback" in result.error
 
 
 # ---------------------------------------------------------------------------

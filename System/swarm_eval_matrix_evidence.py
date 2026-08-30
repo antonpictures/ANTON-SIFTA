@@ -4,6 +4,7 @@ Lane contract: trace (zero-surprise).
 from __future__ import annotations
 
 import math
+import json
 import re
 import time
 from pathlib import Path
@@ -27,6 +28,18 @@ def panel_evidence_rows() -> List[Dict[str, Any]]:
         {"panel": "appearance_walk", "path": ".sifta_state/eval/code_body_appearance_order.jsonl", "ledger": ".sifta_state/eval/code_body_appearance_order.jsonl"},
         {"panel": "organ_field", "path": "System/swarm_canonical_organ_registry.py", "ledger": ".sifta_state/organ_field.jsonl"},
         {"panel": "self_improvement", "path": "System/swarm_self_improvement_loop.py", "ledger": ".sifta_state/self_improvement_proposals.jsonl"},
+        {
+            "panel": "persistent_endogenous_motivation",
+            "path": "System/swarm_drive_economy.py",
+            "ledger": ".sifta_state/eval/motivational_control_evidence.jsonl",
+        },
+        {
+            "panel": "lived_experience_bridge",
+            "path": "System/swarm_lived_experience_bridge.py",
+            "ledger": ".sifta_state/lived_experience_events.jsonl",
+        },
+        {"panel": "spinal_cord", "path": "System/swarm_spinal_cord.py", "ledger": ".sifta_state/spinal_cord_cycles.jsonl"},
+        {"panel": "cortex_switch_truth", "path": "System/swarm_cortex_switch_intent.py", "ledger": ".sifta_state/cortex_selection_receipts.jsonl"},
         {"panel": "effector_gate", "path": "System/swarm_effector_gate.py", "ledger": ".sifta_state/effector_gate.jsonl"},
         {"panel": "intent_nonce", "path": "System/swarm_intent_nonce_gate.py", "ledger": ".sifta_state/intent_nonce_gate.jsonl"},
         {
@@ -56,13 +69,9 @@ def _path_age_s(path: Path, *, now: float | None = None) -> float | None:
 # a single row. An empty-but-freshly-touched ledger scored green while proving
 # nothing — .sifta_state/reply_language_mismatch.jsonl is exactly that today:
 # 0 bytes, mtime hours old. Existence is the icon; rows are the evidence.
-def ledger_evidence_rows(path: Path) -> int | None:
+def ledger_evidence_rows(path: Path, *, activation_id: str | None = None) -> int | None:
     """Count the rows of evidence a ledger actually holds.
-
-    Append ledgers (.jsonl) are counted by non-blank lines. Snapshot artifacts
-    (.json, .html, …) are not row-structured, so a non-empty file counts as one
-    piece of evidence and an empty one as zero. None means unreadable — unknown
-    is never silently treated as evidence.
+    If activation_id is provided, only count rows matching that epoch.
     """
     try:
         if not path.is_file():
@@ -73,15 +82,24 @@ def ledger_evidence_rows(path: Path) -> int | None:
     if size == 0:
         return 0
     if path.suffix.lower() != ".jsonl":
-        return 1
+        return 0 if activation_id else 1
+
     rows = 0
     try:
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                rows += chunk.count(b"\n")
-            handle.seek(max(0, size - 1))
-            if handle.read(1) not in (b"\n", b""):
-                rows += 1  # final line without a trailing newline
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                if activation_id:
+                    try:
+                        data = json.loads(line)
+                        if isinstance(data, dict) and data.get("activation_id") == activation_id:
+                            rows += 1
+                    except json.JSONDecodeError:
+                        continue
+                else:
+                    rows += 1
     except OSError:
         return None
     return rows
@@ -93,6 +111,7 @@ def evidence_score_for_row(
     repo_root: str | Path | None = None,
     now: float | None = None,
     half_life_s: float = 7 * 24 * 3600.0,
+    activation_id: str | None = None,
 ) -> Dict[str, Any]:
     """Score one eval cell from concrete evidence, never prose alone."""
     root = Path(repo_root) if repo_root is not None else _REPO
@@ -119,9 +138,9 @@ def evidence_score_for_row(
         problems.append("missing_named_receipt_or_ledger")
 
     # An existing ledger with zero rows is a bottle, not a female beetle.
-    evidence_rows = ledger_evidence_rows(ledger_obj) if ledger_ok else None
+    evidence_rows = ledger_evidence_rows(ledger_obj, activation_id=activation_id) if ledger_ok else None
     if ledger_ok and evidence_rows == 0:
-        problems.append("empty_ledger")
+        problems.append("no_evidence_for_activation" if activation_id else "empty_ledger")
 
     age_s = _path_age_s(ledger_obj or path_obj, now=now) if (ledger_ok or path_ok) else None
     decay = 1.0
@@ -151,6 +170,7 @@ def evidence_score_for_row(
         "path_ok": path_ok,
         "ledger_ok": ledger_ok,
         "evidence_rows": evidence_rows,
+        "activation_id": activation_id,
         "age_s": None if age_s is None else round(age_s, 3),
         "decay": round(decay, 4),
         "problems": problems,
@@ -163,6 +183,7 @@ def score_panel_evidence_rows(
     repo_root: str | Path | None = None,
     now: float | None = None,
     half_life_s: float = 7 * 24 * 3600.0,
+    activation_id: str | None = None,
 ) -> Dict[str, Any]:
     scored = [
         evidence_score_for_row(
@@ -170,6 +191,7 @@ def score_panel_evidence_rows(
             repo_root=repo_root,
             now=now,
             half_life_s=half_life_s,
+            activation_id=activation_id,
         )
         for row in (rows if rows is not None else panel_evidence_rows())
     ]
@@ -178,11 +200,16 @@ def score_panel_evidence_rows(
         "ok": green == len(scored) and bool(scored),
         "green_count": green,
         "total": len(scored),
+        "activation_id": activation_id,
         "rows": scored,
     }
 
 
-def validate_panel_evidence(*, repo_root: str | Path | None = None) -> Dict[str, Any]:
+def validate_panel_evidence(
+    *,
+    repo_root: str | Path | None = None,
+    activation_id: str | None = None,
+) -> Dict[str, Any]:
     rows = panel_evidence_rows()
     problems: List[Dict[str, Any]] = []
     ok_count = 0
@@ -200,12 +227,17 @@ def validate_panel_evidence(*, repo_root: str | Path | None = None) -> Dict[str,
             problems.append({"panel": row["panel"], "reason": "missing_ledger", "ledger": ledger})
         else:
             ok_count += 1
-    scored = score_panel_evidence_rows(rows, repo_root=repo_root)
+    scored = score_panel_evidence_rows(
+        rows,
+        repo_root=repo_root,
+        activation_id=activation_id,
+    )
     return {
         "ok": not problems and scored["ok"],
         "ok_count": ok_count,
         "green_count": scored["green_count"],
         "total": len(rows),
+        "activation_id": activation_id,
         "problems": problems,
         "scores": scored["rows"],
     }

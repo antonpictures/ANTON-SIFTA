@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,45 @@ def test_stgm_body_truth_snapshot_shows_atp_pulse_and_topbar_rounding(monkeypatc
     assert snap["atp_total_visible_at_3dp"] is False
     assert snap["atp_total_visible_at_topbar_precision"] is True
     assert "same canonical repair_log" in snap["same_organism_note"]
+
+
+def test_stgm_body_truth_snapshot_can_use_stale_cache_without_full_replay(
+    monkeypatch, tmp_path: Path
+) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    cache_path = state_dir / "stgm_economy_cache.json"
+    state_dir.mkdir()
+    repair_log.write_text("", encoding="utf-8")
+    cache_path.write_text(
+        json.dumps(
+            {
+                "truth_label": "STGM_ECONOMY_MATRIX_SNAPSHOT_V2",
+                "spendable_total_stgm": 12.5,
+                "alice_m5_spendable_stgm": 12.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(cache_path, (1.0, 1.0))
+
+    def fail_refresh(**_kwargs):
+        raise AssertionError("stale-cache fast path must not replay the ledger")
+
+    monkeypatch.setattr(stgm_economy, "refresh_stgm_economy_cache", fail_refresh)
+
+    snap = stgm_economy.stgm_body_truth_snapshot(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        cache_path=cache_path,
+        max_cache_age_s=0.0,
+        allow_stale_cache=True,
+    )
+
+    assert snap["spendable_total_stgm"] == 12.5
+    assert snap["refreshed"] is False
+    assert snap["cache_is_fresh"] is False
+    assert snap["cache_stale_allowed"] is True
 
 
 def test_stgm_body_truth_snapshot_shows_receipted_work_pulse(monkeypatch, tmp_path: Path) -> None:

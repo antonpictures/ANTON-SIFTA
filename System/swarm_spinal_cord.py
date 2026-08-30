@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Spinal Cord — bridge organ between Alice's self-detection and MiMo cortex.
+"""Spinal Cord — bridge organ between self-detection and a local coding cortex.
 
 This is the organ that closes the reflexive self-evolution loop:
-  Alice detects problem → formulates coding task → MiMo writes patch
+  Alice detects problem → formulates coding task → local cortex proposes patch
   → mutation governor gates → snapshot → apply → tests → keep/revert
   → receipt ecology reinforces or decays.
 
 Layer 1: Electricity on M5 → ASCII swimmers born → this swimmer detects
-a body-need and extends the MiMo arm to fix it. One organ, one loop,
+a body-need and extends a local cortex arm to fix it. One organ, one loop,
 receipts at every step.
 
 Truth label: SPINAL_CORD_V1.
@@ -16,8 +16,12 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +33,14 @@ TRUTH_LABEL = "SPINAL_CORD_V1"
 DOCTOR = "alice_spinal_cord"
 LEDGER = "spinal_cord_cycles.jsonl"
 PROPOSALS_LEDGER = "spinal_cord_proposals.jsonl"
+LOCAL_CODING_CORTEX = os.environ.get(
+    "SIFTA_SPINAL_LOCAL_MODEL",
+    "krishairnd/Gemma-4-Uncensored:latest",
+).strip()
+LOCAL_OLLAMA_GENERATE_URL = os.environ.get(
+    "SIFTA_LOCAL_OLLAMA_GENERATE_URL",
+    "http://127.0.0.1:11434/api/generate",
+).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +62,7 @@ class BodySignal:
 
 @dataclass
 class PatchTask:
-    """A coding task formulated from a body signal, ready for MiMo."""
+    """A coding task formulated from a body signal for a local cortex."""
     task_id: str
     ts: float
     signal_id: str
@@ -63,7 +75,7 @@ class PatchTask:
 
 @dataclass
 class PatchResult:
-    """Result of MiMo attempting a patch."""
+    """Result of the local coding cortex attempting a patch."""
     task_id: str
     ts: float
     success: bool
@@ -145,7 +157,7 @@ def collect_body_signals(*, state_dir: Path | str | None = None) -> List[BodySig
                     source="owner_correction",
                     severity="yellow",
                     summary=str(row.get("content") or "")[:200],
-                    target_files=auto_targets,  # MiMo still returns exact CHANGED_FILES; this seeds it
+                    target_files=auto_targets,  # local cortex still returns exact CHANGED_FILES; this seeds it
                     suggested_fix="",
                 ))
 
@@ -310,7 +322,7 @@ def _extract_target_files(row: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Task formulation — turn signals into MiMo-able coding tasks
+# Task formulation — turn signals into local-cortex coding tasks
 # ---------------------------------------------------------------------------
 
 def formulate_task(
@@ -318,15 +330,15 @@ def formulate_task(
     *,
     state_dir: Path | str | None = None,
 ) -> PatchTask:
-    """Turn a body signal into a concrete coding task for MiMo.
+    """Turn a body signal into a concrete local-cortex coding task.
 
-    The task prompt is designed so MiMo can:
+    The task prompt is designed so the local cortex can:
       1. Read the target file(s)
       2. Understand the problem from the signal
       3. Write a minimal fix
       4. Return the new file content + a diff summary
     """
-    target_files_str = ", ".join(signal.target_files) if signal.target_files else "(MiMo must identify from context)"
+    target_files_str = ", ".join(signal.target_files) if signal.target_files else "(local cortex must identify from context)"
 
     task_prompt = f"""You are Alice's spinal cord. Alice's body detected a problem and needs you to fix it.
 
@@ -393,28 +405,24 @@ def _find_test_files(target_files: list[str], *, state_dir: Path | str | None = 
 
 
 # ---------------------------------------------------------------------------
-# MiMo dispatch — send task to the cortex arm
+# Local dispatch — send the task to Krisha through loopback Ollama
 # ---------------------------------------------------------------------------
 
-def dispatch_to_mimo(
+def dispatch_to_local_cortex(
     task: PatchTask,
     *,
     timeout_s: int = 180,
     state_dir: Path | str | None = None,
 ) -> PatchResult:
-    """Send the coding task to MiMo CLI and parse the response.
+    """Ask the installed Krisha model for a patch through loopback Ollama.
 
-    Uses `mimo run --format json` with --dangerously-skip-permissions
-    so MiMo can read/write files inside the repo.
-
-    MiMo BORG: before every call, read the current field state (body inventory)
-    and include a snapshot in the prompt + write a pre-call receipt (pheromone).
-    This ensures every MiMo call is grounded in Alice's current body.
+    The cortex receives current body evidence and may only *propose* full file
+    content. The existing mutation governor, snapshot, AST, and pytest gates
+    remain the only path that can apply it. Non-loopback endpoints are refused.
     """
-    import shutil
 
     sd = _state_dir(state_dir)
-    # MiMo Borg: read the field first
+    # Read the current field before every local cortex proposal.
     field_snapshot = []
     try:
         from System.swarm_model_body_self_knowledge import body_file_inventory
@@ -427,14 +435,17 @@ def dispatch_to_mimo(
         "schema": TRUTH_LABEL,
         "ts": time.time(),
         "task_id": task.task_id,
-        "phase": "pre_mimo_call",
+        "phase": "pre_local_cortex_call",
+        "provider": "ollama_local",
+        "model": LOCAL_CODING_CORTEX,
         "field_snapshot": field_snapshot,
         "doctor": DOCTOR,
     }
     _append_jsonl(sd / LEDGER, pre_receipt)
 
-    cli = shutil.which("mimo")
-    if not cli:
+    endpoint = LOCAL_OLLAMA_GENERATE_URL
+    parsed_endpoint = urllib.parse.urlsplit(endpoint)
+    if parsed_endpoint.hostname not in {"127.0.0.1", "localhost", "::1"}:
         return PatchResult(
             task_id=task.task_id,
             ts=time.time(),
@@ -445,31 +456,35 @@ def dispatch_to_mimo(
             tests_passed=False,
             ast_clean=False,
             governor_ok=False,
-            error="MiMo CLI not on PATH — run `mimo providers` to sign in",
+            error=f"Refused non-loopback Ollama endpoint: {endpoint}",
         )
 
-    # Inject field snapshot into prompt for the cortex
-    field_context = f"\n\nCURRENT ALICE BODY FIELD SNAPSHOT (for context before this MiMo call):\n{field_snapshot}\n\n"
+    field_context = f"\n\nCURRENT ALICE BODY FIELD SNAPSHOT:\n{field_snapshot}\n\n"
     augmented_prompt = field_context + task.task_prompt
-
-    cmd = [
-        cli,
-        "run",
-        "--format", "json",
-        "--dir", str(REPO),
-        "--dangerously-skip-permissions",
-        augmented_prompt,
-    ]
-
+    payload = json.dumps(
+        {
+            "model": LOCAL_CODING_CORTEX,
+            "prompt": augmented_prompt,
+            "stream": False,
+            "think": False,
+            "keep_alive": "10m",
+            "options": {"temperature": 0.1, "num_predict": 8192},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(REPO),
-            timeout=timeout_s + 10,
-        )
-    except subprocess.TimeoutExpired:
+        with urllib.request.urlopen(request, timeout=max(5, int(timeout_s))) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        envelope = json.loads(body)
+        raw = str(envelope.get("response") or "").strip()
+        if envelope.get("error"):
+            raise RuntimeError(str(envelope.get("error")))
+    except (TimeoutError, urllib.error.URLError) as exc:
         return PatchResult(
             task_id=task.task_id,
             ts=time.time(),
@@ -480,7 +495,7 @@ def dispatch_to_mimo(
             tests_passed=False,
             ast_clean=False,
             governor_ok=False,
-            error=f"MiMo CLI timed out after {timeout_s}s",
+            error=f"Local Krisha Ollama request failed: {exc}",
         )
     except Exception as exc:
         return PatchResult(
@@ -493,11 +508,50 @@ def dispatch_to_mimo(
             tests_passed=False,
             ast_clean=False,
             governor_ok=False,
-            error=f"MiMo CLI launch failed: {exc}",
+            error=f"Local Krisha response failed: {exc}",
         )
+    return _parse_mimo_response(raw, task)
 
-    raw = (proc.stdout or proc.stderr or "").strip()
-    if proc.returncode != 0:
+
+def dispatch_to_mimo(
+    task: PatchTask,
+    *,
+    timeout_s: int = 180,
+    state_dir: Path | str | None = None,
+) -> PatchResult:
+    """Compatibility name; dispatch is local Krisha and never invokes MiMo."""
+    return dispatch_to_local_cortex(task, timeout_s=timeout_s, state_dir=state_dir)
+
+
+def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
+    """Parse the structured patch response; name kept for ledger compatibility."""
+    # Try NDJSON first
+    text = raw
+    parsed_payload = False
+    terminal_error = ""
+    try:
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if isinstance(obj, dict) and (obj.get("type") == "error" or obj.get("error")):
+                terminal_error = _mimo_error_message(obj)
+                continue
+            if isinstance(obj, dict) and "result" in obj:
+                text = str(obj["result"])
+                parsed_payload = True
+                break
+            elif isinstance(obj, dict) and "text" in obj:
+                text = str(obj["text"])
+                parsed_payload = True
+                break
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # MiMo may exit zero while emitting a JSON error event.  That is a failed
+    # dispatch, never an unstructured diff summary and never ``success=True``.
+    if terminal_error and not parsed_payload:
         return PatchResult(
             task_id=task.task_id,
             ts=time.time(),
@@ -508,31 +562,9 @@ def dispatch_to_mimo(
             tests_passed=False,
             ast_clean=False,
             governor_ok=False,
-            error=f"MiMo CLI failed (rc={proc.returncode}): {raw[:500]}",
+            target_files=list(task.target_files or []),
+            error=f"MiMo returned error: {terminal_error}",
         )
-
-    # Parse MiMo's response
-    return _parse_mimo_response(raw, task)
-
-
-def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
-    """Parse MiMo's structured response into a PatchResult."""
-    # Try NDJSON first
-    text = raw
-    try:
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            obj = json.loads(line)
-            if isinstance(obj, dict) and "result" in obj:
-                text = str(obj["result"])
-                break
-            elif isinstance(obj, dict) and "text" in obj:
-                text = str(obj["text"])
-                break
-    except (json.JSONDecodeError, ValueError):
-        pass
 
     # Extract structured fields
     changed_files = _extract_field(text, "CHANGED_FILES")
@@ -542,7 +574,8 @@ def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
 
     tests_passed = tests_passed_str.lower().strip() in ("true", "yes", "1", "passed") if tests_passed_str else False
 
-    # If MiMo didn't return structured output, treat the whole response as the diff summary
+    # Preserve prose for diagnosis, but prose without the required full-content
+    # block is not a patch Alice can gate or apply.
     if not diff_summary and not new_content:
         diff_summary = text[:500]
 
@@ -553,15 +586,31 @@ def _parse_mimo_response(raw: str, task: PatchTask) -> PatchResult:
     return PatchResult(
         task_id=task.task_id,
         ts=time.time(),
-        success=bool(new_content or diff_summary),
+        success=bool(new_content),
         proposal_id="",  # set later after proposal creation
         new_content=new_content,
-        diff_summary=diff_summary or "MiMo patch (unstructured)",
+        diff_summary=diff_summary or "Local cortex patch (unstructured)",
         tests_passed=tests_passed,
         ast_clean=False,  # verified later
         governor_ok=False,  # verified later
         target_files=resolved_targets,
+        error="" if new_content else "Local cortex returned no NEW_CONTENT block",
     )
+
+
+def _mimo_error_message(obj: Dict[str, Any]) -> str:
+    """Extract a compact truthful message from MiMo CLI JSON error events."""
+    err = obj.get("error")
+    if isinstance(err, dict):
+        data = err.get("data")
+        if isinstance(data, dict) and data.get("message"):
+            return str(data.get("message"))[:500]
+        if err.get("message"):
+            return str(err.get("message"))[:500]
+        return json.dumps(err, ensure_ascii=False, sort_keys=True)[:500]
+    if err:
+        return str(err)[:500]
+    return str(obj.get("message") or obj.get("type") or "unknown MiMo error")[:500]
 
 
 def _extract_field(text: str, field_name: str) -> str:
@@ -611,14 +660,14 @@ def gate_and_apply(
 
     if not result.success or not result.new_content:
         receipt["status"] = "NO_PATCH"
-        receipt["error"] = result.error or "MiMo returned no usable content"
+        receipt["error"] = result.error or "Local cortex returned no usable content"
         _append_jsonl(sd / LEDGER, receipt)
         return receipt
 
     # 1. AST check
-    # Prefer the file MiMo actually named in CHANGED_FILES (result.target_files)
+    # Prefer the file the local cortex named in CHANGED_FILES (result.target_files)
     # over the (possibly empty) pre-known list from the originating signal/task.
-    # This closes the owner-correction + "MiMo identifies" self-evolution path.
+    # This closes the owner-correction + cortex-identifies self-evolution path.
     candidates = getattr(result, "target_files", None) or task.target_files or []
     target_file = candidates[0] if candidates else ""
     if not target_file or (REPO / target_file).is_dir() or not (REPO / target_file).is_file():
@@ -637,7 +686,7 @@ def gate_and_apply(
         "rationale": f"Spinal cord auto-patch from signal {task.signal_id}",
         "predicted_metric": task.predicted_metric,
         "predicted_gain": task.predicted_gain,
-        "proposer": "spinal_cord:mimo",
+        "proposer": "spinal_cord:local_krisha",
     }
     result.proposal_id = proposal["proposal_id"]
 
@@ -762,7 +811,7 @@ def _record_bias_teacher_success_if_kept(
         record_teacher_success(
             teacher="bias_spinal_cycle",
             provider="alice_body",
-            model_label="spinal_mimo",
+            model_label="spinal_local_krisha",
             app=target_file or "spinal_cord",
             alice_receipt_id=str(receipt.get("cycle_id") or receipt.get("proposal_id") or ""),
             result="KEPT",
@@ -872,8 +921,8 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # 4. Dispatch to MiMo
-    result = dispatch_to_mimo(task, state_dir=sd)
+    # 4. Dispatch to the installed local cortex; no paid/API provider.
+    result = dispatch_to_local_cortex(task, state_dir=sd)
 
     # 5. Gate + apply + test + keep/revert
     receipt = gate_and_apply(result, task, state_dir=sd, teach_context=teach_context)
@@ -890,7 +939,10 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
         "task_id": task.task_id,
         "proposal_id": result.proposal_id,
         "status": receipt.get("status", "UNKNOWN"),
-        "mimo_success": result.success,
+        "dispatch_provider": "ollama_local",
+        "dispatch_model": LOCAL_CODING_CORTEX,
+        "local_cortex_success": result.success,
+        "mimo_success": False,
         "tests_passed": result.tests_passed,
         "ast_clean": result.ast_clean,
         "governor_ok": result.governor_ok,

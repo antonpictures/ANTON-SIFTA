@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from System import swarm_canonical_organ_registry as registry_module
 from System.swarm_canonical_organ_registry import (
     _read_jsonl_tail,
     _row_outcome,
@@ -30,6 +31,7 @@ def test_registry_counts_and_routes_to_organs(tmp_path: Path) -> None:
     assert "health" in snap["organs"][0]
     assert "stgm_profitability" in snap["organs"][0]
     assert all(organ.get("stable_id", "").startswith("organ_") for organ in snap["organs"])
+    assert all(organ.get("pipeline_category") for organ in snap["organs"])
 
     routed = route_query("check schedule and execute a tool with receipt", registry=snap)
     ids = [m["organ_id"] for m in routed["matches"]]
@@ -150,3 +152,57 @@ def test_read_jsonl_tail_reads_only_requested_tail(tmp_path: Path) -> None:
     rows = _read_jsonl_tail(ledger, limit=7)
 
     assert [row["idx"] for row in rows] == list(range(193, 200))
+
+
+def test_registry_pipeline_rejects_one_malformed_dynamic_row(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "System").mkdir()
+    valid = {
+        "organ_id": "app_valid",
+        "display_name": "Valid App",
+        "organ_paths": (),
+        "ledgers": (),
+    }
+    monkeypatch.setattr(
+        registry_module,
+        "_app_manifest_organs",
+        lambda *, repo: [{"display_name": "Missing ID"}, valid],
+    )
+
+    snapshot = build_registry(root=tmp_path, state_dir=tmp_path / ".sifta_state")
+    organ_ids = {row["organ_id"] for row in snapshot["organs"]}
+
+    assert "app_valid" in organ_ids
+    assert snapshot["merged_sources"]["apps_manifest"] == 1
+    assert next(row for row in snapshot["organs"] if row["organ_id"] == "app_valid")[
+        "pipeline_category"
+    ] == "application"
+
+
+def test_dynamic_discovery_does_not_duplicate_a_canonical_module(monkeypatch, tmp_path: Path) -> None:
+    duplicate = {
+        "organ_id": "discovered_lived_experience_bridge",
+        "display_name": "Lived Experience Bridge",
+        "organ_paths": ("System/swarm_lived_experience_bridge.py",),
+        "ledgers": ("lived_experience_events.jsonl",),
+    }
+    unique = {
+        "organ_id": "discovered_unique_probe",
+        "display_name": "Unique Probe",
+        "organ_paths": ("System/swarm_unique_probe.py",),
+        "ledgers": (),
+    }
+    monkeypatch.setattr(
+        registry_module,
+        "_dynamic_discovered_organs",
+        lambda *, state: [duplicate, unique],
+    )
+    monkeypatch.setattr(registry_module, "_app_manifest_organs", lambda *, repo: [])
+    monkeypatch.setattr(registry_module, "_agent_arm_organs", lambda: [])
+    monkeypatch.setattr(registry_module, "_ecology_organs", lambda *, state: [])
+
+    snapshot = build_registry(root=registry_module._REPO, state_dir=tmp_path)
+    ids = {row["organ_id"] for row in snapshot["organs"]}
+
+    assert "lived_experience_bridge" in ids
+    assert "discovered_lived_experience_bridge" not in ids
+    assert "discovered_unique_probe" in ids

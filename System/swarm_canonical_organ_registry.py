@@ -20,6 +20,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 try:
+    from System import swarm_workflow
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    import swarm_workflow  # type: ignore[no-redef]
+
+try:
     from System.jsonl_file_lock import append_line_locked
 except Exception:  # pragma: no cover - damaged boot fallback only
     append_line_locked = None  # type: ignore[assignment]
@@ -148,6 +153,40 @@ CANONICAL_ORGANS: tuple[OrganSpec, ...] = (
         ("recall", "engram_write", "episodic_diary", "replay"),
         ("remember", "recall", "memory", "what happened", "earlier", "dream", "diary"),
         aliases=("engram", "hippocampus", "replay", "life_memory"),
+    ),
+    OrganSpec(
+        "lived_experience_bridge",
+        "Lived Experience / Semantic World Bridge",
+        "cognition",
+        (
+            "System/swarm_lived_experience_bridge.py",
+            "System/swarm_observation_fusion.py",
+            "System/swarm_episodic_thread_linker.py",
+            "System/swarm_active_inference_world_model.py",
+            "System/swarm_memory_consciousness_bridge.py",
+        ),
+        (
+            "lived_experience_events.jsonl",
+            "lived_experience_transition_model.json",
+            "unified_stigmergic_field.jsonl",
+        ),
+        (
+            "epistemic_event_status",
+            "semantic_continuity",
+            "history_dependent_prediction",
+            "prediction_error",
+            "operational_observer_observed_coupling",
+        ),
+        (
+            "lived experience",
+            "world model",
+            "observer observed",
+            "continuity",
+            "prediction error",
+            "remembered versus observed",
+        ),
+        owner_sensitive=True,
+        aliases=("semantic_world_model", "life_model", "experience_bridge"),
     ),
     OrganSpec(
         "drive_homeostasis",
@@ -734,75 +773,142 @@ def _ecology_organs(*, state: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _validate_registry_candidate(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize one candidate or reject only that malformed row."""
+    candidate = dict(row)
+    organ_id = str(candidate.get("organ_id") or "").strip()
+    if not organ_id:
+        raise swarm_workflow.OrdinaryError("registry candidate has no organ_id")
+    candidate["organ_id"] = organ_id
+    candidate.setdefault("display_name", organ_id.replace("_", " ").title())
+    candidate.setdefault("layer", "unknown")
+    candidate.setdefault("organ_paths", ())
+    candidate.setdefault("ledgers", ())
+    candidate.setdefault("capabilities", ())
+    candidate.setdefault("query_keywords", ())
+    candidate.setdefault("aliases", ())
+    candidate.setdefault("write_action", False)
+    candidate.setdefault("owner_sensitive", False)
+    return candidate
+
+
+def _score_registry_candidate(
+    row: Mapping[str, Any],
+    *,
+    repo: Path,
+    state: Path,
+) -> dict[str, Any]:
+    """Attach presence, receipt health, and profitability evidence."""
+    candidate = dict(row)
+    organ_paths = tuple(str(path) for path in candidate.get("organ_paths", ()) if str(path))
+    ledgers = tuple(str(path) for path in candidate.get("ledgers", ()) if str(path))
+    present_paths = [path for path in organ_paths if _exists(repo, path)]
+    present_ledgers = [path for path in ledgers if _ledger_exists(state, path)]
+    canonical = candidate.get("source_registry") == "CANONICAL_ORGANS"
+    candidate.update(
+        {
+            "organ_paths": organ_paths,
+            "ledgers": ledgers,
+            "present": bool(present_paths) if canonical else bool(present_paths or present_ledgers),
+            "present_paths": present_paths,
+            "missing_paths": [path for path in organ_paths if path not in present_paths],
+            "present_ledgers": present_ledgers,
+            "missing_ledgers": [path for path in ledgers if path not in present_ledgers],
+            "coverage": round(
+                (len(present_paths) + len(present_ledgers))
+                / max(1, len(organ_paths) + len(ledgers)),
+                4,
+            ),
+        }
+    )
+    return _augment_organ(candidate, state=state)
+
+
+def _categorize_registry_candidate(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Give downstream arbitration one stable provenance category."""
+    candidate = dict(row)
+    source_bucket = str(candidate.get("_source_bucket") or "discovered")
+    candidate["pipeline_category"] = {
+        "canonical": "canonical",
+        "apps_manifest": "application",
+        "agent_arms": "agent_arm",
+        "ecology": "ecology",
+    }.get(source_bucket, "discovered")
+    return candidate
+
+
 def build_registry(
     *,
     root: Path | str | None = None,
     state_dir: Path | str | None = None,
     include_dynamic: bool = True,
 ) -> dict[str, Any]:
-    """Return a live, read-only organ registry snapshot."""
+    """Return a live registry snapshot through validate/score/categorize stages."""
     repo = _repo_root(root)
     state = _state_dir(state_dir)
-    organs: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for spec in CANONICAL_ORGANS:
-        present_paths = [p for p in spec.organ_paths if _exists(repo, p)]
-        present_ledgers = [l for l in spec.ledgers if _ledger_exists(state, l)]
         row = asdict(spec)
         row["source_registry"] = "CANONICAL_ORGANS"
-        row.update(
-            {
-                "present": bool(present_paths),
-                "present_paths": present_paths,
-                "missing_paths": [p for p in spec.organ_paths if p not in present_paths],
-                "present_ledgers": present_ledgers,
-                "missing_ledgers": [l for l in spec.ledgers if l not in present_ledgers],
-                "coverage": round(
-                    (len(present_paths) + len(present_ledgers))
-                    / max(1, len(spec.organ_paths) + len(spec.ledgers)),
-                    4,
-                ),
-            }
-        )
-        organs.append(_augment_organ(row, state=state))
+        row["_source_bucket"] = "canonical"
+        candidates.append(row)
 
-    seen = {str(o.get("organ_id")) for o in organs}
+    seen = {str(row.get("organ_id")) for row in candidates}
+    canonical_paths = {
+        str(path)
+        for row in candidates
+        for path in (row.get("organ_paths") or ())
+        if str(path)
+    }
+    live_repo_sources = repo.resolve() == _REPO.resolve()
+    sources = (
+        ("discovered", _dynamic_discovered_organs(state=state) if live_repo_sources and include_dynamic else []),
+        ("apps_manifest", _app_manifest_organs(repo=repo)),
+        ("agent_arms", _agent_arm_organs() if live_repo_sources and include_dynamic else []),
+        ("ecology", _ecology_organs(state=state)),
+    )
+    for source_name, source_rows in sources:
+        for source_row in source_rows:
+            row = dict(source_row)
+            organ_id = str(row.get("organ_id") or "")
+            if source_name == "discovered" and canonical_paths.intersection(
+                str(path) for path in (row.get("organ_paths") or ()) if str(path)
+            ):
+                continue
+            if organ_id and organ_id in seen:
+                continue
+            if organ_id:
+                seen.add(organ_id)
+            row["_source_bucket"] = source_name
+            candidates.append(row)
+
+    def score_stage(row: Mapping[str, Any]) -> dict[str, Any]:
+        return _score_registry_candidate(row, repo=repo, state=state)
+
+    results = swarm_workflow.run(
+        swarm_workflow.pipeline(
+            candidates,
+            _validate_registry_candidate,
+            score_stage,
+            _categorize_registry_candidate,
+        )
+    )
+    organs: list[dict[str, Any]] = []
     merged_sources = {
-        "canonical": len(organs),
+        "canonical": 0,
         "discovered": 0,
         "apps_manifest": 0,
         "agent_arms": 0,
         "ecology": 0,
     }
-    live_repo_sources = repo.resolve() == _REPO.resolve()
-    for source_name, source_rows in (
-        ("discovered", _dynamic_discovered_organs(state=state) if live_repo_sources and include_dynamic else []),
-        ("apps_manifest", _app_manifest_organs(repo=repo)),
-        ("agent_arms", _agent_arm_organs() if live_repo_sources and include_dynamic else []),
-        ("ecology", _ecology_organs(state=state)),
-    ):
-        for row in source_rows:
-            organ_id = str(row.get("organ_id") or "")
-            if not organ_id or organ_id in seen:
-                continue
-            present_paths = [p for p in row.get("organ_paths", ()) if _exists(repo, p)]
-            present_ledgers = [l for l in row.get("ledgers", ()) if _ledger_exists(state, l)]
-            row.update(
-                {
-                    "present": bool(present_paths or present_ledgers),
-                    "present_paths": present_paths,
-                    "missing_paths": [p for p in row.get("organ_paths", ()) if p not in present_paths],
-                    "present_ledgers": present_ledgers,
-                    "missing_ledgers": [l for l in row.get("ledgers", ()) if l not in present_ledgers],
-                    "coverage": round(
-                        (len(present_paths) + len(present_ledgers))
-                        / max(1, len(row.get("organ_paths", ())) + len(row.get("ledgers", ()))),
-                        4,
-                    ),
-                }
-            )
-            organs.append(_augment_organ(dict(row), state=state))
-            seen.add(organ_id)
-            merged_sources[source_name] += 1
+    for result in results:
+        if result is None:
+            continue
+        organ = dict(result)
+        source_bucket = str(organ.pop("_source_bucket", "discovered"))
+        if source_bucket in merged_sources:
+            merged_sources[source_bucket] += 1
+        organs.append(organ)
 
     counts = {
         "system_python_organs": _count_files(repo, "System/*.py"),
@@ -813,12 +919,14 @@ def build_registry(
         "canonical_organs_present": sum(1 for o in organs if o["present"] and o.get("source_registry") == "CANONICAL_ORGANS"),
         "registry_organs": len(organs),
     }
-    gaps = []
+
+    gaps: list[str] = []
     for organ in organs:
         if not organ["present"]:
             gaps.append(f"{organ['organ_id']}: no organ path present")
         elif organ["coverage"] < 0.5:
             gaps.append(f"{organ['organ_id']}: sparse ledger/path coverage {organ['coverage']}")
+
     code_inventory: dict[str, Any] = {}
     try:
         from System.swarm_code_body_inventory import build_code_inventory

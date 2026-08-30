@@ -51,6 +51,8 @@ from pathlib import Path
 from shutil import which
 from typing import Any, Dict, List, Optional, Tuple
 
+from System import swarm_context
+
 try:
     from . import swarm_terminal_organ as term
     from . import swarm_file_organ as fileo
@@ -701,6 +703,7 @@ def parse_tool_calls(alice_output: str) -> List[ParsedToolCall]:
 
 def _log_trace(event: Dict[str, Any]) -> None:
     """Append to the immutable tool router trace ledger."""
+    event = swarm_context.stamp_context(event)
     event["ts"] = time.time()
     event["schema"] = "SIFTA_TOOL_ROUTER_TRACE_V1"
     try:
@@ -2971,6 +2974,32 @@ def _charge_tool_execution(call: ParsedToolCall, spec: ToolSpec, justification: 
 
 
 def execute_tool_call(
+    call: ParsedToolCall,
+    *,
+    owner_present: bool = False,
+    autonomous: bool = True,
+    caller_pid: str | None = None,
+) -> ToolResult:
+    """Execute a tool inside a causal activation without bypassing its gates."""
+    initiator_id = swarm_context.get_initiator() or "tool_router"
+    with swarm_context.initiator_scope(initiator_id):
+        if swarm_context.get_activation_id():
+            return _execute_tool_call(
+                call,
+                owner_present=owner_present,
+                autonomous=autonomous,
+                caller_pid=caller_pid,
+            )
+        with swarm_context.activation_scope():
+            return _execute_tool_call(
+                call,
+                owner_present=owner_present,
+                autonomous=autonomous,
+                caller_pid=caller_pid,
+            )
+
+
+def _execute_tool_call(
     call: ParsedToolCall,
     *,
     owner_present: bool = False,

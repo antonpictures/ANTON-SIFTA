@@ -5,6 +5,8 @@ import json
 import pytest
 
 from System import swarm_tool_router as router
+from System import swarm_context
+from System import swarm_effector_gate
 from System import swarm_kernel_process_table as kernel_module
 from System import whatsapp_bridge_autopilot as wa
 
@@ -62,6 +64,18 @@ def _isolate_kernel_process_table(tmp_path, monkeypatch):
     monkeypatch.setattr(kernel_module, "_GLOBAL_TABLE", None)
 
 
+@pytest.fixture(autouse=True)
+def _allow_router_unit_test_effectors(monkeypatch):
+    """Reach the router's inner guards without depending on live owner state."""
+    allowed = lambda *_args, **_kwargs: {  # noqa: E731
+        "ok": True,
+        "reason": "router_unit_test_allow",
+        "gate_receipt_id": "router-unit-test",
+    }
+    monkeypatch.setattr(swarm_effector_gate, "require_network_effector", allowed)
+    monkeypatch.setattr(swarm_effector_gate, "require_shell_effector", allowed)
+
+
 def _send_call(extra: str = "") -> router.ParsedToolCall:
     parts = [
         "target=Carlton",
@@ -77,6 +91,38 @@ def _send_call(extra: str = "") -> router.ParsedToolCall:
 
 def _with_cost(tool_call: str) -> str:
     return tool_call[:-1] + " | cost_justification=unit test proves router behavior]"
+
+
+def test_tool_wrapper_creates_and_restores_causal_activation(monkeypatch):
+    observed = {}
+
+    def fake_execute(call, **_kwargs):
+        observed["initiator_id"] = swarm_context.get_initiator()
+        observed["activation_id"] = swarm_context.get_activation_id()
+        return router.ToolResult(call.tool_name, call.params, False, {}, "TEST", "")
+
+    monkeypatch.setattr(router, "_execute_tool_call", fake_execute)
+    call = router.ParsedToolCall("test_tool", {}, "")
+
+    result = router.execute_tool_call(call)
+
+    assert result.status == "TEST"
+    assert observed["initiator_id"] == "tool_router"
+    assert observed["activation_id"]
+    assert swarm_context.get_initiator() is None
+    assert swarm_context.get_activation_id() is None
+
+
+def test_tool_trace_inherits_existing_causal_context(tmp_path, monkeypatch):
+    ledger = tmp_path / "tool_router_trace.jsonl"
+    monkeypatch.setattr(router, "_TRACE_LEDGER", ledger)
+
+    with swarm_context.initiator_scope("research_arm"), swarm_context.activation_scope("epoch-7"):
+        router._log_trace({"event": "TEST_TRACE"})
+
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["initiator_id"] == "research_arm"
+    assert row["activation_id"] == "epoch-7"
 
 
 def test_whatsapp_tool_call_without_owner_consent_records_silence(monkeypatch):

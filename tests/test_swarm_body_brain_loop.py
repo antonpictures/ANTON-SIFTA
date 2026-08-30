@@ -51,6 +51,20 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert "action" in result
             assert "value" in result
             assert "metabolic_mode" in result
+            assert result["initiator_id"] == "body_brain_loop"
+            assert result["activation_id"]
+            assert result["drive_economy"] is not None
+            assert len(result["drive_economy"]["pressures"]) == 38
+            assert result["drive_economy"]["action_policy"] == (
+                "bounded_bias_only_requires_existing_gate"
+            )
+            assert result["drive_interoception"]
+            assert result["drive_neuromodulation"]["action_policy"] == (
+                "modulation_only_no_action_semantics"
+            )
+            assert result["drive_goal_proposal"]["policy"] == (
+                "proposal_only_requires_basal_ganglia_and_authority_gates"
+            )
             assert result["metabolic_mode"] == "GREEN_GROW"
             assert result["result"]["status"] == "simulated"
             assert result["result"]["effect_verified"] is False
@@ -71,6 +85,8 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert len(lines) == 1
             row = json.loads(lines[0])
             assert row["event"] == "body_brain_tick"
+            assert row["initiator_id"] == "body_brain_loop"
+            assert row["activation_id"] == result["activation_id"]
             assert "action" in row
             assert "result" in row
             assert row["result"]["truth_label"] == "SIMULATED_BODY_ACTION"

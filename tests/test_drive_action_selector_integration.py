@@ -48,6 +48,10 @@ def test_pipeline_accepts_drive_hypothalamus_without_changing_tuple_contract(tmp
     assert row["kind"] == "basal_ganglia_selection"
     assert row["drive_context"]["dominant"] in {"energy", "social", "curiosity", "safety"}
     assert row["drive_context"]["drives"]["social"] == 1.0
+    assert row["drive_context"]["economy"]["dominant"]
+    assert row["drive_context"]["economy"]["action_policy"] == (
+        "bounded_bias_only_requires_existing_gate"
+    )
 
 
 def test_pipeline_can_inject_theory_of_mind_before_corpus_callosum(tmp_path, monkeypatch) -> None:

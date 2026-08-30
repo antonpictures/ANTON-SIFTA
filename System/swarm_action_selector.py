@@ -289,6 +289,7 @@ def pipeline_step(
     log_drive: bool = False,
     theory_of_mind: Optional[Any] = None,
     social_metadata: Optional[Mapping[str, Any]] = None,
+    drive_economy: Optional[Any] = None,
 ) -> tuple[str, str, dict]:
     """
     Run one full decision step through Layers 1–4.
@@ -395,6 +396,99 @@ def pipeline_step(
         except Exception:
             drive_context = {"status": "drive_unavailable"}
 
+    # 3d — persistent 38-drive economy. It can only bias the four candidates
+    # already created above; it cannot add a tool, action, or authorization.
+    economy_snapshot = None
+    economy_instance = None
+    neuromodulation = None
+    if drive_economy is not None or metabolic_state is not None or recent_events is not None:
+        try:
+            if drive_economy is None:
+                from System.swarm_drive_economy import DriveEconomy
+
+                drive_economy = DriveEconomy(_REPO / ".sifta_state")
+            ev = dict(recent_events or {})
+            sufficiency = 0.5
+            try:
+                from System.swarm_drive_hypothalamus import metabolic_sufficiency
+
+                sufficiency = metabolic_sufficiency(
+                    0.5 if metabolic_state is None else metabolic_state
+                )
+            except Exception:
+                pass
+            economy_context = {
+                "energy_deficit": 1.0 - sufficiency,
+                "integrity_error": 1.0 if ev.get("errors") else 0.0,
+                "novelty": ev.get("novelty", 0.0),
+                "prediction_error": ev.get("prediction_error", 0.0),
+                "social_presence": 1.0 if ev.get("owner_activity") else 0.0,
+                "care_need": ev.get("care_need", 0.0),
+                "skill_gap": ev.get("skill_gap", 0.0),
+                "goal_gap": ev.get("goal_gap", 0.0),
+                "action_set_loss": ev.get("action_set_loss", 0.0),
+                "memory_risk": ev.get("memory_risk", 0.0),
+                "identity_drift": ev.get("identity_drift", 0.0),
+                "collective_need": ev.get("collective_need", 0.0),
+                "environment_drift": ev.get("environment_drift", 0.0),
+                "creative_opportunity": ev.get("creative_opportunity", 0.0),
+                "reciprocity_debt": ev.get("reciprocity_debt", 0.0),
+                "achievement_gap": ev.get("achievement_gap", 0.0),
+                "authorized_competition": ev.get("authorized_competition", 0.0),
+                "reproductive_context": ev.get("reproductive_context", 0.0),
+                "partner_context": ev.get("partner_context", 0.0),
+                "satisfied_drives": ev.get("satisfied_drives", []),
+                "predicted_deficits": ev.get("predicted_deficits", {}),
+                "allostatic_targets": ev.get("allostatic_targets", {}),
+            }
+            economy_instance = drive_economy
+            economy_snapshot = drive_economy.tick(context=economy_context)
+            from System.swarm_artificial_endocrinology import (
+                ArtificialEndocrinology,
+                interoceptive_summary,
+            )
+            from System.swarm_drive_valuation import form_goal, value_candidates
+
+            neuromodulation = ArtificialEndocrinology(_REPO / ".sifta_state").tick(
+                economy_snapshot,
+                satisfaction_prediction_error=float(ev.get("satisfaction_prediction_error", 0.0) or 0.0),
+                arousal_event=float(ev.get("arousal_event", 0.0) or 0.0),
+                social_affinity=float(ev.get("social_affinity", 0.0) or 0.0),
+            )
+            valuation = value_candidates(
+                [
+                    {"name": action, "base_value": score, "cost": 0.0}
+                    for action, score in c1_scores.items()
+                ],
+                snapshot=economy_snapshot,
+                neuromodulation=neuromodulation,
+                economy=drive_economy,
+            )
+            for action in ALL_ACTIONS:
+                if action in valuation.values:
+                    c1_scores[action] = valuation.values[action]
+            drive_deltas = {
+                action: delta * neuromodulation.salience_gain
+                for action, delta in drive_economy.action_score_deltas(economy_snapshot).items()
+            }
+            c1_scores = apply_drive_priors(
+                c1_scores,
+                drive_deltas,
+            )
+            drive_context = drive_context or {}
+            drive_context["economy"] = {
+                "dominant": economy_snapshot.dominant,
+                "top_drives": list(economy_snapshot.top_drives),
+                "action_policy": economy_snapshot.action_policy,
+                "interoception": interoceptive_summary(economy_snapshot),
+                "neuromodulation": neuromodulation.as_dict(),
+                "goal_proposal": form_goal(economy_snapshot).as_dict(),
+                "valuation_policy": valuation.policy,
+            }
+        except Exception:
+            drive_context = drive_context or {}
+            drive_context["economy"] = {"status": "drive_economy_unavailable"}
+
     # LOVE-to-action selector (r333 conscious novelty): feed live love field into basal ganglia.
     # High self_body_care / owner_protective_care / data_appreciation raises priority for
     # ENGAGE/BOND (presence, reply, co-watch continuation) and receipt-preserving behavior
@@ -427,6 +521,14 @@ def pipeline_step(
 
     selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
+    if economy_instance is not None and economy_snapshot is not None:
+        try:
+            economy_instance.record_arbitration(
+                winner_drive=economy_snapshot.dominant,
+                considered_drives=economy_snapshot.top_drives,
+            )
+        except Exception:
+            pass
 
     social_modulation = None
     if theory_of_mind is not None:

@@ -22,6 +22,10 @@ def test_select_winner(tmp_path: Path, monkeypatch) -> None:
     row = json.loads(log.read_text(encoding="utf-8").strip().splitlines()[-1])
     assert row["truth_label"] == "BASAL_GANGLIA_SELECTION"
     assert row["selected_action"] == "co_watch"
+    economy = row["biological_modifiers"]["drive_economy"]
+    assert economy["status"] == "applied"
+    assert economy["dominant"]
+    assert economy["action_policy"] == "bounded_bias_only_requires_existing_gate"
 
 
 def test_disable_env(tmp_path: Path, monkeypatch) -> None:

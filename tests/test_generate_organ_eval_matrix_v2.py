@@ -1,7 +1,84 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+
+def test_source_line_count_handles_unterminated_last_line(tmp_path):
+    import tools.generate_organ_eval_matrix_v2 as gen
+
+    source = tmp_path / "body.py"
+    source.write_bytes(b"one\ntwo\nthree")
+
+    assert gen._source_line_count(source) == 3
+
+
+def test_jsonl_tail_reads_only_latest_rows(tmp_path):
+    import tools.generate_organ_eval_matrix_v2 as gen
+
+    ledger = tmp_path / "large.jsonl"
+    with ledger.open("w", encoding="utf-8") as handle:
+        for idx in range(200):
+            handle.write(json.dumps({"idx": idx, "payload": "x" * 128}) + "\n")
+
+    rows = gen._jsonl_tail(ledger, limit=5, max_bytes=2048)
+
+    assert [row["idx"] for row in rows] == [195, 196, 197, 198, 199]
+
+
+def test_snapshot_census_is_bounded_to_canonical_code_inventory():
+    import tools.generate_organ_eval_matrix_v2 as gen
+
+    census = gen._source_body_census_from_snapshot(
+        {
+            "code_inventory": {
+                "total_files": 3,
+                "total_loc": 42,
+                "by_dir_summary": {
+                    "System": {"files": 2, "loc": 30},
+                    "tests": {"files": 1, "loc": 12},
+                },
+            }
+        }
+    )
+
+    assert census["files"] == 3
+    assert census["lines"] == 42
+    assert census["by_root_lines"]["System"] == 30
+    assert census["manifest"] == []
+    assert "Fast boot view" in census["scope_note"]
+
+
+def test_refresh_body_matrix_uses_fast_render_for_non_force(tmp_path, monkeypatch):
+    import tools.generate_organ_eval_matrix_v2 as gen
+
+    state = tmp_path / ".sifta_state"
+    eval_dir = state / "eval"
+    eval_dir.mkdir(parents=True)
+    matrix = eval_dir / "ORGAN_EVAL_MATRIX_V2.html"
+    matrix.write_text("old", encoding="utf-8")
+    os.utime(matrix, (1.0, 1.0))
+    snapshot = state / "canonical_organ_registry_snapshot.json"
+    snapshot.write_text('{"truth_label":"CANONICAL_ORGAN_REGISTRY_V1"}', encoding="utf-8")
+
+    monkeypatch.setattr(gen, "_REPO", tmp_path)
+    monkeypatch.setattr(gen, "_STATE", state)
+    monkeypatch.setattr(gen, "_EVAL", eval_dir)
+    monkeypatch.setattr(gen, "_OUT", matrix)
+    monkeypatch.setattr(gen, "_newest_registry_source_mtime", lambda: 0.0)
+
+    def fake_build_html(*, fast=False):
+        assert fast is True
+        return "fast body matrix"
+
+    monkeypatch.setattr(gen, "build_html", fake_build_html)
+
+    out = gen.refresh_body_matrix(force=False)
+
+    assert out["regenerated"] is True
+    assert out["mode"] == "fast_snapshot_cached"
+    assert matrix.read_text(encoding="utf-8") == "fast body matrix"
 
 
 def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypatch):
@@ -198,6 +275,10 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert "Visible topbar text" in html
     assert "STGM 10.000" in html
     assert "same organism" in html
+    assert "Persistent Endogenous Motivational Control System" in html
+    assert "LONG_HORIZON_UNPROVEN" in html
+    assert "motivational_control_evidence.jsonl" in html
+    assert "NOT YET PROVEN" in html
     assert "Quantum / Stigmergy Boundary" in html
     assert "Willow article boundary" in html
     assert "not evidence for parallel universes" in html

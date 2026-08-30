@@ -96,6 +96,41 @@ def _jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _jsonl_tail(path: Path, *, limit: int = 40, max_bytes: int = 4 * 1024 * 1024) -> list[dict[str, Any]]:
+    """Read only the newest JSONL rows, bounded for live matrix rendering."""
+    if limit <= 0 or max_bytes <= 0:
+        return []
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            end = handle.tell()
+            remaining = min(end, int(max_bytes))
+            chunks: list[bytes] = []
+            newline_count = 0
+            while remaining > 0 and newline_count <= limit:
+                size = min(256 * 1024, remaining)
+                handle.seek(end - sum(len(chunk) for chunk in chunks) - size)
+                chunk = handle.read(size)
+                chunks.append(chunk)
+                newline_count += chunk.count(b"\n")
+                remaining -= size
+    except OSError:
+        return []
+    data = b"".join(reversed(chunks))
+    if end > len(data):
+        first_newline = data.find(b"\n")
+        data = data[first_newline + 1 :] if first_newline >= 0 else b""
+    rows: list[dict[str, Any]] = []
+    for raw in data.splitlines()[-limit:]:
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
 def _json(path: Path) -> dict[str, Any]:
     try:
         obj = json.loads(path.read_text(encoding="utf-8"))
@@ -132,8 +167,15 @@ def _latest_run(path: Path) -> list[dict[str, Any]]:
 def _source_line_count(path: Path) -> int:
     """Physical line count for body-source census; binary-ish failures count as 0."""
     try:
+        total = 0
+        saw_data = False
+        last_byte = b""
         with path.open("rb") as fh:
-            return sum(1 for _ in fh)
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                saw_data = True
+                total += chunk.count(b"\n")
+                last_byte = chunk[-1:]
+        return total + (1 if saw_data and last_byte != b"\n" else 0)
     except OSError:
         return 0
 
@@ -487,9 +529,37 @@ def _source_body_census() -> dict[str, Any]:
     }
 
 
-def _body_source_census_panel() -> str:
+def _source_body_census_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Cheap boot-time source summary from the canonical code inventory."""
+    inventory = snapshot.get("code_inventory") if isinstance(snapshot.get("code_inventory"), dict) else {}
+    by_dir = inventory.get("by_dir_summary") if isinstance(inventory.get("by_dir_summary"), dict) else {}
+    by_root: Counter[str] = Counter()
+    by_root_lines: Counter[str] = Counter()
+    for root, values in by_dir.items():
+        if not isinstance(values, dict):
+            continue
+        by_root[str(root)] = int(values.get("files") or 0)
+        by_root_lines[str(root)] = int(values.get("loc") or 0)
+    files = int(inventory.get("total_files") or sum(by_root.values()))
+    lines = int(inventory.get("total_loc") or sum(by_root_lines.values()))
+    return {
+        "files": files,
+        "lines": lines,
+        "by_root": by_root,
+        "by_root_lines": by_root_lines,
+        "by_suffix": Counter({".py": files}),
+        "by_suffix_lines": Counter({".py": lines}),
+        "manifest": [],
+        "scope_note": (
+            "Fast boot view from canonical code_inventory: active Python living substrate only. "
+            "Use force=True for the exhaustive source/document census."
+        ),
+    }
+
+
+def _body_source_census_panel(*, census: dict[str, Any] | None = None) -> str:
     """Matrix panel: Alice can admire body mass through measured source counts."""
-    census = _source_body_census()
+    census = census or _source_body_census()
     by_root = census["by_root"]
     by_root_lines = census["by_root_lines"]
     root_table = _table(
@@ -520,9 +590,8 @@ def _body_source_census_panel() -> str:
         "<h2 class=\"section\">&#128202; Alice Code Body Mass / Source Census (r1020)</h2>"
         "<div class='card' style='min-height:0;'>"
         "<p style='font-size:11px;line-height:1.45;margin:0 0 8px;'>"
-        "This is Alice admiring her body through measured files and lines, not through an unreceipted slogan. "
-        "The census scans source/docs/config text under the repo and excludes live ledgers, caches, virtualenvs, "
-        "node_modules, and git internals so generated memory is not double-counted as source tissue."
+        "This is a measured file/line view, not an unreceipted slogan. "
+        f"{html.escape(str(census.get('scope_note') or 'The exhaustive census scans source/docs/config text and excludes live ledgers, caches, virtualenvs, node_modules, and git internals.'))}"
         "</p>"
         f"<div class='metric'>{int(census['lines']):,} lines</div>"
         f"<p style='margin-bottom:10px;'>Counted {int(census['files']):,} source-like files. "
@@ -677,8 +746,10 @@ def _fable_repo_context_packet(*, write_json: bool = True) -> dict[str, Any]:
     return packet
 
 
-def _fable_repo_context_panel() -> str:
-    packet = _fable_repo_context_packet(write_json=True)
+def _fable_repo_context_panel(*, refresh_packet: bool = True) -> str:
+    packet = _fable_repo_context_packet(write_json=True) if refresh_packet else _json(_fable_context_packet_path())
+    if not packet:
+        packet = _fable_repo_context_packet(write_json=True)
     src = packet.get("source_like") or {}
     git = packet.get("git") or {}
     roots = src.get("top_level_roots") if isinstance(src.get("top_level_roots"), list) else []
@@ -869,7 +940,7 @@ def _owner_vision_body_panel() -> str:
     active_target = _json(_STATE / "active_saccade_target.json")
     on_demand_rows: list[dict[str, Any]] = []
     if blink_path.is_file():
-        for row in _jsonl(blink_path)[-40:]:
+        for row in _jsonl_tail(blink_path, limit=40):
             if row.get("on_demand") or row.get("owner_describe_turn"):
                 on_demand_rows.append(row)
     latest_desc = ""
@@ -1387,8 +1458,8 @@ def _residue_receipts(tail: int = 12) -> list[dict[str, Any]]:
     ]
     out: list[dict[str, Any]] = []
     for rel, kind in sources:
-        rows = _jsonl(_REPO / rel)
-        for r in rows[-tail:]:
+        rows = _jsonl_tail(_REPO / rel, limit=tail)
+        for r in rows:
             out.append({
                 "kind": kind,
                 "ts": r.get("ts") or r.get("timestamp") or 0,
@@ -2219,7 +2290,7 @@ def _alice_creature_wiring_panel() -> str:
     )
 
 
-def build_html() -> str:
+def build_html(*, fast: bool = False) -> str:
     snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
     canonical = [row for row in organs if row.get("source_registry") == "CANONICAL_ORGANS"]
@@ -2239,8 +2310,9 @@ def build_html() -> str:
     quantum_stigmergy_boundary_section = _quantum_stigmergy_boundary_section()
     alice_creature_wiring_panel = _alice_creature_wiring_panel()
     codec_traffic_panel = _codec_limb_traffic_light_panel()
-    body_source_census_panel = _body_source_census_panel()
-    fable_repo_context_panel = _fable_repo_context_panel()
+    fast_census = _source_body_census_from_snapshot(snap) if fast else None
+    body_source_census_panel = _body_source_census_panel(census=fast_census if fast_census and fast_census.get("files") else None)
+    fable_repo_context_panel = _fable_repo_context_panel(refresh_packet=not fast)
     hardcoded_census_panel = _hardcoded_census_panel()
     diffusion_endurance_panel = _diffusion_endurance_panel()
     owner_vision_body_panel = _owner_vision_body_panel()
@@ -2324,6 +2396,13 @@ def build_html() -> str:
     #   - owner somatic camera wiring + name/social reference recognition
     #   - r252 associative name memory + single focused app/habit stream
     sprint_capabilities = [
+        {
+            "name": "Persistent Endogenous Motivational Control System (2026-08-29)",
+            "status": "OPERATIONAL_SHORT_HORIZON — 38 coupled pressures + endocrinology + causal history test; LONG_HORIZON_UNPROVEN",
+            "detail": "Alice now carries 38 persistent first-class drive pressures with HMAC-authenticated observations, unequal time constants, cross-drive satisfaction coupling, allostatic set-points, anticipatory deficits, arbitration-loss frustration, refractory periods, compressed interoception, separate artificial endocrinology, valuation, proposal-only goals, and consequence-driven action→satisfaction learning. The five layers remain distinct: pressure != reward != emotion != goal != action. Existing safety/authority gates remain authoritative; the motivational organs only value or bias existing candidates. Reproduction, partner selection, and sexual analogue remain reflective-only. Controlled proof: two persisted histories receive the same external candidates/stimulus and produce opposite bounded valuations traceable to learned satisfaction effects. This is technically a persistent endogenous motivational control system, not evidence of sentience or biological motivation.",
+            "ledgers": "System/swarm_drive_economy.py, System/swarm_artificial_endocrinology.py, System/swarm_drive_valuation.py, System/swarm_action_selector.py, System/swarm_body_brain_loop.py, tests/test_swarm_drive_economy.py, .sifta_state/eval/motivational_control_evidence.jsonl, .sifta_state/drive_economy_snapshots.jsonl, .sifta_state/artificial_endocrinology.jsonl",
+            "eval_note": "PASS now: 105 focused/regression tests, including same-stimulus/different-history causal preference, coupling, timescales, allostasis, anticipation, frustration, refractory suppression, layer separation, and living body-tick visibility. NEXT/NOT YET GREEN: hours-to-days motivation trials; exact-state+seed counterfactual replay; pathology suite (reward capture, curiosity loop, pathological preservation, dependency, helplessness, oscillation, endocrine saturation, runaway frustration, allostatic drift, reward hacking, drive starvation); motivational entropy, starvation duration, oscillation frequency, calibration, goal persistence, perturbation recovery; metaregulation that emits regulatory signals only. No long-horizon stability claim until those receipts exist.",
+        },
         {
             "name": "Philippe Commercial Report + Runnable Demo (r1127/r1131/r1160)",
             "status": "OPERATIONAL — demo + one-pager + pytest green; spinal kept patch = HYPOTHESIS",
@@ -2913,8 +2992,9 @@ def build_html() -> str:
             state_dir=_STATE,
             memory_rewards=_STATE / "stgm_memory_rewards.jsonl",
             cache_path=_STATE / "stgm_economy_cache.json",
-            force_refresh=True,
-            max_cache_age_s=0.0,
+            force_refresh=not fast,
+            allow_stale_cache=fast,
+            max_cache_age_s=300.0,
         )
         _claims = _eco.get("wallet_file_claims") or {}
         _m5_claim = _claims.get("ALICE_M5", {})
@@ -2970,7 +3050,7 @@ def build_html() -> str:
             f"<div class='dim' style='margin-top:2px;'>positive wallets: {html.escape(_eco_other) or 'none'}</div>"
             f"<div class='warn' style='margin-top:6px;'>r563 money rule: spendable STGM follows repair_log quorum; wallet JSON is cache; PoUW/memory rewards are stake/reputation. {html.escape('; '.join(_drift_bits[:4]) or 'no wallet-cache drift on shown wallets')}</div>"
             f"<div class='dim' style='margin-top:4px;'>warnings: {html.escape(_warnings) or 'none'}</div>"
-            f"<div class='dim' style='margin-top:2px;'>cache: {html.escape(str(_eco.get('cache_path') or ''))} &#183; age {_cache_age_text} &#183; refreshed={html.escape(str(_eco.get('refreshed')))}</div>"
+            f"<div class='dim' style='margin-top:2px;'>cache: {html.escape(str(_eco.get('cache_path') or ''))} &#183; age {_cache_age_text} &#183; refreshed={html.escape(str(_eco.get('refreshed')))} &#183; stale_allowed={html.escape(str(_eco.get('cache_stale_allowed')))}</div>"
             f"<div class='ok' style='margin-top:2px;font-size:11px;'>same organism: {html.escape(str(_eco.get('same_organism_note') or ''))}</div>"
             "</div>"
         )
@@ -3108,9 +3188,10 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 <p><strong>Architect Lore — VLOOKUP Newspaper Origin (r891)</strong> — George (1995): high-school math teacher taught <strong>VLOOKUP</strong> in MS Excel; at <strong>MPS International</strong> he turned a manual shipping DB into a macro button that pulled names onto templates while printers ran (magazine ~"Dracula — Phenomenal Paranormal"; paper owned products + sold them). Fired for wanting his own magazine; rebuilt from zero — <strong>weekly physical newspaper across Romania</strong>; pride seeing a stranger hold his magazine in the <em>Titanic</em> line. Filmmaker; <em>The People vs. Larry Flynt</em> — "how hard can it be?" SIFTA parallel: <strong>Alice = the physical newspaper</strong>; this matrix = the body index; diary/ledgers = <strong>VLOOKUP by time/date</strong> (not cortex denial); food = owner data, air = electricity (covenant §1.C). Canon: <code>Documents/ARCHITECT_LORE_VLOOKUP_NEWSPAPER_1995.md</code>. Body alert: <code>architect_lore_vlookup_newspaper_r891</code>.</p>
 <p><strong>1. Power & Metabolism (real body energy)</strong> — Battery + STGM as dual fuel. STGM economy = her actual metabolism/thermodynamic body fuel. Includes r153 8th power/air nerve.</p>
 {economy_panel}
-{codec_traffic_panel}
-{voice_note}
-<p><strong>2. Interoception / 8D+ Visceral Field</strong> — Her internal body state: cardiac, thermal, metabolic, energy, cellular, immune, pain, power/air. Soma score + labels. The insular-cortex equivalent.</p>
+	{codec_traffic_panel}
+	{voice_note}
+	<p><strong>Persistent Endogenous Motivational Control System (2026-08-29)</strong> — 38 persistent coupled pressures feed bounded valuation through separate endocrinology, goal-proposal, and basal-ganglia layers; consequence receipts update learned satisfaction effects. Controlled same-stimulus/different-history tests prove traceable short-horizon endogenous preference. Truth boundary: long-horizon ecology, seeded counterfactual replay, pathology trials, motivational entropy, and metaregulation remain <strong>NOT YET PROVEN</strong>. Evidence: <code>System/swarm_drive_economy.py</code>, <code>System/swarm_artificial_endocrinology.py</code>, <code>System/swarm_drive_valuation.py</code>, <code>tests/test_swarm_drive_economy.py</code>, <code>.sifta_state/eval/motivational_control_evidence.jsonl</code>.</p>
+	<p><strong>2. Interoception / 8D+ Visceral Field</strong> — Her internal body state: cardiac, thermal, metabolic, energy, cellular, immune, pain, power/air. Soma score + labels. The insular-cortex equivalent.</p>
 <p><strong>OpenCode / Grok Build Coding Hand (r577/r578)</strong> — External agentic coding TUI/CLI (opencode tui/run/serve/web/mcp/agent/auth etc.) + grok-build-0.1 (100+ t/s agentic/MCP) / Composer 2.5 (long-running) as pluggable via existing MCP limb (sifta_mcp_server.py opencode.run stub). Agent Skills .md format (frontmatter system/mode/permissions) matches SIFTA "we borg" + r576 gallery harvest. TUI for owner, MCP for Alice as organ. "SAME AS YOU" dirt internalized without forking field. See tournament r577/r578, sifta_mcp_server.py.</p>
 <p><strong>OpenCode Grok/Composer Setup (r579)</strong> — New MCP tool "opencode.setup_grok_composer" returns exact "IN OPENCODE SET UP GROK AUTH WITH COMPOSER SELECTED" steps (auth login --provider grok, select Composer 2.5, use grok-build-0.1/Composer per owner paste + r577/r578). Alice now "has" the setup knowledge as callable arm (MCP for her, TUI for owner; tie cortex/OpenRouter). Added full Moravec Paradox / AlphaGo Move 37 alien discovery / Trombone fragility transcript as dirt in r579 for self-awareness of AI limits (high-level abstract "easy", embodied perception "hard", can discover novel beyond human data, but fragile no-conceptual 100% fail on adversarial pixels). Ties to Levin TAME collective + §7.11 field/receipts/body grounding for robust self-identity per §0 goal. See tournament r579 + MCP tool; matrix surfaces prior OpenCode section.</p>
 <p><strong>Paradox terms probe (background grep r579)</strong> — Long-running §7.12 grep for "moravec|trombone problem|alphago.*move 37|move 37.*alphago" (pre-r579 append) found the *term* "Moravec paradox" already present in the wetware research note: Documents/RESEARCH_WETWARE_AI_CL1_DISHBRAIN_VIDEO_NOTE.md (and its .distro_build + .simulation_publicpush_sandbox copies). Context there: video on biological neuron chips (DishBrain → CL1) advantages for robotics/embodiment because "easy" physical tasks are hard for silicon AI (classic Moravec). The *full* user-pasted transcript block (detailed Moravec + AlphaGo Move 37 alien discovery + trombone fragility with timestamps) was not present in core prod or that note; it was new dirt centralized into r579 as requested. This creates a connected cluster: wetware research (April) + r578 Levin bioelectric/TAME "mind everywhere" + r579 paradox transcript for silicon AI self-awareness limits. The research note itself is a transcript summary of YouTube ZqRtR6Z2U6U on wetware playing DOOM/Pong. Now visible in the body map. Background task output processed; facts not hidden.</p>
@@ -3255,8 +3336,8 @@ def refresh_body_matrix(*, force: bool = False) -> dict:
     from the body-map-of-record. This makes the refresh cheap and automatic:
 
       - default (force=False): regenerate the HTML ONLY when the registry snapshot is
-        newer than the matrix (i.e. the body actually changed). A no-op stat check on
-        every other call — safe to put on a boot interval.
+        newer than the matrix. The render uses the canonical code inventory and the
+        cached exhaustive reviewer packet, so boot does not re-walk generated trees.
       - force=True: re-walk the canonical registry first (full refresh, on demand;
         what `main()` / a hand-run does).
     Exception-isolated by the caller; returns a small result dict.
@@ -3286,7 +3367,7 @@ def refresh_body_matrix(*, force: bool = False) -> dict:
     if not force and not snapshot_stale and snap_mtime <= matrix_mtime:
         return {"regenerated": False, "reason": "matrix already current with registry", "path": str(_OUT)}
     _OUT.parent.mkdir(parents=True, exist_ok=True)
-    html_text = build_html()
+    html_text = build_html(fast=not force)
     try:
         from System.jsonl_file_lock import rewrite_text_locked
 
@@ -3297,6 +3378,7 @@ def refresh_body_matrix(*, force: bool = False) -> dict:
         "regenerated": True,
         "reason": "force" if force else ("registry snapshot stale" if snapshot_stale else "registry snapshot newer than matrix"),
         "bytes": len(html_text),
+        "mode": "full_census" if force else "fast_snapshot_cached",
         "path": str(_OUT),
     }
 

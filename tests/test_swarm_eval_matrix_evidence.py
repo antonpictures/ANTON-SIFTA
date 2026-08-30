@@ -6,6 +6,7 @@ import time
 
 from System.swarm_eval_matrix_evidence import (
     evidence_score_for_row,
+    ledger_evidence_rows,
     panel_evidence_rows,
     score_panel_evidence_rows,
 )
@@ -18,6 +19,31 @@ def test_shadow_swimmer_panel_evidence_declares_mana_boundary():
     assert shadow["ledger"] == ".sifta_state/ide_stigmergic_trace.jsonl"
     assert shadow["mana_is_crypto"] is False
     assert shadow["stgm_is_crypto"] is True
+
+
+def test_eval_matrix_names_cortex_switch_and_spinal_truth_lanes():
+    rows = {row["panel"]: row for row in panel_evidence_rows()}
+
+    assert rows["cortex_switch_truth"] == {
+        "panel": "cortex_switch_truth",
+        "path": "System/swarm_cortex_switch_intent.py",
+        "ledger": ".sifta_state/cortex_selection_receipts.jsonl",
+    }
+    assert rows["spinal_cord"] == {
+        "panel": "spinal_cord",
+        "path": "System/swarm_spinal_cord.py",
+        "ledger": ".sifta_state/spinal_cord_cycles.jsonl",
+    }
+
+
+def test_eval_matrix_names_persistent_endogenous_motivation_evidence():
+    rows = {row["panel"]: row for row in panel_evidence_rows()}
+
+    assert rows["persistent_endogenous_motivation"] == {
+        "panel": "persistent_endogenous_motivation",
+        "path": "System/swarm_drive_economy.py",
+        "ledger": ".sifta_state/eval/motivational_control_evidence.jsonl",
+    }
 
 
 def test_eval_cell_without_named_evidence_cannot_be_green(tmp_path):
@@ -161,3 +187,45 @@ def test_live_matrix_reports_a_row_count_for_every_cell():
         assert "evidence_rows" in scored, scored["panel"]
         if scored["status"] == "green":
             assert scored["evidence_rows"], f"{scored['panel']} is green with no rows"
+
+
+def test_activation_filter_counts_only_current_epoch(tmp_path):
+    ledger = tmp_path / "evidence.jsonl"
+    ledger.write_text(
+        '{"activation_id":"old"}\n'
+        '{"activation_id":"current"}\n'
+        '{"activation_id":"current"}\n'
+        '{"untagged":true}\n',
+        encoding="utf-8",
+    )
+
+    assert ledger_evidence_rows(ledger) == 4
+    assert ledger_evidence_rows(ledger, activation_id="current") == 2
+    assert ledger_evidence_rows(ledger, activation_id="missing") == 0
+
+
+def test_panel_scoring_propagates_activation_epoch(tmp_path):
+    code = tmp_path / "System" / "organ.py"
+    ledger = tmp_path / ".sifta_state" / "organ.jsonl"
+    code.parent.mkdir(parents=True)
+    ledger.parent.mkdir(parents=True)
+    code.write_text("# organ\n", encoding="utf-8")
+    ledger.write_text('{"activation_id":"current"}\n', encoding="utf-8")
+    row = {
+        "panel": "organ",
+        "path": "System/organ.py",
+        "ledger": ".sifta_state/organ.jsonl",
+    }
+
+    current = score_panel_evidence_rows(
+        [row], repo_root=tmp_path, activation_id="current"
+    )
+    missing = score_panel_evidence_rows(
+        [row], repo_root=tmp_path, activation_id="missing"
+    )
+
+    assert current["activation_id"] == "current"
+    assert current["rows"][0]["status"] == "green"
+    assert current["rows"][0]["evidence_rows"] == 1
+    assert missing["rows"][0]["status"] == "yellow"
+    assert "no_evidence_for_activation" in missing["rows"][0]["problems"]
