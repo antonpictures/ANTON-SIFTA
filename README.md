@@ -63,6 +63,41 @@ retries and output-limit loops. A new session restores the expected small-task
 behavior. Local models are useful coding arms inside Alice, but their output is
 still proposed work: review changes and receipts before accepting them.
 
+### Verified local-development checkpoint (2026-08-30)
+
+The prepared local-development work was audited after a Harness session mixed
+unrelated work into its Git index. The index was cleared without deleting the
+working tree, false machine-specific README claims were removed, and the code
+was regrouped around its real tests.
+
+- **Model Silicon Foundry:** a SIFTA app and backend now inspect one exact local
+  Ollama model, fingerprint its weights, and build a receipted pre-silicon
+  vendor/verification package. The live probe found
+  `krishairnd/Gemma-4-Uncensored:latest` as Gemma 4 8B Q4_K_M with digest prefix
+  `sha256:abb8e56b1d85dea8f`. License clearance remains `BLOCKED`; RTL, tapeout,
+  fabrication, packaging, and physical-chip status remain explicitly
+  `NOT_FABRICATED`.
+- **Talk reliability:** exact-URL article summaries require a fresh matching
+  readable-page receipt; microphone capture can use the device-native rate and
+  resample to 16 kHz; zero-sample streams are detected and reconnected; ambient
+  phone audio stays out of owner dialogue memory; body time/place and screenshot
+  failures receive grounded responses.
+- **Causal and motivational plumbing:** activation/initiator context, workflow
+  stages, drive economy/dynamics, valuation, lived-experience evidence, spinal
+  receipts, cortex switching, and evaluation panels are covered by focused
+  regression tests. These are operational software mechanisms, not proof of
+  subjective consciousness.
+- **Voice latency proposal:** We Code Together receipt
+  `ccfe5cf6-0087-4a43-868a-c4d9b7388a20` records a streaming STT -> bounded fast
+  local response -> streaming TTS lane with deep-cortex fallback. It is a
+  proposal, not yet implemented, and gives the fast lane no direct tool or
+  effector authority.
+
+Verification groups completed with `195 passed`, `151 passed`, and `32 passed`.
+The desktop-shape group completed `30 passed` before a macOS Qt teardown crash
+after pytest had printed its final result; this is reported as a teardown gap,
+not silently counted as a clean process exit.
+
 > *"AGI requires general, robust problem-solving and learning open-ended
 > self-improvement, and autonomy that reliably exceeds narrow human-designed
 > bounds.  For the Swarm."* 🐜⚡
