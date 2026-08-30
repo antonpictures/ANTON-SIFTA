@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -83,6 +85,9 @@ _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
 _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 _PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
 APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
+_HARNESS_ROOT = REPO / "deepseek-harness-master"
+_HARNESS_URL = "http://127.0.0.1:3080"
+_HARNESS_BOOT_LOG = _STATE / "deepseek_harness_boot.log"
 _DESKTOP_CHROME_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -96,6 +101,66 @@ def _record_browser_hardening(event: str, **details) -> None:
         event,
         details=details,
     )
+
+
+def _local_port_is_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.35):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_local_harness() -> str:
+    """Reuse or start the local Harness without creating a second listener."""
+    if os.environ.get("SIFTA_DISABLE_HARNESS_AUTOSTART") == "1":
+        return "disabled_for_process"
+    if _local_port_is_open("127.0.0.1", 3080):
+        _record_browser_hardening(
+            "deepseek_harness_reused",
+            url=_HARNESS_URL,
+            workspace=str(REPO),
+            model_source="local-ollama",
+        )
+        return "already_running"
+    if not _HARNESS_ROOT.is_dir():
+        _record_browser_hardening(
+            "deepseek_harness_missing",
+            harness_root=str(_HARNESS_ROOT),
+        )
+        return "missing"
+    _STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        log = _HARNESS_BOOT_LOG.open("a", encoding="utf-8")
+        env = os.environ.copy()
+        # The launcher must run from its checkout, while sessions should edit SIFTA.
+        env["DSH_CWD"] = str(REPO)
+        env["SIFTA_WORKSPACE_ROOT"] = str(REPO)
+        subprocess.Popen(
+            ["pnpm", "dsh", "--profile", "web", "--port", "3080"],
+            cwd=str(_HARNESS_ROOT),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        _record_browser_hardening(
+            "deepseek_harness_start_requested",
+            url=_HARNESS_URL,
+            workspace=str(REPO),
+            model_source="local-ollama",
+            log=str(_HARNESS_BOOT_LOG),
+        )
+        return "start_requested"
+    except Exception as exc:
+        _record_browser_hardening(
+            "deepseek_harness_start_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            harness_root=str(_HARNESS_ROOT),
+        )
+        return "start_failed"
 
 
 def stage_pending_slideshow(url: str, js: str, *, ttl_s: float = 90.0) -> dict:
@@ -199,6 +264,18 @@ _HOME_HTML = """<!DOCTYPE html>
     justify-content: center;
     max-width: 600px;
   }
+  .program {
+    width: min(600px, 100%);
+    background: linear-gradient(135deg, #102b32, #162238);
+    border: 1px solid #00e5ff66;
+    border-radius: 14px;
+    padding: 20px 22px;
+    text-align: left;
+    box-shadow: 0 8px 30px rgba(0,229,255,0.08);
+  }
+  .program a { color: #e6edf3; text-decoration: none; display: block; }
+  .program strong { color: #00e5ff; font-size: 16px; }
+  .program small { display: block; color: #8b949e; margin-top: 7px; line-height: 1.45; }
   .bk {
     background: #161b22;
     border: 1px solid #30363d;
@@ -254,6 +331,12 @@ _HOME_HTML = """<!DOCTYPE html>
     <div class="logo">🌐</div>
     <h1>Alice Browser</h1>
     <p class="subtitle">Stigmergic web access — every page visit is a receipt</p>
+  </div>
+  <div class="program">
+    <a href="http://127.0.0.1:3080">
+      <strong>🧠 Program Alice Locally</strong>
+      <small>Open DeepSeek Harness in the SIFTA workspace · local Ollama models · port 3080</small>
+    </a>
   </div>
   <div class="bookmarks">
     <a class="bk" href="https://google.com">🔍 Google</a>
@@ -1052,6 +1135,7 @@ class AliceBrowserWidget(QMainWindow):
         self._setup_ui()
         self._apply_style()
         self._navigate(_HOME_URL)
+        self._harness_boot_status = _ensure_local_harness()
         # ── Stigmergic URL drop file polling (AG46 2026-05-07) + r545 watcher ───────────────
         # Alice Browser checks .sifta_state/alice_browser_open_url.txt (dir watch for instant on write,
         # 2s timer fallback). When found, navigates to the URL and deletes the file.

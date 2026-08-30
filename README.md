@@ -38,6 +38,31 @@ operator should read the age, evidence-row count, and live sensor status before
 making a claim. Full implementation and verification record:
 [`Documents/WE_CODE_TOGETHER_R1745_THE_HANDSHAKE.md`](Documents/WE_CODE_TOGETHER_R1745_THE_HANDSHAKE.md).
 
+## Local coding from inside Alice — DeepSeek Harness (2026-08-30)
+
+Alice Browser now presents **Program Alice Locally** as its primary home-page
+action. It opens the local DeepSeek Harness web interface at
+`http://127.0.0.1:3080`, with the SIFTA repository supplied as the intended
+workspace and the Harness configured to use local Ollama models. Browser startup
+reuses an existing listener on port 3080 or starts one when the port is free; it
+does not kill or duplicate a running Harness. Startup outcomes are written to
+the app-hardening ledger, and process output goes to
+`.sifta_state/deepseek_harness_boot.log`.
+
+The integration was verified on the owner node: the web profile returned HTTP
+200, the `ANTON_SIFTA` workspace was visible, local models could read SIFTA
+files and invoke tools, and Ollama showed the selected model resident on the
+GPU. The Harness checkout and its installed dependencies are local prerequisites
+under `deepseek-harness-master/`; the 1.5 GB working checkout is intentionally
+not added to this repository by this integration.
+
+**Operational rule:** start a fresh Harness session for a new task. Continuing
+an old agent session can preserve a very large trajectory; one observed session
+fed roughly 2.4 million historical input tokens into a trivial greeting, causing
+retries and output-limit loops. A new session restores the expected small-task
+behavior. Local models are useful coding arms inside Alice, but their output is
+still proposed work: review changes and receipts before accepting them.
+
 > *"AGI requires general, robust problem-solving and learning open-ended
 > self-improvement, and autonomy that reliably exceeds narrow human-designed
 > bounds.  For the Swarm."* 🐜⚡
