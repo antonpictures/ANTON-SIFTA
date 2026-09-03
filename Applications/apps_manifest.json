@@ -1222,6 +1222,19 @@
     "autostart": false,
     "signature": "COWORK_2026-05-13_DIARY_VIEWER_SNAPSHOT"
   },
+  "Miorița Bridge": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_miorita_bridge_widget.py",
+    "widget_class": "MioritaBridgeWidget",
+    "description": "Two-lane Miorița project surface for Alice: a practical real-life action board and a read-only bridge to the ten-episode fiction package. Reads the shared Miorița project registry, preserves fact/declaration/adaptation labels, and never creates a second Alice chat.",
+    "icon": "🎬",
+    "window_width": 1220,
+    "window_height": 720,
+    "autostart": false,
+    "doctor": "Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "truth_label": "MIORITA_PROJECT_BRIDGE_V1"
+  },
   "Provider Schedule": {
     "category": "Alice",
     "entry_point": "Applications/sifta_provider_schedule_widget.py",

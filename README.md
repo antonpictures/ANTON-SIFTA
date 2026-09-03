@@ -13,6 +13,26 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 The release name is a surface identity, not a second organism: eXistenZ is the
 v9 distribution clothing for the same receipt-first SIFTA field.
 
+## Private Miorița production bridge (2026-09-03)
+
+The local **Miorița Bridge** gives Alice a two-surface view of George's film
+project: bounded real-life next actions and the explicitly fictional season
+development lane. The project archive itself lives outside this repository at
+`/Users/ioanganton/Documents/Miorita`; the app does not copy private source
+material into SIFTA or create a second Alice/chat identity.
+
+A private Season 2 source pass consolidated 514 development screenshots from
+April-August 2026, ordered them by macOS file-creation time, fingerprinted each
+source, and extracted text locally with Apple Vision. Every screenshot has a
+manifest and story-data relationship, while raw OCR remains unverified until
+checked against its image. The archive documents SIFTA's construction process;
+it is not evidence that subjective consciousness has been established.
+
+**Publication boundary:** no screenshot, OCR corpus, private family material,
+or Miorița story database is included in this Git repository. Only the bridge
+code and this high-level method record are public. The screenshot history is
+reserved for Season 2 and is not routed into the ten Season 1 episodes.
+
 ## Current operational evidence — r1745 (2026-08-09)
 
 SIFTA is a living-software research project in the practical sense that matters
