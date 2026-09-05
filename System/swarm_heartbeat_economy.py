@@ -177,8 +177,8 @@ def _commit_pending(sd: Path, ledger: Path, state: dict, path: Path) -> None:
     _save(sd / "heartbeat_economy_latest.json", event)
     state.pop("pending")
     _save(path, state)
-    # Let the existing desktop cache worker refresh the canonical topbar.
-    (sd / "stgm_economy_cache.json").unlink(missing_ok=True)
+    # Preserve the last validated balance until the asynchronous HUD cache
+    # refresher sees this newer settlement. Never blank the wallet between beats.
 
 
 def status_lines(state_dir: Path) -> list[str]:

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -433,12 +435,21 @@ def _write_stgm_economy_cache(data: Dict[str, Any], cache_path: Optional[Path] =
     result["cache_source"] = "computed"
     result["cache_generated_at"] = time.time()
     result["cache_written"] = str(cache_path)
+    temp_path = None
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_path.parent,
+                                         prefix=cache_path.name + ".", delete=False) as f:
+            temp_path = Path(f.name)
             json.dump(result, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, cache_path)
     except Exception as _e:
         result.setdefault("warnings", []).append(f"cache_write_failed:{_e}")
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
     return result
 
 

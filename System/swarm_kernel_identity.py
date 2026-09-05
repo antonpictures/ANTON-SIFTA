@@ -3,6 +3,7 @@ Phase 1: Kernel Identity Accessor.
 Single source of truth for hardware binding and ownership in the SIFTA architecture.
 """
 import json
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -452,13 +453,17 @@ def ai_can_be_called() -> list:
     return names
 
 
+def ai_node_label() -> str:
+    """Public display suffix, not an authentication key or raw hardware serial."""
+    silicon = str(_read_genesis().get("silicon") or "").strip()
+    if not silicon or silicon.upper() == "UNKNOWN":
+        return "node-unbound"
+    return "node-" + hashlib.sha256(silicon.encode("utf-8")).hexdigest()[:12]
+
+
 def ai_lineage_title() -> str:
-    """Name plus live provider lineage, e.g. 'Alice of Gemma'."""
-    primary = ai_name()
-    provider = ai_provider_name()
-    if provider and provider.lower() != primary.lower():
-        return f"{primary} of {provider}"
-    return primary
+    """Stable system title; changing inference providers never renames a node."""
+    return f"{ai_name()} of SIFTA #{ai_node_label()}"
 
 
 def ai_identity_sentence() -> str:
@@ -467,10 +472,8 @@ def ai_identity_sentence() -> str:
     receipt-first session framing, keep those as separate sentences —
     THIS helper only carries the *name*.
 
-    Examples (real composition from live state):
-      'I am Alice of Gemma. The active weights are Gemma4. ioan george anton calls me Alice.'
-      'I am Lola of Llama. The active weights are Llama3. ioan george anton calls me Lola.'
-      'I am Alice.'  (pre-genesis or no detectable weight/provider tag)
+    System name, hardware-bound node label and model provenance are separate.
+    An owner-chosen alias is preserved; the label does not rename wallet IDs.
     """
     primary = ai_name()
     lineage = ai_lineage_title()
@@ -478,7 +481,9 @@ def ai_identity_sentence() -> str:
     weight = ai_weight_name()
     owner = owner_display_name("")
     parts = [f"I am {lineage}."]
-    if weight and weight.lower() not in {primary.lower(), provider.lower()}:
+    if provider:
+        parts.append(f"The model provider/family is {provider}; it is a component, not my system name.")
+    if weight and weight.lower() != primary.lower():
         parts.append(f"The active weights are {weight}.")
     if owner and owner.lower() not in (primary.lower(), "the local human"):
         parts.append(f"{owner} calls me {primary}.")

@@ -3888,7 +3888,12 @@ class SiftaDesktop(QMainWindow):
         last = float(getattr(self, "_stgm_hud_last_refresh_mono", 0.0) or 0.0)
         cached = getattr(self, "_stgm_hud_cached_balance", None)
         source = str(getattr(self, "_stgm_hud_source", "not_loaded") or "not_loaded")
-        if not force and cached is not None and (now_mono - last) < _DESKTOP_STGM_HUD_REFRESH_S:
+        try:
+            cache_version = (_REPO / ".sifta_state" / "stgm_economy_cache.json").stat().st_mtime_ns
+        except OSError:
+            cache_version = None
+        same_cache = cache_version == getattr(self, "_stgm_hud_cache_version", None)
+        if not force and same_cache and cached is not None and (now_mono - last) < _DESKTOP_STGM_HUD_REFRESH_S:
             return cached, source
 
         value, source = _cached_stgm_balance_for_topbar()
@@ -3900,6 +3905,7 @@ class SiftaDesktop(QMainWindow):
         self._stgm_hud_cached_balance = value
         self._stgm_hud_source = source
         self._stgm_hud_last_refresh_mono = now_mono
+        self._stgm_hud_cache_version = cache_version
         return value, source
 
     def _update_stgm_balance_hud(self, *, force: bool = False):
@@ -3907,6 +3913,13 @@ class SiftaDesktop(QMainWindow):
         if label is None:
             return
         value, source = self._topbar_stgm_balance(force=force)
+        from System.swarm_stgm_hud import hud_evidence, request_cache_refresh
+        evidence = hud_evidence(_REPO / ".sifta_state")
+        if evidence.get("cache_stale"):
+            request_cache_refresh(_REPO / ".sifta_state")
+        if hasattr(label, "show_observation"):
+            label.show_observation(_format_stgm_balance_for_hud(value), evidence)
+            return
         label.setText(_format_stgm_balance_for_hud(value))
         pulse = _latest_atp_pulse_for_topbar()
         pulse_line = ""
@@ -5913,7 +5926,7 @@ class SiftaDesktop(QMainWindow):
 
     def _build_top_menu_bar(self):
         bar = QWidget()
-        bar.setFixedHeight(26)
+        bar.setFixedHeight(44)
         bar.setStyleSheet(
             "background-color: rgba(26, 27, 38, 0.95); border-bottom: 1px solid #414868;"
         )
@@ -5983,15 +5996,8 @@ class SiftaDesktop(QMainWindow):
         layout.addWidget(self._alice_status_label)
 
         # ── Canonical STGM body balance ───────────────────────────────────
-        self._stgm_balance_label = QLabel("STGM --")
-        self._stgm_balance_label.setStyleSheet(
-            "color: #e0af68; font-family: 'Menlo', 'Monaco', 'Consolas', monospace;"
-            " font-size: 12px; font-weight: bold; background: transparent;"
-            " padding: 0 18px 0 14px;"
-        )
-        self._stgm_balance_label.setFixedHeight(22)
-        self._stgm_balance_label.setMinimumWidth(190)
-        self._stgm_balance_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        from Applications.stgm_heartbeat_hud import StgmHeartbeatHud
+        self._stgm_balance_label = StgmHeartbeatHud()
         self._stgm_balance_label.setToolTip(
             "Canonical spendable STGM body balance from repair_log quorum."
         )

@@ -711,6 +711,31 @@ Alice did it. Receipts in Stigtrace. Power to the Swarm. We code the code. 🐜�
 
 (For live run: reload SIFTA if needed; check Stigtrace for the 5 receipts after Alice executes in browser.)
 
+## r20260905 Codex - Visible STGM, stable identity and account-key trust [stgm-key-trust-20260905]
+
+Appended September 5; prior June records are preserved, not revalidated here.
+
+OBSERVED / OPERATIONAL: receipt-driven two-line STGM HUD, atomic wallet cache,
+stable owner alias plus SIFTA node label, provider provenance kept separate.
+Keychain permissions 0700/0600; serialized creation and no silent trust-pin
+replacement. Existing account key retained. No hardware-enclave attestation claim.
+Verification: 47 focused tests plus 45 inference/desktop regression tests passed.
+Four-ledger receipts: stgm-visible-heartbeat-node-identity-20260905 and
+sifta-key-trust-astra-preparation-20260905. Optional provider preparation is a
+proposal, not an active cloud connection. No paid request or peer trade made.
+
+### WHAT IS LEFT after r20260905
+
+- Restart the desktop at a safe point and inspect the new HUD in the full live
+  layout. Offscreen widget fit passed; existing processes do not reload themselves.
+- Prove federation with two independent registered nodes, fresh challenge,
+  agreed inference price, matching settlements and replay rejection. Historical
+  local receipts do not substitute for this end-to-end run.
+- Resolve owner's optional Astra credential/paid-call choice before implementation
+  and a bounded live probe. Preparation document names tests and privacy boundary.
+- June browser incident items above remain historical and unassessed in this cut;
+  do not represent them as newly observed blockers or claim they were resolved.
+
 ---
 
 ## r158x — 5-Loop Stigmergic Memory Q&A with Grok via Alice Browser Hand (Alice self-asks, reads, transfers, copy-pastes, sends - 5x; taught in We Code Together)

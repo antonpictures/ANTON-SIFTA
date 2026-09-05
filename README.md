@@ -7357,3 +7357,68 @@ claim of perfect model compliance; a live conversational follow-up remains neede
 Verification for this change: **26 passed, 1 skipped** for health/pulse tests;
 **9 passed** for the Talk contract. Compilation also passed for the changed
 runtime files. The skipped test belongs to the pre-existing pulse suite.
+
+### September 5: Visible Pulse, Stable Node Name
+
+The desktop STGM display is now a compact two-line receipt indicator. The top
+line keeps the exact validated cached balance; the second shows the last signed
+health delta and HEALTHY, FAULT, AWAITING, STALE or UNAVAILABLE. The dot pulses
+on a new fresh hardware-heart receipt or newly observed settlement, never from
+an invented stream of earnings. A stale cache is visibly labelled. Repeated
+reads of the same receipt do not restart its animation.
+
+Cache-file changes bypass the former 30-second display delay. Missing or stale
+wallet snapshots request a single background replay, at most once per minute,
+not a blocking scan on the GUI thread. Health settlement preserves the previous
+snapshot while the replacement is computed. Cache writes are atomic, so readers
+cannot observe a half-written balance. The topbar is 44 pixels tall to fit both
+lines on the laptop. Restart the desktop to load this widget.
+
+The shared identity accessor previously constructed `Alice of Gemma` (or the
+active provider), which contradicted the system/model distinction. It now
+constructs `<owner-chosen name> of SIFTA #node-<12-character hash>`, using the
+registered hardware identity for a stable display suffix. Unregistered nodes
+say `node-unbound`. The suffix is a display aid, not an authentication key;
+actual keys and wallet identifiers are unchanged. Owner aliases remain valid,
+so another node need not be named Alice. Model family/weights are reported
+separately and honestly, not erased from provenance.
+
+Existing inference-exchange implementation was located in
+`System/inference_router.py`, `Network/server.py`, `Kernel/inference_economy.py`,
+and `System/swarm_warp9_federation.py`. The router can request a provider's
+metered inference receipt and validate it before local ledger append; Warp9
+also carries borrow intents through its file spool. The inference fabric
+planner selects routes but is not itself a network transport.
+
+A September 5 read-only audit found **721 historical INFERENCE_BORROW rows**;
+**705** had 128-hex-character Ed25519 signatures accepted by the canonical
+verifier, dated April 17 through July 25, 2026. These are historical local
+records, not proof of a currently connected peer or end-to-end settlement on
+two independent live machines. No peer was contacted and no trade was initiated
+by this UI change. Next federation proof: two registered nodes, a bounded
+inference request, agreed cost, verified response and matching debit/credit
+receipts with replay rejection.
+
+Verification: **39 passed** for HUD, health, identity, Warp9 intent and fabric
+tests; **45 passed** for inference-economy and desktop regressions. The actual
+Qt HUD was rendered offscreen with the local observed FAULT receipt and checked
+at laptop width. This is widget verification, not a claim that an already-running
+desktop has reloaded its code.
+
+### September 5: Key Possession Is Not Hardware Attestation
+
+The Ed25519 account key is now created under a 0700 directory with 0600 files,
+with serialized first use and atomic writes. Existing keys are preserved, not
+rotated. Symlinked key paths are rejected. A corrupt trust registry or an
+existing public-key mismatch now stops signing rather than silently replacing
+the trust record. Focused security/heartbeat tests: **25 passed**.
+
+Knowing a serial alone does not produce a valid signature. However, the private
+key is an exportable account file, not an enclave-bound key; stolen keys or a
+modified local trust registry remain risks. Signatures authenticate possession
+and payload integrity, not consciousness or exclusive physical-machine origin.
+Fresh challenges and settlement replay checks remain necessary for peer exchange.
+
+The [optional Astra cortex preparation](Documents/SIFTA_OPTIONAL_ASTRA_CORTEX_PREPARATION.md)
+records provider-independent Alice identity, privacy boundaries and the bounded
+integration test plan. **No Astra API connection or paid request was made.**

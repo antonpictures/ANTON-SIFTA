@@ -2,13 +2,16 @@
 # ─────────────────────────────────────────────────────────────
 # SIFTA OS — Biological Cryptography (Ed25519 Keychain)
 # ─────────────────────────────────────────────────────────────
-# Anchors raw cryptographic sovereignty to the physical Mac architecture.
-# Prevents node 51% forgery by enforcing mathematically verifiable
-# payload signatures tied to isolated user-root private keys.
+# Associates a node identifier with an Ed25519 key held by this OS account.
+# Signatures prove key possession, not exclusive execution on physical hardware.
 # ─────────────────────────────────────────────────────────────
 
 import os
 import json
+import fcntl
+import stat
+import tempfile
+from contextlib import contextmanager
 
 try:
     from silicon_serial import read_apple_serial
@@ -41,34 +44,61 @@ def get_genesis_anchor() -> str:
         return f"{hw_id}::ANCHOR::{h}"
     return f"{hw_id}::NO_ANCHOR"
 
-def _ensure_keychain():
-    """Generates the off-mesh Private Key if the biological node natively lacks one."""
-    if not os.path.exists(KEY_DIR):
-        os.makedirs(KEY_DIR, exist_ok=True)
-    
-    if not os.path.exists(PRIV_KEY_FILE):
-        print(f"[CRYPTO] Generating bare-metal Ed25519 Keys for {get_silicon_identity()}...")
-        private_key = ed25519.Ed25519PrivateKey.generate()
-        
-        # Serialize and freeze to hidden user directory
-        priv_bytes = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        )
-        with open(PRIV_KEY_FILE, "wb") as f:
-            f.write(priv_bytes)
-        
-        # We must sync the public key to the Swarm Mesh Registry
-        _sync_public_key(private_key.public_key())
-    
-    # Check if PKI dict needs our public key updated
+@contextmanager
+def _private_file(path, flags):
+    fd = os.open(path, flags | os.O_NOFOLLOW, 0o600)
     try:
-        with open(PRIV_KEY_FILE, "rb") as f:
-            private_key = serialization.load_pem_private_key(f.read(), password=None)
-            _sync_public_key(private_key.public_key())
-    except Exception as e:
-        print(f"Keychain load error: {e}")
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise PermissionError("Keychain file must be a regular, singly linked file owned by this user")
+        os.fchmod(fd, 0o600)
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _load_private_key():
+    with _private_file(PRIV_KEY_FILE, os.O_RDONLY) as fd:
+        with os.fdopen(os.dup(fd), "rb") as stream:
+            key = serialization.load_pem_private_key(stream.read(), password=None)
+    if not isinstance(key, ed25519.Ed25519PrivateKey):
+        raise ValueError("Expected an Ed25519 private key")
+    return key
+
+
+def _atomic_write(path, content):
+    pending = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(path), delete=False) as stream:
+            pending = stream.name
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, path)
+    finally:
+        if pending and os.path.exists(pending):
+            os.unlink(pending)
+
+
+def _ensure_keychain():
+    """Preserve the account key; serialize creation and fail closed on trust mismatch."""
+    os.makedirs(KEY_DIR, mode=0o700, exist_ok=True)
+    info = os.lstat(KEY_DIR)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise PermissionError("Key directory must be owned by this user and cannot be a symlink")
+    os.chmod(KEY_DIR, 0o700)
+    with _private_file(os.path.join(KEY_DIR, ".keychain.lock"), os.O_RDWR | os.O_CREAT) as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not os.path.lexists(PRIV_KEY_FILE):
+            key = ed25519.Ed25519PrivateKey.generate()
+            _atomic_write(PRIV_KEY_FILE, key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            ))
+        key = _load_private_key()
+        _sync_public_key(key.public_key())
 
 def _sync_public_key(pub_key):
     hw_serial = get_silicon_identity()
@@ -79,29 +109,28 @@ def _sync_public_key(pub_key):
 
     registry = {}
     if os.path.exists(PKI_REGISTRY):
-        try:
-            with open(PKI_REGISTRY, "r") as f:
-                registry = json.load(f)
-        except Exception:
-            registry = {}
+        with open(PKI_REGISTRY, "r") as f:
+            registry = json.load(f)
+        if not isinstance(registry, dict):
+            raise ValueError("Invalid PKI registry; refusing to replace trust records")
 
-    if registry.get(hw_serial) != pub_hex:
+    if hw_serial in registry and registry[hw_serial] != pub_hex:
+        raise ValueError("Local key differs from trusted node key; explicit key recovery is required")
+    if hw_serial not in registry:
         registry[hw_serial] = pub_hex
-        with open(PKI_REGISTRY, "w") as f:
-            json.dump(registry, f, indent=2)
-        print(f"[CRYPTO] Synchronized Public Key {pub_hex[:12]}... to {hw_serial} in PKI.")
+        os.makedirs(os.path.dirname(PKI_REGISTRY), exist_ok=True)
+        _atomic_write(PKI_REGISTRY, json.dumps(registry, indent=2).encode("utf-8"))
 
 def sign_block(payload: str) -> str:
-    """Signs a given string payload using the physical hardware's private key."""
+    """Sign with this OS account's key, without claiming hardware attestation."""
     _ensure_keychain()
-    with open(PRIV_KEY_FILE, "rb") as f:
-        private_key = serialization.load_pem_private_key(f.read(), password=None)
+    private_key = _load_private_key()
     
     signature = private_key.sign(payload.encode('utf-8'))
     return signature.hex()
 
 def verify_block(hardware_serial: str, payload: str, signature_hex: str) -> bool:
-    """Mathematically evaluates if the genesis payload was signed by the genuine hardware."""
+    """Verify payload integrity against the locally trusted public key for a node."""
     if not os.path.exists(PKI_REGISTRY):
         return False
         
@@ -111,6 +140,8 @@ def verify_block(hardware_serial: str, payload: str, signature_hex: str) -> bool
     except Exception:
         return False
 
+    if not isinstance(registry, dict):
+        return False
     pub_hex = registry.get(hardware_serial)
     if not pub_hex:
         return False
