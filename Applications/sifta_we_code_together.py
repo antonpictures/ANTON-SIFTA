@@ -5191,6 +5191,8 @@ def _fmt_ts(ts: float | int | None) -> str:
 def _stgm_body_truth_lines() -> List[str]:
     """Shared STGM organism truth for We Code Together's read-only mirror."""
     lines = ["STGM BODY TRUTH — same organism as Matrix / Finance / topbar:"]
+    from System.swarm_heartbeat_economy import status_lines
+    lines.extend(status_lines(STATE))
     try:
         from System.stgm_economy import stgm_body_truth_snapshot
 

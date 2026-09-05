@@ -3137,6 +3137,16 @@ def build_html(*, fast: bool = False) -> str:
         inventory_sanity_panel = f"<p class='bad'>Inference inventory sanity panel unavailable: {html.escape(str(_inv_exc))}</p>"
 
     from System.stigmerobotics_life_loop_simulator import life_loop_evidence_lines
+    from System.swarm_heartbeat_economy import status_lines as heartbeat_status_lines
+
+    heartbeat_panel = (
+        '<section id="heartbeat-economy"><h2 class="section">Observed Heartbeat / STGM Health</h2><pre>'
+        + html.escape("\n".join(heartbeat_status_lines(_STATE)))
+        + '</pre><p>Signed local health accounting, not measured joules or a proof of consciousness. '
+        'Only sampled producers are evaluated. Unknown or stale evidence settles zero. '
+        'Daily caps: +0.01 reward / -0.05 penalty STGM (UTC). '
+        'Fault receipts feed the existing self-evaluation repair queue.</p></section>'
+    )
 
     life_loop_panel = (
         '<section id="life-loop-lab"><h2 class="section">Stigmerobotics Life Loop Lab</h2><pre>'
@@ -3184,6 +3194,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {novelty_missing_section}
 {quantum_stigmergy_boundary_section}
 {life_loop_panel}
+{heartbeat_panel}
 
 <!-- TABLE OF CONTENTS / BODY MAP - FIRST 50 LINES GOAL -->
 <h2 class="section">ALICE BODY MAP — Table of Contents</h2>
@@ -3376,7 +3387,12 @@ def refresh_body_matrix(*, force: bool = False) -> dict:
             snap_mtime = registry_snapshot.stat().st_mtime
         except OSError:
             snap_mtime = 0.0
-    if not force and not snapshot_stale and snap_mtime <= matrix_mtime:
+    # Health receipts refresh the readout, not the expensive source registry.
+    try:
+        health_mtime = (_STATE / "heartbeat_economy_latest.json").stat().st_mtime
+    except OSError:
+        health_mtime = 0.0
+    if not force and not snapshot_stale and max(snap_mtime, health_mtime) <= matrix_mtime:
         return {"regenerated": False, "reason": "matrix already current with registry", "path": str(_OUT)}
     _OUT.parent.mkdir(parents=True, exist_ok=True)
     html_text = build_html(fast=not force)

@@ -7301,3 +7301,59 @@ The controller uses a programmed gain-update rule. The 81-versus-140-step result
 demonstrates useful persistence in this particular simulated case. The next
 experiment must vary targets and disturbances, compare retained and erased
 traces, and include unsuccessful trials. Physical validation remains pending.
+
+## Chapter XXXIX - A Heartbeat With Consequences (September 5, 2026)
+
+The desktop hardware-heart callback now joins two existing local receipts:
+`hardware_heart.jsonl` and `body_writer_tick.jsonl`. The new health settlement
+policy in `System/swarm_heartbeat_economy.py` credits the same canonical Alice
+wallet used by the topbar, rather than creating a second balance or cosmetic
+counter. Existing ATP and work-reward lanes remain separate and unchanged.
+Dock animation failure no longer stops the heartbeat callback or health sampling.
+
+- A fresh hardware receipt and successful sampled producers: **+0.00001 STGM**.
+- An explicit failed producer or degraded body supervisor: **-0.0001 STGM**.
+- Missing, malformed, simulated, future or stale source evidence: **zero**.
+- At most one settlement per body receipt and no more than once per 60 seconds.
+- UTC daily caps for this lane: **+0.01 rewards**, **-0.05 penalties**.
+- The complete economic event is signed with the existing local Ed25519 identity.
+  Invalid signatures fail closed, including when legacy verification is disabled.
+- A process lock and durable prepared event support restart recovery. Canonical
+  wallet readers deduplicate event IDs, including replay after interrupted writes.
+- Faults enter `self_eval_swimmer_dispatch.jsonl`, the existing spinal-cord input.
+  A repair signal is not a claim that a repair has already succeeded.
+
+These amounts are an explicit software accounting policy, not a measurement of
+electricity converted into money. The hardware and body receipts are local
+observations; the signature protects their recorded settlement, not the truth of
+every possible sensor. HEALTHY refers only to the sampled producers, not a proof
+that every organ works, that biological life exists, or that consciousness has
+been established.
+
+The first live settlement observed `body_writer_supervisor_degraded`, debited
+**0.0001 STGM**, and queued a red repair signal. Receipt:
+`health-e312ae7c707a65cef6eec03577a1de349922a564d6aa683c99907d0d2706b53b`.
+Healthy credits have been verified with isolated tests, not asserted from this
+degraded live sample. Tests use temporary ledgers and do not mint live test funds.
+
+We Code Together and the Organ Eval Matrix display the latest recorded status,
+delta, evidence age and fault names. Source receipts remain in `.sifta_state`;
+they are not published with this chapter. Restart the desktop to load the new
+callback: an already-running Python process retains its old code. This callback
+does not run while the laptop sleeps or the desktop is stopped.
+
+The Talk contract also distinguishes **Alice/SIFTA system identity** from the
+verified active **model component**. Model provenance stays visible when asked;
+a Gemma receipt does not rename the whole system Gemma. "Stigmergic coordination"
+describes the intended shared-memory, filesystem-trace and organ architecture
+without requiring the user to call it a harness. This prompt correction is not a
+claim of perfect model compliance; a live conversational follow-up remains needed.
+
+```bash
+./.venv/bin/python -m pytest -q tests/test_swarm_heartbeat_economy.py tests/test_stgm_pulse_lane_r20260705.py
+./.venv/bin/python -m pytest -q tests/test_swarm_prompt_contract_base.py
+```
+
+Verification for this change: **26 passed, 1 skipped** for health/pulse tests;
+**9 passed** for the Talk contract. Compilation also passed for the changed
+runtime files. The skipped test belongs to the pre-existing pulse suite.

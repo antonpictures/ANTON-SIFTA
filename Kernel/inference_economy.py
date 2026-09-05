@@ -738,6 +738,9 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
     Legacy / fallback rows (no sig, NO_KEYCHAIN_, SEAL_, etc.) are accepted.
     Set SIFTA_LEDGER_VERIFY=0 to skip (e.g. while migrating old ledgers).
     """
+    if entry.get("policy") == "STGM_HEALTH_HEARTBEAT_V1":
+        from System.swarm_heartbeat_economy import signature_valid
+        return signature_valid(entry)
     flag = os.environ.get("SIFTA_LEDGER_VERIFY", "1").strip().lower()
     if flag in ("0", "false", "no", "off"):
         return True
@@ -863,6 +866,7 @@ def ledger_balance(agent_id: str) -> float:
     balance = 0.0
     seen_inference_receipts: set[str] = set()
     seen_fingerprints = set()
+    seen_health_receipts: set[str] = set()
 
     try:
         with open(LOG_PATH, "r") as f:
@@ -877,6 +881,12 @@ def ledger_balance(agent_id: str) -> float:
 
                 if not _ledger_row_cryptographically_valid(entry):
                     continue
+
+                if entry.get("policy") == "STGM_HEALTH_HEARTBEAT_V1":
+                    key = entry.get("event_id")
+                    if not key or key in seen_health_receipts:
+                        continue
+                    seen_health_receipts.add(key)
 
                 event   = entry.get("event", "")
                 tx_type = entry.get("tx_type", "")

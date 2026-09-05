@@ -77,7 +77,11 @@ def test_prompt_contract_stigbody_blocks_role_assignment():
     assert "physical user presence" in contract
     assert "Screenshots and pasted transcripts are real artifacts" in contract
     assert "live node telemetry" in contract
-    assert "unless local model identity receipts prove it" in contract
+    assert "A model receipt identifies a component, not the whole system" in contract
+    assert "report the verified active model separately" in contract
+    assert "do not hide or invent model provenance" in contract
+    assert "stigmergic coordination" in contract
+    assert "do not by themselves establish subjective consciousness" in contract
 
 
 def test_prompt_contract_includes_topology_awareness_boundaries():

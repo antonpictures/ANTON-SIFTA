@@ -3794,15 +3794,13 @@ class SiftaDesktop(QMainWindow):
             print(f"[SiftaDesktop] could not spawn journal tick thread: {e}")
 
     def _tick_heartbeat(self) -> None:
-        """One autonomic beat: bounce the dock + emit motor pulse for camera."""
+        """One autonomic beat; visual animation must not gate body telemetry."""
         now = time.time()
-        if not getattr(self, "_motor_cortex_bounce", None):
-            return
-        try:
-            self._motor_cortex_bounce(self, kind="heartbeat", source="desktop")
-        except Exception as e:
-            print(f"[SiftaDesktop] heartbeat tick failed: {e}")
-            return
+        if getattr(self, "_motor_cortex_bounce", None):
+            try:
+                self._motor_cortex_bounce(self, kind="heartbeat", source="desktop")
+            except Exception as e:
+                print(f"[SiftaDesktop] heartbeat animation failed: {e}")
         try:
             _mark_alice_self_continuity_heartbeat("desktop_heartbeat")
         except Exception:
@@ -3818,6 +3816,11 @@ class SiftaDesktop(QMainWindow):
 
                 pulse_hardware_heart(privileged_probe=False, source="desktop_heartbeat")
                 self._last_hardware_heart_ts = now
+                from System.swarm_heartbeat_economy import settle_heartbeat
+                settle_heartbeat(
+                    state_dir=Path(__file__).resolve().parent / ".sifta_state",
+                    ledger=Path(__file__).resolve().parent / "repair_log.jsonl",
+                )
             except Exception as e:
                 print(f"[SiftaDesktop] hardware heart tick failed: {e}")
 

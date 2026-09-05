@@ -264,6 +264,9 @@ def _iter_jsonl(path: Path):
 
 
 def _ledger_row_valid(row: Dict[str, Any]) -> bool:
+    if row.get("policy") == "STGM_HEALTH_HEARTBEAT_V1":
+        from System.swarm_heartbeat_economy import signature_valid
+        return signature_valid(row)
     try:
         from Kernel.inference_economy import _ledger_row_cryptographically_valid
 
@@ -692,6 +695,7 @@ def scan_economy(
     out = EconomySnapshot()
     balances: Dict[str, float] = {}
     seen_inference_receipts: set[str] = set()
+    seen_health_receipts: set[str] = set()
     for row in _iter_jsonl(repair_log):
         out.repair_lines += 1
         if not isinstance(row, dict):
@@ -701,6 +705,11 @@ def scan_economy(
                 out.warnings.append("invalid_signed_repair_log_rows_ignored")
             continue
         out.repair_parse_ok += 1
+        if row.get("policy") == "STGM_HEALTH_HEARTBEAT_V1":
+            key = row.get("event_id")
+            if not key or key in seen_health_receipts:
+                continue
+            seen_health_receipts.add(key)
         event = str(row.get("event") or "")
         tx_type = str(row.get("tx_type") or "")
         event_kind = str(row.get("event_kind") or "")
