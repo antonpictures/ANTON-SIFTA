@@ -130,6 +130,11 @@ except Exception:
     _E51_CHAIN_STEPS = ()
     _list_physical_bodies = None
 
+try:
+    from System.stigmerobotics_life_loop_simulator import run_life_loop_experiment
+except Exception:
+    run_life_loop_experiment = None
+
 
 _GLOBAL_STYLE = """
 QWidget {
@@ -307,6 +312,7 @@ _ACTIVE_TESTS = (
     "tests/test_stigmero_e50_arkoma_ik.py",
     "tests/test_stigmero_ik_baseline.py",
     "tests/test_stigmero_e51_hardware_prep.py",
+    "tests/test_stigmerobotics_life_loop_simulator.py",
     "tests/test_ledger_invariants.py",
     "tests/test_stigmero_body_connection_proof.py",
 )
@@ -418,6 +424,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self._build_biohybrid_tab()
         self._build_wet_dry_tab()
         self._build_edge_species_tab()
+        self._build_life_loop_tab()
         self._build_robot_data_tab()
         self._build_body_proof_tab()
         self._build_audit_tab()
@@ -649,8 +656,8 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.edge_organs_table.setItem(i, 0, QTableWidgetItem(name))
             self.edge_organs_table.setItem(i, 1, QTableWidgetItem(status))
 
-        # === FAST LAYER + RECOVERY SIM (Real physics demo) ===
-        fast_box = QLabel("<b>Fast Layer + Thermal DFA + Autonomous Recovery (Investor Demo)</b>")
+        # === FAST LAYER + RECOVERY SIM ===
+        fast_box = QLabel("<b>Fast Layer + Thermal DFA (bounded display model)</b>")
         root.addWidget(fast_box)
 
         self.dfa_state_label = QLabel("<b>DFA State:</b> SAFE")
@@ -754,7 +761,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.dfa_state_label.setText("<b>DFA State:</b> WARN (dV/dt > 0)")
         if self.edge_thermal > 1.35:
             self.edge_dfa_state = "VETO"
-            self.dfa_state_label.setText("<b>DFA State:</b> VETO — effector blocked (receipt written)")
+            self.dfa_state_label.setText("<b>DFA State:</b> VETO — display model blocked")
 
         self.fast_layer_log.appendPlainText(f"Thermal pulse injected. Current thermal: {self.edge_thermal:.2f} | DFA: {self.edge_dfa_state}")
         self._update_energy_panel()
@@ -775,8 +782,119 @@ class StigmeroboticsWidget(SiftaBaseWidget):
 
     def _reset_edge_field(self):
         self._init_edge_simulation()
-        self.fast_layer_log.appendPlainText("Field reset. Receipt chain preserved in ledger.")
+        self.fast_layer_log.appendPlainText("Display field reset. This action does not write a receipt.")
         self.dfa_state_label.setText("<b>DFA State:</b> SAFE")
+
+    def _build_life_loop_tab(self) -> None:
+        page = QWidget()
+        root = QVBoxLayout(page)
+
+        header = QLabel("Receipted Life Loop — falsifiable virtual-body experiment")
+        header.setObjectName("header")
+        root.addWidget(header)
+
+        description = QLabel(
+            "Runs one cold activation, persists body state and a motor-skill pheromone, "
+            "starts a fresh Python interpreter, injects a joint disturbance, and compares "
+            "recovery with an exact same-state replay that cannot read the learned trace. "
+            "Every row is labeled SIMULATED."
+        )
+        description.setWordWrap(True)
+        root.addWidget(description)
+
+        self.life_loop_status = QLabel("NOT RUN — no claim")
+        self.life_loop_status.setObjectName("card")
+        self.life_loop_status.setMinimumHeight(52)
+        root.addWidget(self.life_loop_status)
+
+        self.life_loop_table = QTableWidget(0, 3)
+        self.life_loop_table.setHorizontalHeaderLabels(("Falsifier", "Observed result", "Status"))
+        self.life_loop_table.horizontalHeader().setStretchLastSection(True)
+        self.life_loop_table.setAlternatingRowColors(True)
+        root.addWidget(self.life_loop_table, 1)
+
+        self.life_loop_log = QPlainTextEdit()
+        self.life_loop_log.setReadOnly(True)
+        self.life_loop_log.setMaximumHeight(230)
+        self.life_loop_log.setPlainText(
+            "Press Run Life Loop. A PASS proves only simulated closed-loop continuity."
+        )
+        root.addWidget(self.life_loop_log)
+
+        run = QPushButton("Run Life Loop Falsification")
+        run.clicked.connect(self._run_life_loop_experiment)
+        root.addWidget(run)
+        self.tabs.addTab(page, "Life Loop Lab")
+
+    def _run_life_loop_experiment(self) -> None:
+        if run_life_loop_experiment is None:
+            self.life_loop_status.setText("ERROR — simulator module unavailable")
+            return
+        try:
+            result = run_life_loop_experiment(
+                _REPO / ".sifta_state" / "stigmerobotics_life_loop_runs"
+            )
+        except Exception as exc:
+            self.life_loop_status.setText(f"FAIL — {type(exc).__name__}")
+            self.life_loop_log.setPlainText(f"Experiment failed: {type(exc).__name__}: {exc}")
+            return
+
+        rows = (
+            (
+                "Cold body reaches target",
+                f"{result.cold_activation.steps} control steps",
+                result.cold_activation.reached_target,
+            ),
+            (
+                "Fresh Python interpreter",
+                f"pid {result.initial_process_pid} → {result.resumed_process_pid}",
+                result.process_boundary_verified,
+            ),
+            (
+                "Identity + state survive restart",
+                f"theta={result.cold_activation.final_theta_rad:.4f} rad",
+                result.body_identity_persisted and result.physical_state_persisted,
+            ),
+            (
+                "Motor trace recovered from field",
+                f"loaded={result.trace_loaded_after_restart}",
+                result.trace_loaded_after_restart,
+            ),
+            (
+                "Disturbed body recovers",
+                f"{result.resumed_activation.steps} control steps",
+                result.resumed_activation.reached_target,
+            ),
+            (
+                "Same-state replay without trace",
+                f"{result.counterfactual_cold_steps} steps; advantage={result.recovery_advantage_steps}",
+                result.recovery_advantage_steps > 0,
+            ),
+            (
+                "Command → receipt → sensor",
+                f"paired={result.receipt_chain_ok}",
+                result.receipt_chain_ok,
+            ),
+            (
+                "Trace evaporates forward in time",
+                f"decay={result.pheromone_evaporation_ok}",
+                result.pheromone_evaporation_ok,
+            ),
+        )
+        self.life_loop_table.setRowCount(len(rows))
+        for row_index, (name, observed, ok) in enumerate(rows):
+            for column, value in enumerate((name, observed, "PASS" if ok else "FAIL")):
+                item = QTableWidgetItem(str(value))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.life_loop_table.setItem(row_index, column, item)
+        self.life_loop_table.resizeColumnsToContents()
+        self.life_loop_status.setText(
+            f"{'PASS' if result.passed else 'FAIL'} — SIMULATED · "
+            f"receipt evidence: {Path(result.run_dir).name}"
+        )
+        self.life_loop_log.setPlainText(
+            "\n".join(result.summary_lines()) + f"\n\nEvidence directory: {result.run_dir}"
+        )
 
     def _refresh_tc_status(self):
         try:

@@ -3136,6 +3136,14 @@ def build_html(*, fast: bool = False) -> str:
     except Exception as _inv_exc:
         inventory_sanity_panel = f"<p class='bad'>Inference inventory sanity panel unavailable: {html.escape(str(_inv_exc))}</p>"
 
+    from System.stigmerobotics_life_loop_simulator import life_loop_evidence_lines
+
+    life_loop_panel = (
+        '<section id="life-loop-lab"><h2 class="section">Stigmerobotics Life Loop Lab</h2><pre>'
+        + html.escape("\n".join(life_loop_evidence_lines(_STATE)))
+        + '</pre></section>'
+    )
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -3175,6 +3183,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {alice_creature_wiring_panel}
 {novelty_missing_section}
 {quantum_stigmergy_boundary_section}
+{life_loop_panel}
 
 <!-- TABLE OF CONTENTS / BODY MAP - FIRST 50 LINES GOAL -->
 <h2 class="section">ALICE BODY MAP — Table of Contents</h2>
@@ -3313,6 +3322,9 @@ def _newest_registry_source_mtime() -> float:
         _REPO / "System" / "swarm_organ_registry.py",
         _REPO / "Applications" / "apps_manifest.json",
         _STATE / "organ_ecology_mesh_latest.json",
+        _STATE / "stigmerobotics_life_loop_runs" / "life_loop_experiments.jsonl",
+        _REPO / "System" / "stigmerobotics_life_loop_simulator.py",
+        Path(__file__),
     ]
     try:
         candidates.extend((_REPO / "System").glob("swarm_*.py"))

@@ -7237,3 +7237,67 @@ For the Swarm. 🐜⚡
 ---
 
 *End of Chapter XXXVII. Keep the evidence, remove it from the hot path, restart the cortex, and prove the reply organ is breathing.*
+
+---
+
+## Chapter XXXVIII — The Limb That Remembers (September 4, 2026)
+
+The first maze demonstration was not convincing because it was a detached toy.
+The replacement is a falsifiable experiment inside the existing Stigmerobotics
+body: the real virtual-limb physics, effector bridge, sensor echo, physical-space
+grounding, pheromone field, and append-only receipts now run as one closed loop.
+
+The experiment performs two activations of the same persisted virtual body. The
+first activation produces a bounded controller trace and saves physical state
+without controller gains. A fresh Python interpreter then reloads the body,
+recovers the controller from the evaporating field, receives a fixed disturbance,
+and attempts to settle the joint again. A same-state replay without the learned
+trace is the counterfactual.
+
+### Measured receipt
+
+- Truth label: **`SIMULATED`** throughout.
+- Fresh interpreter PID differs from the initial process: **PASS**.
+- Cold activation: target reached in **139 steps**.
+- Restart plus disturbance: target recovered in **81 steps**.
+- Same-state replay without the learned trace: **140 steps**.
+- Measured trace advantage: **59 steps**.
+- Persisted body identity and physical state: **PASS**.
+- Every motor request paired with an effector receipt and grounded sensor echo:
+  **PASS**.
+- Pheromone evaporation check: **PASS**.
+- Focused simulator and effector verification: **7 tests passed**.
+
+The Stigmerobotics app exposes this as **Life Loop Lab**. A PASS proves only
+simulated command-action-sensor continuity and a useful persisted trace. It does
+not prove physical motion, hardware safety, general autonomy, consciousness, or
+life. Those remain separate tests.
+
+```bash
+PYTHONPATH=. python3 System/stigmerobotics_life_loop_simulator.py
+python3 -m pytest -q \
+  tests/test_stigmerobotics_life_loop_simulator.py \
+  tests/test_stigmero_effector_bridge.py
+```
+
+For the Swarm. 🐜⚡
+
+---
+
+*End of Chapter XXXVIII. Persist the body, disturb it, replay the same state, and let the receipts decide.*
+
+### September 5: Eval Matrix and We Code Together
+
+Both surfaces now read the latest recorded Life Loop experiment through the same
+bounded reader. Eval Matrix has a **Stigmerobotics Life Loop Lab** section;
+We Code Together displays it in **Live Code / Live Proof**. The readout includes
+the recording time, process-boundary check, measured steps and evidence directory.
+An absent index shows NOT RUN; an invalid record shows UNAVAILABLE; an older
+record without a process-boundary check cannot display PASS. New experiment
+receipts invalidate the matrix cache. A body feature alert makes this addition
+available to Alice's self-evaluation.
+
+The controller uses a programmed gain-update rule. The 81-versus-140-step result
+demonstrates useful persistence in this particular simulated case. The next
+experiment must vary targets and disturbances, compare retained and erased
+traces, and include unsuccessful trials. Physical validation remains pending.

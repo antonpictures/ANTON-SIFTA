@@ -40,6 +40,11 @@ ORGANS: dict[str, dict[str, str]] = {
     "E48": {"name": "Wet/Dry Boundary", "module": "System/stigmerobotics_wet_dry_interface.py", "test": "tests/test_stigmero_e48_physical_protocol.py"},
     "E49": {"name": "IRB2400 IK Benchmark", "module": "System/stigmerobotics_irb2400_ik.py", "test": "tests/test_stigmero_e49_irb2400_ik.py"},
     "E50": {"name": "ARKOMA NAO IK Benchmark", "module": "System/stigmerobotics_arkoma_ik.py", "test": "tests/test_stigmero_e50_arkoma_ik.py"},
+    "SIM-LIFE": {
+        "name": "Receipted Virtual Life Loop",
+        "module": "System/stigmerobotics_life_loop_simulator.py",
+        "test": "tests/test_stigmerobotics_life_loop_simulator.py",
+    },
 }
 
 

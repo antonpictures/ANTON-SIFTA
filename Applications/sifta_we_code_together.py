@@ -805,6 +805,8 @@ def _live_coded_content(max_lines: int = 300) -> tuple[str, str]:
 
 def _live_proof_lines(limit: int = 6) -> List[str]:
     """Human-eye proof strip: newest receipts tied to live coding, not test source."""
+    from System.stigmerobotics_life_loop_simulator import life_loop_evidence_lines
+
     rows: List[Dict[str, Any]] = []
     for ledger_name in (
         "codex_alice_grok_cocode_sessions.jsonl",
@@ -826,7 +828,7 @@ def _live_proof_lines(limit: int = 6) -> List[str]:
             except (json.JSONDecodeError, ValueError):
                 continue
     rows.sort(key=lambda r: float(r.get("ts") or 0), reverse=True)
-    lines = ["LIVE PROOF — newest receipt rows, not tests:"]
+    lines = life_loop_evidence_lines(STATE) + ["", "LIVE PROOF — newest receipt rows, not tests:"]
     if not rows:
         lines.append("  no receipt rows found yet")
         return lines
