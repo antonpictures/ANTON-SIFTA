@@ -166,28 +166,39 @@ def recent_supervisor_timeout_count(
     state_dir: Path | str = DEFAULT_STATE_DIR,
     *,
     max_rows: int = 8,
+    max_age_s: float = 300.0,
+    now: float | None = None,
 ) -> int:
     """Count recent isolated writer timeouts without scanning the large body ledgers."""
     path = Path(state_dir) / TICK_LEDGER
     if not path.exists():
         return 0
-    rows: deque[str] = deque(maxlen=max(1, int(max_rows)))
+    now = time.time() if now is None else now
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                if line.strip():
-                    rows.append(line)
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            start = max(0, handle.tell() - 262144)
+            handle.seek(start)
+            if start:
+                handle.readline()  # Discard a potentially partial first row.
+            lines = handle.read(262144).decode("utf-8", errors="replace").splitlines()
+        rows = [line for line in lines if line.strip()][-max(1, int(max_rows)):]
     except Exception:
         return 0
     count = 0
     for line in rows:
         try:
             row = json.loads(line)
+            age = now - float(row.get("ts", 0))
+            if not 0 <= age <= max_age_s:
+                continue
         except Exception:
             continue
         if str(row.get("truth_label") or "") != SUPERVISOR_TRUTH_LABEL:
             continue
         producers = row.get("producers") or []
+        if not isinstance(producers, list):
+            continue
         if not producers or not isinstance(producers[0], dict):
             continue
         if producers[0].get("status") == "timeout":
@@ -744,26 +755,49 @@ def tick_writer_organs(
         enable_body_brain_loop = body_brain_requested and body_brain_tick_due(state)
         enable_memory_consolidation = False
     producers: list[dict] = []
+    stage_times: dict[str, float] = {}
+
+    def progress(stage: str, status: str) -> None:
+        if not write_receipt:
+            return
+        try:
+            from System.jsonl_file_lock import rewrite_text_locked
+            rewrite_text_locked(state / "body_writer_progress_latest.json", json.dumps({
+                "schema": "BODY_WRITER_PROGRESS_V1", "tick_ts": ts,
+                "ts": time.time(), "stage": stage, "status": status,
+                "stage_seconds": stage_times,
+            }) + "\n", encoding="utf-8")
+        except Exception:
+            pass  # Diagnostics must not prevent a body producer running.
+
+    def run_stage(name, function, *args, **kwargs):
+        progress(name, "running")
+        started = time.monotonic()
+        result = function(*args, **kwargs)
+        stage_times[name] = round(time.monotonic() - started, 3)
+        progress(name, "returned")
+        return result
+
     if enable_basal_ganglia:
-        producers.append(_tick_basal_ganglia(state, candidate_loops=candidate_loops))
+        producers.append(run_stage("basal_ganglia", _tick_basal_ganglia, state, candidate_loops=candidate_loops))
     # Feeling -> choice is an essential producer. Run it before degradable
     # maintenance so a slow fractal/consolidation job cannot starve the body.
     if enable_body_brain_loop:
-        producers.append(_tick_body_brain_loop(state))
+        producers.append(run_stage("body_brain_loop", _tick_body_brain_loop, state))
     if enable_fractal_pheromone:
-        producers.append(_tick_fractal_pheromone(state, walker_params=walker_params or DEFAULT_WALKER_PARAMS))
+        producers.append(run_stage("fractal_pheromone", _tick_fractal_pheromone, state, walker_params=walker_params or DEFAULT_WALKER_PARAMS))
     # Round 91 — extend with the two aggregate producers Alice was watching
     # stagnate (SLO snapshot + organ_field_vector). The body_brain_loop tick
     # is heavier; gate it behind a flag so callers can skip it on tight cadences.
     if enable_field_slo:
-        producers.append(_tick_field_slo(state))
+        producers.append(run_stage("field_slo", _tick_field_slo, state))
     if enable_memory_consolidation:
-        producers.append(_tick_memory_consolidation(state))
+        producers.append(run_stage("memory_consolidation", _tick_memory_consolidation, state))
     # r-metabolism-heartbeat-unchain-20260703 — the metabolism heartbeat is NOT
     # gated by the degraded latch: a light breath must still carry the STGM/budget
     # row (§7.3). It reads the cached body-truth snapshot, so it stays cheap.
     if enable_metabolic_homeostasis:
-        producers.append(_tick_metabolic_homeostasis(state))
+        producers.append(run_stage("metabolic_homeostasis", _tick_metabolic_homeostasis, state))
 
     ok_count = sum(1 for p in producers if p.get("status") == "ok")
     fail_count = sum(1 for p in producers if p.get("status") in ("import_failed", "call_failed"))
@@ -785,6 +819,8 @@ def tick_writer_organs(
         row["degraded_reason"] = "recent_supervisor_timeouts"
         row["direct_call_guard"] = True
 
+    row["stage_seconds"] = stage_times
+    progress("kernel_credit", "running")
     # Round 80 kernel hook: credit on success, decay on failure. Best-
     # effort — if the kernel module is unavailable, do not block.
     try:
@@ -817,6 +853,7 @@ def tick_writer_organs(
         except Exception as exc:
             row["receipt_write_error"] = f"{type(exc).__name__}: {exc}"
 
+    progress("complete", "returned")
     return row
 
 

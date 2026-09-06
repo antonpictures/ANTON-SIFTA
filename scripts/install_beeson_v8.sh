@@ -6,6 +6,7 @@ TARGET_DIR="${SIFTA_TARGET_DIR:-$HOME/Music/ANTON_SIFTA}"
 WITH_MODELS=0
 RUN_SMOKE=1
 FORCE_PULL=0
+WITH_VENDOR=0
 
 usage() {
   cat <<'EOF'
@@ -17,6 +18,7 @@ Usage:
 Options:
   --with-models   Download public Hugging Face cortex packages and create Ollama tags when possible.
   --no-smoke      Skip the focused release smoke test.
+  --with-vendor   Fetch optional Git submodules (not required by the core desktop).
   --target DIR    Clone/install into DIR when not already inside a SIFTA checkout.
   --pull          Fast-forward an existing clean checkout before installing.
 EOF
@@ -29,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --smoke) RUN_SMOKE=1 ;;
     --no-smoke) RUN_SMOKE=0 ;;
     --pull) FORCE_PULL=1 ;;
+    --with-vendor) WITH_VENDOR=1 ;;
     --target)
       shift
       TARGET_DIR="${1:?missing target directory}"
@@ -66,22 +69,23 @@ else
   REPO_DIR="$TARGET_DIR"
   if [[ -d "$REPO_DIR/.git" ]]; then
     echo "[beeson] checkout exists: $REPO_DIR"
-    if [[ "$FORCE_PULL" == "1" ]]; then
-      if [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]]; then
-        echo "[beeson] checkout is dirty; skipping pull to preserve local work"
-      else
-        git -C "$REPO_DIR" pull --ff-only
-      fi
-    fi
   else
     echo "[beeson] cloning $REPO_URL -> $REPO_DIR"
     mkdir -p "$(dirname "$REPO_DIR")"
-    git clone --recurse-submodules "$REPO_URL" "$REPO_DIR"
+    git clone "$REPO_URL" "$REPO_DIR"
   fi
   cd "$REPO_DIR"
 fi
 
-if [[ -f ".gitmodules" ]]; then
+if [[ "$FORCE_PULL" == "1" ]]; then
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo "[beeson] checkout is dirty; skipping pull to preserve local work"
+  else
+    git pull --ff-only
+  fi
+fi
+
+if [[ "$WITH_VENDOR" == "1" && -f ".gitmodules" ]]; then
   git submodule sync --recursive
   git submodule update --init --recursive
 fi
@@ -126,11 +130,18 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
+for config in config node_registry; do
+  if [[ ! -e "$config.json" && -f "$config.example.json" ]]; then
+    cp "$config.example.json" "$config.json"
+  fi
+done
+
 if [[ -f "System/bootstrap_pki.py" ]]; then
   echo "[beeson] bootstrapping local Ed25519 identity if needed"
-  PYTHONPATH=. python -m System.bootstrap_pki || {
-    echo "[beeson] bootstrap_pki failed; continuing because older checkouts may initialize on first boot"
-  }
+  PYTHONPATH=. python -m System.bootstrap_pki
+else
+  echo "ERROR: missing System/bootstrap_pki.py; incomplete source checkout" >&2
+  exit 1
 fi
 
 chmod +x "SIFTA OS.command" 2>/dev/null || true
@@ -198,6 +209,10 @@ PY
   fi
 fi
 
+if [[ "$RUN_SMOKE" == "1" ]]; then
+  bash scripts/beeson_smoke_test.sh
+fi
+
 mkdir -p .sifta_state
 BEESON_WITH_MODELS="$WITH_MODELS" python - <<'PY'
 from __future__ import annotations
@@ -221,18 +236,11 @@ print(f"[beeson] install receipt {row['trace_id']} -> {path}")
 PY
 
 if [[ -d "$HOME/Desktop" ]]; then
-  cat > "$HOME/Desktop/SIFTA OS.command" <<'SH'
-#!/bin/zsh
-cd "$HOME/Music/ANTON_SIFTA" || exit 1
-exec "$HOME/Music/ANTON_SIFTA/SIFTA OS.command"
-SH
+  printf '#!/bin/bash\ncd %q || exit 1\nexec %q\n' \
+    "$REPO_DIR" "$REPO_DIR/SIFTA OS.command" > "$HOME/Desktop/SIFTA OS.command"
   chmod +x "$HOME/Desktop/SIFTA OS.command"
   xattr -c "$HOME/Desktop/SIFTA OS.command" 2>/dev/null || true
   echo "[beeson] Desktop launcher ready: $HOME/Desktop/SIFTA OS.command"
-fi
-
-if [[ "$RUN_SMOKE" == "1" ]]; then
-  bash scripts/beeson_smoke_test.sh
 fi
 
 cat <<EOF

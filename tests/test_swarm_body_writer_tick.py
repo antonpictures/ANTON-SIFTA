@@ -370,7 +370,7 @@ def test_recent_timeout_pheromones_trigger_degraded_tick(tmp_path: Path):
     path = state / bwt.TICK_LEDGER
     rows = [
         {
-            "ts": 1.0 + i,
+            "ts": bwt.time.time() - i,
             "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
             "overall_status": "all_failed",
             "producer_count": 1,
@@ -404,7 +404,7 @@ def test_guarded_tick_runs_light_after_repeated_timeouts(tmp_path: Path):
         "\n".join(
             json.dumps(
                 {
-                    "ts": float(i),
+                    "ts": bwt.time.time() - i,
                     "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
                     "overall_status": "all_failed",
                     "producer_count": 1,
@@ -452,7 +452,7 @@ def test_direct_tick_runs_light_after_supervisor_timeout(tmp_path: Path):
     (state / bwt.TICK_LEDGER).write_text(
         json.dumps(
             {
-                "ts": 1.0,
+                "ts": bwt.time.time(),
                 "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
                 "overall_status": "all_failed",
                 "producer_count": 1,
@@ -543,7 +543,7 @@ def test_degraded_tick_does_not_run_memory_consolidation(tmp_path: Path):
     (state / bwt.TICK_LEDGER).write_text(
         json.dumps(
             {
-                "ts": 1.0,
+                "ts": bwt.time.time(),
                 "truth_label": bwt.SUPERVISOR_TRUTH_LABEL,
                 "overall_status": "all_failed",
                 "producer_count": 1,

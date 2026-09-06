@@ -100,6 +100,9 @@ simulation_publicpush_sandbox/
 .idea/
 .env
 .env.*
+/config.json
+/node_registry.json
+.sifta_keys/
 
 
 # ── large logs / dumps at repo root (move to .sifta_state/ if needed) ──

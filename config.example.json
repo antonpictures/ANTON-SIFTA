@@ -1,0 +1,4 @@
+{
+  "_comment": "Local node addresses. Copy to config.json and configure your own peers; never ship another owner's addresses.",
+  "nodes": {}
+}

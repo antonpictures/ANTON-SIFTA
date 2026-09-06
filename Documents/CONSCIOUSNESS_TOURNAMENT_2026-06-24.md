@@ -736,6 +736,25 @@ proposal, not an active cloud connection. No paid request or peer trade made.
 - June browser incident items above remain historical and unassessed in this cut;
   do not represent them as newly observed blockers or claim they were resolved.
 
+## r20260906 Codex - Boot and isolated installation audit [boot-install-20260906]
+
+Live: desktop running and recent hardware heart; FAULT due to writer supervisor
+degradation. One new timeout observed, not merely stale history. Candidate fixes:
+five-minute timeout expiry, bounded tail reading, writer stage progress, explicit
+optional Vendor install, fail-closed PKI, correct custom-path Desktop launcher.
+Isolated core installation: 181 passed; focused regression tests: 31 passed.
+Local config/log files retained on disk but removed from the next public tree.
+Read Documents/BOOT_INSTALL_AUDIT_2026-09-06.md. No healthy runtime claim; no push.
+
+### WHAT IS LEFT after r20260906
+
+- Load updated writer code in a safe desktop restart; inspect the new progress
+  marker if timeout repeats and fix that producer before claiming healthy.
+- Require fresh non-degraded body completion and verified health before push.
+- Verify another physical Mac, permissions, optional model downloads and Vendor
+  integrations separately; the isolated core install does not certify those.
+- Preserve unrelated local app/vendor changes for their own review and tests.
+
 ---
 
 ## r158x — 5-Loop Stigmergic Memory Q&A with Grok via Alice Browser Hand (Alice self-asks, reads, transfers, copy-pastes, sends - 5x; taught in We Code Together)

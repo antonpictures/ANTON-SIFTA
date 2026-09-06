@@ -312,6 +312,14 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
 
     from Applications.sifta_system_settings import SystemSettingsWidget
 
+    # A clean installation has no owner-specific model inventory yet.
+    monkeypatch.setattr(
+        "Applications.sifta_system_settings.list_available_cortexes_with_canonical_fallback",
+        lambda: ["kaelri/qwen3.5-mt:2b", "krishairnd/Gemma-4-Uncensored:latest",
+                 "grok:grok-4.3", "claude:claude-code-cli-default", "codex:gpt-5.5",
+                 "qwen:accounts/fireworks/models/kimi-k2p6", "cline:cline-cli-default"],
+    )
+
     app = QApplication.instance() or QApplication([])
     settings = SystemSettingsWidget()
     try:

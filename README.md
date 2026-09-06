@@ -388,7 +388,7 @@ so using them as Alice's voice crosses node sovereignty (§3) and vendor-identit
 | What | How to get it |
 |------|---------------|
 | macOS 13+ | Desktop organs need macOS permissions; Apple Silicon is ideal |
-| Python 3.11+ | `brew install python@3.12` or use macOS system python3 |
+| Python 3.11+ | Use a separately installed, supported Python; the macOS system Python may be too old |
 | Git | `xcode-select --install` (if not already present) |
 | Homebrew (optional) | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` |
 
@@ -396,12 +396,13 @@ so using them as Alice's voice crosses node sovereignty (§3) and vendor-identit
 
 ```bash
 cd ~/Music
-git clone --recurse-submodules https://github.com/antonpictures/ANTON-SIFTA.git ANTON_SIFTA
+git clone https://github.com/antonpictures/ANTON-SIFTA.git ANTON_SIFTA
 cd ANTON_SIFTA
 ```
 
-`--recurse-submodules` materializes the optional `Vendor/` integrations. The
-core Python OS, tests, and demos remain in the main repository.
+The core desktop does not require optional `Vendor/` integrations. Request them
+explicitly with the installer's `--with-vendor` flag; their upstream revisions
+and availability are separate from the core installation.
 
 ### 2. Create virtualenv and install dependencies
 
@@ -415,10 +416,12 @@ installer remains code-only and does not download multi-GB model weights.
 ### 3. Bootstrap cryptographic identity (installer does this; manual fallback)
 
 ```bash
-PYTHONPATH=. python3 -m System.bootstrap_pki
+PYTHONPATH=. .venv/bin/python -m System.bootstrap_pki
 ```
 
-This generates your node's Ed25519 keypair under `.sifta_state/`.
+This generates the account's private key under `~/.sifta_keys/` and registers
+its public key under `.sifta_state/`. Never copy either node's private identity
+or personal memory into a public release. A bootstrap failure stops installation.
 
 ### 4. Launch SIFTA OS
 
@@ -7422,3 +7425,24 @@ Fresh challenges and settlement replay checks remain necessary for peer exchange
 The [optional Astra cortex preparation](Documents/SIFTA_OPTIONAL_ASTRA_CORTEX_PREPARATION.md)
 records provider-independent Alice identity, privacy boundaries and the bounded
 integration test plan. **No Astra API connection or paid request was made.**
+
+### September 6: Clean Installation Audit, Live Health Still Degraded
+
+The candidate core installer passed in an isolated source tree with a new Python
+environment, empty runtime state and separate temporary account home: **181 smoke
+tests passed**, PKI bootstrap passed, and the desktop module imported. Another
+**31 tests** cover writer timeout expiry, progress diagnostics and installer rules.
+This is same-machine isolation, not certification of every Mac or optional organ.
+
+Core installation skips optional Vendor submodules unless `--with-vendor` is
+requested. Identity failures stop installation; successful install receipts follow
+the smoke gate. The Desktop launcher now uses the actual install directory.
+Local peer configuration is generated from empty examples without replacing an
+existing file. Local logs and peer addresses are removed from the next public tree,
+not from the owner's disk or historical Git commits.
+
+The live desktop is running but still reports supervisor degradation. Old timeout
+history now expires, and a stage progress marker will identify future stalls.
+**Publication is held under the owner's healthy-before-push condition.** The matrix
+was refreshed; 20/20 canonical organ files present is not proof of runtime health.
+See [the audit and remaining checks](Documents/BOOT_INSTALL_AUDIT_2026-09-06.md).
