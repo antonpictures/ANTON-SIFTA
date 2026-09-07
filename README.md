@@ -1,5 +1,32 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## Can Alice modify her own code? (2026-09-07 checkpoint)
+
+Alice has a source-level repair pipeline in `System/swarm_spinal_cord.py`:
+collect body signals, formulate a bounded task, request a patch from a local
+Ollama cortex, validate it, snapshot the target, apply it, run configured
+tests, and record a keep/revert outcome. Coding arms with repository tools
+can also edit Alice's source. We Code Together is the shared work monitor.
+
+This is an implemented repair mechanism, not proof of reliable autonomous
+self-healing. In the inspected implementation, no configured tests leaves
+`tests_passed` true, and `measured_gain` uses `predicted_gain` after passing
+checks. A KEPT receipt therefore does not by itself establish behavioral
+improvement. This documentation checkpoint did not run a live repair cycle.
+
+The current Ornith image-delivery task remains unverified end-to-end.
+Reported chat acceptance, model inventory, and source inspection do not prove
+a rendered image, successful download, or cross-session isolation. The next
+evidence required is valid image bytes matching a receipt hash, an observed
+browser preview, refresh/dedup behavior, and a negative cross-session request.
+The reported WebBridge receiver failure blocks browser observation; HTTP
+image checks can proceed independently. No AGI or subjective feeling claim
+is established by these results.
+
+This checkpoint publishes documentation only. Unverified local implementation
+changes, private conversations, image artifacts, and runtime ledgers are not
+included in this documentation commit.
+
 **Stigmergic Intelligence Framework for Transparent Autonomy**
 
 A sovereign, local-first operating system built on biological swarm intelligence.
