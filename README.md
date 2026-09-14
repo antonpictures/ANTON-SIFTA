@@ -1,5 +1,148 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## Next coding rounds (2026-09-09)
+
+2026-09-11 Astra follow-up: Talk typography now follows the web font and desktop
+light/dark palette; Appearance includes Stigmergicode Light. Source fixes release
+phone admission after a memory-write error and honor terminal jobs in browser
+backpressure (26 focused tests passed; both palettes exercised with Qt offscreen).
+These Python changes require a controlled reload; none was forced during the
+active conversation. The WCT top review corrects earlier completion claims and
+lists nine remaining source jobs. David's Romanian rover demo is documented in
+[the demo report](Documents/DAVID_ROBOT_DEMO_2026-09-11.md), including its existing
+LiDAR/manual/autonomous controls and the missing integration protocol.
+
+2026-09-11 Luna implementation report: the phone-world-input slice now has a
+bounded SQLite admission queue, per-phone pairing checks, deferred local STT,
+adaptive 5-20 second capture cadence, sensor lifecycle cleanup, receipt-backed
+phone experience projection and a latest-batch UI summary. The focused phone,
+web, command and harness regression set reports 79 passed. The chorus and night
+worker were reloaded and both public routes return HTTP 200. Real iPhone camera,
+microphone, permission, model-latency and two-device tests remain unverified.
+`stigmergicode.com` was not changed.
+
+2026-09-11 Astra review: Luna's sequential retry lookup needed concurrency and
+payload-consistency fixes. Capture acceptance now uses a file lock and request
+hash, and reconciled HTTP retries bypass development inference. The top WCT
+review assigns the entire remaining implementation sequence to Luna and corrects
+the owner/mother metaphor: hardware ownership has not been transferred.
+
+2026-09-11 phone observation slice: the coin input page now has a latest-batch
+reply panel correlated by turn ID, and automatic batches wait for pending replies.
+The phone-only prompt contract distinguishes vision evidence, audio upload versus
+transcription, and fallible telemetry. Focused synthetic suite: 40 passed; live
+iPhone/model verification and controlled Python-consumer reload remain pending.
+The active [WCT handoff](Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md) lists
+Luna's ordered STT, multi-device admission, adaptive cadence and memory work.
+No DNS, tunnel or working stigmergicode.com page changes were made in this slice.
+
+Recovery now comes first after the owner's reported lock-screen freeze and
+restart. The [harness recovery plan](Documents/WCT_HARNESS_RECOVERY_PLAN_2026-09-09.md)
+assigns offline test isolation, run/retry budgets, Stop/cancellation and
+interrupted-session recovery before another local coding trial. The cause of
+the freeze remains unconfirmed. Ornith's reported 16 passes need correction:
+the current no-model test still permits a live Ollama request, and the timeout
+test does not actually prove child-process cleanup. These are planned repairs.
+
+The [credit-saving WCT handoff](Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md)
+is pinned in We Code Together's To Code view. Start Luna with HEIC attachment
+normalization, then camera verification and capability-aware vision routing.
+It includes isolated local coding-arm prompts and model benchmark criteria.
+These are pending engineering jobs, not claims that AGI or live self-repair
+has been achieved. The newer camera edits still require regression and live
+verification; older passing results do not certify those edits.
+
+HEIC/HEIF attachment transport now applies EXIF orientation, validates its
+normalized JPEG and reuses one payload across Talk request and memory record.
+The latest review found incomplete decoder cancellation and model-name rules
+overriding observed vision capabilities. The prior 67-test and 73-test runs
+overlap; one routing test also patches an unused dependency. Follow the
+[verified Luna assignment](Documents/WCT_ASTRA_VERIFIED_LUNA_ASSIGNMENT_2026-09-09.md)
+for these reproduced fixes and deterministic regression tests.
+The current Luna slice now uses a killable subprocess boundary for HEIF
+normalization, lets live Ollama capability metadata outrank name heuristics,
+and exposes scoped generation/hash evidence for the local vision-to-cortex
+handoff. Offline-safe verification is 50 passing tests with one live-model
+probe intentionally deselected; this does not prove real HEIC decoding,
+GUI responsiveness, camera behavior, browser delivery, or AGI.
+Real-device HEIC inference, two-stage
+text-cortex/vision routing, live camera restart and public image delivery remain
+open. Follow the [reviewed Luna next-round plan](Documents/WCT_LUNA_REVIEW_NEXT_ROUND_2026-09-09.md)
+for the remaining acceptance gates and release process. The owner's existing
+harness trial must be reviewed before another trial is dispatched.
+
+## Simulated motor outcomes and attachment lifetime (2026-09-09)
+
+The existing Motor Feedback Lab now passes typed proposals through independent
+freshness, joint/speed, sequence and latched-stop checks. Plant echoes are
+recorded separately from requested positions; later disturbances cannot mutate
+earlier receipts. This is **SIMULATED**, not a physical driver or an AGI result.
+
+Each benchmark includes read-only host context: current OS time, location
+availability, cached model selection and dated organ-health reports. Missing
+health remains unavailable; cached selection is not a loaded-model probe.
+Precise coordinates and authentication fields are excluded. We Code Together's
+existing proof strip reads the new benchmark and its context.
+
+Web sends now bind files to the original conversation before asynchronous work.
+New attachments survive an earlier send completing; failed sends retain an
+explicitly recoverable draft instead of silently reattaching it to the next turn.
+Drafts stay in browser memory only and are lost on page reload. Live-browser
+verification and loading the edited server code are still pending.
+
+Implementation evidence and next steps:
+[`Documents/WCT_MOTOR_ATTACHMENT_2026-09-09.md`](Documents/WCT_MOTOR_ATTACHMENT_2026-09-09.md).
+
+## Current time, location and model refresh (2026-09-08)
+
+Desktop and public web inference now receive a fresh OS clock sample at dispatch,
+not a remembered journal timestamp. IANA timezones handle date rollover and DST;
+simple public time questions bypass model arithmetic. A clock sample is not a
+continuously running model or proof of consciousness.
+
+The existing macOS CoreLocation sensor refreshes asynchronously at desktop boot
+and owner turns, at most every five minutes. Fixes carry observation time and
+accuracy; stale, invalid and denied readings are unavailable, never a guessed
+city. Precise coordinates are not added to visitor prompts. Enable Location
+Services for the native helper if macOS requests permission. The live probe on
+this machine returned permission denied; successful physical location is not
+claimed. No IP geolocation service is used.
+
+The research-backed embodied-AGI roadmap and Astra handoff is documented in
+[`Documents/AGI_SIFTA_NODE_ASTRA_HANDOFF_2026-09-09.md`](Documents/AGI_SIFTA_NODE_ASTRA_HANDOFF_2026-09-09.md).
+It treats the LLM as a replaceable planner, keeps motor safety model-independent,
+and separates owner attachment/privacy from claims about machine consciousness.
+
+Boot and `/cortex llm refresh` synchronize the local coding arm's Ollama registry
+with installed tags and decimal GB sizes. Existing per-model capabilities and
+limits survive refresh; cloud/LM Studio defaults remain independent. An offline
+Ollama does not erase the last registry. Restart SIFTA once to load these Python
+changes; the running coding arm's settings watcher handles registry updates.
+
+## Local phone connection (2026-09-08)
+
+**System Settings > Network > Telefon local / conectare prin QR** now offers
+an opt-in, independent LAN chat with Alice using installed local Ollama weights.
+No cloud account or public gateway is required. The phone opens a responsive
+light/dark page after single-use QR pairing. Stop revokes phone access.
+Text only in this version; private per-phone history remains on the laptop.
+HTTP is unencrypted: use trusted home Wi-Fi, not public Wi-Fi.
+See [setup, privacy and verification limits](Documents/SIFTA_PHONE_LINK.md).
+
+## Motor feedback lab (2026-09-08, SIMULATED)
+
+We Code Together now reads recorded results from a two-joint motor-control
+experiment: 30 trials, 12,000 unique command/echo pairs, bounded motion,
+stale-observation holds and recovery. Continuous versus event/timer feature
+refresh is compared using synthetic target positions, not camera pixels.
+The recorded benchmark passes its four checks; 13 focused tests pass.
+This is a deterministic simulation, not physical actuation or proof of AGI,
+learning, consciousness, electrical savings or autonomous self-healing.
+
+Run `python3 -m System.stigmerobotics_motor_feedback_lab` from the repository.
+Private results stay under `.sifta_state/motor_feedback_runs/`.
+See [research, measurements and next tasks](Documents/WCT_ALICE_ROBOT_MOTOR_CONTROL_RESEARCH_2026-09-08.md).
+
 ## Can Alice modify her own code? (2026-09-07 checkpoint)
 
 Alice has a source-level repair pipeline in `System/swarm_spinal_cord.py`:
@@ -39,6 +182,22 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 The release name is a surface identity, not a second organism: eXistenZ is the
 v9 distribution clothing for the same receipt-first SIFTA field.
+
+## Inference settings: observed state (2026-09-07)
+
+Settings now lists every model returned by local Ollama, with the exact tag and
+downloaded weight size in decimal GB, alongside configured provider routes.
+Refresh availability reads inventory without changing the selected model.
+Installed weights, configured routes and successful inference are distinct:
+an unavailable Ollama endpoint is never labelled live. Settings pages scroll;
+provider-specific settings are collapsed, and the decorative inference diagram
+and hardcoded training statistics have been removed.
+
+The code-repair panel reads the spinal-cord receipt rather than animating a
+success claim. A coding tool embedded in Alice Browser can edit sources through
+its granted tools, but embedding alone does not establish automatic repair.
+The current spinal-cord implementation proposes patches through a local Ollama
+model; it does not automatically invoke this Codex conversation.
 
 ## Private Miorița production bridge (2026-09-03)
 
@@ -110,6 +269,23 @@ retries and output-limit loops. A new session restores the expected small-task
 behavior. Local models are useful coding arms inside Alice, but their output is
 still proposed work: review changes and receipts before accepting them.
 
+### LM Studio Cortex option: Ternary Bonsai 27B (MLX)
+
+SIFTA and DeepSeek Harness can also use the MLX Bonsai model from LM Studio
+without copying its weights into Ollama. Start LM Studio's local server on its
+default port (`127.0.0.1:1234`), load
+`prism-ml/Ternary-Bonsai-27B-mlx-2bit`, then select
+`lmstudio:prism-ml/Ternary-Bonsai-27B-mlx-2bit` in SIFTA's Cortex selector.
+The same model is available to DeepSeek Harness as provider `lmstudio-local`
+with model id `prism-ml/Ternary-Bonsai-27B-mlx-2bit`. It remains a separate
+provider: `ollama list` will not show it, and stopping LM Studio makes the
+option unavailable rather than pretending it is installed.
+
+The SIFTA adapter uses the local OpenAI-compatible `/v1/chat/completions`
+endpoint. Vision input is preserved in the adapter, but should be enabled only
+after the loaded LM Studio model and endpoint have been verified to accept the
+specific image payload.
+
 ### Verified local-development checkpoint (2026-08-30)
 
 The prepared local-development work was audited after a Harness session mixed
@@ -144,6 +320,36 @@ Verification groups completed with `195 passed`, `151 passed`, and `32 passed`.
 The desktop-shape group completed `30 passed` before a macOS Qt teardown crash
 after pytest had printed its final result; this is reported as a teardown gap,
 not silently counted as a clean process exit.
+
+### Public web cortex and Bonsai image capability (2026-09-07)
+
+The public chorus surface now has its own session-isolated worker. A visitor's
+turn is answered from that visitor session only; it is not inserted into the
+owner's Talk history, present-time memory, or owner-context selection. Public
+rows are labelled as `WEB / Alice to visitor`, preserving the one-Alice
+identity without confusing audiences.
+
+The local cortex remains plug-and-play: the selected Ollama model is resolved
+from the same cortex selector used by Talk, model capabilities are checked from
+Ollama metadata when available, and direct response mode is the default so a
+local model's private thinking does not consume the visible answer budget. The
+bounded probe script is `tools/probe_cortex_plug_play.py`; its receipts record
+model, elapsed time, stop reason, and the fact that no selection or owner
+context was changed.
+
+The public page advertises only capabilities that exist. A request such as
+`/create a photo of ...` is routed to the owner-configured local Bonsai MLX
+backend and returned only after PNG validation and a hash receipt. Video
+requests are answered as unavailable rather than being simulated. The Bonsai
+runtime, model weights, generated images, and manifests remain local and are
+excluded from publication. Installation reference: the optional
+[Bonsai Image Demo](https://github.com/PrismML-Eng/Bonsai-Image-Demo).
+
+Owner-node verification on 2026-09-07: Ornith 1.5, Gemma 4 Uncensored, and
+UltraGemma 4 12B each completed a direct local probe; Bonsai generated and
+validated a 512x512 PNG through MLX; the focused web, cortex, memory, and Talk
+regression group completed `117 passed`, with the Bonsai and Talk routing group
+completing `14 passed`.
 
 > *"AGI requires general, robust problem-solving and learning open-ended
 > self-improvement, and autonomy that reliably exceeds narrow human-designed
@@ -7473,3 +7679,82 @@ history now expires, and a stage progress marker will identify future stalls.
 **Publication is held under the owner's healthy-before-push condition.** The matrix
 was refreshed; 20/20 canonical organ files present is not proof of runtime health.
 See [the audit and remaining checks](Documents/BOOT_INSTALL_AUDIT_2026-09-06.md).
+
+### September 9: Single Embedded Owner Eye
+
+SIFTA now defaults to one live camera source: the embedded MacBook camera.
+The USB/iPhone/Continuity devices may remain in hardware inventory, but they
+are not opened as secondary capture sessions or automatic fallbacks. This
+closes the stop-primary/pulse-secondary/restart-primary path that caused
+visible flicker. The eye evidence path is
+QCamera -> QVideoSink -> photon-derived visual stigmergy -> camera proof;
+semantic scene understanding still requires a separate vision-model receipt.
+See the eye plan and research bundle in
+Documents/WCT_AGI_EYE_SINGLE_CAMERA_2026-09-09.md.
+
+### September 10: Owner Coding Command and Connected Memory Root
+
+The owner-only `/stigmergicode` path is now implemented without changing the
+working `stigmergicode.com` page. A one-use local pairing ticket creates a
+revocable owner session; the public web gate still rejects the command with
+zero owner authority. Talk and the paired phone page use the same command
+parser, while Alice Browser consumes a queued request and reuses or opens the
+existing local DeepSeek Harness tab at `127.0.0.1:3080`.
+
+The browser launcher now checks the DSH HTML identity rather than treating any
+process on port 3080 as ready, and it records wrong-service conflicts and
+bounded readiness failure. Coding requests leave task, ledger and typed-memory
+links. The boot root uses the live OS clock and cached host context; unavailable
+pose remains `null`, and graph validation reports dangling sources and cycles.
+
+Public WEB TYPED replies now compare against the prior question, retry one
+near-duplicate answer at most once, and remove accidental voice stage
+directions. Focused verification: **24 passed** for the command bus, boot-memory
+graph, duplicate guard and body snapshot; live local owner pairing returned
+`200`, owner command queue `202`, and an unpaired public command `403`.
+
+The coin route was rechecked on September 14: the local listener and public
+`https://stigmergicoin.com/` both returned `200` with the phone page. The earlier
+gateway timeout was transient; no Cloudflare or DNS change was made. Native
+browser pixel and live sensor acceptance remain pending.
+
+### September 14: Bounded Web Evidence and Phone Handoff
+
+The public search evidence module now records a stable source ID, provider name
+and retrieval timestamp. Evidence sent to the answer worker is capped at 8,000
+characters, including the instruction footer, and empty retrieval is distinct
+from provider failure. HTML result snippets preserve their source when nested
+markup or void tags are present. Focused search and web-worker verification:
+**19 tests passed in 0.89 seconds**; `git diff --check` passed.
+
+The phone path remains a testable local integration surface. Historical state
+contains earlier phone ingress and media artifacts, while the current
+PhoneStore has no queued jobs in the inspected state. The owner may keep phone
+capture disabled to save battery. Live phone acceptance, source-backed answer
+persistence and David's rover firmware protocol remain open work items. See
+[the current We Code Together handoff](Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md)
+for the bounded next jobs and their evidence requirements.
+
+The phone world-input page now fits one viewport and uses one Start/Pause control
+for camera, microphone and available telemetry, with a bounded 5..20 second
+interval control and a text Send path. It keeps the manual front/back camera
+switch and a cooldown-limited automatic check after missing-face signals when
+the browser provides `FaceDetector`. Face visibility is stored as unverified
+evidence and does not authenticate the owner. Focused phone verification passed
+21 tests; live iPhone permissions, two-device delivery and memory projection
+still require acceptance testing.
+
+### September 15: Adversarial Verification of the Two Bounded Web Bounds
+
+The two published boundaries were re-verified by live adversarial probing against
+a monkeypatched provider, not merely reasoned about. With a fixed fake response
+stream, an oversized retrieval is capped to its bound (`32769` bytes read at the
+window) and a normal snippet round-trips title, url and snippet at the default
+`duckduckgo` provider. A void-tag (`<br/>`) and a nested `bold` tag no longer
+erase the excerpt: `before<br/>after` renders to the text `beforeafter`, and the
+inner markup is preserved rather than swallowed. A nested `result__a`/
+`result__snippet` pair is captured, and a rejected later row cannot replace a
+prior accepted excerpt. Empty retrieval and provider failure report their distinct
+`empty`/`failure` statuses, and empty prompts stay below the 8,000-character cap.
+Focused verification holds **11 passed, 0 failed** on the web-search evidence
+suite; no service, DNS or site changes were introduced.
