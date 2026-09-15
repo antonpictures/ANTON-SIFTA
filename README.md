@@ -1,5 +1,29 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## David rover integration status (2026-09-15)
+
+David's private [E_Motion-Rover repository](https://github.com/davidk-ro/E_Motion-Rover)
+was received at commit `5fdd0351fc20dc3697e913dee46aaeac5ebfb63b`. SIFTA now has
+an isolated RVR1 UDP adapter for the documented T-Camera protocol, bounded LiDAR
+scan assembly, a conservative front-clearance gate, and a David-side gateway
+process at `scripts/david_rover_gateway.py`. The WAN bridge keeps telemetry/chat
+credentials separate from a five-minute control lease; commands expire, are
+claimed once, and require an acknowledgement.
+
+Verified locally: the RVR1 loopback simulator, wire validation, LiDAR freshness
+and obstacle gate, SQLite control queue, HTTP routes, and gateway dispatcher pass
+`27` focused tests. This is software/simulator evidence only. The real rover is
+not claimed connected or moving: David still needs to confirm the flashed
+firmware commit, LAN address, private RVR1 key, stop hardware, LiDAR axes and
+supervised low-speed acceptance. External UDP drive bypasses the firmware's
+`AutoNavigator`, so the local safety gate and finite firmware watchdog are
+mandatory. See the [full WCT rover handoff](Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md).
+
+The gateway requires `SIFTA_ROVER_TOKEN`, `SIFTA_ROVER_CONTROL_TOKEN`,
+`SIFTA_ROBOT_ID`, `SIFTA_CONNECTION_ID`, `RVR1_HOST` and `RVR1_PSK`; secrets are
+not stored in this repository. No DNS, tunnel, or `stigmergicode.com` route was
+changed by this implementation.
+
 ## Next coding rounds (2026-09-09)
 
 2026-09-11 Astra follow-up: Talk typography now follows the web font and desktop
