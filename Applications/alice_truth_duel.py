@@ -536,8 +536,12 @@ def main() -> int:
     print(response)
     if not args.quiet:
         try:
+            from System.swarm_speech_language import voice_for_text
             from System.swarm_vocal_cords import get_default_backend, VoiceParams
-            get_default_backend().speak(response, VoiceParams(rate=1.1))
+
+            get_default_backend().speak(
+                response, VoiceParams(rate=1.1, voice=voice_for_text(response, "") or None)
+            )
         except Exception:
             pass
 

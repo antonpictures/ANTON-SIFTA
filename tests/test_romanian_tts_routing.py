@@ -62,8 +62,16 @@ def test_english_never_routes_to_romanian_voice(text):
 
 
 @pytest.mark.parametrize("text", ROMANIAN_ASCII + ROMANIAN_DIACRITICS)
-def test_romanian_routes_to_ioana(text):
-    assert _tts_voice_for_text(text, "Samantha") == "Ioana"
+def test_romanian_routes_to_installed_romanian_voice(text):
+    """The voice must be a real installed ro_RO voice, not a hardcoded name.
+
+    macOS reports this machine's Romanian voice as
+    "Ioana (Romanian (Romania))", so the old exact `== "Ioana"` check silently
+    fell back to the English default. Assert the locale-matched result instead.
+    """
+    voice = _tts_voice_for_text(text, "Samantha")
+    assert voice != "Samantha"
+    assert "ioana" in voice.lower() or "romanian" in voice.lower()
 
 
 def test_empty_and_trivial_text_is_not_romanian():

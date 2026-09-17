@@ -38,12 +38,19 @@ def _speak(request: dict) -> None:
     ok = False
     error = ""
     backend_name = "unknown"
+    voice = ""
+    language = ""
     try:
         from System.swarm_vocal_cords import VoiceParams, get_default_backend
+        from System.swarm_speech_language import detect_language, voice_for_text
 
+        # The web mouth had no language routing, so Romanian replies were read
+        # by the English default voice. Resolve the voice from the reply text.
+        language = detect_language(text)
+        voice = voice_for_text(text, "")
         backend = get_default_backend()
         backend_name = str(getattr(backend, "name", "unknown") or "unknown")
-        ok = bool(backend.speak(text, VoiceParams()))
+        ok = bool(backend.speak(text, VoiceParams(voice=voice or None)))
         if not ok and hasattr(backend, "last_failure_reason"):
             error = str(backend.last_failure_reason() or "speech_backend_returned_false")
         elif not ok:
@@ -56,6 +63,8 @@ def _speak(request: dict) -> None:
         "event": "WEB_TYPED_SPEECH_RUNTIME",
         "request_id": request_id,
         "backend": backend_name,
+        "voice": voice,
+        "language": language,
         "ok": ok,
         "error": error,
         "truth_label": "WEB_TYPED_SPEECH_RUNTIME_V1",

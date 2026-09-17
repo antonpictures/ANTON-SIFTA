@@ -88,15 +88,39 @@ sau dar acum aici doar asta tine hai cel cea cele intre dintre imi iti
 place unde cand cine cum bine ceva mult mereu deci pai atunci cu ca si sa
 ne de nu ii le ei ele noi voi vom va vor mi ti se te ma isi
 """.split())
+# Legacy hint kept for callers; the real installed name is resolved by
+# locale in _romanian_voice_name() ("Ioana (Romanian (Romania))" here).
 _RO_VOICE = "Ioana"
+
+
+def _romanian_voice_name() -> str:
+    """Installed Romanian voice, resolved by locale rather than exact name.
+
+    macOS reports this machine's voice as "Ioana (Romanian (Romania))", so the
+    historical exact-string check against "Ioana" never matched. The shared
+    speech-language module resolves by the ro_RO family prefix.
+    """
+    try:
+        from System.swarm_speech_language import macos_voice_for_locale
+
+        return str(macos_voice_for_locale("ro") or "")
+    except Exception:
+        return ""
 
 
 def _is_romanian(text: str) -> bool:
     """True if `text` looks Romanian — diacritics OR Romanian vocabulary.
 
-    English-collision words (care, mine, mai, la, am, are) are excluded so
-    English never routes to the Romanian voice.
+    Delegates to the shared speech-language module so Broca, the Talk widget,
+    and the public web mouth classify identically, then falls back to the
+    local word lists if that import is unavailable.
     """
+    try:
+        from System.swarm_speech_language import is_romanian
+
+        return bool(is_romanian(text))
+    except Exception:
+        pass
     if not text:
         return False
     if _RO_DIACRITICS.search(text):
@@ -458,9 +482,10 @@ class BrocaEgress:
             _BROCA_SPEAKING.set()
             try:
                 ro = _is_romanian(text)
+                ro_voice = _romanian_voice_name() if ro else ""
                 if _VOCAL_CORDS_AVAILABLE and _get_voice_backend is not None:
                     backend = _get_voice_backend()
-                    base = (_VoiceParams(voice=_RO_VOICE) if ro else _VoiceParams()) if _VoiceParams else None
+                    base = (_VoiceParams(voice=ro_voice) if ro_voice else _VoiceParams()) if _VoiceParams else None
                     if _MODULATOR_AVAILABLE and _modulate_voice is not None:
                         params = _modulate_voice(text, base=base)
                     else:
@@ -478,8 +503,8 @@ class BrocaEgress:
                 # change the timeout/return contract on partial installs.
                 try:
                     _say_cmd = ["say"]
-                    if ro:
-                        _say_cmd.extend(["-v", _RO_VOICE])
+                    if ro_voice:
+                        _say_cmd.extend(["-v", ro_voice])
                     _say_cmd.extend(["--", text])
                     proc = subprocess.run(
                         _say_cmd,

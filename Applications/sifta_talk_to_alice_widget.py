@@ -20637,16 +20637,28 @@ place unde cand cine cum bine ceva mult mereu deci pai atunci cu ca si sa
 ne de nu ii le ei ele noi voi vom va vor mi ti se te ma isi
 """.split())
 
-_RO_VOICE_NAME = "Ioana"
+# Romanian TTS routing lives in ONE shared place so the Talk mouth, Broca, and
+# the public web mouth cannot drift apart again. macOS reports this machine's
+# Romanian voice as "Ioana (Romanian (Romania))", not "Ioana", so the old
+# exact-name check silently fell back to the English default voice.
+#   Module: System/swarm_speech_language.py
+_RO_VOICE_NAME = "Ioana"           # legacy hint, kept for callers/tests
+_RO_VOICE_PREFIXES = ("Ioana (Romanian", "Ioana")
 
 
 def _detect_romanian(text: str) -> bool:
     """True if `text` looks Romanian — diacritics OR Romanian vocabulary.
 
-    Works on plain ASCII Romanian (no diacritics). Any single decisive word
-    is enough; otherwise a density of Romanian function words is required, so
-    English text stays on the English voice.
+    Delegates to the shared speech-language module (which itself reuses the
+    cortex-side detector), then falls back to the local word lists if that
+    import is unavailable.
     """
+    try:
+        from System.swarm_speech_language import is_romanian
+
+        return bool(is_romanian(text))
+    except Exception:
+        pass
     if not text:
         return False
     if _RO_DIACRITICS.search(text):
@@ -20661,13 +20673,36 @@ def _detect_romanian(text: str) -> bool:
     return n >= 4 and stop >= max(3, n * 0.4)
 
 
+def _ro_voice_from_names(names) -> str:
+    """Pick an installed Romanian voice by prefix, never by exact name."""
+    ordered = sorted(str(name) for name in (names or ()))
+    for prefix in _RO_VOICE_PREFIXES:
+        for name in ordered:
+            if name.startswith(prefix):
+                return name
+    for name in ordered:
+        if "Romanian" in name:
+            return name
+    return ""
+
+
 def _tts_voice_for_text(text: str, default_voice: str) -> str:
-    """Return the macOS voice name appropriate for the text's language."""
-    if _detect_romanian(text):
-        available = _available_macos_voice_names()
-        if not available or _RO_VOICE_NAME in available:
-            return _RO_VOICE_NAME
-    return default_voice
+    """Return the macOS voice name appropriate for the text's language.
+
+    Non-English owner text routes to an installed voice in that language; a
+    missing voice leaves `default_voice` untouched so Alice still speaks.
+    """
+    if not _detect_romanian(text):
+        return default_voice
+    try:
+        from System.swarm_speech_language import voice_for_text
+
+        resolved = voice_for_text(text, "")
+        if resolved:
+            return resolved
+    except Exception:
+        pass
+    return _ro_voice_from_names(_available_macos_voice_names()) or default_voice
 
 
 def _clean_tts_markdown(text: str) -> str:

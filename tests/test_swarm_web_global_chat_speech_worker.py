@@ -19,7 +19,11 @@ def test_speech_worker_completes_a_successful_request(monkeypatch):
             return True
 
     vocal_cords = types.ModuleType("System.swarm_vocal_cords")
-    vocal_cords.VoiceParams = type("VoiceParams", (), {})
+    class VoiceParams:
+        def __init__(self, voice=None):
+            self.voice = voice
+
+    vocal_cords.VoiceParams = VoiceParams
     vocal_cords.get_default_backend = lambda: FakeBackend()
     monkeypatch.setitem(sys.modules, "System.swarm_vocal_cords", vocal_cords)
     monkeypatch.setattr(
@@ -34,13 +38,15 @@ def test_speech_worker_completes_a_successful_request(monkeypatch):
     worker._speak({"request_id": "turn-1", "text": "Bună, mamă."})
 
     assert completed == [{"request_id": "turn-1", "ok": True, "error": ""}]
-    assert health == [
-        {
-            "event": "WEB_TYPED_SPEECH_RUNTIME",
-            "request_id": "turn-1",
-            "backend": "fake",
-            "ok": True,
-            "error": "",
-            "truth_label": "WEB_TYPED_SPEECH_RUNTIME_V1",
-        }
-    ]
+    assert len(health) == 1
+    row = health[0]
+    assert row["event"] == "WEB_TYPED_SPEECH_RUNTIME"
+    assert row["request_id"] == "turn-1"
+    assert row["backend"] == "fake"
+    assert row["ok"] is True
+    assert row["error"] == ""
+    assert row["truth_label"] == "WEB_TYPED_SPEECH_RUNTIME_V1"
+    # The web mouth must now carry the detected language and the resolved voice
+    # so a Romanian reply cannot silently be read by the English default.
+    assert row["language"] == "romanian"
+    assert "ioana" in row["voice"].lower() or "romanian" in row["voice"].lower()

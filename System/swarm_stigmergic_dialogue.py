@@ -983,15 +983,24 @@ def compose_and_speak(occasion: str = "farewell", *,
                       **kwargs) -> str:
     """Compose a line AND vocalize it via swarm_vocal_cords. Returns the line."""
     line = compose_line(occasion, **kwargs)
+    # Route through the shared language resolver so an autonomous line that
+    # comes out Romanian is not read by the English voice. English keeps the
+    # explicitly requested voice.
+    try:
+        from System.swarm_speech_language import voice_for_text
+
+        spoken_voice = voice_for_text(line, voice) or voice
+    except Exception:
+        spoken_voice = voice
     try:
         from System.swarm_vocal_cords import get_default_backend, VoiceParams
         backend = get_default_backend()
-        backend.speak(line, VoiceParams(rate=rate, voice=voice))
+        backend.speak(line, VoiceParams(rate=rate, voice=spoken_voice))
     except Exception:
         # Fall back to raw `say` so we never go silent on the user.
         try:
             import subprocess
-            cmd = ["say", "-v", voice, line]
+            cmd = ["say", "-v", spoken_voice, line]
             if blocking:
                 subprocess.run(cmd, check=False, timeout=20)
             else:

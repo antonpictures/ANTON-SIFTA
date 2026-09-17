@@ -1,5 +1,75 @@
 # We Code Together: next coding rounds
 
+## Romanian TTS language routing fixed (2026-09-17)
+
+Owner report: "when Alice responds in Romanian in text the voice is still in
+english." Root cause was a silent voice lookup mismatch, twice over.
+
+Three mouths each decided the Romanian voice independently, and two of them
+compared the exact string `"Ioana"`. This Mac's installed voice is reported by
+`say -v ?` as `Ioana (Romanian (Romania))`, so the exact check never matched and
+Romanian text fell through to the English default (Samantha). The public web
+mouth (`swarm_web_global_chat_speech_worker.py`) had no language detection at
+all, so every `/speak` reply used the English default.
+
+Fix: one shared decision point, `System/swarm_speech_language.py`. It resolves a
+voice by locale family (`ro`) rather than a remembered name, reuses the
+cortex-side `swarm_reply_language.detect_owner_language` so mouth and brain
+agree, keeps the owner's chosen voice for English, and falls back to the default
+when no matching voice is installed instead of going silent. Wired into the Talk
+widget (`_tts_voice_for_text`), Broca (`_speak`), and the web speech worker.
+
+Evidence: `python3 -m pytest -q tests/test_speech_language.py
+tests/test_romanian_tts_routing.py tests/test_swarm_web_global_chat_speech_worker.py
+tests/test_alice_voice_picker.py tests/test_swarm_reply_language.py -W error` ->
+**92 passed**. The wider speech set reported **123 passed**. `say -v "Ioana
+(Romanian (Romania))" -o <tmpfile>` returned 0 and produced 75,608 bytes of
+audio, confirming the resolved name is real. The launchd service
+`com.sifta.web-global-chat-speech-worker` was restarted (PID 67314) so the live
+worker loads the fix.
+
+Eval matrix: new row `SUFL-09 speech_language_voice_routing` (COVERED/wired) in
+`System/swarm_eval_matrix_evidence.py`, pointing at the module and tests above.
+`validate_world_to_field_audit()` returns ok. No full-suite run was attempted;
+collection is still stopped by the pre-existing `inference_economy.py` hash
+mismatch in `Kernel/origin_gate.py`, which was not bypassed.
+
+
+## Current execution correction: rover local loop, 2026-09-15
+
+This supersedes the completeness implications of commit dac78d8dd. Its gateway
+never polled UDP after handshake, dropped command lifetime at claim, allowed a
+turn-only command around sensor checks, and treated X as forward. Direct review
+of David's AutoNavigator at 5fdd0351fc20dc3697e913dee46aaeac5ebfb63b establishes
+X lateral / Y forward and a minimum eight-point scan. These are now corrected.
+
+Implemented: dedicated single-owner UDP thread, continuous bounded sensor polls,
+latest-observation HTTPS upload with server sequence continuation, fresh session
+and scan reset on renewal, monotonic command lifetime reduced by complete request
+latency, device scan age included in freshness, neutral at local expiry/hazard
+and shutdown, and invalidation of pending commands when control is reissued.
+HTTPS work cannot block the UDP monitor. Upload timestamps explicitly mean
+gateway receipt, not synchronized camera/LiDAR capture. Receipt states still
+distinguish sent output from physical motion.
+
+Verification: `python3 -m pytest -q -W error tests/test_david_rover_gateway.py
+tests/test_stigmerobotics_rvr1.py tests/test_remote_rover_link.py` -> 34 passed.
+The UDP loopback test sends real authenticated datagrams on localhost, receives
+an eight-point scan and verifies short drive followed by neutral. Separate tests
+cover stale device age, sparse scans, blocked paths during WAN inactivity,
+delayed transport/ACK expiry, turn-only bypass and control renewal revocation.
+
+Next required software work: integrate David's curved-path avoidance for forward
+turning (front-only data does not authorize reverse), provide operator STOP and
+revocation that clear queued motion, bind control to a local consent/boot lease,
+correlate firmware applied/timed-out/released feedback, bound persistent command
+history, and finish phone-to-rover stationary chat/TTS. Audit the published tree's
+missing phone/auth dependencies before deployment; the working tree's passing
+tests do not certify a clean checkout. The global test collection still has the
+previously observed inference_economy integrity mismatch; no bypass was added.
+David's flashed version, LAN provisioning and real two-network acceptance remain
+external requirements. Overall driving-and-chat goal is open.
+
 ## FINAL LUNA HANDOFF: connect David's rover end to end
 
 Owner requests planning here so Luna can execute the next round. Read this
