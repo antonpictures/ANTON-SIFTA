@@ -87,7 +87,26 @@ async function consumePairTicket(){const marker='#pair=';if(!location.hash.start
 $('start').onclick=enableAll;
 $('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');updateEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
 $('voice').onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');updateVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
-$('flip').onclick=async()=>{if(!cameraStream)return;cameraFacing=cameraFacing==='environment'?'user':'environment';try{const next=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}}});cameraStream.getVideoTracks().forEach(t=>t.stop());next.getVideoTracks().forEach(t=>cameraStream.addTrack(t));}catch(e){status('Camera switch failed.');}};
+$('flip').onclick=async()=>{
+  if(!cameraStream)return;
+  const next=cameraFacing==='environment'?'user':'environment';
+  cameraFacing=next;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:next},width:{ideal:1280}},audio:false});
+    cameraStream.getVideoTracks().forEach(t=>t.stop());
+    cameraStream.removeTrack(cameraStream.getVideoTracks()[0]);
+    stream.getVideoTracks().forEach(t=>cameraStream.addTrack(t));
+    status('Camera switched to '+next+'.');
+  }catch(e){
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:next},width:{ideal:1280}},audio:false});
+      cameraStream.getVideoTracks().forEach(t=>t.stop());
+      cameraStream.removeTrack(cameraStream.getVideoTracks()[0]);
+      stream.getVideoTracks().forEach(t=>cameraStream.addTrack(t));
+      status('Camera switched to '+next+'.');
+    }catch(e2){status('Camera switch failed: '+e2.message);}
+  }
+};
 let micRecording=false,micRecorder=null,micPieces=[],micStartTs=0,micGen=0;
 $('mic').onclick=async()=>{
   if(micRecording){
@@ -101,16 +120,16 @@ $('mic').onclick=async()=>{
   const track=audioStream&&audioStream.getAudioTracks()[0];
   if(!track){status('No mic. Enable 👂 ear first.');return;}
   micRecording=true;$('mic').classList.add('on');$('mic').textContent='⏹';
-  const source=new MediaStream([track]),mime=audioMime(),startedAt=new Date().toISOString();micStartTs=Date.now();micGen=generation;
-  micPieces=[];
-  micRecorder=new MediaRecorder(source,mime?{mimeType:mime}:undefined);
+  const mimeType=audioMime(),startedAt=new Date().toISOString();
+  micStartTs=Date.now();micGen=generation;micPieces=[];
+  micRecorder=new MediaRecorder(source,mimeType?{mimeType:mimeType}:undefined);
   micRecorder.ondataavailable=e=>{if(e.data.size)micPieces.push(e.data);};
   micRecorder.onerror=()=>{micRecording=false;$('mic').classList.remove('on');$('mic').textContent='🎤';};
   micRecorder.onstop=async()=>{
     micRecording=false;$('mic').classList.remove('on');$('mic').textContent='🎤';
     if(micGen!==generation||!micPieces.length)return;
     try{
-      const blob=new Blob(micPieces,{type:micRecorder.mimeType||mime||'audio/webm'});
+      const blob=new Blob(micPieces,{type:micRecorder.mimeType||mimeType||'audio/webm'});
       if(blob.size>2*1024*1024)throw new Error('audio > 2 MiB');
       const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';
       const audio={name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()};
