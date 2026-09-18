@@ -295,6 +295,10 @@ def _we_code_to_be_coded_lines(limit: int = 8) -> List[str]:
         "WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md",
         "WCT_FLASH_CODER_BRIEF_2026-09-18.md",
         "WCT_CORTEX_VARIABLE_PLAN_2026-09-18.md",
+        "WCT_BORG_PLAN_AGENT_STACK_15_REPOS_2026-09-18.md",
+        "WCT_MESAJ_PENTRU_DAVID_2026-09-18.md",
+        "WCT_TYPESAFE_AI_REPLY_2026-09-18.md",
+        "WCT_SEMANTIC_NAV_AMR_BORG_READ_2026-09-17.md",
     ):
         handoff = REPO / "Documents" / handoff_name
         if not handoff.is_file():
