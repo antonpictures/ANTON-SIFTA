@@ -25,13 +25,13 @@ button,textarea{font:inherit;border:1px solid var(--line);border-radius:10px;pad
   <p id="captureState" class="capture-state">Sensors are off. Text Send remains available.</p>
   <div><p id="observationSummary" class="summary">I am waiting for my first completed phone observation.</p><p id="observationSources" class="summary-meta">No batch received yet.</p><p id="observationStatus" class="hint" role="status">A received batch will show my first-person summary here.</p></div>
 </section>
-<section class="composer" aria-label="Message Alice"><textarea id="text" placeholder="Type to Alice..." aria-label="Message Alice"></textarea><button id="send" class="primary">Send</button><p id="status" class="text-status" role="status"></p></section>
+<section class="composer" aria-label="Message Alice"><textarea id="text" placeholder="Type to Alice..." aria-label="Message Alice"></textarea><button id="send" class="primary">Send</button><button id="voiceToggle" class="icon-button" aria-label="Toggle Alice voice" title="Alice speaks her observation replies" style="grid-column:2;grid-row:2">🔇</button><p id="status" class="text-status" role="status"></p></section>
 </main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',CADENCE_KEY='sifta.robot.cadence',BATCH_INTERVAL_MS=20000,MIN_CADENCE_MS=5000,MAX_CADENCE_MS=20000,CADENCE_STEP_MS=5000;
 let session=localStorage.getItem(SESSION_KEY);if(!session){session=crypto.randomUUID();localStorage.setItem(SESSION_KEY,session);}
-let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false,generation=0,recognition=null,sensorActive=false,telemetryEnabled=false,latestMotion=null,latestOrientation=null,latestLocation=null,latestBattery=null,eyeTimer=null,batchTimer=null,batchInFlight=false,batchSequence=0,cameraFacing='environment',blackFrameStreak=0,lastAutoFlipAt=0,switchFailureAt=0,switchFailures=0,switchInFlight=null,cadenceMs=Math.min(MAX_CADENCE_MS,Math.max(MIN_CADENCE_MS,Number(localStorage.getItem(CADENCE_KEY))||BATCH_INTERVAL_MS)),locationWatchId=null,polling=false,faceDetector=null,faceState='unknown',noFaceStreak=0;
+const VOICE_KEY='sifta_phone_voice';let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false,generation=0,recognition=null,sensorActive=false,telemetryEnabled=false,latestMotion=null,latestOrientation=null,latestLocation=null,latestBattery=null,eyeTimer=null,batchTimer=null,batchInFlight=false,batchSequence=0,cameraFacing='environment',blackFrameStreak=0,lastAutoFlipAt=0,switchFailureAt=0,switchFailures=0,switchInFlight=null,cadenceMs=Math.min(MAX_CADENCE_MS,Math.max(MIN_CADENCE_MS,Number(localStorage.getItem(CADENCE_KEY))||BATCH_INTERVAL_MS)),locationWatchId=null,polling=false,faceDetector=null,faceState='unknown',noFaceStreak=0;
 const status=value=>$('status').textContent=value;
 // Correlate completed answers by turn, never by whichever reply arrived last.
 const observationTurns=new Map();
@@ -65,6 +65,11 @@ function renderObservation(rows,jobs=[]){
     const caption=$('videoCaption');const captionText=String(view.reply.text||'').trim();
     if(captionText){caption.textContent=captionText;caption.style.display='block';}
     else{caption.style.display='none';}
+    // 2026-09-18 owner ask: Alice speaks her world observations (voice out).
+    if(captionText&&localStorage.getItem(VOICE_KEY)==='on'&&!document.hidden){
+      try{speechSynthesis.cancel();const utter=new SpeechSynthesisUtterance(captionText.slice(0,400));
+      utter.lang='ro-RO';speechSynthesis.speak(utter);}catch(_e){}
+    }
     $('observationSources').textContent='Batch '+String(meta.capture_id).slice(0,12)+' | Received '+new Date(meta.ts*1000).toLocaleTimeString()+' | Image: '+(meta.image_received?'received':'absent')+' | Audio: '+audioState+' | Telemetry: '+(meta.telemetry_received?'phone report received':'absent')+' | '+memoryState;
     for(const [oldId] of view.observations)if(oldId!==id&&!view.pending.some(([p])=>p===oldId))observationTurns.delete(oldId);
   }
@@ -208,6 +213,14 @@ async function consumePairTicket(){
 }
 async function sendPayload(text,attachments=[],capture={}){if(sending)return;sending=true;$('send').disabled=true;try{const enrichedCapture={...capture};if(!Object.prototype.hasOwnProperty.call(enrichedCapture,'telemetry'))enrichedCapture.telemetry=snapshotTelemetry();const result=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,text,attachments,capture:enrichedCapture})});if(!result.accepted)throw new Error(result.message||'message not accepted');if(capture.capture_id&&result.turn_id){observationTurns.set(result.turn_id,{capture_id:capture.capture_id,ts:Date.now()/1000,image_received:attachments.some(a=>a.mime.startsWith('image/')),audio_received:attachments.some(a=>a.mime.startsWith('audio/')),telemetry_received:!!(enrichedCapture.telemetry&&Object.keys(enrichedCapture.telemetry.signals||{}).length)});pendingObservation=true;renderObservation([]);}if($('text').value.trim()===text.trim())$('text').value='';status(result.status==='duplicate_reconciled'?'Batch already accepted; reconnecting to its existing reply.':'Input accepted by Alice. Waiting for the reply.');activateEye(result.status==='duplicate_reconciled'?'reconciled receipt':(attachments.length?'camera/audio input':'owner text input'));await refresh();}catch(error){status('Not confirmed: '+error.message+'. Draft retained; check history before retrying.');throw error;}finally{sending=false;$('send').disabled=false;}}
 $('enableEverything').onclick=enableEverything;
+// 2026-09-18: voice-out toggle for Alice's spoken observations.
+const VOICE_KEY='sifta_phone_voice';
+const voiceBtn=$('voiceToggle');
+function setVoiceBtn(){const on=localStorage.getItem(VOICE_KEY)==='on';voiceBtn.textContent=on?'🔊':'🔇';}
+voiceBtn.onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';
+localStorage.setItem(VOICE_KEY,on?'off':'on');setVoiceBtn();
+if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
+setVoiceBtn();
 // 2026-09-18 owner fix: the iOS keyboard covered the camera preview and there
 // was no way to dismiss it. Tapping the preview (or anywhere that is not a
 // control) blurs the composer so the keyboard slides away; typing taps the
