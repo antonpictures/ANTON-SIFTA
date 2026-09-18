@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -94,7 +95,7 @@ def _age(now: float, row: dict[str, Any]) -> float | None:
         ts = float(row.get("ts") or 0.0)
     except Exception:
         return None
-    if ts <= 0:
+    if not math.isfinite(ts) or ts <= 0 or ts > now:
         return None
     return max(0.0, now - ts)
 
@@ -207,7 +208,9 @@ def build_camera_unified_field_proof(
 
     ok = status in {"OWNER_RECOGNIZED", "UNKNOWN_USER_PRESENT", "CAMERA_HEALTHY_NO_FACE", "CAMERA_HEALTHY_NO_FACE_PROOF"}
 
-    device = str(frame.get("device") or "") if frame_fresh else ""
+    device = str(visual.get("camera_name") or "") if visual_fresh else ""
+    if not device and frame_fresh:
+        device = str(frame.get("device") or "")
     sha8 = str((frame.get("sha8") if frame_fresh else None) or visual.get("sha8") or "")
     if status == "OWNER_RECOGNIZED":
         pct = int(round((conf or 0.0) * 100))

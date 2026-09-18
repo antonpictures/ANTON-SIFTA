@@ -161,6 +161,67 @@ def test_answer_uses_zero_authority_prompt_and_binds_ollama_stamp(tmp_path, monk
     assert stamp["truth_label"] == "KV_CACHE_RESIDENCY_V1"
 
 
+def test_answer_retries_when_model_repeats_previous_answer_for_new_question(tmp_path, monkeypatch):
+    from System import swarm_kv_cache_continuity
+
+    ingress = tmp_path / "ingress.jsonl"
+    replies = tmp_path / "replies.jsonl"
+    first = submit_web_message("What is SIFTA?", "same-session", now=1, ingress_path=ingress)
+    replies.write_text(
+        json.dumps({
+            "turn_id": first["turn_id"],
+            "session_id": "same-session",
+            "reply": "SIFTA is a local software stack.",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    second = submit_web_message(
+        "Are you using the previous conversation as context?",
+        "same-session",
+        now=2,
+        ingress_path=ingress,
+    )
+    calls = []
+
+    def fake_turn(model, messages, *, timeout_s):
+        calls.append(messages)
+        content = (
+            "SIFTA is a local software stack."
+            if len(calls) == 1
+            else "Yes. The earlier turns are supplied as context, then I answer this message."
+        )
+        return {"message": {"content": content}, "done_reason": "stop"}
+
+    monkeypatch.setattr(worker, "_ollama_turn", fake_turn)
+    monkeypatch.setattr(worker, "_append_health", lambda *a, **k: {})
+    monkeypatch.setattr(swarm_kv_cache_continuity, "record_turn_stamp", lambda **k: {})
+    reply, model, stamp, reason = worker.answer_web_turn(
+        second,
+        model="local-test",
+        ingress_path=ingress,
+        replies_path=replies,
+    )
+    assert len(calls) == 2
+    assert reply.startswith("Yes. The earlier turns")
+    assert model == "local-test" and reason == "STOP" and stamp == {}
+    assert "Answer the latest visitor message specifically" in calls[0][0]["content"]
+
+
+def test_repetition_guard_catches_near_duplicate_and_strips_stage_directions():
+    previous = (
+        "SIFTA is a local software stack that combines a replaceable cortex with a "
+        "receipt-backed memory field and a public text register. It keeps the system "
+        "grounded in evidence rather than pretending that every claim is certain."
+    )
+    candidate = (
+        "🔊 **[Speaking in a warm tone]** SIFTA is a local software stack that combines "
+        "a replaceable cortex with a receipt-backed memory field and a public text register. "
+        "It keeps the system grounded in evidence rather than pretending every claim is certain."
+    )
+    assert worker._repeats_previous_answer(candidate, previous, "How does it process input?", "What is SIFTA?")
+    assert worker._clean_public_reply(candidate).startswith("SIFTA is a local software stack")
+
+
 def test_night_worker_launchagent_keeps_system_not_display_awake():
     path = Path(__file__).parents[1] / "launchd" / "com.sifta.web-global-chat-night-worker.plist"
     data = plistlib.loads(path.read_bytes())

@@ -13,10 +13,10 @@ def test_probe_installed_ollama_tags_uses_live_list(monkeypatch):
 
     monkeypatch.setattr(
         defaults,
-        "probe_installed_ollama_tags",
+        "probe_installed_ollama_inventory",
         lambda **kw: (
-            "krishairnd/Gemma-4-Uncensored:latest",
-            "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS",
+            {"name": "krishairnd/Gemma-4-Uncensored:latest", "size_bytes": 6_300_000_000},
+            {"name": "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS", "size_bytes": 16_000_000_000},
         ),
     )
 
@@ -37,8 +37,8 @@ def test_resolve_ollama_model_coerces_missing_local_pin(tmp_path, monkeypatch):
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(
         defaults,
-        "probe_installed_ollama_tags",
-        lambda **kw: ("krishairnd/Gemma-4-Uncensored:latest",),
+        "probe_installed_ollama_inventory",
+        lambda **kw: ({"name": "krishairnd/Gemma-4-Uncensored:latest", "size_bytes": 6_300_000_000},),
     )
 
     defaults.set_default_ollama_model("alice-m5-cortex-8b-6.3gb:latest")

@@ -286,3 +286,13 @@ def test_refresh_body_matrix_rebuilds_stale_snapshot_and_html(tmp_path, monkeypa
     assert "reinforcement-on-recall still OPEN" in html
     assert "latest_work_pulse filters invalid pulse candidates" in html
     assert "STGM wallet question prebrain reflex" in html
+
+
+def test_matrix_renders_world_to_field_crosswalk():
+    import tools.generate_organ_eval_matrix_v2 as gen
+
+    html = gen._world_to_field_audit_panel()
+
+    assert "World-to-Field / SUFL Eval Crosswalk" in html
+    assert "SUFL-07" in html
+    assert "BOUNDARY_ONLY" in html

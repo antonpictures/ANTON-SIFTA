@@ -353,7 +353,57 @@ EXISTENZ_V9 = replace(
     watermark_sub="RECEIPTS · FIELD · ONE ALICE",
 )
 
+# ──────────────────────────────────────────────────────────────────────────────
+#  STIGMERGICODE DARK — web-inspired default clothing
+#  Warm editorial surfaces from the public web interface, translated to a
+#  low-glare dark palette for the laptop desktop.
+# ──────────────────────────────────────────────────────────────────────────────
+
+STIGMERGICODE_DARK = replace(
+    EXISTENZ_V9,
+    theme_id="stigmergicode_dark",
+    display_name="◉ Stigmergicode Dark",
+    os_line="◉ STIGMERGICODE · SIFTA DARK",
+    bg_deep="#12100e",
+    bg_panel="#1b1815",
+    bg_card="rgba(30, 27, 23, 0.97)",
+    accent_primary="#d97745",
+    accent_secondary="#e7a078",
+    accent_hover="rgba(217,119,69,0.20)",
+    accent_pressed="rgba(217,119,69,0.34)",
+    text_primary="#f4eee5",
+    text_secondary="#d0c5b8",
+    text_dim="#9e9184",
+    border_default="#4a3b31",
+    border_subtle="#302720",
+    border_accent="#d97745",
+    menubar_bg="rgba(18, 16, 14, 0.97)",
+    menubar_border="#4a3b31",
+    menubar_app_color="#e7a078",
+    selection_bg="rgba(217,119,69,0.22)",
+    focus_border="#d97745",
+    progress_start="#d97745",
+    progress_end="#e7a078",
+    slider_handle="#d97745",
+    slider_groove="#302720",
+    checkbox_checked="#d97745",
+    tooltip_bg="#282019",
+)
+
+STIGMERGICODE_LIGHT = replace(
+    STIGMERGICODE_DARK,
+    theme_id="stigmergicode_light", display_name="Stigmergicode Light",
+    bg_deep="#f7f4ed", bg_panel="#fffdf8", bg_card="#fffaf2",
+    text_primary="#26231d", text_secondary="#504a41", text_dim="#706a60",
+    border_default="#ded5c7", border_subtle="#e4dbce",
+    accent_primary="#9b4319", accent_secondary="#9b4319",
+    menubar_bg="#fffdf8", menubar_app_color="#9b4319",
+    tooltip_bg="#fffdf8", selection_bg="#e7ddca",
+)
+
 THEMES: dict[str, DesktopPalette] = {
+    "stigmergicode_light": STIGMERGICODE_LIGHT,
+    "stigmergicode_dark": STIGMERGICODE_DARK,
     "mermaid": MERMAID,
     "predator": PREDATOR,
     "beeson": BEESON,
@@ -367,13 +417,13 @@ THEMES: dict[str, DesktopPalette] = {
 # ──────────────────────────────────────────────────────────────
 
 def load_active_theme_id() -> str:
-    """Read persisted theme choice, defaulting fresh v9 nodes to eXistenZ."""
+    """Read persisted theme choice, defaulting fresh nodes to web-inspired dark."""
     try:
         data = json.loads(_THEME_FILE.read_text(encoding="utf-8"))
-        tid = str(data.get("theme_id", "existenz")).strip().lower()
-        return tid if tid in THEMES else "existenz"
+        tid = str(data.get("theme_id", "stigmergicode_dark")).strip().lower()
+        return tid if tid in THEMES else "stigmergicode_dark"
     except Exception:
-        return "existenz"
+        return "stigmergicode_dark"
 
 
 def save_active_theme_id(theme_id: str) -> None:
@@ -387,7 +437,7 @@ def save_active_theme_id(theme_id: str) -> None:
 
 def active_palette() -> DesktopPalette:
     """Return the currently active palette."""
-    return THEMES.get(load_active_theme_id(), MERMAID)
+    return THEMES.get(load_active_theme_id(), STIGMERGICODE_DARK)
 
 
 def wallpaper_path(palette: Optional[DesktopPalette] = None) -> str:
@@ -439,7 +489,7 @@ def _generate_global_qss_impl(p: DesktopPalette) -> str:
     fs = getattr(p, "font_size_px", 13) or 13
     return f"""
 QMainWindow, QDialog {{ background: {p.bg_deep}; }}
-QWidget {{ font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
+QWidget {{ font-family: "Avenir Next", "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
 QMdiSubWindow {{ background: {p.bg_panel}; border: 1px solid {p.border_subtle}; border-radius: 12px; }}
 QMdiSubWindow > QWidget {{ background: {p.bg_panel}; }}
 QScrollBar:vertical {{ background: transparent; width: 5px; margin: 0; }}
@@ -575,7 +625,7 @@ def generate_global_qss(p: Optional[DesktopPalette] = None) -> str:
     fs = getattr(p, "font_size_px", 13) or 13
     return f"""
 QMainWindow, QDialog {{ background: {p.bg_deep}; }}
-QWidget {{ font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
+QWidget {{ font-family: "Avenir Next", "Helvetica Neue", -apple-system, sans-serif; font-size: {fs}px; color: {p.text_primary}; }}
 QMdiSubWindow {{ background: {p.bg_panel}; border: 1px solid {p.border_subtle}; border-radius: 12px; }}
 QMdiSubWindow > QWidget {{ background: {p.bg_panel}; }}
 QScrollBar:vertical {{ background: transparent; width: 5px; margin: 0; }}

@@ -127,7 +127,7 @@ except Exception:
     _HAS_AWARENESS_MIRROR = False
 
 _DEFAULT_LOCAL_ALICE_CORTEX = "sifta-" + "gem" + "ma4-alice"
-_IMAGE_ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+_IMAGE_ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"}
 _MAX_IMAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 
@@ -274,6 +274,27 @@ def _write_chat_pref_receipt(kind: str, payload: Dict[str, Any]) -> str:
     return rid
 
 
+class _PhysicalKeyLineEdit(QLineEdit):
+    """Composer that reports physical key timing without recording key text."""
+
+    physicalKeyPressed = pyqtSignal(float)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        try:
+            modifiers = event.modifiers()
+            is_paste = bool(
+                modifiers & (
+                    Qt.KeyboardModifier.ControlModifier
+                    | Qt.KeyboardModifier.MetaModifier
+                )
+            ) and event.key() == Qt.Key.Key_V
+            if not is_paste:
+                self.physicalKeyPressed.emit(time.time())
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+
 class _WallpaperTextEdit(QTextEdit):
     """QTextEdit with a real viewport-painted background image.
 
@@ -288,6 +309,20 @@ class _WallpaperTextEdit(QTextEdit):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._wallpaper_pixmap = QPixmap()
+        # Live inference appends text frequently. Follow the tail only while
+        # the owner is already reading the tail; manual scrollback must remain
+        # stable while Alice thinks.
+        self._sifta_follow_live_tail = True
+        try:
+            scrollbar = self.verticalScrollBar()
+            scrollbar.sliderMoved.connect(self._record_user_scroll_position)
+            scrollbar.actionTriggered.connect(
+                lambda _action: QTimer.singleShot(
+                    0, self._refresh_user_scroll_position
+                )
+            )
+        except Exception:
+            pass
         self.setAutoFillBackground(False)
         self.viewport().setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -296,6 +331,46 @@ class _WallpaperTextEdit(QTextEdit):
             self.document().setDefaultStyleSheet("body { background: transparent; }")
         except Exception:
             pass
+
+    def _record_user_scroll_position(self, value: int) -> None:
+        scrollbar = self.verticalScrollBar()
+        self._sifta_follow_live_tail = int(value) >= int(scrollbar.maximum()) - 3
+
+    def _refresh_user_scroll_position(self) -> None:
+        scrollbar = self.verticalScrollBar()
+        self._sifta_follow_live_tail = (
+            int(scrollbar.value()) >= int(scrollbar.maximum()) - 3
+        )
+
+    def wheelEvent(self, event: Any) -> None:  # type: ignore[override]
+        super().wheelEvent(event)
+        self._refresh_user_scroll_position()
+
+    def keyPressEvent(self, event: Any) -> None:  # type: ignore[override]
+        super().keyPressEvent(event)
+        if event.key() in {
+            Qt.Key.Key_Up,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_PageUp,
+            Qt.Key.Key_PageDown,
+            Qt.Key.Key_Home,
+            Qt.Key.Key_End,
+        }:
+            self._refresh_user_scroll_position()
+
+    def ensureCursorVisible(self) -> None:  # type: ignore[override]
+        if not self._sifta_follow_live_tail:
+            return
+        super().ensureCursorVisible()
+
+    def setTextCursor(self, cursor: QTextCursor) -> None:  # type: ignore[override]
+        scrollbar = self.verticalScrollBar()
+        preserve_value = None
+        if not self._sifta_follow_live_tail:
+            preserve_value = int(scrollbar.value())
+        super().setTextCursor(cursor)
+        if preserve_value is not None:
+            scrollbar.setValue(preserve_value)
 
     def set_wallpaper_path(self, path: str | Path) -> bool:
         pixmap = QPixmap(str(path))
@@ -324,7 +399,8 @@ class _WallpaperTextEdit(QTextEdit):
                 # transcript surface. Keep a faint trace of it, but put an
                 # IDE-grade dark plate behind every chat line so text never
                 # fights the bright matrix image.
-                painter.fillRect(rect, QColor(5, 7, 14, 218))
+                from System.sifta_desktop_themes import effective_palette
+                painter.fillRect(rect, QColor(effective_palette().bg_panel))
             finally:
                 painter.end()
         super().paintEvent(event)
@@ -7734,6 +7810,15 @@ def _is_bonsai_generation_request(text: str) -> Optional[str]:
     """
     if not text:
         return None
+    # `/create` is the explicit global-chat alias for this same Bonsai organ.
+    # Let it use the normal cortex-first post-turn effector path rather than
+    # being mistaken for an unknown slash command.
+    create_match = re.match(r"^\s*/create\b\s*(?P<body>.*)$", str(text), re.IGNORECASE | re.DOTALL)
+    if create_match:
+        prompt = str(create_match.group("body") or "").strip().strip("?.,!\"'")
+        prompt = re.sub(r"^(?:a|an)\s+", "", prompt, flags=re.IGNORECASE)
+        prompt = re.sub(r"^(?:photo|picture|image)(?:\s+of)?\s+", "", prompt, flags=re.IGNORECASE)
+        return prompt if len(prompt) >= 4 else None
     low = " " + (text or "").lower() + " "
     # r748 — the 11:54 wound (receipt b9e7e72b): "We just updated the Bonsai
     # app. You can open Bonsai app, please." fell through to the tail fallback
@@ -13059,6 +13144,10 @@ def _image_attachment_format(data: bytes) -> str:
         return "jpeg"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in {
+        b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1",
+    }:
+        return "heif"
     return ""
 
 
@@ -13113,14 +13202,14 @@ def _extract_local_image_path_from_text(text: str) -> Optional[str]:
         return None
     candidates: list[str] = []
     quoted = re.findall(
-        r"""["']([^"']+\.(?:png|jpg|jpeg|webp))["']""",
+        r"""["']([^"']+\.(?:png|jpg|jpeg|webp|heic|heif))["']""",
         raw,
         flags=re.IGNORECASE,
     )
     candidates.extend(quoted)
     candidates.extend(
         re.findall(
-            r"""(/[^"'\n\r]+?\.(?:png|jpg|jpeg|webp))""",
+            r"""(/[^"'\n\r]+?\.(?:png|jpg|jpeg|webp|heic|heif))""",
             raw,
             flags=re.IGNORECASE,
         )
@@ -13133,7 +13222,7 @@ def _extract_local_image_path_from_text(text: str) -> Optional[str]:
 
 
 _LOCAL_IMAGE_PATH_CONTEXT_RE = re.compile(
-    r"\b(?:screenshot|screen\s*shot|image|photo|picture|pic|png|jpg|jpeg|webp|"
+    r"\b(?:screenshot|screen\s*shot|image|photo|picture|pic|png|jpg|jpeg|webp|heic|heif|"
     r"took|captured|saved|attached|dropped|sent|for\s+you|look|see|describe|read|"
     r"message|error)\b",
     re.IGNORECASE,
@@ -13180,25 +13269,14 @@ def _encode_ollama_image_attachment(path: str) -> str:
     she saw pixels.
     """
     import base64
+    from System.swarm_image_attachment_normalizer import normalize_image_attachment
 
     p = Path(path).expanduser()
-    if not p.exists() or not p.is_file():
-        raise FileNotFoundError(f"image attachment not found: {p}")
     if p.suffix.lower() not in _IMAGE_ATTACHMENT_SUFFIXES:
         allowed = ", ".join(sorted(_IMAGE_ATTACHMENT_SUFFIXES))
         raise ValueError(f"unsupported image type {p.suffix or '<none>'}; allowed: {allowed}")
-    size = p.stat().st_size
-    if size <= 0:
-        raise ValueError("image attachment is empty")
-    if size > _MAX_IMAGE_ATTACHMENT_BYTES:
-        raise ValueError(
-            f"image attachment is too large: {size} bytes "
-            f"(max {_MAX_IMAGE_ATTACHMENT_BYTES})"
-        )
-    data = p.read_bytes()
-    if not _image_attachment_format(data):
-        raise ValueError("unsupported image bytes; expected png, jpeg, or webp")
-    return base64.b64encode(data).decode("ascii")
+    normalized = normalize_image_attachment(path, max_bytes=_MAX_IMAGE_ATTACHMENT_BYTES)
+    return base64.b64encode(normalized.data).decode("ascii")
 
 
 def _attachment_context_prompt_block(
@@ -13556,6 +13634,20 @@ except Exception:
     def _direct_vlm_stream_chat(*_a, **_kw):                         # type: ignore
         if False:
             yield ("error", "direct vlm brain unavailable")
+
+# LM Studio local OpenAI-compatible server. This is separate from Ollama:
+# `lmstudio:<id>` selects the MLX model served by LM Studio without copying its
+# weights into the Ollama store.
+try:
+    from System.lmstudio_cortex import is_lmstudio_model as _is_lmstudio_model
+    from System.lmstudio_cortex import stream_chat as _lmstudio_stream_chat
+    _LMSTUDIO_AVAILABLE = True
+except Exception:
+    _LMSTUDIO_AVAILABLE = False
+    def _is_lmstudio_model(_n: str) -> bool: return False  # type: ignore
+    def _lmstudio_stream_chat(*_a, **_kw):  # type: ignore
+        if False:
+            yield ("error", "LM Studio adapter unavailable")
 
 # Half-duplex gate — share the swarm's BROCA flag so Wernicke (room-mic
 # listener) doesn't ingest our own speaker output. If the module isn't
@@ -18321,6 +18413,12 @@ def _cowatch_receipt_context_block(
     user_text: str = "",
 ) -> str:
     """Ledger-backed co-watch truth for the prompt; no guessing, no network."""
+    from System.swarm_ambient_transcript_memory import requested_ambient_window_context
+
+    window_context = requested_ambient_window_context(user_text, state_dir=_state_root())
+    if window_context:
+        # Explicit temporal recall must not inherit unrelated six-hour co-watch context.
+        return window_context
     bits: List[str] = []
     try:
         from System.swarm_media_session_memory import latest_media_session_context
@@ -23738,10 +23836,11 @@ class _STTWorker(QThread):
     detected_language = ""
 
     def __init__(self, audio: np.ndarray, model_name: str = "tiny.en",
-                 parent: QObject = None) -> None:
+                 parent: QObject = None, capture_context: Optional[dict[str, Any]] = None) -> None:
         super().__init__(parent)
         self._audio = audio
         self._model_name = model_name
+        self.capture_context = dict(capture_context or {})
 
     def run(self) -> None:
         if (
@@ -23858,6 +23957,29 @@ class _STTWorker(QThread):
             self.detected_language = str(
                 getattr(info, "language", "") or _lang or ""
             ).strip().lower()
+            # Run the bounded acoustic classifier beside STT, not on the Qt
+            # thread. The context is an immutable snapshot for this clip;
+            # callbacks must never inspect a later global audio buffer.
+            if self.capture_context:
+                try:
+                    from System.swarm_keyboard_acoustic_gate import classify_keyboard_audio
+
+                    self.capture_context["keyboard_decision"] = classify_keyboard_audio(
+                        self.capture_context.get("audio"),
+                        typed_events=self.capture_context.get("typed_events", ()),
+                        physical_key_events=self.capture_context.get("physical_key_events", ()),
+                        captured_at=self.capture_context.get("capture_end_ts"),
+                        sample_rate=_AUDIO_RATE,
+                        window_s=4.0,
+                        utterance_id=self.capture_context.get("utterance_id"),
+                        source=self.capture_context.get("source"),
+                        session=self.capture_context.get("session"),
+                        clock=self.capture_context.get("clock"),
+                        capture_start_ts=self.capture_context.get("capture_start_ts"),
+                        capture_end_ts=self.capture_context.get("capture_end_ts"),
+                    )
+                except Exception:
+                    self.capture_context["keyboard_decision"] = None
             self.transcribed.emit(text, conf)
         except Exception as exc:
             self.failed.emit(f"STT crashed: {exc}")
@@ -23877,6 +23999,13 @@ def _is_fast_action_non_text_model(model: str) -> bool:
         return True
     if "kaelri" in low or "qwen3.5-mt" in low:
         return True  # these cause 400 on body action turns; avoid for fast visual clicks
+    try:
+        from System.sifta_inference_defaults import _is_non_dialogue_ollama_default_candidate
+
+        if _is_non_dialogue_ollama_default_candidate(model):
+            return True
+    except Exception:
+        pass
     try:
         return bool(_is_diffusion_model(model))
     except Exception:
@@ -23931,8 +24060,20 @@ def _fast_action_text_model_candidates(models: List[str]) -> List[str]:
     return out
 
 
-_CANONICAL_TALK_M5_MODEL = "alice-m5-cortex-8b-6.3gb:latest"
-_RETIRED_TALK_GEMMA_PREFIX = "alice-gemma4-e2b-cortex-5.1b-4.4gb"
+# Owner 2026-09-18: no hardcoded cortex tags. The Talk primary resolves to the
+# single default variable in System/sifta_inference_defaults.py, and every
+# renamed/dead legacy tag resolves through the alias map there.
+def _canonical_talk_default_model() -> str:
+    try:
+        from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
+
+        return str(CANONICAL_OLLAMA_DEFAULT or "krishairnd/G4U:latest")
+    except Exception:
+        return "krishairnd/G4U:latest"
+
+
+_CANONICAL_TALK_M5_MODEL = _canonical_talk_default_model()
+_RETIRED_TALK_GEMMA_PREFIX = "alice-gemma4-e2b-cortex"
 
 
 def _canonicalize_explicit_talk_model(model: str) -> str:
@@ -23960,6 +24101,32 @@ def _normalize_talk_worker_primary_model(model: str) -> str:
         return normalize_talk_to_alice_model(raw)
     except Exception:
         return raw or str(DEFAULT_OLLAMA_MODEL or _CANONICAL_TALK_M5_MODEL)
+
+
+class _PublicWebWorker(QThread):
+    """Same selected cortex, but no owner prompt, sensors, history or effectors."""
+    completed = pyqtSignal(dict)
+
+    def __init__(self, queued, model, parent=None):
+        super().__init__(parent)
+        self.queued = dict(queued)
+        self.model = model
+
+    def run(self):
+        from System.swarm_web_global_chat_night_worker import process_claimed_turn
+        from System.swarm_web_global_chat_gate import (
+            INGRESS_LEDGER, REPLIES_LEDGER, GLOBAL_CHAT_LEDGER,
+            METABOLISM_LEDGER, SCRUB_LEDGER,
+        )
+        try:
+            result = process_claimed_turn(
+                self.queued, model=self.model, ingress_path=INGRESS_LEDGER,
+                replies_path=REPLIES_LEDGER, conversation_path=GLOBAL_CHAT_LEDGER,
+                metabolism_path=METABOLISM_LEDGER, scrub_path=SCRUB_LEDGER,
+            )
+            self.completed.emit(result)
+        except Exception as exc:
+            self.completed.emit({"error": type(exc).__name__})
 
 
 class _BrainWorker(QThread):
@@ -24052,7 +24219,7 @@ class _BrainWorker(QThread):
                 pass
 
     def _run_impl(self) -> None:
-        def _run_one_model(*, think: bool = True) -> tuple[str | None, str | None]:
+        def _run_one_model(*, think: bool = False) -> tuple[str | None, str | None]:
             if _DIRECT_VLM_AVAILABLE and self._model and _is_direct_vlm_model(self._model):
                 try:
                     try:
@@ -24084,6 +24251,31 @@ class _BrainWorker(QThread):
                     return "".join(full).strip(), None
                 except Exception as exc:
                     return None, f"Direct VLM brain crashed: {exc}"
+
+            if _LMSTUDIO_AVAILABLE and self._model and _is_lmstudio_model(self._model):
+                try:
+                    self.thinkingReceived.emit(f"[lmstudio] start model={self._model}\n")
+                    full: List[str] = []
+                    for kind, payload in _lmstudio_stream_chat(
+                        self._model,
+                        self._history,
+                        temperature=0.7,
+                        timeout_s=float(os.environ.get("SIFTA_LMSTUDIO_TIMEOUT_S", "300")),
+                        max_tokens=4096 if self._complete_answer_mode else _ollama_num_predict(),
+                    ):
+                        if kind == "token":
+                            token = str(payload)
+                            full.append(token)
+                            self.tokenReceived.emit(token)
+                        elif kind == "error":
+                            self.thinkingReceived.emit(f"[lmstudio] error {payload}\n")
+                            return None, str(payload)
+                        elif kind == "done":
+                            self.thinkingReceived.emit("[lmstudio] done\n")
+                            break
+                    return "".join(full).strip(), None
+                except Exception as exc:
+                    return None, f"LM Studio cortex crashed: {exc}"
 
             if _CLOUD_AVAILABLE and _is_cloud_model(self._model):
                 try:
@@ -24773,7 +24965,7 @@ class _BrainWorker(QThread):
                             get_default_ollama_model as _gm,
                         )
 
-                        _parts, rpt = _hd([sysprompt], model_id=str(_gm() or ""))
+                        _parts, rpt = _hd([sysprompt], model_id=self._model)
                         clamped = ["\n\n".join(_parts)]
                     except Exception:
                         from System.swarm_sysprompt_budget import clamp_for_env
@@ -24867,6 +25059,15 @@ class _BrainWorker(QThread):
             except Exception as e:
                 self.thinkingReceived.emit(f"Talk brain: context build failed in worker: {e}\n")
 
+        # Sample after slow context assembly/compaction, not from journal history.
+        from System.swarm_hardware_time_oracle import with_live_awareness
+        from System.swarm_gps_sensor import request_location_refresh
+        _public_turn = bool(getattr(self, "_complete_answer_mode", False))
+        if not _public_turn:
+            request_location_refresh()
+        self._history = with_live_awareness(self._history, public=_public_turn,
+                                           text=self._user_text or "")
+
         route = getattr(self, "_current_cortex_route", None)
         last_failure: str | None = None
 
@@ -24922,7 +25123,6 @@ class _BrainWorker(QThread):
             if isinstance(route, dict):
                 route["model"] = candidate
             response, error = _run_one_model()
-            think_false_retried = False
             if error is not None:
                 last_failure = error
                 try:
@@ -24960,24 +25160,6 @@ class _BrainWorker(QThread):
                     response = _complete_public_answer(str(response))
                 self.done.emit(str(response))
                 return
-            # r430 item #3: bounded think=false retry on empty output for local models.
-            # Thinking tokens can eat the visible budget on long prompts; one retry without think
-            # to surface the answer. This converts "thought but blank" into real output.
-            if (
-                not think_false_retried
-                and ("m5" in str(self._model).lower() or "ollama" in str(self._model).lower())
-            ):
-                think_false_retried = True
-                try:
-                    self.thinkingReceived.emit(f"[brain] empty on {self._model}; one bounded retry with think=false\n")
-                except Exception:
-                    pass
-                response, error = _run_one_model(think=False)
-                if response:
-                    if self._complete_answer_mode:
-                        response = _complete_public_answer(str(response))
-                    self.done.emit(str(response))
-                    return
             try:
                 self.thinkingReceived.emit(
                     f"[brain] model={self._model} produced empty output; trying next candidate\n"
@@ -26998,8 +27180,11 @@ def _pre_user_media_ingress_receipt(
     acoustic_fingerprint: Optional[Dict[str, Any]] = None,
     *,
     voice_george_conf: float = 0.0,
+    typed_turn: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Route movie/YouTube room audio before it becomes a user/RLHS row."""
+    if typed_turn:
+        return None
     try:
         from System.swarm_app_focus import get_focus_context
         from System.swarm_media_ingress_gate import (
@@ -27819,7 +28004,7 @@ def _talk_ollama_model_candidates(
         if not attached:
             return False
         low = attached.lower()
-        if not any(needle in low for needle in ("kaelri", "qwen3.5-mt:2b", "krishairnd/gemma-4")):
+        if not any(needle in low for needle in ("kaelri", "qwen3.5-mt:2b", "krishairnd/g4u")):
             return False
         candidate = str(name or "").strip()
         if not candidate or candidate == attached or candidate == primary:
@@ -28078,7 +28263,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "background: #000000; "
             "color: #e8e8e8; "
             "border: 1px solid #1f1f1f; border-radius: 12px; "
-            "font-family: 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; "
+            "font-family: 'Avenir Next', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; "
             "font-weight: normal; "
             "padding: 18px; "
             "}"
@@ -28166,7 +28351,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "QPlainTextEdit { background: rgba(10,10,10,0.95); "
             "color: #e8e8e8; "
             "border: 1px solid #1f1f1f; border-left: 2px solid #00d4aa; border-radius: 8px; "
-            "font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 13px; "
+            "font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; font-size: 13px; "
             "font-style: normal; line-height: 1.5; padding: 12px 14px; }"
         )
         self._thinking_panel.setFixedHeight(140)
@@ -28238,14 +28423,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # ── Text input: same Alice brain path as voice, without STT. ───────
         text_row = QHBoxLayout()
-        self._text_input = QLineEdit()
+        self._text_input = _PhysicalKeyLineEdit()
         self._text_input.setPlaceholderText("Type to Alice…")
         self._text_input.setMinimumHeight(36)
         # Round 88 — composer: OLED black, hairline default, accent on focus.
         self._text_input.setStyleSheet(
             "QLineEdit { background: #0a0a0a; color: #e8e8e8; "
             "border: 1px solid #2a2a2a; border-radius: 10px; "
-            "font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 14px; padding: 10px 14px; }"
+            "font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; font-size: 14px; padding: 10px 14px; }"
             "QLineEdit:focus { border: 1px solid #00d4aa; }"
         )
         self._text_input.returnPressed.connect(self._submit_text_input)
@@ -28255,8 +28440,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Record (ts, len) on every text change during typing. On submit, compute if a large chunk arrived in very small dt (burst = paste, not deliberate per-char typing).
         # This gives higher-fidelity "owner_work_intensity" for the modality classification and receipts.
         self._typed_input_events: list[tuple[float, int]] = []
+        self._physical_key_events: list[float] = []
         try:
             self._text_input.textChanged.connect(self._record_typed_input_event)
+            self._text_input.physicalKeyPressed.connect(self._record_physical_key_event)
         except Exception:
             pass
 
@@ -28308,6 +28495,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
 
         # r749 — give the cortex hands: register this surface as the router's
+        self._chat_theme_timer = QTimer(self)
+        self._chat_theme_timer.setInterval(1500)
+        self._chat_theme_timer.timeout.connect(self._maybe_refont)
+        self._chat_theme_timer.start()
+
+        # Register this surface as the router's
         # app_open executor. A brain-emitted [TOOL_CALL: app_open | app=...]
         # now opens the real window through the same receipted path as the
         # deterministic app lane. George: "an llm without tools is useless."
@@ -28518,6 +28711,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             self._latest_restart_capsule = None
         self._global_chat_seen_keys: set[str] = set()
+        self._alice_expanded_extend_keys: set[str] = set()
         self._global_chat_offset: int = 0
         self._busy = False                      # pipeline (STT/Brain/TTS) in flight
         self._listener: Optional[_ContinuousListener] = None
@@ -29429,44 +29623,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "prompt_text": clean,
             "display_text": display_text,
         }
-        _WEB_TURN_LOCAL.context = context
-        self._active_web_turn = context
-        local_turn_ids = getattr(self, "_web_local_turn_ids", set())
-        if len(local_turn_ids) > 2048:
-            local_turn_ids.clear()
-        local_turn_ids.add(str(turn_id))
-        self._web_local_turn_ids = local_turn_ids
-        self._latest_turn_modality = "WEB TYPED"
-        self._current_owner_turn_text = display_text
-        self._append_user_line(display_text, 0.0, input_modality="WEB TYPED")
-        # _start_brain owns the one canonical user-row write. The active web
-        # context below supplies turn_id/register/zero-authority metadata there.
-        self._history.append({"role": "user", "content": display_text})
-        self._busy = True
-        try:
-            self._set_pill("thinking", "WEB TYPED — Alice is thinking")
-            self.set_status("Public web turn: text-only cortex response…")
-        except Exception:
-            pass
-        QTimer.singleShot(
-            0,
-            lambda: self._start_brain(
-                clean,
-                conf=1.0,
-                already_displayed=True,
-                typed_turn=True,
-                web_turn=True,
-            ),
-        )
+        context["text"] = display_text
+        worker = _PublicWebWorker(context, self._current_brain_model(), self)
+        self._public_web_worker = worker
+        worker.completed.connect(self._on_public_web_completed)
+        worker.start()
+
+    def _on_public_web_completed(self, result) -> None:
+        # Global chat remains an attributed audit display, not owner conversation input.
+        if result.get("error"):
+            self._append_system_line("WEB reply failed: " + str(result["error"]), error=True)
+            return
+        images = result.get("generated_images") if isinstance(result, dict) else []
+        if isinstance(images, list) and images:
+            links = []
+            for image in images:
+                if not isinstance(image, dict):
+                    continue
+                url = str(image.get("url") or "").strip()
+                if url:
+                    from System.chorus_node_server import LISTEN_PORT
+                    links.append(f"http://127.0.0.1:{LISTEN_PORT}" + url if url.startswith("/") else url)
+            if links:
+                self._append_system_line("WEB #SIFTA image: " + " | ".join(links))
 
     def _poll_web_global_chat(self) -> None:
         """Claim one public turn and send it through Talk's normal cortex."""
         if getattr(self, "_busy", False) or getattr(self, "_active_web_turn", None):
             return
+        worker = getattr(self, "_public_web_worker", None)
+        if worker is not None and worker.isRunning():
+            return
         try:
             from System.swarm_web_global_chat_gate import claim_next_web_turn
 
-            queued = claim_next_web_turn()
+            queued = claim_next_web_turn(lease_s=1200.0)
         except Exception:
             return
         if not queued:
@@ -29819,16 +30010,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
     def _append_alice_extension_for_key(self, key: str) -> None:
         """Render the hidden continuation for a collapsed imported Alice row.
 
-        r770 — George 2026-06-08: "as the global chat advances, if I try to EXTEND
-        past posts it does not work, so I lose text conversation." Root cause: this
-        used blocks.POP(key) — the first EXTEND click DELETED the hidden block, so a
-        second click (or a re-render of the thread that kept the old anchor) found
-        nothing and silently returned → dead link → lost text. Fix: .get not .pop —
-        the continuation stays available for the life of the session, re-clickable,
-        survives re-render. Nothing is consumed (§1.D: don't destroy her words).
+        Legacy collapsed rows remain readable, but their continuation is a
+        one-shot display action. The key is retained for transcript compatibility
+        while a separate expanded-key set makes repeated clicks and re-renders
+        idempotent. Nothing is consumed or duplicated (§1.D: don't destroy her
+        words).
         """
         blocks = getattr(self, "_alice_extend_blocks", None)
         if not isinstance(blocks, dict):
+            return
+        expanded = getattr(self, "_alice_expanded_extend_keys", None)
+        if not isinstance(expanded, set):
+            expanded = set()
+            self._alice_expanded_extend_keys = expanded
+        # The anchor remains in old transcript rows after expansion. Make the
+        # action idempotent so repeated clicks cannot duplicate the answer.
+        if key in expanded:
             return
         block = blocks.get(key)
         if not isinstance(block, dict):
@@ -29836,6 +30033,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         hidden_text = str(block.get("hidden_text") or "").strip()
         if not hidden_text:
             return
+        expanded.add(key)
         surface_tag = str(block.get("surface_tag") or "").strip()
         self._append_global_alice_line(
             hidden_text,
@@ -29848,16 +30046,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
         text: str,
         *,
         surface_tag: str = "",
-        collapse_long: bool = True,
+        collapse_long: bool = False,
     ) -> tuple[str, str, int]:
         """Return display text plus optional extension key/count for Alice rows."""
         raw_text = str(text or "")
         if not collapse_long:
             return raw_text, "", 0
-        # r472: George asked for an explicit EXTEND affordance on long Alice
-        # answers (e.g. the mustard reply) so global chat stays readable.
-        # This is display collapse only: raw text remains registered for copy
-        # and the hidden continuation is available through EXTEND.
+        # Full Alice answers are now the default. Legacy callers can still
+        # opt into a collapsed preview explicitly, and old anchors remain
+        # idempotent for transcript compatibility.
         preview = collapse_text_after_paragraphs(raw_text, max_paragraphs=4)
         visible_text = preview.visible_text if preview.is_collapsed else raw_text
         extend_key = ""
@@ -29907,6 +30104,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
         surface = _global_chat_surface(payload)
         metadata = payload.get("routing_metadata")
         turn_id = str(metadata.get("turn_id") or "").strip() if isinstance(metadata, dict) else ""
+        if surface.casefold() == "web_global_chat":
+            session_tag = str((metadata or {}).get("session_tag") or "visitor")
+            label = "Visitor" if role == "user" else "Alice to visitor"
+            self._append_system_line(f"WEB [{session_tag}] {label}: {text}")
+            return
         if surface.casefold() == "web_global_chat" and turn_id in getattr(self, "_web_local_turn_ids", set()):
             # This Talk instance already painted the web turn through its
             # active cortex path; the ledger tail is only a receipt mirror.
@@ -29972,17 +30174,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         restyles only when the value actually changed. Called at build (force=True)
         and from both message-append paths, so a Settings change lands on the very
         next rendered turn without restart."""
+        from System.sifta_desktop_themes import effective_palette
+        from System.swarm_chat_typography import refresh_transcript
+        p = effective_palette()
         px = _chat_font_px()
-        if not force and px == getattr(self, "_applied_chat_font_px", None):
+        style_key = (px, p.bg_panel, p.text_primary, p.border_default, p.accent_primary)
+        if not force and style_key == getattr(self, "_applied_chat_style", None):
             return
+        self._applied_chat_style = style_key
         self._applied_chat_font_px = px
         try:
             self._chat.setStyleSheet(
                 "QTextEdit { "
-                "background: #000000; "
-                "color: #e8e8e8; "
-                "border: 1px solid #1f1f1f; border-radius: 12px; "
-                f"font-family: 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: {px}px; "
+                f"background: {p.bg_panel}; "
+                f"color: {p.text_primary}; "
+                f"border: 1px solid {p.border_default}; border-radius: 12px; "
+                f"font-family: 'Avenir Next', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: {px}px; "
                 "font-weight: normal; "
                 "padding: 18px; "
                 "}"
@@ -29991,31 +30198,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
         try:
             self._side.setStyleSheet(
-                "QPlainTextEdit { background: #0a0a0a; color: #888888; "
-                "border: 1px solid #1f1f1f; border-radius: 8px; "
+                f"QPlainTextEdit {{ background: {p.bg_panel}; color: {p.text_secondary}; "
+                f"border: 1px solid {p.border_default}; border-radius: 8px; "
                 f"font-family: 'Menlo', monospace; font-size: {max(10, px - 4)}px; padding: 10px; }}"
             )
         except Exception:
             pass
         try:
             self._text_input.setStyleSheet(
-                "QLineEdit { background: #0a0a0a; color: #e8e8e8; "
-                "border: 1px solid #2a2a2a; border-radius: 10px; "
-                f"font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: {px}px; padding: 10px 14px; }}"
+                f"QLineEdit {{ background: {p.bg_panel}; color: {p.text_primary}; "
+                f"border: 1px solid {p.border_default}; border-radius: 10px; "
+                f"font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; font-size: {px}px; padding: 10px 14px; }}"
                 "QLineEdit:focus { border: 1px solid #00d4aa; }"
             )
         except Exception:
             pass
         try:
             self._thinking_panel.setStyleSheet(
-                "QPlainTextEdit { background: rgba(10,10,10,0.95); "
-                "color: #e8e8e8; "
-                "border: 1px solid #1f1f1f; border-left: 2px solid #00d4aa; border-radius: 8px; "
-                f"font-family: 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: {max(11, px - 1)}px; "
+                f"QPlainTextEdit {{ background: {p.bg_panel}; "
+                f"color: {p.text_primary}; "
+                f"border: 1px solid {p.border_default}; border-left: 2px solid {p.accent_primary}; border-radius: 8px; "
+                f"font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; font-size: {max(11, px - 1)}px; "
                 "font-style: normal; line-height: 1.5; padding: 12px 14px; }"
             )
         except Exception:
             pass
+
+        refresh_transcript(self._chat, px, p)
+        self._chat.viewport().update()
 
     def _copy_anchor_html(self, body: str) -> str:
         """r473: widened hit target — '📋 Copy' label with larger padding so the
@@ -30093,7 +30303,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         text: str,
         *,
         surface_tag: str = "",
-        collapse_long: bool = True,
+        collapse_long: bool = False,
     ) -> None:
         """Render imported Alice rows without re-running mouth/ledger side effects."""
         try:
@@ -30116,9 +30326,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         body_fmt = QTextCharFormat()
         body_fmt.setForeground(QColor(220, 225, 245))
         try:
-            body_fmt.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            body_fmt.setFontPointSize(16.0)
-            body_fmt.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            from System.swarm_chat_typography import body_format
+            body_fmt = body_format(_chat_font_px())
+            body_fmt.setFontFamilies(["Avenir Next", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
             body_fmt.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass
@@ -30870,6 +31080,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
             cutoff = ts - 60.0
             self._typed_input_events = [(t, l) for t, l in self._typed_input_events if t >= cutoff][-200:]
         except Exception:
+            pass
+
+    def _record_physical_key_event(self, timestamp: float) -> None:
+        """Keep timing-only key evidence for the current microphone window."""
+        try:
+            ts = float(timestamp)
+            if not np.isfinite(ts):
+                return
+            cutoff = ts - 60.0
+            self._physical_key_events = [
+                value for value in self._physical_key_events if value >= cutoff
+            ][-200:]
+            self._physical_key_events.append(ts)
+        except (TypeError, ValueError):
             pass
 
     def _compute_typed_paste_burst(self) -> tuple[bool, float]:
@@ -33283,6 +33507,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         if audio.size < int(_AUDIO_RATE * 0.3):
             return
+        capture_end_ts = time.time()
+        capture_start_ts = capture_end_ts - (len(audio) / float(_AUDIO_RATE))
+        capture_context = {
+            "audio": audio.copy(),
+            "typed_events": tuple(getattr(self, "_typed_input_events", ())),
+            "physical_key_events": tuple(getattr(self, "_physical_key_events", ())),
+            "utterance_id": uuid.uuid4().hex,
+            "source": "talk_to_alice_microphone",
+            "session": "owner_local",
+            "clock": "wall",
+            "capture_start_ts": capture_start_ts,
+            "capture_end_ts": capture_end_ts,
+        }
         self._pending_acoustic_fingerprint = {}
         try:
             from System.swarm_stigmergic_cochlea import analyze_buffer
@@ -33296,6 +33533,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._pending_acoustic_fingerprint = dict(frame.playback_fingerprint or {})
         except Exception:
             self._pending_acoustic_fingerprint = {}
+        capture_context["fingerprint"] = dict(self._pending_acoustic_fingerprint)
         # Peak-normalise the captured utterance to ~0.9 before Whisper sees
         # it. This is independent of the toolbar gain (which mostly helps
         # the VAD trigger reliably on quiet speech) and is the single
@@ -33305,10 +33543,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._busy = True
         self._set_pill("thinking", "⏳ transcribing…")
         model_name = _selected_whisper_model()
-        self._stt = _STTWorker(audio, model_name=model_name, parent=self)
+        self._stt = _STTWorker(
+            audio, model_name=model_name, parent=self,
+            capture_context=capture_context,
+        )
         self._stt_started_ts = time.time()
         self._stt.progress.connect(self.set_status)
-        self._stt.transcribed.connect(self._on_stt_done)
+        self._stt.transcribed.connect(
+            lambda text, conf, worker=self._stt: self._on_stt_done(
+                text, conf, acoustic_context=getattr(worker, "capture_context", None)
+            )
+        )
         self._stt.failed.connect(self._on_stt_failed)
         self._stt.start()
         QTimer.singleShot(
@@ -38281,6 +38526,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             somatic_felt = ""
             if ok:
                 try:
+                    from System.swarm_cortex_capabilities import invalidate_cortex_capability_cache
+
+                    invalidate_cortex_capability_cache()
+                except Exception:
+                    pass
+                try:
                     from System.swarm_cortex_switch_interoception import receipt_cortex_switch_feeling
 
                     somatic = receipt_cortex_switch_feeling(from_tag, tag, state_dir=_state_root())
@@ -38994,7 +39245,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         web_turn_client_ip_source: str = "",
         web_turn_attachments: Optional[list[dict[str, Any]]] = None,
         web_turn_attachment_context: str = "",
+        acoustic_context: Optional[dict[str, Any]] = None,
     ) -> None:
+        _typed_turn = bool(typed_turn)
         if web_turn:
             self._handle_web_turn(
                 text,
@@ -39008,6 +39261,69 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 attachment_context=web_turn_attachment_context,
             )
             return
+        # Bind this callback's evidence before another queued clip can replace it.
+        _capture_context = dict(acoustic_context or {})
+        _acoustic_fingerprint = {}
+        if (not _typed_turn) and (_capture_context or _LAST_UTTERANCE_AUDIO):
+            _acoustic_fingerprint = dict(
+                _capture_context.get("fingerprint")
+                or getattr(self, "_pending_acoustic_fingerprint", {})
+                or {}
+            )
+            self._pending_acoustic_fingerprint = {}
+        # Reject strong click-only evidence before history, enrollment or actions.
+        # Mixed/unknown audio still follows the normal speech path.
+        if (not _typed_turn) and (_capture_context or _LAST_UTTERANCE_AUDIO):
+            try:
+                from System.swarm_keyboard_acoustic_gate import (
+                    classify_keyboard_audio,
+                    write_keyboard_receipt,
+                )
+                _keyboard_decision = _capture_context.get("keyboard_decision")
+                if _keyboard_decision is None:
+                    # Keep direct callback fixtures/backward-compatible callers
+                    # working; the live worker always supplies capture_context.
+                    _context_audio = _capture_context.get("audio")
+                    if _context_audio is None and not acoustic_context and _LAST_UTTERANCE_AUDIO:
+                        _context_audio = _LAST_UTTERANCE_AUDIO[0]
+                    if _context_audio is not None:
+                        _keyboard_kwargs = {
+                            "typed_events": _capture_context.get(
+                                "typed_events", getattr(self, "_typed_input_events", ())
+                            ),
+                            "captured_at": _capture_context.get("capture_end_ts", time.time()),
+                        }
+                        if acoustic_context:
+                            _keyboard_kwargs.update({
+                                "physical_key_events": _capture_context.get("physical_key_events", ()),
+                                "utterance_id": _capture_context.get("utterance_id"),
+                                "source": _capture_context.get("source"),
+                                "session": _capture_context.get("session"),
+                                "clock": _capture_context.get("clock"),
+                                "capture_start_ts": _capture_context.get("capture_start_ts"),
+                                "capture_end_ts": _capture_context.get("capture_end_ts"),
+                            })
+                        _keyboard_decision = classify_keyboard_audio(
+                            _context_audio, **_keyboard_kwargs
+                        )
+                if not isinstance(_keyboard_decision, dict):
+                    _keyboard_decision = {}
+                if _keyboard_decision.get("route") == "ambient_keyboard":
+                    _keyboard_receipt = write_keyboard_receipt(
+                        _keyboard_decision, state_dir=_state_root(),
+                    )
+                    self._append_system_line(
+                        "Ambient audio: keyboard-like clicks; transcript not promoted "
+                        "to dialogue. This is a heuristic, not an attention estimate. "
+                        "Receipt: " + str(_keyboard_receipt.get("receipt_id") or "unavailable"),
+                        error=False,
+                    )
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+            except Exception:
+                # Classifier or storage failure must not silently discard speech.
+                pass
         if not typed_turn:
             self._stt_consecutive_timeouts = 0
             self._stt_cooldown_until = 0.0
@@ -39361,7 +39677,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Every voice turn is classified before any reflex or brain call. A
         # non-direct row means strict silence plus field receipt.
         if not typed_turn:
-            _early_acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
+            _early_acoustic_fingerprint = _acoustic_fingerprint
             # r890: the first gate now hears WHO is speaking. Was hardcoded
             # voice_george_conf=0.0 since GROK_VOICE_GATE_ORDER — the gate
             # that decides direct-vs-external ran blind to acoustic identity
@@ -39943,8 +40259,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
         QTimer.singleShot(
             0,
-            lambda t=text, c=conf, ip=image_path, tt=typed_turn: self._start_brain(
-                t, conf=c, already_displayed=True, image_path=ip, typed_turn=tt
+            lambda t=text, c=conf, ip=image_path, tt=typed_turn, fp=_acoustic_fingerprint: self._start_brain(
+                t, conf=c, already_displayed=True, image_path=ip, typed_turn=tt,
+                acoustic_fingerprint=fp,
             ),
         )
 
@@ -40723,6 +41040,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         image_path: Optional[str] = None,
         typed_turn: bool = False,
         web_turn: bool = False,
+        acoustic_fingerprint: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Start Alice's model turn from a user/inbox message.
 
@@ -40731,6 +41049,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         """
         _typed_turn = bool(typed_turn)
         _web_turn = bool(web_turn or _active_web_turn_context())
+        if _web_turn:
+            raise RuntimeError("Public turns require the session-isolated _handle_web_turn path")
+        _acoustic_fingerprint = {}
+        if not _typed_turn:
+            _acoustic_fingerprint = dict(
+                acoustic_fingerprint if acoustic_fingerprint is not None
+                else (getattr(self, "_pending_acoustic_fingerprint", {}) or {})
+            )
+            if acoustic_fingerprint is None:
+                self._pending_acoustic_fingerprint = {}
         text = (text or "").strip()
         owner_surface_text = text
         if _typed_turn:
@@ -42001,8 +42329,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
         except Exception:
             pass
-        _acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
-        self._pending_acoustic_fingerprint = {}
         if not already_displayed:
             display_text = text
             if not display_text and image_path:
@@ -42034,7 +42360,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                     for c in _proof.failing_checks
                                 )
                                 self.warning.emit(
-                                    f"⚠️ Body integrity: {len(_proof.failing_checks)} organ(s) disconnected — {_failing}"
+                                    f"⚠️ Body verification: {len(_proof.failing_checks)} check(s) need attention — {_failing}"
                                 )
                         except Exception:
                             pass  # never crash the turn
@@ -42302,6 +42628,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     conf,
                     _acoustic_fingerprint,
                     voice_george_conf=_voice_george_conf,
+                    typed_turn=_typed_turn,
                 )
             if _pre_app_media_row:
                 note, system_context = _media_ingress_note(_pre_app_media_row)
@@ -43643,6 +43970,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _early_wake_row
             or _pre_user_wake_ear_receipt(text, conf, _acoustic_fingerprint)
             if text
+            and not _typed_turn
             and not _voice_continuity_direct
             and not _execute_fired
             and not _owner_sensor_effector_fired
@@ -43756,6 +44084,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     conf,
                     _acoustic_fingerprint,
                     voice_george_conf=_voice_george_conf,
+                    typed_turn=_typed_turn,
                 )
                 if text
                 and not _voice_continuity_direct
@@ -44055,7 +44384,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 _image_attachment_path = Path(image_path).expanduser()
                 _image_attachment_bytes = _image_attachment_path.read_bytes()
                 _image_attachment_fmt = _image_attachment_format(_image_attachment_bytes)
-                _turn_images = [_encode_ollama_image_attachment(image_path)]
+                # HEIC/HEIF is normalized to JPEG by the Ollama transport.
+                if _image_attachment_fmt == "heif":
+                    _image_attachment_fmt = "jpeg"
+                # Normalize and encode once for this accepted turn. Reusing the
+                # exact bytes prevents a source-file change between the live
+                # request and the memory receipt from producing mismatched
+                # evidence.
+                _owner_image_payload = _encode_ollama_image_attachment(image_path)
+                _turn_images = [_owner_image_payload]
                 _turn_image_paths = [str(_image_attachment_path)]
                 _compare_viewport_path = str(
                     (browser_attachment_compare_evidence or {}).get("viewport_image_path") or ""
@@ -44078,7 +44415,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     user_msg["image_paths"] = _turn_image_paths
                     user_msg["image_roles"] = ["owner_attachment", "alice_browser_viewport"]
                 user_msg["image_mime"] = _image_attachment_mime_from_format(_image_attachment_fmt)
-                memory_user_msg["images"] = [_encode_ollama_image_attachment(image_path)]
+                memory_user_msg["images"] = [_owner_image_payload]
                 memory_user_msg["image_path"] = str(_image_attachment_path)
                 memory_user_msg["image_mime"] = _image_attachment_mime_from_format(_image_attachment_fmt)
             except Exception as e:
@@ -45894,11 +46231,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._append_observable_processing(
                         f"Cortex no-token recovery organ failed: {type(exc).__name__}: {exc}"
                     )
-            msg = (
-                f"Cortex no-token watchdog: model={model} produced no first token "
-                f"after {elapsed}s (limit {timeout_s}s). I stopped this stalled cortex "
-                "instead of leaving Alice stuck in thinking."
-            )
+            # 2026-09-18: report the model actually served, never just the
+            # requested tag. Owner saw a dead name in this message while the
+            # brain had silently been swapped to a different model.
+            resolved_model = ""
+            try:
+                from System.sifta_inference_defaults import (
+                    coerce_to_installed_ollama_model as _coerce_reported,
+                )
+
+                resolved_model = str(_coerce_reported(model) or model)
+            except Exception:
+                resolved_model = model
+            if resolved_model and resolved_model != model:
+                msg = (
+                    f"Cortex no-token watchdog: requested={model} resolved={resolved_model} "
+                    f"produced no first token after {elapsed}s (limit {timeout_s}s). "
+                    "I stopped this stalled cortex instead of leaving Alice stuck in thinking."
+                )
+            else:
+                msg = (
+                    f"Cortex no-token watchdog: model={model} produced no first token "
+                    f"after {elapsed}s (limit {timeout_s}s). I stopped this stalled cortex "
+                    "instead of leaving Alice stuck in thinking."
+                )
             self._append_observable_processing(msg)
             brain = getattr(self, "_brain", None)
             if brain is not None:
@@ -49799,12 +50155,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
             return False
         age_s = time.time() - float(self._deferred_utterance_ts or 0.0)
+        if self._busy:
+            return False
         self._deferred_utterance_audio = None
         self._deferred_utterance_ts = 0.0
         if age_s > _DEFERRED_UTTERANCE_MAX_AGE_S:
             self.set_status("Dropped stale queued voice clip.")
-            return False
-        if self._busy:
             return False
         if not _should_suppress_voice_drop_owner_nag(self):
             self._append_system_line("(queued voice clip captured while I was busy; transcribing now)")
@@ -49984,14 +50340,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             r, g, b, a = 12, 14, 22, 232
         block = QTextBlockFormat()
-        block.setBackground(QColor(r, g, b, max(0, min(255, a))))
+        block.clearBackground()
         # Breathing room — matches YouTube's caption-row padding feel
         block.setTopMargin(6)
         block.setBottomMargin(6)
         block.setLeftMargin(10)
         block.setRightMargin(10)
         # Line height tweak so the box hugs the text top/bottom
-        block.setLineHeight(120, 1)  # 120% line height, ProportionalHeight=1
+        block.setLineHeight(155, 1)
         return block
 
     def _append_user_line(self, text: str, conf: float, input_modality: "Optional[str]" = None) -> None:
@@ -50105,10 +50461,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         fmt3 = QTextCharFormat()
         fmt3.setForeground(QColor(*body_rgb))
         try:
-            fmt3.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            fmt3.setFontPointSize(16.0)
+            from System.swarm_chat_typography import body_format
+            fmt3 = body_format(_chat_font_px())
             # Crisp sans-serif — same family YouTube uses for CC default
-            fmt3.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            fmt3.setFontFamilies(["Avenir Next", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
             fmt3.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass
@@ -50723,9 +51079,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         fmt2 = QTextCharFormat()
         fmt2.setForeground(QColor(235, 240, 255))
         try:
-            fmt2.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
-            fmt2.setFontPointSize(16.0)
-            fmt2.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            from System.swarm_chat_typography import body_format
+            fmt2 = body_format(_chat_font_px())
+            fmt2.setFontFamilies(["Avenir Next", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
             fmt2.setFontWeight(QFont.Weight.Normal)
         except Exception:
             pass

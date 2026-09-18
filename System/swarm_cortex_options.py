@@ -113,21 +113,24 @@ CORTEX_OPTIONS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
-        "id": "krishairnd/Gemma-4-Uncensored:latest",
-        "display": "krisha-g4u 8B (Ollama test alias)",  # r1386: display alias only, id is the real Ollama tag
+        # 2026-09-18: owner renamed krishairnd/Gemma-4-Uncensored:latest to
+        # krishairnd/G4U and made it the default local cortex. Old references
+        # resolve through _MODEL_TAG_ALIASES in sifta_inference_defaults.
+        "id": "krishairnd/G4U:latest",
+        "display": "krisha-g4u 8B (local default)",
         "params": "8B",
         "arch": "gemma4",
         "context": "131K advertised / runtime num_ctx not explicit in Modelfile",
         "modalities": ("text", "image", "audio"),
         "capabilities": ("completion", "tool_use", "vision", "audio", "thinking", "local_unfiltered_test"),
         "install_target": "ollama",
-        "source_url": "ollama://krishairnd/Gemma-4-Uncensored:latest",
-        "owner_added": "2026-06-06 (George ollama pull)",
-        "observed_by": "ollama show krishairnd/Gemma-4-Uncensored:latest --verbose",
+        "source_url": "ollama://krishairnd/G4U:latest",
+        "owner_added": "2026-06-06 (George ollama pull); renamed krishairnd/Gemma-4-Uncensored -> G4U 2026-09-18",
+        "observed_by": "ollama show krishairnd/G4U:latest --verbose",
         "observed_capabilities": ("completion", "vision", "audio", "tools", "thinking"),
         "observed_context_length": 131072,
         "observed_quantization": "Q4_K_M",
-        "duplicate_blob_of": "alice-m5-cortex-8b-6.3gb:latest",
+        "duplicate_blob_of": "retired 2026-09-18 (owner deleted the alice-* legacy tags)",
         "duplicate_blob_sha256": "ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6",
         "known_limits": (
             "not Gemma 4 12B; local metadata reports 8.0B parameters",

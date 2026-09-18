@@ -14,6 +14,189 @@ _REPO = Path(__file__).resolve().parents[1]
 _HUMAN_SUFFIX_RE = re.compile(r"\.(human|owner|george)\b", re.IGNORECASE)
 
 
+# The world-to-field request must reuse existing observation, phone, memory and
+# self-evaluation lanes. These rows are the single crosswalk used by the live
+# matrix and We Code Together; they are not a second consciousness registry.
+_WORLD_TO_FIELD_AUDIT_ROWS: tuple[dict[str, Any], ...] = (
+    {
+        "id": "SUFL-01",
+        "family": "observation_envelope",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": (
+            "System/swarm_observation_fusion.py; "
+            "System/swarm_phone_observations.py; tests/test_phone_telemetry_envelope.py"
+        ),
+        "acceptance": "One versioned envelope preserves source, timestamp, modality and confidence without flattening evidence.",
+    },
+    {
+        "id": "SUFL-02",
+        "family": "cross_modal_timestamp_package",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": (
+            "System/swarm_phone_observations.py; System/swarm_observation_fusion.py; "
+            "tests/test_phone_observation_summary.py"
+        ),
+        "acceptance": "Camera, audio and telemetry link only when device/session, time window and coordinate frame agree.",
+    },
+    {
+        "id": "SUFL-03",
+        "family": "idempotent_capture_and_memory_promotion",
+        "status": "COVERED",
+        "wiring": "wired",
+        "evidence": (
+            "System/swarm_phone_observations.py; System/swarm_web_global_chat_gate.py; "
+            "tests/test_phone_observation_summary.py"
+        ),
+        "acceptance": "A repeated capture ID produces one accepted observation and one bounded promotion.",
+    },
+    {
+        "id": "SUFL-04",
+        "family": "owner_correction_supersession",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": (
+            "System/swarm_cortex_context_manager.py; System/swarm_post_turn_correction.py; "
+            "tests/test_post_turn_correction_r1331.py; "
+            "System/swarm_observation_fusion.py:project_field_assertions; "
+            "tests/test_field_assertion_projection.py; "
+            "System/swarm_phone_observations.py:phone_field_projection; "
+            "tests/test_phone_field_projection.py"
+        ),
+        "acceptance": "Evidence revision and phone commit projection tested; authenticated correction adapters and live context wiring remain open. Retain original evidence and competing corrections.",
+    },
+    {
+        "id": "SUFL-05",
+        "family": "unknown_sensor_and_coordinate_honesty",
+        "status": "COVERED",
+        "wiring": "wired",
+        "evidence": (
+            "System/swarm_web_global_chat_gate.py; System/swarm_sensor_truth_context.py; "
+            "tests/test_phone_observation_summary.py; tests/test_swarm_sensor_truth_context.py"
+        ),
+        "acceptance": "Missing GPS, pose, camera, audio or speaker identity stays unknown; no guessed presence is emitted.",
+    },
+    {
+        "id": "SUFL-06",
+        "family": "multi_device_session_isolation",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": (
+            "System/swarm_phone_observations.py; System/swarm_web_global_chat_gate.py; "
+            "tests/test_phone_observation_summary.py"
+        ),
+        "acceptance": "Two devices cannot silently merge observations; physical two-device acceptance remains open.",
+    },
+    {
+        "id": "SUFL-07",
+        "family": "semantic_world_map_index",
+        "status": "OPEN",
+        "wiring": "open",
+        "evidence": "Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md; System/swarm_observation_fusion.py",
+        "acceptance": "Index owner, device, place, object, action and time-window nodes with explicit relation edges.",
+    },
+    {
+        "id": "SUFL-09",
+        "family": "speech_language_voice_routing",
+        "status": "COVERED",
+        "wiring": "wired",
+        "evidence": (
+            "System/swarm_speech_language.py; System/swarm_web_global_chat_speech_worker.py; "
+            "Applications/sifta_talk_to_alice_widget.py; System/swarm_broca_wernicke.py; "
+            "tests/test_speech_language.py; tests/test_romanian_tts_routing.py"
+        ),
+        "acceptance": (
+            "Every TTS mouth resolves one language-matched installed voice: Romanian text routes to an "
+            "installed ro_RO voice (locale family match, not an exact remembered name), English keeps the "
+            "owner's chosen voice, and a missing voice degrades to the default instead of silence."
+        ),
+    },
+    {
+        "id": "SUFL-08",
+        "family": "field_slice_prompt_context",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": (
+            "System/swarm_web_global_chat_gate.py; System/swarm_memory_card.py; "
+            "tests/test_phone_observation_summary.py"
+        ),
+        "acceptance": "Alice receives recent changes, linked evidence, contradictions and missing sensors as a bounded context slice.",
+    },
+    {
+        "id": "OBSERVER-LOOP-01",
+        "family": "observer_observed_delayed_evidence",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": "System/swarm_active_inference_world_model.py:evaluate_delayed_prediction; tests/test_delayed_prediction_evidence.py",
+        "acceptance": "Operational owner definition of qualia: identified observer, observed event, comparison and revision. Delayed evaluator tested; authenticated live forecast/observation pairing and hierarchical coverage remain pending.",
+    },
+    {
+        "id": "PATCH-ORACLE-01",
+        "family": "patch_independent_measurement",
+        "status": "PARTIAL",
+        "wiring": "partial",
+        "evidence": "System/swarm_spinal_cord.py:gate_and_apply; tests/test_spinal_measurement_oracle.py",
+        "acceptance": "Empty/skipped suites cannot pass; finite independent before/after metric required for KEPT. Production metric-probe registration and evaluator isolation remain pending.",
+    },
+    {
+        "id": "BOUNDARY-QUALIA-01",
+        "family": "qualia_claim_boundary",
+        "category": "claim_boundary",
+        "status": "BOUNDARY_ONLY",
+        "wiring": "wired",
+        "evidence": (
+            "System/swarm_alice_self_eval_loop.py; "
+            "Documents/IDE_BOOT_COVENANT.md; Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md"
+        ),
+        "acceptance": "Owner-defined operational qualia is tracked by OBSERVER-LOOP-01. Its measured coverage does not establish subjective experience or universal consciousness.",
+    },
+    {
+        "id": "BOUNDARY-CONSCIOUSNESS-01",
+        "family": "consciousness_claim_boundary",
+        "category": "claim_boundary",
+        "status": "BOUNDARY_ONLY",
+        "wiring": "wired",
+        "evidence": (
+            "System/swarm_alice_self_eval_loop.py; "
+            "Documents/CONSCIOUSNESS_TOURNAMENT_2026-06-24.md; "
+            "Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md"
+        ),
+        "acceptance": "Operational observer/observed loops may be tested; AGI or consciousness completion is never a green result.",
+    },
+)
+
+
+def world_to_field_audit_rows() -> List[Dict[str, Any]]:
+    """Return the one SUFL/WCT crosswalk without creating a rival matrix."""
+    return [dict(row) for row in _WORLD_TO_FIELD_AUDIT_ROWS]
+
+
+def validate_world_to_field_audit() -> Dict[str, Any]:
+    """Check IDs, families and the deliberate open/boundary split."""
+    rows = world_to_field_audit_rows()
+    ids = [str(row.get("id") or "") for row in rows]
+    families = [str(row.get("family") or "") for row in rows]
+    duplicate_ids = sorted({value for value in ids if value and ids.count(value) > 1})
+    duplicate_families = sorted({value for value in families if value and families.count(value) > 1})
+    open_rows = [row["id"] for row in rows if row.get("wiring") == "open"]
+    boundary_rows = [row["id"] for row in rows if row.get("category") == "claim_boundary"]
+    invalid_boundary_status = [
+        row["id"] for row in rows
+        if row.get("category") == "claim_boundary" and row.get("status") != "BOUNDARY_ONLY"
+    ]
+    return {
+        "ok": not duplicate_ids and not duplicate_families and not invalid_boundary_status,
+        "rows": rows,
+        "duplicate_ids": duplicate_ids,
+        "duplicate_families": duplicate_families,
+        "open_rows": open_rows,
+        "boundary_rows": boundary_rows,
+        "invalid_boundary_status": invalid_boundary_status,
+        "note": "Open implementation rows and claim-boundary rows are intentional; neither is a completion claim.",
+    }
+
+
 def _resolve(path_str: str, *, repo_root: Path | None = None) -> Path:
     p = Path(path_str)
     if not p.is_absolute():

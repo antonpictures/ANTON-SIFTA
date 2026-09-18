@@ -519,7 +519,7 @@ class TestMimoIdentifiedTargetRegression:
             signal_id="owner-sig-42",
             target_files=[],
             task_prompt="MiMo must identify the file",
-            test_paths=[],
+            test_paths=["tests/test_some_organ.py"],
         )
 
         # MiMo response result carrying the CHANGED_FILES
@@ -542,7 +542,9 @@ class TestMimoIdentifiedTargetRegression:
         monkeypatch.setattr(sc, "_run_tests", lambda paths: True)
 
         # Execute the gate (it will snapshot + write + decide KEPT/REVERTED inside the fake_repo)
-        receipt = gate_and_apply(result, task, state_dir=sd)
+        measurements = iter([0.2, 0.5])
+        receipt = gate_and_apply(result, task, state_dir=sd,
+                                 metric_probe=lambda: next(measurements))
 
         # Critical assertions for the bug
         assert receipt.get("status") != "NO_VALID_TARGET_FILE", (

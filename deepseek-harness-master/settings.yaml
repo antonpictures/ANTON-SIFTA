@@ -1,0 +1,26 @@
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+ui-theme:
+  preference: dark
+llm-pi-ai:
+  providers:
+    local-ollama:
+      display_name: "Local Ollama Mac 24GB"
+      base_url: "http://localhost:11434/v1"
+      api_protocol: "openai-completions"
+      api_key: "ollama"
+      models:
+        - "hf.co/Blackfrost-AI/Qwen3.8-27B-ABLITERATED-GGUF:Q4_K_S"
+        - "jobhub/Qwen3.8-abliterated:latest"
+        - "jikepjikep_16HEX/gemma-4-26b-nightshift-heretic-uncensored-a4b-moe-q4:latest"
+        - "sifta-qwenpaw-coder:latest"
+        - "north-mini-code-1.0:latest"
+        - "dzgg/Qwen3.5-Uncensored-HauhauCS-Aggressive:4b"
+        - "baytout3/Ornith-1.0-9B-uncensored-GGUF:Q8_0"
+        - "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0"
+        - "krishairnd/Gemma-4-Uncensored:latest"
+agent-default-model:
+  provider: local-ollama
+  model: sifta-qwenpaw-coder:latest
+agent-presets:
+  default: cordis

@@ -121,6 +121,7 @@ class RemoteRoverLink:
                 raise PermissionError("rover must be paired before control can be armed")
             db.execute("UPDATE links SET control_hash=?, control_until=? WHERE robot=?",
                        (digest(token), now + 300, robot))
+            db.execute("UPDATE rover_commands SET state='revoked' WHERE robot=? AND state='pending'", (robot,))
         return {"robot_id": robot, "control_token": token, "expires_at": now + 300,
                 "scope": "rover.control", "motion_enabled": True}
 
@@ -188,7 +189,9 @@ class RemoteRoverLink:
                     "commands": [{"command_id": item["command_id"],
                                    "linear_mm_s": item["linear"],
                                    "angular_mrad_s": item["angular"],
-                                   "timeout_ms": item["timeout_ms"]} for item in commands]}
+                                   "timeout_ms": item["timeout_ms"],
+                                   "valid_for_ms": max(0, int(1000 * (min(item["expires"], row["control_until"]) - now)))}
+                                  for item in commands]}
 
     def ack_command(self, token, payload):
         if not isinstance(payload, dict) or set(payload) != {"robot_id", "connection_id",
@@ -375,6 +378,12 @@ class RemoteRoverGateway:
             raise ValueError("command limit must be 1-8")
         return self._get("/api/rover/commands", token=self.control_token,
                          query=f"?limit={limit}")
+
+    def status(self):
+        result = self._get("/api/rover/status", token=self.token)
+        if result.get("connection_id") != self.connection_id:
+            raise RuntimeError("rover connection changed; pair again")
+        return result
 
     def ack_command(self, *, command_id, state, result):
         if self.control_token is None:

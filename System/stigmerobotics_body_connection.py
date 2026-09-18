@@ -11,6 +11,7 @@ double-spend or charging blocked immune actions.
 """
 from __future__ import annotations
 
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -23,6 +24,18 @@ _WIDGET = _REPO / "Applications" / "sifta_stigmerobotics_widget.py"
 _TALK_WIDGET = _REPO / "Applications" / "sifta_talk_to_alice_widget.py"
 
 ATTACHMENT_ROLE = "ALICE_ATTACHED_STIGMEROBOTICS_HAND"
+
+
+def _talk_primary_turn_source(source: str) -> str:
+    """Restrict static ordering checks to the primary Talk turn method."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_start_brain":
+            return ast.get_source_segment(source, node) or ""
+    return ""
 
 ORGANS: dict[str, dict[str, str]] = {
     "E01": {"name": "Quantifier Gate", "test": "tests/test_stigmero_e01_quantifier_gate.py"},
@@ -270,9 +283,10 @@ def build_body_connection_proof() -> BodyConnectionProof:
         )
     )
 
-    life_hook = talk_text.find("answer_recent_activity_query")
-    work_hook = talk_text.find("answer_deterministic_work_recall_query")
-    brain_start = talk_text.find("self._brain = _BrainWorker")
+    primary_turn = _talk_primary_turn_source(talk_text)
+    life_hook = primary_turn.find("answer_recent_activity_query")
+    work_hook = primary_turn.find("answer_deterministic_work_recall_query")
+    brain_start = primary_turn.find("self._brain = _BrainWorker")
     checks.append(
         BodyConnectionCheck(
             "alice_recall_fast_path_before_model",
@@ -330,7 +344,7 @@ def build_body_connection_proof() -> BodyConnectionProof:
     # ── 7 completion checks (CODE IT ALL — 2026-05-06 session) ───────────────
 
     # Check 1: organ query router is wired into Talk before LLM
-    organ_router_pos = talk_text.find("route_organ_query")
+    organ_router_pos = primary_turn.find("route_organ_query")
     checks.append(BodyConnectionCheck(
         "organ_router_wired_in_talk",
         organ_router_pos >= 0 and brain_start > 0 and organ_router_pos < brain_start,
@@ -369,21 +383,26 @@ def build_body_connection_proof() -> BodyConnectionProof:
         _repair = _REPO / "repair_log.jsonl"
         _signed_rows = []
         if _repair.exists():
-            # The repair ledger is now large enough that the older 5k-row tail
-            # can miss valid E35/router signed spend receipts and falsely mark
-            # Alice disconnected. Scan a bounded but organism-scale horizon.
-            for _line in _repair.read_bytes().splitlines()[-50000:]:
-                try:
-                    _r = _json.loads(_line)
-                    if (_r.get("reason", "").startswith("E35_") or
-                            _r.get("reason", "").startswith("ORGAN_QUERY_ROUTER_")) and \
-                            _r.get("ed25519_sig") and _r.get("signing_node") and \
-                            _r.get("tx_type") == "STGM_SPEND" and _valid_signed_row(_r):
-                        _signed_rows.append(_r)
-                except Exception:
-                    pass
+            # Do not use a physical-line tail: health/metabolism rows can push
+            # the durable E35/router receipt beyond that tail. Stream the file,
+            # parse only relevant spend rows, and retain cryptographic checking.
+            with _repair.open("rb") as _fh:
+                for _line in _fh:
+                    if b'"tx_type"' not in _line or b"STGM_SPEND" not in _line:
+                        continue
+                    try:
+                        _r = _json.loads(_line)
+                        if (_r.get("reason", "").startswith("E35_") or
+                                _r.get("reason", "").startswith("ORGAN_QUERY_ROUTER_")) and \
+                                _r.get("ed25519_sig") and _r.get("signing_node") and \
+                                _r.get("tx_type") == "STGM_SPEND" and _valid_signed_row(_r):
+                            _signed_rows.append(_r)
+                    except Exception:
+                        pass
         _stgm_signed_ok = len(_signed_rows) >= 1
-        _stgm_signed_detail = f"{len(_signed_rows)} verified signed STGM_SPEND rows found in repair_log tail50k"
+        _stgm_signed_detail = f"{len(_signed_rows)} verified signed E35/router STGM_SPEND rows found in repair_log"
+        if not _signed_rows:
+            _stgm_signed_detail = "Recall spend evidence unverified: no matching valid signed E35/router row in ledger; not proof of disconnection"
     except Exception as exc:
         _stgm_signed_detail = f"check failed: {exc}"
     checks.append(BodyConnectionCheck(
@@ -393,7 +412,7 @@ def build_body_connection_proof() -> BodyConnectionProof:
     ))
 
     # Check 4: epistemic boot sanity check present in _start_brain
-    _boot_sanity_pos = talk_text.find("Epistemic Body Boot Sanity")
+    _boot_sanity_pos = primary_turn.find("build_body_connection_proof")
     checks.append(BodyConnectionCheck(
         "boot_sanity_check_first_turn",
         _boot_sanity_pos >= 0 and brain_start > 0 and _boot_sanity_pos < brain_start,

@@ -6590,6 +6590,27 @@ if __name__ == "__main__":
     sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
     sys.stderr.flush()
 
+    # Native location is optional and must never block desktop startup.
+    try:
+        from System.swarm_gps_sensor import request_location_refresh
+        request_location_refresh()
+    except Exception as exc:
+        sys.stderr.write(f"  [BOOT] location: unavailable: {type(exc).__name__}\n")
+
+    # Keep the external local Ollama harness aligned with the live Ollama
+    # inventory before the desktop surfaces expose cortex choices.
+    try:
+        from System.swarm_ollama_harness_sync import sync_local_ollama_harness
+
+        _harness_sync = sync_local_ollama_harness()
+        sys.stderr.write(
+            f"  [BOOT] ollama : harness sync={_harness_sync.get('reason')} "
+            f"models={_harness_sync.get('model_count', 0)}\n"
+        )
+    except Exception as exc:
+        sys.stderr.write(f"  [BOOT] ollama : harness sync skipped: {exc}\n")
+    sys.stderr.flush()
+
     # ── Kernel process table — first accountable process in the macOS/PyQt body.
     kernel_table = None
     try:

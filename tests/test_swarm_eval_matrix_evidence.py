@@ -9,6 +9,8 @@ from System.swarm_eval_matrix_evidence import (
     ledger_evidence_rows,
     panel_evidence_rows,
     score_panel_evidence_rows,
+    validate_world_to_field_audit,
+    world_to_field_audit_rows,
 )
 
 
@@ -229,3 +231,24 @@ def test_panel_scoring_propagates_activation_epoch(tmp_path):
     assert current["rows"][0]["evidence_rows"] == 1
     assert missing["rows"][0]["status"] == "yellow"
     assert "no_evidence_for_activation" in missing["rows"][0]["problems"]
+
+
+def test_world_to_field_crosswalk_has_no_duplicate_ids_or_families():
+    audit = validate_world_to_field_audit()
+
+    assert audit["ok"] is True
+    assert audit["duplicate_ids"] == []
+    assert audit["duplicate_families"] == []
+    assert "SUFL-07" in audit["open_rows"]
+    assert "BOUNDARY-QUALIA-01" in audit["boundary_rows"]
+    assert "BOUNDARY-CONSCIOUSNESS-01" in audit["boundary_rows"]
+    assert audit["invalid_boundary_status"] == []
+
+
+def test_world_to_field_boundary_rows_are_not_capability_passes():
+    rows = world_to_field_audit_rows()
+    boundary = [row for row in rows if row.get("category") == "claim_boundary"]
+
+    assert len(boundary) == 2
+    assert all(row["status"] == "BOUNDARY_ONLY" for row in boundary)
+    assert all(row["wiring"] == "wired" for row in boundary)

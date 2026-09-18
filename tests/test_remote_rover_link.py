@@ -256,6 +256,8 @@ def test_control_lease_queue_claim_and_ack_are_separate(tmp_path):
     assert link.enqueue_command(arm["control_token"], command)["accepted"]
     assert link.enqueue_command(arm["control_token"], command)["duplicate"]
     batch = link.poll_commands(arm["control_token"])
+    ttl = batch["commands"][0].pop("valid_for_ms")
+    assert 0 < ttl <= 2250
     assert batch["commands"] == [{"command_id": "move_1", "linear_mm_s": 100,
                                    "angular_mrad_s": 0, "timeout_ms": 250}]
     assert link.poll_commands(arm["control_token"])["commands"] == []

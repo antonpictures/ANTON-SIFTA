@@ -67,6 +67,8 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+from System.swarm_camera_policy import single_owner_eye_enabled, is_owner_eye_name
+
 _STATE = _REPO / ".sifta_state"
 TARGET_JSON: Path = _STATE / "active_saccade_target.json"
 TARGET_TXT_LEGACY: Path = _STATE / "active_saccade_target.txt"
@@ -450,6 +452,17 @@ def write_target(
         raise ValueError(
             "write_target requires at least one of name, index, unique_id"
         )
+    if single_owner_eye_enabled() and unique_id != "OFF":
+        raw = _raw_live_devices()
+        requested_uid = normalize_unique_id(unique_id)
+        if requested_uid:
+            match = next((item for item in raw if normalize_unique_id(item[0]) == requested_uid), None)
+            if match:
+                name = match[1]
+        elif not name and isinstance(index, int) and 0 <= index < len(raw):
+            name = raw[index][1]
+        if not is_owner_eye_name(name):
+            raise ValueError("SINGLE_OWNER_EYE: select the embedded MacBook camera or close the eye")
     now = time.time()
     priority_i = _coerce_priority(priority)
     if respect_lease:
@@ -603,6 +616,13 @@ def resolve_index(target: Optional[Dict[str, Any]] = None) -> int:
     rec = target if target is not None else read_target()
     if not rec:
         return -1
+    if str(rec.get("unique_id") or "") == "OFF" or rec.get("name") == "(Eye Closed - Off)":
+        return -1
+    if single_owner_eye_enabled():
+        # Capture indices must count every raw AVFoundation device, including
+        # excluded devices. A filtered index can open Continuity by accident.
+        return next((i for i, (_, name) in enumerate(_raw_live_devices())
+                     if is_owner_eye_name(name)), -1)
     live = _live_devices()
     iphone_allowed = _target_allows_iphone_or_continuity(rec)
 
@@ -900,7 +920,10 @@ def live_devices_for_owner_selection() -> List[Tuple[str, str]]:
     non-virtual physical camera, and `/sx3+` can deliberately select
     iPhone/Continuity rows. This must not be used as an automatic fallback list.
     """
-    return _filter_owner_selectable_cameras(_raw_live_devices())
+    devices = _filter_owner_selectable_cameras(_raw_live_devices())
+    if single_owner_eye_enabled():
+        return [item for item in devices if is_owner_eye_name(item[1])]
+    return devices
 
 
 def index_for_owner_selection(
@@ -917,10 +940,14 @@ def index_for_owner_selection(
     wanted_uid = normalize_unique_id(unique_id)
     wanted_name = _norm_name(str(name or ""))
     for i, (uid, desc) in enumerate(_raw_live_devices()):
+        if single_owner_eye_enabled() and not is_owner_eye_name(desc):
+            continue
         if wanted_uid and normalize_unique_id(uid) == wanted_uid:
             return i
         if wanted_name and _norm_name(str(desc or "")) == wanted_name:
             return i
+    if single_owner_eye_enabled():
+        return None
     if name:
         return index_for_name(name)
     return None
@@ -928,6 +955,9 @@ def index_for_owner_selection(
 
 def preferred_live_index() -> int:
     """Public: safest live fallback index (built-in first), or -1 if none."""
+    if single_owner_eye_enabled():
+        return next((i for i, (_, name) in enumerate(_raw_live_devices())
+                     if is_owner_eye_name(name)), -1)
     return _preferred_live_index()
 
 

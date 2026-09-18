@@ -80,6 +80,10 @@ def _image_format_and_size(data: bytes) -> tuple[str, int | None, int | None]:
         # Dimension parsing varies across VP8/VP8L/VP8X. Format proof is enough
         # for this lane; OCR handles the human-useful evidence.
         return "webp", None, None
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in {
+        b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1",
+    }:
+        return "heif", None, None
     return "", None, None
 
 
@@ -339,7 +343,7 @@ def inspect_attachment_image(
             image_path=str(p),
             byte_count=len(data),
             sha256=_sha256_hex(data),
-            error="unsupported image bytes; expected png, jpeg, or webp",
+            error="unsupported image bytes; expected png, jpeg, webp, HEIC, or HEIF",
         )
         if write:
             write_attachment_vision_receipt(summary, state_dir=state, now=now)

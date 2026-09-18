@@ -34,7 +34,8 @@ def control(sequence=0, status=0, state=0, remaining=0):
 
 
 class FirmwareSimulator:
-    def __init__(self):
+    def __init__(self, lidar=False):
+        self.lidar = lidar
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("127.0.0.1", 0))
         self.address = self.sock.getsockname()
@@ -47,8 +48,8 @@ class FirmwareSimulator:
 
     def close(self):
         self._stop.set()
-        self.sock.close()
         self.thread.join(timeout=2)
+        self.sock.close()
 
     def _run(self):
         self.sock.settimeout(0.05)
@@ -63,6 +64,10 @@ class FirmwareSimulator:
             elif packet.kind == SESSION_OPEN:
                 assert packet.payload == struct.pack("<Q", 0x1020304050607080)
                 self.sock.sendto(encode(Packet(CONTROL, packet.session, control()), KEY), peer)
+                if self.lidar:
+                    scan = struct.pack("<HBBBBhH", 1, 3, 0, 8, 0, 0, 0)
+                    scan += b"".join(struct.pack("<hh", x, 1000) for x in range(-350, 351, 100))
+                    self.sock.sendto(encode(Packet(LIDAR, packet.session, scan), KEY), peer)
             elif packet.kind == VELOCITY:
                 linear, angular, timeout_ms, sequence = struct.unpack("<hhHH", packet.payload)
                 self.commands.append((linear, angular, timeout_ms, sequence))
@@ -117,13 +122,16 @@ def test_lidar_rejects_stale_or_oversized_chunk():
 def test_obstacle_gate_requires_fresh_front_clearance():
     eye = Observations()
     clear = Packet(LIDAR, 1, struct.pack(
-        "<HBBBBhHhhhh", 2, 3, 0, 2, 0, 0, 0, 450, 0, 500, 300))
+        "<HBBBBhH", 2, 3, 0, 8, 0, 0, 0) +
+        b"".join(struct.pack("<hh", x, 500) for x in range(-350, 351, 100)))
     assert eye.ingest(clear, 10.0) is not None
     assert eye.obstacle_clear(200, now=10.5)
     assert not eye.obstacle_clear(200, now=11.1)
     assert not eye.obstacle_clear(-200, now=10.5)
     blocked = Packet(LIDAR, 1, struct.pack(
-        "<HBBBBhHhhhh", 3, 3, 0, 2, 0, 0, 0, 250, 0, 500, 300))
+        "<HBBBBhH", 3, 3, 0, 8, 0, 0, 0) +
+        struct.pack("<hh", 0, 250) +
+        b"".join(struct.pack("<hh", x, 500) for x in range(-300, 301, 100)))
     assert eye.ingest(blocked, 12.0) is not None
     assert not eye.obstacle_clear(200, now=12.1)
     assert eye.obstacle_clear(0, now=12.1)
@@ -158,3 +166,39 @@ def test_client_rejects_non_ipv4_and_unopened_velocity():
             client.velocity(0, 0)
     finally:
         client.close()
+
+
+def test_lan_worker_consumes_real_udp_scan_and_sends_neutral():
+    from scripts.david_rover_gateway import LocalRover
+    firmware = FirmwareSimulator(lidar=True)
+    firmware.start()
+    local = LocalRover(RoverClient("127.0.0.1", KEY, port=firmware.address[1]))
+    try:
+        local.start()
+        deadline = time.monotonic() + 1
+        while local.latest is None and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert local.latest[1]["modality"] == "lidar"
+        result = local.execute({"command_id": "loopback", "linear_mm_s": 100,
+                                "angular_mrad_s": 0, "timeout_ms": 100,
+                                "valid_for_ms": 1000}, time.monotonic())
+        assert result["state"] == "accepted"
+        deadline = time.monotonic() + 1
+        while len(firmware.commands) < 2 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert firmware.commands[0][:3] == (100, 0, 100)
+        assert firmware.commands[1][:3] == (0, 0, 100)
+    finally:
+        local.close()
+        firmware.close()
+
+
+def test_sparse_and_old_device_scans_do_not_authorize_drive():
+    eye = Observations()
+    scan = struct.pack("<HBBBBhH", 1, 3, 0, 1, 0, 0, 0) + struct.pack("<hh", 500, 500)
+    eye.ingest(Packet(LIDAR, 1, scan), 10)
+    assert not eye.obstacle_clear(100, now=10.1)
+    scan = struct.pack("<HBBBBhH", 2, 3, 0, 8, 0, 0, 900)
+    scan += b"".join(struct.pack("<hh", x, 1000) for x in range(-350, 351, 100))
+    eye.ingest(Packet(LIDAR, 1, scan), 11)
+    assert not eye.obstacle_clear(100, now=11.2)

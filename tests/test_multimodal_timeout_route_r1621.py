@@ -8,13 +8,37 @@ from System.swarm_multimodal_timeout_route import (
 )
 
 
-def test_krisha_and_qwenpaw_are_risky_for_multimodal():
+def test_name_heuristics_are_risky_when_capabilities_are_unknown(monkeypatch):
+    monkeypatch.setattr(
+        "System.swarm_cortex_capabilities._ollama_capabilities",
+        lambda _model: None,
+    )
     assert is_risky_multimodal_text_mind("krishairnd/Gemma-4-Uncensored:latest")
     assert is_risky_multimodal_text_mind("satgeze/qwenpaw-9b-heretic-1m:latest")
     assert is_risky_multimodal_text_mind("ornith:latest")
 
 
-def test_patience_short_on_image_risky_mind():
+def test_metadata_overrides_risky_name(monkeypatch):
+    monkeypatch.setattr(
+        "System.swarm_cortex_capabilities._ollama_capabilities",
+        lambda _model: frozenset({"completion", "vision"}),
+    )
+    assert not is_risky_multimodal_text_mind("krishairnd/Gemma-4-Uncensored:latest")
+
+
+def test_metadata_can_mark_vision_named_model_text_only(monkeypatch):
+    monkeypatch.setattr(
+        "System.swarm_cortex_capabilities._ollama_capabilities",
+        lambda _model: frozenset({"completion"}),
+    )
+    assert is_risky_multimodal_text_mind("minicpm-v-4_5-abliterated:latest")
+
+
+def test_patience_short_on_image_risky_mind(monkeypatch):
+    monkeypatch.setattr(
+        "System.swarm_cortex_capabilities._ollama_capabilities",
+        lambda _model: None,
+    )
     p = first_token_patience_for_multimodal(
         "krishairnd/Gemma-4-Uncensored:latest",
         has_image=True,
@@ -24,7 +48,11 @@ def test_patience_short_on_image_risky_mind():
     assert p["patience_s"] <= 18.0
 
 
-def test_route_fail_fast_without_vlm():
+def test_route_fail_fast_without_vlm(monkeypatch):
+    monkeypatch.setattr(
+        "System.swarm_cortex_capabilities._ollama_capabilities",
+        lambda _model: None,
+    )
     r = route_multimodal_turn(
         "krishairnd/Gemma-4-Uncensored:latest",
         has_image=True,

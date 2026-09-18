@@ -10,6 +10,7 @@ class _FakeCamera:
 
 
 def test_rank_cameras_keeps_macbook_owner_eye_before_usb(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.delenv("SIFTA_ALLOW_IPHONE_CAMERA", raising=False)
     monkeypatch.delenv("SIFTA_ALLOW_VIRTUAL_CAMERA", raising=False)
     from Applications.sifta_what_alice_sees_widget import _rank_cameras
@@ -28,6 +29,7 @@ def test_rank_cameras_keeps_macbook_owner_eye_before_usb(monkeypatch):
 
 
 def test_rank_cameras_keeps_usb_as_secondary_body_eye(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.delenv("SIFTA_ALLOW_IPHONE_CAMERA", raising=False)
     monkeypatch.delenv("SIFTA_ALLOW_VIRTUAL_CAMERA", raising=False)
     from Applications.sifta_what_alice_sees_widget import _rank_cameras

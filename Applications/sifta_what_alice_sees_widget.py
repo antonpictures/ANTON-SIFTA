@@ -92,6 +92,7 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_base_widget import SiftaBaseWidget
 from System.ledger_append import append_ledger_line
+from System.swarm_camera_policy import single_owner_eye_enabled, capture_allowed, is_owner_eye_name
 from System.swarm_camera_frame_paths import (
     active_eye_frame_path,
     camera_device_frame_index_path,
@@ -233,15 +234,15 @@ def _rank_cameras(devs: List[QCameraDevice]) -> List[QCameraDevice]:
     Order: MacBook owner eye first, USB Logitech world eye second.
     Same strict allowlist as ``swarm_camera_target._filter_body_cameras``.
     """
-    try:
-        from System.swarm_camera_target import is_allowed_owner_body_camera
-    except Exception:
-        is_allowed_owner_body_camera = lambda _name: True  # type: ignore[assignment,misc]
+    from System.swarm_camera_target import is_allowed_owner_body_camera
     body_devs: List[QCameraDevice] = []
     seen_names: set[str] = set()
     for d in devs:
         desc = str(d.description() or "").strip()
-        if not is_allowed_owner_body_camera(desc):
+        if single_owner_eye_enabled():
+            if not is_owner_eye_name(desc) or not is_allowed_owner_body_camera(desc):
+                continue
+        elif not is_allowed_owner_body_camera(desc):
             continue
         name_key = " ".join(desc.casefold().split())
         if name_key in seen_names:
@@ -297,7 +298,7 @@ def _maybe_rotate_visual_stigmergy(now: float) -> None:
         return
 
 
-def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
+def _write_visual_stigmergy(ph: "PhotonStigmergy", *, device: str = "", unique_id: str = "") -> None:
     """Append one compact JSONL row. Throttled by the canvas.
 
     Compact on purpose; this runs on the Qt video-frame path.
@@ -309,6 +310,9 @@ def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
             f.write(json.dumps({
                 "ts": ph.ts,
                 "sha8": ph.sha8,
+                "camera_name": device,
+                "camera_unique_id": unique_id,
+                "capture_source": "qt_video_sink",
                 "w": ph.width,
                 "h": ph.height,
                 "entropy_bits": round(ph.entropy_bits, 3),
@@ -1004,7 +1008,7 @@ class _VideoCanvas(QWidget):
             self._photon = ph
             self._last_sha8 = ph.sha8
             self._last_ledger_ts = ph.ts
-            _write_visual_stigmergy(ph)
+            _write_visual_stigmergy(ph, device=self._device_label, unique_id=self._device_unique_id)
             # Save last frame as JPEG every 30 s for Cosmos-Reason1 inference.
             # Zero cost on most ticks (30 s period vs 200 ms ledger period).
             _now = time.time()
@@ -1701,7 +1705,9 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._cam_combo.blockSignals(False)
         if not restored:
             default_idx = 0 if _EYE_BOOT_OFF else min(1, self._cam_combo.count() - 1)
+            self._cam_combo.blockSignals(True)
             self._cam_combo.setCurrentIndex(default_idx)
+            self._cam_combo.blockSignals(False)
             self._on_cam_changed(default_idx)
         self._refresh_secondary_world_eye()
 
@@ -1735,7 +1741,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             candidates.append(root_active_eye_frame_path())
             candidates.append(active_eye_frame_path())
             by_device = active_eye_frame_path().parent / "by_device"
-            if by_device.is_dir():
+            if by_device.is_dir() and not single_owner_eye_enabled():
                 candidates.extend(by_device.glob("*.png"))
         except Exception:
             pass
@@ -1744,6 +1750,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 if not path.is_file():
                     continue
                 age = now - path.stat().st_mtime
+                if age < 0:
+                    continue
             except Exception:
                 continue
             if age < best_age:
@@ -1766,6 +1774,9 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         """
         img, age, path = self._canonical_eye_frame()
         if img is None:
+            self._canvas._image = None
+            self._canvas.set_error("Camera frame unavailable or stale. Waiting for a fresh capture.")
+            self._canvas.update()
             return False
         try:
             self._canvas.set_error(None)
@@ -1857,6 +1868,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._secondary_world_pulse_timer.stop()
 
     def _secondary_world_eye_candidate(self) -> Optional[QCameraDevice]:
+        if single_owner_eye_enabled():
+            return None
         if not _env_flag("SIFTA_SECONDARY_WORLD_EYE", "1"):
             return None
         try:
@@ -1960,6 +1973,9 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             pass
 
     def _check_secondary_world_delivery(self) -> None:
+        if single_owner_eye_enabled():
+            self._stop_secondary_world_eye()
+            return
         signature = str(getattr(self, "_secondary_world_signature", "") or "")
         started_at = float(getattr(self, "_secondary_world_started_at", 0.0) or 0.0)
         last_frame = float(getattr(self, "_secondary_world_last_frame_ts", 0.0) or 0.0)
@@ -2102,6 +2118,15 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         dev_id = self._cam_combo.currentData()
         if dev_id is None:
             return
+        try:
+            from System.swarm_camera_policy import capture_allowed, rejection_reason
+            chosen_name = str(self._cam_combo.currentText() or "").strip()
+            if dev_id != "OFF" and not capture_allowed(chosen_name):
+                self._canvas.set_chyron(rejection_reason(chosen_name), QColor(255, 200, 90))
+                self._stop_secondary_world_eye()
+                return
+        except Exception:
+            pass
         # Stop previous camera, if any.
         old_camera = self._camera
         self._camera = None
@@ -2230,7 +2255,14 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         except Exception:
             pass
 
-        # Try next candidate per Covenant 7.1
+        try:
+            from System.swarm_camera_policy import single_owner_eye_enabled
+            if single_owner_eye_enabled():
+                return
+        except Exception:
+            pass
+
+        # Try next candidate per Covenant 7.1 when multi-camera mode is enabled.
         curr_idx = self._cam_combo.currentIndex()
         if curr_idx < self._cam_combo.count() - 1:
             self._canvas.set_chyron(f"⚠️ {dev_name} failed. Trying next candidate...", QColor(255, 100, 100))
@@ -2392,6 +2424,16 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         pass
 
     def _on_frame_meta(self, w: int, h: int, sha8: str) -> None:
+        now = time.time()
+        if now - getattr(self, "_last_capture_policy_ts", 0.0) >= 5.0:
+            append_ledger_line(_REPO / ".sifta_state" / "camera_capture_policy.jsonl", {
+                "ts": now, "event": "CAPTURE_POLICY_FRAME", "pid": os.getpid(),
+                "device": self._canvas._device_label, "sha8": sha8,
+                "single_owner_eye": single_owner_eye_enabled(),
+                "secondary_capture": bool(self._secondary_world_camera is not None or self._secondary_world_pulse_active),
+                "capture_winks": not single_owner_eye_enabled(),
+            })
+            self._last_capture_policy_ts = now
         # Cheap status without recreating it every frame; only update if changed.
         new = f"{w}×{h} · sha={sha8}"
         if self._status.text() != new:
@@ -2565,6 +2607,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
     def _wink_led(self, blink_ms: int) -> None:
         """Briefly stop the camera so the green hardware LED winks off-then-on."""
+        if single_owner_eye_enabled():
+            return
         if self._camera is None or self._led_blinking:
             return
         self._led_blinking = True
@@ -2609,6 +2653,15 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         if signature == self._last_saccade_signature:
             return
         self._last_saccade_signature = signature
+
+        try:
+            from System.swarm_camera_policy import capture_allowed, rejection_reason
+            explicit_off = str(rec.get("unique_id") or "").strip().upper() == "OFF"
+            if not explicit_off and rec.get("name") and not capture_allowed(str(rec.get("name"))):
+                self._canvas.set_chyron(rejection_reason(str(rec.get("name"))), QColor(255, 200, 90))
+                return
+        except Exception:
+            pass
 
         target_idx = self._resolve_target_combo_idx(rec)
         if target_idx < 0 or target_idx >= self._cam_combo.count():
@@ -2709,6 +2762,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         Never substring."""
         if not rec:
             return -1
+        if single_owner_eye_enabled():
+            if rec.get("unique_id") == "OFF":
+                return self._cam_combo.findData("OFF")
+            # Never interpret a hardware index as a UI combo index (OFF adds
+            # a slot), or let an external UID select the embedded camera.
+            if not is_owner_eye_name(rec.get("name")):
+                return -1
         # 1) unique_id against itemData (which holds QCameraDevice.id())
         uid = rec.get("unique_id")
         if uid:
@@ -2729,6 +2789,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 if self._cam_combo.itemText(i) == name:
                     return i
         # 3) raw index — last resort
+        if single_owner_eye_enabled():
+            return -1
         idx = rec.get("index")
         if isinstance(idx, int) and 0 <= idx < self._cam_combo.count():
             return idx

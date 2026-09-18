@@ -35,11 +35,15 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QComboBox,
+    QFrame,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -138,31 +142,31 @@ except Exception:
 
 _GLOBAL_STYLE = """
 QWidget {
-    background-color: #0b0c10;
-    color: #c5c6c7;
-    font-family: 'Inter', 'Roboto', 'Menlo', monospace;
+    background-color: #1b1b1a;
+    color: #f0efec;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', 'Segoe UI', sans-serif;
     font-size: 13px;
 }
 QTabWidget::pane {
-    border: 1px solid #1f2833;
-    background: #0b0c10;
-    border-radius: 8px;
+    border: 1px solid #3b3a37;
+    background: #20201f;
+    border-radius: 10px;
     top: -1px;
 }
 QTabBar::tab {
-    background: #1f2833;
-    color: #8892b0;
-    padding: 10px 20px;
+    background: #2a2927;
+    color: #b8b5ae;
+    padding: 9px 16px;
     margin-right: 4px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border: 1px solid transparent;
 }
 QTabBar::tab:selected {
-    background: #0b0c10;
-    color: #66fcf1;
-    border: 1px solid #1f2833;
-    border-bottom-color: #0b0c10;
+    background: #20201f;
+    color: #e3a27b;
+    border: 1px solid #5b4a40;
+    border-bottom-color: #20201f;
     font-weight: bold;
 }
 QTabBar::tab:hover:!selected {
@@ -170,89 +174,90 @@ QTabBar::tab:hover:!selected {
     color: #c5c6c7;
 }
 QLabel#header {
-    color: #66fcf1;
-    font-size: 18px;
+    color: #f4f1eb;
+    font-size: 20px;
     font-weight: bold;
-    padding: 12px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #11141c, stop:1 #0b0c10);
-    border-radius: 6px;
-    border-left: 5px solid #66fcf1;
+    padding: 14px 16px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b2926, stop:0.55 #232321, stop:1 #20201f);
+    border-radius: 10px;
+    border: 1px solid #4a4540;
+    border-left: 5px solid #d9825b;
 }
 QLabel[card="true"] {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a1a24, stop:1 #0b0c10);
-    border: 1px solid #1f2833;
-    border-radius: 8px;
-    padding: 12px;
-    color: #45a29e;
-    font-size: 13px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #292a2a, stop:1 #232423);
+    border: 1px solid #41423f;
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: #a9d6c5;
+    font-size: 12px;
 }
 QLabel[card="true"]:hover {
-    border: 1px solid #45a29e;
+    border: 1px solid #d9825b;
 }
 QTableWidget {
-    background-color: #0b0c10;
-    alternate-background-color: #12141a;
-    gridline-color: #1f2833;
-    border: 1px solid #1f2833;
-    border-radius: 6px;
-    selection-background-color: #1f2833;
-    selection-color: #66fcf1;
+    background-color: #1d1d1c;
+    alternate-background-color: #252624;
+    gridline-color: #3b3a37;
+    border: 1px solid #41423f;
+    border-radius: 8px;
+    selection-background-color: #514238;
+    selection-color: #fffaf2;
 }
 QHeaderView::section {
-    background-color: #1a1a24;
-    color: #66fcf1;
-    padding: 6px;
-    border: 1px solid #1f2833;
+    background-color: #2b2a28;
+    color: #e3a27b;
+    padding: 8px;
+    border: 1px solid #41423f;
     font-weight: bold;
 }
 QPlainTextEdit, QTextBrowser {
-    background-color: #0b0c10;
-    color: #c5c6c7;
-    border: 1px solid #1f2833;
-    border-radius: 6px;
+    background-color: #1d1d1c;
+    color: #e3e0d9;
+    border: 1px solid #41423f;
+    border-radius: 8px;
     padding: 10px;
-    font-family: 'Menlo', monospace;
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
     font-size: 12px;
 }
 QPushButton {
-    background-color: #0b0c10;
-    color: #66fcf1;
-    border: 1px solid #45a29e;
+    background-color: #292a28;
+    color: #e3a27b;
+    border: 1px solid #59504a;
     border-radius: 6px;
     padding: 8px 24px;
     font-weight: bold;
 }
 QPushButton:hover {
-    background-color: #1f2833;
-    border: 1px solid #66fcf1;
+    background-color: #35322f;
+    border: 1px solid #d9825b;
 }
 QPushButton:pressed {
-    background-color: #45a29e;
-    color: #0b0c10;
+    background-color: #d9825b;
+    color: #211b18;
 }
 QComboBox {
-    background-color: #101722;
+    background-color: #292a28;
     color: #e8ffff;
-    border: 1px solid #45a29e;
+    border: 1px solid #59504a;
     border-radius: 6px;
     padding: 8px 12px;
     min-height: 22px;
     font-weight: bold;
 }
 QComboBox:hover {
-    border: 1px solid #66fcf1;
-    background-color: #162233;
+    border: 1px solid #d9825b;
+    background-color: #35322f;
 }
 QComboBox::drop-down {
     border: 0px;
     width: 32px;
 }
 QComboBox QAbstractItemView {
-    background-color: #0b0c10;
+    background-color: #20201f;
     color: #e8ffff;
-    border: 1px solid #45a29e;
-    selection-background-color: #1f2833;
-    selection-color: #66fcf1;
+    border: 1px solid #59504a;
+    selection-background-color: #514238;
+    selection-color: #e3a27b;
     outline: 0;
 }
 QScrollBar:vertical {
@@ -267,7 +272,7 @@ QScrollBar::handle:vertical {
     border-radius: 4px;
 }
 QScrollBar::handle:vertical:hover {
-    background: #45a29e;
+    background: #d9825b;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
@@ -284,7 +289,7 @@ QScrollBar::handle:horizontal {
     border-radius: 4px;
 }
 QScrollBar::handle:horizontal:hover {
-    background: #45a29e;
+    background: #d9825b;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
@@ -379,30 +384,27 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self.setStyleSheet(_GLOBAL_STYLE)
         self._cards: dict[str, QLabel] = {}
 
-        header = QLabel("STIGMEROBOTICS - ROB 501 Proof Control Room")
+        header = QLabel("STIGMEROBOTICS  /  ROB 501 PROOF CONTROL ROOM")
         header.setObjectName("header")
+        header.setToolTip("One visual hub for simulated proofs, live ledgers and bounded experiments.")
         layout.addWidget(header)
 
-        cards = QGridLayout()
-        cards.setHorizontalSpacing(12)
-        cards.setVerticalSpacing(12)
-        for idx, name in enumerate(("singleton", "proofs", "state", "pheromone", "safety", "observability", "chaos", "segmental", "biohybrid", "wetdry", "ledger", "economy", "bodyproof")):
-            lbl = QLabel("...")
-            lbl.setObjectName(f"card_{name}")
-            lbl.setProperty("card", "true")
-            lbl.setMinimumHeight(64)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._cards[name] = lbl
-            cards.addWidget(lbl, idx // 3, idx % 3)
-        layout.addLayout(cards)
+        intro = QLabel(
+            "⚡ GAMIFIED SCIENCE  ·  earn clarity, not hype  ·  every experiment stays labelled SIMULATED"
+        )
+        intro.setObjectName("dashboard_intro")
+        intro.setStyleSheet(
+            "QLabel#dashboard_intro { color: #a8b8cc; padding: 3px 6px 7px; font-size: 12px; }"
+        )
+        layout.addWidget(intro)
 
         nav = QHBoxLayout()
         nav.setSpacing(10)
-        nav_label = QLabel("Page")
-        nav_label.setMinimumWidth(44)
+        nav_label = QLabel("Explore")
+        nav_label.setMinimumWidth(58)
         nav.addWidget(nav_label)
         self.page_selector = QComboBox()
-        self.page_selector.setMinimumWidth(320)
+        self.page_selector.setMinimumWidth(0)
         self.page_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.page_selector.currentIndexChanged.connect(self._on_page_selected)
         nav.addWidget(self.page_selector, 1)
@@ -411,7 +413,12 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self.tabs = QTabWidget()
         self.tabs.tabBar().hide()
         self.tabs.currentChanged.connect(self._sync_page_selector)
-        layout.addWidget(self.tabs, 1)
+        self.tab_scroll = QScrollArea()
+        self.tab_scroll.setWidgetResizable(True)
+        self.tab_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tab_scroll.setWidget(self.tabs)
+        layout.addWidget(self.tab_scroll, 1)
         self._page_selector_updating = False
 
         self._build_overview_tab()
@@ -431,6 +438,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self._build_docs_tab()
         self._build_tests_tab()
         self._sync_page_selector_items()
+        self._polish_tables()
 
         row = QHBoxLayout()
         refresh = QPushButton("Refresh")
@@ -444,6 +452,41 @@ class StigmeroboticsWidget(SiftaBaseWidget):
 
         self._timer = self.make_timer(10_000, self.refresh_all)
         self.refresh_all()
+
+    def _build_status_cards(self) -> QGridLayout:
+        cards = QGridLayout()
+        cards.setContentsMargins(0, 0, 0, 8)
+        cards.setHorizontalSpacing(10)
+        cards.setVerticalSpacing(10)
+        for col in range(4):
+            cards.setColumnStretch(col, 1)
+        names = (
+            "singleton", "proofs", "state", "pheromone", "safety", "observability",
+            "chaos", "segmental", "biohybrid", "wetdry", "ledger", "economy", "bodyproof",
+        )
+        for idx, name in enumerate(names):
+            lbl = QLabel("...")
+            lbl.setObjectName(f"card_{name}")
+            lbl.setProperty("card", "true")
+            lbl.setMinimumHeight(70)
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            lbl.setWordWrap(True)
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            self._cards[name] = lbl
+            cards.addWidget(lbl, idx // 4, idx % 4)
+        return cards
+
+    def _polish_tables(self) -> None:
+        """Keep evidence tables readable inside narrow MDI windows."""
+        for table in self.findChildren(QTableWidget):
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            header.setMinimumSectionSize(72)
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideRight)
+            table.verticalHeader().setDefaultSectionSize(30)
+            table.verticalHeader().setMinimumSectionSize(30)
 
     def _sync_page_selector_items(self) -> None:
         self._page_selector_updating = True
@@ -473,6 +516,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
     def _build_overview_tab(self) -> None:
         page = QWidget()
         root = QVBoxLayout(page)
+        root.addLayout(self._build_status_cards())
         self.event_table = QTableWidget(0, 4)
         self.event_table.setHorizontalHeaderLabels(("Event", "ROB 501 topic", "Prove in SIFTA", "Status"))
         self.event_table.horizontalHeader().setStretchLastSection(True)
@@ -1078,12 +1122,12 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             return
 
         ok = proof.ok
-        status_color = "#66fcf1" if ok else "#ff4b4b"
+        status_color = "#a9d6c5" if ok else "#e07a67"
         fail_count = len(proof.failing_checks)
         self._cards["bodyproof"].setText(
             "<span style='color: white; font-weight: bold;'>Body Proof</span><br/>"
             f"<span style='color: {status_color};'>{'PASS' if ok else f'FAIL ({fail_count})'}</span><br/>"
-            f"<span style='color: #8892b0;'>organs={proof.organ_count} stgm={proof.wallet_stgm:.0f}</span>"
+            f"<span style='color: #aaa49b;'>organs={proof.organ_count} stgm={proof.wallet_stgm:.0f}</span>"
         )
         checks = proof.checks
         self.body_proof_table.setRowCount(len(checks))
@@ -1149,7 +1193,7 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         active = _active_stigmerobotics_apps()
         ok = active == ["Stigmerobotics"]
         
-        status_color = "#66fcf1" if ok else "#ff4b4b"
+        status_color = "#a9d6c5" if ok else "#e07a67"
         self._cards["singleton"].setText(
             f"<span style='color: white; font-weight: bold;'>Singleton {'OK' if ok else 'FAIL'}</span><br/>"
             f"<span style='color: {status_color};'>{active or 'none'}</span>"
@@ -1189,11 +1233,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
         self.event_table.resizeColumnsToContents()
         next_event = next((row[2] for row in rows if "todo" in row[5].lower()), "E03")
         
-        green_color = "#66fcf1" if green == len(rows) else "#45a29e"
+        green_color = "#a9d6c5" if green == len(rows) else "#d2a86d"
         self._cards["proofs"].setText(
             f"<span style='color: white; font-weight: bold;'>Proof Ladder</span><br/>"
             f"<span style='color: {green_color};'>GREEN={green} / {len(rows)}</span><br/>"
-            f"<span style='color: #8892b0;'>next={_short(next_event, 30)}</span>"
+            f"<span style='color: #aaa49b;'>next={_short(next_event, 30)}</span>"
         )
 
     def _refresh_state_vector(self) -> None:
@@ -1210,11 +1254,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.state_vector_log.setPlainText(f"Live state vector failed: {type(exc).__name__}: {exc}")
             return
 
-        status_color = "#66fcf1" if report.ok else "#ff4b4b"
+        status_color = "#a9d6c5" if report.ok else "#e07a67"
         self._cards["state"].setText(
             f"<span style='color: white; font-weight: bold;'>E03 State</span><br/>"
             f"<span style='color: {status_color};'>{'PASS' if report.ok else 'FAIL'}</span><br/>"
-            f"<span style='color: #8892b0;'>x in R<sup>{report.dimension}</sup></span>"
+            f"<span style='color: #aaa49b;'>x in R<sup>{report.dimension}</sup></span>"
         )
         self.state_vector_table.setRowCount(len(report.channels))
         for r, (channel, value) in enumerate(zip(report.channels, report.vector)):
@@ -1245,11 +1289,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.pheromone_log.setPlainText(f"Live pheromone field failed: {type(exc).__name__}: {exc}")
             return
 
-        status_color = "#66fcf1" if report.ok else "#ff4b4b"
+        status_color = "#a9d6c5" if report.ok else "#e07a67"
         self._cards["pheromone"].setText(
             f"<span style='color: white; font-weight: bold;'>E33 Field</span><br/>"
             f"<span style='color: {status_color};'>{'PASS' if report.ok else 'FAIL'}</span><br/>"
-            f"<span style='color: #8892b0;'>risk={report.collision_risk:.4f}</span>"
+            f"<span style='color: #aaa49b;'>risk={report.collision_risk:.4f}</span>"
         )
         rows = sorted(report.field.items(), key=lambda item: item[1], reverse=True)[:12]
         self.pheromone_table.setRowCount(len(rows))
@@ -1281,11 +1325,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.safety_log.setPlainText(f"Live safety graph failed: {type(exc).__name__}: {exc}")
             return
 
-        status_color = "#66fcf1" if report.ok else "#ff4b4b"
+        status_color = "#a9d6c5" if report.ok else "#e07a67"
         self._cards["safety"].setText(
             f"<span style='color: white; font-weight: bold;'>E34 Safety</span><br/>"
             f"<span style='color: {status_color};'>{'PASS' if report.ok else 'LIVE GAP'}</span><br/>"
-            f"<span style='color: #8892b0;'>edges={len(report.edges)} gaps={len(report.violations)}</span>"
+            f"<span style='color: #aaa49b;'>edges={len(report.edges)} gaps={len(report.violations)}</span>"
         )
         rows = report.edges[:12]
         self.safety_table.setRowCount(len(rows))
@@ -1321,11 +1365,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.observability_log.setPlainText(f"Live observability failed: {type(exc).__name__}: {exc}")
             return
 
-        status_color = "#66fcf1" if report.ok else "#ff4b4b"
+        status_color = "#a9d6c5" if report.ok else "#e07a67"
         self._cards["observability"].setText(
             f"<span style='color: white; font-weight: bold;'>E35 Blanket</span><br/>"
             f"<span style='color: {status_color};'>{'NONTRIVIAL' if report.ok else 'BROKEN'}</span><br/>"
-            f"<span style='color: #8892b0;'>hidden={len(report.hidden_deps)} unknown={len(report.unknown_kinds)}</span>"
+            f"<span style='color: #aaa49b;'>hidden={len(report.hidden_deps)} unknown={len(report.unknown_kinds)}</span>"
         )
 
         rows: list[tuple[str, str, str]] = []
@@ -1363,15 +1407,15 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             return
 
         if decision.mode == "CALM":
-            status_color = "#66fcf1"
+            status_color = "#a9d6c5"
         elif decision.mode == "FROZEN":
-            status_color = "#ff4b4b"
+            status_color = "#e07a67"
         else:
-            status_color = "#f7c948"
+            status_color = "#d2a86d"
         self._cards["chaos"].setText(
             f"<span style='color: white; font-weight: bold;'>E45 Chaos</span><br/>"
             f"<span style='color: {status_color};'>{decision.mode}</span><br/>"
-            f"<span style='color: #8892b0;'>amp={decision.amplitude:.4f}</span>"
+            f"<span style='color: #aaa49b;'>amp={decision.amplitude:.4f}</span>"
         )
         rows = decision.wiggles[:12]
         self.chaos_table.setRowCount(len(rows))
@@ -1407,15 +1451,15 @@ class StigmeroboticsWidget(SiftaBaseWidget):
 
         state = report.state.name
         if state == "COORDINATED":
-            status_color = "#66fcf1"
+            status_color = "#a9d6c5"
         elif state == "SINGLE_CHANNEL":
-            status_color = "#45a29e"
+            status_color = "#d2a86d"
         else:
-            status_color = "#ff4b4b"
+            status_color = "#e07a67"
         self._cards["segmental"].setText(
             f"<span style='color: white; font-weight: bold;'>E46 CPG</span><br/>"
             f"<span style='color: {status_color};'>{state}</span><br/>"
-            f"<span style='color: #8892b0;'>ch={report.n_channels} violations={len(report.violations)}</span>"
+            f"<span style='color: #aaa49b;'>ch={report.n_channels} violations={len(report.violations)}</span>"
         )
 
         # Populate coupling edges table
@@ -1459,15 +1503,15 @@ class StigmeroboticsWidget(SiftaBaseWidget):
 
         state = report.state.name
         if state in {"SENSOR_ONLY", "HUMAN_REVIEW_READY"} and report.ok:
-            status_color = "#66fcf1"
+            status_color = "#a9d6c5"
         elif state == "BLOCKED":
-            status_color = "#f7c948"
+            status_color = "#d2a86d"
         else:
-            status_color = "#ff4b4b"
+            status_color = "#e07a67"
         self._cards["biohybrid"].setText(
             f"<span style='color: white; font-weight: bold;'>E47 Biohybrid</span><br/>"
             f"<span style='color: {status_color};'>{state}</span><br/>"
-            f"<span style='color: #8892b0;'>rows={len(report.rows)} intents={report.n_intents}</span>"
+            f"<span style='color: #aaa49b;'>rows={len(report.rows)} intents={report.n_intents}</span>"
         )
 
         rows: list[tuple[str, str, str, str]] = []
@@ -1527,11 +1571,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             return
 
         ok = bridge.all_have_safety_gate and bridge.all_have_doi
-        status_color = "#66fcf1" if ok else "#ff4b4b"
+        status_color = "#a9d6c5" if ok else "#e07a67"
         self._cards["wetdry"].setText(
             f"<span style='color: white; font-weight: bold;'>E48+ Research</span><br/>"
             f"<span style='color: {status_color};'>{'HYPOTHESIS-GATED' if ok else 'BROKEN'}</span><br/>"
-            f"<span style='color: #8892b0;'>specs={len(bridge.specs)} gate=E34</span>"
+            f"<span style='color: #aaa49b;'>specs={len(bridge.specs)} gate=E34</span>"
         )
 
         self.wet_dry_table.setRowCount(len(bridge.specs))
@@ -1565,11 +1609,11 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.audit_log.setPlainText(f"Live audit failed: {type(exc).__name__}: {exc}")
             return
             
-        status_color = "#66fcf1" if ok else "#ff4b4b"
+        status_color = "#a9d6c5" if ok else "#e07a67"
         self._cards["ledger"].setText(
             f"<span style='color: white; font-weight: bold;'>Ledger Audit</span><br/>"
             f"<span style='color: {status_color};'>{'PASS' if ok else 'FAIL'}</span><br/>"
-            f"<span style='color: #8892b0;'>trace={len(trace_result.violations)} receipt={len(receipt_result.violations)}</span>"
+            f"<span style='color: #aaa49b;'>trace={len(trace_result.violations)} receipt={len(receipt_result.violations)}</span>"
         )
         self.audit_log.setPlainText(trace_result.summary() + "\n\n" + receipt_result.summary())
 
@@ -1585,14 +1629,14 @@ class StigmeroboticsWidget(SiftaBaseWidget):
             self.economy_log.setPlainText(f"Summary failed: {type(exc).__name__}: {exc}")
             return
             
-        status_color = "#45a29e"
+        status_color = "#d2a86d"
         if "BLOCKED" in summary.display_status or "CONSERVE" in summary.display_status:
-            status_color = "#ff4b4b"
+            status_color = "#e07a67"
             
         self._cards["economy"].setText(
             f"<span style='color: white; font-weight: bold;'>STGM Immune</span><br/>"
             f"<span style='color: {status_color};'>{summary.display_status}</span><br/>"
-            f"<span style='color: #8892b0;'>burn={summary.session_charged_stgm:.5f}</span>"
+            f"<span style='color: #aaa49b;'>burn={summary.session_charged_stgm:.5f}</span>"
         )
         lines = [format_life_cockpit_summary(summary), ""]
         for event in summary.events[-8:]:
@@ -1624,7 +1668,8 @@ class StigmeroboticsWidget(SiftaBaseWidget):
 def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     win = StigmeroboticsWidget()
-    win.resize(1240, 820)
+    # Keep the default surface comfortable on a 14-inch MacBook at scaled 2K.
+    win.resize(1180, 760)
     win.show()
     sys.exit(app.exec())
 

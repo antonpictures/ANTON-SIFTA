@@ -22,10 +22,14 @@ from __future__ import annotations
 import base64
 import json
 import os
+import uuid
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from System.swarm_image_attachment_normalizer import normalize_image_attachment
+from System.swarm_vision_evidence import VisionEvidence, build_vision_evidence
 
 # Local vision-model name fragments. Kept in sync with
 # swarm_cortex_capabilities.LOCAL_VISION_NEEDLES; duplicated here so this arm
@@ -89,6 +93,23 @@ class LocalVisionResult:
     arm_id: str = ARM_ID
     model: str = ""
     stderr: str = ""
+    generation_id: str = ""
+    image_sha256: str = ""
+    transport_sha256: str = ""
+
+    def to_evidence(self, prompt: str, *, scope: str = "talk") -> VisionEvidence:
+        """Convert the arm result into bounded, non-authoritative cortex context."""
+        return build_vision_evidence(
+            observation=self.output,
+            model=self.model,
+            status=self.status,
+            ok=self.ok,
+            image_sha256=self.image_sha256,
+            transport_sha256=self.transport_sha256,
+            prompt=prompt,
+            scope=scope,
+            generation_id=self.generation_id or None,
+        )
 
 
 def _ollama_tags(host: str = _DEFAULT_HOST, timeout: float = 2.0) -> list[str]:
@@ -129,7 +150,7 @@ def pick_local_vision_model(
     want = _configured_eye(state_dir).lower()
     if want:
         for name, low in lows:
-            if want == low or want in low:
+            if want == low:
                 return name
     # (2) designated gemma4 eye first, then other gemma
     for needle in _PREFERRED_VISION_NEEDLES:
@@ -175,7 +196,10 @@ def describe_image_local(
     if not chosen:
         return LocalVisionResult(ok=False, status="no_local_vision_model_installed")
     try:
-        b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+        # Ollama's image endpoint is not a HEIC decoder. Normalize only the
+        # transport payload; the owner's source path remains unchanged.
+        normalized = normalize_image_attachment(p)
+        b64 = base64.b64encode(normalized.data).decode("ascii")
     except Exception as exc:
         return LocalVisionResult(ok=False, status="image_read_failed", stderr=str(exc), model=chosen)
     body = json.dumps({
@@ -202,7 +226,15 @@ def describe_image_local(
         text = str(payload.get("response") or "").strip()
     if not text:
         return LocalVisionResult(ok=False, status="empty_local_vision_reply", model=chosen)
-    return LocalVisionResult(ok=True, output=text, status="ok", model=chosen)
+    return LocalVisionResult(
+        ok=True,
+        output=text,
+        status="ok",
+        model=chosen,
+        generation_id=str(uuid.uuid4()),
+        image_sha256=str(getattr(normalized, "source_sha256", "") or ""),
+        transport_sha256=str(getattr(normalized, "data_sha256", "") or ""),
+    )
 
 
 __all__ = [

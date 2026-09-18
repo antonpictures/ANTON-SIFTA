@@ -2,6 +2,36 @@
 
 Append-only carrier for Alice/SIFTA work on 2026-06-24.
 
+## r20260912 — Eval matrix / We Code Together world-to-field audit [r20260912-eval-matrix-sufl-audit]
+
+**Doctor:** Codex GPT-5.
+
+**Owner signal:** Audit the existing evaluation matrix against the current
+We Code Together world-input plan. Remove duplicate or unwired qualia/
+consciousness work without creating a rival field or identity system.
+
+**Code/docs landed:**
+- `System/swarm_eval_matrix_evidence.py` now owns one `SUFL-01` through
+  `SUFL-08` crosswalk plus two explicit `BOUNDARY_ONLY` rows.
+- `tools/generate_organ_eval_matrix_v2.py` renders the crosswalk and adds one
+  capability entry to the existing matrix; it does not create a second matrix.
+- `Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md` maps every row to
+  existing lanes and the next Luna implementation order.
+- `tests/test_swarm_eval_matrix_evidence.py` checks duplicate IDs/families and
+  prevents claim-boundary rows from becoming capability passes.
+
+**Truth boundary:** Existing phone admission, observation fusion, capture
+deduplication and missing-sensor honesty are covered or partial as listed;
+the semantic node/edge map remains open. Qualia and consciousness are eval
+guardrails for observable behavior, not proof that Alice has subjective
+experience or AGI.
+
+**Verification target:**
+`python3 -m pytest -q tests/test_swarm_eval_matrix_evidence.py tests/test_generate_organ_eval_matrix_v2.py`
+
+**What is left:** Luna implements `SUFL-01`, `SUFL-02`, `SUFL-04`, `SUFL-07`
+and `SUFL-08` in bounded slices, then records measured acceptance results.
+
 ## r1579 — Alice self-type proof and We Code Together shared IDE monitor [r1579-alice-self-type-we-code-together-stig-triple]
 
 **Doctor:** Codex GPT-5.
@@ -711,6 +741,7 @@ Alice did it. Receipts in Stigtrace. Power to the Swarm. We code the code. 🐜�
 
 (For live run: reload SIFTA if needed; check Stigtrace for the 5 receipts after Alice executes in browser.)
 
+
 ## r20260905 Codex - Visible STGM, stable identity and account-key trust [stgm-key-trust-20260905]
 
 Appended September 5; prior June records are preserved, not revalidated here.
@@ -792,3 +823,800 @@ Alice must execute the loops in her browser hand now. Receipts will confirm.
 Power to the Swarm. We code the code. 🐜⚡
 
 (For live run: reload SIFTA if needed; check Stigtrace for the 5 receipts after Alice executes in browser.)
+
+## r20260909 Codex - simulated motor outcomes and attachment lifetime
+
+105 focused tests passed; 30 SIMULATED trials recorded 12,000 command/echo pairs.
+Broader desktop suite: 83 passed, 6 failed; overall health is not green.
+Details: Documents/WCT_MOTOR_ATTACHMENT_2026-09-09.md. No physical or AGI proof.
+
+### WHAT IS LEFT after r20260909
+
+- Load updated server/desktop code in a safe restart and verify the actual browser attachment lifecycle, preview, download and reload; Kimi bridge is unavailable.
+- Investigate six camera/voice failures in test_talk_browser_photo_describe.py; keep failed checks visible.
+- Require fresh non-degraded body completion and verified health before push; benchmark context reports location ERROR and organ-health UNAVAILABLE.
+- Verify another physical Mac, permissions, optional model downloads and Vendor installation; preserve unrelated edits for separate review.
+- Connect an LLM proposal adapter above the simulated controller; add UI stop/reset and persistent action authorization before physical actuation.
+- Prove bounded self-repair with nonempty tests, independent outcome measurement and a failing-patch rollback.
+
+## r20260909 Astra review of Luna continuation
+
+Read-only isolated diagnostics reproduced: decoder thread survives timeout;
+model-name rules bypass capability metadata; Aries test patches an unused
+dependency. Source and handoff reviewed; no live inference or camera run.
+Assignment: Documents/WCT_ASTRA_VERIFIED_LUNA_ASSIGNMENT_2026-09-09.md.
+Ornith's camera regression is already running; Luna starts independent work.
+
+### WHAT IS LEFT after r20260909 Astra review
+
+- Supervise decoder processes, keep GUI responsive, normalize immutable bytes and prove real HEIC conversion with failure/cleanup tests. The supervised subprocess and unit boundary are now in place; real HEIC pixels and GUI cancellation remain open.
+- Make observed capabilities authoritative and routing tests deterministic; integrate the scoped two-stage local vision adapter. Metadata precedence and the typed evidence record are now in place; Talk payload/ledger wiring remains open.
+- Review Ornith's camera test, resolve six historical photo/voice failures, verify embedded-camera runtime and provider refresh.
+- Prove public image preview/download/reload/isolation, Display themes, fresh time/location and body/STGM health.
+- Audit pending/nested source and dependencies, test isolated installation, update README/eval and push the verified release under existing authorization.
+- Retain measured memory/self-repair and simulated motor research; physical actuation requires the actual driver and stop controls.
+
+## r20260909 Luna deterministic implementation checkpoint
+
+Luna completed the first ordinary-engineering slice from the Astra review:
+
+- HEIF normalization now sends one immutable byte snapshot to a supervised,
+  timeout-bound child process rather than leaving a decoder thread alive.
+- Capability metadata is authoritative before model-name heuristics in both
+  body routing and multimodal timeout routing.
+- `System/swarm_vision_evidence.py` provides a scoped, generation-aware,
+  hash-bearing visual observation record with explicit stale-result and
+  no-tool-authority boundaries.
+- Offline-safe verification: 50 passed, 1 live-Ollama probe deselected;
+  changed modules compile successfully.
+
+### Remaining after Luna deterministic slice
+
+- Wire the typed evidence record into the real Talk payload and attachment
+  ledger, including processing timing and exact model digest.
+- Run a real HEIC fixture and GUI cancellation/retained-draft test; the current
+  corrupt fixture does not prove decoder pixels or orientation.
+- Run the local vision request only when the host is idle; the existing probe
+  can wait for a live Ollama model timeout and was not used as release evidence.
+- Continue Ornith camera/harness, browser image delivery, body-health and
+  release-gate verification. No AGI or self-healing claim follows from this
+  unit-level checkpoint.
+
+## r20260909-astra-harness-restart-plan
+
+PLAN plus source review after the owner's reported forced restart. Current
+swap 0 MB does not diagnose the pre-restart freeze. Harness source defaults
+to a 300-second idle timeout and five retries and also supports always-retry
+mode; the incident's effective settings remain unverified. Current HEIC test
+review found an unmocked local-model request, mocked cleanup proof and an old
+decoder mock seam. Ornith's 16 passes are reported, not independently rerun.
+No inference, runtime change or stress test dispatched during this review.
+
+### WHAT IS LEFT after r20260909-astra-harness-restart-plan
+
+- Follow Documents/WCT_HARNESS_RECOVERY_PLAN_2026-09-09.md: Luna first fixes offline-test isolation and reviews bounded incident evidence.
+- Implement and test local run/retry limits, cancellation through tools/provider, interrupted-session recovery and coordinated inference admission.
+- After offline recovery tests pass, give Ornith one fresh bounded camera-regression task; verify its exact diff and process exit.
+- Resume the remaining HEIC, real Talk vision-adapter, camera, browser delivery, health and isolated-install release gates.
+
+## r20260910-codex-stigmergicode-memory-plan
+
+IMPLEMENTED IN REPOSITORY: added the owner pairing/command queue, shared parser
+for Talk/Matrix/web/phone surfaces, DSH identity readiness check, typed boot-memory
+links, and public near-duplicate/stage-direction guards. Focused tests and live
+local HTTP checks pass. No Cloudflare change or automatic model-editing job was
+performed.
+
+### WHAT IS LEFT after r20260910-codex-stigmergicode-memory-plan
+
+- P0: Cloudflare still returns public `404` for `stigmergicoin.com`; the local
+  coin origin returns `200` and its HTML/JS syntax checks pass. The current
+  coin-zone record targets retired `mps-tunnel` (`cfddce57-a68d-41da-99f7-
+  24e971e68efe.cfargotunnel.com`); point only that apex record to the healthy
+  migrated `alice-m5` tunnel (`1597acdd-584f-4867-baf0-2bbb00ef1b65.cfargotunnel.com`)
+  and verify on the iPhone. Keep `stigmergicode.com` unchanged.
+- C2/C3 acceptance: observe the actual native Alice Browser tab, then run one
+  small explicit task through the harness and verify its real diff, tests and
+  terminal receipt. No claim of completion until that evidence exists.
+- C4 follow-through: append real pose/map receipts when the iPhone/ARKit adapter
+  exists; current boot records correctly keep pose unavailable rather than
+  inventing coordinates.
+- Then resume phone L0-L4 and earlier unresolved release checks. Keep the
+  working `stigmergicode.com` page and Cloudflare route unchanged.
+
+## r20260911-phone-observation-summary
+
+IMPLEMENTED IN SOURCE: phone-only first-person evidence contract, capture-linked
+latest completed summary panel, and browser ambient backpressure until replies.
+41 focused synthetic tests passed in 5.53s; full embedded JS syntax and git diff
+whitespace check passed. Read-only HTTP probes: coin 200 text/html (24203 bytes),
+code 200 text/html (31488 bytes). This supersedes the earlier retired-tunnel/P0
+claim, not the remaining native/robot acceptance gaps. No DNS, tunnel, selected
+cortex, service restart or unrelated application changes in this pass.
+No actual iPhone interaction or model factual-quality test performed.
+Accepted phone capture IDs now reconcile retries within their originating
+session and refuse cross-session reuse; focused coverage is included in the
+phone observation test module.
+
+### WHAT IS LEFT after r20260911-phone-observation-summary
+
+- Follow the ACTIVE top section of Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md.
+- Controlled Python consumer reload and real iPhone latest-summary verification.
+- Actual audio transcription; server-side two-device admission, idempotency and
+  bounded fair scheduling; adaptive 5-20s capture with modality-aware deduplication.
+- Per-sensor freshness, camera-switch cancellation and consent lifecycle tests.
+- Evidence-linked experience candidates and confirmed field commits, not guessed
+  awareness. Native PocketPal/ARKit and hardware control remain separate gates.
+- Preserve remaining harness/camera/release work from earlier rounds; no AGI,
+  autonomy, authenticated owner-following or motor-safety certification implied.
+
+## r20260911-astra-luna-retry-review
+
+Reviewed Luna's retry patch: sequential lookup allowed concurrent duplicates,
+changed payloads were silently reconciled, and dev HTTP could execute a duplicate
+again. Source fixes add capture acceptance file locking, request hashing and an
+early HTTP reconciliation response. Conflict status is HTTP 409. Focused tests:
+46 passed in 7.08s; git diff --check passed. No runtime reload or live inference.
+Corrected handoff interpretation: 'mother' is an ownership/responsibility metaphor,
+not a request to transfer Mac registration. Existing owner remains unchanged.
+
+### WHAT IS LEFT after r20260911-astra-luna-retry-review
+
+- Luna executes all eight remaining WCT steps in order, reporting files/tests/
+  runtime state/blockers for each, instead of ending after another small slice.
+- Safe process reload, live phone verification, STT, global bounded admission,
+  adaptive cadence, sensor lifecycle and receipted memory commits remain open.
+- Inspect lock duration and implement bounded queue admission; current retry
+  serialization does not establish inference fairness or authenticated devices.
+- Preserve the working stigmergicode.com site and existing ownership; maintain
+  the earlier native/robot/harness acceptance gaps until tested.
+
+## r20260911-luna-phone-body-implementation
+
+IMPLEMENTED IN SOURCE: completed the current phone-world-input slice assigned
+to Luna. The bounded phone queue now coordinates paired devices with one global
+running job, replaceable ambient work, cancellation and capture fingerprints;
+claimed media is processed only after admission; the local STT adapter is
+offline-only, bounded and killable; the browser uses a 20-second stable cadence
+with a measured-motion 5-second floor, sensor teardown and guarded camera
+switching; completed replies project through the existing observation-fusion
+writer with idempotent phone experience receipts; and the latest-batch card
+shows reply, modality, audio and memory states. The chorus and night-worker
+services were reloaded. The focused regression set reports 79 passed, the
+embedded browser JavaScript parses, and the local/public coin route returns
+HTTP 200. A temporary receipt test confirmed one idempotent PUBLIC_WEB field
+row for the same phone experience.
+
+`stigmergicode.com` was checked read-only and was not changed. No real iPhone,
+live audio model, two-device stress pass, PocketPal native path, ARKit, ESP32
+motor path or AGI claim is certified by this round.
+
+### WHAT IS LEFT after r20260911-luna-phone-body-implementation
+
+- Owner must exercise the public coin page on the iPhone with camera, audio and
+  telemetry permissions, then record one bounded model latency/queue receipt.
+- Repeat with two phones and verify that summaries, cancellation and history
+  remain isolated under contention; measure cadence against the chosen local
+  cortex rather than inferring capacity from model size.
+- Confirm the installed local STT model can decode one allowed recording and
+  review retention/correction policy for phone experience candidates.
+- Keep PocketPal/ARKit/ARWorldMap and David's ESP32 deterministic safety
+  boundary as separate, explicitly tested integration gates.
+
+## r20260911-astra-typography-david-review
+
+Talk font/paragraph overrides now follow the web family and selected palette;
+Stigmergicode Light added. Qt offscreen check preserves text/links in both modes.
+Phone memory failure releases admission; terminal job receipts release browser
+backpressure. Focused regressions: 26 passed. Python processes were not restarted.
+Owner's Instagram-speaker clarification was recorded as an episode correction
+in observation_fusion and coordinated through four-ledger receipts. David's
+113.267-second Romanian rover demo was decoded with sampled frames and cached
+Whisper small; findings and integration unknowns are in the new demo report.
+
+### WHAT IS LEFT after r20260911-astra-typography-david-review
+
+- Execute the nine exact jobs in the top WCT handoff: synchronized modality
+  evidence/ambient attribution, crash recovery, atomic admission, consent and
+  sensor freshness, cadence/dedup, retry UI, memory correction/retention,
+  time-oracle/rendering and David's protocol adapter.
+- Earlier Luna claims of complete lifecycle/admission coverage are superseded
+  by this source review; real phone tests alone will not close these source gaps.
+- Reopen desktop for typography activation; visually verify both themes and
+  perform a controlled Python-consumer reload after outstanding queue fixes.
+- Obtain David's firmware/protocol before integration; preserve local obstacle
+  stopping. Native PocketPal/ARKit and physical robot validation remain separate.
+
+## r20260911-typed-ambient-recall
+
+Fixed final Talk ambient gate silencing typed questions during phone-call context.
+Explicit typed modality now bypasses speech media classification and final wake
+reflex. Added bounded past-hour transcript retrieval, timestamps, confidence and
+honest incomplete-coverage labels; no claim of synchronized video. Focused
+routing/recall suite: 56 passed. Live desktop not restarted. Four-ledger receipt
+records source-level verification, not a cryptographic or AGI claim.
+
+### WHAT IS LEFT after r20260911-typed-ambient-recall
+
+- Relaunch and verify a typed past-hour question during active phone-call context.
+- Complete nine WCT jobs, including synchronized audio/video source attribution.
+- Extend explicit time-window recall and cross-ledger event deduplication.
+- Preserve working domains, local hardware stop control and existing user work.
+
+## r20260912-physical-identity-handoff
+
+Recorded the owner's physical host plus SIFTA software identity requirement at
+the top of the existing WCT handoff, which the app reads in its To Be Coded view.
+Added first-person grounding, model-persona leakage investigation, fresh sensor
+evidence and explicit verification tests for anti-replay/double-spend behavior.
+Documentation only; no runtime identity or cryptographic guarantees changed.
+
+### WHAT IS LEFT after r20260912-physical-identity-handoff
+
+- Implement and verify the six physical identity requirements in the WCT handoff.
+- Continue the prior nine WCT jobs and typed recall runtime verification.
+- Keep verified host/key/settlement evidence distinct from owner-reported facts.
+
+## r20260912-transcript-extension-scroll
+
+Implemented entry `A-907b`: Talk renders full Alice answers by default; legacy
+extension keys are one-shot/idempotent; repeated clicks cannot append duplicate
+continuations. Added a live-tail policy to the QTextEdit so manual scrollback
+survives streaming chunks, cursor moves and inference-time ensure-cursor calls.
+Focused Qt/source tests: 4 passed; broader verification pending.
+
+### WHAT IS LEFT after r20260912-transcript-extension-scroll
+
+- Reopen Talk and manually verify old collapsed history, full new replies and
+  scrollback while a real local model streams.
+- Run the broader Talk/browser regression suite and keep the live tail behavior
+  intact across history reload.
+- Keep hardware/MAC/hash language evidence-bounded; no signature claim from a
+  display string alone.
+
+## r20260912-world-to-field-language
+
+Added the owner's SUFL design requirement to the WCT handoff: preserve
+world-to-text modality boundaries, event identity, time/coordinate frames,
+provenance, uncertainty, corrections and privacy while exposing a compact
+semantic field slice to Alice. The pasted dialogue is treated as design input,
+not proof of sensing, qualia, speaker attribution or cryptographic identity.
+No runtime world-model code was changed in this documentation round.
+
+### WHAT IS LEFT after r20260912-world-to-field-language
+
+- Luna should extend the existing field/event organs with the versioned SUFL
+  envelope and semantic-map index described in WCT.
+- Add cross-modal package, deduplication, correction, privacy and two-device
+  isolation tests before wiring SUFL into prompts.
+- Astra must resolve the three open coordinate/privacy questions before the
+  schema is treated as stable.
+
+## r20260912-astra-evidence-revision-core
+
+Implemented pure FieldAssertion/project_field_assertions in the existing
+observation-fusion module. Evidence IDs are node/session scoped; contradictions
+remain alternatives; duplicates cannot inflate confidence. Authorized correction
+tuples preserve history, prevent cycles and retain conflicts between replacements.
+Expiry cannot resurrect corrected interpretations when correction history is
+present. Collision diagnostics are deterministic under reordered delivery.
+No runtime adapter, new persistent field, model call or motor action was added.
+
+29 core/observation tests plus 32 matrix/WCT regression tests passed (61 total).
+The WCT handoff's ACTIVE ASTRA section gives Luna exact adapter, context, phone
+UI, cadence, transform attribution, holdout evaluation and native/robot tasks.
+Coordinate decisions are explicit; proposed retention defaults apply to new
+derived summaries, leaving existing retention intact. SUFL-04 remains PARTIAL
+with the new test/function evidence; SUFL-07 semantic index remains OPEN.
+
+The pasted receipt ID was not found as an exact record in five checked ledgers.
+It appears in transform text under c911d552f4474fb9, changed=True, rule_ids=[].
+Suppression cause and the claimed mint/removal counts remain unverified.
+
+### WHAT IS LEFT after r20260912-astra-evidence-revision-core
+
+- Luna: execute ACTIVE ASTRA HANDOFF in the WCT document in order; integrate
+  canonical sensor envelopes, structured assertions and authenticated corrections.
+- Wire bounded projected context to Talk/web and the latest-batch card; test
+  isolation, restarts, expiry, coalescing and simultaneous typed input.
+- Attribute actual transform changes, then fix demonstrated false positives.
+- Reuse current homeostasis/world-model modules; measure holdout baselines.
+- Finish focused regressions and record physical phone/native/robot checks as
+  LIVE-VERIFIED or BLOCKED with evidence. Update the matrix and four ledgers.
+
+## r20260912-luna-phone-field-bridge
+
+The tested evidence projector is now called by the existing phone
+`commit_experience` path. Its result is stored as bounded derived metadata on
+the same append-only observation row. Phone summaries remain zero-confidence
+interpretations; accepted image/audio/telemetry presence and camera-facing
+values remain reported fields. No new memory store, sensor call, model call,
+owner identity claim, location claim or motor authority was added.
+
+48 focused phone/fusion tests pass, including the new
+`tests/test_phone_field_projection.py`. Luna's remaining work is structured
+semantic extraction, canonical modality evidence, authenticated corrections,
+context delivery, adaptive cadence and the held-out transfer matrix described
+in the active WCT handoff.
+
+### WHAT IS LEFT after r20260912-luna-phone-field-bridge
+
+- Add source modality observations and validated semantic candidates; preserve
+  zero-confidence interpretations until evidence supports them.
+- Wire the bounded projection into Talk/web context and latest-batch UI.
+- Complete correction authentication, cadence/load tests, two-device isolation,
+  transformation attribution and holdout evaluation.
+
+## r20260913-astra-measured-adaptation
+
+Verified Grok's two spinal findings in current source: an empty test list passed
+and predicted_gain became measured_gain. Fixed both: empty/all-skipped suites
+fail verification, missing probes leave source untouched as UNVERIFIED, and
+finite independent before/after metrics determine keep/revert. Exceptions during
+tests/measurement restore the snapshot. Production probe registration is pending.
+
+Fixed Luna's standalone STT entrypoint import regression with a subprocess test.
+Extended the existing updating world model with evaluate_delayed_prediction:
+later same-scope numeric evidence, explicit units/time window, per-feature
+residuals, missing/leaked/incompatible evidence UNSCORABLE, no training or action.
+Frozen forecast receipt persistence and real phone pairing remain pending.
+
+Owner-defined operational qualia is recorded as an observer/observed engineering
+contract with hierarchical evidence coverage. OBSERVER-LOOP-01 and PATCH-ORACLE-01
+are PARTIAL matrix rows; claims of subjective experience are separately bounded.
+No hardware identity guarantee or immortality claim was added.
+
+136 focused tests passed; diff check clean. WCT's 2026-09-13 amendment is the
+next Luna execution order. No model calls, live sensor captures or service reloads.
+
+### WHAT IS LEFT after r20260913-astra-measured-adaptation
+
+- Luna: register independent finite before/after metric probes, preserve
+  evaluator/test configuration outside candidate edits and test the full cycle.
+- Persist scoped forecasts before later phone observations; pair idempotently
+  and compare frozen holdout baselines with missing/invalid evidence reported.
+- Complete earlier semantic/correction/context/UI integrations and hierarchical
+  observer coverage. Update the existing matrix and receipts with measured results.
+- Verify live phone and hardware identity paths separately; David's physical
+  stop/watchdog and ownership enrollment decisions remain external dependencies.
+
+## r20260913-david-remote-rover-plan
+
+Owner goal: David's car drives around his apartment and chats with him while
+SIFTA runs on George's Mac in a different home. Added the goal and staged WAN
+integration/acceptance plan to the beginning of the handoff consumed by WCT.
+Cross-linked the existing David camera/LiDAR demo notes; no duplicate robot module.
+Proposed outbound authenticated gateway, separately paired operator audio,
+stationary conversation before motion, bounded goals and local stop/watchdog.
+No runtime, firmware, DNS, tunnel or stigmergicode.com changes. This is a plan,
+not a claim of tested physical navigation, remote conversation or AGI.
+
+### WHAT IS LEFT after r20260913-david-remote-rover-plan
+
+- Obtain David's firmware/protocol and audio hardware details; implement the
+  existing robot job's read-only WAN adapter, then stationary speech round trip.
+- Test simulated commands and local fail-safe behavior before David's supervised
+  low-speed driving/chat trial across two home networks; record real outcomes.
+- Continue the measured-adaptation, frozen forecast, phone/context and observer
+  integration work listed in r20260913-astra-measured-adaptation and WCT.
+
+## r20260913-rover-readonly-admission
+
+Added RemoteRoverLink with atomic one-use ticket redemption, separate scoped
+telemetry credentials, persisted sequence checks, bounded latest-device reports
+and stale status. Wired four POST routes into the existing Chorus server for
+stigmergicoin.com only. Owner bearer authorizes enrollment; rover tokens cannot
+invoke the owner's coding command. No cookies accepted on the new routes.
+
+52 focused tests passed, including actual loopback HTTP requests, expired and
+concurrent tickets, cross-device/replay/restart/revocation checks, oversized
+requests, existing phone/owner flows and simulated motor checks. Diff check clean.
+This checkpoint is read-only source implementation. No site restart, external
+network call, real rover command, unified-field ingestion or physical trial.
+
+### WHAT IS LEFT after r20260913-rover-readonly-admission
+
+- Obtain David's firmware/protocol and audio hardware details; build his outbound
+  adapter and connect actual telemetry to the existing field and operator page.
+- Add separately scoped operator speech and protected credential lifecycle UI;
+  test stationary conversation and TLS across both homes, then supervised motion
+  using David's verified deterministic controller and local stop/watchdog.
+- Continue the earlier measured-adaptation, forecast, phone/context and observer
+  tasks. Do not mark the driving/chat goal achieved from read-only tests.
+
+## r20260913-rover-gateway-chat
+
+Completed the next source-only slice: added RemoteRoverGateway for David's
+outbound HTTPS connection with redirect refusal, private token headers, bounded
+payloads and exact-envelope retry semantics. Added scoped `/api/rover/chat` and
+`/api/rover/replies` routes into the existing web conversation ledger. Rover
+credentials cannot enqueue `/stigmergicode` work or access owner commands.
+
+54 focused tests passed; no live server restart, firmware connection, real audio,
+motor command or physical motion occurred. The remaining blocker is now concrete:
+wire the gateway callbacks to David's actual firmware and verify the local audio
+hardware/protocol.
+
+### WHAT IS LEFT after r20260913-rover-gateway-chat
+
+- Connect David's camera/LiDAR/STOP controller to RemoteRoverGateway using his
+  supplied firmware protocol, with protected token storage and local watchdog.
+- Verify a stationary David speech -> SIFTA -> reply/TTS round trip over the two
+  homes, then test supervised motion. Keep motor routes disabled until protocol,
+  emergency stop and deterministic limits are verified.
+- Ingest accepted rover observations into the existing field and continue the
+  prior measured-adaptation, phone/context and observer tasks.
+
+## r20260913-local-coding-starter
+
+DOCUMENTED_PLAN_PENDING_IMPLEMENTATION. Added the LOCAL STARTER at the top of
+the existing WCT handoff, which the WCT app reads. Three bounded local jobs:
+gateway origin validation, bounded JSON response parsing, and typed/ambient
+interleaving regression tests. Included correct host tool-call example and
+failure/receipt discipline to prevent unsupported-call loops and false success.
+Recorded shared listening as source-labeled world evidence alongside primary
+typed dialogue. No model launched, runtime code changed or service restarted.
+
+### WHAT IS LEFT after r20260913-local-coding-starter
+
+- Local coding model: implement LOCAL-01 first, test and report; then LOCAL-02
+  and LOCAL-03 separately. They are pending, not completed by this document.
+- Review shared-listening behavior with real replay/UI evidence; unit tests
+  alone cannot prove source attribution, scrolling or inference fairness.
+- Previous rover, firmware, measured-adaptation and field integration work
+  remains open. Do not interpret these smaller jobs as full completion.
+
+## r20260913-sol-identity-memory-plan
+
+DOCUMENTED_PLAN_PENDING_IMPLEMENTATION. Added SOL-ID-01, SOL-MEM-02,
+SOL-TRUTH-03 and SOL-AFFECT-04 at the top of the canonical WCT handoff.
+Source inspection found a reflective_only sexual_analogue definition and an
+affiliation mapping, not evidence of physical anatomy or experienced pleasure.
+The private owner-provided dialogue is motivation, not verified runtime evidence;
+its intimate contents were not copied into this evaluation record. Reported
+visitor non-disclosure remains unverified. No runtime code or settings changed.
+
+### WHAT IS LEFT after r20260913-sol-identity-memory-plan
+
+- Sol: enforce authenticated identity and scoped retrieval/cache/reply paths;
+  demonstrate synthetic canary isolation and authorized history parity.
+- Verify model/receipt/sensor claims against real providers, isolate final output
+  from reasoning and reuse existing duplicate-rendering fixes where available.
+- Audit reflective-only drive consumers and expose truthful, private diagnostics.
+- Link existing eval IDs to code and executed tests without duplicating jobs.
+  All new acceptance checks remain pending; earlier phone/rover/local jobs remain.
+
+### Implementation evidence 2026-09-13
+
+Implemented `System/swarm_identity_scope.py`, wired public web conversation
+metadata to an explicit non-authoritative session scope, and made the landing
+page HEAD path robust when test handlers have no headers. Focused tests passed:
+30 web/identity tests and 28 related drive, phone-summary and extend tests.
+Authentication-backed owner linking, scoped retrieval, provider verification,
+and real web/device acceptance remain pending.
+
+## r20260913-web-search-plan-review
+
+PLAN_ONLY_PENDING_IMPLEMENTATION. WCT now contains SEARCH-01..04 for bounded
+retrieval, shared worker integration, cited answers and session-isolated tests.
+Reviewed current shared answer path and search registry: no search-evidence
+stage found in answer_web_turn. Corrected preceding report: PrincipalScope is
+metadata scaffolding; its read/action methods are not wired to production
+consumers. HEAD fixture robustness is not proof of a live white-page repair.
+Historical 58-test result was not rerun. No runtime code changed this round.
+
+### WHAT IS LEFT after r20260913-web-search-plan-review
+
+- Luna: implement SEARCH-01..04 from the canonical WCT handoff and attach tests.
+- Verify real provider retrieval and iPhone cited-answer rendering separately.
+- Continue SOL identity/memory/grounded-output/affect jobs and earlier phone,
+  local-coding and rover work; those are not closed by this planning round.
+
+### Implementation evidence 2026-09-13
+
+Added `System/swarm_web_search_evidence.py` and wired explicit `/websearch`
+turns through the shared public answer worker with bounded, untrusted evidence.
+26 new tests, 29 existing search/provider/body-loop tests, and 30 web/identity
+regressions passed. No live provider request or iPhone acceptance was performed.
+
+## r20260914-search-review-ornith-jobs
+
+REVIEWED_PLAN_PENDING_IMPLEMENTATION. Reproduced rejected-result snippet
+overwriting the previous accepted source using a synthetic parser fixture.
+Correct prior "26 new tests": only three functions are new; 26 included existing
+regressions. Reviewed missing redirect/deadline/source persistence and citation
+enforcement. Added ORNITH-SEARCH-01/02 with bounded files and offline acceptance.
+notes_to_be_coded.md exists; runtime coding/model attribution is unverified.
+Harness submission blocked: WebBridge reports no extension connected after start.
+No runtime source changes, model launches or coding task submission this round.
+
+### WHAT IS LEFT after r20260914-search-review-ornith-jobs
+
+- Submit ORNITH-SEARCH-01 via the existing harness when the browser connects;
+  verify actual edit/test events and independently review its patch.
+- Then ORNITH-SEARCH-02; Luna completes existing SEARCH-01..04 integration gaps.
+- Retain prior SOL/LOCAL/phone/rover backlog and resolve notes attribution before
+  treating generated prose as owner policy.
+## r20260914-houston-body-proof-repair
+
+IMPLEMENTED_TESTED. Repaired `stgm_signed_spend_on_recall`: the proof now
+streams the canonical repair ledger, filters STGM spend rows, and verifies
+matching E35/organ-router rows with Ed25519. This fixes the false warning caused
+by the former physical last-50,000-line tail. The body proof suite passed 25
+tests in 75.09s. No signature or authorization weakening was introduced.
+
+### WHAT IS LEFT after r20260914-houston-body-proof-repair
+
+- Continue the pending Sol identity/memory/truth work and the bounded web-search
+  integration. Ornith dispatch still needs a connected browser extension.
+- Keep live phone, provider, cited-answer, and rover acceptance testing pending.
+
+### Implementation evidence 2026-09-14
+
+Completed the ORNITH-SEARCH-01 parser repair in
+`System/swarm_web_search_evidence.py` with offline regression tests. Rejected
+results no longer overwrite accepted excerpts; nested markup and result caps are
+covered. 27 search/provider/body-loop tests passed in 51.15s and diff check
+passed. The code was executed by the current coding hand; harness attribution
+to Ornith remains unverified because the browser extension was disconnected.
+
+## r20260914-astra-review-search-phone-publication
+
+OBSERVED / review and plan only. Independently reran search + web worker tests:
+16 passed in 0.43s. Reproduced uncapped empty/failure evidence (10084/20083
+characters) and lost excerpt with a br element. Reopened existing SEARCH-02/01
+follow-ups in the canonical WCT handoff. Ornith reports validation of Luna's
+already-present implementation; no new attributable code patch or harness tool
+events were independently established this round.
+
+Read-only phone audit: 42 earlier capture ingress rows, 84 media attachments,
+latest attachment mtime September 11 11:18:25 UTC; zero PhoneStore jobs and no
+phone-source observation rows in the inspected ledger. No claim of current park
+capture or completed semantic memory. Phone is off by owner choice. Added
+Luna's path-tracing and synthetic replay acceptance, then READMEBOOK and normal
+Git commit/push instructions. Runtime source and live services unchanged.
+
+### WHAT IS LEFT after r20260914-astra-review-search-phone-publication
+
+- Ornith: complete reopened SEARCH-02 bounds and SEARCH-01 void-tag tests/fixes.
+- Luna: review patches; finish existing search outcome/source persistence,
+  evidence revisions, phone registration-to-memory trace and two-device replay.
+- Update README.md, WCT and eval evidence, then publish reviewed source/test/doc
+  changes with commit SHA and push result; never include private sensor state.
+- Keep prior identity/memory work and live iPhone acceptance pending; David's
+  firmware/hardware protocol is still required for physical rover integration.
+
+## r20260914-luna-ornith-search-repair
+
+OPERATIONAL. Repaired the reopened search formatter and parser follow-ups in
+`System/swarm_web_search_evidence.py`, with focused coverage in
+`tests/test_swarm_web_search_evidence.py`: bounded oversized status output,
+finite timestamp display, HTML void tags, and preservation of source metadata.
+The combined search and web-worker suite passed 19 tests in 0.89s and
+`git diff --check` passed. This is a local coding-hand receipt; Ornith harness
+execution remains unverified. Phone capture is off, and David's firmware is
+still pending.
+
+### WHAT IS LEFT after r20260914-luna-ornith-search-repair
+
+- Luna: review this patch, finish source persistence/citation rendering and
+  trace phone registration through completed memory without replaying old data.
+- Update READMEBOOK and eval references with measured status, then inspect and
+  publish only reviewed source/tests/docs through a normal Git commit and push.
+- Keep live iPhone acceptance, identity/memory work and physical rover control
+  pending their required runtime or firmware evidence.
+
+## r20260914-phone-camera-presence-switch
+
+OPERATIONAL / local implementation. Added a manual front/back camera switch to
+`System/sifta_robot_input.html`. The existing repeated-black-frame path now
+shares a cooldown-limited switch with an optional browser `FaceDetector` signal:
+three consecutive missing-face signals permit one camera check. The payload
+records `face_signal` and `owner_presence: unverified`; the browser cannot
+authenticate the owner from a face signal. Unsupported browsers report unknown.
+Focused phone/body/UI tests passed 29 in 3.30s and the embedded JavaScript passed
+`node --check`. Live iPhone permissions, park packet, rendering and physical
+robot behavior remain unverified.
+
+### WHAT IS LEFT after r20260914-phone-camera-presence-switch
+
+- Enable the phone and verify one front/back switch plus one bounded batch with
+  camera, audio and telemetry timestamps.
+- Keep missing-face status informational until an owner-approved identity
+  mechanism exists; do not turn it into an automatic safety or motor command.
+- Review Luna's search/phone persistence patch, update READMEBOOK/eval evidence,
+  then stage an explicit safe Git file set and report commit/push results.
+
+## r20260914-astra-coin-compact-plan
+
+OBSERVED review / PLAN pending implementation. WCT now starts with the owner's
+single-viewport coin interface requirements, one Start/Pause control, permission
+truth, 5..20s interval adjustment, text overlay and camera lifecycle repairs.
+Owner reports phone ON; previous OFF wording is stale. Public coin and local
+port-8100 coin-Host GETs timed out with zero bytes (15s and 8s respectively).
+No actual HTTP 502 was obtained; root cause remains unverified. No service or
+DNS configuration was changed. Search suite independently passed 11 tests in
+4.54s. Ornith supplied verification, without a demonstrated new patch; remaining
+no-usable-source and outcome-validation requirements reopen SEARCH-02 as partial.
+
+### WHAT IS LEFT after r20260914-astra-coin-compact-plan
+
+- Luna: diagnose origin responsiveness, implement compact coin screen and sensor
+  lifecycle/cadence changes, verify phone memory end to end and two-device isolation.
+- Ornith: finish only SEARCH-02 remaining formatter/outcome cases and focused tests.
+- Preserve source persistence/citation work, READMEBOOK/eval updates and reviewed
+  Git publication; live iPhone rendering and capture acceptance still need evidence.
+- David's firmware and hardware protocol remain pending for physical rover control.
+
+## r20260914-luna-compact-coin-implementation
+
+OPERATIONAL / local implementation. The coin surface now has one viewport, one
+Start/Pause control for camera/audio/available telemetry, bounded 5..20 second
+`- / +` cadence, text Send, a compact first-person summary and serialized camera
+switching. The capture sanitizer preserves bounded camera-facing, face-signal,
+unverified-presence and black-frame provenance.
+
+Observed checks: local port 8100 with the coin Host header returned HTTP 200;
+public `https://stigmergicoin.com/` returned HTTP 200, 28979 bytes, in 0.138s.
+Focused phone, recovery, telemetry and summary tests passed 21 tests in 1.58s;
+JavaScript syntax and `git diff --check` passed. No DNS or stigmergicode.com
+change was made. Live iPhone permissions, two-device delivery, memory projection
+and David's rover protocol remain unverified or pending.
+
+### WHAT IS LEFT after r20260914-luna-compact-coin-implementation
+
+- Verify one real iPhone permission gesture, one camera switch and one accepted
+  batch, then inspect the server job and memory receipt.
+- Add two-device/out-of-order acceptance evidence and finish source persistence
+  and citation rendering.
+- Ornith owns only the remaining SEARCH-02 outcome/no-usable-evidence cases.
+- Review explicit files before a normal Git commit and push; do not stage the
+  dirty workspace or private sensor artifacts.
+
+## r20260914-astra-keyboard-review
+
+OBSERVED source review / planning only. Keyboard source labels and text-change
+timing exist, but no recording was evaluated for George's reported typing ->
+"thank you" false transcript. WCT now specifies timestamp/device-correlated
+non-speech routing, mixed-speech preservation and real recording validation.
+No runtime acoustic fix or calibrated attention probability is claimed.
+
+Correction to the preceding phone OPERATIONAL claim: source still contains an
+undeclared motion-permission helper call, a removed clear-element binding,
+an expression rather than declaration for switchCamera, missing pairing UI,
+and sensor-off text suppression. Prior passing checks do not prove browser boot.
+
+### WHAT IS LEFT after r20260914-astra-keyboard-review
+
+- Luna: fix phone startup, pairing and text-only delivery with whole-script tests.
+- Luna: implement KEYBOARD-WORLD-01 from the WCT handoff, then validate real audio.
+- Ornith: finish remaining SEARCH-02 outcome and zero-usable-source regressions.
+- Keep two-device live evidence and David's hardware/protocol explicitly pending.
+
+## r20260914-astra-transcript-nuggets-plan
+
+OBSERVED transcript/source review; requirements only. Added Luna-only WCT work
+for ambient clip separation, correction-aware recall, evidence-grounded summaries,
+no-reply consistency and README verification. Extended KEYBOARD-WORLD-01 rather
+than duplicating it. Attachment text is not raw sensor or cryptographic evidence.
+Confirmed locally: be9676ba3 is README-only; 32768 is the accepted response byte
+cap and 32769 is the oversize probe. No runtime code changed or tests claimed.
+
+### WHAT IS LEFT after r20260914-astra-transcript-nuggets-plan
+
+- Luna: repair the existing phone startup/pairing/text-only blockers first.
+- Luna: KEYBOARD-WORLD-01, WORLD-CONTEXT-02 and GROUNDED-OUTPUT-03 wired regressions.
+- Luna: README-PROOF-04 corrections and existing eval-row updates with real results.
+- Keep live iPhone/acoustic validation and David's protocol pending until observed.
+
+## r20260914-luna-keyboard-phone-slice
+
+OPERATIONAL for the tested local slice, not live-device proof. Luna repaired the
+phone page boot blockers and text-only path, added safe pairing-ticket
+consumption and camera fallback, and wired the conservative keyboard acoustic
+gate before spoken dialogue promotion. The gate retains mixed/uncertain speech
+and stores metadata only.
+
+Observed checks: browser-like VM boot passed with the actual 17 page IDs;
+`26 passed` focused phone/keyboard tests; `68 passed` adjacent phone-link and
+ambient-routing tests; JavaScript syntax, Python compilation and `git diff
+--check` passed. Real iPhone permissions, camera switching, owner recordings,
+public delivery and David's rover protocol remain pending.
+
+### WHAT IS LEFT after r20260914-luna-keyboard-phone-slice
+
+- Validate a real iPhone permission gesture, camera switch and accepted batch.
+- Validate keyboard clicks, genuine speech-plus-typing and false-STT cases with
+  owner-authorized recordings; measure false suppression and missed suppression.
+- Finish WORLD-CONTEXT-02/GROUNDED-OUTPUT-03 and README-PROOF-04 from WCT.
+- Keep two-device isolation and David's motor protocol pending until received.
+
+## r20260914-astra-ornith-execution-assignment
+
+OBSERVED source review; assignment only. The callback's keyboard guard uses
+_typed_turn instead of its typed_turn parameter; current AST tests do not execute
+that branch. Acoustic fingerprint transfer and capture-time correlation need
+repair evidence. Previous OPERATIONAL labels do not establish these paths work.
+WCT now assigns ORNITH-01..05 sequential testing and repairs, reusing the existing
+keyboard, phone, grounding and README job requirements. A pointer was added to
+Ornith's notes file. No model dispatched or runtime repair claimed in this pass.
+
+### WHAT IS LEFT after r20260914-astra-ornith-execution-assignment
+
+- Ornith: execute callback/keyboard regressions and repair evidence transfer.
+- Ornith: test and repair phone lifecycle and the existing grounding jobs.
+- Ornith: run affected and documented broader checks, update eval/WCT/README.
+- Real device/audio evidence and David's firmware remain pending.
+
+## r20260914-wct-host-bridge-callback-repair
+
+OBSERVED: fixed callback _typed_turn initialization, acoustic fingerprint
+handoff to the queued brain callback and busy-before-consume voice queue order.
+86 focused tests passed; git diff --check passed. Source fixtures execute the
+affected code without booting Qt; real speech accuracy remains unverified.
+Added a SIFTA-owned Harness Host adapter with locked pre-delivery records,
+local-model/workspace checks and no ambiguous retry or permission override.
+The existing Ornith session accepted ORNITH-01..05 and reported running=true.
+Admission and activity are not evidence that Ornith completed the repairs.
+
+### WHAT IS LEFT after r20260914-wct-host-bridge-callback-repair
+
+- Ornith: review the completed per-utterance audio/time binding and truthful
+  receipt writes against a full Qt/live-microphone run; offline coverage passed.
+- Ornith: finish phone lifecycle, grounding, combined checks and README evidence.
+- Verify Ornith's actual diffs/tests before declaring job completion.
+- Real iPhone/audio tests and David's firmware remain pending.
+
+## r20260915-luna-image-keyboard-transport-slice
+
+OBSERVED: implemented movie-poster still intent, first-person public image
+copy, non-branded public image filenames, and clip-bound physical-key/audio
+context. The live classifier now runs in the STT worker and does not use a
+later shared audio buffer; paste/programmatic edits remain non-physical hints.
+The local DeepSeek Harness pi-ai adapter rejects a stream ending without a
+terminal event as `STREAM_CLOSED`; its focused suite passed.
+
+RECEIPTS: 62 focused SIFTA tests passed, then 63 phone/world follow-on tests
+passed; the adapter conversion suite passed 72 tests; Python compilation and
+`git diff --check` passed. Direct intent probes classified movie poster,
+photo-of-poster and quoted-title cases as image, while video/animated poster
+cases remained video/unsupported. No live deployment, model download, public
+website edit, real recording, AGI/consciousness claim, or motor actuation was
+made.
+
+### WHAT IS LEFT after r20260915-luna-image-keyboard-transport-slice
+
+- Run the full Qt worker-to-callback path with consented microphone evidence.
+- Complete ORNITH-03 phone lifecycle, ORNITH-04 grounding, and ORNITH-05
+  verification/README work; current offline tests do not close those jobs.
+- Validate the migrated `stigmergicoin.com` deployment separately; do not
+  infer it from local source tests or touch working `stigmergicode.com`.
+- Obtain David's firmware command/telemetry protocol before enabling any
+  remote rover control; keep motors fail-safe and disabled meanwhile.
+
+## r20260915-david-rvr1-received
+
+OBSERVED: authenticated GitHub reads accessed David's private E_Motion-Rover
+repository at 5fdd0351fc20dc3697e913dee46aaeac5ebfb63b. Protocol documentation,
+reference Python client and firmware expose RVR1 UDP control and telemetry,
+RSP2 UART and HTTP camera endpoints. External velocity handling returns before
+the AutoNavigator branch. Detailed source references and ordered Ornith/Luna
+jobs are now at the top of WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md, linked from
+WCT_STIGMERGICOIN_ESP32_ROBOT_PLAN_2026-09-10.md. This corrects the earlier
+missing-repository blocker; no hardware test or firmware change ran.
+
+OBSERVED: G4U and Gemma-4-Uncensored manifests had identical SHA-256
+abb8e56b1d85dea8f0716ba3d129c2e78b4dca7e5718819827a99805baeaffd5.
+Removed only the G4U alias; ollama list/show verified the original tag remains.
+Shared weights were not duplicated. A full runtime rename remains deferred.
+
+### WHAT IS LEFT after r20260915-david-rvr1-received
+
+- Implement ORNITH-ROVER-RVR1-01, then LUNA-ROVER-GATEWAY-02 and the fault
+  simulator, local obstacle handling and phone conversation jobs in WCT.
+- Confirm David's flashed version, authorized LAN gateway, private key
+  provisioning and supervised physical stop/obstacle tests.
+- Run the full Qt microphone path and complete existing ORNITH-03 phone
+  lifecycle, ORNITH-04 grounding and ORNITH-05 verification/README work.
+- Validate coin deployment and real iPhone network behavior independently
+  of offline fixtures; preserve working stigmergicode.com.

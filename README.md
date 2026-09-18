@@ -2,6 +2,17 @@
 
 ## David rover integration status (2026-09-15)
 
+Follow-up verification corrected the LiDAR axes to X lateral / Y forward and
+requires at least eight points, matching David's navigator. UDP monitoring now
+runs independently of HTTPS, publishes received observations, and sends neutral
+on local expiry, stale/blocked scans or shutdown. Commands retain their lifetime
+through network and local queue delays; renewing control discards older queued
+goals. A loopback test verifies handshake -> scan -> short drive -> neutral.
+Current focused result: **34 passed**, warnings treated as errors.
+Turning still requires swept-path avoidance, and operator STOP/revocation,
+stationary speech and physical acceptance remain open. The earlier 27-test
+checkpoint below did not establish those capabilities.
+
 David's private [E_Motion-Rover repository](https://github.com/davidk-ro/E_Motion-Rover)
 was received at commit `5fdd0351fc20dc3697e913dee46aaeac5ebfb63b`. SIFTA now has
 an isolated RVR1 UDP adapter for the documented T-Camera protocol, bounded LiDAR
@@ -7782,3 +7793,48 @@ prior accepted excerpt. Empty retrieval and provider failure report their distin
 `empty`/`failure` statuses, and empty prompts stay below the 8,000-character cap.
 Focused verification holds **11 passed, 0 failed** on the web-search evidence
 suite; no service, DNS or site changes were introduced.
+
+## Session 2026-09-18: AliceG4U default cortex, natural-language image dispatch, Semantic-nav-amr borg
+
+The local default cortex is renamed and re-anchored: `krishairnd/Gemma-4-Uncensored:latest`
+-> `krishairnd/G4U` -> `AliceG4U` (blob `ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6`,
+6.3 GB, Gemma 4 E4B-class Q4_K_M, weights unchanged). One variable owns it:
+`CANONICAL_OLLAMA_DEFAULT = "AliceG4U"` in `System/sifta_inference_defaults.py`.
+Every dead tag (`alice-m5-cortex-8b-6.3gb`, `alice-gemma4-e2b-cortex-5.1b-4.4gb`,
+`alice-m1-cortex-4.5b-3.4gb`, `alice-extra-cortex-25.8b-17gb`, `krishairnd/G4U`,
+`krishairnd/Gemma-4-Uncensored`) resolves through `_MODEL_TAG_ALIASES` -> `AliceG4U`.
+No hardcoded cortex names at call sites; overridable via
+`SIFTA_DEFAULT_OLLAMA_MODEL` or `.sifta_state/swimmer_ollama_assignments.json`.
+
+Root cause fixed alongside: Talk's resolver previously swapped a missing tag for the
+SMALLEST installed model, which handed the daily slot to a 0.5 GB SmolVLM vision model
+and produced the "no first token" watchdog kill. `_is_non_dialogue_ollama_default_candidate`
+now rejects vision-only/translation tags, and the watchdog message prints
+`requested=` and `resolved=` so the served model is never misattributed.
+
+Natural-language image creation is live on the public web chat: plain-language
+photo/picture/art requests in English and Romanian ("ok, create a photo of Autumn in
+the park in Romania", "desenează o pisică", "te rog, fă o poză cu toamna în parc")
+dispatch the real image pipeline exactly once — no `/create` prefix required, quoted
+video titles stay still, questions never dispatch. Sanitizer and picker tests updated:
+MiMo default resolution migrates off deleted legacy tags to their sanitized successor
+and accepts live Ollama tags; the live tag probe bypasses the 30s shared cache.
+
+Verified across seven focused suites: **109 passed**
+(`tests/test_inference_settings.py`, `test_cortex_attached_models.py`,
+`test_swarm_cortex_aliases.py`, `test_swarm_cortex_options.py`,
+`test_web_image_variation.py`, `test_web_cortex_photo_isolation.py`,
+`test_web_image_natural_language.py`). Two adjacent picker files
+(`test_round89_cortex_dropdown.py`, `test_r1018_p1_cortex_llm_list_binding.py`)
+carry 9 failures: 5 verified pre-existing at HEAD `f1093ae30`, 4 from a
+`qwen_label` formatter deletion in `Applications/sifta_system_settings.py`
+logged in We Code Together as `wct-verification-of-glm-work-20260918`.
+
+Borg: David's recommended [Semantic-nav-amr](https://github.com/Gukdoli/Semantic-nav-amr)
+is vendored at `Vendor/Semantic-nav-amr` (HEAD `5027a0fd`). What it gave SIFTA that
+did not exist here: a confirmed-object semantic map (YOLOE + depth projection, EMA
+merge, min-5 observations), natural-language navigation (NavigateToObject with LLM
+parser and offline keyword fallback), Nav2/MPPI/AMCL integration on real hardware,
+and multi-instance disambiguation. David's Romanian briefing is at
+`Documents/WCT_MESAJ_PENTRU_DAVID_2026-09-18.md`; the verification of his rover's
+UDP contract (X lateral / Y forward, eight-point scan) stays in force above.

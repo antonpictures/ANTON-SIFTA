@@ -43,6 +43,10 @@ CAPTURE_LEDGER_NAME = "alice_web_captures.jsonl"
 CAPTURE_LATEST_NAME = "alice_web_capture_latest.json"
 CAPTURE_LATEST_ATTEMPT_NAME = "alice_web_capture_latest_attempt.json"
 CAPTURE_TEXT_DIR = "alice_web_capture_text"
+WEBMCP_TRUTH_LABEL = "ALICE_WEBMCP_AFFORDANCE_V1"
+WEBMCP_SCHEMA = "ALICE_WEBMCP_DISCOVERY_V1"
+WEBMCP_LEDGER_NAME = "alice_webmcp_affordances.jsonl"
+WEBMCP_LATEST_NAME = "alice_webmcp_affordances_latest.json"
 DEFAULT_PORT = 10086
 DEFAULT_SESSION = "alice-kimi-limb"
 DEFAULT_CAPTURE_SESSION = "alice-web-capture"
@@ -395,6 +399,256 @@ def _evaluate_payload_value(result: dict[str, Any]) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {"text": value}
     return value if isinstance(value, dict) else {}
+
+
+def _webmcp_tool_requires_confirmation(tool: dict[str, Any]) -> bool:
+    """Conservatively classify page-declared tools that can change the world."""
+    annotations = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
+    if annotations.get("readOnlyHint") is True:
+        return False
+    action_text = " ".join(
+        str(tool.get(key) or "") for key in ("name", "title", "description")
+    ).casefold()
+    sensitive_terms = (
+        "buy", "purchase", "pay", "checkout", "book", "reserve", "submit",
+        "send", "delete", "remove", "cancel", "publish", "post", "upload",
+        "share", "approve", "sign", "transfer", "change", "update", "create",
+    )
+    return annotations.get("readOnlyHint") is not True or any(
+        term in action_text for term in sensitive_terms
+    )
+
+
+def normalize_webmcp_tools(
+    payload: Any,
+    *,
+    page_url: str = "",
+) -> list[dict[str, Any]]:
+    """Normalize experimental WebMCP output into candidate affordance records."""
+    if isinstance(payload, dict):
+        raw_tools = payload.get("tools")
+        if not page_url:
+            page_url = str(payload.get("url") or "")
+    else:
+        raw_tools = payload
+    if not isinstance(raw_tools, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in raw_tools[:100]:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        description = str(raw.get("description") or "").strip()
+        if not name or not description:
+            continue
+        origin = str(raw.get("origin") or "").strip()
+        key = (origin, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        schema = raw.get("inputSchema")
+        if not isinstance(schema, dict):
+            schema = {}
+        annotations = raw.get("annotations")
+        if not isinstance(annotations, dict):
+            annotations = {}
+        candidate = {
+            "schema": WEBMCP_TRUTH_LABEL,
+            "modality": "browser",
+            "provider": "webmcp",
+            "name": name[:160],
+            "title": str(raw.get("title") or "")[:240],
+            "description": description[:1000],
+            "input_schema": schema,
+            "origin": origin[:500],
+            "page_url": page_url[:1000],
+            "annotations": annotations,
+            "read_only": annotations.get("readOnlyHint") is True,
+            "untrusted_content": annotations.get("untrustedContentHint") is True,
+            "authority": "candidate_only",
+            "requires_owner_gate": True,
+        }
+        candidate["requires_confirmation"] = _webmcp_tool_requires_confirmation(raw)
+        normalized.append(candidate)
+    return normalized
+
+
+def _persist_webmcp_discovery(
+    row: dict[str, Any],
+    *,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    sd = _state_dir(state_dir)
+    sd.mkdir(parents=True, exist_ok=True)
+    complete = {
+        **row,
+        "schema": WEBMCP_SCHEMA,
+        "truth_label": WEBMCP_TRUTH_LABEL,
+        "ts": time.time(),
+        "receipt_id": row.get("receipt_id") or f"webmcp_{uuid.uuid4().hex[:16]}",
+    }
+    _append_jsonl(sd / WEBMCP_LEDGER_NAME, complete)
+    (sd / WEBMCP_LATEST_NAME).write_text(
+        json.dumps(complete, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return complete
+
+
+def record_webmcp_discovery(
+    payload: Any,
+    *,
+    source: str,
+    fallback: str = "accessibility_tree",
+    fallback_ok: Optional[bool] = None,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Persist a validated WebMCP sensory result from any existing browser limb."""
+    data = payload if isinstance(payload, dict) else {}
+    tools = normalize_webmcp_tools(data)
+    available = bool(data.get("available") or tools)
+    return _persist_webmcp_discovery(
+        {
+            "ok": bool(data.get("ok", True)),
+            "available": available,
+            "api_available": bool(data.get("api_available", data.get("available"))),
+            "url": str(data.get("url") or ""),
+            "tools": tools,
+            "tool_count": len(tools),
+            "fallback": "none" if available else fallback,
+            "fallback_ok": fallback_ok,
+            "reason": str(data.get("reason") or ""),
+            "error": str(data.get("error") or "")[:500],
+            "source": str(source or "unknown_browser_limb"),
+            "authority": "discovery_only_no_execution",
+        },
+        state_dir=state_dir,
+    )
+
+
+def discover_webmcp_tools(
+    *,
+    session: str = DEFAULT_SESSION,
+    port: int = DEFAULT_PORT,
+    state_dir: Optional[Path | str] = None,
+    accessibility_fallback: bool = True,
+) -> dict[str, Any]:
+    """Sense WebMCP tools on the current page without invoking any of them."""
+    js = (
+        "(async()=>{"
+        "const mc=document.modelContext;"
+        "if(!mc||typeof mc.getTools!=='function')return JSON.stringify({available:false,url:location.href,reason:'api_unavailable'});"
+        "try{const tools=await mc.getTools();"
+        "return JSON.stringify({available:true,url:location.href,tools:Array.from(tools||[]).map(t=>({"
+        "name:t.name||'',title:t.title||'',description:t.description||'',"
+        "inputSchema:t.inputSchema||{},origin:t.origin||'',annotations:t.annotations||{}"
+        "}))});}catch(e){return JSON.stringify({available:false,url:location.href,reason:'discovery_error',error:String(e)});}})()"
+    )
+    evaluated = post_command(
+        "evaluate",
+        {"code": js},
+        session=session,
+        port=port,
+        state_dir=state_dir,
+        source="swarm_kimi_webbridge_webmcp_discovery",
+    )
+    payload = _evaluate_payload_value(evaluated)
+    tools = normalize_webmcp_tools(payload)
+    available = bool(payload.get("available"))
+    fallback = "none"
+    fallback_snapshot: dict[str, Any] = {}
+    if not available and accessibility_fallback:
+        fallback = "accessibility_tree"
+        fallback_snapshot = take_webbridge_uid_snapshot(
+            session=session,
+            port=port,
+            state_dir=state_dir,
+        )
+    row = record_webmcp_discovery(
+        {
+            **payload,
+            "ok": bool(evaluated.get("ok")),
+            "available": available,
+            "tools": tools,
+            "reason": str(payload.get("reason") or evaluated.get("error") or ""),
+        },
+        source="webbridge",
+        fallback=fallback,
+        fallback_ok=bool(fallback_snapshot.get("ok")) if fallback_snapshot else None,
+        state_dir=state_dir,
+    )
+    return row
+
+
+def execute_webmcp_tool(
+    name: str,
+    arguments: Optional[dict[str, Any]] = None,
+    *,
+    session: str = DEFAULT_SESSION,
+    port: int = DEFAULT_PORT,
+    state_dir: Optional[Path | str] = None,
+) -> dict[str, Any]:
+    """Execute one WebMCP tool only after spending a fresh owner-intent nonce."""
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        return {"ok": False, "action": "webmcp_execute", "reason": "missing_tool_name"}
+    try:
+        from System.swarm_effector_gate import require_browser_effector
+
+        gate = require_browser_effector(
+            f"webmcp:{clean_name}",
+            state_dir=state_dir,
+            source="swarm_kimi_webbridge_webmcp",
+        )
+    except Exception as exc:
+        return {"ok": False, "action": "webmcp_execute", "reason": f"gate_error:{exc}"}
+    if not gate.get("ok"):
+        return {
+            "ok": False,
+            "action": "webmcp_execute",
+            "tool": clean_name,
+            "reason": gate.get("reason") or "owner_gate_refused",
+            "gate_receipt_id": gate.get("gate_receipt_id"),
+        }
+
+    args_json = json.dumps(arguments or {}, ensure_ascii=False).replace("<", "\\u003c")
+    name_json = json.dumps(clean_name, ensure_ascii=False).replace("<", "\\u003c")
+    js = (
+        "(async()=>{const mc=document.modelContext;"
+        "if(!mc||typeof mc.getTools!=='function'||typeof mc.executeTool!=='function')"
+        "return JSON.stringify({ok:false,reason:'api_unavailable'});"
+        f"const name={name_json};const input={args_json};"
+        "const tools=await mc.getTools();const tool=Array.from(tools||[]).find(t=>t.name===name);"
+        "if(!tool)return JSON.stringify({ok:false,reason:'tool_not_found',tool:name});"
+        "try{const value=await mc.executeTool(tool,input);return JSON.stringify({ok:true,tool:name,value});}"
+        "catch(e){return JSON.stringify({ok:false,reason:'execution_error',tool:name,error:String(e)});}})()"
+    )
+    evaluated = post_command(
+        "evaluate",
+        {"code": js},
+        session=session,
+        port=port,
+        state_dir=state_dir,
+        source="swarm_kimi_webbridge_webmcp_execute",
+    )
+    payload = _evaluate_payload_value(evaluated)
+    row = {
+        "ok": bool(evaluated.get("ok") and payload.get("ok")),
+        "action": "webmcp_execute",
+        "tool": clean_name,
+        "result": payload.get("value"),
+        "reason": str(payload.get("reason") or evaluated.get("error") or ""),
+        "error": str(payload.get("error") or "")[:500],
+        "gate_receipt_id": gate.get("gate_receipt_id"),
+        "receipt_id": f"webmcp_exec_{uuid.uuid4().hex[:16]}",
+    }
+    _append_jsonl(
+        _state_dir(state_dir) / WEBMCP_LEDGER_NAME,
+        {**row, "schema": "ALICE_WEBMCP_EXECUTION_V1", "truth_label": WEBMCP_TRUTH_LABEL, "ts": time.time()},
+    )
+    return row
 
 
 def _extract_webbridge_page_payload(
@@ -1339,12 +1593,18 @@ def fill_by_uid(
 
 def kimi_capture_prompt_hint() -> str:
     """Short note that can ride in body awareness for the local LLM."""
-    return "General web reads/captures (any URL) can come from Kimi WebBridge first, with public HTTP fetch fallback. They write ALICE_WEB_CAPTURE_V1 body receipts."
+    return (
+        "General web reads/captures can come from WebBridge first, with public HTTP fallback. "
+        "On compatible pages I can also sense WebMCP semantic tools as candidate affordances. "
+        "Discovery is perception only; every tool invocation still requires the browser owner-intent gate. "
+        "Accessibility-tree controls remain the fallback."
+    )
 
 
 __all__ = [
     "TRUTH_LABEL",
     "CAPTURE_TRUTH_LABEL",
+    "WEBMCP_TRUTH_LABEL",
     "wants_kimi_webbridge_limb",
     "wants_general_web_capture",
     "extract_any_url_from_text",
@@ -1363,6 +1623,10 @@ __all__ = [
     "click_by_uid",
     "fill_by_uid",
     "capture_page",
+    "normalize_webmcp_tools",
+    "record_webmcp_discovery",
+    "discover_webmcp_tools",
+    "execute_webmcp_tool",
     "kimi_capture_prompt_hint",
     "_extract_readable_text",
     "_extract_webbridge_uid_set",

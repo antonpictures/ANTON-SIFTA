@@ -150,6 +150,16 @@ def _day_parts(reading: dict[str, Any]) -> dict[str, str]:
 
 def _place_from_receipts(state_dir: Path, reading: dict[str, Any]) -> dict[str, Any]:
     """Place is receipt-backed when known — never invent GPS from chat theater."""
+    from System.swarm_gps_sensor import read_location_snapshot
+    native = read_location_snapshot(state_dir=state_dir)
+    if native.get("status") == "SUCCESS":
+        return {
+            "place_label": (f"CoreLocation {native['latitude']:.5f}, {native['longitude']:.5f}; "
+                            f"accuracy {native['accuracy']:.0f} m; age {native['age_seconds']:.0f} s"),
+            "place_source": "macos_corelocation",
+            "place_confidence": 0.8,
+            "place_truth": "FRESH_NATIVE_FIX_APPROXIMATE",
+        }
     pin = _tail_place(state_dir)
     travel = _travel_place_receipt(state_dir)
     try:

@@ -139,7 +139,7 @@ class Observations:
             return None
         self.pending = None
         self.last_scan = scan
-        self.last_scan_at = now
+        self.last_scan_at = pending[2] - pending[4] / 1000.0
         self.last_points = tuple(pending[3])
         return dict(common, modality="lidar", scan=scan, points_mm=pending[3],
                     age_ms=pending[4], assembly_ms=int(1000 * (now - pending[2])),
@@ -153,11 +153,13 @@ class Observations:
         if linear == 0:
             return True
         if (self.last_scan_at is None or self.last_points is None or
-                now < self.last_scan_at or now - self.last_scan_at > max_age_s):
+                now < self.last_scan_at or now - self.last_scan_at > max_age_s or
+                len(self.last_points) < 8):
             return False
         if linear < 0:
             return False  # The supplied scan is front-only; reverse is unobserved.
-        for forward_mm, lateral_mm in self.last_points:
+        # David's AutoNavigator uses X lateral / Y forward, not ROS X forward.
+        for lateral_mm, forward_mm in self.last_points:
             if (0 <= forward_mm <= stop_distance_mm and
                     abs(lateral_mm) <= corridor_half_width_mm):
                 return False
@@ -211,6 +213,9 @@ class RoverClient:
 
     def open(self):
         self.opened_at = None
+        self.session = secrets.randbits(32) or 1
+        self.observations = Observations()
+        self.capabilities = None
         self._send(HELLO)
         deadline = self.clock() + 2
         while True:
@@ -266,8 +271,20 @@ class RoverClient:
         """Send only after a fresh front scan clears the conservative corridor."""
         if type(linear) is not int or type(angular) is not int:
             raise ValueError("RVR1 velocity values must be integers")
+        if angular:
+            raise RuntimeError("turn clearance requires the rover swept-path controller")
+        integer(timeout_ms, 1, 1000)
         if not self.observations.obstacle_clear(
-                linear, now=self.clock(), stop_distance_mm=stop_distance_mm,
+                linear, now=self.clock(),
+                stop_distance_mm=stop_distance_mm + max(0, linear) * timeout_ms / 1000,
                 corridor_half_width_mm=corridor_half_width_mm):
             raise RuntimeError("local safety gate rejected stale, blocked or unobserved path")
         return self.velocity(linear, angular, timeout_ms=timeout_ms)
+
+    def stop(self):
+        """Best-effort finite neutral command, including at handshake expiry."""
+        if self.opened_at is None:
+            return
+        sequence = (self.sequence + 1) & 65535
+        self._send(VELOCITY, velocity_payload(0, 0, 100, sequence))
+        self.sequence = sequence

@@ -286,3 +286,4 @@ kalshi*.key
 
 # r1640: never commit Kalshi private material
 .sifta_state/secrets/
+Vendor/Semantic-nav-amr

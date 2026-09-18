@@ -150,6 +150,18 @@ def build_sensor_truth_context(
         and camera_source_attribution != "none"
         and proof_camera_healthy
     )
+    # Only expose finite, current measurements; an old light/motion value
+    # must not become a present-tense statement in Alice's next answer.
+    measurements = {}
+    if camera_live_capture_verified:
+        import math
+        for key in ("entropy_bits", "motion_mean", "saliency_peak", "hue_deg"):
+            try:
+                value = float(visual[key])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(value):
+                measurements[key] = round(value, 3)
 
     fp = acoustic.get("playback_fingerprint")
     if not isinstance(fp, dict):
@@ -182,6 +194,8 @@ def build_sensor_truth_context(
             "source": visual_source,
             "explicit_camera_receipt": explicit_camera_receipt,
             "camera_source_attribution": camera_source_attribution,
+            "measurements": measurements,
+            "frame_sha8": visual.get("sha8") if camera_live_capture_verified else None,
         },
         "camera_unified_field_proof": {
             "truth_label": proof_dict.get("truth_label"),
@@ -258,6 +272,8 @@ def summary_for_alice(
             f"vision_heartbeat_age_s={camera_proof.get('vision_heartbeat_age_s')}"
         ),
         f"- camera_live_capture_verified={str(ctx['camera_live_capture_verified']).lower()}",
+        f"- current_visual_measurements={visual.get('measurements', {})} frame_sha8={visual.get('frame_sha8')}; "
+        "motion_mean measures pixel change, saliency measures brightness contrast, not object identity or emotion.",
         (
             f"- mic_feature_receipts=fresh:{str(audio.get('fresh')).lower()} "
             f"age={audio.get('age_text')} device={audio.get('device')} rms={audio.get('rms')}"

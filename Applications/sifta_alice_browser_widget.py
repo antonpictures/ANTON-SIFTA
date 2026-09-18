@@ -28,8 +28,15 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - macOS is the supported desktop host.
+    fcntl = None
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -88,6 +95,7 @@ APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
 _HARNESS_ROOT = REPO / "deepseek-harness-master"
 _HARNESS_URL = "http://127.0.0.1:3080"
 _HARNESS_BOOT_LOG = _STATE / "deepseek_harness_boot.log"
+_HARNESS_LOCK = _STATE / "deepseek_harness_start.lock"
 _DESKTOP_CHROME_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -111,11 +119,24 @@ def _local_port_is_open(host: str, port: int) -> bool:
         return False
 
 
+def _harness_is_ready() -> bool:
+    """Require the actual DSH HTML identity, not merely an occupied port."""
+    try:
+        request = urllib.request.Request(_HARNESS_URL + "/", headers={"Cache-Control": "no-cache"})
+        with urllib.request.urlopen(request, timeout=0.8) as response:
+            if int(getattr(response, "status", 200)) != 200:
+                return False
+            body = response.read(131072).decode("utf-8", "replace")
+        return "<title>DSH Local Build</title>" in body and "@deepseek-ai/dsh-client" in body
+    except (OSError, urllib.error.URLError, ValueError):
+        return False
+
+
 def _ensure_local_harness() -> str:
     """Reuse or start the local Harness without creating a second listener."""
     if os.environ.get("SIFTA_DISABLE_HARNESS_AUTOSTART") == "1":
         return "disabled_for_process"
-    if _local_port_is_open("127.0.0.1", 3080):
+    if _harness_is_ready():
         _record_browser_hardening(
             "deepseek_harness_reused",
             url=_HARNESS_URL,
@@ -123,6 +144,13 @@ def _ensure_local_harness() -> str:
             model_source="local-ollama",
         )
         return "already_running"
+    if _local_port_is_open("127.0.0.1", 3080):
+        _record_browser_hardening(
+            "deepseek_harness_port_conflict",
+            url=_HARNESS_URL,
+            reason="port_occupied_by_non_dsh_service",
+        )
+        return "port_conflict"
     if not _HARNESS_ROOT.is_dir():
         _record_browser_hardening(
             "deepseek_harness_missing",
@@ -131,6 +159,13 @@ def _ensure_local_harness() -> str:
         return "missing"
     _STATE.mkdir(parents=True, exist_ok=True)
     try:
+        lock_handle = _HARNESS_LOCK.open("a+")
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                lock_handle.close()
+                return "start_in_progress"
         log = _HARNESS_BOOT_LOG.open("a", encoding="utf-8")
         env = os.environ.copy()
         # The launcher must run from its checkout, while sessions should edit SIFTA.
@@ -152,8 +187,17 @@ def _ensure_local_harness() -> str:
             model_source="local-ollama",
             log=str(_HARNESS_BOOT_LOG),
         )
+        # Keep the lock through process launch only; a later readiness probe
+        # verifies the actual app identity before a tab is reported ready.
+        if fcntl is not None:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        lock_handle.close()
         return "start_requested"
     except Exception as exc:
+        try:
+            lock_handle.close()
+        except Exception:
+            pass
         _record_browser_hardening(
             "deepseek_harness_start_failed",
             error_type=type(exc).__name__,
@@ -335,7 +379,7 @@ _HOME_HTML = """<!DOCTYPE html>
   <div class="program">
     <a href="http://127.0.0.1:3080">
       <strong>🧠 Program Alice Locally</strong>
-      <small>Open DeepSeek Harness in the SIFTA workspace · local Ollama models · port 3080</small>
+      <small>Open the Stigmergic Coding Arm in the SIFTA workspace · local LLM · port 3080</small>
     </a>
   </div>
   <div class="bookmarks">
@@ -1188,6 +1232,16 @@ class AliceBrowserWidget(QMainWindow):
 
         self._last_ig_carousel: dict = {"ok": False, "reason": "not_initialized"}
 
+        # Owner-only /stigmergicode requests are an event queue, not a second
+        # browser process. Poll lightly and focus the existing Harness tab when
+        # a request is present; a still-booting Harness request is re-queued.
+        self._stigmergicode_timer = QTimer(self)
+        self._stigmergicode_waiting_task = None
+        self._stigmergicode_waiting_since = 0.0
+        self._stigmergicode_timer.timeout.connect(self._poll_stigmergicode_tasks)
+        self._stigmergicode_timer.start(1000)
+        QTimer.singleShot(0, self._poll_stigmergicode_tasks)
+
     # ── UI ───────────────────────────────────────────────────────────────────
 
     def _setup_ui(self):
@@ -1506,6 +1560,57 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
         return i
+
+    def _poll_stigmergicode_tasks(self) -> None:
+        """Consume one authenticated owner coding request and show its tab."""
+        try:
+            from System.swarm_stigmergicode_command import claim_next_task, complete_task, write_task_handoff
+
+            task = self._stigmergicode_waiting_task or claim_next_task(state_dir=_STATE)
+            if not task:
+                return
+            task_id = str(task.get("task_id") or "")
+            harness_state = _ensure_local_harness()
+            if harness_state in {"start_requested", "start_in_progress"} and not _harness_is_ready():
+                if self._stigmergicode_waiting_task is None:
+                    self._stigmergicode_waiting_task = task
+                    self._stigmergicode_waiting_since = time.time()
+                if time.time() - self._stigmergicode_waiting_since > 30.0:
+                    complete_task(task_id, status="FAILED", state_dir=_STATE, reason="harness_readiness_timeout")
+                    self._stigmergicode_waiting_task = None
+                    self._status.showMessage("Coding tab failed: local Harness readiness timed out", 5000)
+                    return
+                self._status.showMessage("Coding tab queued while the local Harness starts", 3500)
+                return
+            if harness_state == "port_conflict":
+                complete_task(task_id, status="FAILED", state_dir=_STATE, reason="port_3080_non_dsh_service")
+                self._stigmergicode_waiting_task = None
+                self._status.showMessage("Coding tab blocked: port 3080 is not the DeepSeek Harness", 5000)
+                return
+            if not _HAS_WEBENGINE or getattr(self, "_tabs", None) is None:
+                complete_task(task_id, status="FAILED", state_dir=_STATE, reason="webengine_unavailable")
+                self._stigmergicode_waiting_task = None
+                return
+            write_task_handoff(task, state_dir=_STATE)
+            target = _HARNESS_URL.rstrip("/")
+            found = -1
+            for item in self._open_tabs_inventory(max_tabs=32):
+                if self._normalize_tab_url_key(item.get("url", "")) == self._normalize_tab_url_key(target):
+                    found = int(item.get("index", -1))
+                    break
+            if found >= 0:
+                self._tabs.setCurrentIndex(found)
+                self._on_tab_changed(found)
+            else:
+                self.new_tab(target)
+            complete_task(task_id, status="OPENED", state_dir=_STATE)
+            self._stigmergicode_waiting_task = None
+            self._status.showMessage("Alice Browser opened the local coding Harness", 5000)
+        except Exception as exc:
+            try:
+                self._status.showMessage(f"Coding tab handoff unavailable: {type(exc).__name__}", 4500)
+            except Exception:
+                pass
 
     def close_current_tab(self) -> bool:
         """Close the active tab (File ▶ Close current Tab). Never drops below one tab."""
@@ -4146,6 +4251,119 @@ class AliceBrowserWidget(QMainWindow):
                 action="probe_failed",
             )
 
+    def _schedule_webmcp_discovery(self, *, source: str) -> None:
+        """Sense page-declared semantic tools without invoking them."""
+        if self._view is None:
+            return
+        expected_url = str(getattr(self, "_current_url", "") or "")
+        if not expected_url or expected_url in (_HOME_URL, "sifta://home", "about:blank"):
+            return
+        js = r"""
+        (function () {
+            function clean(value, limit) {
+                return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit || 1000);
+            }
+            function schemaForForm(form) {
+                var properties = {}, required = [];
+                var controls = Array.prototype.slice.call(form.elements || []);
+                controls.forEach(function (control) {
+                    var name = clean(control.name, 160);
+                    if (!name) return;
+                    var item = {type: 'string'};
+                    var description = clean(control.getAttribute('toolparamdescription'), 500);
+                    if (description) item.description = description;
+                    var options = control.options ? Array.prototype.slice.call(control.options).map(function (o) {
+                        return String(o.value || o.text || '').slice(0, 200);
+                    }).filter(Boolean) : [];
+                    if (options.length) item.enum = options.slice(0, 100);
+                    properties[name] = item;
+                    if (control.required) required.push(name);
+                });
+                var schema = {type: 'object', properties: properties};
+                if (required.length) schema.required = required;
+                return schema;
+            }
+            var declarative = Array.prototype.slice.call(document.querySelectorAll('form[toolname]')).slice(0, 50).map(function (form) {
+                return {
+                    name: clean(form.getAttribute('toolname'), 160),
+                    title: clean(form.getAttribute('tooltitle'), 240),
+                    description: clean(form.getAttribute('tooldescription'), 1000),
+                    inputSchema: schemaForForm(form),
+                    origin: location.origin,
+                    annotations: {readOnlyHint: false, declarative: true, autoSubmit: form.hasAttribute('toolautosubmit')}
+                };
+            }).filter(function (tool) { return tool.name && tool.description; });
+            var mc = document.modelContext;
+            window.__aliceWebMcpProbe = {
+                ok: true, done: !mc || typeof mc.getTools !== 'function',
+                available: declarative.length > 0,
+                api_available: !!(mc && typeof mc.getTools === 'function'),
+                url: location.href, tools: declarative,
+                reason: declarative.length ? '' : 'api_unavailable'
+            };
+            if (mc && typeof mc.getTools === 'function') {
+                Promise.resolve(mc.getTools()).then(function (tools) {
+                    var imperative = Array.from(tools || []).map(function (tool) {
+                        return {
+                            name: tool.name || '', title: tool.title || '',
+                            description: tool.description || '', inputSchema: tool.inputSchema || {},
+                            origin: tool.origin || location.origin, annotations: tool.annotations || {}
+                        };
+                    });
+                    window.__aliceWebMcpProbe.tools = imperative.concat(declarative);
+                    window.__aliceWebMcpProbe.available = window.__aliceWebMcpProbe.tools.length > 0;
+                    window.__aliceWebMcpProbe.reason = window.__aliceWebMcpProbe.available ? '' : 'no_registered_tools';
+                    window.__aliceWebMcpProbe.done = true;
+                }).catch(function (error) {
+                    window.__aliceWebMcpProbe.done = true;
+                    window.__aliceWebMcpProbe.reason = 'discovery_error';
+                    window.__aliceWebMcpProbe.error = String(error);
+                });
+            }
+            return {ok: true, started: true, done: window.__aliceWebMcpProbe.done};
+        })();
+        """
+
+        def _persist(result) -> None:
+            if not isinstance(result, dict) or not result.get("done"):
+                return
+            if str(result.get("url") or "") != str(getattr(self, "_current_url", "") or ""):
+                return
+            try:
+                from System.swarm_kimi_webbridge_bridge import record_webmcp_discovery
+
+                record_webmcp_discovery(
+                    result,
+                    source=f"alice_browser:{source}",
+                    fallback="alice_browser_uid_snapshot",
+                    state_dir=_STATE,
+                )
+            except Exception:
+                pass
+
+        def _poll(attempt: int = 0) -> None:
+            if self._view is None or expected_url != str(getattr(self, "_current_url", "") or ""):
+                return
+
+            def _on_probe(result) -> None:
+                if isinstance(result, dict) and result.get("done"):
+                    _persist(result)
+                elif attempt < 4:
+                    QTimer.singleShot(250, lambda: _poll(attempt + 1))
+
+            try:
+                self._view.page().runJavaScript(
+                    "window.__aliceWebMcpProbe || null",
+                    _on_probe,
+                )
+            except Exception:
+                pass
+
+        try:
+            self._view.page().runJavaScript(js, lambda _result: _poll(0))
+        except Exception:
+            pass
+
     def _browser_awareness_tick(self) -> None:
         """Explicit/event-driven browser awareness refresh.
 
@@ -4167,6 +4385,9 @@ class AliceBrowserWidget(QMainWindow):
                     source="awareness_tick_dom",
                     expected_url=url,
                 )
+            if now - float(getattr(self, "_last_webmcp_awareness_ts", 0.0) or 0.0) >= max(30.0, interval_s):
+                self._last_webmcp_awareness_ts = now
+                self._schedule_webmcp_discovery(source="awareness_tick")
             if _is_instagram_media_url(url):
                 self._read_instagram_carousel()
             try:
@@ -7105,6 +7326,16 @@ class AliceBrowserWidget(QMainWindow):
                 raw_output = getattr(arm_result, "output", "") or ""
                 clean_text = clean_browser_photo_description_text(raw_output)
                 error_text = clean_browser_photo_description_text(getattr(arm_result, "stderr", "") or "")
+                evidence_row = None
+                to_evidence = getattr(arm_result, "to_evidence", None)
+                if callable(to_evidence):
+                    try:
+                        evidence_row = to_evidence(
+                            prompt,
+                            scope="browser_photo_local_image",
+                        ).to_dict()
+                    except Exception:
+                        evidence_row = None
                 asked_for_image = (
                     looks_like_non_visual_arm_reply(clean_text)
                     if clean_text else looks_like_non_visual_arm_reply(raw_output)
@@ -7133,6 +7364,7 @@ class AliceBrowserWidget(QMainWindow):
                     "status": status,
                     "reason": reason,
                     "source": call_source,
+                    "visual_evidence": evidence_row,
                 }
 
             attempts: list[dict] = []

@@ -38,9 +38,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 _DIARY_NAME = "episodic_diary.jsonl"
 
-# Owner-local Talk cortex menu. This is deliberately curated rather than an
-# alias for every tag in `ollama list`: specialist/experimental pulls must not
-# silently renumber George's four familiar /cortex llm choices.
+# Owner-local Talk cortex ordering hints. The live menu is built from the
+# current Ollama inventory; these entries only keep the familiar models first.
 _OWNER_LOCAL_CORTEX_MENU: tuple[str, ...] = (
     "ornith-1.5:9b",
     "sifta-qwenpaw-coder:latest",
@@ -48,6 +47,45 @@ _OWNER_LOCAL_CORTEX_MENU: tuple[str, ...] = (
     "krishairnd/Gemma-4-Uncensored:latest",
 )
 _OWNER_LOCAL_LLM_NAMESPACE = "owner_local_ollama"
+
+
+def _installed_owner_ollama_models() -> List[str]:
+    """Read the current Ollama inventory for the owner-facing local menu."""
+    try:
+        from System.swarm_primary_cortex_switcher import installed_ollama_models
+
+        rows = installed_ollama_models(timeout=3.0)
+    except Exception:
+        return []
+    out: List[str] = []
+    for row in rows or []:
+        name = str(row.get("name") or "").strip()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _owner_local_cortex_menu(installed: Optional[List[str]] = None) -> List[str]:
+    """Return preferred local models first, then every live Ollama pull.
+
+    The four historical entries remain ordering hints only. They are not
+    injected as missing rows, so a fresh ``ollama pull`` appears automatically
+    and a removed model disappears from the next menu refresh.
+    """
+    live = list(installed if installed is not None else _installed_owner_ollama_models())
+    if not live:
+        # Keep a useful offline diagnostic menu when Ollama is still booting.
+        return list(_OWNER_LOCAL_CORTEX_MENU)
+    by_lower = {name.lower(): name for name in live}
+    ordered: List[str] = []
+    for preferred in _OWNER_LOCAL_CORTEX_MENU:
+        actual = by_lower.get(preferred.lower())
+        if actual and actual not in ordered:
+            ordered.append(actual)
+    for name in live:
+        if name not in ordered:
+            ordered.append(name)
+    return ordered
 
 
 def is_slash_command(text: str) -> bool:
@@ -322,6 +360,16 @@ def registered_slash_commands() -> List[Dict[str, str]]:
             "detail": "/cortex <n|name> switches; /cortex llm shows the brain behind the selected provider; /cortex history prints which model actually thought each turn (ledger rows, not narrative)",
         },
         {
+            "cmd": "/create",
+            "summary": "create a photo through the local Bonsai image generator",
+            "detail": "/create <subject> or /create a photo of <subject>; the rendered image and receipt return to chat",
+        },
+        {
+            "cmd": "/stigmergicode",
+            "summary": "open/focus Alice Browser's local coding tab",
+            "detail": "/stigmergicode opens the deepseek harness; add a bounded task after the command to leave it in the coding queue",
+        },
+        {
             "cmd": "/cortex llm",
             "summary": "show/pin the selected cortex provider's underlying LLM when this organ can steer it",
             "detail": (
@@ -583,20 +631,21 @@ def _handle_owner_local_llm_menu(
     current_cortex: str,
     set_cortex_fn: Optional[Callable[[str], Any]],
 ) -> Dict[str, Any]:
-    """Render or switch the stable four-row local Ollama cortex menu."""
-    try:
-        from System.swarm_primary_cortex_switcher import installed_ollama_models
+    """Render or switch the refreshed owner-local Ollama cortex menu."""
+    harness_report: Dict[str, Any] = {}
+    if not str(arg or "").strip() or str(arg or "").strip().lower() == "refresh":
+        try:
+            from System.swarm_ollama_harness_sync import sync_local_ollama_harness
 
-        installed = {
-            str(row.get("name") or "").strip()
-            for row in installed_ollama_models(timeout=3.0)
-            if str(row.get("name") or "").strip()
-        }
-    except Exception:
-        installed = set()
-
-    models = list(_OWNER_LOCAL_CORTEX_MENU)
+            harness_report = sync_local_ollama_harness()
+        except Exception as exc:
+            harness_report = {"ok": False, "reason": f"sync_failed:{type(exc).__name__}"}
+    live_models = _installed_owner_ollama_models()
+    installed = set(live_models)
+    models = _owner_local_cortex_menu(live_models)
     value = str(arg or "").strip()
+    if value.lower() == "refresh":
+        value = ""
     if not value:
         from System.swarm_cortex_llm_list_binding import record_rendered_list
 
@@ -605,11 +654,19 @@ def _handle_owner_local_llm_menu(
         for index, model in enumerate(models, start=1):
             marker = "●" if model == current_cortex else " "
             availability = "" if model in installed else "  (not installed)"
-            label = f"{model}{availability}"
+            size = (harness_report.get("sizes_gb") or {}).get(model, 0)
+            size_label = f" ({size:.1f} GB)" if size else ""
+            label = f"{model}{size_label}{availability}"
             labels.append(label)
             lines.append(f"  {marker} {index}. {label}")
-        lines.append("Switch with /cortex llm <1-4>.")
-        lines.append("Other Ollama pulls are not added or allowed to renumber this menu automatically.")
+        lines.append(f"Switch with /cortex llm <1-{len(models)}>.")
+        lines.append("Live Ollama inventory refreshed for this menu; new pulls are added automatically.")
+        if harness_report.get("ok"):
+            lines.append(
+                f"Local DeepSeek Harness registry refreshed: {harness_report.get('model_count', 0)} Ollama models."
+            )
+        elif harness_report:
+            lines.append(f"Local DeepSeek Harness registry not refreshed: {harness_report.get('reason', 'unknown')}." )
         record_rendered_list(
             namespace=_OWNER_LOCAL_LLM_NAMESPACE,
             items=models,
@@ -626,14 +683,14 @@ def _handle_owner_local_llm_menu(
         index = int(value)
         if not 1 <= index <= len(models):
             out["error"] = "local_llm_index_out_of_range"
-            out["reply"] = f"My local cortex menu has four rows; there is no number {index}. Run /cortex llm."
+            out["reply"] = f"My refreshed local cortex menu has {len(models)} rows; there is no number {index}. Run /cortex llm."
             return out
         target = models[index - 1]
     else:
         target = next((model for model in models if model.lower() == value.lower()), "")
         if not target:
             out["error"] = "local_llm_not_in_owner_menu"
-            out["reply"] = f"{value!r} is not in my four-model local cortex menu. Run /cortex llm."
+            out["reply"] = f"{value!r} is not in my refreshed local Ollama menu. Run /cortex llm."
             return out
 
     if target not in installed:
@@ -1951,9 +2008,47 @@ def handle_slash_command(
     # live at 05:23 and got /help instead of the switch). "/ x" means "/x".
     if clean.startswith("/ ") and len(clean) > 2:
         clean = "/" + clean[2:].lstrip()
+    try:
+        from System.swarm_stigmergicode_command import parse_command as _parse_stigmergicode
+
+        stigmergicode_task = _parse_stigmergicode(clean)
+    except ValueError as exc:
+        out["reply"] = f"Coding task rejected safely: {exc}."
+        out["error"] = "stigmergicode_task_too_long"
+        return out
+    except Exception:
+        stigmergicode_task = None
     parts = clean.split(None, 1)
     cmd = parts[0].lower().rstrip(":,")
     arg = parts[1].strip() if len(parts) > 1 else ""
+
+    # `/create` is a real visual effector, but its execution belongs to the
+    # Talk widget after the active cortex has interpreted the prompt. Returning
+    # unhandled here prevents the generic slash help response from swallowing
+    # the Bonsai request.
+    if cmd == "/create":
+        if not arg:
+            out["reply"] = "Usage: /create <subject> or /create a photo of <subject>."
+            return out
+        out["handled"] = False
+        return out
+
+    if stigmergicode_task is not None:
+        try:
+            from System.swarm_stigmergicode_command import enqueue_task
+
+            row = enqueue_task(stigmergicode_task, source="talk_owner", state_dir=Path(state_dir))
+            out["reply"] = (
+                "Coding tab request queued: Alice Browser will open/focus the local "
+                f"DeepSeek Harness (task {str(row.get('task_id') or '')[:12]})."
+            )
+            if arg:
+                out["reply"] += " The bounded task is attached to the receipt."
+            return out
+        except Exception as exc:
+            out["error"] = f"stigmergicode_failed: {type(exc).__name__}"
+            out["reply"] = f"I could not queue the coding tab safely ({type(exc).__name__})."
+            return out
 
     # `/sc`, `/sx`, and `/p` are implemented by the Talk widget because they need the
     # live Qt body: SIFTA OS/camera capture and Alice Browser DOM inventory.
@@ -2144,13 +2239,18 @@ def handle_slash_command(
         if _llm_parts and _llm_parts[0].lower() in ("llm", "llms", "model", "models"):
             llm_arg = _llm_parts[1] if len(_llm_parts) > 1 else ""
             llm_value = llm_arg.strip()
-            owner_local_mode = current_cortex in _OWNER_LOCAL_CORTEX_MENU
+            owner_local_models = _owner_local_cortex_menu()
+            owner_local_mode = any(
+                current_cortex.lower() == model.lower()
+                for model in owner_local_models
+            )
             owner_local_target = any(
                 llm_value.lower() == model.lower()
-                for model in _OWNER_LOCAL_CORTEX_MENU
+                for model in owner_local_models
             )
-            if owner_local_mode and (
+            if llm_value.lower() == "refresh" or owner_local_mode and (
                 not llm_value
+                or llm_value.lower() == "refresh"
                 or llm_value.isdigit()
                 or owner_local_target
             ):

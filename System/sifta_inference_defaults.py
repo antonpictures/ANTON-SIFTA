@@ -118,23 +118,31 @@ _THIS_NODE = _detect_node()
 # MLX cortex — tournament winner but degenerate in production. Archived.
 ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
-# Canonical Ollama models.
-# Hardware-adaptive: 8GB M1s swap to death on Gemma4. Force lightweight brain.
-# M5 production Talk default = 8B m5 cortex (architect 2026-05-15: smarter,
-# unfiltered, eliminates "system is humming" service-voice residue).
-CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
-CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
-CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
-CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
-CANONICAL_OLLAMA_LOCAL_TEST_CORTEX = "krishairnd/Gemma-4-Uncensored:latest"  # r604/r1386: owner-pulled alias/test cortex; display alias "krisha-g4u"
+# Canonical Ollama default: ONE variable, never hardcoded at call sites.
+# Owner 2026-09-18: krishairnd/Gemma-4-Uncensored:latest renamed to
+# krishairnd/G4U and made the default. Change it here, via
+# SIFTA_DEFAULT_OLLAMA_MODEL, or via .sifta_state/swimmer_ollama_assignments.json.
+# Override precedence: env > assignments JSON > this constant.
+# Owner 2026-09-18: bare tag, no ":latest" suffix — Ollama treats "AliceG4U"
+# and "AliceG4U:latest" identically; the suffix is display-only.
+CANONICAL_OLLAMA_DEFAULT = "AliceG4U"
+# The old alice-* tags are dead history (owner 2026-09-18: "delete them").
+# Every legacy constant below is a shim to the one default variable so the
+# ~30 modules importing them keep resolving without per-file edits. Changing
+# the default means changing CANONICAL_OLLAMA_DEFAULT (or the env/assignments).
+CANONICAL_OLLAMA_DAILY = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_GEMMA4_SMALL = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_LOW_RAM = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_LOCAL_TEST_CORTEX = CANONICAL_OLLAMA_DEFAULT  # was krishairnd/Gemma-4-Uncensored:latest; renamed to G4U 2026-09-18
 CANONICAL_MLX_GEMMA4_12B_ORIGINAL = "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"  # r606: local 12B MLX original/censored test lane
-CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DAILY
-CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # retired heavy tag; receipt/back-compat only
-CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else CANONICAL_OLLAMA_DAILY
+CANONICAL_LMSTUDIO_BONSAI = "lmstudio:prism-ml/Ternary-Bonsai-27B-mlx-2bit"
+CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_EXTRA = CANONICAL_OLLAMA_DEFAULT  # retired heavy tag shim; receipt/back-compat only
 # AG31: Ternary Architecture (Event 122).
-# Primary cortex, spinal reflex, and cheap probe/fallback roles.
-CANONICAL_OLLAMA_REFLEX = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-CANONICAL_OLLAMA_FALLBACK = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+# Primary cortex, spinal reflex, and cheap probe/fallback roles (shims to default).
+CANONICAL_OLLAMA_REFLEX = CANONICAL_OLLAMA_DEFAULT
+CANONICAL_OLLAMA_FALLBACK = CANONICAL_OLLAMA_DEFAULT
 CANONICAL_OLLAMA_LORA_CANDIDATE = "sifta-gemma4-alice-lora:latest"
 # Optional cloud cortex surface (xAI via local SIFTA cloud backend adapter).
 CANONICAL_CLOUD_GROK = "grok:grok-4.3"
@@ -195,12 +203,7 @@ _OLLAMA_TAGS_CACHE_TTL_S: float = 30.0
 _OLLAMA_INVENTORY_CACHE: tuple[dict[str, Any], ...] | None = None
 _OLLAMA_INVENTORY_CACHE_TS: float = 0.0
 _LEGACY_LOCAL_PREFERENCE: tuple[str, ...] = (
-    CANONICAL_OLLAMA_DAILY,
-    CANONICAL_OLLAMA_LOCAL_TEST_CORTEX,
-    CANONICAL_OLLAMA_GEMMA4_SMALL,
-    CANONICAL_OLLAMA_FALLBACK,
-    CANONICAL_OLLAMA_LOW_RAM,
-    CANONICAL_OLLAMA_EXTRA,
+    CANONICAL_OLLAMA_DEFAULT,
 )
 _NON_OLLAMA_RUNTIME_PREFIXES: tuple[str, ...] = (
     "grok:",
@@ -214,6 +217,7 @@ _NON_OLLAMA_RUNTIME_PREFIXES: tuple[str, ...] = (
     "mlx:",
     "mlx-vlm:",
     "diffusion:",
+    "lmstudio:",
 )
 
 
@@ -411,10 +415,30 @@ def _lookup_size_bytes(tag: str, size_by_name: dict[str, int]) -> int:
 
 
 def _is_non_dialogue_ollama_default_candidate(tag: str) -> bool:
+    """True for models that must never become the automatic dialogue default.
+
+    r1560 caught translation-only models. 2026-09-18 extends the net to
+    vision-only / tiny-VLM tags after Talk's resolver handed the daily slot
+    to SmolVLM-500M and the no-token watchdog killed the turn. Vision-capable
+    chat models stay selectable by the owner; they just cannot win the
+    automatic size-first ranking.
+    """
     low = str(tag or "").strip().lower()
     if not low:
         return False
-    return "kaelri" in low or "qwen3.5-mt" in low or "machine-translation" in low
+    if "kaelri" in low or "qwen3.5-mt" in low or "machine-translation" in low:
+        return True
+    vision_only_markers = (
+        "smolvlm",
+        "minicpm-v",
+        "llava",
+        "moondream",
+        "-vlm",
+        "vision-instruct",
+        "embed",
+        "whisper",
+    )
+    return any(marker in low for marker in vision_only_markers)
 
 
 def _rank_installed_ollama_tags(
@@ -455,8 +479,52 @@ def resolve_live_local_ollama_default(
         live = tuple(str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip())
         size_by_name = {str(row.get("name")): int(row.get("size_bytes") or 0) for row in inventory if row.get("name")}
     if live:
+        # The owner's configured default outranks the size ladder when it is
+        # actually installed; size-first only breaks ties between the rest.
+        owner_default = _canonical_model_tag(os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL") or "")
+        if not owner_default:
+            try:
+                data = load_assignments()
+                owner_default = _canonical_model_tag(
+                    str(data.get("default_ollama_model") or "")
+                )
+            except Exception:
+                owner_default = ""
+        if owner_default and any(_same_ollama_tag(tag, owner_default) for tag in live):
+            return owner_default
         return _rank_installed_ollama_tags(live, size_by_name=size_by_name)[0]
     return CANONICAL_OLLAMA_DEFAULT
+
+
+# Owner 2026-09-18: renamed tags and dead legacy tags resolve through this
+# map before the live-inventory match. One row per renamed/dead tag; adding a
+# rename is a one-line change, never a per-callsite edit.
+# 2026-09-18 final rename: the default tag is "AliceG4U" (no :latest).
+# Old names resolve through this map before the live-inventory match.
+_MODEL_TAG_ALIASES: dict[str, str] = {
+    "krishairnd/g4u": "AliceG4U",
+    "krishairnd/gemma-4-uncensored": "AliceG4U",
+    "alice-m5-cortex-8b-6.3gb": "AliceG4U",
+    "alice-gemma4-e2b-cortex-5.1b-4.4gb": "AliceG4U",
+    "alice-m1-cortex-4.5b-3.4gb": "AliceG4U",
+    "alice-extra-cortex-25.8b-17gb": "AliceG4U",
+    "sifta-classifier-c1-3.1b-6.2gb": "AliceG4U",
+    "alice-q-m1-scout-2.3b-2.7gb": "AliceG4U",
+    "sifta-gemma4-alice-lora": "AliceG4U",
+}
+
+
+def _canonical_model_tag(name: str) -> str:
+    """Resolve a renamed/dead tag to its current one; unknown tags pass through."""
+    clean = _clean_model_name(name)
+    low = str(clean or "").strip().lower()
+    if low in _MODEL_TAG_ALIASES:
+        return _MODEL_TAG_ALIASES[low]
+    # `:latest` is the implicit Ollama tag; match aliases with or without it.
+    if low.endswith(":latest") and low[:-len(":latest")] in _MODEL_TAG_ALIASES:
+        base = _MODEL_TAG_ALIASES[low[:-len(":latest")]]
+        return base if base.endswith(":latest") else base + ":latest"
+    return clean
 
 
 def coerce_to_installed_ollama_model(
@@ -465,7 +533,7 @@ def coerce_to_installed_ollama_model(
     installed: Sequence[str] | None = None,
 ) -> str:
     """Map a requested local tag onto an installed tag, or the live default."""
-    clean = _clean_model_name(model_name)
+    clean = _canonical_model_tag(model_name)
     if _is_non_ollama_runtime_tag(clean):
         return clean
     size_by_name: dict[str, int] = {}
@@ -480,7 +548,9 @@ def coerce_to_installed_ollama_model(
     for tag in live:
         if _same_ollama_tag(tag, clean):
             return tag
-    return resolve_live_local_ollama_default(installed=live) if installed is not None else _rank_installed_ollama_tags(live, size_by_name=size_by_name)[0]
+    # Missing tag: the owner default (env/assignments) is the next stop, then
+    # the size-ranked dialogue ladder. Never a silent vision-model downgrade.
+    return resolve_live_local_ollama_default(installed=live)
 
 
 def list_live_local_ollama_fallbacks(
@@ -536,11 +606,9 @@ def persist_ollama_boot_inventory(
         tags = _rank_installed_ollama_tags(tags, size_by_name=size_by_name)
         models = [{"name": tag, "size_bytes": int(size_by_name.get(tag, 0))} for tag in tags]
     resolved = resolve_live_local_ollama_default(installed=tags) if tags else ""
-    missing_legacy = list(dict.fromkeys(
-        pref
-        for pref in _LEGACY_LOCAL_PREFERENCE
-        if not any(_same_ollama_tag(tag, pref) for tag in tags)
-    ))
+    # Owner 2026-09-18: dead alice-* tags are deleted from live routing; the
+    # boot inventory reports only the live default, not a graveyard of retired
+    # canonical names.
     row: dict[str, Any] = {
         "schema": "SIFTA_OLLAMA_BOOT_INVENTORY_V1",
         "ts": time.time(),
@@ -548,7 +616,6 @@ def persist_ollama_boot_inventory(
         "models": models,
         "resolved_daily_local": resolved,
         "selection_policy": "smallest_live_dialogue_ollama_model_by_on_disk_size",
-        "missing_legacy_canonical": missing_legacy,
         "truth_label": "OBSERVED" if tags else "OLLAMA_OFFLINE_OR_EMPTY",
     }
     if write:
@@ -1082,18 +1149,30 @@ def list_installed_alice_cortexes(
         is_scout = "scout" in low or low.startswith("alice-q-")
         is_reflex = low.startswith("sifta-classifier")
         is_retired_heavy = name == CANONICAL_OLLAMA_EXTRA
+        # 2026-09-18: the picker keeps the OWNER'S DEFAULT visible even though
+        # its tag is a plain third-party name (krishairnd/G4U), plus curated
+        # rows and alice-*/sifta-* tags. No hardcoded model name here.
+        is_owner_default = _same_ollama_tag(name, CANONICAL_OLLAMA_DEFAULT)
         if is_scout and not include_scout:
             continue
         if is_reflex and not include_reflex:
             continue
-        if is_retired_heavy and os.environ.get("SIFTA_SHOW_RETIRED_CORTEXES") != "1":
+        # 2026-09-18: the retired-heavy hide-out only applies to a DIFFERENT
+        # tag. When the retired constant shims to the live default, the
+        # default must stay visible (hiding it would blank the primary cortex).
+        if (
+            is_retired_heavy
+            and not is_owner_default
+            and os.environ.get("SIFTA_SHOW_RETIRED_CORTEXES") != "1"
+        ):
             continue
-        # Keep alice-* cortex tags, curated owner-pulled test cortexes, and any
-        # sifta-* primary cortex tags.
-        # (LoRA candidates etc.). Skip generic non-alice models (llama3, phi4...)
-        # because the picker is "which Alice voice do I want", not a model browser.
+        # Keep alice-* cortex tags, curated owner-pulled test cortexes, any
+        # sifta-* primary cortex tags, and the live owner default. Skip generic
+        # non-alice models (llama3, phi4...) because the picker is "which Alice
+        # voice do I want", not a model browser.
         if not (
-            low.startswith("alice-")
+            is_owner_default
+            or low.startswith("alice-")
             or low.startswith("sifta-gemma4-alice")
             or low in curated_ids_lower  # r615: any curated CORTEX_OPTIONS test cortex
         ):
@@ -1213,9 +1292,15 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
     except Exception:
         pass
     if borg_single_mimo:
-        return _dedupe(cloud)
+        # The MiMo single-cortex policy only narrows cloud choices. It must
+        # not hide independent local runtimes such as LM Studio/MLX Bonsai.
+        return _dedupe([CANONICAL_LMSTUDIO_BONSAI, *cloud])
 
     local = list_installed_alice_cortexes()
+    # Bonsai is a local LM Studio/MLX option, not an Ollama tag. Keep it in the
+    # owner-facing selector even when LM Studio is closed; selection then fails
+    # honestly with a server/model availability message instead of disappearing.
+    lmstudio = [CANONICAL_LMSTUDIO_BONSAI]
     mlx = list_installed_mlx_cortexes()
     diffusion = list_installed_diffusion_cortexes()
     # Direct MLX VLM (osmQwopus etc) for vision command cortex — merge so picker dropdown offers mlx-vlm: names
@@ -1227,8 +1312,8 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
         pass
     live_local = list_live_local_ollama_fallbacks(limit=8)
     if local or mlx or diffusion or vlm_direct or live_local:
-        return _dedupe(live_local + local + mlx + diffusion + vlm_direct + cloud)
-    return _dedupe(mlx + vlm_direct + cloud)
+        return _dedupe(live_local + local + lmstudio + mlx + diffusion + vlm_direct + cloud)
+    return _dedupe(lmstudio + mlx + vlm_direct + cloud)
 
 
 __all__ = [
@@ -1242,6 +1327,7 @@ __all__ = [
     "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
     "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",
     "CANONICAL_MLX_GEMMA4_12B_ORIGINAL",
+    "CANONICAL_LMSTUDIO_BONSAI",
     "DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",

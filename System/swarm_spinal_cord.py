@@ -643,10 +643,13 @@ def gate_and_apply(
     *,
     state_dir: Path | str | None = None,
     teach_context: Dict[str, Any] | None = None,
+    metric_probe=None,
 ) -> Dict[str, Any]:
     """Full gate → snapshot → apply → test → keep/revert cycle.
 
-    Returns a receipt dict with every step recorded.
+    Returns a receipt dict with every step recorded. metric_probe is a trusted
+    caller-owned zero-argument measurement for task.predicted_metric (higher is
+    better). Never obtain this callable or its output from the proposed patch.
     """
     sd = _state_dir(state_dir)
     receipt: Dict[str, Any] = {
@@ -677,6 +680,29 @@ def gate_and_apply(
         return receipt
     ast_ok = _check_ast(result.new_content, target_file)
     result.ast_clean = ast_ok
+
+    import math
+    receipt.update(target_file=target_file, tests_passed=False, measured_gain=None,
+                   predicted_metric=task.predicted_metric, predicted_gain=task.predicted_gain)
+    result.tests_passed = False
+    reason = ("invalid_ast" if not ast_ok else "no_tests" if not task.test_paths
+              else "no_measurement_oracle" if not callable(metric_probe) else "")
+    baseline = None
+    if not reason:
+        try:
+            if not math.isfinite(float(task.predicted_gain)) or task.predicted_gain < 0:
+                raise ValueError("invalid expected gain")
+            baseline = float(metric_probe())
+            if not math.isfinite(baseline):
+                raise ValueError("nonfinite baseline")
+        except Exception as exc:
+            reason = "measurement_unavailable"
+            receipt["measurement_error"] = type(exc).__name__
+    if reason:
+        receipt.update(status="UNVERIFIED", reason=reason)
+        _append_jsonl(sd / LEDGER, receipt)
+        return receipt
+    receipt["baseline_metric"] = baseline
 
     # 2. Mutation governor gate
     proposal = {
@@ -726,18 +752,32 @@ def gate_and_apply(
     dst_path.write_text(result.new_content, encoding="utf-8")
 
     # 5. Run tests
-    tests_passed = True
-    if task.test_paths:
+    tests_passed = False
+    try:
         tests_passed = _run_tests(task.test_paths)
+    except Exception as exc:
+        receipt["test_error"] = type(exc).__name__
     result.tests_passed = tests_passed
+    receipt["tests_passed"] = tests_passed
 
     # 6. Measure gain
-    measured_gain = 0.0
+    measured_gain = None
     if tests_passed and ast_ok:
-        measured_gain = task.predicted_gain  # base case: tests pass = predicted gain met
+        try:
+            after = float(metric_probe())
+            if not math.isfinite(after):
+                raise ValueError("nonfinite measurement")
+            measured_gain = after - baseline
+            if not math.isfinite(measured_gain):
+                raise ValueError("nonfinite gain")
+            receipt["after_metric"] = after
+        except Exception as exc:
+            measured_gain = None
+            receipt["measurement_error"] = type(exc).__name__
+    receipt["measured_gain"] = measured_gain
 
     # 7. Keep or revert
-    if tests_passed and ast_ok and measured_gain >= task.predicted_gain:
+    if tests_passed and ast_ok and measured_gain is not None and measured_gain >= task.predicted_gain:
         receipt["status"] = "KEPT"
         receipt["proposal_id"] = proposal["proposal_id"]
         receipt["target_file"] = target_file
@@ -764,6 +804,7 @@ def gate_and_apply(
         receipt["reason"] = (
             "tests_failed" if not tests_passed
             else "ast_dirty" if not ast_ok
+            else "measurement_unavailable" if measured_gain is None
             else "gain_below_predicted"
         )
         _update_proposal_status(proposal["proposal_id"], "reverted", state_dir=sd)
@@ -852,22 +893,31 @@ def _check_mutation_governor(proposal: dict, *, state_dir: Path) -> bool:
 def _run_tests(test_paths: list[str]) -> bool:
     """Run pytest on the given test files. Returns True if all pass."""
     if not test_paths:
-        return True
-    proc = subprocess.run(
-        ["python3", "-m", "pytest", "-q"] + test_paths,
-        cwd=str(REPO),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return proc.returncode == 0
+        return False
+    import tempfile
+    import xml.etree.ElementTree as ET
+    with tempfile.TemporaryDirectory(prefix="sifta-test-oracle-") as scratch:
+        report = Path(scratch) / "results.xml"
+        try:
+            proc = subprocess.run(
+                ["python3", "-m", "pytest", "-q", *test_paths, f"--junitxml={report}"],
+                cwd=str(REPO), capture_output=True, text=True, check=False, timeout=120,
+            )
+            if proc.returncode != 0:
+                return False
+            suites = ET.parse(report).getroot().iter("testsuite")
+            executed = sum(int(s.get("tests", 0)) - int(s.get("skipped", 0)) for s in suites)
+            return executed > 0
+        except (OSError, subprocess.TimeoutExpired, ET.ParseError, ValueError):
+            return False
 
 
 # ---------------------------------------------------------------------------
 # Full cycle — the closed loop
 # ---------------------------------------------------------------------------
 
-def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
+def spinal_cord_cycle(*, state_dir: Path | str | None = None,
+                     metric_probes: dict | None = None) -> Dict[str, Any]:
     """Run one full spinal cord cycle: detect → formulate → dispatch → gate → apply.
 
     This is the main entry point. Call it from a heartbeat, a cron,
@@ -925,7 +975,8 @@ def spinal_cord_cycle(*, state_dir: Path | str | None = None) -> Dict[str, Any]:
     result = dispatch_to_local_cortex(task, state_dir=sd)
 
     # 5. Gate + apply + test + keep/revert
-    receipt = gate_and_apply(result, task, state_dir=sd, teach_context=teach_context)
+    receipt = gate_and_apply(result, task, state_dir=sd, teach_context=teach_context,
+                             metric_probe=(metric_probes or {}).get(task.predicted_metric))
 
     # 6. Write cycle receipt
     cycle_receipt = {

@@ -136,11 +136,13 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
 
     from System import sifta_inference_defaults as defaults
 
-    assert defaults.CANONICAL_OLLAMA_DAILY == "alice-m5-cortex-8b-6.3gb:latest"
-    assert defaults.CANONICAL_OLLAMA_DEFAULT == "alice-m5-cortex-8b-6.3gb:latest"
-    assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "alice-m5-cortex-8b-6.3gb:latest"
-    assert defaults.CANONICAL_OLLAMA_EXTRA == "alice-extra-cortex-25.8b-17gb:latest"
+    # 2026-09-18: owner renamed the default to AliceG4U (bare tag; the :latest
+    # suffix Ollama shows is display-only); legacy constants shim to it.
+    assert defaults.CANONICAL_OLLAMA_DAILY == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_DEFAULT == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_EXTRA == "AliceG4U"
     assert defaults.CANONICAL_CLOUD_GROK == "grok:grok-4.3"
     assert defaults.CANONICAL_CLOUD_CLAUDE == "claude:claude-code-cli-default"
     assert defaults.CANONICAL_CLOUD_CODEX == "codex:gpt-5.5"
@@ -156,23 +158,23 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
     assert defaults.CANONICAL_CLOUD_CLINE == "cline:cline-cli-default"
     assert (
         defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX
-        == "krishairnd/Gemma-4-Uncensored:latest"
+        == "AliceG4U"
     )
     assert (
         defaults.CANONICAL_OLLAMA_LOW_RAM
-        == "alice-m1-cortex-4.5b-3.4gb:latest"
+        == "AliceG4U"
     )
     assert (
         defaults.CANONICAL_OLLAMA_LOW_RAM_SOURCE
-        == "alice-m1-cortex-4.5b-3.4gb:latest"
+        == "AliceG4U"
     )
-    assert defaults.DEFAULT_OLLAMA_MODEL == "alice-m5-cortex-8b-6.3gb:latest"
-    assert defaults.CANONICAL_OLLAMA_REFLEX == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-    assert defaults.CANONICAL_OLLAMA_FALLBACK == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    assert defaults.DEFAULT_OLLAMA_MODEL == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_REFLEX == "AliceG4U"
+    assert defaults.CANONICAL_OLLAMA_FALLBACK == "AliceG4U"
     assert defaults.CANONICAL_OLLAMA_LORA_CANDIDATE == "sifta-gemma4-alice-lora:latest"
     assert "Default local Ollama cortex:** choose from the live `ollama list`" in (defaults.__doc__ or "")
-    assert "Experimental alias/test cortex:** `krishairnd/Gemma-4-Uncensored:latest`" in (defaults.__doc__ or "")
-    assert "Retired heavy cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
+    # 2026-09-18: the doc policy text is history; the retired cortex claims
+    # moved into WCT_CORTEX_VARIABLE_PLAN_2026-09-18.md, so these asserts go.
     assert "Cloud cortex bridges:** Grok, Claude, Codex, Kimi K2.6/Fireworks, and Cline" in (defaults.__doc__ or "")
 
 
@@ -217,11 +219,11 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
     import json as _json
     import urllib.request as _urlrequest
 
+    # 2026-09-18: the three shims now collapse to one tag, so the payload
+    # carries the default once plus the curated/retired/generic rows.
     payload = {
         "models": [
             {"name": defaults.CANONICAL_OLLAMA_DAILY},
-            {"name": defaults.CANONICAL_OLLAMA_GEMMA4_SMALL},
-            {"name": defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX},
             {"name": "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest"},
             {"name": defaults.CANONICAL_OLLAMA_EXTRA},
             {"name": "llama3:latest"},
@@ -242,26 +244,22 @@ def test_retired_17gb_cortex_hidden_from_installed_picker_by_default(monkeypatch
     monkeypatch.setattr(_urlrequest, "urlopen", lambda *_a, **_k: _Resp())
 
     models = defaults.list_installed_alice_cortexes()
+    # 2026-09-18: all legacy constants shim to the default tag, so membership
+    # collapses to one row. Dead alice-* doc-history asserts removed with the
+    # dead tags themselves (owner: "these are old cortex tests, delete them").
     assert defaults.CANONICAL_OLLAMA_DAILY in models
     assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL in models
     assert defaults.CANONICAL_OLLAMA_LOCAL_TEST_CORTEX in models
     assert "igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic:latest" in models
-    assert defaults.CANONICAL_OLLAMA_EXTRA not in models
     assert "llama3:latest" not in models
-
-    monkeypatch.setenv("SIFTA_SHOW_RETIRED_CORTEXES", "1")
-    assert defaults.CANONICAL_OLLAMA_EXTRA in defaults.list_installed_alice_cortexes()
     assert "low-metabolism" in (defaults.__doc__ or "")
-    assert "M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest`" in (defaults.__doc__ or "")
-    assert "Reflex path:** fast deterministic checks first, then the shared Gemma path" in (defaults.__doc__ or "")
-    assert "Generative fallback/probe:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`" in (defaults.__doc__ or "")
-    assert "LoRA surgery candidate:** `sifta-gemma4-alice-lora:latest` is retired" in (defaults.__doc__ or "")
 
 
 def test_system_settings_imports_demoted_gemma4_alias():
     from Applications.sifta_system_settings import CANONICAL_OLLAMA_GEMMA4_SMALL
 
-    assert CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    # 2026-09-18: the demoted gemma4 alias shims to the single default variable.
+    assert CANONICAL_OLLAMA_GEMMA4_SMALL in {"AliceG4U", "AliceG4U:latest"}
 
 
 def test_system_settings_treats_grok_as_remote_cortex():
@@ -308,7 +306,7 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
 
-    from PyQt6.QtWidgets import QApplication, QComboBox, QLabel
+    from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QScrollArea
 
     from Applications.sifta_system_settings import SystemSettingsWidget
 
@@ -337,12 +335,14 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert inventory_picker is not None
         assert inventory_picker.isHidden()
         assert hasattr(settings, "inference_default_card")
+        assert all(isinstance(page, QScrollArea) for page in settings._pages.values())
         labels = "\n".join(label.text() for label in settings.findChildren(QLabel))
         assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in labels
         assert "sifta-classifier-c1-3.1b-6.2gb:latest" not in labels
         picker_items = "\n".join(picker.itemText(i) for i in range(picker.count()))
         assert "kaelri/qwen3.5-mt:2b" in picker_items
-        assert "krishairnd/Gemma-4-Uncensored:latest" in picker_items
+        # 2026-09-18: default cortex renamed to AliceG4U (bare tag).
+        assert "AliceG4U" in picker_items
         assert "grok:grok-4.3" in picker_items
         assert "claude:claude-code-cli-default" in picker_items
         assert "codex:gpt-5.5" in picker_items
@@ -546,7 +546,7 @@ def test_cline_cortex_indicator_refresh_message(monkeypatch, tmp_path):
         picker = settings.findChild(QComboBox, "AliceCortexPicker")
         assert picker is not None
         assert picker.count() >= 1
-        picker.setCurrentIndex(0)
+        picker.setCurrentIndex(picker.findData(defaults.CANONICAL_CLOUD_CLINE))
         settings._refresh_cortex_auth_indicator()
         assert "alice-hand" in settings._cortex_auth_indicator.toolTip()
         settings._on_cortex_auth_indicator_clicked()
@@ -588,7 +588,7 @@ def test_attached_llm_picker_reflects_mimo_keep_list(monkeypatch, tmp_path):
         assert llm_picker.isEnabled()
         items = [llm_picker.itemData(i) for i in range(llm_picker.count())]
         assert "mimo-auto" in items
-        assert "krishairnd/Gemma-4-Uncensored:latest" in items
+        assert any(str(i).startswith("AliceG4U") for i in items)
         assert "mimo-v2.5-pro" not in items
         rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path / ".sifta_state")
         assert llm_picker.itemData(llm_picker.currentIndex()) == rec.get("default_attached")

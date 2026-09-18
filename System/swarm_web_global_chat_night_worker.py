@@ -8,6 +8,7 @@ through the canonical web gate. It has no effector or owner-state imports.
 from __future__ import annotations
 
 import argparse
+import difflib
 import fcntl
 import json
 import os
@@ -32,6 +33,48 @@ MODEL_PREFERENCE = (
 )
 _END_RE = re.compile(r"[.!?](?:[\"')\]}]|\*{0,2})?\s*$")
 _STOP = False
+
+
+def _repeat_key(text: str) -> str:
+    """Normalize whitespace/case for the narrow duplicate-answer guard."""
+    return re.sub(r"\s+", " ", str(text or "")).strip().casefold()
+
+
+def _repeats_previous_answer(
+    candidate: str,
+    previous: str,
+    current_prompt: str,
+    previous_prompt: str = "",
+) -> bool:
+    """Reject exact or near-duplicate answers for a materially new question."""
+    candidate_key = _repeat_key(candidate)
+    previous_key = _repeat_key(previous)
+    prompt_key = _repeat_key(current_prompt)
+    prior_prompt_key = _repeat_key(previous_prompt)
+    if not candidate_key or not previous_key or prompt_key == prior_prompt_key and prior_prompt_key:
+        return False
+    if candidate_key == previous_key:
+        return True
+    if min(len(candidate_key), len(previous_key)) < 100:
+        return False
+    ratio = difflib.SequenceMatcher(None, candidate_key, previous_key).ratio()
+    candidate_words = set(re.findall(r"[a-z0-9']+", candidate_key))
+    previous_words = set(re.findall(r"[a-z0-9']+", previous_key))
+    overlap = len(candidate_words & previous_words) / max(1, len(candidate_words | previous_words))
+    return ratio >= 0.84 or overlap >= 0.82
+
+
+_STAGE_DIRECTION_RE = re.compile(
+    r"(?:🔊\s*)?(?:\*{0,2})\s*\[(?:speaking|voice|tone|sound effect)[^\]]*\](?:\*{0,2})?\s*",
+    re.IGNORECASE,
+)
+
+
+def _clean_public_reply(text: str) -> str:
+    """Remove accidental performance directions from a public text answer."""
+    cleaned = _STAGE_DIRECTION_RE.sub("", str(text or ""))
+    cleaned = re.sub(r"(?m)^\s*🔊\s*\*{0,2}\s*$", "", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 def _append_health(event: str, **fields: Any) -> dict[str, Any]:
@@ -71,6 +114,13 @@ def choose_local_model() -> str:
     if override:
         return override
     try:
+        from System.sifta_inference_defaults import resolve_ollama_model
+        selected = str(resolve_ollama_model(app_context="talk_to_alice") or "").strip()
+        if selected:
+            return selected
+    except Exception:
+        pass
+    try:
         with urllib.request.urlopen(OLLAMA_TAGS_URL, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
         installed = {str(row.get("name") or "") for row in payload.get("models", []) if isinstance(row, dict)}
@@ -87,6 +137,7 @@ def session_messages(
     limit: int = 10,
 ) -> list[dict[str, str]]:
     from System.swarm_web_global_chat_gate import (
+        phone_observation_prompt_block,
         web_attachment_prompt_block,
         web_typed_prompt_block,
     )
@@ -102,7 +153,10 @@ def session_messages(
         "You are Alice, the one SIFTA organism speaking through her public text register. "
         "Be warm, direct, thoughtful, and honest. Do not narrate hidden telemetry, ledgers, "
         "routing, models, or gate machinery to the visitor. Do not claim speed or senses you "
-        "do not have. Markdown is welcome when it improves readability.\n\n"
+        "do not have. Answer the latest visitor message specifically. Use earlier turns as "
+        "context, but do not copy an earlier answer when the latest question is different. "
+        "If asked how processing works, answer that question directly and distinguish known "
+        "facts from uncertainty. Markdown is welcome when it improves readability.\n\n"
         + web_typed_prompt_block(speak_requested=bool(queued.get("speak_requested")))
     )
     session_id = str(queued.get("session_id") or "")
@@ -110,6 +164,14 @@ def session_messages(
         row for row in _read_rows(ingress_path)
         if str(row.get("session_id") or "") == session_id and row.get("decision") == "accepted"
     ]
+    # Never include a later queued message in the answer to an earlier turn.
+    current_id = str(queued.get("turn_id") or "")
+    for index, row in enumerate(ingress):
+        if str(row.get("turn_id") or "") == current_id:
+            ingress = ingress[:index]
+            break
+    else:
+        ingress = [row for row in ingress if float(row.get("ts") or 0) < float(queued.get("ts") or 0)]
     reply_by_turn = {
         str(row.get("turn_id") or ""): str(row.get("reply") or "")
         for row in _read_rows(replies_path)
@@ -117,9 +179,11 @@ def session_messages(
     }
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for row in ingress[-max(1, int(limit)):]:
+        if str(row.get("turn_id") or "") not in reply_by_turn:
+            continue
         text = str(row.get("prompt_text") or row.get("text") or "").strip()
         attachments = row.get("attachments")
-        merged = _merge_attachment_context(text, attachments)
+        merged = text if row.get("capture", {}).get("source") == "stigmergicoin-web" else _merge_attachment_context(text, attachments)
         if merged:
             messages.append({"role": "user", "content": merged})
         prior_reply = reply_by_turn.get(str(row.get("turn_id") or ""), "").strip()
@@ -127,16 +191,31 @@ def session_messages(
             messages.append({"role": "assistant", "content": prior_reply})
     current_text = str(queued.get("prompt_text") or queued.get("text") or "").strip()
     current_attachments = queued.get("attachments")
-    current_merged = _merge_attachment_context(current_text, current_attachments)
+    current_merged = current_text if queued.get("capture", {}).get("source") == "stigmergicoin-web" and queued.get("attachment_context") else _merge_attachment_context(current_text, current_attachments)
     queued_context = str(queued.get("attachment_context") or "").strip()
     if queued_context and queued_context not in current_merged:
         current_merged = f"{current_merged}\n\n{queued_context}".strip() if current_merged else queued_context
+    phone_context = phone_observation_prompt_block(queued)
+    if phone_context and phone_context not in current_merged:
+        current_merged = f"{current_merged}\n\n{phone_context}".strip()
+    # Search is explicit and current-turn only. Ambient STT and camera batches
+    # cannot silently trigger repeated network requests.
+    from System.swarm_web_search_evidence import evidence_prompt, extract_web_search_query, search_web
+    search_query = extract_web_search_query(current_text)
+    if search_query:
+        try:
+            search_context = evidence_prompt(search_query, search_web(search_query))
+        except Exception as exc:
+            search_context = f"WEB SEARCH STATUS: unavailable ({type(exc).__name__}). Do not claim that a search succeeded."
+        current_merged = f"{current_merged}\n\n{search_context}".strip()
     if not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != current_merged:
         messages.append({"role": "user", "content": current_merged})
     return messages
 
 
 def _ollama_turn(model: str, messages: list[dict[str, str]], *, timeout_s: float) -> dict[str, Any]:
+    from System.swarm_hardware_time_oracle import with_live_awareness
+    messages = with_live_awareness(messages, public=True)
     payload = {
         "model": model,
         "messages": messages,
@@ -186,19 +265,40 @@ def answer_web_turn(
     timeout_s: float = 300.0,
 ) -> tuple[str, str, dict[str, Any], str]:
     from System.swarm_kv_cache_continuity import record_turn_stamp
+    from System.swarm_hardware_time_oracle import direct_clock_answer
+
+    text = str(queued.get("prompt_text") or queued.get("text") or "")
+    clock_reply = direct_clock_answer(text) if not queued.get("attachments") else ""
+    if clock_reply:
+        return clock_reply, "os_clock", {}, "STOP"
 
     selected = str(model or choose_local_model())
     messages = session_messages(queued, ingress_path=ingress_path, replies_path=replies_path)
     full = ""
     bound_stamp: dict[str, Any] = {}
     done_reason = "UNKNOWN"
+    previous_answer = next(
+        (
+            str(message.get("content") or "")
+            for message in reversed(messages[:-1])
+            if message.get("role") == "assistant"
+        ),
+        "",
+    )
+    previous_prompt = ""
+    for index in range(len(messages) - 2, 0, -1):
+        if messages[index].get("role") == "assistant":
+            for prior_index in range(index - 1, 0, -1):
+                if messages[prior_index].get("role") == "user":
+                    previous_prompt = str(messages[prior_index].get("content") or "")
+                    break
+            break
+    current_prompt = str(messages[-1].get("content") or "") if messages else text
     for continuation_index in range(3):
         response = _ollama_turn(selected, messages, timeout_s=timeout_s)
         piece = str((response.get("message") or {}).get("content") or "").strip()
         if not piece:
             raise RuntimeError("local cortex returned empty text")
-        full = (full.rstrip() + " " + piece.lstrip()).strip() if full else piece
-        done_reason = str(response.get("done_reason") or response.get("finish_reason") or "UNKNOWN").upper()
         stamp = record_turn_stamp(
             model=selected,
             messages=messages,
@@ -206,6 +306,51 @@ def answer_web_turn(
             source="web_global_chat_night_worker",
         )
         bound_stamp = _accumulate_stamp(bound_stamp, stamp if isinstance(stamp, dict) else {})
+        if continuation_index == 0 and _repeats_previous_answer(piece, previous_answer, current_prompt, previous_prompt):
+            _append_health(
+                "repetition_guard",
+                turn_id=str(queued.get("turn_id") or ""),
+                model=selected,
+                action="retry_current_question",
+            )
+            retry_messages = [dict(message) for message in messages]
+            retry_messages[0]["content"] = (
+                str(retry_messages[0].get("content") or "")
+                + "\n\nThe draft repeated an earlier answer. Discard that draft and answer only "
+                "the latest user message. Do not restate the earlier answer."
+            )
+            response = _ollama_turn(selected, retry_messages, timeout_s=timeout_s)
+            piece = str((response.get("message") or {}).get("content") or "").strip()
+            if not piece:
+                raise RuntimeError("local cortex returned empty text after repetition retry")
+            retry_stamp = record_turn_stamp(
+                model=selected,
+                messages=retry_messages,
+                done_chunk=response,
+                source="web_global_chat_night_worker:repetition_retry",
+            )
+            bound_stamp = _accumulate_stamp(
+                bound_stamp, retry_stamp if isinstance(retry_stamp, dict) else {}
+            )
+            if _repeats_previous_answer(piece, previous_answer, current_prompt, previous_prompt):
+                _append_health(
+                    "repetition_guard_failed",
+                    turn_id=str(queued.get("turn_id") or ""),
+                    model=selected,
+                    action="truthful_correction",
+                )
+                return (
+                    "I need to correct my previous response: I had the earlier conversation "
+                    "as context, but repeated an old answer instead of answering your latest "
+                    "question. That repetition was an error in response generation, not a "
+                    "truthful answer to your question.",
+                    selected,
+                    bound_stamp,
+                    "REPETITION_GUARD",
+                )
+            messages = retry_messages
+        full = (full.rstrip() + " " + piece.lstrip()).strip() if full else piece
+        done_reason = str(response.get("done_reason") or response.get("finish_reason") or "UNKNOWN").upper()
         if _END_RE.search(full) and done_reason not in {"LENGTH", "MAX_TOKENS"}:
             break
         messages.extend(
@@ -221,7 +366,7 @@ def answer_web_turn(
             ]
         )
         _append_health("continuation", turn_id=str(queued.get("turn_id") or ""), index=continuation_index + 1)
-    return full, selected, bound_stamp, done_reason
+    return _clean_public_reply(full), selected, bound_stamp, done_reason
 
 
 def process_one(
@@ -242,21 +387,36 @@ def process_one(
         claim_path=claim_path,
         replies_path=replies_path,
         consumer_id="night_worker",
-        lease_s=360.0,
+        lease_s=1200.0,
         min_age_s=min_age_s,
     )
     if not queued:
         return None
+    return process_claimed_turn(
+        queued, model=model, ingress_path=ingress_path, replies_path=replies_path,
+        conversation_path=conversation_path, metabolism_path=metabolism_path, scrub_path=scrub_path,
+    )
+
+
+def process_claimed_turn(
+    queued: dict[str, Any], *, model: Optional[str], ingress_path: Path,
+    replies_path: Path, conversation_path: Path, metabolism_path: Path, scrub_path: Path,
+) -> dict[str, Any]:
+    """Desktop and headless consumers share this session-only, no-owner-context path."""
+    from System.swarm_web_global_chat_gate import complete_web_turn, record_web_user_turn
+    from System.swarm_web_image_service import handle_media_request
+
     turn_id = str(queued.get("turn_id") or "")
     record_web_user_turn(queued, conversation_path=conversation_path)
     started = time.time()
     try:
-        reply, selected, stamp, done_reason = answer_web_turn(
-            queued,
-            model=model,
-            ingress_path=ingress_path,
-            replies_path=replies_path,
-        )
+        media = handle_media_request(queued, state_dir=replies_path.parent)
+        if media is not None:
+            reply, selected, stamp, done_reason = media["reply"], media["model"], {}, media["status"]
+        else:
+            reply, selected, stamp, done_reason = answer_web_turn(
+                queued, model=model, ingress_path=ingress_path, replies_path=replies_path,
+            )
         row = complete_web_turn(
             turn_id,
             reply,
@@ -269,6 +429,8 @@ def process_one(
             scrub_path=scrub_path,
             metabolism_path=metabolism_path,
             speak_requested=bool(queued.get("speak_requested")),
+            ingress_path=ingress_path,
+            generated_images=(media or {}).get("images", []),
         )
         _append_health(
             "answered",
@@ -280,7 +442,7 @@ def process_one(
         return row
     except Exception as exc:
         fallback = (
-            "My local overnight cortex could not complete this text turn. "
+            "My selected cortex could not complete this turn. "
             "The failure was recorded, and you can try again shortly."
         )
         row = complete_web_turn(
@@ -294,6 +456,7 @@ def process_one(
             scrub_path=scrub_path,
             metabolism_path=metabolism_path,
             speak_requested=bool(queued.get("speak_requested")),
+            ingress_path=ingress_path,
         )
         _append_health("answer_failed", turn_id=turn_id, error=type(exc).__name__)
         return row
@@ -328,6 +491,8 @@ def run_forever(*, once: bool = False) -> int:
     last_heartbeat = 0.0
     claim_path = STATE_DIR / "web_global_chat_claims.jsonl"
     while not _STOP:
+        # Follow owner cortex changes without restarting the public web service.
+        model = choose_local_model()
         process_one(
             ingress_path=INGRESS_LEDGER,
             claim_path=claim_path,

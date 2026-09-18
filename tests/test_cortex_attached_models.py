@@ -39,13 +39,14 @@ def test_attached_model_labels_preserve_machine_ids():
         "GPT-5.4 (openai-codex:gpt-5.4)"
     )
     assert cap.attached_model_matches_active("GPT-5.4", "openai-codex:gpt-5.4")
-    assert cap.format_attached_model("krishairnd/Gemma-4-Uncensored:latest") == (
-        "krisha-g4u (local Ollama) (krishairnd/Gemma-4-Uncensored:latest)"
+    assert cap.format_attached_model("AliceG4U:latest") == (
+        "AliceG4U (local Ollama) (AliceG4U:latest)"
     )
     qwenpaw = cap._MIMO_LOCAL_QWENPAW_9B
-    assert cap.format_attached_model(qwenpaw) == (
-        f"QwenPaw 9B heretic 1M (local Ollama) ({qwenpaw})"
-    )
+    # label lives in _ATTACHED_MODEL_LABELS; the test tracks the constant value
+    label = cap.attached_model_label(qwenpaw)
+    assert cap.format_attached_model(qwenpaw) == f"{label} ({qwenpaw})"
+    assert "QwenPaw" in label
     assert cap.format_attached_model(cap.FIREWORKS_KIMI_K2P6_MODEL) == (
         "Kimi K2.6 (fireworks-api kimi-k2p6) (accounts/fireworks/models/kimi-k2p6)"
     )
@@ -146,14 +147,17 @@ def test_sync_catalog_includes_mimo(tmp_path, monkeypatch):
 
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
     # Owner 2026-06-25: local MiMo picker reflects current kept local bodies.
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
     assert rec.get("live") is True
     models = rec.get("attached_models") or []
     # 2026-07-11: locals from live ollama inventory + cloud keeps (no deleted 26B/diffusion).
     assert "mimo-auto" in models
     assert "accounts/fireworks/models/kimi-k2p6" in models
-    assert "krishairnd/Gemma-4-Uncensored:latest" in models
-    assert "ornith:latest" in models
+    # owner rule: bare tag in code; Ollama shows the :latest suffix
+    assert any(str(m).startswith("AliceG4U") for m in models)
+    # 2026-09-18: the bare "ornith:latest" tag is a retired alias; the live
+    # store exposes the ornith rows under their real names.
+    assert any("ornith" in str(m).lower() for m in models)
     assert "satgeze/qwenpaw-9b-heretic-1m:latest" in models or any(
         "qwenpaw" in str(m) for m in models
     )
@@ -184,7 +188,7 @@ def test_sync_catalog_mimo_fallback_defaults_to_dialogue_local(tmp_path, monkeyp
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
 
     # r1560: No prior binding -> default is the smallest known runnable dialogue local model.
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
     assert "mimo-v2.5-pro" not in (rec.get("attached_models") or [])
 
 
@@ -196,7 +200,7 @@ def test_sync_catalog_resets_removed_mimo_v25_pro_default(tmp_path, monkeypatch)
         [
             "mimo-v2.5-pro",
             "mimo-auto",
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "AliceG4U:latest",
         ],
         default_attached="mimo-v2.5-pro",
         source="stale_mimo_v25_binding",
@@ -212,7 +216,7 @@ def test_sync_catalog_resets_removed_mimo_v25_pro_default(tmp_path, monkeypatch)
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
 
     # r1244/r1560: paid MiMo cloud ids pruned; stale defaults reset to dialogue local.
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
     assert "mimo-v2.5-pro" not in (rec.get("attached_models") or [])
 
 
@@ -220,7 +224,7 @@ def test_sanitize_migrates_deleted_qwen35_tag_to_qwenpaw(tmp_path):
     legacy = "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k:latest"
     cap.record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", legacy, "krishairnd/Gemma-4-Uncensored:latest"],
+        ["mimo-auto", legacy, "AliceG4U:latest"],
         default_attached=legacy,
         source="owner_deleted_qwen35",
         state_dir=tmp_path,
@@ -234,13 +238,13 @@ def test_sanitize_migrates_deleted_qwen35_tag_to_qwenpaw(tmp_path):
 def test_attached_models_for_cortex_sanitizes_non_dialogue_mimo_default_on_read(tmp_path):
     cap.record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", "krishairnd/Gemma-4-Uncensored:latest", cap._MIMO_LOCAL_QWEN35_MT],
+        ["mimo-auto", "AliceG4U:latest", cap._MIMO_LOCAL_QWEN35_MT],
         default_attached=cap._MIMO_LOCAL_QWEN35_MT,
         source="stale_translation_default",
         state_dir=tmp_path,
     )
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
     assert rec.get("source") == "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
 
 
@@ -250,7 +254,7 @@ def test_attached_models_for_cortex_sanitizes_diffusion_mimo_default_on_read(tmp
     diffusion = "diffusion:diffusiongemma-26b"
     cap.record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", "krishairnd/Gemma-4-Uncensored:latest", diffusion],
+        ["mimo-auto", "AliceG4U:latest", diffusion],
         default_attached=diffusion,
         source="stale_diffusion_default",
         state_dir=tmp_path,
@@ -259,7 +263,7 @@ def test_attached_models_for_cortex_sanitizes_diffusion_mimo_default_on_read(tmp
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
 
     assert diffusion not in (rec.get("attached_models") or [])
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
     assert rec.get("source") == "owner_pruned_removed_mimo_v25_pro_default_2026-06-17"
     # Still marked non-dialogue if someone tries to bind it elsewhere.
     assert cap.is_mimo_non_dialogue_attached_default(diffusion)
@@ -270,7 +274,7 @@ def test_settings_refuses_diffusion_mimo_attached_default(tmp_path):
     diffusion = "diffusion:diffusiongemma-26b"
     cap.record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", "krishairnd/Gemma-4-Uncensored:latest"],
+        ["mimo-auto", "AliceG4U:latest"],
         default_attached="mimo-auto",
         source="settings_test_seed",
         state_dir=tmp_path,
@@ -292,14 +296,14 @@ def test_settings_refuses_diffusion_mimo_attached_default(tmp_path):
 def test_attached_models_for_cortex_sanitizes_stale_mimo_default_on_read(tmp_path):
     cap.record_attached_models(
         "mimo:mimo-cli-default",
-        ["mimo-auto", "krishairnd/Gemma-4-Uncensored:latest"],
+        ["mimo-auto", "AliceG4U:latest"],
         default_attached="mimo-v2.5-pro",
         source="stale_binding",
         state_dir=tmp_path,
     )
     rec = cap.attached_models_for_cortex("mimo:mimo-cli-default", state_dir=tmp_path)
     # r1244/r1560: stale removed default sanitized on read -> dialogue local model
-    assert rec.get("default_attached") == cap._MIMO_DEFAULT_ATTACHED
+    assert str(rec.get("default_attached") or "").removesuffix(":latest") == cap._MIMO_DEFAULT_ATTACHED
 
 
 if __name__ == "__main__":

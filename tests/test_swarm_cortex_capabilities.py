@@ -3,6 +3,23 @@ from __future__ import annotations
 import json
 
 
+def test_invalidates_cached_capabilities_for_one_model_or_all(monkeypatch):
+    from System import swarm_cortex_capabilities as cap
+
+    cap._CAPABILITY_CACHE.clear()
+    cap._CAPABILITY_CACHE.update({
+        "text-only": (9999999999.0, frozenset({"completion"})),
+        "vision": (9999999999.0, frozenset({"completion", "vision"})),
+    })
+
+    cap.invalidate_cortex_capability_cache("text-only")
+    assert "text-only" not in cap._CAPABILITY_CACHE
+    assert "vision" in cap._CAPABILITY_CACHE
+
+    cap.invalidate_cortex_capability_cache()
+    assert cap._CAPABILITY_CACHE == {}
+
+
 def test_selects_local_native_vision_cortex(monkeypatch, tmp_path):
     from System import swarm_cortex_capabilities as cap
 

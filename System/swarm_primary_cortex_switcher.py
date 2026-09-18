@@ -25,6 +25,7 @@ from System.sifta_inference_defaults import (
     CANONICAL_OLLAMA_FALLBACK,
     CANONICAL_OLLAMA_LORA_CANDIDATE,
     CANONICAL_OLLAMA_LOW_RAM,
+    CANONICAL_LMSTUDIO_BONSAI,
     resolve_ollama_model,
     set_default_ollama_model,
     set_app_ollama_model,
@@ -48,6 +49,7 @@ PREFERRED_PRIMARY_CORTICES: tuple[str, ...] = (
     CANONICAL_OLLAMA_DEFAULT,
     CANONICAL_OLLAMA_LOW_RAM,
     CANONICAL_OLLAMA_FALLBACK,
+    CANONICAL_LMSTUDIO_BONSAI,
 )
 
 
@@ -209,6 +211,17 @@ def primary_cortex_options(
 
     for name in hints:
         installed_match = next((x for x in installed_names if _same_model(name, x)), "")
+        # LM Studio has a separate model store, so it cannot appear in the
+        # Ollama inventory. Probe only this tagged family before marking it
+        # selectable in the Cortex picker.
+        if not installed_match and str(name).lower().startswith("lmstudio:"):
+            try:
+                from System.lmstudio_cortex import model_available
+
+                if model_available(name):
+                    installed_match = name
+            except Exception:
+                installed_match = ""
         selectable = bool(installed_match)
         model_name = installed_match or name
         label = model_name
@@ -249,6 +262,8 @@ def _provider_for_model(model: str) -> str:
         return "cloud_bridge"
     if low.startswith(("mlx-vlm:", "mlx:")):
         return "mlx_local"
+    if low.startswith("lmstudio:"):
+        return "lmstudio_local"
     return "ollama"
 
 
@@ -307,6 +322,13 @@ def set_primary_cortex(
         row["name"] for row in installed_ollama_models()
     ]
     installed_match = next((x for x in installed_names if _same_model(model, x)), "")
+    if not installed_match and model.lower().startswith("lmstudio:"):
+        try:
+            from System.lmstudio_cortex import model_available
+            if model_available(model):
+                installed_match = model
+        except Exception:
+            installed_match = ""
     if not installed_match:
         raise ValueError(f"primary cortex is not installed in Ollama: {model}")
     try:
@@ -434,6 +456,13 @@ def current_primary_cortex_truth(
         row["name"] for row in installed_ollama_models()
     ]
     installed_active = any(_same_model(active, x) for x in installed_names)
+    if not installed_active and str(active).lower().startswith("lmstudio:"):
+        try:
+            from System.lmstudio_cortex import model_available
+
+            installed_active = model_available(active)
+        except Exception:
+            installed_active = False
     return {
         "active_model": active,
         "installed": installed_active,

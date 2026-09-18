@@ -102,6 +102,47 @@ CLOUD_VISION_NEEDLES = (
 # model in the live TS config. This flag tracks builtins.ts defaultModelId — flip to False if
 # the default Cline model is ever set back to a text-only one.
 CLINE_DEFAULT_VISION_CAPABLE = True
+_CAPABILITY_CACHE: dict[str, tuple[float, frozenset[str] | None]] = {}
+
+
+def invalidate_cortex_capability_cache(model: str | None = None) -> None:
+    """Forget cached Ollama capability metadata after a cortex switch.
+
+    Ollama model metadata can change while the SIFTA process remains alive, and
+    a model switch must not let a previous capability decision survive into the
+    next image turn.
+    """
+    if model is None:
+        _CAPABILITY_CACHE.clear()
+        return
+    _CAPABILITY_CACHE.pop(str(model or "").removeprefix("ollama:").strip(), None)
+
+
+def _ollama_capabilities(model: str) -> frozenset[str] | None:
+    """Use installed model metadata before name heuristics; unknown is not text-only."""
+    name = str(model or "").removeprefix("ollama:").strip()
+    if not name or name.startswith(("gemini:", "grok:", "codex:", "claude:", "cline:",
+                                    "mimo:", "qwen:", "mlx:", "mlx-vlm:")):
+        return None
+    cached = _CAPABILITY_CACHE.get(name)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    capabilities = None
+    try:
+        request = urllib.request.Request(
+            "http://127.0.0.1:11434/api/show", data=json.dumps({"model": name}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=0.6) as response:
+            value = json.loads(response.read()).get("capabilities")
+        if isinstance(value, list):
+            capabilities = frozenset(str(item).lower() for item in value)
+    except Exception:
+        pass
+    if len(_CAPABILITY_CACHE) > 128:
+        _CAPABILITY_CACHE.clear()
+    _CAPABILITY_CACHE[name] = (time.monotonic() + (60 if capabilities is not None else 10), capabilities)
+    return capabilities
 
 
 def _state_dir(state_dir: str | Path | None = None) -> Path:
@@ -161,6 +202,9 @@ def is_vision_capable_model(model: str, *, require_native_image_payload: bool = 
     low = str(model or "").strip().lower()
     if not low:
         return False
+    capabilities = _ollama_capabilities(model)
+    if capabilities is not None:
+        return "vision" in capabilities
     local = any(needle in low for needle in LOCAL_VISION_NEEDLES)
     cloud = any(needle in low for needle in CLOUD_VISION_NEEDLES)
     gemini = low.startswith(("gemini:", "gemini-"))
@@ -209,8 +253,11 @@ def _rank_native_image_models(models: list[str]) -> list[str]:
 
 
 def _capability_row(model: str) -> dict[str, Any]:
+    capabilities = _ollama_capabilities(model)
     return {
         "model": model,
+        "capability_source": "ollama_api_show" if capabilities is not None else "configured_name_hint",
+        "reported_capabilities": sorted(capabilities) if capabilities is not None else [],
         "vision_capable": is_vision_capable_model(model),
         "native_image_payload": is_vision_capable_model(model, require_native_image_payload=True),
     }
@@ -365,13 +412,26 @@ def _resolve_mimo_default_attached(
     *,
     catalog: tuple[str, ...] | None = None,
 ) -> str:
-    """Keep owner-selected defaults only when they remain safe MiMo dialogue defaults."""
+    """Keep owner-selected defaults only when they remain safe MiMo dialogue defaults.
+
+    2026-09-18: a bare stored default (e.g. "AliceG4U") resolves to its live
+    Ollama tag ("AliceG4U:latest") when that is what the picker carries.
+    """
     cur = str(current or "").strip()
     if is_mimo_non_dialogue_attached_default(cur):
         return _MIMO_DEFAULT_ATTACHED
-    allowed = set(catalog if catalog is not None else _MIMO_ATTACHABLE_VIA_UPSTREAM)
+    allowed = list(catalog if catalog is not None else _MIMO_ATTACHABLE_VIA_UPSTREAM)
     if cur in allowed:
         return cur
+    low = cur.lower()
+    for item in allowed:
+        item_low = str(item).lower()
+        if item_low_ok := (item_low == low or item_low == f"{low}:latest"):
+            return item
+    # Bare stored default ("AliceG4U") matches its live Ollama tag form.
+    for item in allowed:
+        if str(item).lower().startswith(low) and low:
+            return item
     return _MIMO_DEFAULT_ATTACHED
 
 
@@ -380,27 +440,62 @@ def _migrate_legacy_local_ollama_id(model_id: str) -> str:
     return _MIMO_LEGACY_LOCAL_OLLAMA_ALIASES.get(mid, mid)
 
 
+# 2026-09-18 owner renames: every old cortex tag resolves to AliceG4U so
+# existing receipts/picker rows keep working without per-row edits.
+_LEGACY_LOCAL_CORTEX_ALIASES: dict[str, str] = {
+    "krishairnd/g4u": "AliceG4U",
+    "krishairnd/g4u:latest": "AliceG4U",
+    "krishairnd/gemma-4-uncensored": "AliceG4U",
+    "krishairnd/gemma-4-uncensored:latest": "AliceG4U",
+    "alice-m5-cortex-8b-6.3gb": "AliceG4U",
+    "alice-m5-cortex-8b-6.3gb:latest": "AliceG4U",
+    "alice-gemma4-e2b-cortex-5.1b-4.4gb": "AliceG4U",
+    "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest": "AliceG4U",
+    "alice-m1-cortex-4.5b-3.4gb": "AliceG4U",
+    "alice-m1-cortex-4.5b-3.4gb:latest": "AliceG4U",
+    "alice-extra-cortex-25.8b-17gb": "AliceG4U",
+    "alice-extra-cortex-25.8b-17gb:latest": "AliceG4U",
+}
+
+
 def _migrate_legacy_mimo_attached_id(model_id: str) -> str:
     """Rewrite pruned MiMo attached rows to the current owner catalog."""
+    raw = str(model_id or "").strip()
+    if raw.lower() in _LEGACY_LOCAL_CORTEX_ALIASES:
+        return _LEGACY_LOCAL_CORTEX_ALIASES[raw.lower()]
     mid = _migrate_legacy_local_ollama_id(model_id)
+    if str(mid or "").strip().lower() in _LEGACY_LOCAL_CORTEX_ALIASES:
+        return _LEGACY_LOCAL_CORTEX_ALIASES[str(mid).strip().lower()]
     if mid == "mimo-v2.5-pro-ultraspeed":
         return FIREWORKS_KIMI_K2P6_MODEL
     return mid
 
 
 def _sanitize_mimo_attached_record(rec: dict[str, Any]) -> dict[str, Any]:
-    """Drop pruned MiMo cloud ids and fix stale defaults on read."""
+    """Drop pruned MiMo cloud ids and fix stale defaults on read.
+
+    2026-09-18: the allow-list also accepts whatever the live Ollama probe
+    returns, so renamed/new local tags (e.g. AliceG4U) survive sanitising
+    instead of being dropped against a frozen catalog tuple.
+    """
     out = dict(rec)
-    models = [
+    allowed = set(_MIMO_ATTACHABLE_VIA_UPSTREAM) | set(_live_ollama_tag_set())
+    migrated_models = [
         _migrate_legacy_mimo_attached_id(str(mid))
         for mid in (out.get("attached_models") or [])
-        if _migrate_legacy_mimo_attached_id(str(mid)) in _MIMO_ATTACHABLE_VIA_UPSTREAM
+        if _migrate_legacy_mimo_attached_id(str(mid)) in allowed
     ]
-    if not models:
-        models = list(_MIMO_ATTACHABLE_VIA_UPSTREAM)
-    out["attached_models"] = models
+    if not migrated_models:
+        migrated_models = list(_MIMO_ATTACHABLE_VIA_UPSTREAM)
+    out["attached_models"] = migrated_models
     raw_default = _migrate_legacy_mimo_attached_id(str(out.get("default_attached") or ""))
-    resolved = _resolve_mimo_default_attached(raw_default)
+    # 2026-09-18: resolve the stored default against the SANITIZED picker list,
+    # so a deleted legacy default lands on its migrated successor (qwen35 ->
+    # qwenpaw) or on the dialogue-safe local default — never back on the dead
+    # tag itself.
+    resolved = _resolve_mimo_default_attached(raw_default, catalog=tuple(migrated_models))
+    if resolved == raw_default and raw_default not in migrated_models:
+        resolved = _resolve_mimo_default_attached(_MIMO_DEFAULT_ATTACHED, catalog=tuple(migrated_models))
     out["default_attached"] = resolved
     default_label = attached_model_label(resolved)
     if default_label != resolved:
@@ -528,7 +623,7 @@ _MIMO_LOCAL_GEMMA26_OLLAMA = "justingtzk/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL_
 _MIMO_LOCAL_ORNITH_9B = "ornith-1.5:9b"
 _MIMO_LOCAL_ORNITH_9B_Q8 = "baytout3/Ornith-1.0-9B-uncensored-GGUF:Q8_0"
 _MIMO_LOCAL_ULTRAGEMMA4_12B = "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0"
-_MIMO_LOCAL_KRISHA = "krishairnd/Gemma-4-Uncensored:latest"
+_MIMO_LOCAL_KRISHA = "AliceG4U"  # 2026-09-18: renamed krishairnd/Gemma-4-Uncensored -> AliceG4U (owner; bare tag in code, :latest display-only)
 _MIMO_LOCAL_QWENPAW_9B = "sifta-qwenpaw-coder:latest"
 _MIMO_LOCAL_QWEN36_NIGHTSHIFT_27B = (
     "jikepjikep_16HEX/qwen3.6-27b-nightshift-heretic-uncensored-q4:latest"
@@ -601,11 +696,21 @@ _MIMO_ATTACHABLE_VIA_UPSTREAM: tuple[str, ...] = (
 
 
 def _live_ollama_tag_set() -> set[str]:
-    """Installed Ollama tags (best-effort). Empty set if daemon unavailable."""
+    """Installed Ollama tags (best-effort). Empty set if daemon unavailable.
+
+    2026-09-18: force a fresh probe. The shared 30s tag cache in
+    sifta_inference_defaults could be primed by a faked response elsewhere in
+    the same process, which silently dropped renamed/current tags from the
+    picker and the sync catalog.
+    """
     try:
         from System.sifta_inference_defaults import probe_installed_ollama_tags
 
-        return {str(t).strip() for t in (probe_installed_ollama_tags() or ()) if str(t).strip()}
+        return {
+            str(t).strip()
+            for t in (probe_installed_ollama_tags(force=True) or ())
+            if str(t).strip()
+        }
     except Exception:
         return set()
 
@@ -633,6 +738,7 @@ def mimo_local_ollama_models_for_picker() -> list[str]:
                 "ornith",
                 "ultragemma",
                 "gemma-4-uncensored",
+                "aliceg4u",  # 2026-09-18: renamed default local cortex
             )
         ):
             out.append(tag)
@@ -698,7 +804,10 @@ _ATTACHED_MODEL_LABELS: dict[str, str] = {
     "mimo-v2.5": "MiMo-V2.5",
     FIREWORKS_KIMI_K2P6_MODEL: "Kimi K2.6 (fireworks-api kimi-k2p6)",
     "mimo-auto": "MiMo Auto (free)",
-    _MIMO_LOCAL_KRISHA: "krisha-g4u (local Ollama)",
+    # 2026-09-18: renamed from krishairnd/Gemma-4-Uncensored. Bare tag in code;
+    # Ollama shows the ":latest" suffix, so both spellings carry the label.
+    "AliceG4U": "AliceG4U (local Ollama)",
+    "AliceG4U:latest": "AliceG4U (local Ollama)",
     _MIMO_LOCAL_ORNITH_9B: "Ornith 1.5 9B (local Ollama)",
     _MIMO_LOCAL_ORNITH_9B_Q8: "Ornith 1.0 9B Q8 uncensored (local Ollama)",
     _MIMO_LOCAL_ULTRAGEMMA4_12B: "UltraGemma4 12B heretic (local Ollama)",
@@ -931,7 +1040,9 @@ def sync_cortex_attached_models_catalog(
     # If preserved default was deleted from ollama, fall back to krisha/catalog default.
     if mimo_preserved_default not in mimo_models and mimo_preserved_default not in _MIMO_OWNER_KEPT_ATTACHABLE_MODELS:
         if mimo_preserved_default not in _MIMO_NATIVE_MODELS and mimo_preserved_default not in _MIMO_FIREWORKS_ATTACHABLE_MODELS:
-            mimo_preserved_default = _resolve_mimo_default_attached(_MIMO_DEFAULT_ATTACHED)
+            mimo_preserved_default = _resolve_mimo_default_attached(
+                _MIMO_DEFAULT_ATTACHED, catalog=tuple(mimo_models)
+            )
             mimo_source = "owner_live_ollama_pruned_stale_default_2026-07-11"
     record_attached_models(
         _MIMO_CORTEX_ID,

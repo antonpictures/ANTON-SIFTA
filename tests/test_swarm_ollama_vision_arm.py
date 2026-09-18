@@ -47,10 +47,52 @@ def test_describe_no_local_model_is_honest_failure(tmp_path):
                         "empty_local_vision_reply"}
 
 
+def test_heic_transport_is_normalized_before_ollama(monkeypatch, tmp_path):
+    img = tmp_path / "IMG_4314.HEIC"
+    img.write_bytes(b"source-heic")
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+        def read(self):
+            return b'{"response":"food on a plate"}'
+
+    def fake_normalize(path):
+        calls.append(str(path))
+        return type("Normalized", (), {"data": b"\\xff\\xd8\\xffjpeg"})()
+
+    monkeypatch.setattr(ov, "pick_local_vision_model", lambda **kwargs: "minicpm-v:latest")
+    monkeypatch.setattr(ov, "normalize_image_attachment", fake_normalize, raising=False)
+    monkeypatch.setattr(ov.urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse())
+    result = ov.describe_image_local(str(img), "describe", model="minicpm-v:latest")
+    assert result.ok is True
+    assert calls == [str(img)]
+
+
 def test_result_shape_matches_agent_arm_contract():
     r = ov.LocalVisionResult(ok=True, output="a woman", model="llava:13b")
     assert hasattr(r, "ok") and hasattr(r, "output")  # describe_current_photo reads these
     assert r.ok is True and r.output == "a woman"
+
+
+def test_result_can_be_wrapped_as_scoped_visual_evidence():
+    r = ov.LocalVisionResult(
+        ok=True,
+        output="a woman is visible",
+        status="ok",
+        model="minicpm-v:latest",
+        generation_id="generation-1",
+        image_sha256="source-hash",
+        transport_sha256="jpeg-hash",
+    )
+    evidence = r.to_evidence("describe the attached image", scope="talk:owner")
+    assert evidence.generation_id == "generation-1"
+    assert evidence.scope == "talk:owner"
+    assert evidence.image_sha256 == "source-hash"
+    assert "a woman is visible" in evidence.prompt_block()
 
 
 def test_capability_wiring_keeps_local_eye_selected():

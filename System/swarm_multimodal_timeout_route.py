@@ -49,6 +49,20 @@ def is_risky_multimodal_text_mind(model: str) -> bool:
     mid = str(model or "").strip()
     if not mid:
         return False
+
+    # Ollama's model metadata is the strongest local fact.  Do not let a stale
+    # name heuristic override a model that currently advertises native vision,
+    # or force a slow image request onto a model that explicitly reports text
+    # only.  Fall back to the historical name rules only when /api/show is
+    # unavailable or has no capability list.
+    try:
+        from System.swarm_cortex_capabilities import _ollama_capabilities
+
+        capabilities = _ollama_capabilities(mid)
+        if capabilities is not None:
+            return "vision" not in capabilities
+    except Exception:
+        pass
     if _VISION_HINT_RE.search(mid) and "uncensored" not in mid.lower():
         # alice-m5 / qwopus style — keep as vision-capable
         return False

@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(autouse=True)
+def no_native_location_requests(monkeypatch):
+    monkeypatch.setattr("System.swarm_gps_sensor.request_location_refresh", lambda: False)
+    monkeypatch.setattr("System.swarm_gps_sensor.read_location_snapshot", lambda **kw: {"status": "UNAVAILABLE"})
 
 
 class _OllamaStreamResponse:
@@ -315,7 +322,8 @@ def test_ollama_failover_reports_failed_receipt_when_all_candidates_empty(monkey
     assert row["model"] == worker._model
     assert row["model"] in failed[0]
     assert row["context_chars"] >= len("Alice, can you hear me?")
-    assert row["context_messages"] == 1
+    assert row["context_messages"] == 2  # User turn plus fresh clock/system context.
+    assert "LIVE CLOCK AT DISPATCH" in worker._history[0]["content"]
     assert row["finish_reason"] == "stop"
 
 
@@ -365,13 +373,13 @@ def test_web_complete_answer_uses_visible_budget_and_records_length(monkeypatch,
     assert worker.last_finish_reason == "STOP"
 
 
-def test_web_turn_has_one_canonical_log_owner_and_skips_its_own_mirror():
+def test_web_turn_has_one_canonical_writer_and_session_isolated_dispatch():
     import inspect
 
     from Applications import sifta_talk_to_alice_widget as talk
 
     handler_source = inspect.getsource(talk.TalkToAliceWidget._handle_web_turn)
-    poll_source = inspect.getsource(talk.TalkToAliceWidget._poll_global_chat_ledger)
     assert "_log_turn(" not in handler_source
-    assert "_web_local_turn_ids" in handler_source
-    assert "_web_local_turn_ids" in poll_source
+    assert "_PublicWebWorker" in handler_source
+    assert "self._history" not in handler_source
+    assert "self._start_brain" not in handler_source

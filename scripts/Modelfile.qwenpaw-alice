@@ -1,0 +1,5 @@
+FROM satgeze/qwenpaw-9b-heretic-1m:latest
+
+PARAMETER num_ctx 16384
+PARAMETER num_predict 8192
+PARAMETER temperature 0.2

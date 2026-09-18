@@ -97,3 +97,62 @@ def test_image_redirect_is_conservative_for_unknown_or_missing_vlm():
     assert unknown["redirect"] is False
     assert missing["redirect"] is False
     assert "NO VLM available" in missing["reason"]
+
+
+def test_default_vlm_discovery_includes_installed_local_ollama_eye(monkeypatch):
+    from System import swarm_body_multimodal_policy as policy
+    monkeypatch.setattr(
+        "System.swarm_ollama_vision_arm.pick_local_vision_model",
+        lambda: "hf.co/huihui-ai/Huihui-MiniCPM-V-4_5-abliterated:Q4_K_M",
+    )
+    vlms = policy._default_vlms()
+    assert "hf.co/huihui-ai/Huihui-MiniCPM-V-4_5-abliterated:Q4_K_M" in vlms
+    row = policy.image_turn_vlm_redirect(
+        "ater vin2011/Aries:latest", True, available_vlms=vlms,
+    )
+    assert row["redirect"] is False  # unknown model remains conservative
+    assert row["capability"] == "unknown"
+    assert "unknown" in row["reason"]
+
+    row = policy.image_turn_vlm_redirect(
+        "ornith-1.5:9b", True, available_vlms=vlms,
+    )
+    assert row["redirect"] is True
+    assert "MiniCPM" in row["to"]
+
+
+def test_redirect_respects_first_owner_selected_eye_without_osm_override():
+    row = image_turn_vlm_redirect(
+        "ornith-1.5:9b",
+        True,
+        available_vlms=["hf.co/huihui-ai/Huihui-MiniCPM-V-4_5-abliterated:Q4_K_M", "mlx-vlm:osmQwopus"],
+    )
+    assert row["redirect"] is True
+    assert row["to"].startswith("hf.co/huihui-ai/Huihui-MiniCPM")
+
+
+def test_live_text_only_capability_routes_unknown_named_cortex(monkeypatch):
+    from System import swarm_body_multimodal_policy as policy
+    from System import swarm_cortex_capabilities as capabilities
+    monkeypatch.setattr(
+        capabilities, "_ollama_capabilities", lambda model: frozenset({"completion"}),
+    )
+    row = policy.image_turn_vlm_redirect(
+        "atervin2011/Aries:latest", True, available_vlms=["minicpm-v:latest"],
+    )
+    assert row["redirect"] is True
+    assert row["to"] == "minicpm-v:latest"
+
+
+def test_live_capability_metadata_overrides_model_name(monkeypatch):
+    from System import swarm_body_multimodal_policy as policy
+    from System import swarm_cortex_capabilities as capabilities
+
+    monkeypatch.setattr(
+        capabilities, "_ollama_capabilities", lambda model: frozenset({"completion", "vision"}),
+    )
+    row = policy.image_turn_vlm_redirect(
+        "gemma:2b", True, available_vlms=["minicpm-v:latest"],
+    )
+    assert row["redirect"] is False
+    assert row["capability"] == "known_vision"

@@ -212,7 +212,12 @@ def _when(ts: float) -> str:
 def _row_provenance(row: Mapping[str, Any], source_ledger: str) -> str:
     """Classify who supplied a row before it can become owner-life evidence."""
     if source_ledger == "alice_conversation.jsonl":
-        payload = row.get("payload") if isinstance(row.get("payload"), Mapping) else {}
+        payload = row.get("payload") if isinstance(row.get("payload"), Mapping) else row
+        metadata = payload.get("routing_metadata") or {}
+        if isinstance(metadata, Mapping) and (
+            metadata.get("surface") == "web_global_chat" or metadata.get("owner_authority") is False
+        ):
+            return "PUBLIC_VISITOR_CONTEXT"
         return "OWNER_DIRECT" if str(payload.get("role") or "").lower() == "user" else "ALICE_GENERATED"
     if source_ledger == "alice_first_person_journal.jsonl":
         source = str(row.get("source") or "").lower()

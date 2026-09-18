@@ -26,6 +26,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 import hashlib
 import json
+import math
 from pathlib import Path
 import time
 from typing import Any, Iterable, Mapping, Optional, Sequence
@@ -395,12 +396,15 @@ def write_observation(
     *,
     path: Path | str = DEFAULT_OBSERVATION_LEDGER,
     writer: str = "unknown",
+    metadata: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Append one observation row. Append-only; no lane rewrites another."""
+    """Append one observation row plus bounded derived metadata."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     row = observation.to_row()
     row["writer"] = str(writer)
+    if metadata:
+        row["derived_metadata"] = dict(metadata)
     with target.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     return row
@@ -614,7 +618,143 @@ def proof_of_property() -> dict[str, bool]:
     }
 
 
+@dataclass(frozen=True)
+class FieldAssertion:
+    """Derived assertion backed by existing observations; timestamps are server UTC.
+
+    Scope and correction authorization come from adapters, never model prose.
+    Coordinate frames must include their map/session identity when applicable.
+    This projection has no persistence or action authority of its own.
+    """
+
+    assertion_id: str
+    node: str
+    session_id: str
+    subject: str
+    predicate: str
+    value: str
+    evidence_ids: tuple[str, ...]
+    valid_from: float
+    valid_until: float
+    coordinate_frame: str = "unknown"
+    confidence: float = 0.0
+    kind: str = "interpretation"
+
+    def __post_init__(self) -> None:
+        required = (self.assertion_id, self.node, self.subject, self.predicate,
+                    self.value, self.coordinate_frame)
+        if any(not isinstance(x, str) or not x.strip() for x in required):
+            raise ValueError("assertion identity, relation and value must be nonempty strings")
+        if not isinstance(self.session_id, str):
+            raise ValueError("session_id must be a string")
+        if self.kind not in {"interpretation", "reported"}:
+            raise ValueError("assertion kind must be interpretation or reported")
+        start, end = float(self.valid_from), float(self.valid_until)
+        if not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
+            raise ValueError("finite increasing server UTC validity interval required")
+        if isinstance(self.evidence_ids, str) or not self.evidence_ids:
+            raise ValueError("explicit observation evidence IDs required")
+        if any(not isinstance(x, str) or not x for x in self.evidence_ids):
+            raise ValueError("invalid evidence ID")
+        object.__setattr__(self, "evidence_ids", tuple(sorted(set(self.evidence_ids))))
+        object.__setattr__(self, "valid_from", start)
+        object.__setattr__(self, "valid_until", end)
+        object.__setattr__(self, "confidence", clamp01(self.confidence))
+
+
+def project_field_assertions(
+    observations: Iterable[Observation],
+    assertions: Iterable[FieldAssertion],
+    *,
+    at: float,
+    approved_corrections: Iterable[tuple[str, str, str, str]] = (),
+    max_items: int = 512,
+) -> dict[str, Any]:
+    """Order-independent belief revision over a bounded, caller-scoped window.
+
+    Corrections are (node, replacement ID, target ID, authorization receipt ID).
+    Callers must authenticate them upstream. This function only checks their
+    consistency; it cannot verify signatures. It retains conflict alternatives,
+    caps confidence by supporting evidence, and never elects truth by popularity.
+    """
+    at = float(at)
+    if not math.isfinite(at) or at < 0 or not 1 <= max_items <= 4096:
+        raise ValueError("finite server time and bounded item limit required")
+
+    def bounded(items):
+        result = []
+        for item in items:
+            if len(result) >= max_items:
+                raise ValueError("field projection capacity exceeded; partition the window")
+            result.append(item)
+        return result
+
+    def unique(items, key):
+        values, collisions = {}, set()
+        for item in bounded(items):
+            identity = key(item)
+            if identity in values and values[identity] != item:
+                collisions.add(identity)
+            values[identity] = item
+        return {k: v for k, v in values.items() if k not in collisions}, collisions
+
+    evidence, evidence_collisions = unique(observations, lambda x: (x.node, x.event_id))
+    claims, claim_collisions = unique(assertions, lambda x: (x.node, x.assertion_id))
+    diagnostics = ["evidence_id_collision:" + json.dumps(k) for k in evidence_collisions]
+    diagnostics += ["assertion_id_collision:" + json.dumps(k) for k in claim_collisions]
+    eligible = {}
+
+    def slot(c):
+        return (c.node, c.session_id, c.coordinate_frame, c.subject, c.predicate)
+
+    for key, claim in claims.items():
+        supports = [evidence.get((claim.node, eid)) for eid in claim.evidence_ids]
+        if not all(o is not None and o.web_session_id == claim.session_id
+                   and math.isfinite(o.ts) and 0 <= o.ts <= at for o in supports):
+            diagnostics.append("missing_or_mismatched_evidence:" + json.dumps(key))
+            continue
+        if claim.valid_from > at:
+            diagnostics.append("future_assertion:" + json.dumps(key))
+            continue
+        eligible[key] = (claim, min(claim.confidence, *(o.confidence for o in supports)))
+
+    superseded, corrections = set(), set()
+    for node, replacement_id, target_id, receipt_id in bounded(approved_corrections):
+        if not all(isinstance(x, str) and x for x in (node, replacement_id, target_id, receipt_id)):
+            raise ValueError("correction IDs and authorization receipt required")
+        replacement = eligible.get((node, replacement_id))
+        target_key = (node, target_id)
+        target = eligible.get(target_key)
+        if (replacement and target and slot(replacement[0]) == slot(target[0])
+                and target[0].kind == "interpretation"
+                and replacement[0].valid_from > target[0].valid_from):
+            superseded.add(target_key)
+            corrections.add((node, replacement_id, target_id, receipt_id))
+        else:
+            diagnostics.append("unapplied_correction:" + json.dumps((node, replacement_id, target_id)))
+
+    groups, history = {}, []
+    for key, (claim, confidence) in sorted(eligible.items()):
+        state = "superseded" if key in superseded else (
+            "expired" if at >= claim.valid_until else "active")
+        row = asdict(claim)
+        row.update(state=state, confidence=confidence)
+        history.append(row)
+        if state == "active":
+            groups.setdefault(slot(claim), []).append(row)
+    beliefs = []
+    for identity, alternatives in sorted(groups.items()):
+        values = sorted({c["value"] for c in alternatives})
+        beliefs.append({"scope": identity, "status": "conflict" if len(values) > 1 else "supported",
+                        "values": values, "assertions": alternatives})
+    return {"schema": "SIFTA_FIELD_ASSERTION_PROJECTION_V1", "at": at,
+            "beliefs": beliefs, "history": history, "corrections": sorted(corrections),
+            "diagnostics": sorted(set(diagnostics)), "action_authority": "none"}
+
+
 __all__ = [
+    "FieldAssertion",
+    "project_field_assertions",
     "AUTHORITY_RANK",
     "Authority",
     "DEFAULT_OBSERVATION_LEDGER",

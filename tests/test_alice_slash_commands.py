@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -11,6 +12,20 @@ from System import swarm_alice_slash_commands as slash
 
 
 TAGS = ["alice-m5-cortex-8b", "heretic", "gemini-2.5-pro", "cline"]
+
+
+@pytest.fixture(autouse=True)
+def no_live_harness_writes(monkeypatch):
+    monkeypatch.setattr("System.swarm_ollama_harness_sync.sync_local_ollama_harness",
+                        lambda **kw: {"ok": True, "model_count": 2, "sizes_gb": {}})
+
+
+def test_refresh_works_from_cloud_cortex(tmp_path, monkeypatch):
+    monkeypatch.setattr(slash, "_installed_owner_ollama_models", lambda: ["new-model:latest"])
+    result, calls = _run("/cortex llm refresh", tmp_path, current="gemini-2.5-pro")
+    assert "new-model:latest" in result["reply"]
+    assert "registry refreshed" in result["reply"]
+    assert calls == []
 
 
 def _run(text: str, tmp_path: Path, *, current: str = "alice-m5-cortex-8b", hand=None):
@@ -228,6 +243,43 @@ def test_cortex_llm_number_switches_using_stable_local_order(tmp_path, monkeypat
     rows = _diary_rows(tmp_path)
     assert rows[-1]["owner_text"] == "/cortex llm 1"
     assert rows[-1]["to_cortex"] == "ornith-1.5:9b"
+
+
+def test_cortex_llm_refreshes_from_live_ollama_inventory(tmp_path, monkeypatch):
+    from System import swarm_primary_cortex_switcher as switcher
+
+    models = [
+        "krishairnd/Gemma-4-Uncensored:latest",
+        "ornith-1.5:9b",
+        "new-owner-pull:latest",
+    ]
+    monkeypatch.setattr(
+        switcher,
+        "installed_ollama_models",
+        lambda timeout=3.0: [{"name": model} for model in models],
+    )
+    res = slash.handle_slash_command(
+        "/cortex llm",
+        state_dir=tmp_path,
+        current_cortex=models[0],
+        set_cortex_fn=lambda _tag: None,
+    )
+
+    assert res["handled"] and not res["error"]
+    assert "● 2. krishairnd/Gemma-4-Uncensored:latest" in res["reply"]
+    assert "1. ornith-1.5:9b" in res["reply"]
+    assert "3. new-owner-pull:latest" in res["reply"]
+    assert "not installed" not in res["reply"]
+    assert "Other Ollama pulls are not added" not in res["reply"]
+    assert "Switch with /cortex llm <1-3>" in res["reply"]
+
+    refreshed = slash.handle_slash_command(
+        "/cortex llm refresh",
+        state_dir=tmp_path,
+        current_cortex=models[0],
+        set_cortex_fn=lambda _tag: None,
+    )
+    assert refreshed["handled"] and "new-owner-pull:latest" in refreshed["reply"]
 
 
 def test_cortex_llm_lane_r943(tmp_path, monkeypatch):

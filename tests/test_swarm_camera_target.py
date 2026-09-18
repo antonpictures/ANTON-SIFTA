@@ -3,8 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import pytest
 
 from System import swarm_camera_target as target
+
+
+@pytest.fixture(autouse=True)
+def legacy_multi_camera_mode(monkeypatch):
+    # This suite covers the optional multi-camera contract. The default
+    # single-eye/raw-device boundary has its own regression suite.
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
 
 
 def _redirect_paths(monkeypatch, tmp_path):
@@ -108,6 +116,7 @@ def test_write_target_uses_live_identity_over_frozen_name_index(monkeypatch, tmp
 
 
 def test_byte_repr_unique_id_resolves_to_live_device(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.setattr(
         target,
         "_live_devices",
@@ -261,6 +270,7 @@ def test_legacy_bare_iphone_index_falls_back_to_live_macbook(monkeypatch):
 
 
 def test_owner_writer_can_explicitly_select_iphone(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.setattr(target, "_live_devices", lambda: [])
     rec = {
         "name": "iPhone Camera",
@@ -298,6 +308,7 @@ def test_detached_logitech_target_falls_back_to_live_macbook(monkeypatch):
 
 
 def test_owner_locked_detached_usb_target_does_not_open_macbook(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.setattr(
         target,
         "_live_devices",
@@ -314,6 +325,7 @@ def test_owner_locked_detached_usb_target_does_not_open_macbook(monkeypatch):
 
 
 def test_attention_director_detached_usb_target_does_not_open_macbook(monkeypatch):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     monkeypatch.setattr(
         target,
         "_live_devices",
@@ -330,6 +342,7 @@ def test_attention_director_detached_usb_target_does_not_open_macbook(monkeypatc
 
 
 def test_prompt_line_reports_owner_usb_target_not_live(monkeypatch, tmp_path):
+    monkeypatch.setenv("SIFTA_SINGLE_OWNER_EYE", "0")
     _redirect_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(
         target,

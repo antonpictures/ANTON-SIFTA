@@ -2788,6 +2788,26 @@ class MatrixTerminalPane(QPlainTextEdit):
 
     def _chat_ask_alice(self, user_input: str) -> None:
         """Ask Alice-the-organism through the Matrix Terminal channel."""
+        # Matrix Terminal is an owner surface, but it shares the exact command
+        # parser and queue with Talk and the paired web input page.
+        try:
+            from System.swarm_stigmergicode_command import enqueue_task, parse_command
+
+            coding_task = parse_command(user_input)
+        except ValueError as exc:
+            coding_task = None
+            if str(user_input or "").lstrip().lower().startswith("/stigmergicode"):
+                self._append_plain(f"Coding task rejected safely: {exc}\n")
+                return
+        except Exception:
+            coding_task = None
+        if coding_task is not None:
+            row = enqueue_task(coding_task, source="matrix_owner", state_dir=_STATE)
+            self._log_global_terminal_turn("user", user_input, action="stigmergicode_command")
+            self._append_plain(
+                f"Alice > coding tab request queued ({str(row.get('task_id') or '')[:12]}).\n\nSIFTA > "
+            )
+            return
         direct_commands = _matrix_terminal_direct_commands(user_input)
         if direct_commands:
             self._log_global_terminal_turn("user", user_input, action="direct_command")

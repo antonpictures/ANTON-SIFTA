@@ -168,6 +168,11 @@ def latest_present_state(
     latest_owner: dict[str, Any] = {}
     latest_alice: dict[str, Any] = {}
     for row in reversed(conv_rows):
+        metadata = row.get("routing_metadata") or {}
+        if isinstance(metadata, Mapping) and (
+            metadata.get("surface") == "web_global_chat" or metadata.get("owner_authority") is False
+        ):
+            continue
         role = str(row.get("role") or row.get("speaker") or "").casefold()
         if not latest_owner and role in {"user", "owner", "george", "ioan"}:
             latest_owner = row

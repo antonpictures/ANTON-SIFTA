@@ -276,7 +276,7 @@ def test_talk_fallback_ladder_excludes_scout_as_voice_cortex(monkeypatch):
     monkeypatch.setattr(
         mod,
         "normalize_talk_to_alice_model",
-        lambda model: "krishairnd/Gemma-4-Uncensored:latest"
+        lambda model: "krishairnd/G4U:latest"
         if "alice-m5-cortex" in str(model)
         else str(model),
     )
@@ -284,7 +284,7 @@ def test_talk_fallback_ladder_excludes_scout_as_voice_cortex(monkeypatch):
         mod,
         "list_live_local_ollama_fallbacks",
         lambda **_kw: [
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             "kaelri/qwen3.5-mt:2b",
         ],
     )
@@ -293,7 +293,7 @@ def test_talk_fallback_ladder_excludes_scout_as_voice_cortex(monkeypatch):
         "alice-m5-cortex-8b-6.3gb:latest"
     )
 
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "krishairnd/G4U:latest" in candidates
     assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
     assert "alice-Q-m1-scout-2.3b-2.7gb:latest" not in candidates
 
@@ -303,7 +303,7 @@ def test_cloud_selected_cortex_stays_first_on_vision_ladder(monkeypatch):
     monkeypatch.setattr(
         mod,
         "list_live_local_ollama_fallbacks",
-        lambda **_kw: ["krishairnd/Gemma-4-Uncensored:latest"],
+        lambda **_kw: ["krishairnd/G4U:latest"],
     )
 
     candidates = mod._talk_ollama_model_candidates(
@@ -312,7 +312,7 @@ def test_cloud_selected_cortex_stays_first_on_vision_ladder(monkeypatch):
     )
 
     assert candidates[0] == "grok:grok-4.3"
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "krishairnd/G4U:latest" in candidates
     assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
 
 
@@ -326,7 +326,7 @@ def test_mimo_ladder_keeps_bare_mimo_first_without_failure_receipt(monkeypatch, 
         mod,
         "list_live_local_ollama_fallbacks",
         lambda **_kw: [
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             "kaelri/qwen3.5-mt:2b",
         ],
     )
@@ -334,7 +334,7 @@ def test_mimo_ladder_keeps_bare_mimo_first_without_failure_receipt(monkeypatch, 
     candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
 
     assert candidates[0] == "mimo:mimo-cli-default"
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "krishairnd/G4U:latest" in candidates
     assert "alice-m5-cortex-8b-6.3gb:latest" not in candidates
 
 
@@ -351,7 +351,7 @@ def test_mimo_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
         "mimo:mimo-cli-default",
         [
             "mimo-auto",
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             qwen,
         ],
         default_attached=qwen,
@@ -362,7 +362,7 @@ def test_mimo_ladder_runs_attached_local_qwen_first(monkeypatch, tmp_path):
 
     assert candidates[0] == "mimo:mimo-cli-default"
     assert candidates[1] == qwen
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "krishairnd/G4U:latest" in candidates
 
 
 def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_path):
@@ -376,7 +376,7 @@ def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_pa
         "list_live_local_ollama_fallbacks",
         lambda **_kw: [
             "kaelri/qwen3.5-mt:2b",
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced:IQ4_XS",
         ],
     )
@@ -388,7 +388,7 @@ def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_pa
         "mimo:mimo-cli-default",
         [
             "mimo-auto",
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             small,
             big,
         ],
@@ -398,7 +398,7 @@ def test_mimo_ladder_small_attached_does_not_escalate_to_27b(monkeypatch, tmp_pa
 
     candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
 
-    assert candidates[:2] == ["mimo:mimo-cli-default", "krishairnd/Gemma-4-Uncensored:latest"]
+    assert candidates[:2] == ["mimo:mimo-cli-default", "krishairnd/G4U:latest"]
     assert small not in candidates
     assert big not in candidates
 
@@ -417,7 +417,7 @@ def test_mimo_vision_ladder_excludes_text_only_fallbacks(monkeypatch, tmp_path):
         "mimo:mimo-cli-default",
         [
             "mimo-auto",
-            "krishairnd/Gemma-4-Uncensored:latest",
+            "krishairnd/G4U:latest",
             text_only,
             vision,
         ],
@@ -470,9 +470,9 @@ def test_mimo_ladder_deprioritizes_cloud_after_recent_timeout(monkeypatch, tmp_p
     candidates = mod._talk_ollama_model_candidates("mimo:mimo-cli-default")
 
     assert candidates[0] == "mimo:mimo-cli-default"
-    assert "krishairnd/Gemma-4-Uncensored:latest" in candidates
+    assert "krishairnd/G4U:latest" in candidates
     assert candidates.index("mimo:mimo-cli-default") < candidates.index(
-        "krishairnd/Gemma-4-Uncensored:latest"
+        "krishairnd/G4U:latest"
     )
 
 

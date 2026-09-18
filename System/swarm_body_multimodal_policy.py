@@ -59,7 +59,7 @@ _BODY_TASK_RE = re.compile(
 # treated as NOT text-only, so we never strip vision from a real VLM.
 _TEXT_ONLY_MODEL_RE = re.compile(
     r"(heretic|igorls/|qat-q4_0-unquantized|text[\s_-]*only|-text\b|"
-    r"krishairnd/gemma-4-uncensored|ornith:|qwenpaw|nightshift|north-mini-code|"
+    r"krishairnd/gemma-4-uncensored|ornith(?:[-:]|$)|qwenpaw|nightshift|north-mini-code|"
     r"hauhau|ultragemma|baytout3/)",
     re.IGNORECASE,
 )
@@ -85,8 +85,39 @@ def is_text_only_cortex(model: str) -> bool:
     return bool(_TEXT_ONLY_MODEL_RE.search(mid))
 
 
+def _observed_cortex_capability(model: str) -> str:
+    """Return text_only, vision, or unknown using live Ollama metadata when available."""
+    mid = str(model or "")
+    try:
+        from System.swarm_cortex_capabilities import _ollama_capabilities
+        capabilities = _ollama_capabilities(mid)
+        if capabilities is not None:
+            return "vision" if "vision" in capabilities else "text_only"
+    except Exception:
+        pass
+    if is_text_only_cortex(mid):
+        return "text_only"
+    if re.search(
+        r"vision|llava|moondream|qwen-vl|mlx-vlm|qwopus|alice-m5-cortex|gemma",
+        mid, re.I,
+    ):
+        return "vision"
+    return "unknown"
+
+
 def _default_vlms() -> list[str]:
     out: list[str] = []
+    # Local Ollama VLMs are valid image adapters too. Keep this discovery live
+    # so a newly pulled MiniCPM model can be used without editing a hardcoded
+    # list or silently falling back to a paid/cloud eye.
+    try:
+        from System.swarm_ollama_vision_arm import pick_local_vision_model
+
+        local = pick_local_vision_model()
+        if local and local not in out:
+            out.append(local)
+    except Exception:
+        pass
     try:
         from System import swarm_mlx_vlm_brain
 
@@ -115,10 +146,17 @@ def image_turn_vlm_redirect(
     """
     if not has_image:
         return {"redirect": False, "to": None, "reason": "no image in turn"}
-    if not is_text_only_cortex(active_model):
-        return {"redirect": False, "to": None, "reason": "active cortex can see (not text-only)"}
+    capability = _observed_cortex_capability(active_model)
+    if capability != "text_only":
+        reason = "active cortex capability is known vision-capable"
+        if capability == "unknown":
+            reason = "active cortex vision capability unknown; preserve selected cortex and do not fake sight"
+        return {"redirect": False, "to": None, "reason": reason,
+                "capability": "known_vision" if capability == "vision" else "unknown"}
     vlms = list(available_vlms) if available_vlms is not None else _default_vlms()
-    pick = next((v for v in vlms if "osmqwopus" in v.lower()), (vlms[0] if vlms else None))
+    # The picker already applied the owner's exact eye choice and live
+    # inventory. Do not override it with a hardcoded MLX model name.
+    pick = vlms[0] if vlms else None
     if not pick:
         return {"redirect": False, "to": None,
                 "reason": "image on text-only cortex but NO VLM available — honest gap, do not fake sight"}

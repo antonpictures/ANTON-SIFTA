@@ -18,15 +18,16 @@ def test_current_alice_m5_cortex_is_not_text_only():
 
 def test_owner_pulled_gemma4_uncensored_is_8b_ollama_test_alias():
     eval_row = cortex_and_arm_eval()
+    # 2026-09-18: owner renamed the tag to krishairnd/G4U and made it default.
     opt = next(
         c for c in eval_row["cortex_options"]
-        if c["id"] == "krishairnd/Gemma-4-Uncensored:latest"
+        if c["id"] == "krishairnd/G4U:latest"
     )
 
     assert opt["install_target"] == "ollama"
     assert opt["params"] == "8B"
     assert opt["observed_quantization"] == "Q4_K_M"
-    assert opt["duplicate_blob_of"] == "alice-m5-cortex-8b-6.3gb:latest"
+    assert "retired 2026-09-18" in opt["duplicate_blob_of"]
     assert "not Gemma 4 12B" in opt["known_limits"][0]
     assert "not MLX/safetensors and not the 12B" in opt["note"]
 

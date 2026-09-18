@@ -291,6 +291,19 @@ def _we_code_to_be_coded_lines(limit: int = 8) -> List[str]:
     canonical row per proposal family plus score/decision/STGM receipts.
     """
     lines = ["TO BE CODED — sorted organ upgrades (raw backlog kept, clean workbench shown):"]
+    for handoff_name in (
+        "WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md",
+        "WCT_FLASH_CODER_BRIEF_2026-09-18.md",
+        "WCT_CORTEX_VARIABLE_PLAN_2026-09-18.md",
+    ):
+        handoff = REPO / "Documents" / handoff_name
+        if not handoff.is_file():
+            continue
+        try:
+            with handoff.open(encoding="utf-8") as handle:
+                lines.extend(["", handle.read(24000), "", "EXISTING SORTED BACKLOG:"])
+        except OSError:
+            lines.append(f"  Coding handoff unavailable: {handoff.name}")
     clean_path = STATE / "we_code_together_to_be_coded.clean.jsonl"
     source_path = clean_path if clean_path.exists() else STATE / "we_code_together_to_be_coded.jsonl"
     rows = _read_jsonl_tail(source_path, limit=max(limit * 3, limit))
@@ -806,6 +819,8 @@ def _live_coded_content(max_lines: int = 300) -> tuple[str, str]:
 def _live_proof_lines(limit: int = 6) -> List[str]:
     """Human-eye proof strip: newest receipts tied to live coding, not test source."""
     from System.stigmerobotics_life_loop_simulator import life_loop_evidence_lines
+    from System.stigmerobotics_motor_feedback_lab import motor_feedback_evidence_lines
+    from System.swarm_camera_policy import camera_eye_evidence_lines
 
     rows: List[Dict[str, Any]] = []
     for ledger_name in (
@@ -828,7 +843,14 @@ def _live_proof_lines(limit: int = 6) -> List[str]:
             except (json.JSONDecodeError, ValueError):
                 continue
     rows.sort(key=lambda r: float(r.get("ts") or 0), reverse=True)
-    lines = life_loop_evidence_lines(STATE) + ["", "LIVE PROOF — newest receipt rows, not tests:"]
+    lines = (
+        camera_eye_evidence_lines(STATE)
+        + [""]
+        + motor_feedback_evidence_lines(STATE)
+        + [""]
+        + life_loop_evidence_lines(STATE)
+        + ["", "LIVE PROOF — newest receipt rows, not tests:"]
+    )
     if not rows:
         lines.append("  no receipt rows found yet")
         return lines

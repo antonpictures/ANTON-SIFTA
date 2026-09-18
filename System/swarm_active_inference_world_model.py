@@ -514,6 +514,73 @@ def tail_world_model_rows(max_rows: int = 32, *, root: Optional[Path] = None) ->
     return out
 
 
+def evaluate_delayed_prediction(prediction: Dict[str, Any], observed: Dict[str, Any]) -> Dict[str, Any]:
+    """Score a frozen prediction against later numeric evidence without training.
+
+    Adapters persist prediction before seeing observed. evaluation_scope contains
+    authenticated node/device/session, coordinate_frame and metric->unit mappings.
+    Observation values are normalized in those same units. This function checks
+    structure/time consistency; persisted provenance must be verified by callers.
+    It does not establish independence merely from a changed session string.
+    """
+    result = {"schema": "SIFTA_DELAYED_PREDICTION_EVAL_V1", "status": "UNSCORABLE",
+              "prediction_id": prediction.get("trace_id"), "event_id": observed.get("event_id"),
+              "training_performed": False, "action_authority": "none"}
+
+    def fail(reason):
+        return {**result, "reason": reason}
+
+    scope = prediction.get("evaluation_scope")
+    if not isinstance(scope, dict) or scope != observed.get("evaluation_scope"):
+        return fail("scope_mismatch")
+    for key in ("node_id", "device_id", "session_id", "coordinate_frame"):
+        if not isinstance(scope.get(key), str) or scope[key] in {"", "unknown"}:
+            return fail("unknown_scope")
+    if not prediction.get("trace_id") or not observed.get("event_id"):
+        return fail("missing_receipt_identity")
+    parents = prediction.get("source_event_ids")
+    if not isinstance(parents, list) or not parents or not all(isinstance(p, str) and p for p in parents):
+        return fail("missing_prediction_provenance")
+    if observed["event_id"] in parents:
+        return fail("training_event_reused")
+    try:
+        issued, target, tolerance, actual_time = (
+            float(prediction["ts"]), float(prediction["target_at"]),
+            float(prediction["tolerance_s"]), float(observed["ts"]))
+        if not all(math.isfinite(v) for v in (issued, target, tolerance, actual_time)):
+            return fail("nonfinite_time")
+        if not (0 <= issued < actual_time and issued < target and 0 <= tolerance <= 300):
+            return fail("invalid_prediction_time")
+        if abs(actual_time - target) > tolerance:
+            return fail("outside_forecast_window")
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return fail("invalid_time")
+    expected, actual, units = (prediction.get("predicted_next_state"),
+                               observed.get("values"), scope.get("units"))
+    if not all(isinstance(v, dict) for v in (expected, actual, units)):
+        return fail("missing_numeric_state")
+    if not expected or len(expected) > 64 or set(expected) != set(actual) or set(expected) != set(units):
+        return fail("metric_set_mismatch")
+    residuals = {}
+    for key in sorted(expected):
+        if not isinstance(units[key], str) or not units[key]:
+            return fail("missing_units")
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in (expected[key], actual[key])):
+            return fail("nonnumeric_state")
+        try:
+            residual = actual[key] - expected[key]
+            if not all(math.isfinite(v) for v in (expected[key], actual[key], residual)):
+                return fail("nonfinite_state")
+        except (OverflowError, TypeError):
+            return fail("nonfinite_state")
+        residuals[key] = {"predicted": expected[key], "observed": actual[key],
+                          "residual": residual, "absolute_error": abs(residual), "unit": units[key]}
+    # Unlike a scalar RMSE, separate residuals never add metres to battery ratios.
+    return {**result, "status": "SCORED", "reason": "later_same_scope_observation",
+            "elapsed_s": actual_time - issued, "residuals": residuals,
+            "promotion": "not_evaluated"}
+
+
 def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     rows = tail_world_model_rows(1, root=root)
     if not rows:
@@ -537,6 +604,7 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
 
 
 __all__ = [
+    "evaluate_delayed_prediction",
     "BASE_MODEL",
     "DEFAULT_PREFERENCES",
     "MODEL_FILE",

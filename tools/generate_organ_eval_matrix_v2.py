@@ -2290,6 +2290,47 @@ def _alice_creature_wiring_panel() -> str:
     )
 
 
+def _world_to_field_audit_panel() -> str:
+    """Render the single SUFL/WCT crosswalk and its truth boundary."""
+    try:
+        from System.swarm_eval_matrix_evidence import validate_world_to_field_audit
+
+        audit = validate_world_to_field_audit()
+        rows = audit.get("rows") or []
+        table = _table(
+            ["ID", "Family", "Status", "Wiring", "Acceptance / Evidence"],
+            (
+                [
+                    html.escape(str(row.get("id") or "")),
+                    html.escape(str(row.get("family") or "")),
+                    f"<span class='{_status_class(str(row.get('status') or ''))}'>"
+                    f"{html.escape(str(row.get('status') or ''))}</span>",
+                    html.escape(str(row.get("wiring") or "")),
+                    html.escape(
+                        f"{row.get('acceptance') or ''} Evidence: {row.get('evidence') or ''}"
+                    ),
+                ]
+                for row in rows
+            ),
+        )
+        verdict = "PASS — no duplicate IDs/families and boundary rows are non-green" if audit.get("ok") else "FAIL — audit registry needs repair"
+        return (
+            "<section class='card' id='world-to-field-audit'>"
+            "<h2>World-to-Field / SUFL Eval Crosswalk</h2>"
+            f"<div class='metric'>{html.escape(verdict)}</div>"
+            "<p>One matrix crosswalk for phone/world input, observation fusion and WCT. "
+            "OPEN means implementation remains; BOUNDARY_ONLY means the row guards against "
+            "unsupported qualia/consciousness claims and is never a capability pass.</p>"
+            f"{table}"
+            "<p class='dim' style='margin-top:8px;'>"
+            "Source: System/swarm_eval_matrix_evidence.py and Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md. "
+            "Semantic map construction is the next Luna implementation slice; no second field or identity system is authorized."
+            "</p></section>"
+        )
+    except Exception as exc:
+        return f"<section class='card'><h2>World-to-Field / SUFL Eval Crosswalk</h2><p class='bad'>Unavailable: {html.escape(str(exc))}</p></section>"
+
+
 def build_html(*, fast: bool = False) -> str:
     snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
     organs = snap.get("organs", []) if isinstance(snap.get("organs"), list) else []
@@ -2309,6 +2350,23 @@ def build_html(*, fast: bool = False) -> str:
     novelty_missing_section = _sifta_novelty_missing_section()
     quantum_stigmergy_boundary_section = _quantum_stigmergy_boundary_section()
     alice_creature_wiring_panel = _alice_creature_wiring_panel()
+    world_to_field_audit_panel = _world_to_field_audit_panel()
+    try:
+        from System.swarm_camera_policy import camera_eye_snapshot
+
+        _eye = camera_eye_snapshot(_STATE)
+        _eye_status = "CAPTURE PASS / SEMANTIC EVAL OPEN" if _eye.get("capture_gate_pass") else "OPEN"
+        eye_panel = (
+            "<section class='card'><h2>AGI Eye Readiness — Single Owner Camera</h2>"
+            f"<div class='metric'>{html.escape(_eye_status)}</div>"
+            "<p>Eval gate: one embedded MacBook capture source; no secondary camera session; "
+            "fresh capture proof; visual stigmergy receipt; semantic claims require a vision-model receipt.</p>"
+            f"<pre>{html.escape(json.dumps(_eye, sort_keys=True, indent=2, default=str))}</pre>"
+            "<p class='dim'>Current result is operational camera grounding, not a claim of AGI or consciousness. "
+            "Next gate: temporal scene memory and action-relevant vision evals.</p></section>"
+        )
+    except Exception as _eye_exc:
+        eye_panel = f"<section class='card'><h2>AGI Eye Readiness</h2><p class='bad'>Unavailable: {html.escape(str(_eye_exc))}</p></section>"
     codec_traffic_panel = _codec_limb_traffic_light_panel()
     fast_census = _source_body_census_from_snapshot(snap) if fast else None
     body_source_census_panel = _body_source_census_panel(census=fast_census if fast_census and fast_census.get("files") else None)
@@ -2396,6 +2454,13 @@ def build_html(*, fast: bool = False) -> str:
     #   - owner somatic camera wiring + name/social reference recognition
     #   - r252 associative name memory + single focused app/habit stream
     sprint_capabilities = [
+        {
+            "name": "World-to-Field / SUFL Crosswalk (2026-09-12)",
+            "status": "AUDITED — existing phone/observation lanes reused; semantic map OPEN; qualia/consciousness rows are BOUNDARY_ONLY",
+            "detail": "The matrix now has one explicit crosswalk for the phone world-input work. It reuses observation_fusion, phone admission, sensor-truth, correction and memory lanes; it does not create a second field, identity system or consciousness registry. COVERED rows are backed by existing code/tests, PARTIAL rows need integration or physical acceptance, SUFL-07 semantic map remains OPEN, and the two claim-boundary rows can never become green capability evidence.",
+            "ledgers": "System/swarm_eval_matrix_evidence.py, System/swarm_observation_fusion.py, System/swarm_phone_observations.py, Documents/WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md, tests/test_swarm_eval_matrix_evidence.py, tests/test_phone_observation_summary.py",
+            "eval_note": "Run `python3 -c \"from System.swarm_eval_matrix_evidence import validate_world_to_field_audit; print(validate_world_to_field_audit())\"`. Next Luna slice: implement SUFL-07's semantic node/edge index, then add deterministic package/correction tests. Do not label this AGI, qualia or consciousness proof.",
+        },
         {
             "name": "Persistent Endogenous Motivational Control System (2026-08-29)",
             "status": "OPERATIONAL_SHORT_HORIZON — 38 coupled pressures + endocrinology + causal history test; LONG_HORIZON_UNPROVEN",
@@ -3191,6 +3256,8 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {package_stack_section}
 {marketing_commercial_section}
 {alice_creature_wiring_panel}
+{world_to_field_audit_panel}
+{eye_panel}
 {novelty_missing_section}
 {quantum_stigmergy_boundary_section}
 {life_loop_panel}
