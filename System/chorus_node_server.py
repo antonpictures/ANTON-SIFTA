@@ -895,6 +895,27 @@ class ChorusHandler(BaseHTTPRequestHandler):
             from System.swarm_stigmergicode_command import pair_ticket
 
             token = pair_ticket(str(payload.get("ticket") or ""))
+            # 2026-09-18: register the phone's identity on the stigmergic lane.
+            # Alice records: which hardware sent the pairing request, from what IP,
+            # at what time. This is the swimmer's birth certificate on this lane.
+            try:
+                from System.swarm_organism_doctor import _node_serial
+                visitor_ip, visitor_ip_source = self._cloudflare_visitor_ip()
+                identity_row = {
+                    "schema": "STIGMERGIC_LANE_REGISTRATION_V1",
+                    "ts": time.time(),
+                    "node_serial": _node_serial(),
+                    "phone_ip": visitor_ip or "unknown",
+                    "phone_ip_source": visitor_ip_source or "unknown",
+                    "lane": "stigmergicoin.com",
+                    "truth_label": "PHONE_IDENTITY_REGISTERED_V1",
+                }
+                identity_path = _REPO / ".sifta_state" / "stigmergic_lane_registry.jsonl"
+                identity_path.parent.mkdir(parents=True, exist_ok=True)
+                with identity_path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(identity_row, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
             self._respond(200, {"ok": True, "session": token, "cookie_name": "sifta_owner"})
         except PermissionError as exc:
             self._respond(403, {"ok": False, "error": str(exc)})
