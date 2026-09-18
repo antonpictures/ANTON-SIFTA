@@ -8,7 +8,13 @@ from System import sifta_phone_link as phone
 
 
 def qr_pixmap(url):
-    import qrcode
+    try:
+        import qrcode
+    except ModuleNotFoundError:
+        raise RuntimeError(
+            "Lipseste modulul 'qrcode'. Instaleaza-l cu: "
+            "/usr/local/bin/python3 -m pip install qrcode"
+        ) from None
     qr = qrcode.QRCode(border=4, error_correction=qrcode.constants.ERROR_CORRECT_M)
     qr.add_data(url)
     qr.make(fit=True)
