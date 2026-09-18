@@ -88,23 +88,43 @@ $('start').onclick=enableAll;
 $('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');updateEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
 $('voice').onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');updateVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
 $('flip').onclick=async()=>{
-  if(!cameraStream)return;
+  if(!cameraStream){status('Tap 🎥 Start first.');return;}
   const next=cameraFacing==='environment'?'user':'environment';
   cameraFacing=next;
+  // iOS Safari: stop ALL tracks first, then request a fresh stream.
+  // Swapping tracks on the existing stream does NOT work on iOS.
+  stopBatching();
+  cameraStream.getTracks().forEach(t=>t.stop());
+  cameraStream=null;$('camera').srcObject=null;
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:next},width:{ideal:1280}},audio:false});
-    cameraStream.getVideoTracks().forEach(t=>t.stop());
-    cameraStream.removeTrack(cameraStream.getVideoTracks()[0]);
-    stream.getVideoTracks().forEach(t=>cameraStream.addTrack(t));
+    const earOn=localStorage.getItem(EAR_KEY)!=='off';
+    const media=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:next},width:{ideal:1280}},
+      audio:earOn?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false
+    });
+    cameraStream=media;
+    if(media.getAudioTracks().length)audioStream=media;
+    $('camera').srcObject=cameraStream;
+    await $('camera').play();
     status('Camera switched to '+next+'.');
+    if(sensorActive)startBatching();
   }catch(e){
+    status('Camera switch failed: '+e.message);
+    // Try to restore the original camera
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:next},width:{ideal:1280}},audio:false});
-      cameraStream.getVideoTracks().forEach(t=>t.stop());
-      cameraStream.removeTrack(cameraStream.getVideoTracks()[0]);
-      stream.getVideoTracks().forEach(t=>cameraStream.addTrack(t));
-      status('Camera switched to '+next+'.');
-    }catch(e2){status('Camera switch failed: '+e2.message);}
+      const restore=cameraFacing==='user'?'environment':'user';
+      cameraFacing=restore;
+      const media=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:restore},width:{ideal:1280}},
+        audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false
+      });
+      cameraStream=media;
+      if(media.getAudioTracks().length)audioStream=media;
+      $('camera').srcObject=cameraStream;
+      await $('camera').play();
+      if(sensorActive)startBatching();
+      status('Restored previous camera.');
+    }catch(e2){status('Camera restore also failed: '+e2.message);}
   }
 };
 let micRecording=false,micRecorder=null,micPieces=[],micStartTs=0,micGen=0;
