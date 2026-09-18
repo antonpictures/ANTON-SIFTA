@@ -7838,3 +7838,16 @@ parser and offline keyword fallback), Nav2/MPPI/AMCL integration on real hardwar
 and multi-instance disambiguation. David's Romanian briefing is at
 `Documents/WCT_MESAJ_PENTRU_DAVID_2026-09-18.md`; the verification of his rover's
 UDP contract (X lateral / Y forward, eight-point scan) stays in force above.
+
+## WhatsApp bridge status (checked 2026-09-18)
+
+The WhatsApp bridge (`Network/whatsapp_bridge/bridge.js`, Baileys) forwards
+every incoming DM/group text to SIFTA's swarm endpoint and replies in-chat with
+"typing..." presence — friends CAN chat with Alice through WhatsApp. It is
+currently NOT running (no `bridge.js` process, port 3001 closed); the paired
+session in `whatsapp_session/` dates to May 4 2026 and likely needs a fresh QR
+scan to reconnect. Voice calls: the "allow phonecalls from this network" iOS
+prompt enables WhatsApp's own call routing through the LAN; the bridge handles
+text only — voice calls stay on WhatsApp's stack, Alice does not join calls.
+The bridge's `http://192.168.1.114:50621` is the LAN phone-link chat, unrelated
+to WhatsApp.
