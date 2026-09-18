@@ -50,3 +50,8 @@ owner authority -> Alice's vision lane matches the frame against enrolled
 face templates (photo + name supplied by George only) -> the caption can then
 say "George at his desk" instead of "a person with glasses". Until enrollment
 exists, captions stay generic — honest by design.
+
+## 2026-09-18 pilot lane receipt
+- Commit 4192448dc: phone speaks every ALICE reply (speechSynthesis, ro voice) + 🧭 Pilot button (one movement command per reply; owner answers "gata" + what he sees).
+- No server change; page re-read per request, phone reload suffices, pairing cookie survives.
+- Room-learning evidence: .sifta_state/phone_link/events.jsonl (turn_finished audit) + session transcript json.
