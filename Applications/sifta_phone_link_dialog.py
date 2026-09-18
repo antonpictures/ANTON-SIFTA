@@ -12,8 +12,8 @@ def qr_pixmap(url):
         import qrcode
     except ModuleNotFoundError:
         raise RuntimeError(
-            "Lipseste modulul 'qrcode'. Instaleaza-l cu: "
-            "/usr/local/bin/python3 -m pip install qrcode"
+            "The 'qrcode' module is missing. Install it with: "
+            ".venv/bin/python -m pip install qrcode"
         ) from None
     qr = qrcode.QRCode(border=4, error_correction=qrcode.constants.ERROR_CORRECT_M)
     qr.add_data(url)
