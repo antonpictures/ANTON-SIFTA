@@ -33,7 +33,7 @@ textarea{font:inherit;border:1px solid var(--line);border-radius:10px;padding:8p
   <button id="start" class="start">🎥</button>
   <button id="ear" class="on">👂</button>
   <button id="voice" title="Alice speaks">🔇</button>
-  <button id="flip">↻</button>
+  <button id="mic" title="Tap to start recording, tap again to send">🎤</button><button id="flip">↻</button>
 </div>
 <section class="composer">
   <textarea id="text" placeholder="Type to Alice..."></textarea>
@@ -88,6 +88,51 @@ $('start').onclick=enableAll;
 $('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');updateEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
 $('voice').onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');updateVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
 $('flip').onclick=async()=>{if(!cameraStream)return;cameraFacing=cameraFacing==='environment'?'user':'environment';try{const next=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}}});cameraStream.getVideoTracks().forEach(t=>t.stop());next.getVideoTracks().forEach(t=>cameraStream.addTrack(t));}catch(e){status('Camera switch failed.');}};
+let micRecording=false,micRecorder=null,micPieces=[],micStartTs=0,micGen=0;
+$('mic').onclick=async()=>{
+  if(micRecording){
+    micRecording=false;$('mic').classList.remove('on');$('mic').textContent='🎤';
+    if(micRecorder&&micRecorder.state!=='inactive'){micRecorder.stop();return;}
+    await sendMicBatch(null);
+    return;
+  }
+  if(!cameraStream&&!sensorActive){status('Tap 🎥 Start first.');return;}
+  if(batchInFlight||sending){status('Processing previous batch.');return;}
+  const track=audioStream&&audioStream.getAudioTracks()[0];
+  if(!track){status('No mic. Enable 👂 ear first.');return;}
+  micRecording=true;$('mic').classList.add('on');$('mic').textContent='⏹';
+  const source=new MediaStream([track]),mime=audioMime(),startedAt=new Date().toISOString();micStartTs=Date.now();micGen=generation;
+  micPieces=[];
+  micRecorder=new MediaRecorder(source,mime?{mimeType:mime}:undefined);
+  micRecorder.ondataavailable=e=>{if(e.data.size)micPieces.push(e.data);};
+  micRecorder.onerror=()=>{micRecording=false;$('mic').classList.remove('on');$('mic').textContent='🎤';};
+  micRecorder.onstop=async()=>{
+    micRecording=false;$('mic').classList.remove('on');$('mic').textContent='🎤';
+    if(micGen!==generation||!micPieces.length)return;
+    try{
+      const blob=new Blob(micPieces,{type:micRecorder.mimeType||mime||'audio/webm'});
+      if(blob.size>2*1024*1024)throw new Error('audio > 2 MiB');
+      const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';
+      const audio={name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()};
+      await sendMicBatch(audio);
+    }catch(error){status('Mic failed: '+error.message);}
+  };
+  micRecorder.start(250);
+  status('Recording... tap again to send.');
+};
+async function sendMicBatch(audio){
+  batchInFlight=true;
+  try{
+    let frame=sensorActive?takeFrame():null;
+    const captureId=crypto.randomUUID(),attachments=[];
+    if(frame)attachments.push(frame);
+    if(audio)attachments.push(audio);
+    const prompt='Voice batch: transcribe my speech first, then summarize as a bounded life experience. Preserve uncertainty.';
+    const envelope={schema_version:'sifta.capture.v1',capture_id:captureId,kind:'voice_push',source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:frame&&frame.capturedAt,audio_started_at:audio&&audio.startedAt,audio_ended_at:audio&&audio.endedAt,telemetry:snapshotTelemetry()};
+    await sendPayload(prompt,attachments,envelope);
+  }catch(error){status('Voice batch failed: '+error.message);}
+  finally{batchInFlight=false;updateStartBtn();}
+}
 $('send').onclick=async()=>{const text=$('text').value.trim();if(!text){status('Type a message first.');return;}if(batchInFlight){status('Processing a batch.');return;}try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_e){}};
 updateEarBtn();updateVoiceBtn();updateStartBtn();updateFlipBtn();
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMedia();else refresh();});
