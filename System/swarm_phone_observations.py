@@ -212,7 +212,37 @@ def prepare(row, store, *, transcriber=transcribe_file):
         from System.swarm_web_global_chat_gate import web_attachment_prompt_block
         images = [a for a in row.get("attachments", []) if a.get("mime", "").startswith("image/")]
         if images:
-            blocks.append(web_attachment_prompt_block(images))
+            # 2026-09-18 borg: the phone camera is a real EYE. A local VLM
+            # (owner-named in .sifta_state/local_vision_eye.txt) looks at the
+            # frame BEFORE the prompt is assembled; its description replaces
+            # the OCR meta-receipt as the primary visual evidence. OCR stays
+            # appended as a bounded secondary source.
+            described = False
+            for image in images:
+                vpath = (REPO / image.get("storage_relpath", "")).resolve()
+                if not vpath.is_file():
+                    continue
+                try:
+                    from System.swarm_ollama_vision_arm import describe_image_local
+                    result = describe_image_local(
+                        str(vpath),
+                        "Describe briefly what you see: place, person, objects. "
+                        "Two sentences max, no speculation.",
+                        timeout_s=180,
+                    )
+                except Exception:
+                    result = None
+                if result is not None and getattr(result, "ok", False):
+                    blocks.append(
+                        "PHONE CAMERA DESCRIPTION (local vision, fallible): "
+                        + str(result.output).strip()
+                    )
+                    described = True
+                    break
+            if images and not described:
+                blocks.append(web_attachment_prompt_block(images))
+        else:
+            pass
     context = "\n\n".join(blocks)
     store.update(turn, context=context)
     return context
