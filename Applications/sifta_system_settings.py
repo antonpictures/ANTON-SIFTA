@@ -1856,6 +1856,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
         phone_button.setMinimumHeight(44)
         phone_button.clicked.connect(self._open_phone_link)
         root.addWidget(phone_button)
+
+        stigmergicoin_pair_btn = QPushButton("Alice on stigmergicoin.com — pair any phone (link via WhatsApp)")
+        stigmergicoin_pair_btn.setMinimumHeight(44)
+        stigmergicoin_pair_btn.clicked.connect(self._pair_stigmergicoin_phone)
+        root.addWidget(stigmergicoin_pair_btn)
         root.addWidget(self.net_wa)
 
         # WhatsApp Connect / Disconnect toggle button
@@ -1873,6 +1878,24 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(self.net_nerve)
         root.addStretch()
         return page
+
+    def _pair_stigmergicoin_phone(self) -> None:
+        """Mint a stigmergicoin.com pairing link George can send via WhatsApp to any phone worldwide."""
+        import sys as _sys
+        try:
+            from System.swarm_stigmergicode_command import issue_pairing_ticket
+            ticket = issue_pairing_ticket()
+            url = f"https://stigmergicoin.com/#pair={ticket}"
+            QApplication.clipboard().setText(url)
+            QMessageBox.information(
+                self, "Alice on stigmergicoin.com",
+                f"Link copied to clipboard (valid 5 minutes):\n\n{url}\n\n"
+                "Send it via WhatsApp to any phone. The person clicks it, "
+                "the page says 'Owner phone paired', and they can chat with Alice "
+                "with camera, audio and telemetry from anywhere in the world."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Pairing failed", f"Could not mint ticket: {exc}")
 
     def _open_phone_link(self) -> None:
         from Applications.sifta_phone_link_dialog import PhoneLinkDialog
