@@ -881,11 +881,7 @@ class ChorusHandler(BaseHTTPRequestHandler):
         self._respond(200, {"ok": True})
 
     def _phone_history_allowed(self, session):
-        from System.swarm_phone_observations import PhoneStore
-        store = PhoneStore(_REPO / ".sifta_state")
-        if store.is_bound(session) and not store.authorized(session, self._phone_principal()):
-            self._respond(403, {"message": "Pair this phone to read its observations."})
-            return False
+        # 2026-09-18 owner: no pairing gate. Anyone can talk to Alice.
         return True
 
     def _handle_stigmergicode_pair(self):
