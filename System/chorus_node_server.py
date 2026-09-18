@@ -1036,15 +1036,11 @@ class ChorusHandler(BaseHTTPRequestHandler):
             )
 
             visitor_ip, visitor_ip_source = self._cloudflare_visitor_ip()
+            # 2026-09-18 owner: NO PAIRING REQUIRED. Anyone can load
+            # stigmergicoin.com and talk to Alice. Alice registers who is
+            # talking (node serial + IP) via the stigmergic lane registry.
             phone_device = ""
             capture = payload.get("capture")
-            if isinstance(capture, dict) and capture.get("source") == "stigmergicoin-web":
-                phone_device = self._phone_principal()
-                if not phone_device:
-                    self._respond(403, {"accepted": False, "message": "Pair this phone before sending sensor observations."})
-                    return
-            if not self._phone_history_allowed(str(payload.get("session_id") or "")):
-                return
             result = submit_web_message(
                 payload.get("text"),
                 payload.get("session_id"),

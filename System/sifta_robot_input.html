@@ -133,7 +133,6 @@ $('text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.prev
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMedia();else refresh();});
 window.addEventListener('pagehide',()=>{stopped=true;stopMedia();});
 if(typeof window.FaceDetector==='function'){try{faceDetector=new window.FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(_e){}}
-consumePairTicket();
 setInterval(refresh,5000);
 refresh();
 </script>

@@ -1852,15 +1852,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.net_nerve = MetricCard("Nerve Channel", "UDP Broadcast", "Fast autonomic reflex bus")
         root.addWidget(self.net_ssid)
         root.addWidget(self.net_ip)
-        phone_button = QPushButton("Telefon local / conectare prin QR")
-        phone_button.setMinimumHeight(44)
-        phone_button.clicked.connect(self._open_phone_link)
-        root.addWidget(phone_button)
 
-        stigmergicoin_pair_btn = QPushButton("Alice on stigmergicoin.com — pair any phone (link via WhatsApp)")
-        stigmergicoin_pair_btn.setMinimumHeight(44)
-        stigmergicoin_pair_btn.clicked.connect(self._pair_stigmergicoin_phone)
-        root.addWidget(stigmergicoin_pair_btn)
         root.addWidget(self.net_wa)
 
         # WhatsApp Connect / Disconnect toggle button
