@@ -3,176 +3,98 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Alice | SIFTA world input</title>
+<title>Alice</title>
 <style>
-:root{color-scheme:light dark;--bg:#1d1e1a;--ink:#eeeade;--panel:#292b25;--line:#56594c;--accent:#e8a580;--good:#176b3a}
+:root{color-scheme:dark;--bg:#111;--ink:#eee;--panel:#222;--line:#444;--accent:#e8a580;--good:#176b3a}
 *{box-sizing:border-box}html{height:100%;overflow:hidden}body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font:16px/1.35 "Avenir Next",sans-serif}
-main{height:100svh;max-width:980px;margin:auto;padding:10px 12px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px}
-h1{font:24px Georgia,serif;margin:0}.eyebrow{color:var(--accent);font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;margin:0;min-height:0}
-.stage{position:relative;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:6px;overflow:hidden}
-video{display:block;width:100%;height:100%;max-height:50vh;min-height:120px;background:#25251f;border-radius:10px;object-fit:cover}
-#videoCaption{position:absolute;left:8px;right:8px;bottom:6px;z-index:3;background:rgba(20,21,16,.82);color:#fff;border-radius:8px;padding:6px 12px;font-size:12px;line-height:1.3;text-align:center;pointer-events:none;box-shadow:0 1px 8px rgba(0,0,0,.4)}
-button,textarea{font:inherit;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--panel);color:var(--ink)}
-button{cursor:pointer;margin:0;touch-action:manipulation}button:disabled{opacity:.5;cursor:default}
-.primary{background:var(--good);color:#fff;border-color:var(--good);font-weight:800}.primary.is-on{background:var(--good)}
-textarea{width:100%;min-height:36px;height:36px;resize:none}
-.row{display:flex;align-items:center;gap:6px}
-.hint,#status{color:#a0a090;font-size:11px;min-height:12px}
-.capture-state{font-weight:700;color:var(--accent);margin:0;font-size:13px}
-.summary{margin:0;min-height:16px;max-height:34px;overflow:auto;white-space:pre-wrap;font-size:12px}
-.summary-meta{margin:0;color:#71695d;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.interval{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
-.interval button{width:28px;height:26px;border-radius:14px;font-size:16px;line-height:1}
-.interval-value{min-width:48px;text-align:center;font-weight:800;font-size:13px}
+main{height:100svh;max-width:980px;margin:auto;padding:6px;display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:4px}
+.stage{position:relative;overflow:hidden;border-radius:12px}
+video{display:block;width:100%;height:100%;min-height:200px;background:#000;object-fit:cover}
+#caption{position:absolute;left:6px;right:6px;bottom:6px;z-index:3;background:rgba(0,0,0,.75);color:#fff;border-radius:10px;padding:8px 14px;font-size:13px;line-height:1.4;text-align:center;pointer-events:none;display:none}
+#caption.show{display:block}
+.controls{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap}
+.controls button{cursor:pointer;margin:0;touch-action:manipulation;font:inherit;border:1px solid var(--line);border-radius:20px;padding:8px 14px;background:var(--panel);color:var(--ink);font-size:13px}
+.controls button.on{background:var(--accent);color:#111;border-color:var(--accent)}
+.controls .start{background:var(--good);color:#fff;border-color:var(--good);font-weight:800}
+.controls .start.is-on{background:var(--accent);border-color:var(--accent)}
+.controls .icon{width:34px;height:34px;border-radius:50%;padding:0;font-size:15px}
 .composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:end}
-.composer textarea{grid-column:1}.composer #send{grid-column:2;grid-row:1;align-self:stretch}
-#pushTalk{grid-column:1/-1;font-size:15px;font-weight:800;padding:10px;border-radius:12px}
-.text-status{grid-column:1/-1;margin:0;font-size:11px}
-.icon-button{width:34px;height:34px;border-radius:50%;font-size:17px}
-.eye-card{display:flex;align-items:center;gap:8px;margin:0;padding:2px 6px;border:1px solid var(--line);border-radius:10px}
-.red-eye{width:38px;height:24px;display:grid;place-items:center;border:2px solid #5f171d;border-radius:54% 10%;background:#210b0d;box-shadow:0 0 0 2px #160608 inset}.red-eye:before{content:"";width:14px;height:14px;border-radius:50%;background:#8e161d;box-shadow:0 0 6px #d62c34}.red-eye:after{content:"";width:5px;height:5px;border-radius:50%;background:#ffd9c6;grid-area:1/1}.red-eye.is-live{animation:real-data-pulse .8s ease-in-out 2}.eye-caption{margin:0;font-size:11px}.eye-caption strong{display:block}
-@media(max-width:520px){
-  html,body{overflow-y:auto;overflow-x:hidden;height:auto}
-  main{height:auto;min-height:100svh;padding:5px 6px calc(4px + env(safe-area-inset-bottom));gap:4px}
-  video{max-height:28vh}h1{font-size:16px}.eyebrow{font-size:8px}
-  .bootline{font-size:9px;white-space:normal}section{padding:4px;border-radius:10px}.stage{padding:4px;gap:4px}
-  button,textarea{padding:4px 6px;font-size:11px}button.primary{font-size:12px;padding:5px 8px}
-  #pushTalk{font-size:14px;padding:9px}.interval button{width:22px;height:20px;font-size:13px}
-  .interval-value{min-width:40px;font-size:11px}.icon-button{width:26px;height:26px;font-size:13px}
-  textarea{min-height:28px;height:28px}.composer{gap:2px}
-  .summary{max-height:22px;font-size:10px;min-height:12px}.capture-state{font-size:10px}
-  .hint,#status{font-size:8px;min-height:8px}.eye-card{padding:1px 4px}.eye-caption{font-size:9px}
-  #videoCaption{font-size:10px;padding:4px 8px}
-}
-@media(prefers-color-scheme:light){:root{--bg:#f5f1e8;--ink:#282820;--panel:#fffaf2;--line:#bdb4a4;--accent:#a64625}}
+textarea{font:inherit;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--panel);color:var(--ink);width:100%;min-height:34px;height:34px;resize:none}
+.composer button{border-radius:10px;padding:8px 16px;background:var(--good);color:#fff;border-color:var(--good);font-weight:800;font-size:13px}
+#status{color:#888;font-size:10px;min-height:10px;grid-column:1/-1;margin:0}
 </style>
 </head>
 <body><main>
-<section class="stage" aria-label="Alice phone world input">
-  <video id="camera" playsinline muted autoplay aria-label="Camera preview"></video>
-  <div id="videoCaption" role="status" aria-live="polite" style="display:none"></div>
-  <div class="row" style="gap:4px;justify-content:center;align-items:center">
-    <button id="enableEverything" class="primary" aria-pressed="false" style="flex:1">🎥 Start</button>
-    <button id="pushTalk" class="primary" style="flex:2">Hold to talk</button>
-    <button id="earToggle" aria-label="Toggle Alice hearing" title="Alice hears the world">👂 off</button><button id="voiceToggle" aria-label="Toggle Alice voice" title="Alice speaks replies">🔇</button>
-    <button id="switchCamera" class="icon-button" aria-label="Switch camera" disabled>↻</button>
-  </div>
-  <div id="videoCaption2" class="summary" aria-live="polite" style="display:none"></div>
-  <div id="bootNotice" class="bootline" style="font-size:9px;color:#71695d;text-align:center;white-space:normal">Tap 🎥 Start. Alice sees, hears, speaks.</div>
-</section>
-<section class="composer" aria-label="Message Alice">
-  <textarea id="text" placeholder="Type to Alice..." aria-label="Message Alice"></textarea>
-  <button id="send" class="primary">Send</button>
-  <p id="status" class="text-status" role="status"></p>
+<div class="stage">
+  <video id="camera" playsinline muted autoplay></video>
+  <div id="caption" role="status"></div>
+</div>
+<div class="controls">
+  <button id="start" class="start">🎥</button>
+  <button id="ear" class="on">👂</button>
+  <button id="voice" title="Alice speaks">🔇</button>
+  <button id="flip">↻</button>
+</div>
+<section class="composer">
+  <textarea id="text" placeholder="Type to Alice..."></textarea>
+  <button id="send">Send</button>
+  <p id="status" role="status"></p>
 </section>
 </main>
 <script>
-const $=id=>document.getElementById(id),SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',CADENCE_KEY='sifta.robot.cadence',BATCH_INTERVAL_MS=20000,MIN_CADENCE_MS=10000,MAX_CADENCE_MS=60000,CADENCE_STEP_MS=5000;
-const VOICE_KEY='sifta_phone_voice',EAR_KEY='sifta_phone_ear';let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false,generation=0,recognition=null,sensorActive=false,telemetryEnabled=false,latestMotion=null,latestOrientation=null,latestLocation=null,latestBattery=null,eyeTimer=null,batchTimer=null,batchInFlight=false,batchSequence=0,cameraFacing='environment',blackFrameStreak=0,lastAutoFlipAt=0,switchFailureAt=0,switchFailures=0,switchInFlight=null,cadenceMs=Math.min(MAX_CADENCE_MS,Math.max(MIN_CADENCE_MS,Number(localStorage.getItem(CADENCE_KEY))||BATCH_INTERVAL_MS)),locationWatchId=null,polling=false,faceDetector=null,faceState='unknown',noFaceStreak=0;
-let pushRecorder=null,pushPieces=[],pushMode='idle',pushStartTs=0;
-function status(text){$('status').textContent=text;}
-function setVoiceBtn(){const on=localStorage.getItem(VOICE_KEY)==='on';$('voiceToggle').textContent=on?'🔊':'🔇';}
-function pushLabel(){return pushMode==='armed'?'Release to send':pushMode==='toggled'?'Tap to send':'Hold to talk';}
-function updateCaptureState(){$('enableEverything').textContent=sensorActive?'⏸':'🎥';$('enableEverything').setAttribute('aria-pressed',String(sensorActive));}
-function updateCadenceLabel(){$('cadenceValue').textContent=(cadenceMs/1000)+'s';}
-function setSwitchButton(){const button=$('switchCamera');button.disabled=!cameraStream||!!switchInFlight;button.textContent=switchInFlight?'…':'↻';}
-function nextCadence(){return motionEnergy()>.30?MIN_CADENCE_MS:cadenceMs;}
-function updateBootNotice(){$('bootNotice').textContent=sensorActive?'Alice sees and hears.':'Tap 🎥 Start.';}
-function updateCaptureState(){if(sensorActive){$('enableEverything').textContent='⏸';$('enableEverything').classList.add('is-on');}else{$('enableEverything').textContent='🎥';$('enableEverything').classList.remove('is-on');}}
-function stopBatching(){if(batchTimer){clearTimeout(batchTimer);batchTimer=null;}}
-</script>
-<script>
-/* Full original JS logic (abridged — the script from the working version).
-   All handlers, camera, batching, push-to-talk, voice and caption logic. */
+const $=id=>document.getElementById(id);
+const SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',EAR_KEY='sifta_phone_ear',VOICE_KEY='sifta_phone_voice';
+const BATCH_MS=20000,MIN_MS=10000,MAX_MS=60000,STEP_MS=5000;
+let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false,generation=0,sensorActive=false,telemetryEnabled=false;
+let latestMotion=null,latestOrientation=null,latestLocation=null,latestBattery=null,locationWatchId=null;
+let batchTimer=null,batchInFlight=false,batchSequence=0,cameraFacing='environment',blackStreak=0,lastFlip=0;
+let cadenceMs=Math.min(MAX_MS,Math.max(MIN_MS,Number(localStorage.getItem(CADENCE_KEY))||BATCH_MS));
+let polling=false,faceDetector=null,faceState='unknown',noFace=0;
+let observationTurns=new Map(),pendingObs=false;
 const session=localStorage.getItem(SESSION_KEY)||(()=>{const s=crypto.randomUUID();localStorage.setItem(SESSION_KEY,s);return s;})();
-function snapshotTelemetry(){const signals={};if(latestMotion)signals['acceleration']={x:latestMotion.x,y:latestMotion.y,z:latestMotion.z};if(latestOrientation)signals['orientation']={alpha:latestOrientation.alpha,beta:latestOrientation.beta,gamma:latestOrientation.gamma};if(latestLocation)signals['gps']={lat:latestLocation.latitude,lon:latestLocation.longitude,accuracy:latestLocation.accuracy};if(latestBattery)signals['battery']={level:latestBattery.level,charging:latestBattery.charging};signals['captured_at']=new Date().toISOString();return signals;}
+function status(t){$('status').textContent=t;}
+function updateStartBtn(){const b=$('start');if(sensorActive){b.textContent='⏸';b.classList.add('is-on');}else{b.textContent='🎥';b.classList.remove('is-on');}}
+function updateEarBtn(){const on=localStorage.getItem(EAR_KEY)!=='off';$('ear').textContent='👂';$('ear').classList.toggle('on',on);}
+function updateVoiceBtn(){const on=localStorage.getItem(VOICE_KEY)==='on';$('voice').textContent=on?'🔊':'🔇';$('voice').classList.toggle('on',on);}
+function updateFlipBtn(){$('flip').disabled=!cameraStream;}
+function snapshotTelemetry(){const s={};if(latestMotion)s.acceleration={x:latestMotion.x,y:latestMotion.y,z:latestMotion.z};if(latestOrientation)s.orientation={alpha:latestOrientation.alpha,beta:latestOrientation.beta,gamma:latestOrientation.gamma};if(latestLocation)s.gps={lat:latestLocation.latitude,lon:latestLocation.longitude,accuracy:latestLocation.accuracy};if(latestBattery)s.battery={level:latestBattery.level,charging:latestBattery.charging};s.captured_at=new Date().toISOString();return s;}
 function bytesToBase64(bytes){const bin=[];for(let i=0;i<bytes.length;i+=8192)bin.push(String.fromCharCode.apply(null,bytes.subarray(i,i+8192)));return btoa(bin.join(''));}
 async function request(url,options={}){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);try{const headers=new Headers(options.headers||{}),owner=localStorage.getItem(OWNER_KEY);if(owner)headers.set('Authorization','Bearer '+owner);options.signal=controller.signal;Object.assign(options,{headers});const response=await fetch(url,options);if(!response.ok){const body=await response.text();let parsed={};try{parsed=JSON.parse(body)}catch(_e){}throw new Error(parsed.message||response.status+' '+response.statusText);}return JSON.parse(await response.text());}finally{clearTimeout(timer);}}
 async function digestText(text){const data=new TextEncoder().encode(text);const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-function updateMotion(event){if(!telemetryEnabled)return;if(event.accelerationIncludingGravity)latestMotion={x:event.accelerationIncludingGravity.x||0,y:event.accelerationIncludingGravity.y||0,z:event.accelerationIncludingGravity.z||0};}
-function updateOrientation(event){if(!telemetryEnabled)return;latestOrientation={alpha:event.alpha||0,beta:event.beta||0,gamma:event.gamma||0};}
-function motionEnergy(){if(!latestMotion)return 0;const m=latestMotion;return Math.sqrt((m.x||0)**2+(m.y||0)**2+(m.z||0)**2);}
-function takeFrame(){const video=$('camera');if(!cameraStream||!video.videoWidth)return null;const sample=document.createElement('canvas');sample.width=16;sample.height=16;const sampleContext=sample.getContext('2d');sampleContext.drawImage(video,0,0,16,16);const pixels=sampleContext.getImageData(0,0,16,16).data;let luminance=0;for(let i=0;i<pixels.length;i+=4)luminance+=(pixels[i]+pixels[i+1]+pixels[i+2])/3;luminance/=pixels.length/4;const canvas=document.createElement('canvas');const scale=Math.min(1,1280/Math.max(video.videoWidth,video.videoHeight));canvas.width=Math.max(1,Math.round(video.videoWidth*scale));canvas.height=Math.max(1,Math.round(video.videoHeight*scale));canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.72);if(data.length>2800000)throw new Error('frame is larger than 2 MiB');return {name:'phone-frame.jpg',mime:'image/jpeg',data_url:data,capturedAt:new Date().toISOString(),width:canvas.width,height:canvas.height,likely_black:luminance<8};}
-function startBatching(){if(batchTimer||!sensorActive)return;batchTimer=setTimeout(()=>{batchTimer=null;if(document.hidden||batchInFlight||sending||pendingObservation||!cameraStream){if(cameraStream&&!stopped)startBatching();return;}captureObservation('','periodic_observation',2500);},nextCadence());}
+function updateMotion(e){if(!telemetryEnabled)return;if(e.accelerationIncludingGravity)latestMotion={x:e.accelerationIncludingGravity.x||0,y:e.accelerationIncludingGravity.y||0,z:e.accelerationIncludingGravity.z||0};}
+function updateOrientation(e){if(!telemetryEnabled)return;latestOrientation={alpha:e.alpha||0,beta:e.beta||0,gamma:e.gamma||0};}
+function takeFrame(){const v=$('camera');if(!cameraStream||!v.videoWidth)return null;const s=document.createElement('canvas');s.width=16;s.height=16;s.getContext('2d').drawImage(v,0,0,16,16);const px=s.getContext('2d').getImageData(0,0,16,16).data;let lum=0;for(let i=0;i<px.length;i+=4)lum+=(px[i]+px[i+1]+px[i+2])/3;lum/=px.length/4;const c=document.createElement('canvas');const sc=Math.min(1,1280/Math.max(v.videoWidth,v.videoHeight));c.width=Math.max(1,Math.round(v.videoWidth*sc));c.height=Math.max(1,Math.round(v.videoHeight*sc));c.getContext('2d').drawImage(v,0,0,c.width,c.height);const data=c.toDataURL('image/jpeg',.72);if(data.length>2800000)throw new Error('frame too large');return {name:'phone-frame.jpg',mime:'image/jpeg',data_url:data,capturedAt:new Date().toISOString(),width:c.width,height:c.height,likely_black:lum<8};}
+function startBatching(){if(batchTimer||!sensorActive)return;batchTimer=setTimeout(()=>{batchTimer=null;if(document.hidden||batchInFlight||sending||pendingObs||!cameraStream){if(cameraStream&&!stopped)startBatching();return;}captureObservation('','ambient',2500);},cadenceMs);}
+function stopBatching(){if(batchTimer){clearTimeout(batchTimer);batchTimer=null;}}
 function pauseTelemetry(){window.removeEventListener('devicemotion',updateMotion);window.removeEventListener('deviceorientation',updateOrientation);if(locationWatchId){navigator.geolocation.clearWatch(locationWatchId);locationWatchId=null;}}
-
-let audioEnabled=false;
-async function enableEverything(){
-  if(sensorActive){stopMedia();return;}
-  if(!navigator.mediaDevices){status('Camera and microphone APIs are unavailable.');return;}
-  const version=++generation;
-  let media=null;
-  try{
-    const earOn=localStorage.getItem(EAR_KEY)!=='off';
-    const cameraPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:earOn?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});
-    const motionPromise=requestMotionPermission();
-    media=await cameraPromise;
-    if(version!==generation){media.getTracks().forEach(t=>t.stop());return;}
-    cameraStream=media;
-    if(media.getAudioTracks().length)audioStream=media;
-    $('camera').srcObject=cameraStream;
-    await $('camera').play();
-    sensorActive=true;audioEnabled=earOn;
-    startTelemetry(true);startBatching();setSwitchButton();updateCaptureState();updateBootNotice();
-    status(earOn?'Camera + audio + telemetry active.':'Camera + telemetry active (ear off).');
-  }catch(e){status('Camera/audio unavailable: '+e.message);}
-}
+function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('camera').srcObject=null;pauseTelemetry();faceState='unknown';noFace=0;updateStartBtn();updateEarBtn();}
+function audioMime(){for(const c of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'])if(window.MediaRecorder&&MediaRecorder.isTypeSupported(c))return c;return '';}
+async function recordAudioWindow(ms){const track=audioStream&&audioStream.getAudioTracks()[0];if(!track||!window.MediaRecorder)return null;const source=new MediaStream([track]),mime=audioMime(),startedAt=new Date().toISOString(),gen=generation;return new Promise((resolve,reject)=>{const pieces=[],rec=new MediaRecorder(source,mime?{mimeType:mime}:undefined);recorder=rec;rec.ondataavailable=e=>{if(e.data.size)pieces.push(e.data);};rec.onerror=()=>{if(recorder===rec)recorder=null;reject(new Error('audio capture failed'));};rec.onstop=async()=>{if(recorder===rec)recorder=null;if(gen!==generation){resolve(null);return;}if(!pieces.length){resolve(null);return;}try{const blob=new Blob(pieces,{type:rec.mimeType||mime||'audio/webm'});if(blob.size>2*1024*1024)throw new Error('audio > 2 MiB');const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';resolve({name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()});}catch(error){reject(error);}};try{rec.start(250);setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},ms);}catch(error){reject(error);}});}
+async function captureObservation(text,reason,audioMs){if(batchInFlight||(!sensorActive&&!text))return;batchInFlight=true;let gen=generation;try{let frame=sensorActive?takeFrame():null;if(frame&&frame.likely_black)blackStreak++;else blackStreak=0;let audio=null;if(sensorActive&&localStorage.getItem(EAR_KEY)!=='off')try{audio=await recordAudioWindow(audioMs);}catch(e){}if(gen!==generation)return;const cid=crypto.randomUUID(),attachments=[];if(frame)attachments.push(frame);if(audio)attachments.push(audio);const prompt=text||('Ambient observation batch '+(++batchSequence)+': summarize only evidence accepted from the phone as a bounded life experience; preserve uncertainty.');const envelope={schema_version:'sifta.capture.v1',capture_id:cid,kind:reason,source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:frame&&frame.capturedAt,telemetry:snapshotTelemetry()};await sendPayload(prompt,attachments,envelope);}catch(error){status('Not confirmed: '+error.message+'.');}finally{batchInFlight=false;updateStartBtn();if(cameraStream&&!stopped)startBatching();}}
+function updateStartBtn(){const b=$('start');if(sensorActive){b.textContent='⏸';b.classList.add('is-on');}else{b.textContent='🎥';b.classList.remove('is-on');}}
+function updateEarBtn(){const on=localStorage.getItem(EAR_KEY)!=='off';$('ear').textContent='👂';$('ear').classList.toggle('on',on);}
+function updateVoiceBtn(){const on=localStorage.getItem(VOICE_KEY)==='on';$('voice').textContent=on?'🔊':'🔇';$('voice').classList.toggle('on',on);}
+function updateFlipBtn(){$('flip').disabled=!cameraStream;}
+async function enableAll(){if(sensorActive){stopMedia();return;}if(!navigator.mediaDevices){status('Camera/mic APIs unavailable.');return;}const version=++generation;let media=null;try{const earOn=localStorage.getItem(EAR_KEY)!=='off';media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:earOn?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});if(version!==generation){media.getTracks().forEach(t=>t.stop());return;}cameraStream=media;if(media.getAudioTracks().length)audioStream=media;$('camera').srcObject=cameraStream;await $('camera').play();sensorActive=true;startTelemetry(true);startBatching();updateFlipBtn();updateStartBtn();updateEarBtn();status(earOn?'Camera + audio + telemetry active.':'Camera + telemetry active (ear off).');}catch(e){status('Camera/audio unavailable: '+e.message);}}
 async function requestMotionPermission(){if(typeof DeviceMotionEvent!=='undefined'&&DeviceMotionEvent.requestPermission){try{const r=await DeviceMotionEvent.requestPermission();return r==='granted';}catch(e){return false;}}startTelemetry(true);return true;}
-function startTelemetry(motionGranted=true){telemetryEnabled=true;if(motionGranted){window.addEventListener('devicemotion',updateMotion,{passive:true});window.addEventListener('deviceorientation',updateOrientation,{passive:true});}if(navigator.geolocation)locationWatchId=navigator.geolocation.watchPosition(position=>{if(!telemetryEnabled)return;latestLocation={latitude:Number(position.coords.latitude.toFixed(3)),longitude:Number(position.coords.longitude.toFixed(3)),accuracy:position.coords.accuracy,captured_at:new Date().toISOString()};},()=>{}, {enableHighAccuracy:false,maximumAge:30000,timeout:10000});if(navigator.getBattery)navigator.getBattery().then(battery=>{if(telemetryEnabled)latestBattery={level:battery.level,charging:battery.charging,captured_at:new Date().toISOString()};}).catch(()=>{});}
-function cancelPhoneWork(){}
-
-function stopMedia(){generation++;sensorActive=false;stopBatching();cancelPhoneWork();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(track=>track.stop());if(audioStream)audioStream.getTracks().forEach(track=>track.stop());cameraStream=null;audioStream=null;recorder=null;$('camera').srcObject=null;pauseTelemetry();faceState='unknown';noFaceStreak=0;const button=$('enableEverything');button.classList.remove('is-on');button.setAttribute('aria-pressed','false');button.textContent='🎥 Start';setSwitchButton();updateCaptureState();updateBootNotice();}
-function audioMime(){for(const candidate of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'])if(window.MediaRecorder&&MediaRecorder.isTypeSupported(candidate))return candidate;return '';}
-async function recordAudioWindow(durationMs){const audio=audioStream&&audioStream.getAudioTracks()[0];if(!audio||!window.MediaRecorder)return null;const source=new MediaStream([audio]),mime=audioMime(),startedAt=new Date().toISOString(),captureGeneration=generation;return new Promise((resolve,reject)=>{const pieces=[],localRecorder=new MediaRecorder(source,mime?{mimeType:mime}:undefined);recorder=localRecorder;localRecorder.ondataavailable=event=>{if(event.data.size)pieces.push(event.data);};localRecorder.onerror=()=>{if(recorder===localRecorder)recorder=null;reject(new Error('audio capture failed'));};localRecorder.onstop=async()=>{if(recorder===localRecorder)recorder=null;if(captureGeneration!==generation){resolve(null);return;}if(!pieces.length){resolve(null);return;}try{const blob=new Blob(pieces,{type:localRecorder.mimeType||mime||'audio/webm'});if(blob.size>2*1024*1024)throw new Error('audio is larger than 2 MiB');const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';resolve({name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()});}catch(error){reject(error);}};try{localRecorder.start(250);setTimeout(()=>{if(localRecorder.state!=='inactive')localRecorder.stop();},durationMs);}catch(error){reject(error);}});}
-async function captureObservation(text,reason,audioMs){if(batchInFlight||(!sensorActive&&!text))return;batchInFlight=true;let observationGeneration=generation;try{if(sensorActive)await updateOwnerFaceSignal(observationGeneration);let observedFrame=sensorActive?takeFrame():null;if(observedFrame&&observedFrame.likely_black)blackFrameStreak++;else blackFrameStreak=0;let audio=null;if(sensorActive)try{audio=await recordAudioWindow(audioMs);}catch(error){status('Audio window unavailable.');}if(observationGeneration!==generation)return;const captureId=crypto.randomUUID(),attachments=[];if(observedFrame)attachments.push(observedFrame);if(audio)attachments.push(audio);const prompt=text||('Ambient observation batch '+(++batchSequence)+': summarize only evidence accepted from the phone as a bounded life experience; preserve uncertainty.');const envelope={schema_version:'sifta.capture.v1',capture_id:captureId,kind:reason,source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:observedFrame&&observedFrame.capturedAt,telemetry:snapshotTelemetry()};await sendPayload(prompt,attachments,envelope);}catch(error){status('Observation not confirmed: '+error.message+'.');}finally{batchInFlight=false;updateCaptureState();if(cameraStream&&!stopped)startBatching();}}
-async function sendPushObservation(audio){pushMode='sending';const button=$('pushTalk');button.disabled=true;try{let observedFrame=sensorActive?takeFrame():null;if(observedFrame&&observedFrame.likely_black)blackFrameStreak++;else blackFrameStreak=0;const captureId=crypto.randomUUID(),attachments=[];if(observedFrame)attachments.push(observedFrame);if(audio)attachments.push(audio);const prompt='Push-to-talk batch '+(++batchSequence)+': summarize only evidence accepted from the phone as a bounded life experience; transcribe my speech first; preserve uncertainty.';const envelope={schema_version:'sifta.capture.v1',capture_id:captureId,kind:'push_to_talk',source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:observedFrame&&observedFrame.capturedAt,telemetry:snapshotTelemetry()};await sendPayload(prompt,attachments,envelope);}catch(error){status('Push batch not confirmed: '+error.message+'.');}finally{button.disabled=false;button.textContent=pushLabel();updateCaptureState();}}
-async function pushTalkDown(){if(pushMode!=='idle'||batchInFlight||sending)return;if(!cameraStream&&!sensorActive){status('Enable camera first.');return;}if(pendingObservation){status('Previous batch is still waiting for its reply.');return;}stopBatching();pushMode='armed';pushStartTs=Date.now();const started=pushStartAudio();const button=$('pushTalk');if(!started){pushMode='idle';status('Microphone unavailable for push-to-talk.');return;}button.textContent='Release to send';updateCaptureState();}
-async function pushTalkEnd(){if(pushMode!=='armed')return;const heldMs=Date.now()-pushStartTs;if(heldMs<350){pushMode='toggled';$('pushTalk').textContent='Tap to send';updateCaptureState();return;}pushMode='sending';$('pushTalk').textContent='… sending';if(recorder&&recorder.state!=='inactive'){recorder.stop();return;}pushMode='idle';await sendPushObservation(null);}
-async function pushTalkCancel(){if(pushMode!=='toggled')return;pushMode='idle';if(recorder&&recorder.state!=='inactive')recorder.stop();$('pushTalk').textContent='Hold to talk';updateCaptureState();}
-function pushLabel(){return pushMode==='armed'?'Release to send':pushMode==='toggled'?'Tap to send':'Hold to talk';}
-const voiceBtn=$('voiceToggle');
-function setVoiceBtn(){const on=localStorage.getItem(VOICE_KEY)==='on';voiceBtn.textContent=on?'🔊':'🔇';}
-voiceBtn.onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');setVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
-setVoiceBtn();
+function startTelemetry(motionGranted=true){telemetryEnabled=true;if(motionGranted){window.addEventListener('devicemotion',updateMotion,{passive:true});window.addEventListener('deviceorientation',updateOrientation,{passive:true});}if(navigator.geolocation)locationWatchId=navigator.geolocation.watchPosition(p=>{if(!telemetryEnabled)return;latestLocation={latitude:Number(p.coords.latitude.toFixed(3)),longitude:Number(p.coords.longitude.toFixed(3)),accuracy:p.coords.accuracy,captured_at:new Date().toISOString()};},()=>{},{enableHighAccuracy:false,maximumAge:30000,timeout:10000});if(navigator.getBattery)navigator.getBattery().then(b=>{if(telemetryEnabled)latestBattery={level:b.level,charging:b.charging,captured_at:new Date().toISOString()};}).catch(()=>{});}
+function renderObservation(rows,jobs=[]){pendingObs=false;let latestReply='';for(const row of rows){const tid=String(row.turn_id||'');if(observationTurns.has(tid)&&row.reply){latestReply=String(row.reply).trim();}}if(latestReply){const first=latestReply.split(/(?<=[.!?])\s+/)[0]||latestReply;const cap=first.length<=120?first:first.slice(0,117)+'…';const caption=$('caption');caption.textContent=cap;caption.classList.add('show');clearTimeout(caption._hideTimer);caption._hideTimer=setTimeout(()=>{caption.classList.remove('show');},6000);const voiceOn=localStorage.getItem(VOICE_KEY)==='on';if(voiceOn&&!document.hidden){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(cap.slice(0,200));u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}}}
+async function refresh(){if(polling||stopped||document.hidden)return;polling=true;try{const data=await request('/api/history?session_id='+encodeURIComponent(session)),rows=data.history||[],jobs=data.observations||[];renderObservation(rows,jobs);const active=jobs.find(job=>job.state==='running'||job.state==='queued');if(active)status('Processing batch ('+active.state+').');}catch(error){status('History unavailable: '+error.message);}finally{polling=false;}}
+async function sendPayload(text,attachments=[],capture={}){if(sending)return;sending=true;$('send').disabled=true;try{const enriched={...capture};if(!Object.prototype.hasOwnProperty.call(enriched,'telemetry'))enriched.telemetry=snapshotTelemetry();const result=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,text,attachments,capture:enriched})});if(!result.accepted)throw new Error(result.message||'message not accepted');if(capture.capture_id&&result.turn_id){observationTurns.set(result.turn_id,{capture_id:capture.capture_id,ts:Date.now()/1000,image_received:attachments.some(a=>a.mime.startsWith('image/')),audio_received:attachments.some(a=>a.mime.startsWith('audio/')),telemetry_received:!!(enriched.telemetry&&Object.keys(enriched.telemetry.signals||{}).length)});pendingObs=true;}if($('text').value.trim()===text.trim())$('text').value='';status(result.status==='duplicate_reconciled'?'Batch already accepted.':'Input accepted.');await refresh();}catch(error){status('Not confirmed: '+error.message+'. Draft retained.');throw error;}finally{sending=false;$('send').disabled=false;}}
+async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
 </script>
 <script>
-/* Wiring, rendering, polling and the rest of the live loop */
-async function sendPayload(text,attachments=[],capture={}){if(sending)return;sending=true;$('send').disabled=true;try{const enrichedCapture={...capture};if(!Object.prototype.hasOwnProperty.call(enrichedCapture,'telemetry'))enrichedCapture.telemetry=snapshotTelemetry();const result=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,text,attachments,capture:enrichedCapture})});if(!result.accepted)throw new Error(result.message||'message not accepted');if(capture.capture_id&&result.turn_id){observationTurns.set(result.turn_id,{capture_id:capture.capture_id,ts:Date.now()/1000,image_received:attachments.some(a=>a.mime.startsWith('image/')),audio_received:attachments.some(a=>a.mime.startsWith('audio/')),telemetry_received:!!(enrichedCapture.telemetry&&Object.keys(enrichedCapture.telemetry.signals||{}).length)});pendingObservation=true;}if($('text').value.trim()===text.trim())$('text').value='';status(result.status==='duplicate_reconciled'?'Batch already accepted.':'Input accepted. Waiting for reply.');activateEye(attachments.length?'camera/audio input':'owner text input');await refresh();}catch(error){status('Not confirmed: '+error.message+'. Draft retained.');throw error;}finally{sending=false;$('send').disabled=false;}}
-$('send').onclick=async()=>{const text=$('text').value.trim();if(!text){status('Type a message first.');return;}if(batchInFlight){status('An observation batch is already being processed.');return;}try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_error){}};
-$('enableEverything').onclick=enableEverything;
-const voiceBtn2=$('voiceToggle');
-function setVoiceBtn2(){const on=localStorage.getItem(VOICE_KEY)==='on';voiceBtn2.textContent=on?'🔊':'🔇';}
-setVoiceBtn2();
-const earBtn=$('earToggle');
-function setEarBtn(){const on=localStorage.getItem(EAR_KEY)==='on';earBtn.textContent=on?'👂 on':'👂 off';earBtn.style.opacity=on?'1':'.5';}
-setEarBtn();
-earBtn.onclick=async()=>{
-  const wasOn=localStorage.getItem(EAR_KEY)==='on';
-  localStorage.setItem(EAR_KEY,wasOn?'off':'on');
-  setEarBtn();
-  if(!sensorActive){status('Enable camera first, then toggle ear.');return;}
-  if(!wasOn&&!audioStream){
-    try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Alice ear: on. She hears the world.');}
-    catch(e){status('Microphone unavailable: '+e.message);}
-  }else if(wasOn&&audioStream){
-    audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Alice ear: off. Camera still fed.');
-  }
-};
+$('start').onclick=enableAll;
+$('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');updateEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
+$('voice').onclick=()=>{const on=localStorage.getItem(VOICE_KEY)==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');updateVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
+$('flip').onclick=async()=>{if(!cameraStream)return;cameraFacing=cameraFacing==='environment'?'user':'environment';try{const next=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}}});cameraStream.getVideoTracks().forEach(t=>t.stop());next.getVideoTracks().forEach(t=>cameraStream.addTrack(t));}catch(e){status('Camera switch failed.');}};
+$('send').onclick=async()=>{const text=$('text').value.trim();if(!text){status('Type a message first.');return;}if(batchInFlight){status('Processing a batch.');return;}try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_e){}};
+updateEarBtn();updateVoiceBtn();updateStartBtn();updateFlipBtn();
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMedia();else refresh();});
-window.addEventListener('pagehide',()=>{stopped=true;clearInterval(timer);stopMedia();});
-if(typeof window.FaceDetector==='function'){try{faceDetector=new window.FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(_e){}}
-let observationTurns=new Map(),pendingObservation=false,polling2=false;
-async function refresh(){if(polling2||stopped||document.hidden)return;polling2=true;try{const data=await request('/api/history?session_id='+encodeURIComponent(session)),rows=data.history||[],jobs=data.observations||[];renderObservation(rows,jobs);const active=jobs.find(job=>job.state==='running'||job.state==='queued');if(active)status('Processing batch ('+active.state+').');}catch(error){status('History unavailable: '+error.message);}finally{polling2=false;}}
-async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
-function renderObservation(rows,jobs=[]){const view=observationView(rows,observationTurns,jobs);pendingObservation=view.pending.length>0;for(const [id,meta] of view.observations)observationTurns.set(id,meta);if(view.latest){const [id,meta]=view.latest;const raw=String(view.reply.text||'').trim();const firstSentence=raw.split(/(?<=[.!?])\s+/)[0]||raw;const captionText=firstSentence.length<=120?firstSentence:firstSentence.slice(0,117)+'…';const caption=$('videoCaption');if(captionText){caption.textContent=captionText;caption.style.display='block';clearTimeout(caption._hideTimer);caption._hideTimer=setTimeout(()=>{caption.style.display='none';},6000);}else{caption.style.display='none';}$('observationSummary').textContent=raw||'I have no description for this completed turn.';const voiceOn=localStorage.getItem(VOICE_KEY)==='on';if(captionText&&voiceOn&&!document.hidden){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(captionText.slice(0,200));u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}}else{$('observationSummary').textContent='I am waiting for my first completed phone observation.';}$('observationStatus').textContent=pendingObservation?'I am waiting for '+view.pending.length+' observation replies.':'No observation reply is pending.';}
-function observationView(rows,known,jobs=[]){const observations=new Map(),replies=new Map(),pending=[];let latest=null;for(const row of rows){const turnId=String(row.turn_id||'');const text=String(row.reply||row.text||'');if(observationTurns.has(turnId)){observations.set(turnId,observationTurns.get(turnId));replies.set(turnId,{text});latest=[turnId,observationTurns.get(turnId)];}else if(row.text){replies.set(turnId,{text:row.text});latest=[turnId,{ts:row.ts,capture_id:''}];}}return {observations,replies,pending,latest};}
-function activateEye(kind){const eye=$('eye');if(eye){eye.classList.add('is-live');setTimeout(()=>{eye.classList.remove('is-live');},2000);}}
-setVoiceBtn2();
+window.addEventListener('pagehide',()=>{stopped=true;stopMedia();});
 consumePairTicket();
 setInterval(refresh,5000);
 refresh();
-setVoiceBtn();
 </script>
 </body>
 </html>
