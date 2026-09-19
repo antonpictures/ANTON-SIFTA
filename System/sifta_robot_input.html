@@ -6,13 +6,13 @@
 <title>Alice</title>
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow-y:auto;overflow-x:hidden;background:#111;color:#eee;font:15px "Avenir Next",sans-serif}
+html,body{margin:0;height:100%;overflow-y:auto;overflow-x:hidden;background:#111;color:#eee;font:16px "Avenir Next",sans-serif}
 main{max-width:640px;margin:auto;padding:6px}
 .stage{position:relative;border-radius:12px;overflow:hidden;background:#000}
 video{display:block;width:100%;height:35vh;min-height:180px;object-fit:cover;background:#000}
-#cap{position:absolute;left:6px;right:6px;bottom:6px;background:rgba(0,0,0,.78);color:#fff;border-radius:8px;padding:5px 10px;font-size:12px;line-height:1.3;text-align:center;pointer-events:none;display:none}
-.bar{display:flex;gap:5px;justify-content:center;padding:4px 0;flex-wrap:wrap}
-.bar button{cursor:pointer;touch-action:manipulation;font:inherit;font-size:12px;border:1px solid #444;border-radius:16px;padding:6px 12px;background:#222;color:#ccc}
+#cap{background:rgba(0,0,0,.75);color:#fff;padding:10px 14px;font-size:14px;line-height:1.4;min-height:40px}
+.bar{display:flex;gap:5px;justify-content:center;padding:5px 0;flex-wrap:wrap}
+.bar button{cursor:pointer;touch-action:manipulation;font:inherit;font-size:13px;border:1px solid #444;border-radius:16px;padding:8px 14px;background:#222;color:#ccc}
 .bar button.on{background:var(--accent,#e8a580);color:#111;border-color:var(--accent)}
 .bar button.start{background:#176b3a;color:#fff;border-color:#176b3a;font-weight:700}
 .bar button.start.on{background:var(--accent,#e8a580);color:#111;border-color:var(--accent)}
@@ -26,8 +26,7 @@ textarea{font:inherit;border:1px solid #444;border-radius:8px;padding:6px;backgr
 <body><main>
 <div class="stage">
   <video id="cam" playsinline muted autoplay></video>
-  <div id="cap" role="status"></div>
-  <audio id="ttsAudio" preload="none"></audio>
+  <div id="cap">Alice is here. Tap 🎥 to start.</div>
 </div>
 <div class="bar">
   <button id="start" class="start">🎥</button>
@@ -36,7 +35,7 @@ textarea{font:inherit;border:1px solid #444;border-radius:8px;padding:6px;backgr
   <button id="flip">↻</button>
 </div>
 <section class="composer">
-  <textarea id="text" placeholder="..."></textarea>
+  <textarea id="text" placeholder="Type to Alice..."></textarea>
   <button id="send">Send</button>
   <p id="status" role="status"></p>
 </section>
@@ -44,16 +43,17 @@ textarea{font:inherit;border:1px solid #444;border-radius:8px;padding:6px;backgr
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-const SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',EAR_KEY='sifta_phone_ear',VOICE_KEY='sifta_phone_voice',CADENCE_KEY='sifta_phone_cadence';
+const SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',EAR_KEY='sifta_phone_ear',VOICE_KEY='sifta_phone_voice';
 const BATCH_MS=20000,MIN_MS=10000,MAX_MS=60000;
 let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false;
 let generation=0,sensorActive=false,telemetryOn=false;
 let latestMotion=null,latestOrient=null,latestGPS=null,latestBatt=null,gpsWatch=null;
 let batchTimer=null,batchInFlight=false,batchSeq=0,cameraFacing='environment',blackStreak=0,lastFlip=0;
-let cadenceMs=Math.min(MAX_MS,Math.max(MIN_MS,Number(localStorage.getItem('sifta_phone_cadence'))||10000));
-let polling=false,telemetryEnabled=false;
+let cadenceMs=Math.min(MAX_MS,Math.max(MIN_MS,Number(localStorage.getItem(CADENCE_KEY))||10000));
+let polling=false;
 const observationTurns=new Map();let pendingObs=false;
 const session=localStorage.getItem(SESSION_KEY)||(()=>{const s=crypto.randomUUID();localStorage.setItem(SESSION_KEY,s);return s;})();
+
 function status(t){$('status').textContent=t;}
 function setStartBtn(){const b=$('start');if(sensorActive){b.textContent='⏸';b.classList.add('on');}else{b.textContent='🎥';b.classList.remove('on');}}
 function setEarBtn(){const on=localStorage.getItem(EAR_KEY)!=='off';$('ear').textContent='👂';$('ear').classList.toggle('on',on);}
@@ -63,34 +63,20 @@ function snapshotTelemetry(){const s={};if(latestMotion)s.acceleration={x:latest
 function bytesToBase64(bytes){const bin=[];for(let i=0;i<bytes.length;i+=8192)bin.push(String.fromCharCode.apply(null,bytes.subarray(i,i+8192)));return btoa(bin.join(''));}
 async function request(url,options={}){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const headers=new Headers(options.headers||{}),owner=localStorage.getItem(OWNER_KEY);if(owner)headers.set('Authorization','Bearer '+owner);options.signal=controller.signal;Object.assign(options,{headers});const response=await fetch(url,options);if(!response.ok){const body=await response.text();let parsed={};try{parsed=JSON.parse(body)}catch(_e){}throw new Error(parsed.message||response.status+' '+response.statusText);}return JSON.parse(await response.text());}finally{clearTimeout(timer);}}
 async function digestText(text){const data=new TextEncoder().encode(text);const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-function updateMotion(e){if(!telemetryEnabled)return;if(e.accelerationIncludingGravity)latestMotion={x:e.accelerationIncludingGravity.x||0,y:e.accelerationIncludingGravity.y||0,z:e.accelerationIncludingGravity.z||0};}
-function updateOrientation(e){if(!telemetryEnabled)return;latestOrient={alpha:e.alpha||0,beta:e.beta||0,gamma:e.gamma||0};}
+function updateMotion(e){if(!telemetryOn)return;if(e.accelerationIncludingGravity)latestMotion={x:e.accelerationIncludingGravity.x||0,y:e.accelerationIncludingGravity.y||0,z:e.accelerationIncludingGravity.z||0};}
+function updateOrientation(e){if(!telemetryOn)return;latestOrient={alpha:e.alpha||0,beta:e.beta||0,gamma:e.gamma||0};}
 function takeFrame(){const v=$('cam');if(!cameraStream||!v.videoWidth)return null;const s=document.createElement('canvas');s.width=16;s.height=16;s.getContext('2d').drawImage(v,0,0,16,16);const px=s.getContext('2d').getImageData(0,0,16,16).data;let lum=0;for(let i=0;i<px.length;i+=4)lum+=(px[i]+px[i+1]+px[i+2])/3;lum/=px.length/4;const c=document.createElement('canvas');const sc=Math.min(1,1280/Math.max(v.videoWidth,v.videoHeight));c.width=Math.max(1,Math.round(v.videoWidth*sc));c.height=Math.max(1,Math.round(v.videoHeight*sc));c.getContext('2d').drawImage(v,0,0,c.width,c.height);const data=c.toDataURL('image/jpeg',.72);if(data.length>2800000)throw new Error('frame too large');return {name:'phone-frame.jpg',mime:'image/jpeg',data_url:data,capturedAt:new Date().toISOString(),width:c.width,height:c.height,likely_black:lum<8};}
 function startBatching(){if(batchTimer||!sensorActive)return;batchTimer=setTimeout(()=>{batchTimer=null;if(document.hidden||batchInFlight||sending||pendingObs||!cameraStream){if(cameraStream&&!stopped)startBatching();return;}captureObservation('','ambient',2500);},cadenceMs);}
 function stopBatching(){if(batchTimer){clearTimeout(batchTimer);batchTimer=null;}}
 function pauseTelemetry(){window.removeEventListener('devicemotion',updateMotion,{passive:true});window.removeEventListener('deviceorientation',updateOrientation,{passive:true});if(gpsWatch){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;}}
-function startTelemetry(motionGranted=true){telemetryEnabled=true;if(motionGranted){window.addEventListener('devicemotion',updateMotion,{passive:true});window.addEventListener('deviceorientation',updateOrientation,{passive:true});}if(navigator.geolocation)locationWatchId=navigator.geolocation.watchPosition(position=>{if(!telemetryEnabled)return;latestLocation={latitude:Number(position.coords.latitude.toFixed(3)),longitude:Number(position.coords.longitude.toFixed(3)),accuracy:position.coords.accuracy,captured_at:new Date().toISOString()};},()=>{}, {enableHighAccuracy:false,maximumAge:30000,timeout:10000});if(navigator.getBattery)navigator.getBattery().then(battery=>{if(telemetryEnabled)latestBattery={level:battery.level,charging:battery.charging,captured_at:new Date().toISOString()};}).catch(()=>{});}
-function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('cam').srcObject=null;pauseTelemetry();faceState='unknown';noFace=0;setStartBtn();setEarBtn();setFlipBtn();}
+function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('cam').srcObject=null;pauseTelemetry();setStartBtn();setEarBtn();setFlipBtn();}
 function audioMime(){for(const c of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'])if(window.MediaRecorder&&MediaRecorder.isTypeSupported(c))return c;return '';}
 async function recordAudioWindow(ms){const track=audioStream&&audioStream.getAudioTracks()[0];if(!track||!window.MediaRecorder)return null;const source=new MediaStream([track]),mime=audioMime(),startedAt=new Date().toISOString(),gen=generation;return new Promise((resolve,reject)=>{const pieces=[],rec=new MediaRecorder(source,mime?{mimeType:mime}:undefined);recorder=rec;rec.ondataavailable=e=>{if(e.data.size)pieces.push(e.data);};rec.onerror=()=>{if(recorder===rec)recorder=null;reject(new Error('audio capture failed'));};rec.onstop=async()=>{if(recorder===rec)recorder=null;if(gen!==generation){resolve(null);return;}if(!pieces.length){resolve(null);return;}try{const blob=new Blob(pieces,{type:rec.mimeType||mime||'audio/webm'});if(blob.size>2*1024*1024)throw new Error('audio > 2 MiB');const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';resolve({name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()});}catch(error){reject(error);}};try{rec.start(250);setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},ms);}catch(error){reject(error);}});}
 async function captureObservation(text,reason,audioMs){if(batchInFlight||(!sensorActive&&!text))return;batchInFlight=true;let gen=generation;try{let frame=sensorActive?takeFrame():null;if(frame&&frame.likely_black)blackStreak++;else blackStreak=0;let audio=null;const earOn=localStorage.getItem(EAR_KEY)!=='off';if(sensorActive&&earOn)try{audio=await recordAudioWindow(audioMs);}catch(e){}if(gen!==generation)return;const cid=crypto.randomUUID(),attachments=[];if(frame)attachments.push(frame);if(audio)attachments.push(audio);const prompt=text||('Ambient observation batch '+(++batchSeq)+': describe what you see in the image. What is in the room, who is visible, what is happening? Be concise, first person.');const envelope={schema_version:'sifta.capture.v1',capture_id:cid,kind:reason,source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:frame&&frame.capturedAt,telemetry:snapshotTelemetry()};await sendPayload(prompt,attachments,envelope);}catch(error){status(error.message);}finally{batchInFlight=false;setStartBtn();if(cameraStream&&!stopped)startBatching();}}
-function renderObservation(rows,jobs=[]){pendingObs=false;let latestReply='';for(const row of rows){if(row.reply)latestReply=String(row.reply).trim();}if(latestReply){const first=latestReply.split(/(?<=[.!?])\s+/)[0]||latestReply;const cap=first.length<=120?first:first.slice(0,117)+'…';const el=$('cap');el.textContent=cap;el.style.display='block';clearTimeout(el._t);el._t=setTimeout(()=>{el.style.display='none';},15000);setAliceState('speaking');
-    const vOn=localStorage.getItem(VOICE_KEY);const speaking=(vOn===null||vOn==='on');
-    if(speaking&&cap&&!document.hidden){
-      // 2026-09-19: play Alice's voice through the phone speaker via server-side TTS
-      try{
-        const audioEl=$('ttsAudio');
-        if(audioEl){
-          audioEl.src='/api/tts?text='+encodeURIComponent(cap.slice(0,300));
-          audioEl.play().catch(()=>{});
-        }
-      }catch(_e){}
-      // Also try speechSynthesis as backup
-      try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(cap.slice(0,200));u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}
-    }}}
+function renderObservation(rows,jobs=[]){pendingObs=false;let latestReply='';for(const row of rows){if(row.reply)latestReply=String(row.reply).trim();}if(latestReply){const first=latestReply.split(/(?<=[.!?])\s+/)[0]||latestReply;const cap=first.length<=120?first:first.slice(0,117)+'…';const el=$('cap');el.textContent=cap;const vOn=localStorage.getItem(VOICE_KEY);const speaking=(vOn===null||vOn==='on');if(speaking&&cap&&!document.hidden){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(cap.slice(0,200));u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}}}
 async function refresh(){if(polling||stopped||document.hidden)return;polling=true;try{const data=await request('/api/history?session_id='+encodeURIComponent(session)),rows=data.history||[],jobs=data.observations||[];renderObservation(rows,jobs);const active=jobs.find(job=>job.state==='running'||job.state==='queued');if(active)status('Processing...');}catch(error){status('History unavailable.');}finally{polling=false;}}
 async function sendPayload(text,attachments=[],capture={}){if(sending)return;sending=true;$('send').disabled=true;try{const enriched={...capture};if(!Object.prototype.hasOwnProperty.call(enriched,'telemetry'))enriched.telemetry=snapshotTelemetry();const result=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,text,attachments,capture:enriched})});if(!result.accepted)throw new Error(result.message||'not accepted');if(capture.capture_id&&result.turn_id){observationTurns.set(result.turn_id,{capture_id:capture.capture_id,ts:Date.now()/1000,image_received:attachments.some(a=>a.mime.startsWith('image/')),audio_received:attachments.some(a=>a.mime.startsWith('audio/')),telemetry_received:!!(enriched.telemetry&&Object.keys(enriched.telemetry.signals||{}).length)});pendingObs=true;}if($('text').value.trim()===text.trim())$('text').value='';status('Accepted.');await refresh();}catch(error){status(error.message);throw error;}finally{sending=false;$('send').disabled=false;}}
-async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('no session returned');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Paired.');}catch(error){status('Pairing failed: '+error.message);}}
+async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
 // ─── Wiring ───
 $('start').onclick=async()=>{
   if(sensorActive){stopMedia();return;}
@@ -105,52 +91,25 @@ $('start').onclick=async()=>{
     sensorActive=true;startTelemetry(true);startBatching();setStartBtn();setEarBtn();setFlipBtn();status(earOn?'Camera + audio + telemetry active.':'Camera + telemetry active (ear off).');
   }catch(e){status('Camera/audio unavailable: '+e.message);}
 };
-$('ear').onclick=async()=>{
-  const wasOn=localStorage.getItem(EAR_KEY)!=='off';
-  localStorage.setItem(EAR_KEY,wasOn?'off':'on');setEarBtn();
-  if(!sensorActive)return;
-  if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}
-  else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}
-};
-$('voice').onclick=()=>{const v=localStorage.getItem(VOICE_KEY),on=v===null||v==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');setVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
-$('flip').onclick=async()=>{
-  if(!cameraStream){status('Start first.');return;}
-  const next=cameraFacing==='environment'?'user':'environment';
-  cameraFacing=next;
-  // iOS: stop ALL tracks, get fresh stream with new facingMode
-  stopBatching();
-  cameraStream.getTracks().forEach(t=>t.stop());
-  cameraStream=null;$('cam').srcObject=null;
-  try{
-    const media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:next},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});
-    cameraStream=media;if(media.getAudioTracks().length)audioStream=media;
-    $('cam').srcObject=cameraStream;await $('cam').play();
-    if(sensorActive)startBatching();
-    status('Camera: '+next+'.');
-  }catch(e){
-    status('Flip failed: '+e.message);
-    try{
-      cameraFacing=cameraFacing==='user'?'environment':'user';
-      const restore=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});
-      cameraStream=restore;if(restore.getAudioTracks().length)audioStream=restore;
-      $('cam').srcObject=cameraStream;await $('cam').play();if(sensorActive)startBatching();
-      status('Restored previous camera.');
-    }catch(e2){status('Camera restore failed: '+e2.message);}
-  }
-};
-$('send').onclick=async()=>{
-  const text=$('text').value.trim();if(!text){status('Type a message.');return;}
-  if(batchInFlight){status('Processing previous batch.');return;}
-  try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_e){}
-};
+function requestMotionPermission(){if(typeof DeviceMotionEvent!=='undefined'&&DeviceMotionEvent.requestPermission){try{const r=DeviceMotionEvent.requestPermission();return r==='granted';}catch(e){return false;}}startTelemetry(true);return true;}
+function startTelemetry(motionGranted=true){telemetryOn=true;if(motionGranted){window.addEventListener('devicemotion',updateMotion,{passive:true});window.addEventListener('deviceorientation',updateOrientation,{passive:true});}if(navigator.geolocation)gpsWatch=navigator.geolocation.watchPosition(p=>{if(!telemetryOn)return;latestGPS={latitude:Number(p.coords.latitude.toFixed(3)),longitude:Number(p.coords.longitude.toFixed(3)),accuracy:p.coords.accuracy,captured_at:new Date().toISOString()};},()=>{},{enableHighAccuracy:false,maximumAge:30000,timeout:10000});if(navigator.getBattery)navigator.getBattery().then(b=>{if(telemetryOn)latestBatt={level:b.level,charging:b.charging,captured_at:new Date().toISOString()};}).catch(()=>{});}
+function pauseTelemetry(){window.removeEventListener('devicemotion',updateMotion,{passive:true});window.removeEventListener('deviceorientation',updateOrientation,{passive:true});if(gpsWatch){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;}}
+function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('cam').srcObject=null;pauseTelemetry();faceState='unknown';noFace=0;setStartBtn();setEarBtn();setFlipBtn();}
+let faceState='unknown',noFace=0,faceDetector=null;
+$('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');setEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
+$('voice').onclick=()=>{const v=localStorage.getItem(VOICE_KEY);const on=v===null||v==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');setVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
+$('flip').onclick=async()=>{if(!cameraStream){status('Start first.');return;}const next=cameraFacing==='environment'?'user':'environment';cameraFacing=next;stopBatching();cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;$('cam').srcObject=null;try{const media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:next},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});cameraStream=media;if(media.getAudioTracks().length)audioStream=media;$('cam').srcObject=cameraStream;await $('cam').play();if(sensorActive)startBatching();status('Camera: '+next+'.');}catch(e){status('Flip failed: '+e.message);try{cameraFacing=cameraFacing==='user'?'environment':'user';const restore=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});cameraStream=restore;if(restore.getAudioTracks().length)audioStream=restore;$('cam').srcObject=cameraStream;await $('cam').play();if(sensorActive)startBatching();status('Restored previous camera.');}catch(e2){status('Camera restore also failed.');}}};
+$('send').onclick=async()=>{const text=$('text').value.trim();if(!text){status('Type a message.');return;}if(batchInFlight){status('Processing previous batch.');return;}try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_e){}};
 $('text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('send').onclick();}});
-// ─── Init ───
+async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
+</script>
+<script>
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMedia();else refresh();});
 window.addEventListener('pagehide',()=>{stopped=true;stopMedia();});
 if(typeof window.FaceDetector==='function'){try{faceDetector=new window.FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(_e){}}
+consumePairTicket();
 setInterval(refresh,5000);
 refresh();
-try { enableAll(); } catch(e) { status('Auto-start: '+e.message); }
 </script>
 </body>
 </html>
