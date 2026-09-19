@@ -96,7 +96,16 @@ def _inception_reply(text: str, session_history: list = None) -> str:
         )
         with urllib.request.urlopen(req, timeout=30) as handle:
             payload = json.loads(handle.read().decode("utf-8", "replace"))
-        return str(payload.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        raw = str(payload.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        # 2026-09-19 owner: nanobots filter Mercury's raw output by comparing it
+        # against the cryptographic memories on the hard drive before it reaches
+        # the real world. Mercury proposes; Alice's nanobots verify.
+        try:
+            from System.swarm_speech_receipt_filter import strip_receipts_and_meta_for_speech
+            raw = strip_receipts_and_meta_for_speech(raw)
+        except Exception:
+            pass
+        return raw
     except Exception:
         return ""
 WEB_CHAT_MAX_BODY = 18 * 1024 * 1024
