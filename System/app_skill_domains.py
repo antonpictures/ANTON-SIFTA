@@ -21,6 +21,27 @@ from typing import Dict, List
 # These domains should match tags in the skill library (we can add "domains" to skills later).
 
 APP_SKILL_DOMAINS: Dict[str, List[str]] = {
+    # World of Warcraft — Azeroth Bridge (owner request 2026-09-19)
+    "world_of_warcraft": [
+        "game_world_knowledge",
+        "companion_not_automation",
+        "eula_boundary_respect",
+        "human_in_the_loop_confirmation",
+        "owner_lived_history",
+        "paladin_lore_2003_2006",
+        "battle_net_api_reading",
+        "honest_unverified_labelling",
+        "long_horizon_world_memory",
+        "never_claim_what_alice_did_not_do",
+    ],
+    "azeroth": [
+        "game_world_knowledge",
+        "companion_not_automation",
+        "eula_boundary_respect",
+        "human_in_the_loop_confirmation",
+        "honest_unverified_labelling",
+        "long_horizon_world_memory",
+    ],
     # WordAce / Teach Ace to Read
     "wordace": [
         "reading_teaching",

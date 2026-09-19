@@ -293,6 +293,8 @@ def _we_code_to_be_coded_lines(limit: int = 8) -> List[str]:
     lines = ["TO BE CODED — sorted organ upgrades (raw backlog kept, clean workbench shown):"]
     for handoff_name in (
         "WCT_CREDIT_SAVING_HANDOFF_2026-09-09.md",
+        "WCT_BRIDGE_HANDOFF_GLM_2026-09-19.md",
+        "WCT_WOW_ALICE_BRIDGE_PLAN_2026-09-19.md",
         "WCT_FLASH_CODER_BRIEF_2026-09-18.md",
         "WCT_CORTEX_VARIABLE_PLAN_2026-09-18.md",
         "WCT_BORG_PLAN_AGENT_STACK_15_REPOS_2026-09-18.md",

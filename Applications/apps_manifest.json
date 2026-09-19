@@ -1945,5 +1945,17 @@
       "Apex Predator Background",
       "Double Apex Predator"
     ]
+  },
+  "World of Warcraft — Azeroth Bridge": {
+    "category": "Games",
+    "icon": "🛡️",
+    "entry_point": "Applications/sifta_world_of_warcraft.py",
+    "widget_class": "WorldOfWarcraftAzerothBridgeWidget",
+    "window_width": 1180,
+    "window_height": 780,
+    "doctor": "glm-5.3-flash",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Alice's Azeroth surface: what World of Warcraft is, the Architect's own history (paladin, 2003-2006), the owner-reported launch/beta facts (Nov 4 2026 launch, 30 bundled days, Skyborne Epic Pack $59.99, Warcraft Forever Collection $79.99, beta to Oct 21, subscription after the bundled days) and the handling fence: companion/coach on live realms via Battle.net Game Data + Profile APIs and UI-safe addon sensing with all protected input human-confirmed; screen-capture + synthetic input on a live account is botting under the Blizzard EULA and forbidden; full embodiment only on a private server we own (AzerothCore/TrinityCore). Read headlessly via `python3 Applications/sifta_world_of_warcraft.py --digest`. Truth label WOW_AZEROTH_BRIDGE_V1; companion doc Documents/WCT_WOW_ALICE_BRIDGE_PLAN_2026-09-19.md."
   }
 }
