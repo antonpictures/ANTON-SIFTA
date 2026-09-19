@@ -209,14 +209,12 @@ def prepare(row, store, *, transcriber=transcribe_file):
         store.update(turn, state="coalesced")
         return ""
     if store.get(turn).get("error") != "consent revoked":
-        from System.swarm_web_global_chat_gate import web_attachment_prompt_block
         images = [a for a in row.get("attachments", []) if a.get("mime", "").startswith("image/")]
         if images:
             # 2026-09-18 borg: the phone camera is a real EYE. A local VLM
             # (owner-named in .sifta_state/local_vision_eye.txt) looks at the
             # frame BEFORE the prompt is assembled; its description replaces
-            # the OCR meta-receipt as the primary visual evidence. OCR stays
-            # appended as a bounded secondary source.
+            # the OCR meta-receipt as the primary visual evidence.
             described = False
             for image in images:
                 vpath = (REPO / image.get("storage_relpath", "")).resolve()
@@ -239,10 +237,9 @@ def prepare(row, store, *, transcriber=transcribe_file):
                     )
                     described = True
                     break
-            if images and not described:
+            if not described:
+                from System.swarm_web_global_chat_gate import web_attachment_prompt_block
                 blocks.append(web_attachment_prompt_block(images))
-        else:
-            pass
     context = "\n\n".join(blocks)
     store.update(turn, context=context)
     return context
