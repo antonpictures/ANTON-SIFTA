@@ -58,6 +58,38 @@ CHORUS_LOG.parent.mkdir(parents=True, exist_ok=True)
 
 # Public web chat is an extension of this server, never a rival listener.
 WEB_CHAT_DEV_MODE = os.environ.get("SIFTA_WEB_CHAT_DEV_MODE", "0") == "1"
+# 2026-09-19: Inception Labs Mercury 2.5 as the instant-reply engine for stigmergicoin.com
+_INCEPTION_KEY_FILE = _REPO / ".sifta_state" / "inception_api_key"
+_INCEPTION_HOST = "https://api.inceptionlabs.ai/v1/chat/completions"
+
+def _inception_reply(text: str, session_history: list = None) -> str:
+    """Direct reply via Inception Labs Mercury 2.5 — instant, no night-worker queue."""
+    key = ""
+    if _INCEPTION_KEY_FILE.exists():
+        key = _INCEPTION_KEY_FILE.read_text(encoding="utf-8").strip()
+    if not key:
+        return ""
+    import urllib.request
+    messages = []
+    for prev in (session_history or [])[-6:]:
+        messages.append({"role": "user", "content": str(prev)})
+    messages.append({"role": "user", "content": text})
+    body = json.dumps({
+        "model": "mercury-2.5",
+        "reasoning_effort": "low",
+        "messages": messages,
+    }).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            _INCEPTION_HOST, data=body,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as handle:
+            payload = json.loads(handle.read().decode("utf-8", "replace"))
+        return str(payload.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+    except Exception:
+        return ""
 WEB_CHAT_MAX_BODY = 18 * 1024 * 1024
 WEB_CHAT_PAGE = r"""<!doctype html>
 <html lang="en">
@@ -1067,6 +1099,31 @@ class ChorusHandler(BaseHTTPRequestHandler):
                 return
             # Dev mode provides a local smoke path while Talk is closed. It
             # still records the web register and deliberately has no effectors.
+            # 2026-09-19: Inception Labs instant reply for simple text turns.
+            # If no attachments, no media request, and no dev mode, answer
+            # directly so the phone gets a reply without the night worker.
+            attachments = payload.get("attachments") or []
+            capture_payload = payload.get("capture") or {}
+            if not attachments and WEB_CHAT_DEV_MODE is False:
+                record_web_user_turn(result)
+                inception_text = _inception_reply(
+                    str(payload.get("text") or ""),
+                    session_history=[],
+                )
+                if inception_text:
+                    complete_web_turn(
+                        result["turn_id"],
+                        inception_text,
+                        model="inception-mercury-2.5",
+                        session_id=str(result["session_id"]),
+                        done_reason="INCEPTION_DIRECT",
+                    )
+                    self._respond(200, {
+                        "accepted": True, "status": "answered",
+                        "turn_id": result["turn_id"], "session_id": str(result["session_id"]),
+                        "speak_requested": bool(payload.get("speak_requested")),
+                    })
+                    return
             if WEB_CHAT_DEV_MODE:
                 from System import chorus_engine
                 from System.swarm_web_image_service import handle_media_request
