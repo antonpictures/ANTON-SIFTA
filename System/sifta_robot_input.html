@@ -50,7 +50,7 @@ let generation=0,sensorActive=false,telemetryOn=false;
 let latestMotion=null,latestOrient=null,latestGPS=null,latestBatt=null,gpsWatch=null;
 let batchTimer=null,batchInFlight=false,batchSeq=0,cameraFacing='environment',blackStreak=0,lastFlip=0;
 let cadenceMs=Math.min(MAX_MS,Math.max(MIN_MS,Number(localStorage.getItem('sifta_phone_cadence'))||10000));
-let polling=false;
+let polling=false,telemetryEnabled=false;
 const observationTurns=new Map();let pendingObs=false;
 const session=localStorage.getItem(SESSION_KEY)||(()=>{const s=crypto.randomUUID();localStorage.setItem(SESSION_KEY,s);return s;})();
 function status(t){$('status').textContent=t;}
