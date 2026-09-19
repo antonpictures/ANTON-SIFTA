@@ -735,6 +735,8 @@ class ChorusHandler(BaseHTTPRequestHandler):
             self._handle_ping()
         elif urlsplit(self.path).path == "/api/stigmergicode/pair":
             self._handle_stigmergicode_pair()
+        elif urlsplit(self.path).path.startswith("/api/tts"):
+            self._handle_tts()
         elif urlsplit(self.path).path == "/api/phone/cancel":
             self._handle_phone_cancel()
         elif urlsplit(self.path).path == "/api/stigmergicode":
@@ -1257,6 +1259,40 @@ class ChorusHandler(BaseHTTPRequestHandler):
             with CHORUS_LOG.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"ts": time.time(), "event": "web_replies_error", "error": type(exc).__name__}) + "\n")
             self._respond(500, {"message": "Replies are temporarily unavailable."})
+
+    def _handle_tts(self):
+        """Generate TTS audio server-side using say + afconvert (Apple Silicon)."""
+        import urllib.parse as _up
+        query = _up.parse_qs(urlsplit(self.path).query)
+        text = query.get("text", [""])[0].strip()
+        if not text or len(text) > 500:
+            self._respond(400, {"error": "text required, max 500 chars"})
+            return
+        import subprocess, tempfile, os
+        aiff = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
+        aiff_path = aiff.name
+        aiff.close()
+        m4a_path = aiff_path + ".m4a"
+        try:
+            subprocess.run(["say", "-o", aiff_path, text],
+                           capture_output=True, timeout=15)
+            subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", aiff_path, aiff_path + ".m4a"],
+                           capture_output=True, timeout=15)
+            audio_data = open(aiff_path + ".m4a", "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mp4")
+            self.send_header("Content-Length", str(len(audio_data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(audio_data)
+        except Exception as exc:
+            self._respond(500, {"error": str(exc)[:200]})
+        finally:
+            try:
+                os.unlink(aiff_path)
+                os.unlink(aiff_path + ".m4a")
+            except OSError:
+                pass
 
     def _respond_html(self, code: int, body: str, *, head_only: bool = False):
         data = body.encode("utf-8")
