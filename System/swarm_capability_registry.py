@@ -1333,12 +1333,53 @@ def capabilities_for_open_app_prompt(app_name: str, *, limit: int = 8) -> str:
     return "\n".join(lines)
 
 
+def capability_availability_gate(
+    caps: Optional[List[Capability]] = None,
+    *,
+    state_root: Any = None,
+    readings: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[Capability]]:
+    """D1: split the index into what this body can do now and what it cannot, with reasons.
+
+    A capability whose backing tool/organ is in the D1 loss ledger, or whose body reading is
+    gone, is not offered for the next step. Loss is read from the body, never inferred from
+    an exception at call time. Returns ``{"available": [...], "unavailable": [...]}`` with
+    ``unavailable`` entries tagged in ``backing["blocked"]`` = ``{"reason_code", "detail"}``.
+    """
+    index = list(caps) if caps is not None else build_capability_index()
+    try:
+        from System.swarm_boot_identity import capability_health
+
+        health = capability_health(state_root=state_root, readings=readings)
+    except Exception:
+        health = {}
+    available: List[Capability] = []
+    unavailable: List[Capability] = []
+    for cap in index:
+        backing = dict(getattr(cap, "backing", {}) or {})
+        organ = str(backing.get("tool") or backing.get("organ") or cap.name)
+        entry = health.get(organ) or health.get(cap.name) or {}
+        if entry.get("state") == "lost":
+            backing["blocked"] = {
+                "reason_code": entry.get("reason_code") or "STALE_CAPABILITY",
+                "detail": entry.get("detail") or f"{organ} reported lost by this body",
+            }
+            cap.backing = backing
+            unavailable.append(cap)
+        else:
+            backing.pop("blocked", None)
+            cap.backing = backing
+            available.append(cap)
+    return {"available": available, "unavailable": unavailable}
+
+
 def capability_field_summary() -> Dict[str, Any]:
     """Counts + sample, for status dashboards / verify-all-chains style probes."""
     caps = build_capability_index()
     def _is_app(c: Capability) -> bool:
         b = getattr(c, "backing", {}) or {}
         return bool(b.get("app_widget_class") or b.get("app_entry_point"))
+    gate = capability_availability_gate(caps)
     return {
         "ts": time.time(),
         "total": len(caps),
@@ -1347,5 +1388,6 @@ def capability_field_summary() -> Dict[str, Any]:
         "hybrids": sum(1 for c in caps if c.is_hybrid()),
         "apps": sum(1 for c in caps if _is_app(c)),
         "learned_from_trace": sum(1 for c in caps if c.learned_from_trace),
+        "unavailable_now": [c.name for c in gate["unavailable"]],
         "sample": [c.name for c in caps[:12]],
     }

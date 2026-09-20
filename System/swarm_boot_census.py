@@ -100,11 +100,58 @@ def _body_monitor_counts(*, probe_body: bool) -> Dict[str, int]:
         }
 
 
+_BLANK_BOOT_IDENTITY: Dict[str, Any] = {
+    "boot_id": None,
+    "boot_sequence": 0,
+    "previous_boot_id": None,
+    "topology_id": None,
+    "headless": None,
+    "body_roles": [],
+    "unavailable_capabilities": [],
+}
+
+
+def _boot_identity_block(state_root: Optional[Path] = None) -> Dict[str, Any]:
+    """D1: which body woke up here, and what it can no longer do.
+
+    Read-only by design: the census reports the boot lineage, it does not record a boot.
+    ``start_boot()`` is what records one, and ``main()`` below is the command that boots.
+    """
+    try:
+        from System.swarm_boot_identity import (
+            capability_health,
+            previous_boot,
+            run_probes,
+            topology_facts,
+            topology_id,
+        )
+
+        readings = run_probes()
+        facts = topology_facts(readings=readings)
+        prior = previous_boot(state_root=state_root) or {}
+        mine = prior if prior.get("pid") == os.getpid() else {}
+        health = capability_health(state_root=state_root, readings=readings)
+        return {
+            "boot_id": mine.get("boot_id"),
+            "boot_sequence": int(mine.get("sequence", 0) or 0),
+            "previous_boot_id": prior.get("boot_id"),
+            "topology_id": topology_id(facts=facts),
+            "headless": facts.get("headless"),
+            "body_roles": list(facts.get("roles") or []),
+            "unavailable_capabilities": sorted(
+                name for name, entry in health.items() if entry.get("state") == "lost"
+            ),
+        }
+    except Exception:
+        return dict(_BLANK_BOOT_IDENTITY)
+
+
 def boot_census(
     *,
     state_dir: Optional[Path] = None,
     probe_body: bool = True,
     probe_identity: bool = True,
+    probe_boot_identity: bool = True,
 ) -> Dict[str, Any]:
     state = Path(state_dir) if state_dir is not None else _STATE
     field = _last_jsonl_payload(state / "organ_field_vector.jsonl")
@@ -115,6 +162,10 @@ def boot_census(
         if probe_identity
         else {"identity_present": 0, "identity_silent": 0, "identity_total": 0}
     )
+    if probe_boot_identity:
+        out.update(_boot_identity_block(state))
+    else:
+        out.update(dict(_BLANK_BOOT_IDENTITY))
     out.update(
         {
             "field_declared_organs": int(field.get("declared_organ_count", 0) or 0),
@@ -159,6 +210,16 @@ def boot_census_lines(census: Optional[Dict[str, Any]] = None) -> list[str]:
     lines = [
         f"🐜  {real} REAL body organs  |  DEMO {demo}  BROKEN {broken}  UNKNOWN {unknown}",
     ]
+    if c.get("boot_id"):
+        # D1: the banner names the body and boot it is actually running in, and it says
+        # out loud what this body can no longer do.
+        roles = ",".join(c.get("body_roles") or []) or "none"
+        lines.append(
+            f"🧭  {c.get('topology_id')}  |  roles {roles}  |  headless {c.get('headless')}"
+        )
+        lost = list(c.get("unavailable_capabilities") or [])
+        if lost:
+            lines.append(f"⛔  unavailable now: {', '.join(lost)}")
     if identity_total:
         lines.append(f"🧬  {identity_total} identity probes  |  {identity_present} present now")
     if dims or swimmers or edges:
@@ -198,6 +259,13 @@ def render_boot_banner(os_line: Optional[str] = None) -> str:
 
 
 def main() -> None:
+    # the boot banner is the command that boots: record this boot first, then report it.
+    try:
+        from System.swarm_boot_identity import start_boot
+
+        start_boot(state_root=_STATE)
+    except Exception:
+        pass
     print(render_boot_banner())
 
 
