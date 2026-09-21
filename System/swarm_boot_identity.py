@@ -40,6 +40,14 @@ REASON_TARGET_UNKNOWN = "TARGET_UNKNOWN"
 _LOST = "lost"
 _RECOVERED = "recovered"
 
+# Evidence provenance for a health entry. R1: an entry must say *where* its claim came
+# from, because a measurement and a ledger row do not have the same authority.
+EVIDENCE_LEDGER_LOST = "ledger_lost"
+EVIDENCE_LEDGER_RECOVERED = "ledger_recovered"
+EVIDENCE_PROBE_FAILED = "probe_failed"
+EVIDENCE_PROBE_UNKNOWN = "probe_unknown"
+EVIDENCE_PROBE_PRESENT = "probe_present"
+
 
 # ── shared plumbing (same fallbacks the rest of the body uses) ─────────────────
 
@@ -485,40 +493,97 @@ def capability_health(*, state_root: Optional[os.PathLike | str] = None,
 
     A capability the probes cannot measure is reported ``lost`` with a reason — never
     silently dropped, and never assumed present.
+
+    R1 evidence precedence, per capability (never across capabilities):
+
+    * a *recovery* row is superseded by a **fresh probe failure**, because a direct
+      measurement outranks older history that claims the organ works again;
+    * a *loss* row is **not** cleared by a probe that merely reads present: the ledger
+      records faults a probe cannot see (a remote link, a tool, an owner block), so the
+      more precise loss stands and the disagreement is recorded;
+    * a probe that is ``None`` is *unknown*, which is distinct from an explicit failure —
+      it keeps the prior claim but raises ``discovery_required``.
+
+    Every entry carries provenance: ``evidence`` (which kind of claim won),
+    ``boot_id`` and ``boot_changed`` (so a claim is not silently inherited across a
+    restart), and ``age_ms``.
     """
+    stamp = time.time() if now is None else now
+    here = (previous_boot(state_root=state_root) or {}).get("boot_id")
     state: Dict[str, Dict[str, Any]] = {}
     for row in _iter_rows(_health_path(state_root)):
         name = row.get("capability")
         if not name:
             continue
-        if row.get("kind") == _RECOVERED:
-            state[name] = {"state": "present", "reason_code": None,
-                           "detail": row.get("detail"), "at_utc": row.get("at_utc")}
-        else:
-            state[name] = {"state": _LOST, "reason_code": row.get("reason_code") or REASON_BLOCKED,
-                           "detail": row.get("detail"), "at_utc": row.get("at_utc")}
+        recovered = row.get("kind") == _RECOVERED
+        state[name] = {
+            "state": "present" if recovered else _LOST,
+            "reason_code": None if recovered else (row.get("reason_code") or REASON_BLOCKED),
+            "detail": row.get("detail"),
+            "at_utc": row.get("at_utc"),
+            "evidence": EVIDENCE_LEDGER_RECOVERED if recovered else EVIDENCE_LEDGER_LOST,
+            "boot_id": row.get("boot_id"),
+        }
 
     measured = run_probes(state_root=state_root) if readings is None else dict(readings)
     for name, value in sorted(measured.items()):
-        if value is None or value is False:
-            # only claim loss when the ledger does not already describe it more precisely
-            state.setdefault(name, {
+        prior = state.get(name)
+        if prior is None:
+            # first evidence this body has about the capability
+            if value is None or value is False:
+                unknown = value is None
+                state[name] = {
+                    "state": _LOST,
+                    "reason_code": PROBE_CAPABILITY_REASONS.get(name, REASON_UNSUPPORTED),
+                    "detail": "probe reported no usable reading" if unknown else "probe reported unavailable",
+                    "at_utc": utc_now(now=stamp),
+                    "evidence": EVIDENCE_PROBE_UNKNOWN if unknown else EVIDENCE_PROBE_FAILED,
+                    "boot_id": here,
+                    "discovery_required": unknown,
+                }
+            else:
+                state[name] = {
+                    "state": "present", "reason_code": None, "detail": None,
+                    "at_utc": utc_now(now=stamp),
+                    "evidence": EVIDENCE_PROBE_PRESENT,
+                    "boot_id": here,
+                    "discovery_required": False,
+                }
+            continue
+
+        if prior.get("state") == _LOST:
+            # The ledger already describes a loss. A probe reading says nothing about the
+            # fault the ledger recorded, so it must not erase it — record disagreement.
+            prior["probe_disagrees"] = value is True
+            continue
+
+        # Prior claim is present (a recovery row). Only a *fresh failure* overrides it.
+        if value is False:
+            state[name] = {
                 "state": _LOST,
                 "reason_code": PROBE_CAPABILITY_REASONS.get(name, REASON_UNSUPPORTED),
-                "detail": "probe reported no usable reading" if value is None else "probe reported unavailable",
-                "at_utc": utc_now(now=now),
-            })
-        else:
-            # a measured reading is positive evidence of presence, unless the ledger
-            # records a loss that the probe cannot see (e.g. a tool, not a sensor)
-            state.setdefault(name, {
-                "state": "present", "reason_code": None, "detail": None,
-                "at_utc": utc_now(now=now),
-            })
-    stamp = time.time() if now is None else now
+                "detail": "probe reported unavailable",
+                "at_utc": utc_now(now=stamp),
+                "evidence": EVIDENCE_PROBE_FAILED,
+                "boot_id": here,
+                "discovery_required": False,
+                "superseded": {
+                    "evidence": prior.get("evidence"),
+                    "at_utc": prior.get("at_utc"),
+                    "boot_id": prior.get("boot_id"),
+                },
+            }
+        elif value is None:
+            # unknown is not failure: keep the claim, but ask for discovery
+            prior["discovery_required"] = True
+
     for entry in state.values():
         parsed = _parse_utc(entry.get("at_utc"))
         entry["age_ms"] = None if parsed is None else max(0, int((stamp - parsed) * 1000))
+        entry.setdefault("discovery_required", False)
+        entry["boot_changed"] = bool(
+            here and entry.get("boot_id") and entry.get("boot_id") != here
+        )
     return state
 
 
@@ -544,17 +609,27 @@ def planning_view(actions: Sequence[Mapping[str, Any]], *,
     health = capability_health(state_root=state_root, now=now, readings=readings)
     available: list[Dict[str, Any]] = []
     blocked: list[Dict[str, Any]] = []
+    discovery: list[Dict[str, Any]] = []
     for action in actions:
         name = str(action.get("name") or "")
         missing = []
         for requirement in action.get("preconditions") or ():
-            entry = health.get(str(requirement))
+            requirement = str(requirement)
+            entry = health.get(requirement)
             if entry is None:
                 # never reported by this body: on an unfamiliar body the planner must
                 # not assume the organ exists.
-                missing.append((str(requirement), REASON_UNSUPPORTED))
+                missing.append((requirement, REASON_UNSUPPORTED))
+                discovery.append({"capability": requirement, "for_action": name,
+                                  "state": "unreported",
+                                  "reason": "never reported by this body; probe before use"})
             elif entry.get("state") == _LOST:
-                missing.append((str(requirement), entry.get("reason_code") or REASON_BLOCKED))
+                missing.append((requirement, entry.get("reason_code") or REASON_BLOCKED))
+                if entry.get("discovery_required"):
+                    # unknown is not failure: name the discovery the planner owes
+                    discovery.append({"capability": requirement, "for_action": name,
+                                      "state": "unknown",
+                                      "reason": entry.get("evidence") or "probe_unknown"})
         if missing:
             requirement, reason = missing[0]
             blocked.append({
@@ -566,6 +641,7 @@ def planning_view(actions: Sequence[Mapping[str, Any]], *,
         else:
             available.append(dict(action))
     return {"available": available, "unavailable": blocked,
+            "discovery_required": discovery,
             "topology_id": topology_id(readings=readings),
             "checked_at_utc": utc_now(now=now)}
 

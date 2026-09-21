@@ -343,3 +343,102 @@ def test_capability_registry_withholds_a_lost_organ(tmp_path):
     B.mark_recovered("rvr1", state_root=tmp_path)
     restored = R.capability_availability_gate([cap, ok], state_root=tmp_path)
     assert [c.name for c in restored["available"]] == ["rvr1_drive", "speak"]
+
+
+# ── R1: evidence precedence by source, capability and freshness ────────────────
+
+def test_fresh_probe_failure_supersedes_an_older_recovery(tmp_path):
+    """The audit's exact reproduction: an old recovery must not hide a live failure."""
+    B.mark_recovered("camera", now=100, state_root=tmp_path)
+    view = B.planning_view([{"name": "navigate", "preconditions": ["camera"]}],
+                           now=103, readings={"camera": False}, state_root=tmp_path)
+    assert view["available"] == []
+    assert view["unavailable"][0]["blocked_by"] == ["camera"]
+
+    health = B.capability_health(state_root=tmp_path, now=103, readings={"camera": False})
+    entry = health["camera"]
+    assert entry["state"] == "lost"
+    assert entry["evidence"] == "probe_failed"
+    assert entry["superseded"]["evidence"] == "ledger_recovered"
+
+
+def test_present_then_failed_then_recovered(tmp_path):
+    """Full arc: presence, a measured failure, then a recorded recovery."""
+    readings = {"camera": True}
+    assert B.capability_health(state_root=tmp_path, readings=readings)["camera"]["state"] == "present"
+
+    failed = B.capability_health(state_root=tmp_path, readings={"camera": False})
+    assert failed["camera"]["state"] == "lost"
+    assert failed["camera"]["evidence"] == "probe_failed"
+
+    B.mark_recovered("camera", state_root=tmp_path)
+    assert B.capability_health(state_root=tmp_path, readings=readings)["camera"]["state"] == "present"
+
+
+def test_stale_recovery_does_not_erase_a_fresh_failure_across_a_restart(tmp_path):
+    """A recovery carried across a boot boundary is still superseded by a live failure."""
+    B.start_boot(state_root=tmp_path, readings=MAC_READINGS, process_boot_id="boot-a")
+    B.mark_recovered("camera", now=100, state_root=tmp_path)
+    B.start_boot(state_root=tmp_path, readings=MAC_READINGS, process_boot_id="boot-b")
+
+    health = B.capability_health(state_root=tmp_path, now=103, readings={"camera": False})
+    assert health["camera"]["state"] == "lost"
+    assert health["camera"]["superseded"]["boot_id"] is not None
+
+
+def test_unknown_reading_is_not_an_explicit_failure(tmp_path):
+    """``None`` is unknown: the claim survives, but discovery is demanded."""
+    B.mark_recovered("camera", state_root=tmp_path)
+    health = B.capability_health(state_root=tmp_path, readings={"camera": None})
+    entry = health["camera"]
+    assert entry["state"] == "present"          # unknown is not a measured failure
+    assert entry["discovery_required"] is True
+    assert entry["evidence"] == "ledger_recovered"
+
+    # with no prior claim, unknown is reported unavailable but stays distinguishable
+    fresh = B.capability_health(state_root=tmp_path, readings={"thermal": None})
+    assert fresh["thermal"]["state"] == "lost"
+    assert fresh["thermal"]["evidence"] == "probe_unknown"
+    assert fresh["thermal"]["discovery_required"] is True
+
+
+def test_a_sensor_probe_never_erases_an_unrelated_tool_fault(tmp_path):
+    """Precedence is per capability: a healthy sensor says nothing about a tool."""
+    B.mark_lost("arm_tool", reason_code="BLOCKED", detail="servo fault", state_root=tmp_path)
+    health = B.capability_health(state_root=tmp_path, readings={"camera": True})
+    assert health["arm_tool"]["state"] == "lost"
+    assert health["arm_tool"]["reason_code"] == "BLOCKED"
+    assert health["camera"]["state"] == "present"
+
+    # and a probe reading *present* cannot clear the ledger's more precise loss
+    disagreed = B.capability_health(state_root=tmp_path, readings={"network": True})
+    assert disagreed["network"]["state"] == "present"   # no ledger rows for network here
+
+
+def test_probe_reading_present_cannot_clear_a_recorded_loss(tmp_path):
+    B.mark_lost("network", reason_code="BLOCKED", detail="wifi down", state_root=tmp_path)
+    health = B.capability_health(state_root=tmp_path, readings={"network": True})
+    assert health["network"]["state"] == "lost"
+    assert health["network"]["evidence"] == "ledger_lost"
+    assert health["network"]["probe_disagrees"] is True
+
+
+def test_health_entries_carry_boot_identity_and_age(tmp_path):
+    B.start_boot(state_root=tmp_path, readings=MAC_READINGS, process_boot_id="boot-a")
+    B.mark_lost("arm_tool", reason_code="BLOCKED", state_root=tmp_path, now=100)
+    B.start_boot(state_root=tmp_path, readings=MAC_READINGS, process_boot_id="boot-b")
+
+    entry = B.capability_health(state_root=tmp_path, now=103)["arm_tool"]
+    assert entry["boot_id"] == "boot-a"
+    assert entry["boot_changed"] is True
+    assert entry["age_ms"] >= 0
+
+
+def test_unknown_dependency_is_an_actionable_discovery_state(tmp_path):
+    view = B.planning_view([{"name": "navigate", "preconditions": ["camera"]}],
+                           state_root=tmp_path, readings={"camera": None})
+    assert view["available"] == []
+    assert view["discovery_required"] == [
+        {"capability": "camera", "for_action": "navigate", "state": "unknown",
+         "reason": "probe_unknown"}
+    ]
