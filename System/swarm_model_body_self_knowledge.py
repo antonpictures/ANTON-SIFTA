@@ -22,8 +22,12 @@ rather than reciting model names she cannot verify. That is the whole point — 
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
+
+# Asset types the self-knowledge inventory reports (unchanged shape from before).
+_INVENTORY_SUFFIXES = (".py", ".md", ".json", ".txt", ".csv", ".pdf", ".png")
 
 # The distinction George said took him a while: MLX != GGUF != vLLM.
 RUNTIME_TAXONOMY: dict[str, str] = {
@@ -86,17 +90,33 @@ def body_file_inventory(key_dirs: tuple[str, ...] = ("System", "Applications", "
         p = repo / d
         if not p.exists():
             continue
-        for f in sorted(p.rglob("*"))[: 200]:  # safety bound
-            if f.is_file() and f.suffix in (".py", ".md", ".json", ".txt", ".csv", ".pdf", ".png"):
+        # No prefix cut here. Any bound applied to sorted(rglob(...)) is an
+        # ordering decision in disguise: System/ alone holds 7489 entries, so an
+        # alphabetical prefix stopped before most of it (System/ contributed 2 of
+        # 50 rows, tests/ 1, while tools/ took 41) and organs written into my own
+        # body could never appear. The walk is exhaustive; the 50-row output bound
+        # below is applied after ranking, so recent self-evolution always survives.
+        #
+        # os.walk keeps that exhaustive walk cheap: directory type comes from the
+        # dirent, and only qualifying extensions are stat()ed, so this costs ~4k
+        # stats instead of a stat per entry (measured 657ms -> see _INVENTORY_SUFFIXES).
+        for root, _dirs, names in os.walk(p):
+            for name in names:
+                if os.path.splitext(name)[1] not in _INVENTORY_SUFFIXES:
+                    continue
+                fp = Path(root) / name
                 try:
-                    stat = f.stat()
-                    out.append({
-                        "path": str(f.relative_to(repo)),
-                        "size": stat.st_size,
-                        "mtime": stat.st_mtime,
-                    })
+                    stat = fp.stat()
                 except Exception:
                     continue
+                out.append({
+                    "path": str(fp.relative_to(repo)),
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                })
+    # Newest first, so self-evolution is what shows up — the point of asking my
+    # own body what it contains. Path breaks mtime ties so the result is stable.
+    out.sort(key=lambda r: (-float(r["mtime"]), r["path"]))
     return out[: 50]
 
 def qualia_consistency(
