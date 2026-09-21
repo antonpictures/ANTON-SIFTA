@@ -125,6 +125,37 @@ except ImportError as exc:
     HAS_ORGANS = False
 
 
+# ── Adaptive body registration (D3H-1, 2026-09-21) ───────────────────────────
+# The adaptive step path (`System/swarm_adaptive_step_binding.py`) dispatches an
+# action to whatever organ has registered itself as the body that moves. Until now
+# nothing in ordinary startup registered one, so every production step would have
+# been refused for want of an adapter -- a path only a test could walk. This block
+# is deliberately OUTSIDE the fatal organ-import block above: an absent adaptive arm
+# must never fracture the heartbeat. The report is kept on the module so a census or
+# an operator can ask what actually got wired, and a failure is printed, not hidden.
+try:
+    from System.swarm_adaptive_software_body import install_software_body as _install_adaptive_body
+
+    ADAPTIVE_BODY_REPORT: dict = dict(_install_adaptive_body())
+except Exception as _adaptive_exc:  # noqa: BLE001 - boot survives an absent arm
+    ADAPTIVE_BODY_REPORT = {
+        "registered": False,
+        "reason_code": "REGISTRATION_FAILED",
+        "detail": f"{type(_adaptive_exc).__name__}: {_adaptive_exc}",
+    }
+
+if ADAPTIVE_BODY_REPORT.get("registered"):
+    print(
+        f"[adaptive-body] {ADAPTIVE_BODY_REPORT.get('adapter_id')} registered "
+        f"-> {ADAPTIVE_BODY_REPORT.get('workspace')}"
+    )
+else:
+    print(
+        "[adaptive-body] NOT registered "
+        f"({ADAPTIVE_BODY_REPORT.get('reason_code')}): {ADAPTIVE_BODY_REPORT.get('detail')}"
+    )
+
+
 class SiftaBrainstem:
     """The master physiological loop for SIFTA 5.0"""
     
