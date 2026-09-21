@@ -430,6 +430,11 @@ BELIEF_TRUTH_LABEL = "LIVED_EXPERIENCE_BELIEF_V1"
 POSE_UNITS = "m"
 DEFAULT_EVIDENCE_TTL_S = 900.0
 DEFAULT_MOVED_THRESHOLD_M = 0.25
+# R3: the wire `covariance` slot must always carry a finite number, so "no
+# estimate" needs an explicit, standard marker. -1.0 on a variance diagonal is
+# the established robotics convention for "unknown"; it is never a measurement
+# and must never be read as one.
+POSE_VARIANCE_UNKNOWN = -1.0
 ENTITY_KINDS = tuple(sorted({"object", "tool", "agent", "place", "resource", "unknown"}))
 BELIEF_RECORD_CLASSES = ("DUPLICATE_REPLAY", "FRESH", "STALE_REPLAY")
 
@@ -450,11 +455,38 @@ def _finite_number(value: Any, *, field_name: str) -> float:
     return number
 
 
+def _row_ttl(row: Mapping[str, Any]) -> float:
+    """The lifetime *this observation* declared. R2.
+
+    A lifetime belongs to the observation that declared it, not to whichever row
+    happened to be written last. An absent lifetime falls back to the default; an
+    explicit ``0`` means "no reusable freshness" and must never be replaced by the
+    default, which would silently grant nine hundred seconds of life to evidence
+    that asked for none.
+    """
+    raw = row.get("evidence_ttl_s")
+    if raw is None:
+        return DEFAULT_EVIDENCE_TTL_S
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_EVIDENCE_TTL_S
+
+
+def _row_expired(row: Mapping[str, Any], ts: float, *, ttl: float | None = None) -> bool:
+    """True when this row's own lifetime has elapsed at ``ts``."""
+    lifetime = _row_ttl(row) if ttl is None else ttl
+    if lifetime <= 0.0:
+        return True
+    return (ts - float(row.get("observed_at") or 0.0)) > lifetime
+
+
 def _canonical_pose(
     pose: Mapping[str, Any] | None,
     *,
     frame: str | None,
     uncertainty_m: Any = None,
+    uncertainty_rad: Any = None,
 ) -> dict[str, Any] | None:
     """Return a metric pose, or None when the pose is genuinely unknown.
 
@@ -484,6 +516,12 @@ def _canonical_pose(
     if uncertainty_m is not None:
         out["uncertainty_m"] = round(
             max(0.0, _finite_number(uncertainty_m, field_name="pose_uncertainty_m")), 6
+        )
+    # R3: angular uncertainty is carried on its own axis of meaning. It is never
+    # derived from the position uncertainty and never invented when unreported.
+    if uncertainty_rad is not None:
+        out["uncertainty_rad"] = round(
+            max(0.0, _finite_number(uncertainty_rad, field_name="pose_uncertainty_rad")), 6
         )
     return out
 
@@ -557,6 +595,7 @@ def observe_entity(
     pose: Mapping[str, Any] | None = None,
     frame: str | None = None,
     pose_uncertainty_m: Any = None,
+    pose_uncertainty_rad: Any = None,
     attributes: Mapping[str, Any] | None = None,
     relations: Iterable[Any] | None = None,
     confidence: float = 0.5,
@@ -601,7 +640,9 @@ def observe_entity(
         downgrade_reason = "required_evidence_missing"
         status = EpistemicStatus.UNKNOWN
     capped = min(_clamp01(confidence, 0.0), _CONFIDENCE_CAP[status])
-    clean_pose = _canonical_pose(pose, frame=frame, uncertainty_m=pose_uncertainty_m)
+    clean_pose = _canonical_pose(
+        pose, frame=frame, uncertainty_m=pose_uncertainty_m, uncertainty_rad=pose_uncertainty_rad
+    )
     clean_attrs = _normalise_attributes(attributes)
     clean_relations = _normalise_relations(relations)
 
@@ -746,12 +787,14 @@ def entity_belief(
 
     fresh.sort(key=lambda row: (float(row.get("observed_at") or 0.0), str(row.get("observation_id"))))
     current = fresh[-1]
-    ttl = float(current.get("evidence_ttl_s") or DEFAULT_EVIDENCE_TTL_S)
-    observed_at = float(current.get("observed_at") or 0.0)
-    age = max(0.0, ts - observed_at)
-    expired = [row for row in fresh if ttl > 0.0 and (ts - float(row.get("observed_at") or 0.0)) > ttl]
-    live = [row for row in fresh if row not in expired]
+    # R2: each row expires on its own declared lifetime, never on a neighbour's.
+    expired = [row for row in fresh if _row_expired(row, ts)]
+    expired_ids = {str(row.get("observation_id") or "") for row in expired}
+    live = [row for row in fresh if str(row.get("observation_id") or "") not in expired_ids]
     newest_live = live[-1] if live else current
+    ttl = _row_ttl(newest_live)
+    observed_at = float(newest_live.get("observed_at") or 0.0)
+    age = max(0.0, ts - observed_at)
 
     conflicts: list[dict[str, Any]] = []
     superseded: list[str] = []
@@ -879,7 +922,7 @@ def entity_belief(
         "last_seen_utc": _utc(observed_at),
         "evidence_age_s": round(age, 6),
         "evidence_ttl_s": ttl,
-        "stale": bool(newest_live in expired) if expired else False,
+        "stale": bool(str(newest_live.get("observation_id") or "") in expired_ids),
         "supporting_observation_ids": [str(row.get("observation_id") or "") for row in live],
         "expired_evidence_ids": [str(row.get("observation_id") or "") for row in expired],
         "superseded_observation_ids": superseded,
@@ -965,9 +1008,16 @@ def _project_pose(
     """Project an internal metric pose into the C0 POSE shape.
 
     A pose without a map identity cannot be expressed on the wire, so it is
-    withheld rather than invented. An unmeasured heading is projected as a zero
-    angle carrying a (pi/2)^2 variance: the belief says "heading unknown", and
-    the yaw slot is never mistaken for a measurement.
+    withheld rather than invented.
+
+    R3: an unreported uncertainty is *unknown*, not zero. This function never
+    turns silence into precision. A known uncertainty is projected as its own
+    squared value with no artificial floor; an unknown one is projected as
+    ``POSE_VARIANCE_UNKNOWN`` on its diagonal, so a reader can always tell a
+    measurement from an absence. Position and heading are independent: an
+    unmeasured heading is projected as a zero angle carrying the maximum-entropy
+    heading variance of (pi/2)^2, and a measured heading carries its own
+    angular uncertainty rather than borrowing the position variance.
     """
     if pose is None:
         return None
@@ -976,11 +1026,23 @@ def _project_pose(
             f"entity {entity_id!r} has a pose but no map_ref was supplied; "
             "a pose without a map identity must not be projected"
         )
-    uncertainty = float(pose.get("uncertainty_m") or 0.0)
-    variance = max(uncertainty * uncertainty, 1e-9)
+    raw_position_uncertainty = pose.get("uncertainty_m")
+    variance = (
+        POSE_VARIANCE_UNKNOWN
+        if raw_position_uncertainty is None
+        else float(raw_position_uncertainty) ** 2
+    )
     yaw = pose.get("yaw_rad")
     yaw_value = 0.0 if yaw is None else float(yaw)
-    yaw_variance = (math.pi / 2.0) ** 2 if yaw is None else max(variance, 1e-9)
+    if yaw is None:
+        yaw_variance = (math.pi / 2.0) ** 2
+    else:
+        raw_angular_uncertainty = pose.get("uncertainty_rad")
+        yaw_variance = (
+            POSE_VARIANCE_UNKNOWN
+            if raw_angular_uncertainty is None
+            else float(raw_angular_uncertainty) ** 2
+        )
     return {
         "map_id": str(map_ref["map_id"]),
         "map_revision": str(map_ref["map_revision"]),

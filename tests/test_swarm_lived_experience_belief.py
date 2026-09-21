@@ -12,6 +12,7 @@ The four acceptance laws are each pinned by at least one test:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -25,7 +26,11 @@ from System.swarm_adaptive_contracts import BeliefState  # noqa: E402
 from System.swarm_lived_experience_bridge import (  # noqa: E402
     BELIEF_LEDGER,
     BELIEF_TRUTH_LABEL,
+    DEFAULT_EVIDENCE_TTL_S,
     DEFAULT_MOVED_THRESHOLD_M,
+    POSE_VARIANCE_UNKNOWN,
+    _row_expired,
+    _row_ttl,
     belief_content_hash,
     belief_snapshot,
     entity_belief,
@@ -346,3 +351,221 @@ def test_invalid_entity_identifiers_and_kinds_are_refused(tmp_path: Path) -> Non
         _observe(tmp_path, kind="ghost")
     with pytest.raises(ValueError, match="body_id must be non-empty"):
         belief_snapshot(body_id="", state_dir=tmp_path)
+
+
+# --- R2: an observation's lifetime belongs to that observation -------------------
+
+
+def test_a_newer_observation_cannot_revive_expired_neighbour_evidence(tmp_path: Path) -> None:
+    """A long lifetime on the newest row must not extend an older row's lifetime."""
+    short = _observe(
+        tmp_path, observed_at=100.0, ttl_s=1.0, attributes={"colour": "red"}, now=100.0
+    )
+    _observe(tmp_path, observed_at=102.0, ttl_s=1000.0, now=102.0)
+    belief = entity_belief("mug_1", now=103.0, state_dir=tmp_path)
+
+    assert belief["expired_evidence_ids"] == [short["observation_id"]]
+    assert short["observation_id"] not in belief["supporting_observation_ids"]
+    assert belief["attributes"] == {}, "expired evidence must not carry into the live view"
+
+
+def test_each_observation_expires_on_its_own_clock(tmp_path: Path) -> None:
+    """Mixed lifetimes in one ledger: three rows, three independent verdicts."""
+    quick = _observe(tmp_path, observed_at=100.0, ttl_s=1.0, now=100.0)
+    slow = _observe(tmp_path, observed_at=101.0, ttl_s=50.0, now=101.0)
+    durable = _observe(tmp_path, observed_at=102.0, ttl_s=5000.0, now=102.0)
+
+    belief = entity_belief("mug_1", now=110.0, state_dir=tmp_path)
+
+    assert belief["expired_evidence_ids"] == [quick["observation_id"]]
+    assert belief["supporting_observation_ids"] == [slow["observation_id"], durable["observation_id"]]
+    assert belief["stale"] is False, "the belief rests on live evidence"
+
+
+def test_a_zero_lifetime_is_no_reusable_freshness_not_the_default(tmp_path: Path) -> None:
+    """ttl_s=0.0 must never be rewritten into DEFAULT_EVIDENCE_TTL_S."""
+    assert _row_ttl({"evidence_ttl_s": 0.0}) == 0.0
+    assert _row_ttl({"evidence_ttl_s": 0}) == 0.0
+    assert _row_ttl({"evidence_ttl_s": None}) == DEFAULT_EVIDENCE_TTL_S
+    assert _row_ttl({}) == DEFAULT_EVIDENCE_TTL_S
+
+    instant = _observe(tmp_path, observed_at=100.0, ttl_s=0.0, now=100.0)
+    belief = entity_belief("mug_1", now=100.5, state_dir=tmp_path)
+
+    assert _row_expired({"observed_at": 100.0, "evidence_ttl_s": 0.0}, 100.5) is True
+    assert belief["expired_evidence_ids"] == [instant["observation_id"]]
+    assert belief["supporting_observation_ids"] == []
+    assert belief["evidence_ttl_s"] == 0.0, "the declared lifetime is reported, not the default"
+    assert belief["stale"] is True
+    assert belief["uncertainty"] == 1.0, "no reusable freshness means no confidence"
+
+
+def test_receipt_time_cannot_renew_an_old_source_timestamp(tmp_path: Path) -> None:
+    """Late delivery of old telemetry stays old: age follows the source clock."""
+    row = _observe(tmp_path, observed_at=100.0, ttl_s=5.0, now=900.0)
+    assert row["observed_at"] == pytest.approx(100.0)
+    assert row["recorded_at"] == pytest.approx(900.0)
+
+    late = entity_belief("mug_1", now=901.0, state_dir=tmp_path)
+
+    assert late["evidence_age_s"] == pytest.approx(801.0)
+    assert late["expired_evidence_ids"] == [row["observation_id"]]
+    assert late["stale"] is True
+
+
+def test_the_newest_arrival_still_expires_on_its_own_clock(tmp_path: Path) -> None:
+    """Arrival order must not decide expiry: the last row written can expire first."""
+    durable = _observe(tmp_path, observed_at=100.0, ttl_s=1000.0, now=100.0)
+    brief = _observe(tmp_path, observed_at=105.0, ttl_s=1.0, now=105.0)
+
+    belief = entity_belief("mug_1", now=110.0, state_dir=tmp_path)
+
+    assert belief["expired_evidence_ids"] == [brief["observation_id"]]
+    assert belief["supporting_observation_ids"] == [durable["observation_id"]]
+    assert belief["evidence_age_s"] == pytest.approx(10.0), "age follows the newest live row"
+    assert belief["stale"] is False
+
+
+def test_an_out_of_order_older_source_is_a_replay_not_expired_evidence(tmp_path: Path) -> None:
+    """Late delivery of an older source timestamp is rejected, not silently freshened."""
+    newest = _observe(tmp_path, observed_at=200.0, ttl_s=1000.0, now=200.0)
+    late = _observe(tmp_path, observed_at=100.0, ttl_s=5.0, now=300.0)
+
+    assert late["freshens"] is False
+    assert late["record_class"] == "STALE_REPLAY"
+    belief = entity_belief("mug_1", now=301.0, state_dir=tmp_path)
+    assert late["observation_id"] in belief["rejected_observation_ids"]
+    assert belief["supporting_observation_ids"] == [newest["observation_id"]]
+    assert belief["expired_evidence_ids"] == [], "a rejected replay is not expiry bookkeeping"
+
+
+def test_a_replayed_observation_id_cannot_renew_the_evidence(tmp_path: Path) -> None:
+    """Duplicate IDs are rejected outright, so a replay cannot reset the clock."""
+    original = _observe(tmp_path, observed_at=100.0, ttl_s=1.0, now=100.0)
+    replay = _observe(
+        tmp_path,
+        observed_at=100.0,
+        ttl_s=1.0,
+        now=500.0,
+        observation_id=original["observation_id"],
+    )
+
+    assert replay["freshens"] is False
+    assert replay["record_class"] == "DUPLICATE_REPLAY"
+    belief = entity_belief("mug_1", now=501.0, state_dir=tmp_path)
+    assert belief["expired_evidence_ids"] == [original["observation_id"]]
+    assert belief["supporting_observation_ids"] == []
+    assert belief["stale"] is True
+
+
+def test_each_attribute_expires_with_the_row_that_reported_it(tmp_path: Path) -> None:
+    """Per-attribute expiry: a stale attribute leaves, a fresh peer stays."""
+    _observe(tmp_path, observed_at=100.0, ttl_s=2.0, attributes={"colour": "red"}, now=100.0)
+    kept = _observe(
+        tmp_path, observed_at=101.0, ttl_s=1000.0, attributes={"weight_kg": 0.4}, now=101.0
+    )
+    belief = entity_belief("mug_1", now=110.0, state_dir=tmp_path)
+
+    assert set(belief["attributes"]) == {"weight_kg"}
+    assert belief["attributes"]["weight_kg"]["observation_id"] == kept["observation_id"]
+    assert belief["supporting_observation_ids"] == [kept["observation_id"]]
+    assert len(belief["expired_evidence_ids"]) == 1, "expired history stays visible"
+
+
+# --- R3: unknown uncertainty is never false precision ---------------------------
+
+
+def _pose_with_yaw(x: float, y: float, yaw_rad: float) -> dict:
+    """R3-local: a measured heading, which the shared _pose helper does not build."""
+    pose = _pose(x, y)
+    pose["yaw_rad"] = yaw_rad
+    return pose
+
+
+def _pose_covariance(tmp_path: Path, pose: dict, **kwargs) -> list[float]:
+    _observe(tmp_path, pose=pose, now=100.0, **kwargs)
+    snapshot = belief_snapshot(
+        body_id="rover-1",
+        map_ref={"map_id": "m1", "map_revision": "sha256:" + "a" * 64},
+        now=100.0,
+        state_dir=tmp_path,
+    )
+    return snapshot["entities"][0]["pose"]["covariance"]
+
+
+def test_an_unreported_position_uncertainty_is_unknown_not_zero(tmp_path: Path) -> None:
+    """Silence is not precision: the old code wrote 1e-9, i.e. near-certainty."""
+    covariance = _pose_covariance(tmp_path, _pose(1.0, 2.0))
+
+    assert covariance[0] == POSE_VARIANCE_UNKNOWN
+    assert covariance[4] == POSE_VARIANCE_UNKNOWN
+    assert covariance[0] != pytest.approx(1e-9), "an absence must not read as near-certainty"
+    assert len(covariance) == 9
+
+
+def test_position_and_angular_uncertainty_are_independent(tmp_path: Path) -> None:
+    """R3: the heading slot must not borrow the position variance."""
+    covariance = _pose_covariance(
+        tmp_path,
+        _pose_with_yaw(1.0, 2.0, 0.3),
+        pose_uncertainty_m=0.5,
+        pose_uncertainty_rad=0.05,
+    )
+
+    assert covariance[0] == pytest.approx(0.25), "position variance is its own squared value"
+    assert covariance[8] == pytest.approx(0.0025), "heading variance is its own squared value"
+    assert covariance[8] != pytest.approx(covariance[0]), "the two axes are not interchangeable"
+
+
+def test_an_angular_uncertainty_never_leaks_into_the_position_slot(tmp_path: Path) -> None:
+    covariance = _pose_covariance(
+        tmp_path, _pose_with_yaw(1.0, 2.0, 0.3), pose_uncertainty_rad=0.25
+    )
+
+    assert covariance[0] == POSE_VARIANCE_UNKNOWN, "an angular figure is not a position figure"
+    assert covariance[8] == pytest.approx(0.0625)
+
+
+def test_a_measured_heading_without_angular_uncertainty_stays_unknown(tmp_path: Path) -> None:
+    """A measured angle with no reported spread is unknown spread, not position spread."""
+    covariance = _pose_covariance(
+        tmp_path, _pose_with_yaw(1.0, 2.0, 0.3), pose_uncertainty_m=0.5
+    )
+
+    assert covariance[0] == pytest.approx(0.25)
+    assert covariance[8] == POSE_VARIANCE_UNKNOWN
+
+
+def test_an_unmeasured_heading_keeps_its_maximum_entropy_variance(tmp_path: Path) -> None:
+    """The established heading convention is preserved: no yaw means (pi/2)^2."""
+    covariance = _pose_covariance(tmp_path, _pose(1.0, 2.0), pose_uncertainty_m=0.1)
+
+    assert covariance[8] == pytest.approx((math.pi / 2.0) ** 2)
+    assert covariance[0] == pytest.approx(0.01)
+
+
+def test_a_reported_zero_uncertainty_is_not_inflated_by_a_floor(tmp_path: Path) -> None:
+    """An explicit 0.0 is the source's claim to make, and it is preserved."""
+    covariance = _pose_covariance(tmp_path, _pose(1.0, 2.0), pose_uncertainty_m=0.0)
+
+    assert covariance[0] == pytest.approx(0.0)
+    assert covariance[0] != pytest.approx(1e-9)
+
+
+def test_an_unreported_uncertainty_is_absent_from_the_belief_pose(tmp_path: Path) -> None:
+    """The belief must not invent an uncertainty field nobody measured."""
+    _observe(tmp_path, pose=_pose(1.0, 2.0), now=100.0)
+    pose = entity_belief("mug_1", now=100.0, state_dir=tmp_path)["pose"]
+
+    assert "uncertainty_m" not in pose
+    assert "uncertainty_rad" not in pose
+
+
+def test_a_reported_angular_uncertainty_reaches_the_belief_pose(tmp_path: Path) -> None:
+    _observe(
+        tmp_path, pose=_pose_with_yaw(1.0, 2.0, 0.3), pose_uncertainty_rad=0.05, now=100.0
+    )
+    pose = entity_belief("mug_1", now=100.0, state_dir=tmp_path)["pose"]
+
+    assert pose["uncertainty_rad"] == pytest.approx(0.05)
+    assert "uncertainty_m" not in pose, "the axes stay independent end to end"
