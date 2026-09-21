@@ -406,6 +406,29 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    "adaptive_goal_step": ToolSpec(
+        name="adaptive_goal_step",
+        description=(
+            "Advance one adaptive goal by exactly one bounded step: check the current "
+            "planning view for the capabilities the action depends on, hand the action "
+            "to the registered body once, poll a bounded number of times, then let the "
+            "V1 verifier decide whether it completed. Use this when George asks Alice "
+            "to actually attempt a movement or goal, not merely to describe one. "
+            "Returns outcome (completed/blocked/unknown/stopped/refused) and the "
+            "reason, never a claim of success without verified evidence."
+        ),
+        required_params=("goal_file",),
+        optional_params=(
+            "max_polls",
+            "interval_s",
+            "state_root",
+            "ledger_state_dir",
+            "verifier_id",
+            "confirm",
+        ),
+        write_action=True,
+        requires_autonomy_gate=True,
+    ),
     "topology_awareness_status": ToolSpec(
         name="topology_awareness_status",
         description=(
@@ -2080,6 +2103,113 @@ def _exec_capability_field_status(params: Dict[str, str]) -> Dict[str, Any]:
         }
 
 
+def _adaptive_step_binding_module():
+    try:
+        from System import swarm_adaptive_step_binding as binding
+        return binding
+    except Exception:
+        import swarm_adaptive_step_binding as binding
+        return binding
+
+
+def _adaptive_goal_loop_module():
+    try:
+        from System import swarm_adaptive_goal_loop as loop_mod
+        return loop_mod
+    except Exception:
+        import swarm_adaptive_goal_loop as loop_mod
+        return loop_mod
+
+
+def _adaptive_action_journal_module():
+    try:
+        from System import swarm_action_journal as journal_mod
+        return journal_mod
+    except Exception:
+        import swarm_action_journal as journal_mod
+        return journal_mod
+
+
+def _exec_adaptive_goal_step(params: Dict[str, str]) -> Dict[str, Any]:
+    """One bounded adaptive step, driven through the real loop and journals.
+
+    The body and the verifier come from organs that registered themselves; this
+    executor invents neither. If nothing has registered to move, the honest answer is
+    that no body is registered -- not a synthetic one that would make a report look
+    successful.
+    """
+    binding_mod = _adaptive_step_binding_module()
+    try:
+        goal_file = str(params.get("goal_file") or "").strip()
+        if not goal_file:
+            return {
+                "ok": False,
+                "error": "goal_file is required: a JSON step request with goal, action, preconditions",
+                "registered_bodies": list(binding_mod.registered_adaptive_bodies()),
+            }
+        goal, action, preconditions = binding_mod.load_step_request(goal_file)
+        adapter_id = str(action.get("adapter_id") or "")
+        body = binding_mod.lookup_adaptive_body(adapter_id)
+        if body is None:
+            return {
+                "ok": False,
+                "error": (
+                    f"no body is registered for adapter_id {adapter_id!r}; "
+                    "an organ must register_adaptive_body() before a step can move"
+                ),
+                "registered_bodies": list(binding_mod.registered_adaptive_bodies()),
+                "outcome": None,
+            }
+        loop_mod = _adaptive_goal_loop_module()
+        state_root = str(params.get("state_root") or "").strip() or str(_STATE)
+        journal = _adaptive_action_journal_module().ActionJournal(state_root)
+        verifier = None
+        verifier_id = str(params.get("verifier_id") or "").strip()
+        if verifier_id:
+            verifier = binding_mod.lookup_adaptive_verifier(verifier_id)
+            if verifier is None:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"no verifier is registered under {verifier_id!r}; refusing to "
+                        "run a step whose completion could not be confirmed"
+                    ),
+                    "registered_verifiers": list(binding_mod.registered_adaptive_verifiers()),
+                    "outcome": None,
+                }
+        binding = binding_mod.AdaptiveStepBinding(
+            loop_mod.GoalLoop(
+                graph=[goal],
+                adapter=loop_mod.AdapterBinding.bind(
+                    adapter_id,
+                    body["adapter"],
+                    capability_revision=body.get("capability_revision") or "",
+                ),
+                verifier=verifier,
+                journal=journal,
+            ),
+            state_root=state_root,
+            readings=None,
+            ledger_state_dir=str(params.get("ledger_state_dir") or "").strip() or None,
+            interval_s=_float_param(params, "interval_s", 0.0),
+            max_polls=max(1, _int_param(params, "max_polls", 1)),
+        )
+        confirm = str(params.get("confirm", "true")).strip().lower() not in ("0", "false", "no")
+        report = binding.run_step(
+            str(goal.get("goal_id") or ""),
+            action,
+            preconditions=preconditions,
+            confirm=confirm,
+        )
+        return {"ok": True, **report}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "outcome": None,
+        }
+
+
 def _exec_topology_awareness_status(params: Dict[str, str]) -> Dict[str, Any]:
     try:
         from System import swarm_topology_awareness as topo_mod
@@ -2520,6 +2650,7 @@ _EXECUTORS = {
     "fetch_url": _exec_fetch_url,
     "search_web": _exec_search_web,
     "capability_field_status": _exec_capability_field_status,
+    "adaptive_goal_step": _exec_adaptive_goal_step,
     "topology_awareness_status": _exec_topology_awareness_status,
     "edge_intent_classify": _exec_edge_intent_classify,
     "edge_intent_eval": _exec_edge_intent_eval,
