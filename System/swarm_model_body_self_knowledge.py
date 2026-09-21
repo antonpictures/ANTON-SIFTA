@@ -77,27 +77,42 @@ def _live_inventory_rows(max_rows: int = 12) -> list[dict[str, Any]]:
     return list(rows)[: max(1, int(max_rows))]
 
 
-def body_file_inventory(key_dirs: tuple[str, ...] = ("System", "Applications", "Simulations", "assets/robotics", "tests", "tools", "WIN-WIN_Flyer", "outputs")) -> list[dict[str, Any]]:
+def body_file_inventory(key_dirs: tuple[str, ...] = ("System", "Applications", "Simulations", "assets/robotics", "tests", "tools", "WIN-WIN_Flyer", "outputs"), max_rows: int = 50) -> list[dict[str, Any]]:
     """Real disk inventory of my code/organs/files (live glob/ls, not weights or memory).
 
     Returns list of {path, size, mtime} for key Python/MD/JSON/PDF/PNG assets so I can answer
     "point to the IRB2400 files in your body" or "list the PDFs I forged" with actual paths + write a receipt.
     Bounded, honest (skips missing, never invents).
+
+    INV-2 (2026-09-21): this is the *recent view* — newest first, bounded by
+    max_rows (default 50). It is a window over the full body, not the body:
+    use body_file_inventory_page() for deterministic full coverage and
+    body_file_lookup() for exact paths that recency must not be able to hide.
+    """
+    # No prefix cut here. Any bound applied to sorted(rglob(...)) is an
+    # ordering decision in disguise: System/ alone holds 7489 entries, so an
+    # alphabetical prefix stopped before most of it (System/ contributed 2 of
+    # 50 rows, tests/ 1, while tools/ took 41) and organs written into my own
+    # body could never appear. The walk is exhaustive; the row bound is applied
+    # after ranking, so recent self-evolution always survives.
+    return _walk_inventory(key_dirs)[: max(0, int(max_rows))]
+
+
+def _walk_inventory(key_dirs: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Exhaustive walk of the key dirs, sorted newest-first with a path tiebreak.
+
+    INV-2 shared core for the recent view, the paginated full view and exact-path
+    lookup, so all three describe the same body. The sort key (-mtime, path) is a
+    total order over distinct paths, so page boundaries and ranks are deterministic
+    across calls while files stay unchanged.
     """
     repo = Path(__file__).resolve().parent.parent
     out: list[dict[str, Any]] = []
     for d in key_dirs:
-        p = repo / d
+        p = Path(d) if os.path.isabs(d) else repo / d
         if not p.exists():
             continue
-        # No prefix cut here. Any bound applied to sorted(rglob(...)) is an
-        # ordering decision in disguise: System/ alone holds 7489 entries, so an
-        # alphabetical prefix stopped before most of it (System/ contributed 2 of
-        # 50 rows, tests/ 1, while tools/ took 41) and organs written into my own
-        # body could never appear. The walk is exhaustive; the 50-row output bound
-        # below is applied after ranking, so recent self-evolution always survives.
-        #
-        # os.walk keeps that exhaustive walk cheap: directory type comes from the
+        # os.walk keeps the exhaustive walk cheap: directory type comes from the
         # dirent, and only qualifying extensions are stat()ed, so this costs ~4k
         # stats instead of a stat per entry (measured 657ms -> see _INVENTORY_SUFFIXES).
         for root, _dirs, names in os.walk(p):
@@ -109,15 +124,97 @@ def body_file_inventory(key_dirs: tuple[str, ...] = ("System", "Applications", "
                     stat = fp.stat()
                 except Exception:
                     continue
+                try:
+                    shown = str(fp.relative_to(repo))
+                except ValueError:  # absolute key dir outside the repo (tests/probes)
+                    shown = str(fp)
                 out.append({
-                    "path": str(fp.relative_to(repo)),
+                    "path": shown,
                     "size": stat.st_size,
                     "mtime": stat.st_mtime,
                 })
     # Newest first, so self-evolution is what shows up — the point of asking my
     # own body what it contains. Path breaks mtime ties so the result is stable.
     out.sort(key=lambda r: (-float(r["mtime"]), r["path"]))
-    return out[: 50]
+    return out
+
+
+def body_file_inventory_page(page: int = 0, page_size: int = 50, key_dirs: tuple[str, ...] = ("System", "Applications", "Simulations", "assets/robotics", "tests", "tools", "WIN-WIN_Flyer", "outputs")) -> dict[str, Any]:
+    """Deterministic page over the FULL inventory, with coverage metadata.
+
+    INV-2 law: no false "whole body" claim from a bounded sample. The response
+    states the total row count, which slice this page carries, and whole_body —
+    True only when this single page spans every row. Recency (file churn) can
+    move a row across pages but cannot remove it from the paged body.
+    """
+    rows = _walk_inventory(key_dirs)
+    total = len(rows)
+    size = max(1, int(page_size))
+    start = max(0, int(page)) * size
+    stop = start + size
+    page_rows = rows[start:stop]
+    pages = (total + size - 1) // size
+    return {
+        "view": "full_inventory_page",
+        "rows": page_rows,
+        "page": max(0, int(page)),
+        "page_size": size,
+        "total": total,
+        "pages": pages,
+        "complete": total <= stop and start < max(total, 1),
+        "whole_body": total <= size,
+        "omitted": max(0, total - stop) if start == 0 else total - stop,
+        "sort": "mtime_desc_path_asc",
+        "note": (
+            "one page of the full inventory; rows are ordered newest first with a "
+            "path tiebreak — a 50-row page is a window, never the whole body"
+        ),
+    }
+
+
+def body_file_lookup(path: str, key_dirs: tuple[str, ...] = ("System", "Applications", "Simulations", "assets/robotics", "tests", "tools", "WIN-WIN_Flyer", "outputs")) -> dict[str, Any]:
+    """Exact-path lookup that recency cannot hide.
+
+    INV-2: an old organ must stay discoverable after any number of newer files
+    exist. This stats the requested path directly — no 50-row window is involved —
+    and labels the hit honestly: the body root is this repo, while
+    ``in_inventory_scope`` says whether the hit lies inside the scanned key dirs
+    with an inventoried suffix. A real file outside the scanned dirs is reported
+    found but out of scope, not silently pretended either way.
+    """
+    repo = Path(__file__).resolve().parent.parent
+    roots: list[Path] = []
+    for d in key_dirs:
+        base = Path(d) if os.path.isabs(d) else repo / d
+        try:
+            roots.append(base.resolve())
+        except Exception:
+            continue
+    raw = Path(str(path))
+    target = raw if raw.is_absolute() else repo / raw
+    try:
+        resolved = target.resolve()
+    except Exception:
+        return {"found": False, "reason_code": "UNRESOLVABLE", "path": str(path)}
+    inside_body = resolved == repo or repo in resolved.parents or any(
+        root == resolved or root in resolved.parents for root in roots
+    )
+    if not inside_body:
+        return {"found": False, "reason_code": "PATH_OUTSIDE_BODY", "path": str(path)}
+    if not resolved.is_file():
+        return {"found": False, "reason_code": "ABSENT", "path": str(path)}
+    try:
+        stat = resolved.stat()
+    except Exception as exc:  # unreadable is a fact, not a lie
+        return {"found": False, "reason_code": "STAT_FAILED", "detail": str(exc), "path": str(path)}
+    try:
+        shown = str(resolved.relative_to(repo))
+    except ValueError:
+        shown = str(resolved)
+    in_scope = os.path.splitext(resolved.name)[1] in _INVENTORY_SUFFIXES and any(
+        root == resolved.parent or root in resolved.parents for root in roots
+    )
+    return {"found": True, "path": shown, "size": stat.st_size, "mtime": stat.st_mtime, "in_inventory_scope": bool(in_scope)}
 
 def qualia_consistency(
     *,
