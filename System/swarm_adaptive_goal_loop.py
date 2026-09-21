@@ -67,10 +67,21 @@ __all__ = [
     "NullVerifier",
     "AdapterBinding",
     "LifecycleLedger",
+    "CompletionRefused",
     "GoalLoop",
 ]
 
 UNRESOLVED_STATE = "unknown"
+
+
+def _journal_module():
+    """Import the journal either way, so ``System/`` runs from its own directory."""
+    try:
+        from System import swarm_action_journal as journal_module
+    except ImportError:  # pragma: no cover - bare System/ path
+        import swarm_action_journal as journal_module  # type: ignore
+
+    return journal_module
 
 
 # --- Clock seam ---------------------------------------------------------------
@@ -147,6 +158,16 @@ class LifecycleError(ValueError):
         super().__init__(f"[{code}] {detail}")
         self.code = code
         self.detail = detail
+
+
+class CompletionRefused(LifecycleError):
+    """D3d: a goal was not allowed to be called done.
+
+    Raised by the strict completion path so that "the verifier did not confirm
+    it" can never be mistaken for "it is done". The non-strict :meth:`GoalLoop.confirm`
+    reports the same refusal as data; this type exists for callers that must not
+    proceed on an unconfirmed success.
+    """
 
 
 # --- Goal graph ---------------------------------------------------------------
@@ -475,6 +496,7 @@ class GoalLoop:
         self.journal = journal
         self._completed: list[str] = []
         self._proposals: dict[str, dict] = {}
+        self._claims: dict[str, dict] = {}
         self._results: dict[str, dict] = {}
         self._revisions: dict[str, int] = {}
 
@@ -543,7 +565,36 @@ class GoalLoop:
             "predicted_postcondition": proposal["predicted_postcondition"],
             "required_observation_ids": list(proposal["required_observation_ids"]),
         }
-        return VerifierResult.from_payload(self.verifier.verify(request))
+        try:
+            result = VerifierResult.from_payload(self.verifier.verify(request))
+        except VerificationIntegrityError as exc:
+            # A forged success is refused at the boundary -- and the attempt is
+            # written down. A refusal that leaves no trace is indistinguishable
+            # later from a verifier that was never asked.
+            if self.journal is not None:
+                self.journal.append(
+                    _journal_module().KIND_VERIFICATION,
+                    action_id,
+                    goal_id=proposal["goal_id"],
+                    payload={
+                        "verified": None,
+                        "outcome": "refused",
+                        "verifier": type(self.verifier).__name__,
+                        "detail": f"[{exc.code}] {exc}",
+                    },
+                )
+            raise
+        if self.journal is not None:
+            self.journal.append(
+                _journal_module().KIND_VERIFICATION,
+                action_id,
+                goal_id=proposal["goal_id"],
+                payload={
+                    **result.to_dict(),
+                    "outcome": "confirmed" if result.verified else "not_confirmed",
+                },
+            )
+        return result
 
     def proposal(self, action_id: str) -> Optional[dict]:
         return self._proposals.get(str(action_id))
@@ -659,6 +710,12 @@ class GoalLoop:
             },
         )
         self.lifecycle.observe(action_id, "accepted" if receipt_id else UNRESOLVED_STATE)
+        if receipt_id:
+            # A receipted handover means the action is under way in the world, not
+            # merely acknowledged. Walking the frozen ladder one rung (accepted ->
+            # running) keeps the graph honest: nothing may be called succeeded
+            # without having first been known to run.
+            self.lifecycle.observe(action_id, "running")
         return {
             "action_id": action_id,
             "intent_seq": intent_row.seq,
@@ -667,7 +724,18 @@ class GoalLoop:
         }
 
     def result(self, action_id: str) -> Optional[dict]:
+        """The frozen ActionResult for this action, if one exists.
+
+        Only a contract-valid record lives here. An adapter's report that an
+        action succeeded is not one: the frozen contract refuses a `succeeded`
+        ActionResult that carries no verified result, so such reports wait in
+        `claim()` until a verifier supplies the evidence.
+        """
         return self._results.get(str(action_id))
+
+    def claim(self, action_id: str) -> Optional[dict]:
+        """What a body reported about an action, before verification."""
+        return self._claims.get(str(action_id))
 
     # -- reconciliation (D3c) -------------------------------------------------
 
@@ -795,12 +863,13 @@ class GoalLoop:
                         "detail": detail,
                     },
                 )
-                self._results[target] = {
+                self._claims[target] = {
                     "action_id": target,
                     "goal_id": goal_id,
                     "status": status,
                     "via": "reconciliation",
                     "verified": False,
+                    "detail": detail,
                 }
             outcomes.append(
                 {
@@ -821,9 +890,174 @@ class GoalLoop:
         """Actions a body claims succeeded that no verifier has confirmed."""
         return tuple(
             action_id
-            for action_id, row in self._results.items()
+            for action_id, row in {**self._claims, **self._results}.items()
             if row.get("status") == "succeeded" and not row.get("verified")
         )
+
+    # -- verifier-driven completion (D3d) ------------------------------------
+
+    def confirmed_actions(self) -> tuple:
+        """Actions on disk with a completion row. The journal is the authority.
+
+        In-memory completion does not survive a restart; this does, so a body
+        that comes back up cannot be talked into completing the same goal twice
+        or forget that it already had the evidence.
+        """
+        if self.journal is None:
+            return ()
+        kinds = _journal_module().KIND_COMPLETION
+        seen: list = []
+        for row in self.journal.rows:
+            if row.kind == kinds and row.action_id not in seen:
+                seen.append(row.action_id)
+        return tuple(seen)
+
+    def _verified_result_on_disk(self, action_id: str) -> Optional[dict]:
+        """The frozen result a verifier wrote, read back from the journal.
+
+        After a restart the in-memory result map is empty, so an
+        ``already_completed`` answer must be able to produce the evidence it is
+        asserting rather than an empty shell.
+        """
+        if self.journal is None:
+            return None
+        j = _journal_module()
+        for row in reversed(self.journal.rows):
+            if row.action_id != str(action_id) or row.kind != j.KIND_RESULT:
+                continue
+            if row.payload.get("via") == "verification":
+                return {k: v for k, v in row.payload.items() if k != "via"}
+        return None
+
+    def confirm(self, action_id: str) -> dict:
+        """Ask the verifier, persist a frozen result, and complete only if confirmed.
+
+        The order is the law: a goal is not completed and then checked, it is
+        checked and then completed. An adapter's ``succeeded`` never reaches
+        here -- only a named verifier answering with named observation evidence
+        can, and the frozen ``ActionResult`` it produces is written to the
+        journal before the goal is marked done.
+        """
+        action_id = str(action_id)
+        if self.journal is None:
+            raise CompletionRefused(
+                "NO_JOURNAL",
+                "refusing to complete a goal without a durable journal: an unrecorded "
+                "completion is an unfalsifiable claim",
+            )
+        j = _journal_module()
+        # The journal is consulted before memory, for the same reason it is
+        # before a resend: a restart must not turn an already-completed action
+        # into an unknown one, nor into a second completion.
+        already = action_id in self.confirmed_actions()
+        if already:
+            completion = self.journal.latest(action_id, j.KIND_COMPLETION)
+            on_disk = self._verified_result_on_disk(action_id)
+            return {
+                "action_id": action_id,
+                "goal_id": completion.goal_id if completion is not None else None,
+                "verified": True,
+                "completed": True,
+                "already_completed": True,
+                "verifier_result": (self.result(action_id) or on_disk or {}).get("verifier_result"),
+                "result": self.result(action_id) or on_disk,
+                "detail": "this action already has a completion row on disk",
+            }
+        proposal = self._proposals.get(action_id)
+        if proposal is None:
+            raise CompletionRefused("UNKNOWN_ACTION", f"no proposal {action_id!r} to confirm")
+        if self.journal.intent(action_id) is None:
+            raise CompletionRefused(
+                "UNJOURNALLED_ACTION",
+                f"action {action_id!r} has no intent row; it was never submitted, so nothing "
+                "can have been observed about it",
+            )
+        goal_id = proposal["goal_id"]
+
+        result = self.verify(action_id)  # journals the verdict either way
+        if not result.verified:
+            return {
+                "action_id": action_id,
+                "goal_id": goal_id,
+                "verified": False,
+                "completed": False,
+                "already_completed": False,
+                "verifier_result": result.to_dict(),
+                "result": None,
+                "detail": result.detail or "the verifier did not confirm the postcondition",
+            }
+
+        submitted = self.journal.latest(action_id, j.KIND_SUBMIT)
+        receipt_id = None
+        if submitted is not None:
+            receipt_id = submitted.payload.get("effect_receipt_id") or submitted.payload.get(
+                "receipt_id"
+            )
+        latest_status = self.journal.latest(action_id, j.KIND_STATUS)
+        if latest_status is not None and latest_status.payload.get("effect_receipt_id"):
+            receipt_id = latest_status.payload["effect_receipt_id"]
+
+        now = self.clock.now_utc()
+        frozen = ActionResult.from_dict(
+            {
+                "schema_version": "1.0.0",
+                "action_id": action_id,
+                "status": "succeeded",
+                "actual_observation_ids": list(result.observation_ids),
+                "verifier_result": result.to_dict(),
+                # A predicted cost is not an actual cost, and an unreported one is
+                # unknown rather than zero.
+                "cost": None,
+                "error": None,
+                "effect_receipt_id": receipt_id,
+                "updated_at_utc": now,
+            }
+        ).to_dict()
+
+        self.record_result(frozen)
+        self._results[action_id] = {**frozen, "verified": True, "via": "verification"}
+        # The claim is settled: keeping it would leave a confirmed action listed
+        # as an unverified success forever.
+        self._claims.pop(action_id, None)
+        self.journal.append(
+            j.KIND_RESULT, action_id, goal_id=goal_id, payload={**frozen, "via": "verification"}
+        )
+        self.mark_complete(goal_id)
+        self.journal.append(
+            j.KIND_COMPLETION,
+            action_id,
+            goal_id=goal_id,
+            payload={
+                "action_id": action_id,
+                "goal_id": goal_id,
+                "verified": True,
+                "verifier": result.verifier,
+                "method": result.method,
+                "observation_ids": list(result.observation_ids),
+                "effect_receipt_id": receipt_id,
+                "verified_at_utc": now,
+            },
+        )
+        return {
+            "action_id": action_id,
+            "goal_id": goal_id,
+            "verified": True,
+            "completed": True,
+            "already_completed": False,
+            "verifier_result": result.to_dict(),
+            "result": frozen,
+            "detail": result.detail,
+        }
+
+    def require_confirmed(self, action_id: str) -> dict:
+        """Strict completion: anything short of a confirmed success raises."""
+        report = self.confirm(action_id)
+        if not report["completed"]:
+            raise CompletionRefused(
+                "UNVERIFIED_SUCCESS",
+                f"goal {report['goal_id']!r} is not done: {report['detail']}",
+            )
+        return report
 
     def unresolved_actions(self) -> tuple:
         return self.lifecycle.unresolved()

@@ -56,7 +56,20 @@ KIND_STATUS = "status"
 KIND_RESULT = "result"
 KIND_VERIFICATION = "verification"
 KIND_NOTE = "note"
-JOURNAL_KINDS = (KIND_INTENT, KIND_SUBMIT, KIND_STATUS, KIND_RESULT, KIND_VERIFICATION, KIND_NOTE)
+# D3d: the one event a reader must never have to infer from a result row.
+KIND_COMPLETION = "completion"
+# Kinds are additive. A reader must ignore a kind it does not know rather than
+# treat the row as malformed: the wire shape of a row never changes, only the
+# vocabulary of what may appear in it.
+JOURNAL_KINDS = (
+    KIND_INTENT,
+    KIND_SUBMIT,
+    KIND_STATUS,
+    KIND_RESULT,
+    KIND_VERIFICATION,
+    KIND_NOTE,
+    KIND_COMPLETION,
+)
 
 # States an intent can be in, from the journal's point of view alone.
 SUBMIT_UNATTEMPTED = "unattempted"

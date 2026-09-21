@@ -327,8 +327,13 @@ def test_a_reconciled_success_is_a_claim_that_the_verifier_has_not_confirmed(tmp
 
     assert report["reconciled"][0]["resolved"] is True
     assert loop.unverified_successes() == (_aid("act"),)
-    assert loop.result(_aid("act"))["verified"] is False
-    assert loop.result(_aid("act"))["via"] == "reconciliation"
+    # The adapter's word is a claim, not a record. The frozen contract refuses a
+    # `succeeded` ActionResult with no verified result behind it, so `result()`
+    # must stay empty here rather than hand back a shape the contract forbids.
+    assert loop.result(_aid("act")) is None
+    assert loop.claim(_aid("act"))["verified"] is False
+    assert loop.claim(_aid("act"))["via"] == "reconciliation"
+    assert loop.claim(_aid("act"))["detail"] is None
 
 
 def test_reconciliation_records_the_effect_receipt_when_the_adapter_supplies_one(tmp_path: Path) -> None:
