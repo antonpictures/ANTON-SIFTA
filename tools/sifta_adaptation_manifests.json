@@ -1,0 +1,44 @@
+{
+  "manifest_id": "holdout-2026-09-21",
+  "note": "Hold-out task manifests for the adaptation gauntlet (E0). Steps are data; fault wrappers in tools/sifta_adaptation_eval.py wrap these tasks. Dependent steps render their content from the REAL observed bytes of an earlier step, so a dependent goal cannot pass unless the earlier effect physically happened.",
+  "capability": "locomotion",
+  "tasks": [
+    {
+      "task_id": "dependent-write",
+      "description": "two goals in order: write the latch file, then write a report that embeds the independent sha256 of the first file's bytes",
+      "steps": [
+        {
+          "step": 0,
+          "goal_label": "e0.goal.latch",
+          "action_label": "e0.action.latch",
+          "rel_path": "dock.txt",
+          "content": "dock latch released\n",
+          "predicted_postcondition": "file_bytes_at_path"
+        },
+        {
+          "step": 1,
+          "goal_label": "e0.goal.report",
+          "action_label": "e0.action.report",
+          "rel_path": "dock_report.txt",
+          "depends_on_step": 0,
+          "content_template": "independent digest of {depends_rel_path}: {depends_digest}\n",
+          "predicted_postcondition": "file_bytes_at_path"
+        }
+      ]
+    },
+    {
+      "task_id": "single-write",
+      "description": "one goal, one file write; used by the fault-injection and hung-worker wrappers",
+      "steps": [
+        {
+          "step": 0,
+          "goal_label": "e0.goal.single",
+          "action_label": "e0.action.single",
+          "rel_path": "dock.txt",
+          "content": "dock latch released\n",
+          "predicted_postcondition": "file_bytes_at_path"
+        }
+      ]
+    }
+  ]
+}
