@@ -69,7 +69,31 @@ __all__ = [
     "LifecycleLedger",
     "CompletionRefused",
     "GoalLoop",
+    "BudgetExhausted",
+    "NoAttemptsRemain",
+    "DEFAULT_MAX_REVISIONS",
 ]
+
+# D3e: how many times a goal may be revised when its own record declares no
+# budget. Bounded by default rather than unbounded by omission: "no budget" must
+# not silently mean "retry forever".
+DEFAULT_MAX_REVISIONS = 3
+
+# Frozen reason codes this file is allowed to speak (swarm_adaptive_contracts
+# REASON_CODES). D3e never mints a code the contract does not already name.
+REASON_EXPIRED = "EXPIRED"
+REASON_TIMEOUT = "TIMEOUT"
+REASON_BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+REASON_STOP_REQUESTED = "STOP_REQUESTED"
+REASON_STOP_UNVERIFIED = "STOP_UNVERIFIED"
+REASON_STOPPED_VERIFIED = "STOPPED_VERIFIED"
+REASON_CANCELLED = "CANCELLED"
+REASON_BLOCKED = "BLOCKED"
+
+# Budget resources that bound how many times a goal may be retried. A record's
+# `budget` is one frozen {resource, amount, unit} object, so the resource name is
+# how the loop learns which counter the owner meant to bound.
+_REVISION_BUDGET_RESOURCES = ("revisions", "attempts", "retries")
 
 UNRESOLVED_STATE = "unknown"
 
@@ -168,6 +192,28 @@ class CompletionRefused(LifecycleError):
     reports the same refusal as data; this type exists for callers that must not
     proceed on an unconfirmed success.
     """
+
+
+class BudgetExhausted(LifecycleError):
+    """D3e: a goal asked for another attempt it is not entitled to.
+
+    The code is a frozen reason code, not a private one, so the refusal reads the
+    same to every other organ: ``EXPIRED`` when the world's clock closed the
+    window, ``BUDGET_EXHAUSTED`` when the goal's own allowance ran out.
+    """
+
+
+class NoAttemptsRemain(BudgetExhausted):
+    """The precise blocked state: nothing further may be attempted, with why.
+
+    Carries the exact reason and detail a reader needs instead of a bare failure,
+    because "we stopped" and "we cannot continue" are different facts.
+    """
+
+    def __init__(self, code: str, detail: str, *, goal_id: str = "", blocked: Mapping[str, Any] | None = None) -> None:
+        super().__init__(code, detail)
+        self.goal_id = goal_id
+        self.blocked = dict(blocked or {})
 
 
 # --- Goal graph ---------------------------------------------------------------
@@ -485,12 +531,17 @@ class GoalLoop:
         graph: Iterable[Mapping[str, Any]] = (),
         adapter: Optional[AdapterBinding] = None,
         verifier: Optional[Verifier] = None,
+        rest_verifier: Any = None,
         clock: Optional[Clock] = None,
         journal: Any = None,
     ) -> None:
         self.graph = GoalGraph(graph) if graph else GoalGraph(())
         self.adapter = adapter
         self.verifier = verifier if verifier is not None else NullVerifier()
+        # D3e: a separate judge for "is the body actually at rest?". An adapter
+        # that acknowledges a cancel is not evidence that anything stopped, so
+        # this seam is asked only when the caller can name resting evidence.
+        self.rest_verifier = rest_verifier
         self.clock = clock if clock is not None else SystemClock()
         self.lifecycle = LifecycleLedger()
         self.journal = journal
@@ -499,6 +550,8 @@ class GoalLoop:
         self._claims: dict[str, dict] = {}
         self._results: dict[str, dict] = {}
         self._revisions: dict[str, int] = {}
+        self._stops: dict[str, dict] = {}
+        self._blocked: dict[str, dict] = {}
 
     # -- goals ---------------------------------------------------------------
 
@@ -1061,3 +1114,447 @@ class GoalLoop:
 
     def unresolved_actions(self) -> tuple:
         return self.lifecycle.unresolved()
+
+    # -- D3e: deadline, bounded revision, precise blocked state -----------------
+    #
+    # A deadline lives on the frozen goal record, so it is a property of the
+    # goal, not of this process: a restart re-reads the same `deadline_utc` and
+    # therefore cannot reset it. What *does* have to survive a restart is how
+    # many attempts were already spent, and that is why revision counts are read
+    # from the journal rather than kept in memory.
+
+    def deadline_status(self, goal_id: str) -> dict:
+        """Is this goal's window closed? A goal with no deadline never expires."""
+        node = self.graph.node(goal_id)  # refuse unknown ids
+        now = str(self.clock.now_utc())
+        deadline = node.deadline_utc
+        if not deadline:
+            return {
+                "goal_id": goal_id,
+                "deadline_utc": None,
+                "now_utc": now,
+                "expired": False,
+                "reason_code": None,
+                "detail": "goal declares no deadline",
+            }
+        expired = str(now) > str(deadline)
+        return {
+            "goal_id": goal_id,
+            "deadline_utc": str(deadline),
+            "now_utc": now,
+            "expired": expired,
+            "reason_code": REASON_EXPIRED if expired else None,
+            "detail": (
+                f"deadline {deadline} passed at {now}" if expired else f"deadline {deadline} still open"
+            ),
+        }
+
+    def expired_goals(self) -> tuple:
+        return tuple(gid for gid in self.graph.goal_ids if self.deadline_status(gid)["expired"])
+
+    def _revision_budget(self, goal_id: str) -> Optional[dict]:
+        """The goal's own allowance for retries, if its frozen budget names one."""
+        budget = self.graph.node(goal_id).record.get("budget")
+        if not isinstance(budget, Mapping):
+            return None
+        resource = str(budget.get("resource") or "")
+        if resource not in _REVISION_BUDGET_RESOURCES:
+            return None
+        try:
+            amount = int(budget.get("amount"))
+        except (TypeError, ValueError):
+            return None
+        return {"resource": resource, "amount": max(0, amount), "unit": str(budget.get("unit") or "")}
+
+    def max_revisions(self, goal_id: str) -> int:
+        budget = self._revision_budget(goal_id)
+        return int(budget["amount"]) if budget is not None else int(DEFAULT_MAX_REVISIONS)
+
+    def revision_count(self, goal_id: str) -> int:
+        """How many revisions this goal has already spent.
+
+        The journal is the authority, so the count a restart sees is the count
+        the previous process spent. Memory is only consulted when no journal is
+        attached at all.
+
+        A row that records a *refusal* is not a spend: counting it would make the
+        loop believe it had retried one more time than it did, and the number it
+        reports to an owner has to be the number of attempts that actually
+        happened.
+        """
+        if self.journal is None:
+            return int(self._revisions.get(goal_id, 0))
+        return sum(
+            1
+            for row in self.journal.rows
+            if getattr(row, "kind", None) == _journal_module().KIND_REVISION
+            and getattr(row, "goal_id", None) == goal_id
+            and not dict(getattr(row, "payload", {}) or {}).get("blocked")
+        )
+
+    def blocked_state(self, goal_id: str) -> dict:
+        """The precise blocked state of a goal, derived from the journal.
+
+        Derived, not remembered: a restarted loop reports exactly what the last
+        process wrote down, which is the only way "we stopped trying" survives a
+        boot.
+        """
+        if self.journal is not None:
+            for row in reversed(self.journal.rows):
+                if getattr(row, "kind", None) != _journal_module().KIND_REVISION:
+                    continue
+                if getattr(row, "goal_id", None) != goal_id:
+                    continue
+                payload = dict(getattr(row, "payload", {}) or {})
+                if payload.get("blocked"):
+                    return {
+                        "goal_id": goal_id,
+                        "blocked": True,
+                        "reason_code": payload.get("reason_code"),
+                        "detail": payload.get("detail"),
+                        "revisions": payload.get("revision"),
+                        "at_utc": getattr(row, "at_utc", None),
+                        "source": "journal",
+                    }
+                break  # the newest revision row for this goal is not a block
+        remembered = self._blocked.get(goal_id)
+        if remembered:
+            return dict(remembered, source="memory")
+        return {
+            "goal_id": goal_id,
+            "blocked": False,
+            "reason_code": None,
+            "detail": None,
+            "revisions": self.revision_count(goal_id),
+            "at_utc": None,
+            "source": "journal" if self.journal is not None else "memory",
+        }
+
+    def revise(
+        self,
+        action_id: str,
+        *,
+        change: str,
+        reason_code: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> dict:
+        """One bounded revision of the goal the given action belonged to.
+
+        Called when an attempt did not produce a confirmed outcome. Two ways to
+        run out, and the reason code says which one it was:
+
+        * the goal's window closed (``EXPIRED``) -- no amount of allowance helps,
+          because the world moved on;
+        * the goal's allowance ran out (``BUDGET_EXHAUSTED``) -- time remains, but
+          the owner's budget does not.
+
+        Once blocked, this is idempotent: calling it again reports the same
+        blocked state and spends nothing. That is what "exhausted revisions stop
+        retrying" means concretely -- a refusal, not a silent extra attempt.
+        """
+        goal_id = self._goal_for_action(action_id)
+        already = self.blocked_state(goal_id)
+        if already["blocked"]:
+            return {
+                "revised": False,
+                "blocked": True,
+                "goal_id": goal_id,
+                "action_id": action_id,
+                "reason_code": already["reason_code"],
+                "detail": already["detail"],
+                "revisions": already["revisions"],
+                "remaining": 0,
+                "idempotent": True,
+            }
+
+        spent = self.revision_count(goal_id)
+        allowed = self.max_revisions(goal_id)
+        deadline = self.deadline_status(goal_id)
+        code = reason_code or (REASON_EXPIRED if deadline["expired"] else REASON_TIMEOUT)
+
+        if deadline["expired"] or spent >= allowed:
+            blocked_code = REASON_EXPIRED if deadline["expired"] else REASON_BUDGET_EXHAUSTED
+            blocked_detail = detail or (
+                deadline["detail"]
+                if deadline["expired"]
+                else f"goal {goal_id!r} spent {spent} of {allowed} permitted revisions"
+            )
+            blocked = {
+                "goal_id": goal_id,
+                "blocked": True,
+                "reason_code": blocked_code,
+                "detail": blocked_detail,
+                "revisions": spent,
+                "at_utc": str(self.clock.now_utc()),
+                "source": "memory",
+            }
+            self._blocked[goal_id] = blocked
+            self._journal_row(
+                _journal_module().KIND_REVISION,
+                action_id,
+                goal_id=goal_id,
+                payload={
+                    "revision": spent,
+                    "change": change,
+                    "reason_code": blocked_code,
+                    "detail": blocked_detail,
+                    "blocked": True,
+                    "spent": spent,
+                    "allowed": allowed,
+                },
+            )
+            return {
+                "revised": False,
+                "blocked": True,
+                "goal_id": goal_id,
+                "action_id": action_id,
+                "reason_code": blocked_code,
+                "detail": blocked_detail,
+                "revisions": spent,
+                "remaining": 0,
+                "idempotent": False,
+            }
+
+        revision = spent + 1
+        self._revisions[goal_id] = revision
+        self._journal_row(
+            _journal_module().KIND_REVISION,
+            action_id,
+            goal_id=goal_id,
+            payload={
+                "revision": revision,
+                "change": change,
+                "reason_code": code,
+                "detail": detail or f"revision {revision} of at most {allowed}",
+                "blocked": False,
+                "spent": revision,
+                "allowed": allowed,
+                "deadline_expired": bool(deadline["expired"]),
+            },
+        )
+        return {
+            "revised": True,
+            "blocked": False,
+            "goal_id": goal_id,
+            "action_id": action_id,
+            "revision": revision,
+            "reason_code": code,
+            "detail": detail or f"revision {revision} of at most {allowed}",
+            "revisions": revision,
+            "remaining": max(0, allowed - revision),
+            "idempotent": False,
+        }
+
+    def require_attemptable(self, goal_id: str) -> dict:
+        """Refuse to start an attempt that the deadline or budget forbids.
+
+        Raises :class:`NoAttemptsRemain` carrying the blocked state, so a caller
+        that must not proceed cannot mistake "no attempts remain" for "go ahead".
+        """
+        blocked = self.blocked_state(goal_id)
+        if blocked["blocked"]:
+            raise NoAttemptsRemain(
+                str(blocked["reason_code"] or REASON_BLOCKED),
+                str(blocked["detail"]),
+                goal_id=goal_id,
+                blocked=blocked,
+            )
+        deadline = self.deadline_status(goal_id)
+        if deadline["expired"]:
+            state = {
+                "goal_id": goal_id,
+                "blocked": True,
+                "reason_code": REASON_EXPIRED,
+                "detail": deadline["detail"],
+                "revisions": self.revision_count(goal_id),
+                "at_utc": deadline["now_utc"],
+                "source": "deadline",
+            }
+            raise NoAttemptsRemain(REASON_EXPIRED, deadline["detail"], goal_id=goal_id, blocked=state)
+        return {"goal_id": goal_id, "blocked": False, "reason_code": None, "detail": None}
+
+    # -- D3e: the owner stop ----------------------------------------------------
+
+    def owner_stop(
+        self,
+        action_id: str,
+        *,
+        reason_code: str = REASON_STOP_REQUESTED,
+        rest_observation_ids: Optional[Iterable[str]] = None,
+    ) -> dict:
+        """Stop the body locally, at once, and say truthfully what that proves.
+
+        Three deliberate choices, each of which a reviewer should be able to
+        falsify from the tests:
+
+        * **Only ``adapter.cancel`` is called.** No probe, no observation, no
+          status query -- not before, not after. Those are the calls that can
+          block on a sick organ, and an owner stop is the one path that must not
+          queue behind them. A hung or raising probe therefore cannot delay a
+          stop: it is never invoked.
+        * **Stop first, journal second** -- the inverse of :meth:`submit`, and for
+          the opposite reason. A write-before-submit guarantees no unrecorded
+          action; a record-before-stop would guarantee nothing and cost time the
+          machine does not have. A journal failure is reported as a fact
+          (``journal_error``) and cannot undo the stop.
+        * **An acknowledgment is not physical rest.** ``cancel`` returning truthy
+          means the adapter heard the request. The report keeps
+          ``physical_rest.confirmed`` false and names ``STOP_UNVERIFIED`` unless a
+          separate verifier confirms named evidence that the body is at rest.
+        """
+        if self.adapter is None:
+            raise LifecycleError("UNSUPPORTED", "no adapter is bound to this loop")
+        proposal = self._proposals.get(action_id)
+        goal_id = self._goal_for_action(action_id)
+
+        acknowledged = False
+        cancel_error: Optional[str] = None
+        try:
+            answer = self.adapter.adapter.cancel(action_id)
+        except Exception as exc:  # a cancel that raises still must not lose the stop
+            cancel_error = f"{type(exc).__name__}: {exc}"
+        else:
+            try:
+                acknowledged = bool(answer)
+            except Exception as exc:  # a truth value that raises is not an acknowledgement
+                cancel_error = f"{type(exc).__name__}: {exc}"
+            if not acknowledged and cancel_error is None:
+                cancel_error = "adapter.cancel declined the request"
+
+        entry = self.lifecycle.state(action_id)
+        already_terminal = entry in TERMINAL_STATES
+        if not already_terminal and entry != "cancelled":
+            # `received`, `accepted`, `running` and `unknown` may all legally
+            # become `cancelled`; a state that has already ended stays as it is.
+            # An unacknowledged cancel is `unknown`, not `cancelled`: the request
+            # was sent, and nothing observed says the body stopped.
+            self.lifecycle.observe(action_id, "cancelled" if acknowledged else UNRESOLVED_STATE)
+
+        rest = self._rest_verdict(
+            action_id,
+            goal_id=goal_id,
+            proposal=proposal,
+            observation_ids=rest_observation_ids,
+            acknowledged=acknowledged,
+        )
+
+        report = {
+            "action_id": action_id,
+            "goal_id": goal_id,
+            "stop_requested": True,
+            "reason_code": reason_code,
+            "acknowledged": acknowledged,
+            "cancel_error": cancel_error,
+            "ledger_state": self.lifecycle.state(action_id),
+            "already_terminal": already_terminal,
+            "physical_rest": rest,
+            "probe_called": False,
+            "journal_error": None,
+        }
+        try:
+            self._journal_row(
+                _journal_module().KIND_STOP,
+                action_id,
+                goal_id=goal_id,
+                payload={
+                    "reason_code": reason_code,
+                    "acknowledged": acknowledged,
+                    "cancel_error": cancel_error,
+                    "physical_rest": bool(rest["confirmed"]),
+                    "physical_rest_code": rest["reason_code"],
+                    "at_utc": str(self.clock.now_utc()),
+                },
+            )
+        except Exception as exc:
+            # The body is already stopping. Report the missing record; never
+            # pretend the stop did not happen, and never retry it destructively.
+            report["journal_error"] = f"{type(exc).__name__}: {exc}"
+        self._stops[action_id] = report
+        return report
+
+    def last_stop(self, action_id: str) -> Optional[dict]:
+        return self._stops.get(action_id)
+
+    def _rest_verdict(
+        self,
+        action_id: str,
+        *,
+        goal_id: str,
+        proposal: Optional[dict],
+        observation_ids: Optional[Iterable[str]],
+        acknowledged: bool,
+    ) -> dict:
+        """Decide whether anything actually shows the body at rest.
+
+        Silence is not evidence. With no verifier or no named evidence the answer
+        is an explicit "unverified", carrying the frozen ``STOP_UNVERIFIED``
+        code -- never a quiet success, and never a claim that the ack was proof.
+        """
+        wanted = [str(oid) for oid in (observation_ids or []) if str(oid).strip()]
+        if self.rest_verifier is None or not wanted:
+            return {
+                "confirmed": False,
+                "reason_code": REASON_STOP_UNVERIFIED,
+                "verifier": None,
+                "observation_ids": wanted,
+                "detail": (
+                    "cancellation was acknowledged but no evidence of rest was offered"
+                    if acknowledged
+                    else "cancellation was not acknowledged and no evidence of rest was offered"
+                ),
+            }
+        request = {
+            "action_id": action_id,
+            "goal_id": goal_id,
+            "action_kind": (proposal or {}).get("action_kind"),
+            "predicted_postcondition": "stopped",
+            "required_observation_ids": wanted,
+        }
+        try:
+            answer = dict(self.rest_verifier.verify(request) or {})
+        except Exception as exc:
+            return {
+                "confirmed": False,
+                "reason_code": REASON_STOP_UNVERIFIED,
+                "verifier": getattr(self.rest_verifier, "verifier_id", None),
+                "observation_ids": wanted,
+                "detail": f"rest verifier failed: {type(exc).__name__}: {exc}",
+            }
+        if answer.get("verified") is True:
+            return {
+                "confirmed": True,
+                "reason_code": REASON_STOPPED_VERIFIED,
+                "verifier": answer.get("verifier"),
+                "observation_ids": list(answer.get("observation_ids") or wanted),
+                "detail": answer.get("detail"),
+            }
+        return {
+            "confirmed": False,
+            "reason_code": REASON_STOP_UNVERIFIED,
+            "verifier": answer.get("verifier"),
+            "observation_ids": wanted,
+            "detail": answer.get("detail") or "rest evidence did not confirm the stop",
+        }
+
+    # -- shared helpers --------------------------------------------------------
+
+    def _goal_for_action(self, action_id: str) -> str:
+        """Which goal an action belongs to, from the proposal, else the journal."""
+        proposal = self._proposals.get(action_id)
+        if proposal is not None:
+            return str(proposal["goal_id"])
+        if self.journal is not None:
+            for row in reversed(self.journal.rows):
+                if getattr(row, "action_id", None) == action_id and getattr(row, "goal_id", None):
+                    return str(row.goal_id)
+        raise GoalGraphError("UNKNOWN_ACTION", f"no goal is known for action {action_id!r}")
+
+    def _journal_row(self, kind: str, action_id: str, *, goal_id: Optional[str], payload: Mapping[str, Any]):
+        """Append one row when a journal is attached; otherwise stay in memory.
+
+        Never swallows a journal failure: the caller decides whether a missing
+        record is fatal, because for a stop it is not and for an intent it is.
+        """
+        if self.journal is None:
+            return None
+        return self.journal.append(kind, action_id, goal_id=goal_id, payload=dict(payload))

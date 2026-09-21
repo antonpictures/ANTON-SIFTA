@@ -58,6 +58,11 @@ KIND_VERIFICATION = "verification"
 KIND_NOTE = "note"
 # D3d: the one event a reader must never have to infer from a result row.
 KIND_COMPLETION = "completion"
+# D3e: an owner stop, and a bounded revision of a goal that did not work out.
+# Both are journalled so a restart inherits the decision instead of re-deriving
+# it -- a stop that only lived in memory would be re-attempted by the next boot.
+KIND_STOP = "stop"
+KIND_REVISION = "revision"
 # Kinds are additive. A reader must ignore a kind it does not know rather than
 # treat the row as malformed: the wire shape of a row never changes, only the
 # vocabulary of what may appear in it.
@@ -69,6 +74,8 @@ JOURNAL_KINDS = (
     KIND_VERIFICATION,
     KIND_NOTE,
     KIND_COMPLETION,
+    KIND_STOP,
+    KIND_REVISION,
 )
 
 # States an intent can be in, from the journal's point of view alone.
