@@ -465,12 +465,14 @@ class GoalLoop:
         adapter: Optional[AdapterBinding] = None,
         verifier: Optional[Verifier] = None,
         clock: Optional[Clock] = None,
+        journal: Any = None,
     ) -> None:
         self.graph = GoalGraph(graph) if graph else GoalGraph(())
         self.adapter = adapter
         self.verifier = verifier if verifier is not None else NullVerifier()
         self.clock = clock if clock is not None else SystemClock()
         self.lifecycle = LifecycleLedger()
+        self.journal = journal
         self._completed: list[str] = []
         self._proposals: dict[str, dict] = {}
         self._results: dict[str, dict] = {}
@@ -546,8 +548,282 @@ class GoalLoop:
     def proposal(self, action_id: str) -> Optional[dict]:
         return self._proposals.get(str(action_id))
 
+    # -- durable submission (D3b) --------------------------------------------
+
+    def attach_journal(self, journal: Any) -> None:
+        """Give the loop a durable outbox. Without one it refuses to submit."""
+        self.journal = journal
+
+    def submit(self, action_id: str) -> dict:
+        """Journal the intent durably, *then* ask the adapter to act.
+
+        Ordering is the whole point: the row is fsynced before the adapter is
+        called, so no action can exist in the world without existing on disk.
+        If the adapter raises, the intent and an ``attempted_unknown`` marker stay
+        behind, the action becomes ``unknown``, and a retry is refused -- the body
+        must reconcile before it may act again.
+        """
+        action_id = str(action_id)
+        if self.journal is None:
+            raise LifecycleError(
+                "NO_JOURNAL",
+                "refusing to submit without a durable journal: an unjournalled action cannot be reconciled",
+            )
+        if self.adapter is None:
+            raise LifecycleError("NO_ADAPTER", "no adapter bound to this loop")
+
+        try:
+            from System.swarm_action_journal import (
+                KIND_INTENT,
+                KIND_SUBMIT,
+                SUBMIT_ACCEPTED,
+                SUBMIT_ATTEMPTED,
+                SUBMIT_UNATTEMPTED,
+                JournalError,
+            )
+        except ImportError:  # pragma: no cover - bare System/ path
+            from swarm_action_journal import (  # type: ignore
+                KIND_INTENT,
+                KIND_SUBMIT,
+                SUBMIT_ACCEPTED,
+                SUBMIT_ATTEMPTED,
+                SUBMIT_UNATTEMPTED,
+                JournalError,
+            )
+
+        # The journal is consulted before this process's own memory. A restarted
+        # body holds no proposals, and that amnesia must never become permission
+        # to resend an action the previous body already handed over.
+        state = self.journal.submit_state(action_id)
+        if state in (SUBMIT_ATTEMPTED, SUBMIT_ACCEPTED):
+            raise JournalError(
+                "RESEND_FORBIDDEN",
+                f"action {action_id!r} was already handed to the adapter ({state}); "
+                "reconcile its true status instead of resending it",
+            )
+
+        proposal = self._proposals.get(action_id)
+        if proposal is None:
+            raise LifecycleError("UNKNOWN_ACTION", f"no proposal {action_id!r} to submit")
+        if state == SUBMIT_UNATTEMPTED:
+            # A previous process wrote the intent and died before submitting.
+            # Reuse that row rather than inventing a second claim.
+            intent_row = self.journal.intent(action_id)
+        else:
+            intent_row = self.journal.append(
+                KIND_INTENT,
+                action_id,
+                goal_id=proposal["goal_id"],
+                payload={
+                    "goal_id": proposal["goal_id"],
+                    "action_kind": proposal["action_kind"],
+                    "adapter_id": proposal["adapter_id"],
+                    "capability_revision": proposal["capability_revision"],
+                    "predicted_postcondition": proposal["predicted_postcondition"],
+                    "required_observation_ids": list(proposal["required_observation_ids"]),
+                    "args": dict(proposal["args"]),
+                },
+            )
+
+        try:
+            receipt = self.adapter.adapter.submit(dict(proposal))
+        except Exception as exc:  # the adapter's failure must not erase the intent
+            self.journal.append(
+                KIND_SUBMIT,
+                action_id,
+                goal_id=proposal["goal_id"],
+                payload={
+                    "outcome": "attempted_unknown",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "adapter_id": self.adapter.adapter_id,
+                },
+            )
+            self.lifecycle.observe(action_id, UNRESOLVED_STATE)
+            raise
+
+        # An empty receipt id is no receipt id: the adapter did not tell us the
+        # action was accepted, so the action stays unknown.
+        receipt_id = None
+        if receipt is not None:
+            candidate = str(receipt).strip()
+            receipt_id = candidate or None
+        outcome = SUBMIT_ACCEPTED if receipt_id else "attempted_unknown"
+        self.journal.append(
+            KIND_SUBMIT,
+            action_id,
+            goal_id=proposal["goal_id"],
+            payload={
+                "outcome": outcome,
+                "effect_receipt_id": receipt_id,
+                "adapter_id": self.adapter.adapter_id,
+            },
+        )
+        self.lifecycle.observe(action_id, "accepted" if receipt_id else UNRESOLVED_STATE)
+        return {
+            "action_id": action_id,
+            "intent_seq": intent_row.seq,
+            "outcome": outcome,
+            "effect_receipt_id": receipt_id,
+        }
+
     def result(self, action_id: str) -> Optional[dict]:
         return self._results.get(str(action_id))
+
+    # -- reconciliation (D3c) -------------------------------------------------
+
+    def reconcile(self, action_id: Optional[str] = None) -> dict:
+        """Ask the adapter what actually happened. Never resend, never guess.
+
+        A restart finds actions whose submit was attempted and whose outcome was
+        never learned. The only honest move is to ask, so this calls
+        ``adapter.status`` and records whatever it says -- including "still
+        running" and including "I do not know". A non-terminal or unrecognisable
+        answer leaves the action unresolved and still un-resendable; only a
+        terminal answer, evidenced by the journal, closes it.
+
+        Statuses outside the frozen lifecycle are recorded as ``unknown`` rather
+        than accepted as words: an adapter cannot invent a state.
+        """
+        if self.adapter is None:
+            raise LifecycleError("NO_ADAPTER", "no adapter bound to this loop")
+        if self.journal is None:
+            raise LifecycleError(
+                "NO_JOURNAL",
+                "refusing to reconcile without a durable journal: there is no record of what was attempted",
+            )
+        try:
+            from System.swarm_action_journal import KIND_NOTE, KIND_RESULT, KIND_STATUS, JournalError
+        except ImportError:  # pragma: no cover - bare System/ path
+            from swarm_action_journal import (  # type: ignore
+                KIND_NOTE,
+                KIND_RESULT,
+                KIND_STATUS,
+                JournalError,
+            )
+
+        if action_id is None:
+            targets = [row.action_id for row in self.journal.in_flight()]
+        else:
+            action_id = str(action_id)
+            if self.journal.intent(action_id) is None:
+                raise JournalError(
+                    "UNJOURNALLED_ACTION",
+                    f"action {action_id!r} has no intent row; there is nothing trustworthy to reconcile",
+                )
+            targets = [action_id]
+
+        outcomes: list = []
+        for target in targets:
+            goal_id = None
+            intent = self.journal.intent(target)
+            if intent is not None:
+                goal_id = intent.goal_id
+            try:
+                reported = self.adapter.adapter.status(target)
+            except Exception as exc:
+                self.journal.append(
+                    KIND_STATUS,
+                    target,
+                    goal_id=goal_id,
+                    payload={
+                        "reported": None,
+                        "outcome": "status_unavailable",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                self.journal.append(
+                    KIND_NOTE,
+                    target,
+                    goal_id=goal_id,
+                    payload={"note": "reconciliation_incomplete", "for_action": target},
+                )
+                outcomes.append(
+                    {
+                        "action_id": target,
+                        "status": UNRESOLVED_STATE,
+                        "resolved": False,
+                        "detail": f"status unavailable: {type(exc).__name__}: {exc}",
+                    }
+                )
+                continue
+
+            raw_status = None
+            if isinstance(reported, Mapping):
+                raw_status = reported.get("status")
+            claimed = None if raw_status is None else str(raw_status)
+            status = claimed if claimed in LIFECYCLE_STATES else UNRESOLVED_STATE
+            detail = None
+            if claimed is not None and claimed != status:
+                detail = f"adapter reported {claimed!r}, which is not a frozen lifecycle state"
+
+            self.journal.append(
+                KIND_STATUS,
+                target,
+                goal_id=goal_id,
+                payload={
+                    "reported": claimed,
+                    "outcome": status,
+                    "detail": detail,
+                    "effect_receipt_id": (
+                        reported.get("effect_receipt_id") if isinstance(reported, Mapping) else None
+                    ),
+                },
+            )
+
+            current = self.lifecycle.state(target)
+            try:
+                self.lifecycle.observe(target, status)
+            except LifecycleError:
+                # The ledger refuses the jump; the journal keeps the report and
+                # the action stays where it was rather than being forced forward.
+                self.journal.append(
+                    KIND_NOTE,
+                    target,
+                    goal_id=goal_id,
+                    payload={"note": "lifecycle_refused", "from": current, "to": status},
+                )
+
+            resolved = status in TERMINAL_STATES
+            if resolved:
+                self.journal.append(
+                    KIND_RESULT,
+                    target,
+                    goal_id=goal_id,
+                    payload={
+                        "status": status,
+                        "via": "reconciliation",
+                        "detail": detail,
+                    },
+                )
+                self._results[target] = {
+                    "action_id": target,
+                    "goal_id": goal_id,
+                    "status": status,
+                    "via": "reconciliation",
+                    "verified": False,
+                }
+            outcomes.append(
+                {
+                    "action_id": target,
+                    "status": status,
+                    "resolved": resolved,
+                    "detail": detail,
+                }
+            )
+
+        return {
+            "reconciled": tuple(outcomes),
+            "still_in_flight": tuple(row.action_id for row in self.journal.in_flight()),
+            "resend_forbidden": tuple(self.journal.resend_forbidden()),
+        }
+
+    def unverified_successes(self) -> tuple:
+        """Actions a body claims succeeded that no verifier has confirmed."""
+        return tuple(
+            action_id
+            for action_id, row in self._results.items()
+            if row.get("status") == "succeeded" and not row.get("verified")
+        )
 
     def unresolved_actions(self) -> tuple:
         return self.lifecycle.unresolved()
