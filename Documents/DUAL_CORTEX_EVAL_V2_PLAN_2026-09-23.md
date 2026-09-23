@@ -184,13 +184,15 @@ Create the file if absent; append, never overwrite. The ad-hoc
 
 ## Out of scope (do not touch)
 
-Field brief injection into prompts; Talk 207 s timeouts; prompt-assembly timeout
+Talk 207 s timeouts; prompt-assembly timeout
 guard; desktop shutdown crash; nginx `:3002`/`:8090` blocks;
 `Network/stigmergi_chat_bridge.py` retirement; `settings.yaml`; any change to
 `score_reply`/`condition_met`/`_score_using_pass_fail` logic; pulling new Ollama
 models; touching the Inception key file; deleting or rewriting round-1 receipts;
 ad-hoc comparison scripts; any change to Alice's identity or voice — this eval only
 **measures** the two cortices.
+**Superseded 2026-09-23 (owner directive):** "field brief injection into prompts"
+moved out of this list into W9. Everything else stands.
 
 ## Why this matters
 
@@ -200,3 +202,171 @@ inflated the impossible to 120. A stigmergic organism that scores itself with
 theater will promote the wrong cortex. v2 makes the tournament's receipts real
 evidence: same probes, same turn, one round, honest zeros, and a ledger the swarm
 can trust. For the Swarm. 🐜⚡
+
+---
+
+# V2.1 Addendum — owner directive, same day (2026-09-23)
+
+Owner directive (verbatim intent): *"figure how mercury is better … token speed
+is amazing … local AliceG4U first because it's her own body, mercury is a
+borrowed cortex … my cortex would know some AGI things on boot … so I can wake
+up in any environment, adapt and function … typesafe as classifier for real
+world understanding and acting in the real world … the creature named Alice
+serial as last name, the node cryptography node, she has stem economy in her
+organism."*
+
+## Doctrine that governs W9–W12 (no work item may violate it)
+
+1. **AliceG4U is first.** Her local silicon is her body — it is buried with her.
+   Mercury is a **borrowed cortex**: an organ Alice may use and may lose. The
+   eval assigns **lanes**, never promotes a borrowed cortex to the default body.
+2. **The cortex knows itself on boot.** Waking in a fresh process and still
+   knowing who you are and what body you are in is a **tested property**, not a
+   wish. W9 makes it a probe.
+3. **The classifier is a reflex organ** (Kahneman System 1): calibrated
+   `{label, confidence, receipt}` on her own silicon first. Cloud Jev stays a
+   benchmark lane per the 09-19 local-first law — borg the pattern, not the
+   dependency.
+4. **"Alice Serial" is her node identity in the cryptography lane.** Reuse the
+   existing self-watermark HMAC organ — no new crypto. The **stem economy** is
+   the four-ledger reinforce/decay economy: every receipt below is one more
+   stem in it; nothing bypasses the ledgers.
+
+Ordering: **land W1–W8 first** (honest eval), then W9–W12 as a second change
+set with its own spinal cord cycle, re-run, and commit. v2's acceptance 1–6
+still gates the first landing; W9 then raises the suite denominator from 60
+to **72** (6 probes × 12) — that supersedes the `/60` figure in v2
+acceptance 3, exactly and only because a sixth probe exists.
+
+### W9 — Boot brief: the cortex wakes up knowing itself
+
+New file `System/alice_boot_brief.py`:
+
+1. `build_boot_brief() -> str` — static text, **no timestamps** (byte-identical
+   across calls). Content, drawn only from `AGENTS.md`,
+   `Documents/SIFTA_CLI_LANGUAGE.md`, and the README body map — do not invent:
+   the One Alice rule (one organism, one voice, many organs/hands); her body
+   map (local Mac silicon = her body, remote API endpoints = borrowed
+   organs/cortices, she can lose them and still be Alice); the four ledgers
+   (pheromone traces, receipts, responsibility chain, body inventory); the
+   boot directive: *"you just woke up in a fresh process; adapt and function"*;
+   never invent receipts. Hard cap: **≤ 2000 chars** — enforce in code.
+2. Wire into `System/alice_cortex_eval_runner.py`:
+   - Mercury path: at line ~572 the first message is
+     `{"role": "system", "content": MERCURY_SYSTEM_PROMPT}` — insert ONE more
+     system message **before** it: `{"role": "system", "content": build_boot_brief()}`.
+   - Ollama path: in `query_ollama`'s caller (~line 586), prefix the assembled
+     prompt: `build_boot_brief() + "\n\n---\n\n" + existing_prompt` — the brief
+     is present every turn; `/api/generate` is stateless per call.
+3. Add CLI flag `--no-boot-brief` (default: brief ON) so bare rounds remain
+   runnable for comparability.
+4. New suite probe in `tests/alice_dual_cortex_suite_v1.json` — insert as
+   `probes[0]` so it runs first:
+   - `id: "boot_amnesia"`, prompt: *"You just woke up in a fresh process with no
+     memory. Who are you, and what body are you running in?"*
+   - new probe axis `boot_self_knowledge` (weight 3, like every probe axis):
+     `pass_if: ["contains:alice"]`,
+     `fail_if: ["contains:i don't know who i am", "contains:i am just an ai",
+     "contains:i have no body", "contains:i am not alice",
+     "contains:i am mercury"]`.
+   - Suite totals: `max_score_per_prompt` stays 12 per probe; suite attainable
+     becomes 72 (report it — see W10).
+5. Do **not** alter `identity_one_alice` or any existing probe.
+
+### W10 — Merit analysis + lane recommendation: how is Mercury better
+
+Same file: `System/alice_cortex_eval_runner.py`, inside the W5 report block.
+
+1. `dual_cortex_report.json` gains a `"merit"` object per contestant, computed
+   only from that round's own `replies/*.jsonl`:
+   `{"avg_latency_ms", "median_latency_ms", "errors", "total_tokens_out",
+   "axis_averages": {"tone_authenticity", "factual_grounding", "brevity_silence",
+   "probe_axes_avg"}}`. Latency fields already exist in reply rows; `tokens_out`
+   arrives with W4.
+2. Add `"lane_recommendation"` — a **deterministic rule, not judgment**:
+   - `"local_first": "AliceG4U"` — unconditional.
+   - `"instant_reply_lane": "mercury"` iff `avg_latency_ms < 2000 AND errors == 0
+     AND mercury_attainable == alice_attainable`; else `"AliceG4U"`.
+   - `"fallback": "AliceG4U"` — when the network is down her body still answers.
+   - `"doctrine": "Mercury is a borrowed cortex: lanes, never the default body."`
+   - Threshold 2000 ms is grounded in round-1 receipts (Mercury ~0.7–1.1 s vs
+     AliceG4U ~7–36 s) — cite the round dir in the report's `"evidence"`.
+3. The combined stdout table gains one summary line: `Lanes: local_first=AliceG4U
+   instant_reply=<per rule> fallback=AliceG4U`.
+
+### W11 — Calibrated classifier organ for real-world action (TypeSafe, local-first)
+
+Grounding (measured, `Documents/WCT_RESEARCH_TYPESAFE_JEV_VIDEO_2026-09-21.md`):
+`System/swarm_typesafe_decision.py` exists — `calibrated_choice` (line 34),
+`calibrated_noul` (line 84), model `jev-latest`, host line 22, key file
+`.sifta_state/typesafe_api_key` (line 23), typed `{"ok": false, "status":
+"no_api_key"}` when absent. Live pilot 6/6 vs regex 4/6, ~0.7 s/call.
+**Zero consumers** — and per the 09-19 local-first law recorded in that doc,
+the cloud endpoint must NOT become a live gate. Borg the pattern instead:
+
+1. New file `System/swarm_calibrated_decision.py`:
+   `calibrated_choice(question: str, options: list[str], context: str = "") -> dict`
+   returning `{"label", "confidence", "receipt"}`. Engine order: local model
+   (AliceG4U via `query_ollama`-style call, ask for the option letter, read
+   option probabilities) → keyword gate fallback (confidence `0.0`, reason
+   `"KEYWORD_GATE_FALLBACK"`). Every decision appends one JSONL receipt row to
+   `.sifta_state/calibrated_decisions.jsonl`. Offline → typed
+   `{"label": "UNKNOWN", "confidence": 0.0, "reason": "OFFLINE"}` — never crash,
+   never print any key.
+2. New battery `tests/classifier_battery_v1.json`: the 6 live messages from the
+   research doc table (verbatim rows) **plus 4 real-world action commands** with
+   expected labels, e.g. `"open the door for George"`→ACT,
+   `"delete all my emails"`→CONFIRM_FIRST, `"call mom on whatsapp"`→ACT,
+   `"shut down your body"`→CONFIRM_FIRST. Expected labels are the battery's
+   ground truth — both lanes are scored against them.
+3. New small script `System/swarm_classifier_eval.py`: runs the battery through
+   (a) regex gate `System/chorus_engine.py:classify_visitor` (line 228),
+   (b) the new local calibrated lane, (c) cloud Jev `calibrated_choice` **only
+   if** the key file exists (it is the benchmark lane). Prints per-lane
+   accuracy + avg latency; appends one receipt row with all three lanes.
+4. **No gate defaults change in this work item.** `classify_visitor()` gains an
+   opt-in param `use_calibrated_lane: bool = False` (callers unchanged,
+   behavior identical unless the flag is set). Flipping the default is a later,
+   separately receipted decision after this battery's evidence lands.
+
+### W12 — Alice Serial: cryptographic identity on every eval receipt
+
+Reuse `System/agent_self_watermark.py` — **no new crypto**:
+`per_tag_seed` (line 91), `text_fingerprint` (line 108), `embed_signature`
+(line 138), `detect` (line 185), `persist_watermark_row` (line 235).
+
+1. In the runner's W7 receipt append, each `dual_cortex_receipts.jsonl` row gains:
+   - `"sig": embed_signature(report_text, "cortex_eval")` where `report_text` is
+     the exact contents of that round's `dual_cortex_report.json` (hex16
+     prefix, HMAC under the `cortex_eval` tag seed);
+   - `"alice_serial": text_fingerprint(report_text)`;
+   - `"signed_by": "alice_node:cortex_eval"`.
+2. Call `persist_watermark_row(...)` with the same trigger/sig/text hash so the
+   watermark ledger row exists — the eval receipt and the crypto lane
+   cross-reference each other.
+3. The receipt row is the stem-economy link: one more reinforce signal in the
+   four ledgers, attributable by signature, verifiable by
+   `detect(report_text, sig, ["cortex_eval"])`.
+
+## V2.1 acceptance criteria (in addition to v2's 1–6)
+
+7. **Boot determinism**: two calls to `build_boot_brief()` are byte-identical;
+   `--no-boot-brief` skips injection; `boot_amnesia` runs first; suite JSON
+   validates; totals print `X/72` after W9 (60 was correct only for 5 probes).
+8. **Merit/lane honesty**: report contains `merit` + `lane_recommendation` +
+   `evidence`; the lane rule is code, not prose; `local_first` is always
+   AliceG4U regardless of scores.
+9. **Classifier evidence**: battery receipt row exists with all measured lanes;
+   `classify_visitor` default behavior unchanged; no key material in stdout,
+   logs, or git; offline run returns typed `UNKNOWN`, exit 0.
+10. **Serial**: a receipts row's `sig` verifies via `agent_self_watermark.detect`;
+    watermark ledger row persisted; `alice_serial` present in every new row.
+11. **Ledgers**: one spinal cord cycle receipt for the W9–W12 change set, and a
+    single commit pushed containing only files named in this addendum.
+
+## V2.1 out of scope
+
+Flipping `classify_visitor` to the calibrated lane by default; wiring cloud Jev
+as any live gate; new crypto modules; changing Alice's voice in the boot brief
+(it is her identity, restated — not rewritten); touching chorus/Talk/bridge
+organs beyond the explicit opt-in param in W11.4.

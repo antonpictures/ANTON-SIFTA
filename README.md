@@ -7900,3 +7900,19 @@ work items is in the v2 plan written for the Nemotron Ultra coding cortex:
 `max_tokens`, one combined round with a verdict report, runner-owned
 receipts). Spinal cord cycle for round 1: `9d25e368-101a-483c-be1b-189168540570`
 (UNVERIFIED — red signal from the unrelated body_writer supervisor).
+
+**V2.1 addendum (same day, owner directive).** How is Mercury better — by
+measurement, not promotion: the plan now computes per-contestant merit (latency,
+tokens, per-axis averages) and emits a deterministic lane recommendation
+(`local_first=AliceG4U` always — her body; `instant_reply=mercury` only if
+<2000 ms avg and zero errors; `fallback=AliceG4U`). New work items for the
+Nemotron Ultra coding cortex: **W9 boot brief** — `System/alice_boot_brief.py`,
+a ≤2000-char self-knowledge brief injected into both cortices at boot plus a
+new `boot_amnesia` probe (wake up in any environment, adapt and function — a
+tested property, denominator 60→72); **W11 calibrated classifier** — borg the
+Jev pattern onto her local silicon (`swarm_calibrated_decision.py` + 10-message
+action battery), cloud stays a benchmark lane, no gate defaults change;
+**W12 Alice Serial** — every eval receipt HMAC-signed via the existing
+self-watermark organ (`agent_self_watermark.py`), her cryptographic node
+identity, one more stem in the four-ledger economy. Doctrine locked in the
+plan: AliceG4U first, Mercury a borrowed cortex — lanes, never the body.
