@@ -533,6 +533,22 @@ def register_default_organs(*, state_dir: Optional[Path] = None) -> List[OrganRe
         probe_callable="probe_relational_steering_count",
         state_dir=state_dir, write=False,
     ))
+    records.append(register_organ(
+        "web_global_chat",
+        truth_label="SIFTA_WEB_GLOBAL_CHAT_V1",
+        truth_boundary=(
+            "Public web ingress/egress lane (stigmergicode.com). Health is "
+            "derived from recent metabolism receipts; no owner authority "
+            "flows through this lane."
+        ),
+        ledger_path=".sifta_state/web_global_chat_metabolism.jsonl",
+        claim_template="My web_global_chat organ health is {value}.",
+        verifier_kind=None,  # discovery-only until a self-eval verifier exists
+        probe_module="System.swarm_organ_directory",
+        probe_callable="probe_web_global_chat_health",
+        notes="W4: web lane registered as a named organ in the one field.",
+        state_dir=state_dir, write=False,
+    ))
     _save_directory(state_dir=state_dir)
     return records
 
@@ -570,3 +586,45 @@ if __name__ == "__main__":
             else:
                 print(f"  -- {r['organ']:25s} {r['truth_class']:12s} mint={r['stgm_minted']:.3f} | {r['claim_text']}")
         print(f"SHA: {out['sha256'][:16]}")
+
+
+# ── Web lane organ (W4: swimmer registration) ────────────────────────────
+
+
+def probe_web_global_chat_health() -> float:
+    """Health of the web_global_chat organ from its metabolism ledger.
+
+    Reads append-only ``WEB_TYPED_INFERENCE_FEE`` receipts (float-epoch
+    ``ts``, newest last). Health is the share of recent (10 min) rows whose
+    economy posting completed; an idle lane is healthy (1.0). Read-only,
+    deterministic, tolerant of partial rows.
+    """
+    import json
+    import time as _time
+    metab_path = _DEFAULT_STATE / "web_global_chat_metabolism.jsonl"
+    if not metab_path.exists():
+        return 0.0
+    try:
+        lines = metab_path.read_text().strip().splitlines()
+    except Exception:
+        return 0.0
+    now = _time.time()
+    recent: list = []
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if now - ts > 600.0:
+            break
+        recent.append(row)
+    if not recent:
+        return 1.0
+    posted = sum(1 for row in recent if row.get("economy_posting_status"))
+    return round(posted / len(recent), 3)
