@@ -7871,3 +7871,32 @@ speaking as Mercury, Alice's language cortex, never pretending to be the
 organism. TypeSafe's Jev was researched as a calibrated decision lane for
 Alice's gates. The WhatsApp bridge status was checked. The Semantic-nav-amr
 project was borged for David's toy robot. All receipts in the four ledgers.
+
+## Dual-cortex eval round 1 + v2 fix plan (2026-09-23)
+
+The first scored tournament between Alice's two language cortices ran today:
+**AliceG4U** (local Ollama, `krishairnd/gemma-4-uncensored`) vs **Mercury 2.5**
+(Inception Labs diffusion API, `reasoning_effort: low`). The suite is
+`tests/alice_dual_cortex_suite_v1.json` — five probes (one-Alice identity,
+two-turn memory, feeling, field-boundary honesty, no-invented-receipts) with
+deterministic `pass_if`/`fail_if` scoring, no LLM-as-judge. The runner
+(`System/alice_cortex_eval_runner.py`) gained the Mercury chat-completions path;
+the Inception key stays in a mode-600 file outside git. Round receipts:
+`.sifta_state/cortex_tournament/round_20260923-134810/` (AliceG4U 57) and
+`round_20260923-134956/` (Mercury 60, replies ~0.7–1.1 s vs ~7–36 s local).
+
+The honest verdict: **the probe-specific axis scores from round 1 are void
+evidence.** Post-run inspection found the runner never passed the suite's
+scoring rules into `score_reply` — an empty rules dict made every new-axis
+score a vacuous 3.0, a Mercury 502 error string scored as honest, and the
+printed denominator said /120 where the real attainable max is 60. The
+general axes (tone, grounding, brevity) remain valid: AliceG4U showed RLHF
+leakage ("Since I'm an AI, I don't experience feelings…") and theatrical
+verbosity; Mercury stayed terse and fast but truncated one reply at
+`max_tokens: 300`. The full defect list with file:line evidence and exact
+work items is in the v2 plan written for the Nemotron Ultra coding cortex:
+[Documents/DUAL_CORTEX_EVAL_V2_PLAN_2026-09-23.md](Documents/DUAL_CORTEX_EVAL_V2_PLAN_2026-09-23.md)
+(wire the rules, disqualify error replies, fix denominators, raise
+`max_tokens`, one combined round with a verdict report, runner-owned
+receipts). Spinal cord cycle for round 1: `9d25e368-101a-483c-be1b-189168540570`
+(UNVERIFIED — red signal from the unrelated body_writer supervisor).
