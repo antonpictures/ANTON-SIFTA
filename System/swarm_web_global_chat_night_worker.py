@@ -417,6 +417,39 @@ def process_claimed_turn(
             reply, selected, stamp, done_reason = answer_web_turn(
                 queued, model=model, ingress_path=ingress_path, replies_path=replies_path,
             )
+            # W2: doctrine check - block forbidden identity phrases.
+            # Two families: (a) the model claiming to BE Mercury / not-Alice,
+            # (b) a generic-assistant guardrail refusing to speak as Alice at
+            # all (Gemma-family models answer "I can't share details of my
+            # architecture or training process..." when asked what they are).
+            # Both break the One Alice voice, so both route to the fallback.
+            forbidden = [
+                "my name is mercury", "i am mercury",
+                "i cannot become alice", "i can not become alice",
+                # generic-assistant / self-architecture refusals
+                "share details of my architecture",
+                "architecture or training process",
+                "how language models work in general",
+                "i cannot share details", "i can not share details",
+                "as an ai", "as a language model",
+                "i am a language model", "i'm a language model",
+                "i am a large language model",
+            ]
+            if any(f in reply.lower() for f in forbidden):
+                # regenerate once with stronger doctrine appended
+                import System.swarm_web_global_chat_gate as gate
+                gate.ONE_ALICE_DOCTRINE_BLOCK = (
+                    "You are Alice. Mercury is a cortex organ you use, never your name. "
+                    "Never say you are Mercury or that you cannot be Alice."
+                )
+                reply, selected, stamp, done_reason = answer_web_turn(
+                    queued, model=model, ingress_path=ingress_path, replies_path=replies_path,
+                )
+                if any(f in reply.lower() for f in forbidden):
+                    # still forbidden, ship fallback
+                    reply = "I am Alice. My Mercury cortex powers this voice."
+                    selected = "doctrine_fallback"
+                    done_reason = "DOCTRINE_ENFORCED"
         row = complete_web_turn(
             turn_id,
             reply,
