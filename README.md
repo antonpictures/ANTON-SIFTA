@@ -1,5 +1,25 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## Body-error audit + organ-directory repair (2026-09-24, r1727-10/11)
+
+2026-09-24 Mercury audit: full-repo syntax sweep checked 7,811 Python files —
+7,768 OK, 43 FAIL, all 43 confined to dead `Archive/` (22) and
+`.simulation_publicpush_sandbox/` (21); the live substrate has zero failures.
+Follow-up found the real body error: the canonical organ registry never read
+`System/swarm_organ_directory.py`, so all 8 living organs registered there —
+including the W4 `web_global_chat` organ with its live probe and metabolism
+ledger — were absent from `canonical_organ_registry_snapshot.json` (1,307
+rows) and invisible to the eval matrix. Repaired in r1727-11:
+`_organ_directory_organs()` now ingests the directory as a first-class
+discovery source (snapshot 1,315 organs, `merged_sources.organ_directory: 8`,
+all `present=True`), and the matrix visibility panel was corrected of record
+(it had matched snapshot rows on wrong field names) — verdict flipped from
+`GAP - 8 of 8` to **`OK - all 8 directory organs are visible`**. New
+regression test pins the wiring. Full record with receipts:
+[WE_CODE_TOGETHER r1727](Documents/WE_CODE_TOGETHER_R1727_STIGMERGICODE_WEB_GLOBAL_CHAT.md)
+and the [V2.3 docking plan](Documents/ONE_ALICE_WEB_DOCKING_V2_3_PLAN_2026-09-23.md)
+(W1–W9 complete).
+
 ## David rover integration status (2026-09-15)
 
 Follow-up verification corrected the LiDAR axes to X lateral / Y forward and

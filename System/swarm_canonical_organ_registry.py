@@ -783,6 +783,51 @@ def _ecology_organs(*, state: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _organ_directory_organs(*, state: Path) -> list[dict[str, Any]]:
+    """Living organs from System/swarm_organ_directory.py (r1727-11 repair).
+
+    Before this source existed, build_registry() never read the organ
+    directory, so organs registered there with live probes and ledgers —
+    web_global_chat (W4) included — were absent from the canonical snapshot
+    and therefore invisible to the eval matrix. Measured 2026-09-23: 8 of 8
+    directory organs missing from canonical_organ_registry_snapshot.json even
+    though the snapshot was written hours after the organ file. This source
+    closes that wiring gap; list_organs() is read-only (disk load, no writes).
+    """
+    try:
+        from System.swarm_organ_directory import list_organs
+
+        records = list_organs()
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for record in records:
+        name = str(getattr(record, "name", "") or "")
+        if not name:
+            continue
+        ledger = str(getattr(record, "ledger_path", "") or "")
+        ledger_name = Path(ledger).name if ledger else ""
+        probe = str(getattr(record, "probe_callable", "") or "")
+        out.append(
+            {
+                "organ_id": "organ_dir_" + _stable_id(name),
+                "display_name": name,
+                "layer": "organ_directory",
+                "organ_paths": ("System/swarm_organ_directory.py",),
+                "ledgers": (ledger_name,) if ledger_name else (),
+                "capabilities": (("organ_probe", "self_registration") + ((probe,) if probe else ())),
+                "query_keywords": (name, "organ directory", "living organ", "probe"),
+                "aliases": (name,),
+                "write_action": bool(ledger_name),
+                "owner_sensitive": "owner" in str(getattr(record, "truth_boundary", "") or "").casefold(),
+                "source_registry": "swarm_organ_directory",
+                "organ_directory_probe": probe,
+                "organ_directory_truth_boundary": str(getattr(record, "truth_boundary", "") or ""),
+            }
+        )
+    return out
+
+
 def _validate_registry_candidate(row: Mapping[str, Any]) -> dict[str, Any]:
     """Normalize one candidate or reject only that malformed row."""
     candidate = dict(row)
@@ -843,6 +888,7 @@ def _categorize_registry_candidate(row: Mapping[str, Any]) -> dict[str, Any]:
         "apps_manifest": "application",
         "agent_arms": "agent_arm",
         "ecology": "ecology",
+        "organ_directory": "organ_directory",
     }.get(source_bucket, "discovered")
     return candidate
 
@@ -876,6 +922,7 @@ def build_registry(
         ("apps_manifest", _app_manifest_organs(repo=repo)),
         ("agent_arms", _agent_arm_organs() if live_repo_sources and include_dynamic else []),
         ("ecology", _ecology_organs(state=state)),
+        ("organ_directory", _organ_directory_organs(state=state) if live_repo_sources and include_dynamic else []),
     )
     for source_name, source_rows in sources:
         for source_row in source_rows:
@@ -910,6 +957,7 @@ def build_registry(
         "apps_manifest": 0,
         "agent_arms": 0,
         "ecology": 0,
+        "organ_directory": 0,
     }
     for result in results:
         if result is None:

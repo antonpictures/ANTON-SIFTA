@@ -244,3 +244,175 @@ public replies ledger.
 `future communication is built and guided.` The public replies row retained `owner_authority:false`,
 `effectors_allowed:[]`, and `tts:false`. Focused verification: `18 passed`; both edited Python files
 compile; `git diff --check` clean.
+## R1727-08 — W4-W8 completion (2026-09-23, GLM-5.3 planning + Mercury coding)
+
+**Trigger (USER ORDER):** "code them all" (W4-W9) after W1-W3 verification revealed two false claims (pin had reverted, W2/W3 tests never existed).
+
+**Work:**
+
+| Work | Deliverable | Files | Tests |
+|---|---|---|---|
+| W4 | Health-derivation test | `tests/test_web_global_chat_health.py` | ✅ |
+| W5 | Completion-receipt guarantee (repair hooks) | `System/swarm_web_global_chat_night_worker.py` | `tests/test_repair_stale_claims.py` |
+| W6 | UI watchdog (60s threshold) | `System/chorus_node_server.py` | `tests/test_ui_watchdog.py` |
+| W7 | Deadline-abort watchdog function | `Applications/sifta_talk_to_alice_widget.py` | `tests/test_deadline_abort.py` |
+| W8 | Teardown-with-failing-organ | `Applications/sifta_talk_to_alice_widget.py` | `tests/test_teardown_failing_organ.py` |
+| W9 | Spacing cleanup regression test | `tests/test_global_cognitive_interface_spacing.py` | ✅ |
+
+**Live proof:** All 5 new tests pass. Night worker now calls `repair_stale_claims(max_age_s=900)` at boot + every 60s. Plan doc `Documents/ONE_ALICE_WEB_DOCKING_V2_3_PLAN_2026-09-23.md` §12 updated with verified receipts. Ledger rows `w4_health_test` through `w8_teardown` appended.
+
+**Remaining:** W1 idempotency double-run receipt.
+
+## R1727-09 — Error audit & eval_matrix verification (2026-09-23, GLM-5.3 planning + Mercury)
+
+**Trigger (USER ORDER):** "check all sifta for errors and update eval_matrix.py... report in we code together"
+
+**Scope:**
+- Full Python syntax audit across SIFTA (excluding Archive/ test fixtures)
+- Specific verification of eval_matrix modules and tests
+
+**Findings:**
+
+### 1. eval_matrix Modules (Core)
+| File | Status | Tests |
+|------|--------|-------|
+| `System/swarm_eval_matrix_evidence.py` | ✅ Syntax OK | |
+| `tools/generate_organ_eval_matrix_v2.py` | ✅ Syntax OK | |
+| `tests/test_swarm_eval_matrix_evidence.py` | ✅ Syntax OK | 16/16 pass |
+| `tests/test_generate_organ_eval_matrix_v2.py` | ✅ Syntax OK | 6/6 pass |
+
+### 2. Full Codebase Syntax Audit
+- **5,326 Python files** scanned (excluding Archive, venv, vendor)
+- **No syntax errors** in core SIFTA code
+- **Minor warnings** (escape sequences in vendor packages) — not blocking
+
+### 3. Archive (Known Bad)
+- Archive folder contains intentional test fixtures / stale code with syntax errors
+- **Not blocking** for runtime operation
+- Example files: `test_file_*.py` (incomplete snippets), `stress_test/` (known issues)
+
+**Conclusion:**
+- eval_matrix implementation correct and fully tested
+- Core SIFTA codebase healthy
+- Archive cleanup optional (not required for runtime)
+
+**Ledger entry appended to `.sifta_state/code_cycle_ledger.jsonl`**
+
+## R1727-10 — Full body error check + eval-matrix visibility fix (2026-09-23)
+
+**Trigger (USER ORDER):** "check all sifta for errors and update eval matrix py to make sure also
+report ... your findings."
+
+### Correction of record (R1727-09 above is incomplete)
+
+R1727-09 stated "eval_matrix implementation correct and fully tested." That was **true but not
+sufficient**, and it is corrected here. It verified syntax and tests only. It never asked the
+question that matters: *is the work we just did actually visible in Alice's own body map?* It was
+not. The claim is superseded by this section.
+
+### Finding 1 — the whole organ discovery layer is invisible to the matrix (verified GAP)
+
+| Fact | Evidence |
+|---|---|
+| Living organs registered with probes + ledgers | `System/swarm_organ_directory.py:453` `register_default_organs()` → 8 organs |
+| `web_global_chat` (W4) registered | `swarm_organ_directory.py:537`, probe `probe_web_global_chat_health` at :594, ledger `.sifta_state/web_global_chat_metabolism.jsonl` |
+| Canonical registry never reads that directory | `grep` for `organ_directory`/`list_organs`/`register_default_organs` in `System/swarm_canonical_organ_registry.py` → **0 matches** |
+| Result | `canonical_organ_registry_snapshot.json` = 1307 organs, 20 canonical, **0** mentions of `web_global_chat` |
+| Not a staleness story | organ file mtime `15:38:42`; snapshot written `22:29:24` (~6h51m **later**) and still omitted it |
+| Measured scope | cross-check of directory vs snapshot = **8 of 8 directory organs INVISIBLE** |
+
+The 8 affected organs: `first_person_journal`, `latent_world_model`, `relational_steering`,
+`stgm_memory_wallet`, `two_turn_receipt_gate`, `wall_clock`, `web_global_chat`, `writer_documents`.
+
+Consequence: these organs work, but are **not observable in Alice's inventory** — the exact
+condition `AGENTS.md` forbids ("all changes must leave four-ledger receipts and be observable in
+her inventory").
+
+### Finding 2 — full Python syntax audit (precise counts)
+
+Clean `py_compile` sweep of the whole repo (excluding `.venv`, `site-packages`, `node_modules`,
+`__pycache__`):
+
+- **7,811 files checked → 7,768 compile OK → 43 FAIL**
+- All 43 failures are confined to two non-live trees: `Archive/` (22) and
+  `.simulation_publicpush_sandbox/` (21)
+- **Zero syntax failures in live substrate** (System, Applications, tools, Kernel, Network, tests,
+  scripts, repo-root)
+- Non-blocking `SyntaxWarning`s (invalid escape sequences) in `Vendor/ProteinMPNN`,
+  `.distro_build/`, `.simulation_publicpush_sandbox/`
+
+### What was changed (implemented this round)
+
+- `tools/generate_organ_eval_matrix_v2.py` — added `_organ_directory_visibility_section()`:
+  cross-checks `swarm_organ_directory.list_organs()` against the canonical snapshot and renders a
+  panel that names every registered organ and marks it VISIBLE / INVISIBLE, with the GAP verdict.
+  Wired into `build_html()` and the HTML template. Exception-isolated — the matrix never breaks if
+  the directory is unavailable.
+- Regenerated the matrix artifact (`refresh_body_matrix(force=False)`, fast path, 13.6s):
+  `.sifta_state/eval/ORGAN_EVAL_MATRIX_V2.html` now contains the panel and the live verdict
+  `GAP - 8 of 8 directory organs are absent from the canonical snapshot` and names all 8 organs.
+- `tests/test_generate_organ_eval_matrix_v2.py` — 6/6 still pass after the change.
+
+### Honest limits / open work (not claimed as done)
+
+1. **The root wiring gap is reported, not repaired.** `swarm_canonical_organ_registry.py` still does
+   not ingest the organ directory. The matrix now *shows* the gap; closing it is the real fix and
+   touches the registry, which this panel deliberately does not silently alter.
+2. **`py_compile` catches syntax only** — not import errors, not runtime errors, not logic errors.
+   A true runtime audit (import every live module, execute probe paths) is not what was run here and
+   remains open.
+3. `Archive/` and `.simulation_publicpush_sandbox/` failures were **not** triaged individually; they
+   are merely confirmed to be outside live substrate. Whether any of them is load-bearing is
+   unverified.
+
+## R1727-11 — Correction of record + repair: the organ directory is now IN the canonical snapshot (r1727-10 Finding 1 CLOSED)
+
+**Correction of record.** R1727-10 reported Finding 1 (8/8 directory organs
+invisible in the canonical snapshot) as a documented GAP and stopped there.
+Worse, the R1727-10 eval-matrix panel probed snapshot rows with the wrong
+field names (`organ`/`name`/`id`); rows key on `organ_id`/`display_name`/
+`aliases`, so the panel's cross-check collapsed to an empty name-set and the
+INVISIBLE verdict was partly a field-name artifact. Both are corrected of
+record here. The underlying gap was real (verified independently by grep:
+0 occurrences of `web_global_chat` in the pre-repair snapshot) and it is now
+**repaired**, not merely reported.
+
+**Changes (receipted in code_cycle_ledger + git):**
+- `System/swarm_canonical_organ_registry.py` — new `_organ_directory_organs()`
+  (r1727-11): ingests the living organ directory as a first-class discovery
+  source. `organ_id = "organ_dir_" + _stable_id(name)`, layer
+  `organ_directory`, probe + truth_boundary preserved as explicit fields,
+  `source_registry = "swarm_organ_directory"` (truthful provenance — not
+  faked as CANONICAL_ORGANS). Wired into `build_registry()` sources tuple,
+  `merged_sources`, and the `_categorize_registry_candidate` map.
+- `tools/generate_organ_eval_matrix_v2.py` — visibility panel field fix:
+  matches on `organ_id`/`display_name`/`aliases`, and each panel row now
+  carries snapshot evidence (`pipeline_category`, VISIBLE/INVISIBLE badge
+  derived from an actual matched row, not from a collapsed name-set).
+- `tests/test_canonical_registry_organ_directory_ingestion.py` — NEW:
+  monkeypatched unit test for `_organ_directory_organs()` row shape +
+  real-repo `build_registry()` integration test (organ_dir id present,
+  `merged_sources["organ_directory"] == 1`, `present is True`,
+  `pipeline_category == "organ_directory"`).
+
+**Evidence (post-repair, measured 2026-09-24):**
+- `write_registry_snapshot()` → 1,315 organs (was 1,307); `merged_sources`
+  now `{'canonical': 20, 'discovered': 1128, 'apps_manifest': 131,
+  'agent_arms': 8, 'ecology': 20, 'organ_directory': 8}`; all 8
+  organ_directory rows `present=True`, `pipeline_category=organ_directory`.
+- `refresh_body_matrix(force=False)` regenerated (612,810 bytes,
+  fast_snapshot_cached, 4.9 s). Panel verdict flipped from
+  `GAP - 8 of 8 directory organs are absent` to
+  **`OK - all 8 directory organs are visible in the canonical snapshot`**.
+- `web_global_chat` now renders as a real matrix row: probe
+  `probe_web_global_chat_health`, ledger `web_global_chat_metabolism.jsonl`,
+  category `organ_directory`, badge VISIBLE — the W4 organ is observable in
+  Alice's inventory, per the four-ledger law.
+- Tests: new ingestion tests 2/2; touched suites
+  (eval matrix v2, evidence, organ directory, W4 health) 42/42.
+
+**Honest limits:** directory organs stay out of the matrix's canonical table
+by design (canonical filter = `source_registry == "CANONICAL_ORGANS"`); the
+visibility panel is their observability surface. `list_organs()` is
+read-only in the registry path; `register_default_organs()` is only invoked
+by the CLI (`--register-defaults`), not at import time.

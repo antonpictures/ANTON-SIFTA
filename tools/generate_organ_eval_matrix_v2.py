@@ -2092,6 +2092,106 @@ owner "imagine 0 balance" conservation must be reconciled before lawyer/sales fr
 """
 
 
+def _organ_directory_visibility_section() -> str:
+    """Cross-check the living organ directory against the canonical snapshot.
+
+    r1727-10 (2026-09-23): George ordered a full body error check plus an
+    eval-matrix update. Finding: System/swarm_organ_directory.py
+    register_default_organs() holds 8 living organs with real probes and
+    ledger paths, but System/swarm_canonical_organ_registry.py never reads
+    that directory (zero references to organ_directory / list_organs /
+    register_default_organs), so directory organs are absent from
+    canonical_organ_registry_snapshot.json and therefore invisible in this
+    matrix. web_global_chat (W4) was the proof: registered at
+    swarm_organ_directory.py:537 with probe_web_global_chat_health returning
+    live health, yet 0 occurrences in a snapshot written ~6h51m later.
+
+    This panel makes that class of invisibility self-reporting instead of
+    silent. A registered-but-INVISIBLE organ still works; it is simply not
+    observable in Alice's own inventory, which is the condition AGENTS.md
+    forbids.
+    """
+    try:
+        system_dir = _REPO / "System"
+        if str(system_dir) not in sys.path:
+            sys.path.insert(0, str(system_dir))
+        import swarm_organ_directory as organ_dir
+
+        records = organ_dir.list_organs()
+        snap = _json(_STATE / "canonical_organ_registry_snapshot.json")
+        snapshot_rows = [row for row in (snap.get("organs") or []) if isinstance(row, dict)]
+        # Snapshot rows key on organ_id / display_name / aliases (r1727-11 field fix:
+        # the first cut of this panel probed organ/name/id and never matched).
+        snapshot_names = set()
+        for row in snapshot_rows:
+            for key in ("organ_id", "display_name"):
+                value = str(row.get(key) or "")
+                if value:
+                    snapshot_names.add(value)
+            for alias in row.get("aliases") or ():
+                value = str(alias or "")
+                if value:
+                    snapshot_names.add(value)
+        rows = []
+        invisible_count = 0
+        for rec in records:
+            name = str(getattr(rec, "name", "") or "")
+            probe_name = str(getattr(rec, "probe_callable", "") or "")
+            ledger = str(getattr(rec, "ledger_path", "") or "")
+            match = next(
+                (
+                    row
+                    for row in snapshot_rows
+                    if str(row.get("display_name") or "") == name
+                    or name in tuple(str(a) for a in (row.get("aliases") or ()))
+                ),
+                None,
+            )
+            visible = match is not None
+            if not visible:
+                invisible_count += 1
+            badge = "VISIBLE" if visible else "INVISIBLE"
+            cls = "ok" if visible else "bad"
+            rows.append(
+                [
+                    html.escape(name),
+                    html.escape(probe_name or "-"),
+                    html.escape(Path(ledger).name if ledger else "-"),
+                    html.escape(str(match.get("pipeline_category") or "-") if match else "-"),
+                    f"<span class='{cls}'>{badge}</span>",
+                ]
+            )
+        if invisible_count:
+            verdict = (
+                f"GAP - {invisible_count} of {len(rows)} directory organs are absent "
+                "from the canonical snapshot (registered and probing, but not observable)"
+            )
+        else:
+            verdict = (
+                f"OK - all {len(rows)} directory organs are visible in the canonical snapshot"
+            )
+        table = _table(
+            ["Organ (directory)", "Probe", "Ledger", "Pipeline category", "Snapshot visibility"],
+            rows,
+        )
+        return (
+            '<h2 class="section">Organ Directory Visibility - registered vs observable (r1727-10)</h2>'
+            f'<div class="metric">{html.escape(verdict)}</div>'
+            '<p style="color:#9ff2ad;font-size:12px;margin:0 0 8px;">'
+            "Source of truth: System/swarm_organ_directory.py list_organs() cross-checked against "
+            ".sifta_state/canonical_organ_registry_snapshot.json. An organ that is registered with a "
+            "live probe but INVISIBLE here is still working - it is simply not observable in Alice's "
+            "own inventory, which is the condition AGENTS.md forbids."
+            "</p>"
+            f"{table}"
+        )
+    except Exception as exc:
+        return (
+            '<h2 class="section">Organ Directory Visibility (r1727-10)</h2>'
+            f"<p class='bad'>Unavailable: {html.escape(str(exc))}</p>"
+        )
+
+
 def _quantum_stigmergy_boundary_section() -> str:
     """Render George's quantum+stigmergy intuition as a useful boundary, not proof."""
     rows = [
@@ -2349,6 +2449,7 @@ def build_html(*, fast: bool = False) -> str:
     marketing_commercial_section = _marketing_commercial_inventory_section()
     novelty_missing_section = _sifta_novelty_missing_section()
     quantum_stigmergy_boundary_section = _quantum_stigmergy_boundary_section()
+    organ_directory_visibility_section = _organ_directory_visibility_section()
     alice_creature_wiring_panel = _alice_creature_wiring_panel()
     world_to_field_audit_panel = _world_to_field_audit_panel()
     try:
@@ -3259,6 +3360,7 @@ th{{color:#8ce6ff;font-size:11px;text-transform:uppercase;}}
 {world_to_field_audit_panel}
 {eye_panel}
 {novelty_missing_section}
+{organ_directory_visibility_section}
 {quantum_stigmergy_boundary_section}
 {life_loop_panel}
 {heartbeat_panel}
