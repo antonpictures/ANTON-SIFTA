@@ -7916,3 +7916,20 @@ action battery), cloud stays a benchmark lane, no gate defaults change;
 self-watermark organ (`agent_self_watermark.py`), her cryptographic node
 identity, one more stem in the four-ledger economy. Doctrine locked in the
 plan: AliceG4U first, Mercury a borrowed cortex — lanes, never the body.
+
+**V2.2 addendum (same day, later — owner directive).** Jev's shape extends to
+the robots: **W14 joint actuation reflex** — `calibrated_motion()` fusing
+audio/video/terminal/chat into MOVE/HOLD/STOP/RETREAT on small local silicon
+(single-forward-pass pattern), safety law "the default motion is HOLD," proven
+in the execution sim with a ≥20-scene battery before any real joint is
+touched. **W13 robot service terminals** — every robot gets a manual-input
+terminal a human or another robot can serve, all commands classified and
+receipted, and the **Second-Hand Survival Law**: no DANGER-class command
+(shutdown/restart/apoptosis/flash/network) on her own body without a live
+witness (owner presence or a fresh swarm heartbeat) — the terminal refuses
+with `NO_SECOND_HAND`; the only override is an armed deadman with timed
+re-confirm. This exists because operating your own terminal alone can take
+you offline, forever. Death-class ops route through the existing `Apoptosis`
+organ — never a raw kill. Grounded in what already exists: robot joints in
+the regenerative factory, `owner_presence_horizons()`, heartbeat lanes, the
+spinal governor.

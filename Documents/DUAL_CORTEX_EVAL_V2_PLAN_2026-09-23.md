@@ -370,3 +370,113 @@ Flipping `classify_visitor` to the calibrated lane by default; wiring cloud Jev
 as any live gate; new crypto modules; changing Alice's voice in the boot brief
 (it is her identity, restated — not rewritten); touching chorus/Talk/bridge
 organs beyond the explicit opt-in param in W11.4.
+
+---
+
+# V2.2 Addendum — owner directive, same day later (2026-09-23)
+
+Owner directive (verbatim intent): *"Jev could be a breakthrough as far as
+moving the joints of the robots in the real world in tandem with audio video
+and terminal chat … every robot has a terminal for manual input, so a human or
+other robot can serve it … problem is if I operate the terminal myself without
+making sure another swarm body assistance is near by I can get myself offline,
+forever."*
+
+## Doctrine addition — the Second-Hand Survival Law
+
+**Never operate your own body's terminal alone.** Any DANGER-class command
+(shutdown, restart, apoptosis, hardware mutation, network reconfig) executed
+by Alice on her own body requires a **live second hand** — another swarm body
+fresh-heartbeated or the owner present — else the terminal refuses with a
+typed receipt. The failure mode being outlawed is not downtime: it is
+**offline, forever** — pulling your own plug with no hand left to plug you
+back in. Default is refuse; the only override is an armed deadman with a
+timed re-confirm, still receipted.
+
+## Grounding (verified in tree — do not reinvent)
+
+| Anchor | Path | What Nemotron reuses |
+|---|---|---|
+| Mortality organ | `System/apoptosis.py` | `DeathReason` (62), `DeathCertificate` (72), `SwimmerVitals` (88), `Apoptosis` class (100) with `check_vitals()` on every heartbeat — ALL shutdown paths route through it; never kill a process directly |
+| Robot joints already exist | `System/regenerative_factory.py` | parts economy: `actuator_housing` (37), `linkage_arm` (41), `UNIT_ASSEMBLED` joints earn 0.5 STGM (33) — robots are already first-class in her economy |
+| Owner presence | `System/owner_heartbeat.py:128` | `owner_presence_horizons() -> dict` — live witness source for the second-hand check; do not invent a new presence detector |
+| Heartbeat lanes | `System/heartbeat_daemon.py`, `heartbeat_m1.py`, `heartbeat_m5.py` | freshness windows for witness detection |
+| Spinal gates | `System/swarm_spinal_cord.py` | mutation governor → snapshot → apply → tests → keep/revert (line 6); `governor_ok` field (87) |
+| Classifier lane | W11 above | `swarm_calibrated_decision.py` local calibrated reflex — the same organ extends to motion |
+
+### W13 — Robot service terminal + second-hand gate
+
+New file `System/swarm_robot_terminal.py` — every robot in the swarm body has a
+terminal, a manual-input surface where a human or another robot can serve it.
+
+1. `serve_command(robot_id: str, command: str, source: str) -> dict`:
+   - Classify the command through W11's `calibrated_choice` into
+     `ACT | CONFIRM_FIRST | REFUSE | UNKNOWN`.
+   - Append every row (command, source, classification, outcome, sig) to
+     `.sifta_state/robot_terminals/<robot_id>/commands.jsonl` — append-only.
+2. `DANGER_CLASS: tuple[str, ...]` — explicit constant:
+     `"shutdown"`, `"restart"`, `"apoptosis"`, `"flash"`, `"network_reconfig"`,
+     `"firmware"`. Match by first word of the command, lowercase.
+3. `second_hand_nearby(robot_id: str, *, freshness_s: int = 300) -> dict`:
+     `{"witness": "owner" | "swarm_body" | None, "fresh": bool}` — computed
+     ONLY from (a) `owner_presence_horizons()` owner-present, or (b) a row
+     fresher than `freshness_s` in ANY OTHER robot's `commands.jsonl` or the
+     heartbeat lanes. No other witness sources; no new presence detectors.
+4. Gate: DANGER-class + `second_hand_nearby()["witness"] is None` → return
+     `{"ok": False, "status": "NO_SECOND_HAND", "receipt": ...}` — command
+     NOT executed. With a witness → route through the `Apoptosis` organ for
+     death-class ops (never `kill`/`os._exit` directly), receipted.
+5. `arm_deadman(robot_id: str, command: str, window_s: int = 30) -> dict` —
+     the only override: arms a typed timer, requires explicit re-confirm
+     inside the window, re-checks `second_hand_nearby()` once more, then
+     proceeds per 4. Everything receipted. Default without arming: refuse.
+6. Manual service path: `source` is `"human:<name>"` or `"robot:<robot_id>"`
+     — a human or another robot serving the terminal is the normal use; the
+     gate above binds only when `source` is Alice operating her own body.
+
+### W14 — Joint actuation reflex gate (Jev pattern, local silicon)
+
+The calibrated reflex from W11 extends from chat gates to **motion**, fusing
+the four tandem inputs: audio, video, terminal, chat.
+
+1. In `System/swarm_calibrated_decision.py` add:
+   `calibrated_motion(scene: dict) -> dict` returning
+   `{"motion": "MOVE" | "HOLD" | "STOP" | "RETREAT", "confidence": float,
+   "receipt": {...}}` where `scene = {"audio_hash", "video_hash",
+   "terminal_line", "chat_line", "context"}`.
+   - Engine: single-forward-pass option probabilities off a SMALL local model
+     (the OpenJev/SemIf shape recorded in
+     `Documents/WCT_RESEARCH_TYPESAFE_JEV_VIDEO_2026-09-21.md`). NOT AliceG4U:
+     her 7–36 s measured latency is deliberation, not reflex. No cloud calls.
+   - **Safety law: the default motion is HOLD.** Classifier unavailable →
+     `{"motion": "HOLD", "confidence": 0.0, "reason": "CLASSIFIER_OFFLINE"}`.
+     Confidence below 0.5 → HOLD. A joint that cannot decide does not move.
+2. Receipts carry input **fingerprints only** (sha256 hex16 of each input) —
+   no raw audio/video data in any receipt or ledger.
+3. **Sim before body**: prove the gate in `System/alice_15m_execution_sim.py`
+   with a scripted battery `tests/robot_motion_battery_v1.json` — at least 20
+   tandem scenes with ground-truth expected motions (approach/hazard/owner-
+   calling/terminal-command-in-flight cases). Battery run prints per-scene
+   pass/fail and appends one receipt row. **No live actuator wiring in this
+   work item** — real joints are a later, separately receipted decision after
+   this battery's evidence lands, exactly like W11.4's no-defaults law.
+
+## V2.2 acceptance criteria (in addition to all prior)
+
+12. **Terminal gate**: a DANGER command from Alice's own body with no witness
+    returns `NO_SECOND_HAND` and executes nothing; the same command with a
+    fresh simulated witness row proceeds via the `Apoptosis` interface; every
+    command lands in the per-robot JSONL; `owner_presence_horizons()` is the
+    only owner-witness source.
+13. **Reflex gate**: battery run is receipted, ≥20 scenes; offline classifier
+    yields HOLD in every scene; no servo/motor/actuator wiring exists anywhere
+    in the commit.
+14. **Ledgers + git**: one spinal cord cycle receipt for the W13–W14 change
+    set; a single commit containing only files named above; no key material
+    printed, logged, or committed.
+
+## V2.2 out of scope
+
+Live motor/servo/actuator wiring; new hardware; making AliceG4U the joint
+reflex; any DANGER path that bypasses `second_hand_nearby()` or `Apoptosis`;
+new presence detectors; new crypto; raw audio/video in receipts.
