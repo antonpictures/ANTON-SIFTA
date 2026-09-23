@@ -7933,3 +7933,33 @@ you offline, forever. Death-class ops route through the existing `Apoptosis`
 organ — never a raw kill. Grounded in what already exists: robot joints in
 the regenerative factory, `owner_presence_horizons()`, heartbeat lanes, the
 spinal governor.
+
+**V2.3 addendum (same day, night — owner directive).** George's live paste
+exposed five wiring faults, all diagnosed to file:line before planning. **(1)
+Model 404s** — `_REMOTE_PINNED` pins suffixed cloud IDs (`nemotron-3-nano:30b-cloud`)
+while DSH sessions request the bare IDs, so `nemotron-3-nano`/`-super`/`-ultra`
+and `qwen3.5:397b` 404 and `glm-5.2-flash` is absent entirely; the plan adds the
+exact bare IDs plus verified pricing from the Architect. **(2) One-Alice web
+identity split** — WEB session `06ad894dbf` answered "My name is Mercury… I
+cannot become Alice"; the fix is code, not prompt: a `ONE_ALICE_DOCTRINE_BLOCK`
+injected into both web prompt builders plus a post-answer refusal check that
+blocks and regenerates forbidden-identity replies. **(3) Web lanes don't dock
+into the one field** — the ledgers already record every session's unique tag
+(`web_global_chat_ingress.jsonl`/`_replies.jsonl`); the missing piece is
+`web_field_dock_block()`, feeding cross-session visitor knowledge back into
+every web turn, gated by the existing `Authority.PUBLIC_WEB` filter. **(4) Web
+UI stuck on "thinking"** — every claimed web turn must reach a terminal state:
+worker finally-blocks write an interrupted fallback, `repair_stale_claims()`
+self-heals orphans on boot and a slow timer, and the front-end gets a 120s
+watchdog that resyncs from `replies_for_session` — the coded equivalent of
+George's manual page reload. **(5) Talk 207 s timeouts vs 3.27 s direct model
+calls** — prompt assembly gets an absolute `time.monotonic()` deadline checked
+before each awaited sub-step, and the desktop shutdown path stops organs in
+reverse order, swallowing per-organ failures instead of crashing. Also shipped
+with this addendum: the completed V2.2 `calibrated_motion()` classifier in
+`System/swarm_calibrated_decision.py` (single forward pass, default HOLD) and
+the `_REMOTE_PINNED` cloud-tag preservation in
+`System/swarm_ollama_harness_sync.py` (sync can no longer silently delete the
+default cortex `deepseek-v4.1-flash:cloud`). Full work items, coding order,
+and acceptance tests for the Nemotron Ultra coding cortex:
+[Documents/ONE_ALICE_WEB_DOCKING_V2_3_PLAN_2026-09-23.md](Documents/ONE_ALICE_WEB_DOCKING_V2_3_PLAN_2026-09-23.md)

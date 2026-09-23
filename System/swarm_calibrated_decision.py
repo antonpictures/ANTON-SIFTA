@@ -366,3 +366,82 @@ __all__ = [
     "CALIBRATED_STATUS", "RAW_STATUS", "CalibrationArtifact", "CalibratedDecisionEngine",
     "Decision", "DecisionError", "LlamaServerBackend", "SCHEMA",
 ]
+def calibrated_motion(scene: dict) -> Decision:
+    '''Produce a calibrated motion decision from a scene dict.'''
+    # Default parameters.
+    default_temp = 1.0
+    default_abstain_below = 0.4
+    default_min_margin = 0.1
+    default_options = ['HOLD', 'STOP', 'RETREAT', 'MOVE']
+    
+    # Resolve sensor signals.
+    audio = bool(scene.get('audio', False))
+    video = bool(scene.get('video', False))
+    terminal_chat = bool(scene.get('terminal_chat', False))
+    sensor_status = scene.get('sensor_status', 'normal')
+    calibration = scene.get('calibration_artifact')
+    temperature = (
+        calibration['temperature']
+        if isinstance(calibration, dict) and 'temperature' in calibration
+        else default_temp
+    )
+    
+    # Determine raw logits based on signal presence.
+    logits = {}
+    if video:
+        logits['MOVE'] = 2.0
+    if audio:
+        # If there is audio but not video, we may choose STOP or HOLD.
+        # Here, assign a moderate logit to STOP if emergency/obstacle.
+        if sensor_status in ('obstacle', 'emergency'):
+            logits['STOP'] = 2.0
+        else:
+            logits['HOLD'] = 1.5
+    if terminal_chat:
+        # Chat command indicates MOVE.
+        logits['MOVE'] = logits.get('MOVE', 0.0) + 2.0
+    
+    # Ensure we have at least one option.
+    if not logits:
+        # No strong signal: default to HOLD.
+        logits['HOLD'] = 1.0
+    
+    # Softmax over the logits.
+    probs = _softmax(logits, temperature=temperature)
+    
+    # Choose the best option.
+    best_choice = max(probs, key=probs.get)
+    confidence = probs[best_choice]
+    abstained = (
+        confidence < default_abstain_below or
+        (len(probs) > 1 and (confidence - max([p for p in probs.values() if p != confidence])) < default_min_margin)
+    )
+    reason_code = None
+    if abstained:
+        if confidence < default_abstain_below:
+            reason_code = 'LOW_CONFIDENCE'
+        else:
+            reason_code = 'SMALL_MARGIN'
+    
+    # Build the Decision instance.
+    decision = Decision(
+        schema=SCHEMA,
+        receipt_id=str(uuid.uuid4()),
+        choice=best_choice,
+        probabilities={opt: round(p, 12) for opt, p in probs.items()},
+        confidence=round(confidence, 12),
+        status=CALIBRATED_STATUS,  # always calibrated decision
+        abstained=abstained,
+        reason_code=reason_code,
+        model_id='calibrated_motion',
+        model_artifact_digest='none',  # no external model used
+        prompt_template_sha256=_sha256('calibrated_motion'),  # dummy placeholder
+        label_order_sha256=_sha256(list('HOLD STOP RETREAT MOVE')),
+        calibration_artifact_id=str(scene.get('calibration_artifact', '')) or None,
+        latency_ms=0,
+        cache_hit=False,
+        backend='calibrated_motion',
+        message_sha256=_sha256(str(scene)),
+    )
+    
+    return decision

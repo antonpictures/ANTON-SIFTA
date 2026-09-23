@@ -26,6 +26,28 @@ _DEFAULT_SETTINGS = Path.home() / ".dsh" / "settings.yaml"
 _SYNC_LEDGER = _STATE / "ollama_harness_sync.jsonl"
 _OLLAMA_HOST = "http://127.0.0.1:11434"
 
+# Remote/cloud tags the local daemon proxies but never lists in ``/api/tags``.
+# Ollama's inventory is the source of truth only for *installed weights*: a cloud
+# tag answers on ``/v1/chat/completions`` yet is invisible to ``/api/tags``, so an
+# inventory-only rebuild silently deleted it — including the owner's default
+# cortex model, ``deepseek-v4.1-flash:cloud``, whose loss the report could only
+# flag as ``default_unavailable`` after the fact. Each id below was verified live
+# on this box: HTTP 200 with content from the daemon's OpenAI-compatible endpoint.
+# Adding a cloud model to the Harness means adding it here as well, or the next
+# sync removes it again.
+_REMOTE_PINNED: tuple[dict[str, Any], ...] = (
+    {"id": "deepseek-v4.1-flash:cloud", "contextWindow": 65536, "maxTokens": 16384},
+    {"id": "nemotron-3-ultra:cloud", "contextWindow": 65536, "maxTokens": 16384},
+    {"id": "nemotron-3-super:cloud", "contextWindow": 65536, "maxTokens": 16384},
+    {"id": "nemotron-3-nano:30b-cloud", "contextWindow": 65536, "maxTokens": 16384},
+    {"id": "qwen3.5:397b-cloud", "contextWindow": 65536, "maxTokens": 16384},
+)
+
+
+def _pinned_rows() -> list[dict[str, Any]]:
+    """Pinned remote tags as inventory-shaped rows (``name`` defaults to the id)."""
+    return [{"name": str(row["id"]), **row} for row in _REMOTE_PINNED]
+
 
 def _yaml_scalar(value: str) -> str:
     """Quote a YAML scalar without requiring PyYAML on another machine."""
@@ -198,11 +220,18 @@ def sync_local_ollama_harness(
     """Synchronize Harness's local Ollama provider with live installed models."""
     path = Path(settings_path or _DEFAULT_SETTINGS).expanduser()
     rows = list(inventory) if inventory is not None else read_ollama_inventory(host=host, timeout=timeout)
+    if rows:
+        # Only a real inventory may drive the rebuild. An offline Ollama leaves the
+        # rows empty on purpose: pinning first would otherwise rewrite the list down
+        # to the remote tags alone and drop every installed local weight.
+        present = {str(row.get("id") or "") for row in rows}
+        rows.extend(row for row in _pinned_rows() if str(row["id"]) not in present)
     report: dict[str, Any] = {
         "schema": "SIFTA_OLLAMA_HARNESS_SYNC_V1",
         "ts": time.time(),
         "settings_path": str(path),
         "ollama_models": [str(row.get("id") or "") for row in rows],
+        "pinned_remote": [str(row["id"]) for row in _REMOTE_PINNED],
         "model_count": len(rows),
         "sizes_gb": {str(row["id"]): round(int(row.get("sizeBytes") or 0) / 1_000_000_000, 1) for row in rows},
         "ok": False,
