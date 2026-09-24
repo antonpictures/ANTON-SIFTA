@@ -1124,6 +1124,41 @@ class ChorusHandler(BaseHTTPRequestHandler):
             # directly so the phone gets a reply without the night worker.
             attachments = payload.get("attachments") or []
             capture_payload = payload.get("capture") or {}
+            # 2026-09-24 (r1727-12, "it does not paint sir"): media dispatch
+            # must not be dev-only. In production the inception path answered
+            # paint/create requests with prose and Bonsai was never reached.
+            # Natural language ("paint a picture of world peace", "/create a
+            # photo of ...") now paints before the cortex answers.
+            # handle_media_request itself refuses /speak and non-media text,
+            # so this stays an honest no-op for those turns.
+            if not payload.get("speak_requested"):
+                from System.swarm_web_image_service import handle_media_request, media_intent
+
+                if media_intent(str(payload.get("text") or "")):
+                    record_web_user_turn(result)
+                    media = handle_media_request(result)
+                    if media:
+                        reply = str(media.get("reply") or "")
+                        model = str(media.get("model") or "bonsai")
+                        generated_images = media.get("images") or []
+                        done_reason = str(media.get("status") or "IMAGE_RESULT")
+                        complete_web_turn(
+                            result["turn_id"],
+                            reply,
+                            model=model,
+                            session_id=str(result["session_id"]),
+                            generated_images=generated_images,
+                            done_reason=done_reason,
+                        )
+                        self._respond(
+                            200,
+                            {
+                                "accepted": True, "status": "answered",
+                                "turn_id": result["turn_id"], "session_id": str(result["session_id"]),
+                                "speak_requested": bool(payload.get("speak_requested")),
+                            },
+                        )
+                        return
             if not attachments and WEB_CHAT_DEV_MODE is False:
                 record_web_user_turn(result)
                 inception_text = _inception_reply(

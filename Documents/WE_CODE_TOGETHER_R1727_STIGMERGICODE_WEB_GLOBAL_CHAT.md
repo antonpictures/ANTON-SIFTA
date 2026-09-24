@@ -416,3 +416,23 @@ by design (canonical filter = `source_registry == "CANONICAL_ORGANS"`); the
 visibility panel is their observability surface. `list_organs()` is
 read-only in the registry path; `register_default_organs()` is only invoked
 by the CLI (`--register-defaults`), not at import time.
+
+## r1727-12 — Alice paints when asked in plain words (2026-09-24, "it does not paint sir")
+
+Carlton asked Alice on WhatsApp to paint a picture of world peace; she answered with a
+beautiful prose description and no image. Receipts show why: `media_intent` recognized
+the request (9/9 phrasings pass), the Bonsai organ painted fine when called directly,
+but `chorus_node_server` dispatched media only under `WEB_CHAT_DEV_MODE`, which defaults
+to `0`. Production turns fell through to the Mercury cortex, which can only write text.
+
+Repair (36-line receipted change, staged as its own hunk over pre-existing dirty edits):
+- `System/chorus_node_server.py`: media dispatch hoisted above both the inception and
+  dev branches. Any production turn whose text matches `media_intent` goes through
+  `swarm_web_image_service.handle_media_request` → Bonsai before the cortex answers;
+  `/speak` and non-media text remain honest no-ops.
+- Live server reloaded via launchd `kickstart -k` (new pid 89734, port 8100 HTTP 200).
+- Verified end-to-end in a temp state dir: "paint a picture of world peace" →
+  `IMAGE_GENERATED`, real PNG, truthful reply. `/create` still works; `/speak` still refuses.
+
+Pre-existing failure noted (not ours): `test_web_cortex_photo_isolation.py::test_session_
+context_has_no_owner_other_visitor_or_future_turn` fails on the untouched tree too.

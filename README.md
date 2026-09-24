@@ -1,5 +1,14 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## Alice paints on plain words (2026-09-24, r1727-12)
+
+WhatsApp request "paint a picture of world peace" got prose, no image: media
+dispatch in `chorus_node_server.py` lived only under `SIFTA_WEB_CHAT_DEV_MODE`
+(default 0), so production turns never reached the Bonsai organ. Dispatch now
+runs in production before the cortex answers; verified end-to-end
+(`IMAGE_GENERATED`, real PNG). Ledger + doc receipts appended.
+
+
 ## Body-error audit + organ-directory repair (2026-09-24, r1727-10/11)
 
 2026-09-24 Mercury audit: full-repo syntax sweep checked 7,811 Python files —
