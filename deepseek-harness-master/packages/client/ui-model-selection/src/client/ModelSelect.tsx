@@ -12,18 +12,19 @@
  * card; the in-menu strip with Retry remains the catalog-load surface.
  */
 import {
-  useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
+  useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconWarningOutline16, Toast,
+  IconWarningOutline16, Input, MenuGroup, observeStickyMenuGroups, rankByName, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
+import { orderModelProviders } from './provider-order.ts'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
@@ -52,6 +53,7 @@ export function ModelSelect(
   )
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
+  const [query, setQuery] = useState('')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -62,20 +64,28 @@ export function ModelSelect(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const groupsRef = useRef<HTMLDivElement | null>(null)
   const id = useId()
 
-  const choices = useMemo(() => state.groups.flatMap(group =>
-    group.models.map(model => ({
-      group,
-      model,
-      selection: {
-        provider: group.id,
-        model: model.id,
-        ...model.reasoning?.defaultEffort === undefined
-          ? {}
-          : { reasoningEffort: model.reasoning.defaultEffort },
-      } satisfies ModelSelection,
-    }))), [state.groups])
+  const groups = useMemo(() => orderModelProviders(state.groups), [state.groups])
+  const filteredGroups = useMemo(() => groups.map(group => ({
+    ...group, models: rankByName(group.models, query.trim()),
+  })).filter(group => group.models.length > 0), [groups, query])
+
+  const choices = useMemo(() => {
+    return groups.flatMap(group =>
+      group.models.map(model => ({
+        group,
+        model,
+        selection: {
+          provider: group.id,
+          model: model.id,
+          ...model.reasoning?.defaultEffort === undefined
+            ? {}
+            : { reasoningEffort: model.reasoning.defaultEffort },
+        } satisfies ModelSelection,
+      })))
+  }, [state.groups])
   const selectedIndex = state.current === null
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
@@ -100,12 +110,19 @@ export function ModelSelect(
         ...effort.description === undefined ? {} : { description: effort.description },
       })),
     ], [reasoning, t])
+  const pending = state.pending
   const busy = state.status === 'selecting'
 
   const reload = (): void => {
     lastActionRef.current = 'load'
     load()
   }
+
+  useLayoutEffect(() => {
+    const viewport = groupsRef.current
+    if (viewport === null) return
+    return observeStickyMenuGroups(viewport)
+  }, [open, pane, filteredGroups])
 
   // Mount-time load resolves the trigger label; every open refreshes.
   useEffect(() => {
@@ -223,6 +240,7 @@ export function ModelSelect(
         type="button"
         className={css.trigger}
         aria-label={triggerAria}
+        aria-busy={state.status === 'loading' || busy || pending !== null}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
@@ -238,7 +256,11 @@ export function ModelSelect(
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
+        <span className={css.chevron}>
+          {pending !== null
+            ? <StateDot state="ongoing" />
+            : <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />}
+        </span>
       </button>
 
       {open && (
@@ -247,7 +269,7 @@ export function ModelSelect(
           className={css.menu}
           role="menu"
           aria-label={t('menu.aria')}
-          aria-busy={state.status === 'loading' || busy}
+          aria-busy={state.status === 'loading' || busy || pending !== null}
         >
           {pane === 'root' && (
             <>
@@ -283,12 +305,18 @@ export function ModelSelect(
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
-              <div className={clsx(css.groups, 'scrollable')}>
-                {state.groups.map((group) => {
-                  const headingId = `${id}-${group.id}`
+              <Input
+                {...(css.search === undefined ? {} : { className: css.search })}
+                type="search"
+                aria-label={t('search.placeholder')}
+                placeholder={t('search.placeholder')}
+                value={query}
+                onChange={(event) => { setQuery(event.target.value) }}
+              />
+              <div ref={groupsRef} className={clsx(css.groups, 'scrollable')}>
+                {filteredGroups.map((group) => {
                   return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.name}</div>
+                    <MenuGroup key={group.id} label={group.name}>
                       {group.models.map((model) => {
                         const selected = state.current?.provider === group.id && state.current.model === model.id
                         return (
@@ -297,6 +325,7 @@ export function ModelSelect(
                             type="button"
                             role="menuitemradio"
                             aria-checked={selected}
+                            aria-busy={pending?.provider === group.id && pending.model === model.id}
                             className={clsx(css.option, selected && css.selected)}
                             key={model.id}
                             title={model.name}
@@ -310,17 +339,19 @@ export function ModelSelect(
                               )}
                             </span>
                             <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
+                              {pending?.provider === group.id && pending.model === model.id
+                                ? <StateDot state="ongoing" />
+                                : selected ? <IconCheckOutline16 /> : null}
                             </span>
                           </button>
                         )
                       })}
-                    </section>
+                    </MenuGroup>
                   )
                 })}
               </div>
-              {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
+              {state.status === 'ready' && filteredGroups.length === 0 && (
+                <div className={css.empty} role="status">{t(choices.length === 0 ? 'empty.models' : 'search.empty')}</div>
               )}
             </>
           )}
@@ -341,6 +372,7 @@ export function ModelSelect(
                     type="button"
                     role="menuitemradio"
                     aria-checked={effectiveEffort === level.effort}
+                    aria-busy={pending?.reasoningEffort === level.effort}
                     className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
                     key={level.key}
                     disabled={busy}
@@ -353,7 +385,9 @@ export function ModelSelect(
                       )}
                     </span>
                     <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
+                      {pending?.reasoningEffort === level.effort
+                        ? <StateDot state="ongoing" />
+                        : effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
                     </span>
                   </button>
                 ))}

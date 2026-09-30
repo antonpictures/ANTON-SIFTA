@@ -135,6 +135,11 @@
   cursor: pointer;
 }
 
+.search {
+  flex-shrink: 0;
+  margin: 4px;
+}
+
 .groups {
   min-height: 0;
   overflow-y: auto;

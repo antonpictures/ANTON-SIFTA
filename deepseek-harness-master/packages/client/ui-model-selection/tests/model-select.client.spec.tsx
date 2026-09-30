@@ -40,6 +40,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
     }],
     failures: [],
     status: 'ready',
+    pending: null,
     error: null,
     ...overrides,
   }
@@ -180,5 +181,90 @@ describe('ModelSelect reasoning effort', () => {
 
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('ModelSelect pending selection', () => {
+  const groups = [{
+    id: 'deepseek-official',
+    name: 'DeepSeek',
+    models: [
+      { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+    ],
+  }]
+  const ongoing = (): number => document.querySelectorAll('[data-state="ongoing"]').length
+
+  it('shows a spinner on the submitted row and on the trigger while the selection settles', () => {
+    const directory = createSnapshotStore(state({
+      groups,
+      status: 'selecting',
+      pending: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+
+    const pro = screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ })
+    const flash = screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Flash/ })
+    // The pending row trades its check slot for the spinner; the trigger does
+    // the same with its chevron, so exactly two are on screen.
+    expect(pro.querySelector('[data-state="ongoing"]')).toBeTruthy()
+    expect(flash.querySelector('[data-state="ongoing"]')).toBeNull()
+    expect(ongoing()).toBe(2)
+    // Rows stay unclickable until the selection settles.
+    expect((pro as HTMLButtonElement).disabled).toBe(true)
+    expect((flash as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows the spinner on the pending effort row', () => {
+    const directory = createSnapshotStore(state({
+      groups,
+      status: 'selecting',
+      pending: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
+    const max = screen.getByRole('menuitemradio', { name: /Max/ })
+    const high = screen.getByRole('menuitemradio', { name: /High/ })
+    expect(max.querySelector('[data-state="ongoing"]')).toBeTruthy()
+    expect(high.querySelector('[data-state="ongoing"]')).toBeNull()
+  })
+
+  it('keeps the chevron and the check marks when no selection is pending', () => {
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state({ groups }))}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    expect(trigger.getAttribute('aria-busy')).toBe('false')
+    expect(ongoing()).toBe(0)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(ongoing()).toBe(0)
   })
 })

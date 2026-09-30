@@ -29,6 +29,8 @@ export interface ModelDirectoryState {
   failures: readonly ModelCatalogFailure[]
   /** Lifecycle of the in-flight operation. */
   status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
+  /** Selection submitted by the latest `select` until it settles; null otherwise. */
+  pending: ModelSelection | null
   /** Whole-request or selection failure text; null when none. */
   error: string | null
 }
@@ -37,7 +39,7 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    current: null, routable: null, groups: [], failures: [], status: 'idle', pending: null, error: null,
   })
 
   /** Latest operation wins; an older response never overwrites a newer one. */
@@ -94,7 +96,7 @@ export class ModelDirectory {
   async select(selection: ModelSelection): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null })
+    this.store.update((s) => { s.status = 'selecting'; s.pending = selection; s.error = null })
     const { result } = await this.sessions.selectModel({
       sessionId: this.sessionId,
       provider: selection.provider,
@@ -108,7 +110,11 @@ export class ModelDirectory {
       return
     }
     if (!result.ok) {
-      this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
+      this.store.update((s) => {
+        s.status = 'error'
+        s.pending = null
+        s.error = `${result.error.code}: ${result.error.message}`
+      })
       throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
     }
     // The Host validated the route before accepting it, so a selection that
@@ -117,6 +123,7 @@ export class ModelDirectory {
       s.current = result.value.selected
       s.routable = true
       s.status = 'ready'
+      s.pending = null
       s.error = null
     })
   }
@@ -135,6 +142,7 @@ export class ModelDirectory {
       s.groups = []
       s.failures = []
       s.status = 'idle'
+      s.pending = null
       s.error = null
     })
     if (!this.available()) return
