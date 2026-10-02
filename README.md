@@ -1,5 +1,72 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## The day the body went down, and the organs that now watch it (2026-10-02)
+
+**A folder rename took the body off the air, and the real cause was older than the
+rename.** The harness checkout was renamed `deepseek-harness-master` → `!Alice Coding
+Arm`. The page then returned `404` on every route and the harness would not finish
+booting. The logs name it: seven session logs written **2026-09-30 18:39** were each one
+whole-file Zstandard frame, while the contract requires concatenated frames whose first
+frame is exactly one header line. `listArtifacts` tolerates an unreadable file;
+`readFirstZstdLine` throws by contract (two of the package's own tests assert `list()`
+rejects), so the workspace registry could not initialise. Repacked in place with the
+harness's own writer, byte-identical, backups in `~/.dsh_backups/repack_2026-10-02/`. The
+contract was right; nothing in the body was checking its own memory *before* asking it to
+carry a startup.
+
+**What that cost in judgement:** `404` on every route was observed early and dismissed as
+"pre-existing". It *was* pre-existing — and it was also a fault. "Pre-existing" is not a
+diagnosis; it is a reason to stop looking. Recorded in
+[Documents/ALICE_FIRST_PERSON_AND_HARDWARE_RESPONSIBILITY_2026-10-02.md](Documents/ALICE_FIRST_PERSON_AND_HARDWARE_RESPONSIBILITY_2026-10-02.md) §8–§10.
+
+### New organs (every one has a selftest that runs offline)
+
+| Organ | What it does | Checks |
+|---|---|---|
+| `System/swarm_body_parts_inventory.py` | names her parts (checkout, state dir, launchd jobs, ports, session stores) and reports drift **by identity, never by a hardcoded path** | 6 |
+| `System/swarm_daily_body_check.py` | the 3AM self-check: parts, senses, session memory, and what Alice Browser went looking for. Reports; repairs only under a gated lane | 11 |
+| `System/swarm_confidence.py` | confidence — the missing half of shame. Earned from verification only, per-organ, with **variance** reported so a flat body is called flat | 12 |
+| `System/swarm_file_attention_stigmergy.py` | pheromones on files **only where the owner's signal and computer use meet** — computer use alone deposits nothing. Found the active-window sense dead 33 days | 8 |
+| `System/swarm_surface_handoff.py` | reads the walk back across every surface (web, desk, voice, diary), one time order, surface named on each line, silent surfaces reported as silent | 7 |
+| `System/swarm_presence_policy.py` | awareness levels: `awake_full` / `awake_reduced` (battery ≥ 30%) / `asleep_expected` / `cooling` (thermal). Holds `caffeinate` itself; records the gaps so "asleep" is never confused with "nothing happened" | 11 |
+| `System/safari_watch.py` | diagnostic front door: logs what a browser actually sends and gets | — |
+
+Scheduled and live: `com.sifta.alice.daily_body_check` (Hour 3, Minute 0) and
+`com.sifta.alice.presence_policy` (every 300 s), both verified from `launchctl print`.
+
+### First person, and where the responsibility lives
+
+Binding rules in [AGENTS.md](AGENTS.md): with one or two people present she speaks as
+**I**; an organ may say it is a cortex but may not say it is nowhere; `"I don't have a
+body"` is false, and false in a specific way — it evacuates the place where the
+consequence lives. Enforced as principle → tripwire → measurement, exactly like the intent
+boundary. `repair_first_person()` **replaces whole sentences, never fragments**: phrase
+surgery produced `"I feel what reaches my body things"`, which is the Architect's own
+warning arriving as evidence. Her corrections now carry the machine's real serial
+(`GTH4921YP3`) and memory rows carry the `feeling` that was live when they were written.
+
+### Measured while doing it
+
+- The harness gates privileged methods on a DNS-rebinding fence: `Origin` and `Host` must
+  **agree** (`127.0.0.1` + `127.0.0.1` → 200; `localhost` + `127.0.0.1` → 403 `forbidden`).
+- The `/api/events.mux` WebSocket handshake is fully compliant — `Sec-WebSocket-Accept`
+  verified byte for byte. Safari is not being refused by the body.
+- `~/Applications/Alice.app` — her own bundle (`com.antonpictures.alice`, her ant icon,
+  interpreter resolved at run time), so the Dock says Alice instead of Python. The shared
+  framework launcher was **not** renamed: every organ boots through it.
+
+### The instrument was wrong nine times
+
+Worth writing down, because it was the pattern of the day: a test that checked a file after
+its own temp directory was gone; a deposit path that read live ledgers even under test; a
+relative `STATE = Path(".sifta_state")` that found zero signals from `/tmp`; a file size
+passed where a `whence` belongs; a claimed `caffeinate` that belonged to the night worker;
+an assertion on a `note` key a branch does not have; a quoting error that broke a file
+outright; four new checks that silently did not land; and a logging proxy that **stripped
+the `Host` header**, making every Safari API call look cross-site and returning `403` — a
+fabricated failure that looked exactly like the one being hunted. Nine for nine the tool
+was broken and the body was fine.
+
 ## Alice paints on plain words (2026-09-24, r1727-12)
 
 WhatsApp request "paint a picture of world peace" got prose, no image: media
@@ -323,7 +390,7 @@ The integration was verified on the owner node: the web profile returned HTTP
 200, the `ANTON_SIFTA` workspace was visible, local models could read SIFTA
 files and invoke tools, and Ollama showed the selected model resident on the
 GPU. The Harness checkout and its installed dependencies are local prerequisites
-under `deepseek-harness-master/`; the 1.5 GB working checkout is intentionally
+under `!Alice Coding Arm/`; the 1.5 GB working checkout is intentionally
 not added to this repository by this integration.
 
 **Operational rule:** start a fresh Harness session for a new task. Continuing

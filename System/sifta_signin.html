@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — StigmergiCoin</title>
+<style>
+  :root{--bg:#141414;--card:#1c1c1c;--line:#262626;--txt:#ece9e2;--dim:#9a9893;--dimmer:#6f6d69;--accent:#d97757}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);display:grid;place-items:center;min-height:100vh;
+    font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:24px}
+  .card{width:min(430px,100%);background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px}
+  h1{font:600 24px/1.2 Georgia,serif;margin:0 0 6px}
+  p{color:var(--dim);font-size:14px;margin:0 0 16px}
+  .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#8a4527);
+    display:grid;place-items:center;font-size:17px;margin-bottom:14px}
+  .g{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;
+    border-radius:11px;border:1px solid #3a3a3a;background:#222;color:#e8e8e8;
+    font:inherit;font-size:14.5px;cursor:pointer;margin-bottom:18px}
+  .g:hover{background:#2a2a2a}
+  .box{background:#191919;border:1px solid var(--line);border-radius:11px;padding:13px 15px;font-size:13px;color:var(--dim)}
+  .box b{color:#cfcbc3}
+  ul{margin:8px 0 0;padding-left:18px}
+  li{margin-bottom:5px}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  code{background:#111;padding:1px 6px;border-radius:5px;font-size:12.5px;color:#c9c6bf}
+  .back{display:inline-block;margin-top:18px;font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="mark">🐜</div>
+  <h1>Sign in</h1>
+  <p>Keep your chats under your own account, on any device.</p>
+
+  <a class="g" href="/api/auth/google/start" style="text-decoration:none">
+    <span style="font-weight:700;color:#e8e8e8">G</span> <span style="color:#e8e8e8">Continue with Google</span>
+  </a>
+
+  <div class="box">
+    <b>One step left.</b> The credentials are installed, but Google rejects unknown
+    callback addresses, and this one is not registered yet. In the Google Cloud console open your
+    OAuth client and add this exact URI under <i>Authorized redirect URIs</i>:
+    <ul>
+      <li><code>https://stigmergicoin.com/api/auth/google/callback</code></li>
+    </ul>
+    Until then Google will answer with <code>redirect_uri_mismatch</code>.
+    <br><br>
+    <b>Your history already works.</b> Every chat on this device is saved against this
+    browser's cookie, so the sidebar keeps it without any sign-in. Signing in only makes that
+    history follow you to your phone and other computers.
+  </div>
+
+  <a class="back" href="/">← back to the desk</a>
+</div>
+</body>
+</html>

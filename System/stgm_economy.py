@@ -949,3 +949,85 @@ __all__ = [
     "validate_economic_attribution",
     "wallet_file_claims",
 ]
+
+# --------------------------------------------------------------------------
+# Metabolism federation: the signed chain is a claim source, and reconciliation
+# makes it one economy instead of two.
+# --------------------------------------------------------------------------
+
+METABOLISM_SUPPLY_FILE = "stgm_supply_canonical.json"
+
+
+def metabolism_wallet_claims(state_dir: Optional[Path] = None) -> Dict[str, float]:
+    """Signed-chain balances, as a claim source alongside the wallet files.
+
+    Same class as ``wallet_file_claims``: evidence to reconcile against, never a
+    licence to spend. Spendable truth stays ``canonical_wallet_balance``.
+    """
+    try:
+        from System import swarm_stgm_metabolism as metabolism
+
+        return {k: round(float(v), 9) for k, v in metabolism.balances(state_dir=state_dir).items()}
+    except Exception:
+        return {}
+
+
+def reconcile_metabolism(state_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Compare the metabolism chain against canonical spendable truth, per agent.
+
+    Returns every agent where the two disagree. An empty ``drift`` means the
+    chained economy and the canonical ledger say the same thing, which is the
+    only state in which a trade on the chain can be trusted.
+    """
+    claims = metabolism_wallet_claims(state_dir)
+    # ONE pass. Calling canonical_wallet_balance per agent replays the 128 MB
+    # repair_log once per agent and turns a reconciliation into gigabytes of I/O.
+    snap = scan_economy(state_dir=state_dir) if state_dir else scan_economy()
+    canonical_map = {str(k): float(v) for k, v in (snap.canonical_wallet_balances or {}).items()}
+    drift: Dict[str, Dict[str, float]] = {}
+    for agent, chain_balance in sorted(claims.items()):
+        canonical = round(canonical_map.get(agent, 0.0), 9)
+        if round(canonical - chain_balance, 6) != 0:
+            drift[agent] = {"chain": chain_balance, "canonical": canonical, "delta": round(canonical - chain_balance, 6)}
+    return {
+        "agents_on_chain": len(claims),
+        "drift": drift,
+        "in_sync": not drift,
+        "rule": "spendable truth is canonical_wallet_balance(repair_log.jsonl); the chain is reconciled to it, not the reverse",
+        "truth_label": "STGM_METABOLISM_RECONCILIATION_V1",
+    }
+
+
+def canonical_supply(state_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """ONE statement of how much STGM exists, so four totals stop circulating.
+
+    circulating - sum of canonical spendable balances across known agents
+    lifetime    - every unit ever minted per the canonical repair log
+    retired     - lifetime minus circulating (spent/retired, not spendable)
+    """
+    snap = scan_economy(state_dir=state_dir) if state_dir else scan_economy()
+    wallets = {str(k): float(v) for k, v in (snap.canonical_wallet_balances or {}).items()}
+    circulating = round(sum(wallets.values()), 9)
+    lifetime = round(float(snap.canonical_minted or 0.0), 9)
+    out = {
+        "ts": time.time(),
+        "circulating_stgm": circulating,
+        "lifetime_minted_stgm": lifetime,
+        "retired_stgm": round(lifetime - circulating, 9),
+        "wallets": len(wallets),
+        "source": "scan_economy() canonical replay of repair_log.jsonl (single pass; same truth as ledger_balance)",
+        "net_supply_stgm": round(float(snap.net_supply or 0.0), 9),
+        "supersedes": [
+            "alice_stgm_night_baseline.json stgm_balance (a file claim; canonical balance for that wallet is 0.0)",
+            "stgm_economy_cache.json spendable_total_stgm (cache, lags)",
+            "stgm_economy_cache.json net_supply_stgm (a different quantity: net supply, not circulating)",
+        ],
+        "truth_label": "STGM_CANONICAL_SUPPLY_V1",
+    }
+    try:
+        path = (state_dir or STATE_DIR) / METABOLISM_SUPPLY_FILE
+        path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as exc:
+        out["write_error"] = f"{type(exc).__name__}: {exc}"
+    return out
+

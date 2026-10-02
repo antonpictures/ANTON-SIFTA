@@ -1957,5 +1957,20 @@
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "autostart": false,
     "description": "Alice's Azeroth surface: what World of Warcraft is, the Architect's own history (paladin, 2003-2006), the owner-reported launch/beta facts (Nov 4 2026 launch, 30 bundled days, Skyborne Epic Pack $59.99, Warcraft Forever Collection $79.99, beta to Oct 21, subscription after the bundled days) and the handling fence: companion/coach on live realms via Battle.net Game Data + Profile APIs and UI-safe addon sensing with all protected input human-confirmed; screen-capture + synthetic input on a live account is botting under the Blizzard EULA and forbidden; full embodiment only on a private server we own (AzerothCore/TrinityCore). Read headlessly via `python3 Applications/sifta_world_of_warcraft.py --digest`. Truth label WOW_AZEROTH_BRIDGE_V1; companion doc Documents/WCT_WOW_ALICE_BRIDGE_PLAN_2026-09-19.md."
+  },
+  "Pump Sentinel (Rug Radar)": {
+    "category": "Economy",
+    "icon": "🛰️",
+    "entry_point": "Applications/sifta_pump_sentinel_app.py",
+    "widget_class": "PumpSentinelApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "doctor": "alice_borg_assimilation",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "expected_open_signals": [
+      "pump_sentinel_visible"
+    ],
+    "truth_label": "PUMP_SENTINEL_APP_V1",
+    "description": "The visible surface for Alice's pump.fun launch screening. Shows live counts from the harvest and curve ledgers, a table of screened tokens with risk score, verdict and the flags that fired, the known outcome where the path ledger has one, and whether the detector is separating real winners from real losers. One button screens the newest launches on the chain. Reads the same ledgers and runs the same detectors as the headless tools, so nothing on screen is invented. Backed by tools/pumpfun_rugcheck.py + pumpfun_harvester.mjs + pumpfun_curve_poller.py. In the first validation the DEV-HISTORY check carried the separation (6/6 on hand-picked extremes), the bundle check fired on none, and the wash check was unmeasured; samples are small, so this is an instrument, not a profit claim."
   }
 }

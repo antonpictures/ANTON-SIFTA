@@ -55,6 +55,16 @@ from PyQt6.QtWidgets import (
 REPO = Path(__file__).resolve().parents[1]
 STATE = REPO / ".sifta_state"
 
+# Harness ingress organ: two surfaces, one body. The mirror now renders the
+# harness web session's replies beside the spinal receipts (read-only).
+try:
+    from System.swarm_harness_ingress_connector import drain_replies as _harness_replies
+    from System.swarm_harness_ingress_connector import harness_health as _harness_health
+except Exception:  # pragma: no cover — damaged boot keeps the mirror alive
+    _harness_replies = staticmethod(lambda limit=12: [])
+    _harness_health = staticmethod(lambda: {"web_200": False})
+
+
 BG_DARK = "#070908"
 BG_CARD = "#0d1510"
 BORDER = "#244d2d"

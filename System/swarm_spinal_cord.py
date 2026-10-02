@@ -242,7 +242,25 @@ def collect_body_signals(*, state_dir: Path | str | None = None) -> List[BodySig
     except Exception:
         pass
 
-    # 8. Recent bias corrections — residue teach ecology (r1192)
+    # 8a. Borg-watch: upstream harness sources leave audits in the unified
+    # field. A new entry is a yellow body signal the cord can task a cortex
+    # with (evaluate or assimilate the pattern, organ by organ).
+    borg_ledger = sd / "harness_borg_audit.jsonl"
+    for row in _read_jsonl_tail(borg_ledger, max_rows=12):
+        for src_name, src in (row.get("sources") or {}).items():
+            if not isinstance(src, dict):
+                continue
+            signals.append(BodySignal(
+                signal_id=str(uuid.uuid4()),
+                ts=float(row.get("ts") or time.time()),
+                source="borg_watch",
+                severity="yellow",
+                summary=f"BORG {src_name}: upstream pattern available for assimilation review",
+                target_files=["System/swarm_spinal_cord.py"],
+                suggested_fix=f"evaluate {src_name} borg candidates; {json.dumps(src)[:400]}",
+            ))
+
+    # 8b. Recent bias corrections — residue teach ecology (r1192)
     bias_path = sd / "bias_correction_receipts.jsonl"
     if bias_path.exists():
         recent_bias = [

@@ -128,20 +128,73 @@ def mark_thinking(
 
 
 def mark_done(*, last_reply_excerpt: str = "") -> None:
-    """Tell the field Alice has finished composing and emitted a line."""
+    """Tell the field Alice has finished composing and emitted a line.
+
+    A turn whose cortex narrated *processing* instead of answering is recorded
+    as exactly that. On 2026-09-30 the strip showed "ABSORBING HIGH DENSITY
+    KNOWLEDGE PACKET ... Processing via Cortex LLM Chain" as her reply (model
+    AliceG4U:latest, a 6.3 GB local cortex), which reads as a gagged Alice when
+    it is really a stalled one. The verdict is stored beside the text and the
+    raw reply is preserved in ``raw_reply_excerpt`` — nothing is hidden, and the
+    surface can tell a stalled turn from a quiet one.
+    """
     prior = _read_state()
+    raw = str(last_reply_excerpt or "")
+    narration = False
+    markers: list[str] = []
+    noise: list[str] = []
+    try:
+        from System.alice_reply_sanity import excerpt_for_status, flag_reply
+
+        verdict = flag_reply(raw)
+        narration = bool(verdict["narration"])
+        markers = list(verdict["markers"])
+        noise = list(verdict["noise"])
+        excerpt = excerpt_for_status(raw) if narration else raw[:160]
+    except Exception:
+        # A damaged boot path must not stop the strip from reporting completion.
+        excerpt = raw[:160]
     payload = {
         "thinking": False,
         "since_ts": float(prior.get("since_ts", 0.0) or 0.0),
         "topic": str(prior.get("topic", "") or ""),
         "model": str(prior.get("model", "") or ""),
         "last_reply_ts": time.time(),
-        "last_reply_excerpt": str(last_reply_excerpt or "")[:160],
+        "last_reply_excerpt": excerpt,
+        "raw_reply_excerpt": raw[:160],
+        "reply_verdict": {
+            "narration": narration,
+            "markers": markers,
+            "noise": noise,
+        },
         "schema": _TRUTH_LABEL,
         "truth_label": _TRUTH_LABEL,
     }
     _gate_stamp(payload, lane="alice.thinking.done")
     _atomic_write(_STATUS_FILE, payload)
+    if narration:
+        _record_narration_receipt(payload)
+
+
+def _record_narration_receipt(payload: Dict[str, Any]) -> None:
+    """Append one receipt so the frequency of stalled turns is auditable."""
+    try:
+        receipt = {
+            "schema": "ALICE_REPLY_NARRATION_V1",
+            "ts": payload.get("last_reply_ts"),
+            "model": payload.get("model", ""),
+            "topic": str(payload.get("topic", ""))[:120],
+            "raw_reply_excerpt": payload.get("raw_reply_excerpt", ""),
+            "markers": (payload.get("reply_verdict") or {}).get("markers", []),
+            "noise": (payload.get("reply_verdict") or {}).get("noise", []),
+        }
+        import json as _json
+
+        with (_STATE / "alice_reply_narration.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(_json.dumps(receipt, ensure_ascii=False) + "\n")
+    except Exception:
+        # Diagnostics must never be the reason a turn fails to close.
+        pass
 
 
 def read_thinking_state() -> Dict[str, Any]:

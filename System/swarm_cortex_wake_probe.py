@@ -344,6 +344,16 @@ def _check_openai_compatible_profile(
     return True, f"endpoint reachable at {base_url}"
 
 
+def _inception_key_present() -> bool:
+    """Mercury needs no local weights — only the Inception key on disk."""
+    try:
+        from pathlib import Path as _P
+        key = _P(__file__).resolve().parents[1] / ".sifta_state" / "inception_api_key"
+        return key.is_file() and len(key.read_text(encoding="utf-8").strip()) > 20
+    except Exception:
+        return False
+
+
 def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> list[CortexModelSpec]:
     """Return known cortex candidates from constants plus local Ollama inventory."""
     specs: dict[str, CortexModelSpec] = {}
@@ -369,6 +379,18 @@ def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> 
         source="canonical",
         note="Uses signed-in Codex CLI/OAuth as a teacher cortex.",
     )
+    # Mercury 2.5 — Inception Labs cloud cortex. She is Alice's fast public voice on
+    # the other lane and a candidate cortex for the desk, but she is not an ollama
+    # model, so the local inventory never listed her. The key file is the tell.
+    if _inception_key_present():
+        specs["mercury-2.5"] = CortexModelSpec(
+            model_id="mercury-2.5",
+            provider="inception",
+            available=True,
+            source="canonical",
+            note="Inception Labs diffusion cortex (~1000 tok/s). Key present on this Mac.",
+        )
+
     for model in (CANONICAL_OLLAMA_DAILY, CANONICAL_OLLAMA_GEMMA4_SMALL):
         specs[model] = CortexModelSpec(
             model_id=model,

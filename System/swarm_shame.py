@@ -88,6 +88,7 @@ What this organ deliberately does NOT do
 from __future__ import annotations
 
 import json
+import os
 import math
 import sys
 import time
@@ -107,6 +108,12 @@ _CANONICAL_LEDGER = _REPO / "repair_log.jsonl"
 TAU_SECONDS = 3600.0          # ~41.6 min half-life
 S0 = 2.0                       # gain reference
 MAX_EVENT_MAGNITUDE = 1.0      # hard cap (no runaway shame per single act)
+
+# PROPORTION. Architect 2026-10-02: "in our world human creatures have different
+# proportions of shame". One act does not weigh the same in every creature, so the
+# magnitude is scaled by a proportion rather than fixed. This is per-organism, not
+# per-act: it moves the whole curve, exactly as a temperament would.
+SHAME_PROPORTION = float(os.environ.get("SIFTA_SHAME_PROPORTION", "1.0"))
 DEFAULT_EVENT_MAGNITUDE = 0.5
 DEFAULT_REPAIR_STRENGTH = 0.5
 REPLAY_WINDOW_S = 4 * TAU_SECONDS  # ~2.7 hrs back on import
@@ -182,8 +189,11 @@ class ShameRegistry:
             # Self-attributed shame collapses to rumination — see Tracy & Robins.
             # We allow it but document it; observers are the corrective signal.
             pass
+        # the proportion is applied first, then the cap: a creature with a large
+        # share of shame reaches the ceiling sooner, it does not exceed it
+        magnitude = float(magnitude) * SHAME_PROPORTION
         magnitude = max(-MAX_EVENT_MAGNITUDE,
-                        min(MAX_EVENT_MAGNITUDE, float(magnitude)))
+                        min(MAX_EVENT_MAGNITUDE, magnitude))
         ev = ShameEvent(
             ts=time.time(),
             source_organ=source,

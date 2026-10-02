@@ -196,7 +196,6 @@ def default_scan_roots() -> list[Path]:
         home / "Downloads",
         home / ".cache" / "huggingface" / "hub",
         home / "Library" / "Caches" / "huggingface" / "hub",
-        home / "Library" / "Application Support" / "LM Studio" / "models",
     ]
     seen: set[str] = set()
     roots: list[Path] = []

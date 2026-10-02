@@ -26,6 +26,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
@@ -250,6 +252,8 @@ class ActionJournal:
         self._detail: Optional[str] = None
         self._next_seq = 1
         self._loaded = False
+        self._writer_lock = threading.RLock()
+        self._lock_depth = 0
 
     # -- paths ---------------------------------------------------------------
 
@@ -339,6 +343,62 @@ class ActionJournal:
 
     # -- append --------------------------------------------------------------
 
+    @contextmanager
+    def _exclusive_writer(self):
+        """Serialize claims and tail updates across instances and processes.
+
+        Contention is explicit rather than a queued motor command. No adapter
+        call runs under this lock, so a hung adapter cannot hold the journal.
+        """
+        if not self._writer_lock.acquire(blocking=False):
+            raise JournalError("JOURNAL_BUSY", "another thread owns this journal")
+        fd = None
+        try:
+            if self._lock_depth:
+                yield
+                return
+            try:
+                import fcntl
+            except ImportError as exc:
+                raise JournalError("LOCK_UNAVAILABLE", "journal needs an OS file lock") from exc
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(self.path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise JournalError("JOURNAL_BUSY", "another writer owns this journal") from exc
+            self._lock_depth += 1
+            try:
+                yield
+            finally:
+                self._lock_depth -= 1
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            if fd is not None:
+                os.close(fd)
+            self._writer_lock.release()
+
+    def claim_dispatch(self, action_id: str, *, goal_id: str, payload: Mapping[str, Any]) -> JournalRow:
+        """Durably reserve one dispatch before an effect can start.
+
+        An existing intent, including a legacy intent without a submit row, is
+        ambiguous after a crash. It must be reconciled, never blindly reused.
+        """
+        with self._exclusive_writer():
+            self.replay()
+            if self.latest(action_id, KIND_STOP) is not None:
+                raise JournalError("STOP_REQUESTED", f"action {action_id!r} has an owner stop request")
+            previous = self.intent(action_id)
+            if previous is not None:
+                old_hash = previous.payload.get("proposal_hash")
+                if old_hash and old_hash != payload.get("proposal_hash"):
+                    raise JournalError("ID_CONFLICT", f"action {action_id!r} has different content")
+                raise JournalError(
+                    "RESEND_FORBIDDEN",
+                    f"action {action_id!r} already has a dispatch intent; reconcile its outcome",
+                )
+            return self.append(KIND_INTENT, action_id, goal_id=goal_id, payload=payload)
+
     def append(
         self,
         kind: str,
@@ -348,7 +408,14 @@ class ActionJournal:
         payload: Optional[Mapping[str, Any]] = None,
     ) -> JournalRow:
         """Durably append one row. Returns only once the row is on disk."""
-        self._ensure_loaded()
+        with self._exclusive_writer():
+            # A different journal instance may have written since our last read.
+            self.replay()
+            if self._torn_lines or not self._chain_ok or self._tampered_lines:
+                raise JournalError("UNREPAIRED_JOURNAL", "repair/inspect the journal before appending")
+            return self._append_locked(kind, action_id, goal_id=goal_id, payload=payload)
+
+    def _append_locked(self, kind, action_id, *, goal_id=None, payload=None) -> JournalRow:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         prev = self._rows[-1].row_hash if self._rows else GENESIS_HASH
         row = JournalRow.build(
@@ -421,7 +488,9 @@ class ActionJournal:
             return None
         submit = self.latest(action_id, KIND_SUBMIT)
         if submit is None:
-            return SUBMIT_UNATTEMPTED
+            # A process may have performed the effect and died before the
+            # acknowledgment write. This applies to old intent-only rows too.
+            return SUBMIT_ATTEMPTED
         status = submit.payload.get("outcome")
         if status == "rejected":
             return SUBMIT_REJECTED
@@ -444,7 +513,7 @@ class ActionJournal:
         return tuple(out)
 
     def unattempted(self) -> tuple:
-        """Intents durably recorded but never handed to an adapter."""
+        """Compatibility query; intent-only rows now require reconciliation."""
         return tuple(
             row
             for row in self.intents()
@@ -463,6 +532,11 @@ class ActionJournal:
         Only ever truncates an *incomplete* write. A row that parses but fails
         its own hash is evidence of tampering and is never silently dropped.
         """
+        with self._exclusive_writer():
+            self.replay()
+            return self._repair_torn_tail_locked()
+
+    def _repair_torn_tail_locked(self) -> int:
         if not self.path.exists():
             return 0
         if self._tampered_lines:

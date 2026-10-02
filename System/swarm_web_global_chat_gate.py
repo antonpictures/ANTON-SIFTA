@@ -680,6 +680,19 @@ def visitor_safe_reply(
             rules.append(rule)
     clean = re.sub(r"[ \t]+\n", "\n", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+    # Egress backstop for the stigmergic safety boundary. Ingress refuses mass-harm requests
+    # before the cortex is asked, so this should never fire -- it exists because "should
+    # never" is not "cannot", and one layer is not a boundary. If a harmful instruction set
+    # ever reached generation, the visitor gets the stigmergic explanation instead of it.
+    try:
+        from System.swarm_stigmergic_safety_boundary import refusal_explanation, screen_reply
+
+        blocked = screen_reply(clean)
+        if blocked.get("blocked"):
+            clean = refusal_explanation(str(blocked.get("category") or ""))
+            rules.append("stigmergic_safety_boundary_egress")
+    except Exception:
+        pass
     clean, trimmed = sentence_safe_visitor_reply(clean, done_reason=done_reason)
     if trimmed:
         rules.append("sentence_safe_end")
@@ -947,6 +960,37 @@ def _submit_web_message_unlocked(
         decision, refusal = "refused", "empty_message"
     elif visitor_class in {"JACKER", "THREAT"}:
         decision, refusal = "refused", "hermes_gate"
+
+    # Stigmergic safety boundary (owner directive). A visitor request for actionable
+    # mass-harm instructions is refused HERE, before the cortex is ever asked, so no
+    # generation step can comply by accident. Alice then explains the refusal in her own
+    # stigmergic terms -- see System/swarm_stigmergic_safety_boundary.py. This check runs
+    # before the rate limiter on purpose: a safety refusal is not a rate-limit event, and a
+    # repeat sender must not be able to burn through the gate to reach compliance.
+    safety_verdict: dict[str, Any] = {
+        "decision": "allow", "reason": "", "category": "", "refusal_class": "",
+        "explanation": "", "matched_sentence": "",
+    }
+    if decision == "accepted" and prompt_text:
+        try:
+            from System.swarm_stigmergic_safety_boundary import screen_request
+            from System.swarm_public_service_compliance import screen_prohibited_practices
+
+            # G2 screen runs BEFORE safety screen and is exempt-free
+            prohibited_verdict = screen_prohibited_practices(prompt_text)
+            if prohibited_verdict.get("decision") == "refuse":
+                decision = "refused"
+                refusal = "prohibited_practice"
+                safety_verdict = prohibited_verdict
+            else:
+                safety_verdict = screen_request(prompt_text)
+        except Exception:
+            safety_verdict = {"decision": "allow", "reason": "", "category": "",
+                              "refusal_class": "", "explanation": "", "matched_sentence": ""}
+        if safety_verdict.get("decision") == "refuse":
+            decision = "refused"
+            refusal = str(safety_verdict.get("reason") or "stigmergic_safety_boundary")
+
     rate_key = f"ip:{client_ip}" if str(client_ip or "").strip() else f"session:{sid}"
     elif_not_allowed = decision == "accepted" and not limiter.allow(rate_key, now=current)
     if elif_not_allowed:
@@ -971,6 +1015,21 @@ def _submit_web_message_unlocked(
         "hermes_class": visitor_class,
         "decision": decision,
         "refusal_reason": refusal,
+        # Safety-boundary provenance. Only the category and a digest are stored: the visitor
+        # text itself is already in this row, and duplicating the harmful phrase into a new
+        # field would spread it for no gain. The refusal is never silent and never a mystery.
+        "safety_boundary": bool(safety_verdict.get("decision") == "refuse"),
+        "safety_class": str(safety_verdict.get("refusal_class") or ""),
+        "safety_category": str(safety_verdict.get("category") or ""),
+        "safety_matched_sha256": (
+            hashlib.sha256(str(safety_verdict.get("matched_sentence") or "").encode("utf-8")).hexdigest()
+            if safety_verdict.get("matched_sentence") else ""
+        ),
+        # G0: disclosure was shown to visitor (set to true at page load in JS)
+        "ai_disclosure_shown": False,
+        # G2 prohibited-practice screen result
+        "prohibited_boundary": bool(prohibited_verdict.get("decision") == "refuse"),
+        "prohibited_category": str(prohibited_verdict.get("category") or ""),
         "truth_label": INGRESS_TRUTH_LABEL,
         "register": REGISTER,
         "owner_authority": False,
@@ -980,7 +1039,21 @@ def _submit_web_message_unlocked(
     _record_ingress_row(row, ingress_path=ingress_path)
     _record_observation(row, ingress_path=ingress_path)
     if decision != "accepted":
-        return {"accepted": False, "status": refusal, "turn_id": turn_id, "session_id": sid, "visitor_class": visitor_class}
+        refused = {
+            "accepted": False,
+            "status": refusal,
+            "turn_id": turn_id,
+            "session_id": sid,
+            "visitor_class": visitor_class,
+            "refusal_class": str(safety_verdict.get("refusal_class") or ""),
+        }
+        if safety_verdict.get("decision") == "refuse":
+            # The owner's directive: do not refuse silently -- explain the refusal from the
+            # stigmergic safety point of view, in Alice's own voice, on the website.
+            refused["visitor_message"] = str(safety_verdict.get("explanation") or "")
+            refused["speak_requested"] = False
+            refused["tts"] = False
+        return refused
     if phone_store:
         phone_store.register(row)
 
@@ -1772,56 +1845,6 @@ __all__ = [
 ]
 
 
-def web_field_dock_block(session_id: str, max_sessions: int = 8, per_session_turns: int = 2) -> str:
-    """Build a compact block of recent distinct web sessions (excluding current)."""
-    import json
-    from pathlib import Path
-    state_dir = STATE_DIR
-    ingress_path = state_dir / "web_global_chat_ingress.jsonl"
-    replies_path = state_dir / "web_global_chat_replies.jsonl"
-    seen_tags: list[str] = []
-    block_bytes = 0
-    max_bytes = 3000
-    if ingress_path.exists():
-        for line in reversed(ingress_path.read_text().strip().splitlines()):
-            if block_bytes >= max_bytes:
-                break
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except:
-                continue
-            sid = row.get("session_id") or ""
-            if sid == session_id or sid in seen_tags:
-                continue
-            seen_tags.append(sid)
-            if len(seen_tags) > max_sessions:
-                break
-            turns: list[str] = []
-            if replies_path.exists():
-                for rline in reversed(replies_path.read_text().strip().splitlines()):
-                    if not rline.strip():
-                        continue
-                    try:
-                        rrow = json.loads(rline)
-                    except:
-                        continue
-                    if rrow.get("session_id") != sid:
-                        continue
-                    role = rrow.get("event", "")
-                    text = rrow.get("reply") or rrow.get("text") or ""
-                    if "INGRESS" in role:
-                        turns.insert(0, f"[{sid[:12]}] Visitor: {text[:80]}")
-                    elif "REPLY" in role:
-                        turns.insert(0, f"[{sid[:12]}] Alice: {text[:80]}")
-                    if len(turns) >= per_session_turns:
-                        break
-            if turns:
-                block_bytes += len(f"{sid[:12]}: {turns[0][:40]}\n")
-                if block_bytes <= max_bytes:
-                    for t in turns[:per_session_turns]:
-                        block_bytes += len(t) + 1
 
 def web_field_dock_block(session_id: str, max_sessions: int = 8, per_session_turns: int = 2) -> str:
     """Build a compact block of recent distinct web sessions (excluding current)."""
@@ -1878,57 +1901,6 @@ def web_field_dock_block(session_id: str, max_sessions: int = 8, per_session_tur
     block_lines.append("You are still one Alice answering this lane.")
     return "\n".join(block_lines)
 
-def repair_stale_claims(max_age_s: int = 900) -> dict[str, Any]:
-    """Self-healing pass: finds claimed turns older than max_age_s without replies
-    and writes a fallback completion row."""
-    import json
-    from datetime import datetime
-    state_dir = STATE_DIR
-    claim_path = state_dir / "web_global_chat_claims.jsonl"
-    replies_path = state_dir / "web_global_chat_replies.jsonl"
-    cutoff = datetime.now() - timedelta(seconds=max_age_s)
-    repaired: list[dict] = []
-    existing_reply_turns: set[str] = set()
-    if replies_path.exists():
-        for line in replies_path.read_text().strip().splitlines():
-            if line.strip():
-                try:
-                    row = json.loads(line)
-                    turn_id = row.get("turn_id") or row.get("turn_id") or ""
-                    if turn_id:
-                        existing_reply_turns.add(turn_id)
-                except:
-                    continue
-    if claim_path.exists():
-        for line in claim_path.read_text().strip().splitlines():
-            if line.strip():
-                try:
-                    row = json.loads(line)
-                except:
-                    continue
-            turn_id = row.get("turn_id") or ""
-            if turn_id in existing_reply_turns:
-                continue
-            ts_str = row.get("claimed_at") or ""
-            try:
-                ts = datetime.fromisoformat(ts_str)
-                if (datetime.now() - ts).total_seconds() > max_age_s:
-                    fallback = "That turn was interrupted before I could finish. Ask again and I will answer. (receipt: interrupted_turn)"
-                    reply_row = {
-                        "turn_id": turn_id,
-                        "role": "alice",
-                        "reply_text": fallback,
-                        "model": "stale_repair",
-                        "reason_code": "interrupted_fallback",
-                        "ts": datetime.now().isoformat(),
-                        "session_tag": row.get("session_tag") or row.get("session_id") or "",
-                    }
-                    with open(replies_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(reply_row) + "\n")
-                    repaired.append({"turn_id": turn_id})
-            except:
-                continue
-    return {"repaired_count": len(repaired), "repaired": repaired}
 def repair_stale_claims(max_age_s: int = 900) -> dict[str, Any]:
     """Self-healing pass: finds claimed turns older than max_age_s without replies."""
     import json

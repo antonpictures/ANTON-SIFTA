@@ -534,6 +534,20 @@ def chorus(question: str, session_id: str, session_history: list, attachment_con
             _awareness = (_awareness + "\n\n" + _pm) if _awareness else _pm
     except Exception:
         pass
+    # r1729: the Talk window reads the SAME shared record the harness writes, so
+    # the two surfaces stop disagreeing about the same machine. Deliberately
+    # tiny: the swimmers run num_ctx=1024 and their prompt already carries the
+    # swimmer system text, anatomy, body snapshot and awareness blocks, so a
+    # large injection squeezes the answer itself (a long Talk reply truncated to
+    # "Alice (silent)" on 2026-09-29 was the first symptom). Two traces, short.
+    try:
+        from System import alice_continuity
+
+        _continuity_block = alice_continuity.prompt_block(max_traces=2, max_chars=110)
+        if _continuity_block:
+            _awareness = (_awareness + "\n\n" + _continuity_block) if _awareness else _continuity_block
+    except Exception:
+        pass
     attachment_context = str(attachment_context or "").strip()
 
     # 0. Rate limit

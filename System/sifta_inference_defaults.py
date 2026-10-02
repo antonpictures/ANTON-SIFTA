@@ -136,7 +136,6 @@ CANONICAL_OLLAMA_LOW_RAM = CANONICAL_OLLAMA_DEFAULT
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_DEFAULT
 CANONICAL_OLLAMA_LOCAL_TEST_CORTEX = CANONICAL_OLLAMA_DEFAULT  # was krishairnd/Gemma-4-Uncensored:latest; renamed to G4U 2026-09-18
 CANONICAL_MLX_GEMMA4_12B_ORIGINAL = "mlx-vlm:SuperagenticAI/gemma-4-12b-it-8bit-mlx"  # r606: local 12B MLX original/censored test lane
-CANONICAL_LMSTUDIO_BONSAI = "lmstudio:prism-ml/Ternary-Bonsai-27B-mlx-2bit"
 CANONICAL_OLLAMA_M5_FALLBACK = CANONICAL_OLLAMA_DEFAULT
 CANONICAL_OLLAMA_EXTRA = CANONICAL_OLLAMA_DEFAULT  # retired heavy tag shim; receipt/back-compat only
 # AG31: Ternary Architecture (Event 122).
@@ -217,7 +216,6 @@ _NON_OLLAMA_RUNTIME_PREFIXES: tuple[str, ...] = (
     "mlx:",
     "mlx-vlm:",
     "diffusion:",
-    "lmstudio:",
 )
 
 
@@ -1292,15 +1290,9 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
     except Exception:
         pass
     if borg_single_mimo:
-        # The MiMo single-cortex policy only narrows cloud choices. It must
-        # not hide independent local runtimes such as LM Studio/MLX Bonsai.
-        return _dedupe([CANONICAL_LMSTUDIO_BONSAI, *cloud])
+        return _dedupe([*cloud])
 
     local = list_installed_alice_cortexes()
-    # Bonsai is a local LM Studio/MLX option, not an Ollama tag. Keep it in the
-    # owner-facing selector even when LM Studio is closed; selection then fails
-    # honestly with a server/model availability message instead of disappearing.
-    lmstudio = [CANONICAL_LMSTUDIO_BONSAI]
     mlx = list_installed_mlx_cortexes()
     diffusion = list_installed_diffusion_cortexes()
     # Direct MLX VLM (osmQwopus etc) for vision command cortex — merge so picker dropdown offers mlx-vlm: names
@@ -1312,8 +1304,8 @@ def list_available_cortexes_with_canonical_fallback() -> list[str]:
         pass
     live_local = list_live_local_ollama_fallbacks(limit=8)
     if local or mlx or diffusion or vlm_direct or live_local:
-        return _dedupe(live_local + local + lmstudio + mlx + diffusion + vlm_direct + cloud)
-    return _dedupe(lmstudio + mlx + vlm_direct + cloud)
+        return _dedupe(live_local + local + mlx + diffusion + vlm_direct + cloud)
+    return _dedupe(mlx + vlm_direct + cloud)
 
 
 __all__ = [
@@ -1327,7 +1319,6 @@ __all__ = [
     "CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH",
     "CANONICAL_CLOUD_QWEN_PREMIUM_KIMI",
     "CANONICAL_MLX_GEMMA4_12B_ORIGINAL",
-    "CANONICAL_LMSTUDIO_BONSAI",
     "DEPRECATED_OWNER_FACING_FIREWORKS_CORTEXES",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",

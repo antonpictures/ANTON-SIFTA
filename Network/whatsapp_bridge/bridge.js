@@ -27,6 +27,12 @@ const ALLOWED_GROUP_JID = (process.env.SIFTA_WA_GROUP_JID || "").trim();
 const SYNC_FULL_HISTORY = process.env.SIFTA_WA_SYNC_FULL_HISTORY === "1";
 const BRIDGE_STARTED_AT_SEC = Math.floor(Date.now() / 1000);
 const APPEND_REPLAY_GRACE_SEC = Number(process.env.SIFTA_WA_APPEND_REPLAY_GRACE_SEC || "30");
+// Optional: pair with an 8-char phone-number code instead of a QR.
+// Set SIFTA_WA_PAIR_NUMBER to the account number in international digits (e.g. 13232026780).
+// The code is valid for minutes, unlike a QR which rotates every ~20s.
+const PAIR_NUMBER = (process.env.SIFTA_WA_PAIR_NUMBER || "").replace(/[^0-9]/g, "");
+let pairingCodeRequested = false;
+
 let lastKnownHuman = null;
 let injectServerStarted = false;
 let waConnectionState = "booting";
@@ -80,6 +86,9 @@ function postContactsToSifta(contacts) {
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState("./whatsapp_session");
   const { version } = await fetchLatestBaileysVersion();
+  // Each fresh socket may request its own pairing code; a code from a dead
+  // socket is worthless, so re-arm on every connect attempt.
+  pairingCodeRequested = false;
 
   const sock = makeWASocket({
     version,
@@ -93,10 +102,25 @@ async function connectToWhatsApp() {
 
     if (qr) {
       console.log("\n╔══════════════════════════════════════════╗");
-      console.log("║  SIFTA SWARM — WhatsApp Pairing QR Code  ║");
-      console.log("║  Open WhatsApp → Linked Devices → Scan  ║");
+      console.log("║  SIFTA SWARM — WhatsApp Pairing          ║");
+      console.log("║  Phone → Settings → Linked Devices       ║");
+      console.log("║  → Link a Device → scan this QR          ║");
       console.log("╚══════════════════════════════════════════╝\n");
       qrcode.generate(qr, { small: true });
+      if (PAIR_NUMBER && !pairingCodeRequested) {
+        pairingCodeRequested = true;
+        try {
+          const code = await sock.requestPairingCode(PAIR_NUMBER);
+          console.log("\n────────────────────────────────────────────");
+          console.log("  OR type this 8-char code instead of scanning:");
+          console.log(`        >>>  ${code}  <<<`);
+          console.log("  (Linked Devices → 'Link with phone number instead')");
+          console.log("────────────────────────────────────────────\n");
+        } catch (err) {
+          pairingCodeRequested = false;
+          console.log(`[BRIDGE] Pairing-code request failed (${err && err.message}); use the QR above.`);
+        }
+      }
     }
 
     if (connection === "open") {
@@ -252,7 +276,7 @@ async function connectToWhatsApp() {
 
   // ── AUTONOMOUS INJECTION SERVER ───────────────────────────
   if (!injectServerStarted) {
-  const injectServer = http.createServer((req, res) => {
+  const injectServer = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
         const body = JSON.stringify({
           ok: waConnectionState === "open",
@@ -303,6 +327,24 @@ async function connectToWhatsApp() {
                 res.end('Error');
             }
         });
+    } else if (req.method === 'GET' && req.url === '/groups') {
+        // READ-ONLY: enumerate the groups this account participates in.
+        // Resolves an owner-named group (e.g. "the one with 199 in the title")
+        // to its real JID for consent receipts. Never sends anything.
+        try {
+          const groups = await sock.groupFetchAllParticipating();
+          const rows = Object.values(groups || {}).map((g) => ({
+            jid: g.id,
+            subject: g.subject,
+            participants: (g.participants || []).length,
+            announce_only: !!g.announce,
+          }));
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, count: rows.length, groups: rows }));
+        } catch (e) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }));
+        }
     } else {
         res.writeHead(404);
         res.end();

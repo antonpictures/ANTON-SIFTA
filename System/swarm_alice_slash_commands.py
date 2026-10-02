@@ -365,6 +365,11 @@ def registered_slash_commands() -> List[Dict[str, str]]:
             "detail": "/create <subject> or /create a photo of <subject>; the rendered image and receipt return to chat",
         },
         {
+            "cmd": "/s",
+            "summary": "short owner handoff: /s <prompt> queues coding work and leaves a continuity trace",
+            "detail": "identical store to /stigmergicode (the authoritative owner coding queue); /s adds the shared-memory trace so every Alice surface can see what was asked",
+        },
+        {
             "cmd": "/stigmergicode",
             "summary": "open/focus Alice Browser's local coding tab",
             "detail": "/stigmergicode opens the deepseek harness; add a bounded task after the command to leave it in the coding queue",
@@ -2032,6 +2037,42 @@ def handle_slash_command(
             return out
         out["handled"] = False
         return out
+
+    # `/s <prompt>` is the short owner handoff to the local coding surface. The
+    # authoritative work queue stays `swarm_stigmergicode_command` (the same
+    # store `/stigmergicode` writes), so this verb shortens the typing and adds
+    # only what was missing: a continuity trace in the one shared memory, which
+    # is how a session on the other side learns what was asked and by whom.
+    if cmd == "/s":
+        if not arg:
+            out["reply"] = "Usage: /s <prompt for the coding surface>."
+            return out
+        try:
+            from System.swarm_stigmergicode_command import enqueue_task
+
+            row = enqueue_task(arg, source="talk_owner", state_dir=Path(state_dir))
+            task_id = str(row.get("task_id") or "")
+            out["reply"] = f"/s queued for the coding surface (task {task_id[:12]})."
+            try:
+                from System import alice_continuity
+
+                record = alice_continuity.write(
+                    "command",
+                    arg,
+                    surface="sifta-talk",
+                    ref=task_id,
+                    tags=["/s"],
+                    ledger=Path(state_dir) / "alice_continuity.jsonl",
+                )
+                out["reply"] += f" Continuity trace {record['id']}."
+            except Exception:
+                # The queue is authoritative; a missing trace must not lose the task.
+                out["reply"] += " Continuity trace unavailable; the queue entry stands."
+            return out
+        except Exception as exc:
+            out["error"] = f"slash_s_failed: {type(exc).__name__}"
+            out["reply"] = f"I could not queue that for the coding surface ({type(exc).__name__})."
+            return out
 
     if stigmergicode_task is not None:
         try:

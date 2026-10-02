@@ -3,7 +3,7 @@
 set -u
 
 SIFTA_ROOT="/Users/ioanganton/Music/ANTON_SIFTA"
-HARNESS_ROOT="$SIFTA_ROOT/deepseek-harness-master"
+HARNESS_ROOT="$SIFTA_ROOT/!Alice Coding Arm"
 NODE_BIN="/opt/homebrew/bin/node"
 TSX_LOADER="$HARNESS_ROOT/node_modules/tsx/dist/esm/index.mjs"
 DSH_BIN="$HARNESS_ROOT/apps/cli/src/bin.ts"

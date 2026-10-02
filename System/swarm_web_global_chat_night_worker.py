@@ -474,6 +474,7 @@ def process_claimed_turn(
         )
         return row
     except Exception as exc:
+        # W5 finally-path guard: ensure the worker always ships a valid reply row.
         fallback = (
             "My selected cortex could not complete this turn. "
             "The failure was recorded, and you can try again shortly."
@@ -507,6 +508,7 @@ def run_forever(*, once: bool = False) -> int:
         METABOLISM_LEDGER,
         REPLIES_LEDGER,
         SCRUB_LEDGER,
+        repair_stale_claims,
     )
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -521,7 +523,10 @@ def run_forever(*, once: bool = False) -> int:
     grace_s = max(0.0, float(os.environ.get("SIFTA_WEB_NIGHT_GRACE_S", "8")))
     model = choose_local_model()
     _append_health("boot", pid=os.getpid(), model=model, grace_s=grace_s)
+    # W5: hook repair at boot to clear any stale claims from previous crashes
+    repair_stale_claims(max_age_s=900)
     last_heartbeat = 0.0
+    last_repair = 0.0
     claim_path = STATE_DIR / "web_global_chat_claims.jsonl"
     while not _STOP:
         # Follow owner cortex changes without restarting the public web service.
@@ -538,9 +543,14 @@ def run_forever(*, once: bool = False) -> int:
         )
         if once:
             break
-        if time.time() - last_heartbeat >= 60.0:
+        now = time.time()
+        if now - last_heartbeat >= 60.0:
             _append_health("heartbeat", pid=os.getpid(), model=model)
-            last_heartbeat = time.time()
+            last_heartbeat = now
+        # W5: hook repair periodically (every minute) to catch stalled claims
+        if now - last_repair >= 60.0:
+            repair_stale_claims(max_age_s=900)
+            last_repair = now
         time.sleep(poll_s)
     _append_health("stop", pid=os.getpid())
     return 0

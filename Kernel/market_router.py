@@ -89,23 +89,17 @@ def route_inference_job(job_metadata: dict, available_nodes: list[str]) -> str:
     
     # Payload for benchmark
     ollama_payload = json.dumps({"model": "llama4-maverick:17b", "prompt": "hi", "stream": False}).encode("utf-8")
-    lmstudio_payload = json.dumps({"model": "local-model", "messages": [{"role": "user", "content": "hi"}], "stream": False}).encode("utf-8")
 
     ollama_latency = benchmark_engine("Ollama", "http://localhost:11434/api/generate", ollama_payload)
-    lmstudio_latency = benchmark_engine("LM Studio", "http://localhost:1234/v1/chat/completions", lmstudio_payload)
 
-    if ollama_latency == float('inf') and lmstudio_latency == float('inf'):
-        print("   [ARBITRAGE] Both API engines offline. Falling back to default node selection.")
+    if ollama_latency == float('inf'):
+        print("   [ARBITRAGE] Ollama engine offline. Falling back to default node selection.")
         elected = random.choice(satisfied_nodes)
         return elected['id']
 
-    if ollama_latency <= lmstudio_latency:
-        print(f"   [WINNER] Ollama secured the contract! ({ollama_latency:.4f}s)")
-        # In reality, this would return the fastest API endpoint + Node ID
-        return satisfied_nodes[0]['id']
-    else:
-        print(f"   [WINNER] LM Studio secured the contract! ({lmstudio_latency:.4f}s)")
-        return satisfied_nodes[0]['id']
+    print(f"   [WINNER] Ollama secured the contract! ({ollama_latency:.4f}s)")
+    # In reality, this would return the fastest API endpoint + Node ID
+    return satisfied_nodes[0]['id']
 
 if __name__ == "__main__":
     print("==================================================")

@@ -394,81 +394,6 @@ def _installed_ollama_names() -> set[str]:
         return set()
 
 
-def _find_lms_cli() -> str | None:
-    """Locate lms binary (LM Studio CLI): prefer PATH (shutil.which), then known macOS ~/.lmstudio location.
-    This enables status detection for install_target="lmstudio" entries without requiring ollama registration.
-    """
-    p = shutil.which("lms")
-    if p and os.access(p, os.X_OK):
-        return p
-    home = os.path.expanduser("~")
-    for cand in (
-        os.path.join(home, ".lmstudio", "bin", "lms"),
-        os.path.join(home, "Library", "Application Support", "LM Studio", "bin", "lms"),
-    ):
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return cand
-    return None
-
-
-def _installed_lmstudio_names() -> set[str]:
-    """Return lowercased model keys/names from LM Studio (general support kept for other models).
-
-    Preferred: `lms ls --json`.
-    Fallback: recursive GGUF scan under common LM Studio model roots.
-    (Note: gemma-4-12b now uses pure HF GGUF path per owner request; this scanner remains for other use.)
-    """
-    names: set[str] = set()
-    lms = _find_lms_cli()
-    if lms:
-        try:
-            res = subprocess.run(
-                [lms, "ls", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=6,
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                data = json.loads(res.stdout or "[]")
-                items = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    for k in ("modelKey", "displayName", "path", "name", "id", "indexedModelIdentifier"):
-                        v = str(item.get(k) or "").strip().lower()
-                        if v:
-                            names.add(v)
-                            # basename and fragments for fuzzy match e.g. "gemma-4-12b", "google/gemma-4-12b"
-                            base = v.rsplit("/", 1)[-1].rsplit(":", 1)[0].rsplit(".", 1)[0]
-                            if base:
-                                names.add(base)
-                            for sep in ("-", "_", "/"):
-                                for part in base.split(sep):
-                                    if part and len(part) > 2:
-                                        names.add(part)
-        except Exception:
-            pass
-    # GGUF scan fallback (robust for any pull method)
-    home = os.path.expanduser("~")
-    roots = [
-        os.path.join(home, "Library", "Application Support", "LM Studio", "models"),
-        os.path.join(home, ".lmstudio", "models"),
-        os.path.join(home, "LM Studio", "models"),
-    ]
-    for root in roots:
-        if not os.path.isdir(root):
-            continue
-        for dirpath, _, fns in os.walk(root):
-            for fn in fns:
-                if fn.lower().endswith((".gguf", ".bin", ".safetensors")):
-                    b = fn.lower().rsplit(".", 1)[0]
-                    names.add(b)
-                    for p in dirpath.lower().split(os.sep):
-                        if p and len(p) > 1:
-                            names.add(p)
-    return names
-
-
 def _installed_litert_lm_names() -> set[str]:
     """Detect litert-lm on-device models (r501 adoption + r503).
     litert-lm is Google's CLI runtime for running models like Gemma 4 locally (pip/uv install litert-lm).
@@ -501,14 +426,13 @@ def _installed_litert_lm_names() -> set[str]:
 
 
 def _installed_cortex_names() -> set[str]:
-    """Union of Ollama (via switcher) + LM Studio (general) + MLX VLM + litert-lm (r501/r503/r505).
-    r505: gemma-4-12b switched to pure HF GGUF (Q6_K per owner) + MLX; LM Studio scanner kept only for other models.
+    """Union of Ollama (via switcher) + MLX VLM + litert-lm (r501/r503/r505).
+    r505: gemma-4-12b switched to pure HF GGUF (Q6_K per owner) + MLX.
     """
     oll = _installed_ollama_names()
-    lms = _installed_lmstudio_names()
     mlx = _installed_mlx_vlm_names()
     lit = _installed_litert_lm_names()
-    return oll | lms | mlx | lit
+    return oll | mlx | lit
 
 
 def _installed_mlx_vlm_names() -> set[str]:
@@ -802,7 +726,7 @@ def cortex_and_arm_eval() -> dict[str, Any]:
         "Current alice-m5-cortex-8b is not text-only: live `ollama show` reports completion, "
         "vision, audio, tools, and thinking. Gemma 4 12B is a candidate for stronger/consolidated "
         "native multimodal work and longer context, not the first brain that lets Alice see. "
-        "Catalog now unifies detection across Ollama + MLX + litert + general LM Studio (for other models). "
+        "Catalog now unifies detection across Ollama + MLX + litert. "
         "r505: gemma-4-12b is pure HF GGUF Q6_K per owner (no LM Studio). "
         "We will manage many models stigmergically: pick per task from receipts, installed status, modality, "
         "latency/STGM cost, owner signal, and actual success. Evaluate Gemma against the 8B on real "

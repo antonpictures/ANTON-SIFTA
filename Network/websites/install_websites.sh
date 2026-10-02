@@ -103,6 +103,13 @@ server {
     root /opt/homebrew/var/www/stigmergicoin.com;
     index index.html;
 
+    location /api/ {
+        proxy_pass http://127.0.0.1:3012;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
     location / {
         try_files $uri $uri/ =404;
     }

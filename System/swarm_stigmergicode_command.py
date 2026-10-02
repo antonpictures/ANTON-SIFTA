@@ -293,6 +293,55 @@ def release_task(task_id: str, *, state_dir: Path | str = DEFAULT_STATE_DIR, rea
     return complete_task(task_id, status="PENDING", state_dir=state_dir, reason=reason)
 
 
+# Failures that say something about a CONSUMER's readiness, never about the work
+# itself. A task failed for one of these must not stay hidden from the surface it
+# was addressed to. ``port_3080_non_dsh_service`` came from a readiness predicate
+# that required a page title the Harness no longer serves (fixed 2026-09-29 in
+# Applications/sifta_alice_browser_widget.py); every owner request queued while
+# that predicate was stale was failed within milliseconds of being claimed.
+SPURIOUS_FAILURE_REASONS: tuple[str, ...] = (
+    "port_3080_non_dsh_service",
+    "harness_readiness_timeout",
+)
+
+
+def reopen_spurious_failures(
+    *,
+    state_dir: Path | str = DEFAULT_STATE_DIR,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Requeue tasks whose FAILED reason is about a consumer, not about the work.
+
+    The transition is appended, never rewritten, so the original failure stays in
+    the ledger and the reopen is auditable rather than silent.
+    """
+    root = Path(state_dir)
+    _, tasks_path, lock_path = _paths(root)
+    reopened: list[dict[str, Any]] = []
+    with _locked(lock_path):
+        states = _task_states(tasks_path)
+        for task_id in sorted(states, key=lambda key: float(states[key].get("created_at") or 0.0)):
+            if len(reopened) >= max(1, limit):
+                break
+            row = states[task_id]
+            if str(row.get("status")) != "FAILED":
+                continue
+            reason = str(row.get("reason") or "")
+            if reason not in SPURIOUS_FAILURE_REASONS:
+                continue
+            updated = dict(row)
+            updated.update({
+                "status": "PENDING",
+                "updated_at": time.time(),
+                "reason": f"reopened: {reason}",
+            })
+            _append(tasks_path, updated)
+            reopened.append(updated)
+    for row in reopened:
+        _append_receipt(row, state_dir=root)
+    return reopened
+
+
 def write_task_handoff(row: dict[str, Any], *, state_dir: Path | str = DEFAULT_STATE_DIR) -> Path:
     """Write the current owner task for the local coding surface, never public chat."""
     root = Path(state_dir)

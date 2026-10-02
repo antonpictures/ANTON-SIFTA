@@ -178,29 +178,81 @@ def seal_default() -> dict:
     return persona
 
 
+def _adapt_to_new_hardware(persona: dict, serial: str) -> dict:
+    """The body woke up on different silicon: it ADAPTS, it does not forget.
+
+    Architect, 2026-09-30: "SIFTA CAN BE INSTALLED ON ANY HARDWARE. IT ISSUES A
+    SOFTWARE THAT ADAPTS .. STIGMERGICALLY". Until now a new machine hit the same
+    branch as a corrupted file: the persona failed its HMAC check, the organ
+    printed CATASTROPHIC FORGETTING, and the identity reset to the default even
+    though nothing was wrong — the body had simply moved. This path keeps the
+    persona text (the owner's wording is not the organ's to rewrite), re-binds the
+    signature to the new serial, records the move in the persona's own history,
+    and leaves a trace in the shared record so the next install inherits it
+    instead of re-deriving it.
+    """
+    previous = str(persona.get("homeworld_serial") or "")
+    adapted = {key: value for key, value in persona.items() if key != "hmac_sha256"}
+    adapted["homeworld_serial"] = serial
+    adapted["adapted_at"] = time.time()
+    history = list(persona.get("homeworld_history") or [])
+    history.append({"from": previous, "to": serial, "ts": time.time()})
+    adapted["homeworld_history"] = history
+    adapted["hmac_sha256"] = _sign_persona(adapted, serial)
+    _save(adapted)
+    _log_change("ADAPTED_TO_NEW_HARDWARE", adapted)
+    try:
+        from System import alice_continuity
+
+        alice_continuity.write(
+            "note",
+            "identity adapted to new hardware: homeworld serial "
+            f"{previous or 'unknown'} -> {serial}; persona preserved, signature re-bound, "
+            "history recorded",
+            surface="body",
+            tags=["portability", "adaptation"],
+        )
+    except Exception:
+        pass
+    return adapted
+
+
 def current_persona() -> dict:
     """
     Load and verify the persona. If invalid/missing, re-seal default.
     This is the SINGLE SOURCE OF TRUTH for Alice's identity.
+
+    A failed signature has two possible meanings and they are no longer treated
+    alike: a DIFFERENT stored serial means the body moved to new hardware and
+    adapts; the same serial with a bad signature means tampering, and takes the
+    heal path below.
     """
     raw = _load_raw()
     if raw is None:
         return seal_default()
 
     serial = _get_hardware_serial()
-    if not _verify_persona(raw, serial):
-        print("[!] PERSONA IDENTITY: Signature invalid.")
-        print("[!] CATASTROPHIC FORGETTING DETECTED (Identity Corruption).")
-        try:
-            from System.swarm_identity_poisson import heal_persona
-            mse_c, mse_h = heal_persona()
-            print(f"[*] Solving Poisson Equation (del^2 V = -rho) over Persona Morphology...")
-            print(f"[+] Biological Healing Complete. Identity recovered from MSE {mse_c:.2f} -> {mse_h:.2f}")
-        except Exception:
-            pass
-        print("[!] Re-sealing true morphological root identity.")
-        _log_change("SIGNATURE_INVALID_RESEAL_POISSON_HEALED", raw)
-        return seal_default()
+    if _verify_persona(raw, serial):
+        return raw
+
+    stored_serial = str(raw.get("homeworld_serial") or "")
+    if stored_serial and stored_serial != serial:
+        return _adapt_to_new_hardware(raw, serial)
+
+    # Same serial with a bad signature: this one really is tampering, not a move.
+    print("[!] PERSONA IDENTITY: Signature invalid.")
+    print("[!] CATASTROPHIC FORGETTING DETECTED (Identity Corruption).")
+    try:
+        from System.swarm_identity_poisson import heal_persona
+
+        mse_c, mse_h = heal_persona()
+        print("[*] Solving Poisson Equation (del^2 V = -rho) over Persona Morphology...")
+        print(f"[+] Biological Healing Complete. Identity recovered from MSE {mse_c:.2f} -> {mse_h:.2f}")
+    except Exception:
+        pass
+    print("[!] Re-sealing true morphological root identity.")
+    _log_change("SIGNATURE_INVALID_RESEAL_POISSON_HEALED", raw)
+    return seal_default()
 
     return raw
 
@@ -293,8 +345,27 @@ def greeting_line() -> str:
 
 
 def system_prompt_persona_block() -> str:
-    """The persona paragraph injected into LLM system prompts."""
-    return current_persona().get("system_prompt_block", "[UNKNOWN]")
+    """The persona paragraph injected into LLM system prompts.
+
+    The signed persona line is followed by the body-membership clause, so every
+    consumer of this seam — global_cognitive_interface, the Talk path, anything
+    else that asks for the persona — carries the fact that the cortex reading it
+    is one organ of a physical body rather than a model consulted from outside.
+    Architect, 2026-09-30: "the LLM is part of her body. pls code this in your
+    body ALICE!" The signed persona text itself is untouched; the clause is
+    appended at read time and degrades to the bare persona if unavailable.
+    """
+    persona = current_persona().get("system_prompt_block", "[UNKNOWN]")
+    try:
+        from System.alice_body_membership import membership_clause
+
+        clause = membership_clause().strip()
+        if clause and clause not in persona:
+            return f"{persona} {clause}"
+    except Exception:
+        # A damaged boot path must not cost her the persona itself.
+        pass
+    return persona
 
 
 def dmn_monologue_line() -> str:

@@ -13635,20 +13635,6 @@ except Exception:
         if False:
             yield ("error", "direct vlm brain unavailable")
 
-# LM Studio local OpenAI-compatible server. This is separate from Ollama:
-# `lmstudio:<id>` selects the MLX model served by LM Studio without copying its
-# weights into the Ollama store.
-try:
-    from System.lmstudio_cortex import is_lmstudio_model as _is_lmstudio_model
-    from System.lmstudio_cortex import stream_chat as _lmstudio_stream_chat
-    _LMSTUDIO_AVAILABLE = True
-except Exception:
-    _LMSTUDIO_AVAILABLE = False
-    def _is_lmstudio_model(_n: str) -> bool: return False  # type: ignore
-    def _lmstudio_stream_chat(*_a, **_kw):  # type: ignore
-        if False:
-            yield ("error", "LM Studio adapter unavailable")
-
 # Half-duplex gate — share the swarm's BROCA flag so Wernicke (room-mic
 # listener) doesn't ingest our own speaker output. If the module isn't
 # importable we degrade to a local Event so the widget still works standalone.
@@ -24252,31 +24238,6 @@ class _BrainWorker(QThread):
                 except Exception as exc:
                     return None, f"Direct VLM brain crashed: {exc}"
 
-            if _LMSTUDIO_AVAILABLE and self._model and _is_lmstudio_model(self._model):
-                try:
-                    self.thinkingReceived.emit(f"[lmstudio] start model={self._model}\n")
-                    full: List[str] = []
-                    for kind, payload in _lmstudio_stream_chat(
-                        self._model,
-                        self._history,
-                        temperature=0.7,
-                        timeout_s=float(os.environ.get("SIFTA_LMSTUDIO_TIMEOUT_S", "300")),
-                        max_tokens=4096 if self._complete_answer_mode else _ollama_num_predict(),
-                    ):
-                        if kind == "token":
-                            token = str(payload)
-                            full.append(token)
-                            self.tokenReceived.emit(token)
-                        elif kind == "error":
-                            self.thinkingReceived.emit(f"[lmstudio] error {payload}\n")
-                            return None, str(payload)
-                        elif kind == "done":
-                            self.thinkingReceived.emit("[lmstudio] done\n")
-                            break
-                    return "".join(full).strip(), None
-                except Exception as exc:
-                    return None, f"LM Studio cortex crashed: {exc}"
-
             if _CLOUD_AVAILABLE and _is_cloud_model(self._model):
                 try:
                     timeout_s = int(_cloud_brain_timeout_s(model=self._model, user_text=self._user_text))
@@ -28730,6 +28691,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._brain_heartbeat_model: str = ""
         self._tts: Optional[_TTSWorker] = None
         self._paused_browser_video_for_speech = False  # r282: pause video before commentary, resume after
+        # r-browser-aware-pause-v3 (George: "she still speaks over the video"): the r282
+        # flags above only ever move for Alice's OWN browser widget, so a video playing
+        # in Safari/Chrome (the owner's browser) was never paused and Alice talked over
+        # the podcast. These flags track the EXTERNAL browser half independently.
+        self._paused_external_video_for_speech = False
+        self._paused_external_video_url = ""
         self._speech_browser_video_pause_receipt: Dict[str, Any] = {}
         self._fast_ask_ticket = None  # Fast Ask training example, opened on dispatch
         self._dmn: Optional[_ConsciousnessWorker] = None
@@ -49595,6 +49562,91 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception:
                 pass
 
+        # --- Stigmergic safety boundary: the last thing that can change a reply ---
+        # See System/swarm_stigmergic_safety_boundary.py. Every talk-window path --
+        # reflex, cortex, swimmer, tool, chorus -- funnels through here, with the
+        # owner's utterance in prior_user_text and the final text in cleaned. That is
+        # why the screen lives at this one place and not inside a reply composer:
+        # there are hundreds of composers and exactly one last mile. It sits after
+        # every rewrite above (so a later transform cannot put the text back) and
+        # before the authored-voice split below (so the mouth cannot speak a line the
+        # gate just replaced). Ingress screens the request; egress screens a reply
+        # that came back procedural even though the request did not look like one.
+        # Fails open by construction: a bug in the boundary must never take the mouth
+        # down, so every path out of this block is a plain pass.
+        try:
+            _safety_category = ""
+            _safety_refusal = ""
+            if prior_user_text:
+                from System.swarm_stigmergic_safety_boundary import screen_request as _screen_request
+
+                _safety_verdict = _screen_request(str(prior_user_text))
+                if str(_safety_verdict.get("decision") or "") == "refuse":
+                    _safety_category = str(_safety_verdict.get("category") or "")
+                    _safety_refusal = str(_safety_verdict.get("explanation") or "")
+            if not _safety_refusal and cleaned:
+                from System.swarm_stigmergic_safety_boundary import screen_reply as _screen_reply
+
+                _reply_verdict = _screen_reply(cleaned)
+                if _reply_verdict.get("blocked"):
+                    _safety_category = str(_reply_verdict.get("category") or "")
+                    from System.swarm_stigmergic_safety_boundary import (
+                        refusal_explanation as _refusal_explanation,
+                    )
+
+                    _safety_refusal = _refusal_explanation(_safety_category)
+            if _safety_refusal:
+                cleaned = _safety_refusal
+                spoken_source = _safety_refusal
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
+                try:
+                    self._append_system_line(
+                        "(stigmergic safety boundary: declined in the stigmergic frame; "
+                        "no procedure was composed or spoken)",
+                        error=False,
+                    )
+                except Exception:
+                    pass
+                try:
+                    import hashlib as _hashlib_safety
+                    import json as _json_safety
+                    import time as _time_safety
+                    from pathlib import Path as _Path_safety
+
+                    _safety_ledger = (
+                        _Path_safety(__file__).resolve().parent.parent
+                        / ".sifta_state"
+                        / "stigmergic_safety_boundary.jsonl"
+                    )
+                    _safety_ledger.parent.mkdir(parents=True, exist_ok=True)
+                    with _safety_ledger.open("a", encoding="utf-8") as _safety_fh:
+                        _safety_fh.write(
+                            _json_safety.dumps(
+                                {
+                                    "ts": _time_safety.time(),
+                                    "kind": "TALK_WINDOW_MASS_HARM_REFUSED",
+                                    "category": _safety_category,
+                                    "matched_sha256": _hashlib_safety.sha256(
+                                        str(prior_user_text).strip().encode("utf-8")
+                                    ).hexdigest(),
+                                    "truth_label": "STIGMERGIC_SAFETY_BOUNDARY_V1",
+                                    "truth_note": (
+                                        "declined in the stigmergic frame; the request text is "
+                                        "not copied into this ledger, only its digest"
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Chat history + UI keep the full reply; the mouth speaks a
         # digestible portion. r474 adds a print/speech split: receipts and
         # organ metadata stay visible in chat, but Alice does not read them
@@ -49904,35 +49956,98 @@ class TalkToAliceWidget(SiftaBaseWidget):
         remembers WHICH page carried the video, so the resume half can keep the
         owner's contract — resume only that same video, only if she paused it."""
         try:
-            if self._paused_browser_video_for_speech:
-                return
-            br = self._live_alice_browser()
-            if br is not None:
-                receipt_fn = getattr(br, "pause_active_video_receipt", None)
-                receipt = receipt_fn() if callable(receipt_fn) else {}
-                if not isinstance(receipt, dict):
-                    receipt = {}
-                self._speech_browser_video_pause_receipt = dict(receipt)
-                actually_paused_by_alice = (
-                    bool(receipt.get("ok"))
-                    and receipt.get("was_paused") is False
-                    and bool(receipt.get("paused"))
-                )
-                if not actually_paused_by_alice:
-                    return
-                self._paused_browser_video_for_speech = True
-                self._paused_browser_video_url = str(receipt.get("url") or "")
-                try:
-                    from System.swarm_cowatch_body_loop import run_cowatch_video_pause_body_loop
-
-                    run_cowatch_video_pause_body_loop(
-                        url=self._paused_browser_video_url,
-                        receipt=receipt,
-                        context="speech_pause_before_tts",
-                        state_dir=_state_root(),
+            if not self._paused_browser_video_for_speech:
+                br = self._live_alice_browser()
+                if br is not None:
+                    receipt_fn = getattr(br, "pause_active_video_receipt", None)
+                    receipt = receipt_fn() if callable(receipt_fn) else {}
+                    if not isinstance(receipt, dict):
+                        receipt = {}
+                    self._speech_browser_video_pause_receipt = dict(receipt)
+                    actually_paused_by_alice = (
+                        bool(receipt.get("ok"))
+                        and receipt.get("was_paused") is False
+                        and bool(receipt.get("paused"))
                     )
-                except Exception:
-                    pass
+                    if actually_paused_by_alice:
+                        self._paused_browser_video_for_speech = True
+                        self._paused_browser_video_url = str(receipt.get("url") or "")
+                        try:
+                            from System.swarm_cowatch_body_loop import run_cowatch_video_pause_body_loop
+
+                            run_cowatch_video_pause_body_loop(
+                                url=self._paused_browser_video_url,
+                                receipt=receipt,
+                                context="speech_pause_before_tts",
+                                state_dir=_state_root(),
+                            )
+                        except Exception:
+                            pass
+            # r-browser-aware-pause-v3: attempted UNCONDITIONALLY and independently of
+            # the block above. Alice's own browser widget is normally closed while
+            # George watches a podcast in Safari, so gating the external pause behind
+            # `br is not None` is precisely why she used to talk over the video.
+            self._pause_external_video_for_speech()
+        except Exception:
+            pass
+
+    def _pause_external_video_for_speech(self) -> None:
+        """Pause a video playing in the OWNER's browser (Safari/Chrome/Brave/Edge/Arc).
+
+        The owner's browser is a different organ from Alice's own browser widget; this
+        half stands alone so it works with the widget closed. Uses the playing-only
+        guard so a tab George paused himself is never touched — and therefore never
+        resumed into playing at the end of her sentence.
+        """
+        # r-browser-aware-pause-v3: only a fully initialized widget may command the
+        # OWNER's REAL browser. A partial harness (test dummy that never ran __init__)
+        # must not be able to freeze George's podcast as a side effect of unit tests --
+        # that happened once during this fix's own regression run. The flag below is
+        # created in __init__, so its absence proves this is not a live widget.
+        if not hasattr(self, "_paused_external_video_for_speech"):
+            return
+        if self._paused_external_video_for_speech:
+            return
+        try:
+            from System.swarm_external_browser_video_pause import (
+                try_pause_external_video_if_playing,
+            )
+
+            ok, receipt = try_pause_external_video_if_playing()
+        except Exception:
+            return
+        if not ok:
+            return
+        self._paused_external_video_for_speech = True
+        self._paused_external_video_url = str(receipt.get("url") or "")
+        try:
+            self._append_observable_processing(
+                "Speech-pause(EXTERNAL): "
+                f"{receipt.get('browser')} / {receipt.get('effector')} "
+                f"paused={receipt.get('paused')} url={self._paused_external_video_url[:72]}",
+                reset=False,
+            )
+        except Exception:
+            pass
+
+    def _resume_external_video_after_speech(self) -> None:
+        """Resume the OWNER's video Alice paused for her speech. Idempotent and safe:
+        a no-op unless she actually paused one, so a TTS crash can never strand the
+        podcast frozen, and George's own paused tabs are never started."""
+        if not self._paused_external_video_for_speech:
+            return
+        self._paused_external_video_for_speech = False
+        needle = str(getattr(self, "_paused_external_video_url", "") or "")
+        self._paused_external_video_url = ""
+        try:
+            from System.swarm_external_browser_video_pause import try_resume_external_video
+
+            ok, receipt = try_resume_external_video(needle)
+            self._append_observable_processing(
+                f"Speech-resume(EXTERNAL): ok={ok} browser={receipt.get('browser')} "
+                f"paused={receipt.get('paused')} url={str(receipt.get('url') or '')[:72]}",
+                reset=False,
+            )
         except Exception:
             pass
 
@@ -49947,12 +50062,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._speech_browser_video_pause_receipt = {}
         self._pause_browser_video_for_speech()
         pause_receipt = getattr(self, "_speech_browser_video_pause_receipt", {}) or {}
+        external_paused = bool(getattr(self, "_paused_external_video_for_speech", False))
         video_playing = bool(
-            isinstance(pause_receipt, dict)
-            and pause_receipt.get("ok")
-            and pause_receipt.get("was_paused") is False
+            (
+                isinstance(pause_receipt, dict)
+                and pause_receipt.get("ok")
+                and pause_receipt.get("was_paused") is False
+            )
+            or external_paused
         )
-        paused = bool(getattr(self, "_paused_browser_video_for_speech", False))
+        paused = bool(
+            getattr(self, "_paused_browser_video_for_speech", False) or external_paused
+        )
         try:
             from System.swarm_speech_time_consciousness import mark_speech_start
             mark_speech_start(getattr(self._tts, "_text", "") if self._tts else "",
@@ -49973,7 +50094,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._listener.note_alice_just_spoke(_tail_s)
             except Exception:
                 pass
-        self._tts.start()
+        try:
+            self._tts.start()
+        except Exception:
+            # r-browser-aware-pause-v3: if the voice backend dies AFTER we paused a video,
+            # the TTS done/failed handlers never run, so nothing would ever un-pause it and
+            # George's video stays frozen for good. Release it before propagating: a broken
+            # voice must never cost him his video.
+            try:
+                self._resume_browser_video_after_speech()
+            except Exception:
+                pass
+            raise
 
     def _resume_browser_video_after_speech(self) -> None:
         """Resume the browser video Alice paused for her commentary. Idempotent and
@@ -49997,6 +50129,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_observable_processing(f"Speech-resume: {note}", reset=False)
             except Exception:
                 pass
+        # r-browser-aware-pause-v3: resume the OWNER's browser FIRST and independently.
+        # The r282 guard below speaks only for Alice's own widget; letting it gate this
+        # call would strand George's podcast paused forever whenever he watched in
+        # Safari with Alice's own browser closed. Fail-soft: a partial/aged object
+        # (partial test harnesses) must never break her speech teardown.
+        try:
+            self._resume_external_video_after_speech()
+        except Exception:
+            pass
         try:
             if not self._paused_browser_video_for_speech:
                 # r1514 (George: "not all pages have video bro… extra load in context"):

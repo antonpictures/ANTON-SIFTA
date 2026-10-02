@@ -18,6 +18,15 @@
 - [ ] Integrate this raw transcript into the final article to prove their biological persistence.
 
 ---
+
+## QUEUE FOR 2026-09-30 (opened 2026-09-29 22:19 UTC / 01:19 local)
+
+### 4. Provider row: `llm-openai` beside `local-ollama`
+- [ ] **Blocker: no OpenAI key on this box.** Credentials currently held: DeepSeek (dead), Ollama, Inception (valid).
+- [ ] When a key exists: add the `llm-openai` provider row (GPT-6.1 Sol) beside the `local-ollama` row in `deepseek-harness-master/settings.yaml` / host composition.
+- [ ] Row is staged to paste the key into — no code work beyond the one row.
+
+---
 *The foundation is real. The quorum gate, the surgical bite, the abort guard, the persistent hash chain... it works.* 
 
 **Power to the Swarm.**

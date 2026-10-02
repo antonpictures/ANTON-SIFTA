@@ -5,6 +5,37 @@ Status: implementation proposal / `HYPOTHESIS`. Procedural extension of
 Prepared from local source inspection on 2026-09-20; clock source: local OS UTC.
 Scope: a general adaptive loop spanning software, a rover body, and shared swarm experience.
 
+## Current implementation review — 2026-09-21
+
+Starting HEAD `e215a78ac`: C0/D1/D2, R1–R3, D3a–g and V1 now exist.
+Read [the current WCT queue and repair receipt](WCT_ADAPTIVE_RUNTIME_AND_LOCAL_DECISIONS_2026-09-21.md)
+for implementation status and acceptance criteria. This pass fixed crash replay,
+cross-process journal claims and expired/stopped dispatch admission; **361 focused
+and rover tests passed**. These fixes are local working-tree changes.
+
+D3 still needs production adapter registration, persistent physiology ownership,
+bounded adapter calls and a reachable concurrent stop path (D3H-1–4). E0 and the
+remaining D4–D6/G1–G4/W1 jobs are open. GLM's local decision jobs J0–J3 can proceed
+independently. The September 20 findings below are historical and superseded where
+the current queue records implementation or repair.
+
+### Historical implementation review — 2026-09-20
+
+Checked at HEAD `49f21d05c`. **Read the [audit and D3 resume instructions](ALICE_ADAPTIVE_AUDIT_AND_D3_RESUME.md)
+before continuing.** They supersede the initial job ordering where corrections are needed.
+
+- C0 (`fb3a9869c`), D1 (`6afb85d96`) and D2 (`49f21d05c`) exist and their focused
+  suites pass: **103 passed in 1.12s** on this review. This is implementation evidence,
+  not proof that the adaptive loop is integrated or the hardware is ready.
+- Independent scratch probes exposed D1 health precedence and D2 evidence-lifetime /
+  pose-uncertainty defects. Repair **R1/R2/R3** before D3 uses those results for actions.
+- C0 validates record structure; D3 must resolve and independently verify the referenced
+  observations. The audit records semantic validation gaps and a compatible D3 boundary.
+- D3's proposed module and tests do **not** exist. Use the small D3a–D3f writes in the
+  resume instructions. D4–D6 remain future work; E0/G1–G4/W1 retain their original scope.
+- The full suite is **not green/verified**. Integrity-manifest mismatch is confirmed;
+  the grounding failure is reported but not rerun here. Preserve unrelated working edits.
+
 ## 1. The decision and the target
 
 **Build one Alice with replaceable environment adapters and a closed learning loop.**

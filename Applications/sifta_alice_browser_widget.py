@@ -92,7 +92,7 @@ _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
 _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 _PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
 APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
-_HARNESS_ROOT = REPO / "deepseek-harness-master"
+_HARNESS_ROOT = REPO / "!Alice Coding Arm"
 _HARNESS_URL = "http://127.0.0.1:3080"
 _HARNESS_BOOT_LOG = _STATE / "deepseek_harness_boot.log"
 _HARNESS_LOCK = _STATE / "deepseek_harness_start.lock"
@@ -120,14 +120,26 @@ def _local_port_is_open(host: str, port: int) -> bool:
 
 
 def _harness_is_ready() -> bool:
-    """Require the actual DSH HTML identity, not merely an occupied port."""
+    """Require the actual DSH client contract, not a cosmetic page title.
+
+    This predicate used to require ``<title>DSH Local Build</title>``. The title
+    is owned by the Harness checkout (``apps/web/index.html``) and now reads
+    ``#SIFTA Self Coding``, so readiness came back False against a Harness that
+    was in fact serving: ``_ensure_local_harness`` then saw an occupied port and
+    returned ``port_conflict``, and every owner coding request was marked FAILED
+    with ``reason=port_3080_non_dsh_service`` before the Harness could claim it
+    (measured 2026-09-29: an ``/s`` task was claimed and failed in the same 4ms).
+    ``window.__DSH_BOOT__`` is injected only by dsh web, and the client plugin
+    path is registered by the Harness client itself, so both identify the real
+    thing while surviving any rebranding.
+    """
     try:
         request = urllib.request.Request(_HARNESS_URL + "/", headers={"Cache-Control": "no-cache"})
         with urllib.request.urlopen(request, timeout=0.8) as response:
             if int(getattr(response, "status", 200)) != 200:
                 return False
             body = response.read(131072).decode("utf-8", "replace")
-        return "<title>DSH Local Build</title>" in body and "@deepseek-ai/dsh-client" in body
+        return "__DSH_BOOT__" in body and "@deepseek-ai/dsh-client" in body
     except (OSError, urllib.error.URLError, ValueError):
         return False
 
@@ -1564,7 +1576,9 @@ class AliceBrowserWidget(QMainWindow):
     def _poll_stigmergicode_tasks(self) -> None:
         """Consume one authenticated owner coding request and show its tab."""
         try:
-            from System.swarm_stigmergicode_command import claim_next_task, complete_task, write_task_handoff
+            from System.swarm_stigmergicode_command import (
+                claim_next_task, complete_task, release_task, write_task_handoff,
+            )
 
             task = self._stigmergicode_waiting_task or claim_next_task(state_dir=_STATE)
             if not task:
@@ -1576,9 +1590,16 @@ class AliceBrowserWidget(QMainWindow):
                     self._stigmergicode_waiting_task = task
                     self._stigmergicode_waiting_since = time.time()
                 if time.time() - self._stigmergicode_waiting_since > 30.0:
-                    complete_task(task_id, status="FAILED", state_dir=_STATE, reason="harness_readiness_timeout")
+                    # Readiness is not a property of the WORK, so a slow Harness
+                    # start must not be terminal here: marking the task FAILED
+                    # consumed the owner's request before the surface it was
+                    # addressed to could claim it (measured 2026-09-29 after a
+                    # reboot: '/s ...' was claimed by this widget and FAILED with
+                    # harness_readiness_timeout while the DSH side never saw it).
+                    # Put it back so whichever worker is ready takes it.
+                    release_task(task_id, state_dir=_STATE, reason="harness_readiness_timeout")
                     self._stigmergicode_waiting_task = None
-                    self._status.showMessage("Coding tab failed: local Harness readiness timed out", 5000)
+                    self._status.showMessage("Coding tab requeued: local Harness still starting", 5000)
                     return
                 self._status.showMessage("Coding tab queued while the local Harness starts", 3500)
                 return

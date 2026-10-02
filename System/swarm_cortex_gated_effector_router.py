@@ -169,6 +169,23 @@ class RegexIntentClassifier:
         return (None, 0.0, {})
 
 
+# ── Default classifier selection ────────────────────────────────────────────
+
+def _default_classifier() -> IntentClassifier:
+    """The classifier a caller gets when it passes none.
+
+    The regex band-aid unless the Jev intent lane was deliberately enabled by
+    an operator (a marker file). Any failure in the lane falls back here, so
+    this hook can never make the router worse than it was.
+    """
+    try:
+        from System.swarm_jev_intent_lane import default_classifier
+
+        return default_classifier()
+    except Exception:
+        return RegexIntentClassifier()
+
+
 # ── The gate ────────────────────────────────────────────────────────────────
 
 def _write_decision_receipt(d: RouterDecision) -> None:
@@ -208,7 +225,7 @@ def gate(
     field carries whatever the effector returned. If decision !=
     "FIRE", no effector runs."""
     if classifier is None:
-        classifier = RegexIntentClassifier()
+        classifier = _default_classifier()
     if registry is None:
         registry = _REGISTRY
 

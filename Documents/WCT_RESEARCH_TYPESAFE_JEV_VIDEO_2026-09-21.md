@@ -86,3 +86,13 @@ Borg OpenJev's approach, not the cloud dependency: single-forward-pass option
 probabilities off one of her local models, behind the
 `swarm_calibrated_decision.py` interface from the 09-19 brief, first consumer
 `classify_visitor()`, keyword gate as fallback, every decision receipted.
+
+## Follow-up review and coding queue
+
+See [the current local-decision jobs J0–J4](WCT_ADAPTIVE_RUNTIME_AND_LOCAL_DECISIONS_2026-09-21.md).
+The six-message result above is pilot accuracy, not evidence of calibration or
+held-out superiority. Raw option softmax and distribution confidence must not be
+reported as probability of correctness without measurement. The candidate formerly
+called OpenJev is TheoLeeCJ/SemIf; it reproduces the interface pattern, not Jev's
+undisclosed model or training. Pin and measure the actual Mac backend before wiring
+its decisions. Source links and acceptance criteria are in the current queue.

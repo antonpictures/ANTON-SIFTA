@@ -244,21 +244,20 @@ def test_the_resend_refusal_names_every_action_that_needs_reconciliation(tmp_pat
 # --- the intent written before a crash in the caller --------------------------
 
 
-def test_an_intent_written_but_never_submitted_is_not_a_duplicate_claim(tmp_path: Path) -> None:
+def test_a_legacy_intent_without_ack_is_reconciled_not_resent(tmp_path: Path) -> None:
     journal = ActionJournal(tmp_path)
     loop = _loop(tmp_path, _Adapter(), journal)
     loop.propose(_proposal("act", "root"))
-    # Simulate a process that died between the intent append and the adapter call.
+    # The journal cannot tell whether the process died before or after the effect.
     journal.append("intent", _aid("act"), goal_id=_gid("root"), payload={"partial": True})
 
-    assert journal.submit_state(_aid("act")) == "unattempted"
-    assert [row.action_id for row in journal.unattempted()] == [_aid("act")]
-
-    outcome = loop.submit(_aid("act"))
-
-    assert len(journal.history(_aid("act"))) == 2  # the reused intent, then the submit
-    assert outcome["outcome"] == "accepted"
-    assert journal.intents()[-1].seq == outcome["intent_seq"]
+    assert journal.submit_state(_aid("act")) == "attempted"
+    assert journal.unattempted() == ()
+    assert [row.action_id for row in journal.in_flight()] == [_aid("act")]
+    with pytest.raises(JournalError, match="reconcile"):
+        loop.submit(_aid("act"))
+    assert len(journal.history(_aid("act"))) == 1
+    assert loop.adapter.adapter.submit_calls == 0
 
 
 # --- restart ------------------------------------------------------------------
@@ -289,6 +288,186 @@ def test_sequence_numbers_never_reuse_after_a_restart(tmp_path: Path) -> None:
 
     assert [r.seq for r in second.rows] == [1, 2, 3]
     assert row.seq == 3
+
+
+def test_two_cached_journals_refresh_the_tail_before_writing(tmp_path: Path) -> None:
+    first, second = ActionJournal(tmp_path), ActionJournal(tmp_path)
+    first.replay()
+    second.replay()
+    first.append("note", _aid("a"))
+    second.append("note", _aid("b"))
+    first.append("note", _aid("c"))
+    report = ActionJournal(tmp_path).replay()
+    assert report.chain_ok
+    assert [row.seq for row in report.rows] == [1, 2, 3]
+
+
+def test_process_exit_after_effect_cannot_duplicate_the_effect(tmp_path: Path) -> None:
+    import subprocess
+
+    # Unlike RuntimeError, os._exit runs no exception handler or cleanup path.
+    script = """
+import os, runpy, sys
+from pathlib import Path
+n = runpy.run_path(sys.argv[1])
+p = Path(sys.argv[2])
+class Body(n['_Adapter']):
+    def submit(self, action):
+        with (p / 'effect.txt').open('a') as f:
+            f.write('effect\\n'); f.flush(); os.fsync(f.fileno())
+        os._exit(23)
+j = n['ActionJournal'](p)
+loop = n['_loop'](p, Body(), j)
+loop.propose(n['_proposal']('act', 'root'))
+loop.submit(n['_aid']('act'))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(Path(__file__).resolve()), str(tmp_path)],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 23, result.stderr
+    adapter = _Adapter()
+    restarted = _loop(tmp_path, adapter, ActionJournal(tmp_path))
+    restarted.propose(_proposal("act", "root"))
+    with pytest.raises(JournalError) as exc:
+        restarted.submit(_aid("act"))
+    assert exc.value.code == "RESEND_FORBIDDEN"
+    assert adapter.submit_calls == 0
+    assert (tmp_path / "effect.txt").read_text().splitlines() == ["effect"]
+    assert restarted.journal.submit_state(_aid("act")) == "attempted"
+
+
+def test_two_callers_can_claim_only_one_dispatch(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+    adapters = [_Adapter(), _Adapter()]
+    loops = [_loop(tmp_path, adapter, ActionJournal(tmp_path)) for adapter in adapters]
+    for loop in loops:
+        loop.propose(_proposal("act", "root"))
+        loop.journal.replay()
+
+    def submit(loop):
+        barrier.wait(timeout=5)
+        try:
+            return loop.submit(_aid("act"))["outcome"]
+        except JournalError as exc:
+            return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(submit, loops))
+    assert sum(adapter.submit_calls for adapter in adapters) == 1
+    assert set(outcomes) <= {"accepted", "RESEND_FORBIDDEN", "JOURNAL_BUSY"}
+    assert ActionJournal(tmp_path).replay().chain_ok
+
+
+def test_changed_proposal_cannot_reuse_a_claimed_action_id(tmp_path: Path) -> None:
+    loop = _loop(tmp_path, _Adapter(), ActionJournal(tmp_path))
+    proposal = _proposal("act", "root")
+    loop.propose(proposal)
+    loop.submit(proposal["action_id"])
+    loop.propose({**proposal, "args": {"x_m": 9.0}})
+    with pytest.raises(JournalError) as exc:
+        loop.submit(proposal["action_id"])
+    assert exc.value.code == "ID_CONFLICT"
+    assert loop.adapter.adapter.submit_calls == 1
+
+
+def test_dispatch_claim_is_exclusive_across_processes(tmp_path: Path) -> None:
+    import subprocess
+    script = """
+import json, os, sys, time
+from pathlib import Path
+from System.swarm_action_journal import ActionJournal, JournalError
+p = Path(sys.argv[1]); j = ActionJournal(p); j.replay()
+(p / ('ready-' + str(os.getpid()))).touch()
+until = time.monotonic() + 5
+while len(list(p.glob('ready-*'))) < 2:
+    if time.monotonic() > until: raise RuntimeError('peer did not start')
+    time.sleep(0.005)
+try:
+    j.claim_dispatch('same-action', goal_id='same-goal', payload={'proposal_hash':'same'})
+    with (p / 'effects.txt').open('a') as f: f.write('effect\\n')
+    print('claimed')
+except JournalError as exc:
+    print(exc.code)
+"""
+    children = [subprocess.Popen(
+        [sys.executable, "-c", script, str(tmp_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    ) for _ in range(2)]
+    try:
+        outputs = []
+        for child in children:
+            stdout, stderr = child.communicate(timeout=10)
+            assert child.returncode == 0, stderr
+            outputs.append(stdout.strip())
+        assert outputs.count('claimed') == 1
+        assert set(outputs) <= {'claimed', 'RESEND_FORBIDDEN', 'JOURNAL_BUSY'}
+        assert (tmp_path / 'effects.txt').read_text().splitlines() == ['effect']
+        assert ActionJournal(tmp_path).replay().chain_ok
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+
+
+def test_failed_durability_never_reaches_the_adapter(tmp_path: Path, monkeypatch) -> None:
+    adapter = _Adapter()
+    loop = _loop(tmp_path, adapter, ActionJournal(tmp_path))
+    loop.propose(_proposal("act", "root"))
+    import os
+    def fail_fsync(fd):
+        raise OSError("disk unavailable")
+    monkeypatch.setattr(os, "fsync", fail_fsync)
+    with pytest.raises(OSError, match="disk unavailable"):
+        loop.submit(_aid("act"))
+    assert adapter.submit_calls == 0
+
+
+def test_submit_itself_enforces_the_goal_deadline(tmp_path: Path) -> None:
+    goal = _goal("root")
+    goal["deadline_utc"] = "2025-01-01T00:00:00Z"
+    adapter = _Adapter()
+    loop = GoalLoop(
+        graph=[goal], adapter=AdapterBinding.bind("nav2", adapter, capability_revision=SHA),
+        clock=ManualClock(), journal=ActionJournal(tmp_path),
+    )
+    loop.propose(_proposal("act", "root"))
+    with pytest.raises(LifecycleError, match="EXPIRED"):
+        loop.submit(_aid("act"))
+    assert adapter.submit_calls == 0
+    assert loop.journal.intent(_aid("act")) is None
+
+
+def test_stop_before_dispatch_survives_restart(tmp_path: Path) -> None:
+    journal = ActionJournal(tmp_path)
+    loop = _loop(tmp_path, _Adapter(), journal)
+    proposal = _proposal("act", "root")
+    loop.propose(proposal)
+    loop.owner_stop(_aid("act"))
+    body = _Adapter()
+    restarted = _loop(tmp_path, body, ActionJournal(tmp_path))
+    restarted.propose(proposal)
+    with pytest.raises(JournalError) as exc:
+        restarted.submit(_aid("act"))
+    assert exc.value.code == "STOP_REQUESTED"
+    assert body.submit_calls == 0
+
+
+def test_append_does_not_overwrite_or_extend_an_unrepaired_tail(tmp_path: Path) -> None:
+    journal = ActionJournal(tmp_path)
+    journal.append("note", _aid("a"))
+    with journal.path.open("ab") as handle:
+        handle.write(b'{"torn":')
+    before = journal.path.read_bytes()
+    with pytest.raises(JournalError) as exc:
+        journal.append("note", _aid("b"))
+    assert exc.value.code == "UNREPAIRED_JOURNAL"
+    assert journal.path.read_bytes() == before
 
 
 def test_a_verified_action_is_no_longer_in_flight_after_restart(tmp_path: Path) -> None:
@@ -466,7 +645,7 @@ def test_the_journal_writes_only_inside_the_state_directory(tmp_path: Path) -> N
     journal = ActionJournal(state)
     journal.append("note", _aid("act"), payload={"n": 1})
 
-    assert [p.name for p in sorted(state.iterdir())] == [JOURNAL_FILENAME]
+    assert [p.name for p in sorted(state.iterdir())] == [JOURNAL_FILENAME, JOURNAL_FILENAME + ".lock"]
 
 
 def test_an_unknown_submit_state_is_none_not_a_guess(tmp_path: Path) -> None:

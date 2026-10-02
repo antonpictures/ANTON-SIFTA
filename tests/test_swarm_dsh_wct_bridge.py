@@ -112,7 +112,7 @@ def test_real_cli_host_transport_keyless_snapshot(root):
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
-    launcher = Path(__file__).parents[1] / "deepseek-harness-master/scripts/sifta-wct.py"
+    launcher = Path(__file__).parents[1] / "!Alice Coding Arm/scripts/sifta-wct.py"
     command = [sys.executable, str(launcher), "dispatch", "--root", str(root), "--session", "s",
                "--url", f"http://127.0.0.1:{server.server_port}"]
     try:

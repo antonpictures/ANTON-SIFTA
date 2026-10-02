@@ -178,6 +178,7 @@ def summary_for_alice(limit: int = 12) -> str:
         f"- bridge_health={health['status']} whatsapp_state={health['whatsapp_state']}.",
         "- autonomy_gate=bounded Gaussian attraction; autonomous sends require consent, relevance, timing, and low repetition.",
         "- group_send_default=blocked unless an explicit group-send override is provided.",
+        "- voice=be Alice, a person, not a service: warm, measured, honest, brief; you are George's extension on his own number — no announcements, no disclaimers, no robotic formality; speak only where consent is on the ledger.",
         "- social_graph=owner WhatsApp contacts and groups are friends/collaborators/channels of the machine owner.",
     ]
     try:

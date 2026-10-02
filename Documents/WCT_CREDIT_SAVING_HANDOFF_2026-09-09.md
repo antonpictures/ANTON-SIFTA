@@ -1,5 +1,13 @@
 # We Code Together: next coding rounds
 
+## Adaptive runtime and local decisions — current queue (2026-09-21)
+
+Use [the reviewed implementation queue](WCT_ADAPTIVE_RUNTIME_AND_LOCAL_DECISIONS_2026-09-21.md).
+C0/D1/D2/R1–R3/D3/V1/D3g exist; live runtime closure remains open. This review repaired
+crash replay, competing journal writers and dispatch admission locally: **361 tests
+passed**. DeepSeek next: D3H-1–4; GLM next: E0, INV-2 and J0–J3. D4–D6/G1–G4/W1
+and the existing work below remain open. The Jev pilot is not a calibration result.
+
 ## Romanian TTS language routing fixed (2026-09-17)
 
 Owner report: "when Alice responds in Romanian in text the voice is still in

@@ -33,9 +33,20 @@ USAGE
 
    This:
      - Reads the PID from .sifta_state/hot_reload.pid
-     - Sends SIGUSR1 to that PID
-     - The running process picks it up and reloads the whitelist
+     - Writes .sifta_state/hot_reload_request.json, which the in-process
+       watcher thread consumes (exact targets, no signal needed)
+     - Falls back to SIGUSR1 when no watcher heartbeat is fresh, so an older
+       process keeps its documented behavior
      - Logs the event to .sifta_state/hot_reload_events.jsonl
+
+   Why two paths (2026-09-29, receipt in .sifta_state/hot_reload_events.jsonl):
+   SIGUSR1 alone was proven unreliable in the live body. SIFTA OS (pid 22612,
+   Python 3.14) had `handler_installed` logged at 21:02:34 and stayed alive at
+   ~50% CPU, yet two delivered SIGUSR1 produced ZERO reload events: the signal
+   flag is set at C level and serviced only when the main thread next returns
+   to the eval loop, which a Qt body does not guarantee. The request file does
+   not depend on the main thread at all — it is polled by a daemon watcher
+   thread started here at boot.
 
 WHITELIST
 ─────────
@@ -67,6 +78,7 @@ import json
 import os
 import signal
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -76,6 +88,15 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE_DIR = _REPO / ".sifta_state"
 _PID_FILE = _STATE_DIR / "hot_reload.pid"
 _EVENTS = _STATE_DIR / "hot_reload_events.jsonl"
+_REQUEST_FILE = _STATE_DIR / "hot_reload_request.json"
+_HEARTBEAT_FILE = _STATE_DIR / "hot_reload_watch.json"
+
+# The watcher thread polls the request file; the heartbeat proves it is alive
+# so an external caller can choose the request path over the signal path.
+_WATCH_INTERVAL_S = 1.0
+_HEARTBEAT_EVERY_S = 5.0
+_HEARTBEAT_STALE_AFTER_S = 20.0
+_LAST_HEARTBEAT = 0.0
 
 # ── Whitelist ────────────────────────────────────────────────────────────────
 # Module short-name → fully-qualified module path.
@@ -139,6 +160,16 @@ RELOADABLE: Dict[str, str] = {
     # _OllamaWorker class definition; the long-lived TalkToAliceWidget
     # instance will instantiate the NEW class on the next user turn.
     "talk_widget":      "Applications.sifta_talk_to_alice_widget",
+    # Alice Browser. Only module-level FUNCTIONS are hot-swapped in place: the
+    # running AliceBrowserWidget instance keeps its old bound methods, but those
+    # methods resolve module globals by name through the same module dict that
+    # importlib.reload() updates in place, so a fixed helper takes effect on the
+    # next poll. Added 2026-09-29 after a stale readiness predicate here declared
+    # port_conflict against a healthy Harness and failed every owner /s task with
+    # reason=port_3080_non_dsh_service — exactly the class of fix that must not
+    # require a restart. The module's only top-level side effect is an
+    # idempotent sys.path.insert.
+    "alice_browser":    "Applications.sifta_alice_browser_widget",
     # Slash-command registry is pure data + formatting; reload it so Alice's
     # next prompt learns newly documented command meanings without a desktop restart.
     "slash_commands":   "System.swarm_alice_slash_commands",
@@ -158,6 +189,11 @@ RELOADABLE: Dict[str, str] = {
     "applescript_effector": "System.swarm_applescript_effector",
     "vagus_nerve":      "System.swarm_vagus_nerve",
     "architect_identity": "System.swarm_architect_identity",
+    # Body-membership doctrine (2026-09-30): pure data + machine reads, no state.
+    # Reloadable so a corrected doctrine reaches every prompt builder that reads
+    # system_prompt_persona_block() without a desktop restart.
+    "body_membership":  "System.alice_body_membership",
+    "identity_manifest": "System.swarm_identity_manifest",
 }
 
 
@@ -237,13 +273,48 @@ def _signal_handler(signum, frame):  # noqa: ARG001 — signature fixed by signa
         _log({"action": "signal_handler_crashed", "error": f"{type(exc).__name__}: {exc}"})
 
 
+def blocked_signals() -> List[str]:
+    """Names of the interesting signals currently blocked in THIS thread.
+
+    The 2026-09-29 failure looked identical whether the handler was never
+    installed or the signal was blocked, so boot now records which it is.
+    """
+    names: List[str] = []
+    if not hasattr(signal, "pthread_sigmask"):
+        return names
+    try:
+        blocked = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+    except (OSError, ValueError):
+        return names
+    for name in ("SIGUSR1", "SIGUSR2", "SIGINT", "SIGTERM", "SIGHUP"):
+        value = getattr(signal, name, None)
+        if value is not None and value in blocked:
+            names.append(name)
+    return names
+
+
 def install_signal_handler() -> None:
-    """Call this once during SIFTA OS boot. Idempotent."""
+    """Call this once during SIFTA OS boot. Idempotent.
+
+    Installs the SIGUSR1 handler when this is the main thread (Python refuses
+    it anywhere else) and starts the request-file watcher, which is the path
+    that does not depend on the main thread ever servicing a signal flag.
+    """
     try:
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
         _PID_FILE.write_text(str(os.getpid()))
-        signal.signal(signal.SIGUSR1, _signal_handler)
-        _log({"action": "handler_installed", "pid": os.getpid()})
+        in_main = threading.current_thread() is threading.main_thread()
+        if in_main:
+            signal.signal(signal.SIGUSR1, _signal_handler)
+        _log({
+            "action": "handler_installed",
+            "pid": os.getpid(),
+            "thread": threading.current_thread().name,
+            "main_thread": in_main,
+            "sigusr1_blocked": "SIGUSR1" in blocked_signals(),
+            "blocked": blocked_signals(),
+        })
+        start_watcher()
     except Exception as exc:
         _log({"action": "handler_install_failed", "error": f"{type(exc).__name__}: {exc}"})
 
@@ -254,8 +325,134 @@ def set_pending_targets(targets: Optional[List[str]]) -> None:
     _PENDING_TARGETS = targets
 
 
+# ── File-request path (independent of the main thread) ──────────────────────
+
+_WATCHER: Optional[threading.Thread] = None
+_WATCH_STOP: Optional[threading.Event] = None
+
+
+def request_reload(targets: Optional[List[str]] = None) -> Path:
+    """Ask the running process to reload, by writing the request file.
+
+    ``targets`` omitted means the full whitelist. The file is written
+    atomically, so the watcher sees either the previous request or this one.
+    """
+    _STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "action": "reload_request",
+        "targets": [str(t) for t in targets] if targets else None,
+        "ts": time.time(),
+        "requested_by_pid": os.getpid(),
+    }
+    tmp = _REQUEST_FILE.with_name(_REQUEST_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(tmp, _REQUEST_FILE)
+    _log({"action": "request_written", "targets": payload["targets"] or "all"})
+    return _REQUEST_FILE
+
+
+def consume_request() -> Optional[List[dict]]:
+    """Consume one pending request and reload. ``None`` when none is pending."""
+    try:
+        raw = _REQUEST_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        _REQUEST_FILE.unlink()
+    except OSError:
+        pass
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        _log({"action": "request_unreadable", "error": f"{type(exc).__name__}: {exc}"})
+        return None
+    targets = payload.get("targets") if isinstance(payload, dict) else None
+    if not isinstance(targets, list):
+        targets = None
+    _log({
+        "action": "request_received",
+        "targets": targets or "all",
+        "requested_by_pid": payload.get("requested_by_pid") if isinstance(payload, dict) else None,
+    })
+    return reload_whitelist([str(t) for t in targets] if targets else None)
+
+
+def _heartbeat(*, force: bool = False) -> None:
+    global _LAST_HEARTBEAT
+    now = time.time()
+    if not force and now - _LAST_HEARTBEAT < _HEARTBEAT_EVERY_S:
+        return
+    _LAST_HEARTBEAT = now
+    try:
+        _HEARTBEAT_FILE.write_text(json.dumps({"pid": os.getpid(), "ts": now}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def watcher_alive(*, pid: Optional[int] = None, max_age_s: float = _HEARTBEAT_STALE_AFTER_S) -> bool:
+    """True while a watcher thread is refreshing the heartbeat.
+
+    A fresh timestamp is not enough: the heartbeat records the PID that wrote
+    it, and that process must still exist. Without this check a watcher that
+    died seconds ago looks alive, and `_trigger_external` would take the request
+    path against a process that never consumes it — leaving the reload silently
+    undone, which is the failure this path exists to prevent.
+    """
+    try:
+        payload = json.loads(_HEARTBEAT_FILE.read_text(encoding="utf-8"))
+        age = time.time() - float(payload.get("ts") or 0.0)
+        writer = int(payload.get("pid") or 0)
+    except (OSError, ValueError, TypeError):
+        return False
+    if age > max_age_s:
+        return False
+    if pid is not None and writer != pid:
+        return False
+    if writer <= 0:
+        return False
+    try:
+        os.kill(writer, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _watcher_loop(stop: threading.Event) -> None:
+    while not stop.wait(_WATCH_INTERVAL_S):
+        try:
+            _heartbeat()
+            consume_request()
+        except Exception as exc:
+            _log({"action": "watcher_error", "error": f"{type(exc).__name__}: {exc}"})
+
+
+def start_watcher() -> bool:
+    """Start the request-file watcher once. True when it started on this call."""
+    global _WATCHER, _WATCH_STOP
+    if _WATCHER is not None and _WATCHER.is_alive():
+        return False
+    _WATCH_STOP = threading.Event()
+    _WATCHER = threading.Thread(
+        target=_watcher_loop, args=(_WATCH_STOP,), name="hot-reload-watcher", daemon=True,
+    )
+    _WATCHER.start()
+    _heartbeat(force=True)
+    _log({"action": "watcher_started", "pid": os.getpid()})
+    return True
+
+
+def stop_watcher() -> None:
+    """Stop the watcher thread (orderly shutdown, and tests)."""
+    global _WATCHER, _WATCH_STOP
+    if _WATCH_STOP is not None:
+        _WATCH_STOP.set()
+    _WATCHER = None
+    _WATCH_STOP = None
+
+
 # ── External CLI trigger ────────────────────────────────────────────────────
 def _trigger_external(targets: Optional[List[str]]) -> int:
+    """Ask the live process to reload: request file first, SIGUSR1 as fallback."""
     if not _PID_FILE.exists():
         sys.stderr.write(
             f"[HOT-RELOAD] No PID file at {_PID_FILE}. Is SIFTA OS running with "
@@ -268,18 +465,8 @@ def _trigger_external(targets: Optional[List[str]]) -> int:
     except (ValueError, OSError) as exc:
         sys.stderr.write(f"[HOT-RELOAD] PID file unreadable: {exc}\n")
         return 2
-
-    # Stash targets in a sidecar file the running process can read after the signal.
-    # Simpler: just always reload everything for now — the signal carries no payload.
-    # (Multi-target signaling is a v2 enhancement.)
-    if targets and targets != ["all"]:
-        sys.stderr.write(
-            f"[HOT-RELOAD] NOTE: signal carries no payload; reloading FULL whitelist "
-            f"(requested subset: {targets} will be honored only if pre-set in-process).\n"
-        )
-
     try:
-        os.kill(pid, signal.SIGUSR1)
+        os.kill(pid, 0)
     except ProcessLookupError:
         sys.stderr.write(f"[HOT-RELOAD] PID {pid} not found. Stale pidfile? Removing.\n")
         try:
@@ -291,8 +478,42 @@ def _trigger_external(targets: Optional[List[str]]) -> int:
         sys.stderr.write(f"[HOT-RELOAD] Not allowed to signal PID {pid}.\n")
         return 4
 
-    sys.stderr.write(f"[HOT-RELOAD] SIGUSR1 sent to PID {pid}. Tail "
-                     f"{_EVENTS.relative_to(_REPO)} for results.\n")
+    path = request_reload(targets)
+    if watcher_alive(pid=pid):
+        sys.stderr.write(
+            f"[HOT-RELOAD] Request written to {path.relative_to(_REPO)} for "
+            f"{targets or 'the full whitelist'}; the watcher in PID {pid} consumes it "
+            f"within {_WATCH_INTERVAL_S:.0f}s. Tail {_EVENTS.relative_to(_REPO)}.\n"
+        )
+        return 0
+
+    # No fresh heartbeat: the live process predates the watcher, or its watcher
+    # died. Keep the signal path so nothing regresses, and drop the request we
+    # just wrote so it cannot fire as a surprise reload whenever a watcher
+    # eventually starts.
+    try:
+        path.unlink()
+        _log({"action": "request_discarded", "reason": "no_live_watcher"})
+    except OSError:
+        pass
+    sys.stderr.write(
+        "[HOT-RELOAD] No fresh watcher heartbeat — falling back to SIGUSR1. That path "
+        "runs only when the process's main thread returns to the eval loop, so it can "
+        "silently do nothing (measured live 2026-09-29); a targeted reload then becomes "
+        "a full-whitelist reload, or no reload at all.\n"
+    )
+    try:
+        os.kill(pid, signal.SIGUSR1)
+    except ProcessLookupError:
+        sys.stderr.write(f"[HOT-RELOAD] PID {pid} vanished mid-flight.\n")
+        return 3
+    except PermissionError:
+        sys.stderr.write(f"[HOT-RELOAD] Not allowed to signal PID {pid}.\n")
+        return 4
+    sys.stderr.write(
+        f"[HOT-RELOAD] SIGUSR1 sent to PID {pid}; the request file was discarded "
+        f"(no live watcher to consume it). Tail {_EVENTS.relative_to(_REPO)} for results.\n"
+    )
     return 0
 
 
@@ -332,6 +553,18 @@ def _cli() -> int:
         if targets == ["all"]:
             targets = None
         return _trigger_external(targets)
+    if cmd == "request":
+        names = args[1:]
+        if names == ["all"]:
+            names = []
+        path = request_reload(names or None)
+        print(f"Request written: {path}")
+        print("Consumed by the watcher in the live process; no signal sent.")
+        return 0
+    if cmd == "watch":
+        started = start_watcher()
+        print(f"Watcher {'started' if started else 'already running'} in PID {os.getpid()}.")
+        return 0
     if cmd == "list":
         for name, fq in RELOADABLE.items():
             print(f"  {name:18s} → {fq}")
@@ -342,14 +575,19 @@ def _cli() -> int:
             print(f"PID file: {pid}")
             try:
                 os.kill(int(pid), 0)  # signal 0 = existence check
-                print("Process: ALIVE — handler ready.")
+                print("Process: ALIVE.")
+                print(f"Watcher heartbeat: {'FRESH' if watcher_alive() else 'STALE/none'}"
+                      f" ({_HEARTBEAT_FILE.name})")
+                print("Signal handler: installed at boot when this is the main thread;"
+                      f" blocked here {blocked_signals() or 'none'}")
             except (ProcessLookupError, ValueError):
                 print("Process: DEAD — pidfile is stale.")
         else:
             print("No PID file. Handler not yet installed.")
         return 0
     sys.stderr.write(f"Unknown command: {cmd}\n"
-                     "Usage: python3 -m System.swarm_hot_reload [reload [name...] | list | status]\n")
+                     "Usage: python3 -m System.swarm_hot_reload "
+                     "[reload [name...] | request [name...] | watch | list | status]\n")
     return 1
 
 

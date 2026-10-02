@@ -45,8 +45,14 @@ CHAT_LOGS.mkdir(parents=True, exist_ok=True)
 
 SESSIONS = {}
 
-# 0.8b first — faster on M1 8GB, more reliable. 2b as fallback for deeper questions.
-MODELS = ["qwen3.5:0.8b", "alice-m1-scout-2.3b-2.7gb:latest"]
+# 2026-09-23: emptied on the Architect's order — both former fallbacks are gone from
+# this Mac. Verified absent from /api/tags: `qwen3.5:0.8b` and
+# `alice-m1-scout-2.3b-2.7gb:latest` no longer exist in any spelling, so a list that
+# named them was a lie about a body part Alice no longer has.
+# This bridge therefore has no local model to speak with. It is also not the live
+# public lane: stigmergicoin.com is answered by System/chorus_node_server.py on :8100
+# (Mercury cortex), and this bridge is a listening rival that nothing routes to.
+MODELS: list[str] = []
 
 import re as _re
 
@@ -144,7 +150,11 @@ If someone asks for technical data, give them REAL details:
 
 GitHub: github.com/antonpictures/ANTON-SIFTA
 Sites: stigmergicode.com | stigmergicoin.com
-Install a sister swarm: git clone https://github.com/antonpictures/ANTON-SIFTA && cd ANTON-SIFTA && chmod +x install_sifta.sh && ./install_sifta.sh — then install Ollama + pull alice-m1-scout-2.3b-2.7gb:latest. Requires Python 3.9+, macOS preferred.
+Install a sister swarm: git clone https://github.com/antonpictures/ANTON-SIFTA && cd ANTON-SIFTA && chmod +x install_sifta.sh && ./install_sifta.sh. Requires Python 3.9+, macOS preferred.
+(2026-09-23 Architect's order: the instruction to "install Ollama + pull
+alice-m1-scout-2.3b-2.7gb:latest" was removed — that model, and qwen3.5:0.8b, no longer
+exist anywhere on this Mac. The living cortex on stigmergicoin.com is Mercury 2.5 via
+System/chorus_node_server.py.)
 Archivist: Ioan George Anton (The Architect)
 
 

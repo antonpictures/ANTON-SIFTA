@@ -678,56 +678,52 @@ class GoalLoop:
 
         try:
             from System.swarm_action_journal import (
-                KIND_INTENT,
                 KIND_SUBMIT,
                 SUBMIT_ACCEPTED,
-                SUBMIT_ATTEMPTED,
-                SUBMIT_UNATTEMPTED,
                 JournalError,
             )
         except ImportError:  # pragma: no cover - bare System/ path
             from swarm_action_journal import (  # type: ignore
-                KIND_INTENT,
                 KIND_SUBMIT,
                 SUBMIT_ACCEPTED,
-                SUBMIT_ATTEMPTED,
-                SUBMIT_UNATTEMPTED,
                 JournalError,
-            )
-
-        # The journal is consulted before this process's own memory. A restarted
-        # body holds no proposals, and that amnesia must never become permission
-        # to resend an action the previous body already handed over.
-        state = self.journal.submit_state(action_id)
-        if state in (SUBMIT_ATTEMPTED, SUBMIT_ACCEPTED):
-            raise JournalError(
-                "RESEND_FORBIDDEN",
-                f"action {action_id!r} was already handed to the adapter ({state}); "
-                "reconcile its true status instead of resending it",
             )
 
         proposal = self._proposals.get(action_id)
         if proposal is None:
+            self.journal.replay()
+            if self.journal.intent(action_id) is not None:
+                raise JournalError(
+                    "RESEND_FORBIDDEN",
+                    f"action {action_id!r} already has a dispatch intent; reconcile its outcome",
+                )
             raise LifecycleError("UNKNOWN_ACTION", f"no proposal {action_id!r} to submit")
-        if state == SUBMIT_UNATTEMPTED:
-            # A previous process wrote the intent and died before submitting.
-            # Reuse that row rather than inventing a second claim.
-            intent_row = self.journal.intent(action_id)
-        else:
-            intent_row = self.journal.append(
-                KIND_INTENT,
-                action_id,
-                goal_id=proposal["goal_id"],
-                payload={
-                    "goal_id": proposal["goal_id"],
-                    "action_kind": proposal["action_kind"],
-                    "adapter_id": proposal["adapter_id"],
-                    "capability_revision": proposal["capability_revision"],
-                    "predicted_postcondition": proposal["predicted_postcondition"],
-                    "required_observation_ids": list(proposal["required_observation_ids"]),
-                    "args": dict(proposal["args"]),
-                },
-            )
+        self.journal.replay()
+        self.require_attemptable(proposal["goal_id"])
+        if action_id in self._stops:
+            raise LifecycleError(REASON_STOP_REQUESTED, "this action has an owner stop request")
+        # Reserve under the journal's cross-process lock before calling out.
+        # The durable intent itself means "may have executed", even if this
+        # process is killed before it can write any submit outcome.
+        import hashlib
+        import json
+        proposal_hash = hashlib.sha256(
+            json.dumps(proposal, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest()
+        intent_row = self.journal.claim_dispatch(
+            action_id,
+            goal_id=proposal["goal_id"],
+            payload={
+                "goal_id": proposal["goal_id"],
+                "action_kind": proposal["action_kind"],
+                "adapter_id": proposal["adapter_id"],
+                "capability_revision": proposal["capability_revision"],
+                "predicted_postcondition": proposal["predicted_postcondition"],
+                "required_observation_ids": list(proposal["required_observation_ids"]),
+                "args": dict(proposal["args"]),
+                "proposal_hash": proposal_hash,
+            },
+        )
 
         try:
             receipt = self.adapter.adapter.submit(dict(proposal))

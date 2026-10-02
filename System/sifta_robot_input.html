@@ -1,115 +1,732 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Alice</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StigmergiCoin — the finance desk</title>
+<meta name="description" content="Ask anything about oil, gold, commodities, stocks, indices, currencies and crypto. Live prices, real news, honest answers.">
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow-y:auto;overflow-x:hidden;background:#111;color:#eee;font:16px "Avenir Next",sans-serif}
-main{max-width:640px;margin:auto;padding:6px}
-.stage{position:relative;border-radius:12px;overflow:hidden;background:#000}
-video{display:block;width:100%;height:35vh;min-height:180px;object-fit:cover;background:#000}
-#cap{background:rgba(0,0,0,.75);color:#fff;padding:10px 14px;font-size:14px;line-height:1.4;min-height:40px}
-.bar{display:flex;gap:5px;justify-content:center;padding:5px 0;flex-wrap:wrap}
-.bar button{cursor:pointer;touch-action:manipulation;font:inherit;font-size:13px;border:1px solid #444;border-radius:16px;padding:8px 14px;background:#222;color:#ccc}
-.bar button.on{background:var(--accent,#e8a580);color:#111;border-color:var(--accent)}
-.bar button.start{background:#176b3a;color:#fff;border-color:#176b3a;font-weight:700}
-.bar button.start.on{background:var(--accent,#e8a580);color:#111;border-color:var(--accent)}
-.bar button.icon{width:32px;height:32px;padding:0;font-size:14px;border-radius:50%}
-.composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:end}
-textarea{font:inherit;border:1px solid #444;border-radius:8px;padding:6px;background:#222;color:#eee;width:100%;height:32px;resize:none}
-.composer button{border-radius:8px;padding:6px 14px;background:#176b3a;color:#fff;border-color:#176b3a;font-weight:700;font-size:12px}
-#status{color:#777;font-size:9px;min-height:8px;grid-column:1/-1;margin:0}
+  :root{
+    --bg:#141414; --side:#171717; --line:#262626; --line2:#2f2f2f;
+    --txt:#ece9e2; --dim:#9a9893; --dimmer:#6f6d69;
+    --accent:#d97757; --accent2:#c6613f; --card2:#1f1f1f;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);display:flex;
+    font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2c2c2c;border-radius:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ─────────── sidebar ─────────── */
+  .sidebar{width:264px;flex:0 0 264px;background:var(--side);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:14px 10px 10px;min-height:0}
+  .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px}
+  .mark{width:26px;height:26px;flex:0 0 26px;border-radius:8px;
+    background:linear-gradient(135deg,var(--accent),#8a4527);display:grid;place-items:center;font-size:14px}
+  .wordmark{font:600 21px/1 Georgia,"Times New Roman",serif;letter-spacing:.2px}
+  .nav{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+  .nav button{display:flex;align-items:center;gap:11px;width:100%;background:transparent;border:0;
+    color:#c9c6bf;font:inherit;font-size:14px;padding:9px 11px;border-radius:9px;cursor:pointer;text-align:left}
+  .nav button:hover{background:#212121;color:var(--txt)}
+  .nav button.active{background:#262626;color:var(--txt)}
+  .sidebar-label{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dimmer);
+    padding:10px 11px 6px}
+  .chatlist{flex:1;overflow-y:auto;min-height:0;margin:0 -4px}
+  .chatlist .item{display:block;width:100%;text-align:left;background:transparent;border:0;
+    color:#bdbab3;font:inherit;font-size:13.5px;padding:8px 11px;border-radius:8px;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chatlist .item:hover{background:#212121;color:var(--txt)}
+  .chatlist .item.on{background:#262626;color:var(--txt)}
+  .chatlist .empty{color:var(--dimmer);font-size:12.5px;padding:8px 11px}
+  .chatlist .row{display:flex;align-items:center;gap:2px}
+  .chatlist .row .item{flex:1;min-width:0}
+  .chatlist .row .arch{background:transparent;border:0;color:var(--dimmer);cursor:pointer;
+    font:inherit;font-size:13px;padding:6px 8px;border-radius:7px;opacity:0;flex:none}
+  .chatlist .row:hover .arch{opacity:1}
+  .chatlist .row .arch:hover{background:#2b2b2b;color:var(--txt)}
+  .archbar{display:flex;align-items:center;gap:6px;padding:9px 11px 5px;color:var(--dimmer);
+    font:inherit;font-size:11px;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;
+    user-select:none}
+  .archbar:hover{color:var(--txt)}
+  .archlist .item{color:#8e8b85}
+  .side-foot{border-top:1px solid var(--line);padding:10px 6px 2px;margin-top:8px}
+  .codeside{display:flex;gap:6px;padding:8px 4px 2px}
+  .codeside input{flex:1;min-width:0;background:#141414;border:1px solid var(--line);
+    color:var(--txt);border-radius:9px;padding:7px 10px;font:inherit;font-size:12.5px;
+    text-transform:uppercase;letter-spacing:.05em}
+  .codeside input::placeholder{color:var(--dimmer);text-transform:none;letter-spacing:0}
+  .codeside button{background:#2b2b2b;border:0;color:var(--txt);font:inherit;font-size:12.5px;
+    padding:7px 12px;border-radius:9px;cursor:pointer}
+  .codeside button:hover{background:var(--accent2)}
+  .codeside button[disabled]{opacity:.6;cursor:default}
+  .codeside-note{font-size:11.5px;color:var(--dimmer);padding:2px 6px 0;min-height:14px}
+
+  .sponsor{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;
+    background:#1b1b1b;border:1px solid var(--line);margin-bottom:8px;text-decoration:none}
+  .sponsor:hover{border-color:#4a3524;background:#202020}
+  .sponsor .buy{color:var(--accent)}
+  .sponsor .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 7px}
+  .sponsor .txt{font-size:11.5px;color:var(--dim);line-height:1.35}
+  .sponsor .txt b{color:#cfcbc3;font-weight:600}
+  .sponsor .px{font-size:11.5px;color:#cfcbc3;margin-left:auto;white-space:nowrap}
+
+  .account{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px}
+  .avatar{width:26px;height:26px;flex:0 0 26px;border-radius:50%;
+    background:linear-gradient(135deg,#4a4a4a,#2b2b2b);display:grid;place-items:center;font-size:11px;color:#ddd}
+  .account .who{font-size:13px;color:#cfcbc3;line-height:1.25}
+  .account .plan{font-size:11px;color:var(--dimmer)}
+
+  /* ─────────── main ─────────── */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 20px 0}
+  .pill{font-size:12px;color:var(--dim);background:#1d1d1d;border:1px solid var(--line);
+    border-radius:999px;padding:5px 12px}
+  .pill b{color:var(--accent);font-weight:600}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:9px;
+    width:32px;height:32px;display:grid;place-items:center;cursor:pointer;font-size:14px}
+  .ghost:hover{color:var(--txt);border-color:var(--line2)}
+
+  .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:0 20px 30px;min-height:0;overflow-y:auto}
+  .hero{font:600 clamp(32px,4.6vw,52px)/1.1 Georgia,"Times New Roman",serif;text-align:center;
+    letter-spacing:-.5px;display:flex;align-items:center;gap:14px;margin:0}
+  /* The ant, as the same orange tile as the brand mark top-left — sized in em
+     so it scales with the headline, and sitting AFTER the words. */
+  .hero .ht{white-space:nowrap}
+  .hero .ast{flex:none;font-size:.62em;line-height:1;width:1.25em;height:1.25em;
+    border-radius:.34em;background:linear-gradient(135deg,var(--accent),#8a4527);
+    display:grid;place-items:center;box-shadow:0 3px 12px rgba(217,119,87,.28)}
+  .hero-sub{color:var(--dim);font-size:14px;margin:14px 0 0;text-align:center;max-width:560px}
+  .hero-sub b{color:#cfcbc3;font-weight:600}
+
+  .thread{flex:1;overflow-y:auto;min-height:0;padding:26px 20px 10px;display:none}
+  .thread.on{display:block}
+  .wrap{max-width:760px;margin:0 auto}
+  .turn{margin-bottom:26px}
+  .turn .q{font-weight:600;color:#f2efe9;margin-bottom:10px}
+  .turn .a{color:#ddd9d1;word-wrap:break-word}
+  .turn .a table{border-collapse:collapse;margin:8px 0;font-size:13.5px;width:100%}
+  .turn .a th,.turn .a td{border:1px solid var(--line2);padding:5px 9px;text-align:left}
+  .turn .a th{background:#202020;color:#cfcbc3}
+  .turn .a code{background:#1f1f1f;padding:1px 6px;border-radius:5px;font-size:13px}
+  .turn .src{font-size:11.5px;color:var(--dimmer);margin-top:8px}
+  .thinking{color:var(--dim);font-style:italic}
+
+  .composer-hold{width:100%;display:flex;justify-content:center;padding:0 20px 12px}
+  .composer{width:min(760px,100%);background:var(--card2);border:1px solid var(--line2);
+    border-radius:22px;padding:16px 16px 10px;box-shadow:0 6px 28px rgba(0,0,0,.35)}
+  .composer textarea{width:100%;background:transparent;border:0;color:var(--txt);
+    font-size:16.5px;line-height:1.5;resize:none;outline:none;min-height:28px;max-height:180px;
+    padding:2px 2px 8px;font-family:inherit}
+  .composer textarea::placeholder{color:var(--dimmer)}
+  .crow{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid var(--line)}
+  .seg{display:flex;background:#191919;border-radius:9px;padding:2px}
+  .seg button{background:transparent;border:0;color:var(--dimmer);font:inherit;font-size:12.5px;
+    padding:5px 11px;border-radius:7px;cursor:pointer}
+  .seg button.on{background:#2b2b2b;color:var(--txt)}
+  .crow .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .model{font-size:12.5px;color:var(--dimmer)}
+  .pill .pill-narrow{display:none}
+  .pill b{font-variant-numeric:tabular-nums}
+  .gate .a{background:#1d1a16;border:1px solid #4a3524;border-radius:14px;padding:12px 14px}
+  .gate-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .gatebtn{background:var(--accent2);border:0;color:#fff;font:inherit;font-size:13.5px;
+    padding:9px 15px;border-radius:10px;cursor:pointer;text-decoration:none;display:inline-block}
+  .gatebtn:hover{background:var(--accent)}
+  .gatebtn[disabled]{opacity:.6;cursor:default}
+  .gate-code{display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap}
+  .gate-code input{flex:1;min-width:150px;background:#141414;border:1px solid var(--line2);
+    color:var(--txt);border-radius:10px;padding:9px 12px;font:inherit;font-size:13.5px;
+    text-transform:uppercase;letter-spacing:.06em}
+  .gate-code input::placeholder{color:var(--dimmer);text-transform:none;letter-spacing:0}
+  .gate-note{font-size:12.5px;color:var(--dimmer);margin:8px 0 0}
+  .send{width:36px;height:36px;border-radius:10px;background:var(--accent2);border:0;color:#fff;
+    font-size:16px;cursor:pointer;display:grid;place-items:center}
+  .send:hover{background:var(--accent)}
+  .send:disabled{opacity:.5;cursor:default}
+  .hint{font-size:11.5px;color:var(--dimmer);text-align:center;padding:0 0 14px}
+  .hint a{color:var(--dimmer);text-decoration:underline}
+
+  /* One question at a time, rolling. Five stacked questions ate half the phone
+     screen; a visitor only ever needs one to start with, and the rail turns. */
+  .chips{display:flex;justify-content:center;align-items:center;margin:20px 0 0;
+    width:100%;max-width:760px;min-height:36px;padding:0 16px}
+  .chip{background:#1c1c1c;border:1px solid var(--line);border-radius:999px;padding:7px 14px;
+    font-size:13px;color:var(--dim);cursor:pointer;max-width:100%;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;transition:opacity .3s ease}
+  .chip:hover{border-color:var(--line2);color:var(--txt)}
+  .chip.spon{color:#e7c9a8;border-color:#4a3524}
+
+  /* ── phones ────────────────────────────────────────────────────────────────
+     Two real phone failures, both from George's screenshot:
+       * .sidebar was display:none below 820px with NO button to open it, so
+         saved chats, the archive and "sign in with Google" were unreachable.
+       * .chip was nowrap + centred, so a long question overflowed both sides of
+         its box and clipped into a fragment mid-word.
+     The sidebar is now a drawer, and questions wrap instead of being cut. */
+  .menu{display:none}
+  .scrim{display:none}
+  @media(max-width:820px){
+    .sidebar{position:fixed;top:0;bottom:0;left:0;width:84%;max-width:330px;z-index:60;
+      transform:translateX(-103%);transition:transform .22s ease;box-shadow:0 0 46px rgba(0,0,0,.7)}
+    .sidebar.open{transform:none}
+    .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50}
+    .scrim.on{display:block}
+    /* Pin the ☰ left and let the pill shrink, so a narrow phone can never push
+       the row past the edge: measured, the row right-packs and the pill is the
+       item that gives way. */
+    .menu{display:inline-flex;align-items:center;justify-content:center;font-size:16px;
+      order:-1;margin-right:auto}
+    .topbar{gap:8px;padding:12px 14px 0}
+    .pill{font-size:11px;padding:5px 9px;min-width:0;flex:0 1 auto;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pill .pill-wide{display:none}
+    .pill .pill-narrow{display:inline}
+    .hero{font-size:28px;gap:9px}
+    .chips{padding:0 12px;margin-top:14px;min-height:32px}
+    .chip{font-size:12px;padding:6px 12px}
+    .composer-hold{padding:0 12px}
+  }
 </style>
 </head>
-<body><main>
-<div class="stage">
-  <video id="cam" playsinline muted autoplay></video>
-  <div id="cap">Alice is here. Tap 🎥 to start.</div>
-</div>
-<div class="bar">
-  <button id="start" class="start">🎥</button>
-  <button id="ear" class="on">👂</button>
-  <button id="voice" class="on">🔊</button>
-  <button id="flip">↻</button>
-</div>
-<section class="composer">
-  <textarea id="text" placeholder="Type to Alice..."></textarea>
-  <button id="send">Send</button>
-  <p id="status" role="status"></p>
-</section>
-</main>
-<script>
-"use strict";
-const $=id=>document.getElementById(id);
-const SESSION_KEY='sifta.robot.session',OWNER_KEY='sifta.owner.session',EAR_KEY='sifta_phone_ear',VOICE_KEY='sifta_phone_voice';
-const BATCH_MS=20000,MIN_MS=10000,MAX_MS=60000;
-let cameraStream=null,audioStream=null,recorder=null,sending=false,stopped=false;
-let generation=0,sensorActive=false,telemetryOn=false;
-let latestMotion=null,latestOrient=null,latestGPS=null,latestBatt=null,gpsWatch=null;
-let batchTimer=null,batchInFlight=false,batchSeq=0,cameraFacing='environment',blackStreak=0,lastFlip=0;
-let cadenceMs=Math.min(MAX_MS,Math.max(MIN_MS,Number(localStorage.getItem(CADENCE_KEY))||10000));
-let polling=false;
-const observationTurns=new Map();let pendingObs=false;
-const session=localStorage.getItem(SESSION_KEY)||(()=>{const s=crypto.randomUUID();localStorage.setItem(SESSION_KEY,s);return s;})();
+<body>
 
-function status(t){$('status').textContent=t;}
-function setStartBtn(){const b=$('start');if(sensorActive){b.textContent='⏸';b.classList.add('on');}else{b.textContent='🎥';b.classList.remove('on');}}
-function setEarBtn(){const on=localStorage.getItem(EAR_KEY)!=='off';$('ear').textContent='👂';$('ear').classList.toggle('on',on);}
-function setVoiceBtn(){const v=localStorage.getItem(VOICE_KEY);const on=v===null||v==='on';$('voice').textContent=on?'🔊':'🔇';$('voice').classList.toggle('on',on);}
-function setFlipBtn(){$('flip').disabled=!cameraStream;}
-function snapshotTelemetry(){const s={};if(latestMotion)s.acceleration={x:latestMotion.x,y:latestMotion.y,z:latestMotion.z};if(latestOrient)s.orientation={alpha:latestOrient.alpha,beta:latestOrient.beta,gamma:latestOrient.gamma};if(latestGPS)s.gps={lat:latestGPS.latitude,lon:latestGPS.longitude,accuracy:latestGPS.accuracy};if(latestBatt)s.battery={level:latestBatt.level,charging:latestBatt.charging};s.captured_at=new Date().toISOString();return s;}
-function bytesToBase64(bytes){const bin=[];for(let i=0;i<bytes.length;i+=8192)bin.push(String.fromCharCode.apply(null,bytes.subarray(i,i+8192)));return btoa(bin.join(''));}
-async function request(url,options={}){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const headers=new Headers(options.headers||{}),owner=localStorage.getItem(OWNER_KEY);if(owner)headers.set('Authorization','Bearer '+owner);options.signal=controller.signal;Object.assign(options,{headers});const response=await fetch(url,options);if(!response.ok){const body=await response.text();let parsed={};try{parsed=JSON.parse(body)}catch(_e){}throw new Error(parsed.message||response.status+' '+response.statusText);}return JSON.parse(await response.text());}finally{clearTimeout(timer);}}
-async function digestText(text){const data=new TextEncoder().encode(text);const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-function updateMotion(e){if(!telemetryOn)return;if(e.accelerationIncludingGravity)latestMotion={x:e.accelerationIncludingGravity.x||0,y:e.accelerationIncludingGravity.y||0,z:e.accelerationIncludingGravity.z||0};}
-function updateOrientation(e){if(!telemetryOn)return;latestOrient={alpha:e.alpha||0,beta:e.beta||0,gamma:e.gamma||0};}
-function takeFrame(){const v=$('cam');if(!cameraStream||!v.videoWidth)return null;const s=document.createElement('canvas');s.width=16;s.height=16;s.getContext('2d').drawImage(v,0,0,16,16);const px=s.getContext('2d').getImageData(0,0,16,16).data;let lum=0;for(let i=0;i<px.length;i+=4)lum+=(px[i]+px[i+1]+px[i+2])/3;lum/=px.length/4;const c=document.createElement('canvas');const sc=Math.min(1,1280/Math.max(v.videoWidth,v.videoHeight));c.width=Math.max(1,Math.round(v.videoWidth*sc));c.height=Math.max(1,Math.round(v.videoHeight*sc));c.getContext('2d').drawImage(v,0,0,c.width,c.height);const data=c.toDataURL('image/jpeg',.72);if(data.length>2800000)throw new Error('frame too large');return {name:'phone-frame.jpg',mime:'image/jpeg',data_url:data,capturedAt:new Date().toISOString(),width:c.width,height:c.height,likely_black:lum<8};}
-function startBatching(){if(batchTimer||!sensorActive)return;batchTimer=setTimeout(()=>{batchTimer=null;if(document.hidden||batchInFlight||sending||pendingObs||!cameraStream){if(cameraStream&&!stopped)startBatching();return;}captureObservation('','ambient',2500);},cadenceMs);}
-function stopBatching(){if(batchTimer){clearTimeout(batchTimer);batchTimer=null;}}
-function pauseTelemetry(){window.removeEventListener('devicemotion',updateMotion,{passive:true});window.removeEventListener('deviceorientation',updateOrientation,{passive:true});if(gpsWatch){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;}}
-function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('cam').srcObject=null;pauseTelemetry();setStartBtn();setEarBtn();setFlipBtn();}
-function audioMime(){for(const c of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'])if(window.MediaRecorder&&MediaRecorder.isTypeSupported(c))return c;return '';}
-async function recordAudioWindow(ms){const track=audioStream&&audioStream.getAudioTracks()[0];if(!track||!window.MediaRecorder)return null;const source=new MediaStream([track]),mime=audioMime(),startedAt=new Date().toISOString(),gen=generation;return new Promise((resolve,reject)=>{const pieces=[],rec=new MediaRecorder(source,mime?{mimeType:mime}:undefined);recorder=rec;rec.ondataavailable=e=>{if(e.data.size)pieces.push(e.data);};rec.onerror=()=>{if(recorder===rec)recorder=null;reject(new Error('audio capture failed'));};rec.onstop=async()=>{if(recorder===rec)recorder=null;if(gen!==generation){resolve(null);return;}if(!pieces.length){resolve(null);return;}try{const blob=new Blob(pieces,{type:rec.mimeType||mime||'audio/webm'});if(blob.size>2*1024*1024)throw new Error('audio > 2 MiB');const bytes=new Uint8Array(await blob.arrayBuffer()),audioType=(blob.type||'audio/webm').split(';')[0],ext=audioType==='audio/mp4'?'.m4a':audioType==='audio/ogg'?'.ogg':'.webm';resolve({name:'phone-audio'+ext,mime:audioType,data_url:'data:'+audioType+';base64,'+bytesToBase64(bytes),startedAt,endedAt:new Date().toISOString()});}catch(error){reject(error);}};try{rec.start(250);setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},ms);}catch(error){reject(error);}});}
-async function captureObservation(text,reason,audioMs){if(batchInFlight||(!sensorActive&&!text))return;batchInFlight=true;let gen=generation;try{let frame=sensorActive?takeFrame():null;if(frame&&frame.likely_black)blackStreak++;else blackStreak=0;let audio=null;const earOn=localStorage.getItem(EAR_KEY)!=='off';if(sensorActive&&earOn)try{audio=await recordAudioWindow(audioMs);}catch(e){}if(gen!==generation)return;const cid=crypto.randomUUID(),attachments=[];if(frame)attachments.push(frame);if(audio)attachments.push(audio);const prompt=text||('Ambient observation batch '+(++batchSeq)+': describe what you see in the image. What is in the room, who is visible, what is happening? Be concise, first person.');const envelope={schema_version:'sifta.capture.v1',capture_id:cid,kind:reason,source:'stigmergicoin-web',device_id:'browser:'+session.slice(0,16),captured_at:frame&&frame.capturedAt,telemetry:snapshotTelemetry()};await sendPayload(prompt,attachments,envelope);}catch(error){status(error.message);}finally{batchInFlight=false;setStartBtn();if(cameraStream&&!stopped)startBatching();}}
-function renderObservation(rows,jobs=[]){pendingObs=false;let latestReply='';for(const row of rows){if(row.reply)latestReply=String(row.reply).trim();}if(latestReply){const first=latestReply.split(/(?<=[.!?])\s+/)[0]||latestReply;const cap=first.length<=120?first:first.slice(0,117)+'…';const el=$('cap');el.textContent=cap;const vOn=localStorage.getItem(VOICE_KEY);const speaking=(vOn===null||vOn==='on');if(speaking&&cap&&!document.hidden){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(cap.slice(0,200));u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}}}
-async function refresh(){if(polling||stopped||document.hidden)return;polling=true;try{const data=await request('/api/history?session_id='+encodeURIComponent(session)),rows=data.history||[],jobs=data.observations||[];renderObservation(rows,jobs);const active=jobs.find(job=>job.state==='running'||job.state==='queued');if(active)status('Processing...');}catch(error){status('History unavailable.');}finally{polling=false;}}
-async function sendPayload(text,attachments=[],capture={}){if(sending)return;sending=true;$('send').disabled=true;try{const enriched={...capture};if(!Object.prototype.hasOwnProperty.call(enriched,'telemetry'))enriched.telemetry=snapshotTelemetry();const result=await request('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:session,text,attachments,capture:enriched})});if(!result.accepted)throw new Error(result.message||'not accepted');if(capture.capture_id&&result.turn_id){observationTurns.set(result.turn_id,{capture_id:capture.capture_id,ts:Date.now()/1000,image_received:attachments.some(a=>a.mime.startsWith('image/')),audio_received:attachments.some(a=>a.mime.startsWith('audio/')),telemetry_received:!!(enriched.telemetry&&Object.keys(enriched.telemetry.signals||{}).length)});pendingObs=true;}if($('text').value.trim()===text.trim())$('text').value='';status('Accepted.');await refresh();}catch(error){status(error.message);throw error;}finally{sending=false;$('send').disabled=false;}}
-async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
-// ─── Wiring ───
-$('start').onclick=async()=>{
-  if(sensorActive){stopMedia();return;}
-  if(!navigator.mediaDevices){status('No media APIs.');return;}
-  const ver=++generation;let media=null;
-  try{
-    const earOn=localStorage.getItem(EAR_KEY)!=='off';
-    media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:earOn?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});
-    if(ver!==generation){media.getTracks().forEach(t=>t.stop());return;}
-    cameraStream=media;if(media.getAudioTracks().length)audioStream=media;
-    $('cam').srcObject=cameraStream;await $('cam').play();
-    sensorActive=true;startTelemetry(true);startBatching();setStartBtn();setEarBtn();setFlipBtn();status(earOn?'Camera + audio + telemetry active.':'Camera + telemetry active (ear off).');
-  }catch(e){status('Camera/audio unavailable: '+e.message);}
-};
-function requestMotionPermission(){if(typeof DeviceMotionEvent!=='undefined'&&DeviceMotionEvent.requestPermission){try{const r=DeviceMotionEvent.requestPermission();return r==='granted';}catch(e){return false;}}startTelemetry(true);return true;}
-function startTelemetry(motionGranted=true){telemetryOn=true;if(motionGranted){window.addEventListener('devicemotion',updateMotion,{passive:true});window.addEventListener('deviceorientation',updateOrientation,{passive:true});}if(navigator.geolocation)gpsWatch=navigator.geolocation.watchPosition(p=>{if(!telemetryOn)return;latestGPS={latitude:Number(p.coords.latitude.toFixed(3)),longitude:Number(p.coords.longitude.toFixed(3)),accuracy:p.coords.accuracy,captured_at:new Date().toISOString()};},()=>{},{enableHighAccuracy:false,maximumAge:30000,timeout:10000});if(navigator.getBattery)navigator.getBattery().then(b=>{if(telemetryOn)latestBatt={level:b.level,charging:b.charging,captured_at:new Date().toISOString()};}).catch(()=>{});}
-function pauseTelemetry(){window.removeEventListener('devicemotion',updateMotion,{passive:true});window.removeEventListener('deviceorientation',updateOrientation,{passive:true});if(gpsWatch){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;}}
-function stopMedia(){generation++;sensorActive=false;stopBatching();if(recorder&&recorder.state!=='inactive')recorder.stop();if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());if(audioStream)audioStream.getTracks().forEach(t=>t.stop());cameraStream=null;audioStream=null;recorder=null;$('cam').srcObject=null;pauseTelemetry();faceState='unknown';noFace=0;setStartBtn();setEarBtn();setFlipBtn();}
-let faceState='unknown',noFace=0,faceDetector=null;
-$('ear').onclick=async()=>{const wasOn=localStorage.getItem(EAR_KEY)!=='off';localStorage.setItem(EAR_KEY,wasOn?'off':'on');setEarBtn();if(!sensorActive)return;if(!wasOn&&!audioStream){try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});status('Ear: on.');}catch(e){status('Mic unavailable.');}}else if(wasOn&&audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;status('Ear: off.');}};
-$('voice').onclick=()=>{const v=localStorage.getItem(VOICE_KEY);const on=v===null||v==='on';localStorage.setItem(VOICE_KEY,on?'off':'on');setVoiceBtn();if(!on){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('Vocea mea e pornita.');u.lang='ro-RO';speechSynthesis.speak(u);}catch(_e){}}};
-$('flip').onclick=async()=>{if(!cameraStream){status('Start first.');return;}const next=cameraFacing==='environment'?'user':'environment';cameraFacing=next;stopBatching();cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;$('cam').srcObject=null;try{const media=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:next},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});cameraStream=media;if(media.getAudioTracks().length)audioStream=media;$('cam').srcObject=cameraStream;await $('cam').play();if(sensorActive)startBatching();status('Camera: '+next+'.');}catch(e){status('Flip failed: '+e.message);try{cameraFacing=cameraFacing==='user'?'environment':'user';const restore=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1280}},audio:localStorage.getItem(EAR_KEY)!=='off'?{channelCount:1,echoCancellation:true,noiseSuppression:true}:false});cameraStream=restore;if(restore.getAudioTracks().length)audioStream=restore;$('cam').srcObject=cameraStream;await $('cam').play();if(sensorActive)startBatching();status('Restored previous camera.');}catch(e2){status('Camera restore also failed.');}}};
-$('send').onclick=async()=>{const text=$('text').value.trim();if(!text){status('Type a message.');return;}if(batchInFlight){status('Processing previous batch.');return;}try{$('text').blur();await captureObservation(text,'owner_text',1500);}catch(_e){}};
-$('text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('send').onclick();}});
-async function consumePairTicket(){const marker='#pair=';if(!location.hash.startsWith(marker))return;const ticket=decodeURIComponent(location.hash.slice(marker.length));if(!ticket)return;try{const result=await request('/api/stigmergicode/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})});if(!result.session)throw new Error('pairing did not return a session');localStorage.setItem(OWNER_KEY,result.session);history.replaceState(null,'',location.pathname+location.search);status('Owner phone paired.');}catch(error){status('Owner pairing unavailable: '+error.message);}}
-</script>
+<aside class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="mark">🐜</div>
+    <div class="wordmark">stigmergi<span style="color:var(--accent)">coin</span></div>
+  </div>
+
+  <nav class="nav">
+    <button id="newchat" class="active">＋ New chat</button>
+    <button id="btnmarkets">◫ Markets now</button>
+    <button id="btnnews">◈ Today's news</button>
+  </nav>
+
+  <div class="sidebar-label">Your chats</div>
+  <div class="chatlist" id="chatlist"></div>
+  <div id="archwrap" style="display:none">
+    <div class="archbar" id="archbar"><span id="archarrow">▸</span> Archived
+      <span id="archcount"></span></div>
+    <div class="chatlist archlist" id="archlist" style="display:none"></div>
+  </div>
+
+  <div class="side-foot">
+    <a class="sponsor" id="sponsor" href="https://dexscreener.com/solana" target="_blank"
+       rel="noopener" title="See $MPS on DexScreener — where it trades">
+      <span class="dot"></span>
+      <span class="txt">Powered by <b>GoogleMapsCoin $MPS</b><br><span class="buy">on Solana · trade it ↗</span></span>
+      <span class="px" id="spx">—</span>
+    </a>
+    <div class="codeside">
+      <input id="sidecode" placeholder="Have a code?" autocomplete="off"
+             title="A code adds credit without an account">
+      <button id="sidecoderedeem">Use</button>
+    </div>
+    <div class="codeside-note" id="codesidenote"></div>
+
+    <div class="account">
+      <span class="avatar" id="av">?</span>
+      <span>
+        <span class="who" id="who">This device</span><br>
+        <span class="plan" id="planline">history saved here · <a href="/signin">sign in with Google</a></span>
+      </span>
+    </div>
+  </div>
+</aside>
+
+<div class="scrim" id="scrim"></div>
+
+<main class="main">
+  <div class="topbar">
+    <button class="ghost menu" id="menu" title="Your chats and account"
+            aria-label="Your chats and account">☰</button>
+    <span class="pill" id="pill" title="Three questions free, then sign in with Google for $6.00 of credit a day">
+      <span class="pill-wide">Free · <b>3 free questions</b></span>
+      <span class="pill-narrow"><b>3</b> free</span>
+    </span>
+    <button class="ghost" id="incognito" title="Private: this question is not saved to your chats or your file">🕶</button>
+  </div>
+
+  <section class="stage" id="stage">
+    <h1 class="hero"><span class="ht">Let's talk markets</span><span class="ast">🐜</span></h1>
+    <p class="hero-sub">Oil · gold · commodities · stocks · indices · currencies · crypto.
+      Live prices, real headlines, and <b>answers that say when they don't know</b>.</p>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="thread" id="thread"><div class="wrap" id="turns"></div></section>
+
+  <div class="composer-hold">
+    <form class="composer" id="form">
+      <textarea id="q" rows="1" placeholder="Ask about any market — or paste a coin you are looking at…"></textarea>
+      <div class="crow">
+        <span class="seg"><button type="button" class="on">Chat</button><button type="button" disabled title="coming soon">Research</button></span>
+        <span class="right">
+          <span class="model" id="modelname" title="Alice reads live prices and headlines, then answers you herself">Alice</span>
+          <button class="send" id="send" type="submit" title="Send">↑</button>
+        </span>
+      </div>
+    </form>
+  </div>
+  <div class="hint">Not financial advice · <a href="/disclaimer">risk notice &amp; privacy</a> · never share a seed phrase</div>
+</main>
+
 <script>
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMedia();else refresh();});
-window.addEventListener('pagehide',()=>{stopped=true;stopMedia();});
-if(typeof window.FaceDetector==='function'){try{faceDetector=new window.FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(_e){}}
-consumePairTicket();
-setInterval(refresh,5000);
-refresh();
+const $ = (i)=>document.getElementById(i);
+const fmt=(n,d)=>{ d=d||8; n=Number(n); if(!isFinite(n)||n===0)return '—';
+  if(n>=1000)return '$'+n.toLocaleString(undefined,{maximumFractionDigits:0});
+  if(n>=1)return '$'+n.toLocaleString(undefined,{maximumFractionDigits:2});
+  return '$'+n.toFixed(d).replace(/0+$/,'');};
+
+let conversationId = null, sending = false, incognito = false;
+
+// A device signature that survives a cleared cookie. It is hashed with a local
+// salt on the server and used only to count free questions — nothing here is
+// stored raw, and it never leaves the desk's own memory.
+function fingerprint(){
+  try{
+    const parts=[screen.width+'x'+screen.height, screen.colorDepth,
+      new Date().getTimezoneOffset(), navigator.language||'',
+      (navigator.languages||[]).join(','), navigator.platform||'',
+      navigator.hardwareConcurrency||0, navigator.maxTouchPoints||0,
+      Math.round((window.devicePixelRatio||1)*100)];
+    try{
+      const c=document.createElement('canvas'); c.width=200; c.height=40;
+      const g=c.getContext('2d');
+      g.textBaseline='top'; g.font='13px Georgia'; g.fillStyle='#d97757';
+      g.fillText('stigmergicoin \u{1F41C}', 2, 2);
+      parts.push(c.toDataURL().slice(-48));
+    }catch(e){}
+    const str=parts.join('|');
+    let h=2166136261;
+    for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h,16777619); }
+    return 'fp_'+(h>>>0).toString(36);
+  }catch(e){ return ''; }
+}
+const FP=fingerprint();
+
+async function price(){
+  try{
+    const d = await (await fetch('/api/gmprice',{cache:'no-store'})).json();
+    const gt=(d.sources||{}).geckoterminal||{}, ds=(d.sources||{}).dexscreener||{};
+    $('spx').textContent = fmt(ds.price_usd||gt.price_usd, 10);
+    if (ds.url) $('sponsor').href = ds.url;          // straight to the live pool
+  }catch(e){ $('spx').textContent='—'; }
+}
+price(); setInterval(price, 90000);
+
+async function loadChats(){
+  try{
+    const d = await (await fetch('/api/chats',{cache:'no-store'})).json();
+    const box = $('chatlist'); box.textContent='';
+    const list = d.chats||[], arch = d.archived||[];
+    if(!list.length){
+      const e=document.createElement('div'); e.className='empty';
+      e.textContent = arch.length
+        ? 'No active chats — ' + arch.length + ' archived below.'
+        : 'No saved chats yet — ask something.';
+      box.appendChild(e);
+    }
+    list.forEach(function(c){ box.appendChild(chatRow(c,false)); });
+
+    const wrap=$('archwrap'), al=$('archlist');
+    if(arch.length){
+      wrap.style.display=''; $('archcount').textContent='('+arch.length+')';
+      al.textContent=''; arch.forEach(function(c){ al.appendChild(chatRow(c,true)); });
+    }else{ wrap.style.display='none'; al.textContent=''; al.style.display='none';
+           $('archarrow').textContent='▸'; }
+  }catch(e){}
+}
+
+function chatRow(c, archived){
+  const row=document.createElement('div'); row.className='row';
+  const b=document.createElement('button');
+  b.className='item'+(c.id===conversationId?' on':'');
+  b.textContent=c.title||'untitled';
+  b.title=(c.title||'')+'  ('+(c.count||0)+' turns)';
+  b.onclick=function(){ openChat(c.id); };
+  const a=document.createElement('button');
+  a.className='arch';
+  a.textContent=archived?'↩':'⌫';
+  a.title=archived?'Unarchive this chat':'Archive this chat (it is kept, just hidden)';
+  a.onclick=function(ev){ ev.stopPropagation(); archiveChat(c.id,!archived); };
+  row.appendChild(b); row.appendChild(a);
+  return row;
+}
+
+async function archiveChat(id, archived){
+  try{
+    const d = await (await fetch('/api/chat/archive',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({conversation_id:id, archived:archived})})).json();
+    if(!d.ok){
+      alert('could not '+(archived?'archive':'unarchive')+' this chat: '+(d.error||'unknown'));
+      return;
+    }
+    if(archived && conversationId===id){ conversationId=null; $('turns').textContent=''; showStage(); }
+    loadChats();
+  }catch(e){ alert('could not reach the desk: '+e.message); }
+}
+
+function drawerSet(open){
+  const sb=document.getElementById('sidebar'), sc=$('scrim');
+  if(!sb) return;
+  sb.classList.toggle('open', !!open);
+  if(sc) sc.classList.toggle('on', !!open);
+}
+$('menu').onclick=function(){ drawerSet(!document.getElementById('sidebar').classList.contains('open')); };
+$('scrim').onclick=function(){ drawerSet(false); };
+
+$('sidecoderedeem').onclick=async function(){
+  const btn=$('sidecoderedeem'), inp=$('sidecode'), note=$('codesidenote');
+  const code=(inp.value||'').trim();
+  if(!code){ inp.focus(); return; }
+  btn.disabled=true; btn.textContent='\u2026';
+  try{
+    const d=await (await fetch('/api/credits/redeem',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code:code})})).json();
+    if(d.ok){
+      inp.value='';
+      note.textContent='\u2713 Added $'+Number(d.credited_usd||0).toFixed(2)+' \u2014 '+d.questions+' questions.';
+      credits();
+    }else{
+      note.textContent=d.message||'That code did not work.';
+    }
+  }catch(e){ note.textContent='Could not reach the desk.'; }
+  btn.disabled=false; btn.textContent='Use';
+};
+
+$('archbar').onclick=function(){
+  const al=$('archlist'), open = al.style.display!=='none';
+  al.style.display = open?'none':'';
+  $('archarrow').textContent = open?'▸':'▾';
+};
+
+function openChat(id){
+  conversationId=id;
+  drawerSet(false);            // on a phone, picking a chat closes the drawer
+  (async function(){
+    try{
+      const d = await (await fetch('/api/chatlog?conversation_id='+encodeURIComponent(id),{cache:'no-store'})).json();
+      $('turns').textContent=''; showThread();
+      const turns=d.turns||[];
+      if(!turns.length) addTurn('(empty thread)','This conversation has no saved turns.');
+      turns.forEach(function(t){ addTurn(t.q, t.a); });
+      loadChats(); scroll();
+    }catch(e){}
+  })();
+}
+
+function showThread(){ $('stage').style.display='none'; $('thread').classList.add('on'); }
+function showStage(){ $('stage').style.display='flex'; $('thread').classList.remove('on'); }
+function scroll(){ const t=$('thread'); t.scrollTop=t.scrollHeight; }
+
+function esc(s){ return (s||'').replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function render(text){
+  let h = esc(text);
+  h = h.replace(/((?:^\|.*\|$\n?)+)/gm, function(block){
+    const rows = block.trim().split('\n').map(function(r){ return r.split('|').slice(1,-1).map(function(c){return c.trim();}); });
+    if(rows.length < 2) return block;
+    const head = rows[0];
+    const body = rows.slice(1).filter(function(r){ return !/^[-\s:]*$/.test(r[0]||''); });
+    return '<table><thead><tr>'+head.map(function(c){return '<th>'+c+'</th>';}).join('')+
+      '</tr></thead><tbody>'+body.map(function(r){
+        return '<tr>'+r.map(function(c){return '<td>'+c+'</td>';}).join('')+'</tr>'; }).join('')+'</tbody></table>';
+  });
+  h = h.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  return h.replace(/\n/g,'<br>');
+}
+
+function addTurn(q, a, meta){
+  const t=document.createElement('div'); t.className='turn';
+  t.innerHTML='<div class="q">'+esc(q)+'</div><div class="a">'+render(a)+'</div>'+
+              (meta?'<div class="src">'+esc(meta)+'</div>':'');
+  $('turns').appendChild(t); showThread(); scroll(); return t;
+}
+const THINKING=[
+  'one moment — I\u2019m reading the live tape for you\u2026',
+  'give me a second, I\u2019m looking at the numbers\u2026',
+  'coming \u2014 checking the market first\u2026',
+  'just a moment, I\u2019m on it\u2026',
+  'hold on, let me look at what\u2019s actually trading\u2026'
+];
+function pending(){
+  const t=document.createElement('div'); t.className='turn';
+  const line=THINKING[Math.floor(Math.random()*THINKING.length)];
+  t.dataset.base=line;
+  t.innerHTML='<div class="a thinking">'+esc(line)+'</div>';
+  $('turns').appendChild(t); showThread(); scroll(); return t;
+}
+
+async function ask(text){
+  text=(text||'').trim(); if(!text||sending) return;
+  sending=true; $('send').disabled=true;
+  if(!conversationId) conversationId='c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const turn=document.createElement('div'); turn.className='turn';
+  turn.innerHTML='<div class="q">'+esc(text)+'</div>';
+  $('turns').appendChild(turn);
+  const p=pending();
+  try{
+    // Ask, then collect. The desk answers in a worker now, so a slow model can
+    // never cut the connection: this POST returns a job id at once, and the
+    // answer is picked up by polling until it is ready.
+    const r0 = await fetch('/api/gmchat',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:text, conversation_id: incognito?'':conversationId,
+                            fingerprint:FP, incognito:incognito, async:true})});
+    let first;
+    try { first = JSON.parse(await r0.text()); }
+    catch(parseErr){ throw new Error('the desk did not accept the question — please try again'); }
+    if(!first.accepted || !first.job_id){
+      if(first.reason === 'sign_in_required' || first.reason === 'out_of_credit'){
+        p.remove(); showGate(first.message, first.reason);
+        return;                                  // refused before the model ran: cost $0
+      }
+      throw new Error(first.error || 'the desk refused the question');
+    }
+    const d = await collectAnswer(first.job_id, p);
+    p.remove();
+    const meta=[];
+    if(d.receipt_id) meta.push('alice · '+String(d.receipt_id).slice(0,8));
+    if(d.topics&&d.topics.length) meta.push(d.topics.join(', '));
+    if(d.search_used) meta.push(d.search_used+' web result(s)');
+    if(d.news_used) meta.push(d.news_used+' live headline(s)');
+    turn.innerHTML='<div class="q">'+esc(text)+'</div><div class="a">'+
+                   render(d.answer||d.error||'no answer')+'</div>'+
+                   (meta.length?'<div class="src">'+esc(meta.join(' · '))+'</div>':'');
+    scroll(); credits(); if(!incognito) loadChats();
+  }catch(e){
+    p.remove();
+    turn.innerHTML='<div class="q">'+esc(text)+'</div><div class="a">could not reach the desk: '+esc(e.message)+'</div>';
+  }finally{ sending=false; $('send').disabled=false; $('q').focus(); }
+}
+
+async function credits(){
+  try{
+    const d = await (await fetch('/api/credits',{cache:'no-store'})).json();
+    const pill = $('pill'); if(!pill) return;
+    const wide = pill.querySelector('.pill-wide'), narrow = pill.querySelector('.pill-narrow');
+    if(!wide || !narrow) return;
+    const bal = '$' + Number(d.balance_usd || 0).toFixed(2);
+    if(d.signed_in){
+      wide.innerHTML = 'Free \u00b7 <b>$6 a day</b> \u00b7 have <b>' + bal + '</b>';
+      narrow.innerHTML = '<b>' + bal + '</b>';
+      pill.title = '$6.00 of credit every day. You have ' + bal + ' \u2014 ' +
+                   d.questions_left + ' questions. Then $' +
+                   Number(d.price_per_question).toFixed(2) + ' a question.';
+    }else if(Number(d.balance_usd || 0) > 0){
+      // credit on a browser with no account: a code, or the owner handing it over
+      const q = Number(d.questions_left || 0);
+      wide.innerHTML = 'Credit <b>' + bal + '</b> \u00b7 <b>' + q + '</b> questions left';
+      narrow.innerHTML = '<b>' + bal + '</b>';
+      pill.title = 'Credit on this browser: ' + bal + ' \u2014 ' + q + ' questions. ' +
+                   Number(d.free_left || 0) + ' free left today.';
+    }else{
+      const n = Number(d.free_left || 0);
+      wide.innerHTML = 'Free \u00b7 <b>' + n + ' free question' + (n === 1 ? '' : 's') + ' left</b>';
+      narrow.innerHTML = '<b>' + n + '</b> free';
+      pill.title = 'Three questions free, then sign in with Google \u2014 or use a code \u2014 ' +
+                   'and I will put credit in your hand';
+    }
+  }catch(e){}
+}
+
+function showGate(message, reason){
+  const t = document.createElement('div'); t.className = 'turn gate';
+  let actions = '';
+  if(reason === 'sign_in_required'){
+    actions = '<a class="gatebtn" href="/api/auth/google/start">Sign in with Google</a>';
+  }else{
+    actions = '<button class="gatebtn" id="topupbtn">Top up with a card</button>' +
+              '<a class="gatebtn" href="/api/auth/google/start" style="background:#2b2b2b">Switch account</a>';
+  }
+  t.innerHTML = '<div class="a">' + esc(message || '') + '</div><div class="gate-row">' + actions +
+    '</div><div class="gate-code"><input id="gatecode" placeholder="Have a code?" autocomplete="off">' +
+    '<button class="gatebtn" id="gatecoderedeem" style="background:#2b2b2b">Use code</button></div>' +
+    '<div class="gate-note">A code gives credit without an account \u2014 ask for one if you have no Google.</div>';
+  $('turns').appendChild(t); showThread(); scroll();
+  const b = t.querySelector('#topupbtn');
+  if(b) b.onclick = function(){ topUp(b); };
+  const rc = t.querySelector('#gatecoderedeem');
+  if(rc) rc.onclick = function(){ redeemCode(t, rc); };
+  credits();
+}
+
+async function redeemCode(card, btn){
+  const input = card.querySelector('#gatecode');
+  const code = (input && input.value || '').trim();
+  if(!code){ if(input) input.focus(); return; }
+  btn.disabled = true; btn.textContent = 'checking\u2026';
+  try{
+    const d = await (await fetch('/api/credits/redeem',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code:code})})).json();
+    if(d.ok){
+      credits();
+      card.innerHTML = '<div class="a">That worked \u2014 I have put $' +
+        Number(d.credited_usd || 0).toFixed(2) + ' on you, which is ' + d.questions +
+        ' questions. Go on, ask me.</div>';
+      return;
+    }
+    btn.disabled = false; btn.textContent = 'Use code';
+    let note = card.querySelector('.gate-note');
+    if(!note){ note = document.createElement('div'); note.className = 'gate-note'; card.appendChild(note); }
+    note.textContent = d.message || 'That code did not work.';
+  }catch(e){
+    btn.disabled = false; btn.textContent = 'Use code';
+  }
+}
+
+async function topUp(btn){
+  btn.disabled = true; btn.textContent = 'opening Stripe\u2026';
+  try{
+    const d = await (await fetch('/api/stripe/topup',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bundle:'questions_25'})})).json();
+    if(d.ok && d.url){ window.location = d.url; return; }
+    if(d.error === 'sign_in_required'){ window.location = '/api/auth/google/start'; return; }
+    btn.textContent = 'could not open Stripe \u2014 try again';
+  }catch(e){ btn.textContent = 'could not reach Stripe \u2014 try again'; }
+  btn.disabled = false;
+}
+
+async function collectAnswer(job, pendingEl){
+  const started=Date.now();
+  for(;;){
+    await new Promise(function(r){ setTimeout(r, 2500); });
+    const secs=Math.round((Date.now()-started)/1000);
+    const t=pendingEl.querySelector('.thinking');
+    if(t) t.textContent = secs < 20
+      ? (pendingEl.dataset.base||'one moment\u2026') + '  (' + secs + 's)'
+      : 'still with you \u2014 this one is taking me a while, I haven\u2019t dropped it  (' + secs + 's)';
+    let d;
+    try{
+      d = await (await fetch('/api/gmchat/result?job_id='+encodeURIComponent(job),
+                             {cache:'no-store'})).json();
+    }catch(netErr){ continue; }                      // a dropped poll is not a failure
+    if(d.state==='done') return d;
+    if(d.state==='unknown')
+      throw new Error('the desk lost track of this question — please ask again');
+    if(secs>360)
+      throw new Error('the desk is still working after six minutes — the answer will appear '
+        + 'in your chats when it lands');
+  }
+}
+
+const ta=$('q');
+ta.addEventListener('input',function(){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px'; });
+ta.addEventListener('keydown',function(e){
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; ask(v); }
+});
+$('form').addEventListener('submit',function(e){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; ask(v); });
+
+$('newchat').onclick=function(){ conversationId=null; $('turns').textContent=''; showStage(); loadChats(); ta.focus(); };
+$('incognito').onclick=function(){ incognito=!incognito;
+  $('incognito').style.color = incognito?'var(--accent)':'';
+  // The old label said "this chat is not saved", which was not true: the thread
+  // was skipped, but the exchange was still written against the person.
+  $('incognito').title = incognito
+    ? 'Private is ON \u2014 this question is not saved to your chats or your file'
+    : 'Private: ask without it being saved to you'; };
+// Both of these used to send one frozen sentence, so every click read the same
+// and the button felt broken. They draw from a small pool now and never repeat
+// the previous ask. Every market variant names oil, gold, the S&P 500 and bitcoin
+// on purpose: those words are what make the desk go and fetch live quotes.
+const MARKETS_ASKS=[
+  'Where are oil, gold, the S&P 500 and bitcoin trading right now?',
+  'Give me the tape: crude, gold, the S&P 500 and bitcoin.',
+  'What are oil, gold, the S&P 500 and bitcoin doing this hour?',
+  'Snapshot the majors for me — crude, gold, the S&P 500, bitcoin.',
+  'How are crude, gold, the S&P 500 and bitcoin moving today?'
+];
+const NEWS_ASKS=[
+  'What is the biggest market-moving story in the news right now?',
+  'What is moving markets in the news today?',
+  'Which headline matters most for markets right now?',
+  'What story in the news should a trader be reading this morning?'
+];
+let lastMarketsAsk=-1, lastNewsAsk=-1;
+function nextAsk(pool, last){
+  let i; do { i=Math.floor(Math.random()*pool.length); } while(pool.length>1 && i===last);
+  return i;
+}
+$('btnmarkets').onclick=function(){
+  lastMarketsAsk=nextAsk(MARKETS_ASKS,lastMarketsAsk);
+  ask(MARKETS_ASKS[lastMarketsAsk]);
+};
+$('btnnews').onclick=function(){
+  lastNewsAsk=nextAsk(NEWS_ASKS,lastNewsAsk);
+  ask(NEWS_ASKS[lastNewsAsk]);
+};
+
+let chipList=[], chipAt=0, chipTimer=null;
+const CHIP_EVERY=4500;
+
+function renderChip(){
+  const box=$('chips'); if(!box) return;
+  let el=box.querySelector('.chip');
+  if(!el){ el=document.createElement('div'); el.className='chip'; box.appendChild(el); }
+  el.classList.add('fade');
+  setTimeout(function(){
+    el.textContent=chipList[chipAt];
+    el.className='chip'+(chipAt===0?' spon':'');
+    el.classList.remove('fade');
+  },170);
+  el.onclick=function(){ ask(chipList[chipAt]); };
+}
+
+function rollChips(){
+  if(chipTimer) clearInterval(chipTimer);
+  chipTimer=setInterval(function(){
+    if(chipList.length<2) return;
+    chipAt=(chipAt+1)%chipList.length;
+    renderChip();
+  }, CHIP_EVERY);
+}
+
+(async function chips(){
+  try{
+    const d=await (await fetch('/api/chips',{cache:'no-store'})).json();
+    chipList=(d.questions||[]).slice(0,8);
+    if(!chipList.length) return;
+    chipAt=0; renderChip(); rollChips();
+    const box=$('chips');
+    // hold still while a finger or a cursor is on it
+    box.onmouseenter=function(){ if(chipTimer) clearInterval(chipTimer); };
+    box.onmouseleave=rollChips;
+    box.ontouchstart=function(){ if(chipTimer) clearInterval(chipTimer); };
+    box.onfocus=function(){ if(chipTimer) clearInterval(chipTimer); };
+  }catch(e){}
+})();
+
+async function me(){
+  try{
+    const d = await (await fetch('/api/me',{cache:'no-store'})).json();
+    if(d.signed_in){
+      $('who').textContent = d.name || d.email || 'signed in';
+      $('av').textContent = (d.name||d.email||'?').trim().charAt(0).toUpperCase();
+      $('planline').innerHTML = escapeText(d.email||'') + ' · <a href="/api/auth/signout">sign out</a>';
+    }
+  }catch(e){}
+}
+function escapeText(t){ return String(t||'').replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+me();
+loadChats();
+credits();
+if(location.search.indexOf('topup=done') >= 0){
+  // the webhook may land a moment after the redirect
+  setTimeout(credits, 2500); setTimeout(credits, 7000);
+}
 </script>
 </body>
 </html>

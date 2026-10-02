@@ -1620,3 +1620,115 @@ Shared weights were not duplicated. A full runtime rename remains deferred.
   lifecycle, ORNITH-04 grounding and ORNITH-05 verification/README work.
 - Validate coin deployment and real iPhone network behavior independently
   of offline fixtures; preserve working stigmergicode.com.
+
+
+## r20260920-astra-adaptive-intelligence-plan
+
+OBSERVED: inspected the existing boot/capability/physiology, world-model, repair,
+rover and WhatsApp paths. Existing RVR1 client, remote link and Dell-side gateway
+are present; their three focused offline test files completed with 34 passed.
+The older missing-SIFTA-rover-code statement is superseded at source/test level;
+physical readiness and ROS integration remain unverified.
+
+DELIVERED: Documents/ALICE_ADAPTIVE_INTELLIGENCE_HANDOFF.md and
+Documents/ALICE_ROVER_INTENT_CONTRACT_V1.md. Proposed Dell role: one Alice's
+headless rover organ. DeepSeek/GLM jobs cover shared contracts, portable boot,
+beliefs, durable execution, transferable learning, skills, resource recovery,
+federation, measured self-repair and independent evaluations. These are plans,
+not implemented adaptive-intelligence capabilities or an AGI certificate.
+
+Receipt: astra-adaptive-plan-20260920-5d1b5e9f;
+IDE_DOCTOR_OPERATIONAL_TRACE; local OS clock provenance; docs only.
+
+### WHAT IS LEFT after r20260920-astra-adaptive-intelligence-plan
+
+- Implement C0 and E0, then D1/G1 and the remaining dependency-ordered DeepSeek/GLM jobs in ALICE_ADAPTIVE_INTELLIGENCE_HANDOFF.md; retain the existing rover test baseline.
+- Reconcile existing RVR1/gateway implementation against the prior ORNITH-ROVER-RVR1-01 and LUNA-ROVER-GATEWAY-02 requirements in WCT; new mission-level ROS/Dell integration and full fault evaluation remain open.
+- Confirm David's flashed firmware, Dell/ROS environment, body limits, authorized LAN gateway and private key provisioning; perform supervised physical stop/obstacle/pose tests and the chassis swap.
+- Complete W1 echo direction/read-view/consent-path verification without duplicating ongoing WhatsApp bridge work; group sends remain pending the owner's instruction.
+- Preserve prior open phone work: full Qt microphone path, ORNITH-03 lifecycle, ORNITH-04 grounding and ORNITH-05 verification/README.
+- Preserve prior open deployment work: validate coin deployment and real iPhone network behavior independently of offline fixtures; preserve working stigmergicode.com.
+
+
+## r20260920-astra-adaptive-review-ca67686a
+
+OBSERVED at HEAD 49f21d05c: C0/D1/D2 focused suites 103 passed in 1.12s;
+existing rover plus adjacent belief/census suites 51 passed in 4.41s.
+D3 module and test are absent. Scratch probes exposed historical recovery
+masking fresh failed health, newer TTL reviving old evidence, zero TTL becoming
+900 seconds, and unknown position accuracy becoming variance 1e-9. C0 structural
+acceptance is not independent outcome verification. Source inspection found a
+checkout-mutating fixture test; direct hashing confirmed the origin manifest mismatch.
+
+DELIVERED: ALICE_ADAPTIVE_AUDIT_AND_D3_RESUME.md and current-status update in
+ALICE_ADAPTIVE_INTELLIGENCE_HANDOFF.md. Repairs are assigned, not implemented;
+D3 is divided into six small writes ending in exercised live integration.
+No runtime source, trust baseline, unrelated working diff, or external delivery
+was changed. Receipt astra-adaptive-review-ca67686a; IDE_DOCTOR_OPERATIONAL_TRACE.
+
+### WHAT IS LEFT after r20260920-astra-adaptive-review-ca67686a
+
+- DeepSeek: repair R1 health precedence, R2 per-observation freshness, R3 pose uncertainty; implement D3a–D3f with V1 independent verification, then D4–D6 per updated handoff.
+- GLM: E0 independent scenarios and regression tests; G1 ROS/Dell integration, then G2/G3/G4 and W1 at their dependency points. Preserve frozen C0 compatibility.
+- Verify real Linux/sensor behavior, David's firmware and Dell body profile; prepare README and complete supervised stop/pose/obstacle/chassis-swap evidence.
+- Isolate the checkout-mutating self-improvement fixture test; investigate the named grounding-window failure separately and review the integrity mismatch without silently replacing the trust baseline.
+- Add targeted/paginated inventory with explicit bounded-sample metadata; code presence in a short sample is not a completeness requirement.
+- Prior phone/audio/ORNITH and coin/iPhone deployment verification remain open; git push and WhatsApp instructions remain pending delivery items, not completed actions.
+
+## r20260921-astra-dispatch-repair-6423f36c
+
+OBSERVED at starting HEAD e215a78ac: the reported adaptive commits exist, but
+production body registration and persistent bounded runtime integration remain open.
+Independent probes reproduced duplicate effects after crash before submit receipt,
+conflicting journal tails from cached writers, and an expired goal reaching submit.
+
+DELIVERED: owner-directed local repair in swarm_action_journal.py and
+swarm_adaptive_goal_loop.py, with regression coverage in test_swarm_action_journal.py.
+Durable intent now reserves dispatch; legacy ambiguity requires reconciliation.
+OS file locks serialize claims/tail updates, changed content refuses ID reuse, and
+submit enforces the existing deadline/block/owner-stop admission checks. No autonomous
+spinal cycle or foundation-model training is claimed for this direct code patch.
+
+Verification: 361 passed in 4.11s across 14 adaptive/rover files, including real
+process exit after effect and competing independent processes. Tests use temporary
+state. This is focused verification, not a green whole-directory suite or physical run.
+Local changes are uncommitted. WCT_ADAPTIVE_RUNTIME_AND_LOCAL_DECISIONS_2026-09-21.md
+records the repair, limitations, current dependencies and DeepSeek/GLM job cards.
+Receipt: astra-adaptive-dispatch-6423f36c; IDE_DOCTOR_OPERATIONAL_TRACE;
+registration 6423f36c-5ae6-4fab-93b0-f501860fa733; local OS clock provenance.
+
+### WHAT IS LEFT after r20260921-astra-dispatch-repair-6423f36c
+
+- DeepSeek: D3H-1–4 production software adapter/verifier registration, persistent physiology ownership, reachable concurrent stop with bounded adapter I/O, authoritative prerequisites and bounded revisions; then D4–D6 and J4 at their dependencies.
+- GLM: E0 independent end-to-end/fault scenario runner, INV-2 exact-path/paginated inventory, J0–J3 real local logits plus held-out calibration and staged classify_visitor integration; G1–G4 and W1 retain the original handoff scope.
+- Verify real Linux/sensor behavior and David's firmware/Dell profile; complete README, supervised stop/pose/obstacle tests and chassis-swap evidence against the rover contract.
+- Investigate the recorded integrity-manifest mismatch and truth-navigation prompt failure separately; isolate the checkout-mutating fixture test without silently replacing the trust baseline or unrelated edits.
+- Preserve prior phone/audio/ORNITH, coin/iPhone deployment and network verification; git push, WhatsApp instructions and group sends remain uncompleted delivery items.
+
+## r20260922-astra-j1-local-decision-9a0d4c7e
+
+OBSERVED at HEAD `dd8944bbe`: GLM's J0 local logits probe is present and the real
+forward-pass packet records Aries llama3.2 3.2B Q4_K_M, llama.cpp, finite declared
+options and raw option-relative status. J0 receipt `31b3841d-1785-4ecc-84a6-ae96c3f10c05`.
+
+DELIVERED LOCALLY: `System/swarm_calibrated_decision.py` and
+`tests/test_swarm_calibrated_decision.py`. J1 wraps a running local llama.cpp endpoint,
+rejects token collisions/missing/nonfinite logits, returns a full typed distribution,
+explicit raw-vs-calibrated status, model/prompt/label-order hashes, latency, cache
+identity, abstention and refusal receipts. It has no cloud fallback and is not yet
+wired into `classify_visitor`; J2 must establish held-out calibration first.
+
+Verification: **7 passed** in `tests/test_swarm_calibrated_decision.py`. Current tests
+use a deterministic local fake backend; J0 supplies the real backend evidence. No model
+download or cloud call was made by J1. The code is uncommitted and unrelated working
+files are preserved.
+
+Receipt: `astra-j1-local-decision-9a0d4c7e`, all four ledgers returned `ok`; IDE doctor
+trace was registered before mutation. No module or classifier result certifies AGI.
+
+### WHAT IS LEFT after r20260922-astra-j1-local-decision-9a0d4c7e
+
+- GLM: J2 labelled fit/validation/test data and calibration metrics; then J3 shadow wiring into `classify_visitor`, with keyword fallback and no authority over credentials, consent or physical motion.
+- DeepSeek: D3H-2 per-body execution service and restart goal replay, then D3H-3 bounded cancellation and D3H-4 authoritative adapter prerequisites.
+- Robotics: frozen SIFTA↔ROS mission/status contract, local Nav2/ESP32 watchdog and stop, stuck detection, bounded chassis-compatible recoveries, rest/checkpoint after failed recovery, and supervised Ackermann then differential-drive evidence.
+- E0's restart-dependent-goal failure remains an honest open defect; whole-directory integrity mismatch and truth-navigation failure remain separate.
