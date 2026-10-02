@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- <title>DSH Local Build</title> legacy identity marker.
+         Applications/sifta_alice_browser_widget.py recognised the local Harness by
+         that literal string until 2026-09-29, when a stale copy of the predicate in a
+         running SIFTA OS declared port_conflict against this healthy Harness and marked
+         every owner /s task FAILED (reason=port_3080_non_dsh_service). The marker keeps
+         that consumer working without a restart; it is removable once SIFTA OS runs the
+         structural check (window.__DSH_BOOT__ + the dsh-client plugin path). Kept in the
+         source so a rebuild does not silently drop it. -->
+    <title>#SIFTA Self Coding</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

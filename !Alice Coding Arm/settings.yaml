@@ -1,0 +1,25 @@
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+ui-theme:
+  preference: dark
+llm-pi-ai:
+  providers:
+    local-ollama:
+      display_name: Local Ollama Mac 24GB
+      base_url: http://localhost:11434/v1
+      api_protocol: openai-completions
+      api_key: ollama
+      models:
+      - sifta-ornith-coder:latest
+      - codecraftersllc/ornith-1.5-35b-a3b-abliterated:latest
+      - LisyNeko/qwen3.8-9b-coder:latest
+      - krishairnd/Gemma-4-Uncensored:latest
+      - leonardoba500/deepseek-v41-uncensored
+      - hf.co/ggml-org/SmolVLM-500M-Instruct-GGUF:Q8_0
+      - hf.co/huihui-ai/Huihui-MiniCPM-V-4_5-abliterated:Q4_K_M
+      - atervin2011/Aries:latest
+agent-default-model:
+  provider: local-ollama
+  model: sifta-ornith-coder:latest
+agent-presets:
+  default: cordis
