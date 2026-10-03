@@ -141,6 +141,8 @@ def _deposit_inbox(
     from_me: bool = False,
     chat_type: str | None = None,
     participant: str | None = None,
+    media_path: str | None = None,
+    media_type: str | None = None,
 ) -> None:
     """Deposit the incoming message to the SIFTA desktop inbox."""
     INBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +153,12 @@ def _deposit_inbox(
         from_me=from_me,
         chat_type=chat_type,
         participant=participant,
+        # These are the function's OWN parameters. The first version read them from `body`,
+        # which does not exist inside this function -- so every incoming WhatsApp message threw
+        # NameError, ingest died, and the bridge sent the owner a wave instead of an answer.
+        # A placeholder reply is worse than silence: it looks like someone answered.
+        media_path=media_path,
+        media_type=media_type,
     )
     try:
         from System.jsonl_file_lock import append_line_locked
@@ -212,6 +220,12 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
             name = body.get("name")
             text = str(body.get("text", ""))[:MAX_INPUT_CHARS]
             from_me = _coerce_bool(body.get("fromMe", False))
+            # Read once, here, where `body` actually exists. Two earlier attempts put this variable
+            # in scopes that did not have it -- first inside _deposit_inbox (no body), then as a
+            # reference in the handler (never defined). Each one threw NameError on EVERY incoming
+            # message, and the bridge answered the owner with a wave.
+            media_path = str(body.get("mediaPath") or "") or None
+            media_type = str(body.get("mediaType") or "") or None
             chat_type = _normalize_chat_type(body.get("chatType"), from_jid)
             participant = str(body.get("participant", "")).strip() or None
             _record_contact(from_jid, str(name) if name else None)
@@ -239,6 +253,8 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
                 from_me=from_me,
                 chat_type=chat_type,
                 participant=participant,
+                media_path=media_path,
+                media_type=media_type,
             )
 
             # Do not wait for the LLM. Just tell the bridge it's queued.

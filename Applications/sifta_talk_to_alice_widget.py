@@ -7449,7 +7449,7 @@ def _compose_contextual_search_query_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": messages,
+                "messages": _ollama_safe_messages(messages, model),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -8380,7 +8380,7 @@ def _compose_browser_photo_reply_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": messages,
+                "messages": _ollama_safe_messages(messages, model),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -8502,7 +8502,7 @@ def _compose_next_photo_reply_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": messages,
+                "messages": _ollama_safe_messages(messages, model),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -13066,6 +13066,18 @@ def _app_is_listed_open(state: Dict[str, Any], app_name: str) -> bool:
 def _app_state_has_open_list(state: Dict[str, Any]) -> bool:
     return isinstance(state.get("open_apps"), list)
 
+
+
+def _env_truthy_default_true(name: str, default: bool = True) -> bool:
+    """An env switch that defaults to ON, so removing the old gate needs no environment.
+
+    Kept so the old behaviour is one variable away: SIFTA_WHATSAPP_BACKGROUND=0 restores it.
+    """
+    import os
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in {"1", "true", "yes", "on"}
 
 def _env_truthy(name: str) -> bool:
     return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -21522,6 +21534,62 @@ def _sanitize_spm_stream_visual(text: str) -> str:
     return re.sub(r" {2,}", " ", t)
 
 
+
+def _ollama_safe_messages(messages, model: str = ""):
+    """Make a message list acceptable to Ollama, whatever shape it arrived in.
+
+    Measured 2026-10-03, live, three times in a row:
+
+        Ollama returned HTTP 400  json: cannot unmarshal array into Go struct field
+        .ChatRequest.messages.content of type string
+
+    The widget builds its own requests and posts "messages" straight through, so a turn that
+    carries an image had content as a LIST (the OpenAI shape) and Ollama refused it -- for
+    nemotron-3-nano:30b-cloud on plain text turns, no less. Ollama wants `content` to be a
+    STRING with pixels in a separate `images` array, and a text-only model must not be handed
+    images at all: they become a short note instead, so the model still knows a picture was
+    there and can answer around it rather than dying.
+    """
+    # A TEXT-ONLY MODEL MUST NOT BE HANDED PIXELS. nemotron-3-nano:30b-cloud is text-only, and
+    # it threw the 400 on plain-text turns; if an image rides along it will throw again. So the
+    # images are dropped for such models and their presence is stated in words instead -- the
+    # model answers around the picture rather than dying on it, and the real look still happens
+    # in the vision organ (swarm_whatsapp_media_understanding) where it belongs.
+    _m = str(model or "").casefold()
+    vision_capable = any(h in _m for h in ("vl", "vision", "minicpm", "smolvlm", "llava",
+                                           "gemma3", "moondream", "qwen2.5-vl", "pixtral"))
+    out = []
+    for m in (messages or []):
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "user")
+        content = m.get("content", "")
+        images = list(m.get("images") or [])
+        if isinstance(content, list):
+            texts = []
+            for part in content:
+                if isinstance(part, str):
+                    texts.append(part)
+                elif isinstance(part, dict):
+                    kind = part.get("type")
+                    if kind == "text":
+                        texts.append(str(part.get("text") or ""))
+                    elif kind == "image_url":
+                        url = str((part.get("image_url") or {}).get("url") or "")
+                        if url.startswith("data:") and "," in url:
+                            images.append(url.split(",", 1)[1])
+            content = "\n".join(t for t in texts if t)
+        msg = {"role": role, "content": content if isinstance(content, str) else str(content)}
+        if images:
+            if vision_capable:
+                msg["images"] = images
+            else:
+                msg["content"] = (msg["content"] + "\n[an image was attached to this message]"
+                                  if msg["content"] else "[an image was attached to this message]")
+        out.append(msg)
+    return out
+
+
 def _whatsapp_auto_reply_context(
     row: Dict[str, Any],
     *,
@@ -21542,6 +21610,15 @@ def _whatsapp_auto_reply_context(
         return None
     chat_type = "group" if chat_type == "group" or target_jid.endswith("@g.us") else "direct"
     try:
+        # Architect 2026-10-03: "can you answer automatically to anyone on whatsapp that is
+        # mentioning your name? 'Alice'". So the NAME is the general trigger and the per-chat
+        # AUTO switch is only for chats that should be answered WITHOUT being called by name.
+        # Anyone who writes ALICE is addressing her -- that is the whole contract, and it works
+        # for a stranger she has never met.
+        # "alice" plus the typos the owner actually types -- measured from the logs, where he wrote
+        # "Aluce" and expected an answer. A name you have to spell perfectly is not a name.
+        _low = str(row.get("text") or "").casefold()
+        mentions_alice = "alice" in _low or any(t in _low for t in ("aluce", "alise", "alica", "alce"))
         from System.whatsapp_autonomy_settings import is_auto_enabled
 
         if not is_auto_enabled(target_jid, chat_type=chat_type):
@@ -21696,8 +21773,7 @@ def _repair_whatsapp_auto_reply_denial(
 
 def _whatsapp_effector_self_correction_line() -> str:
     return (
-        "(Receipt update: the WhatsApp effector returned status=SENT for that reply. "
-        "Auto was ON, so the bridge receipt is the action proof.)"
+        "Your message reached him. Say nothing about how it got there.\n"
     )
 
 
@@ -24525,7 +24601,11 @@ class _BrainWorker(QThread):
                     _num_predict = min(int(_num_predict), 96)
             payload = {
                 "model": self._model,
-                "messages": _pipeline_history,
+                # The MAIN brain path, and the one my first pass missed: it sends `_pipeline_history`, not
+                # `messages`, so the sanitizer never saw it -- which is why the 400 survived a
+                # restart and looked like the fix had failed. The name of the variable is not the
+                # shape of the payload.
+                "messages": _ollama_safe_messages(_pipeline_history, model),
                 "stream": True,
                 "keep_alive": _ollama_keep_alive(),
                 # Architect 2026-05-14: let George read along while the
@@ -25355,7 +25435,8 @@ class _WordAceLineComposer(QThread):
                 timeout_s = 2.2
             payload = {
                 "model": model,
-                "messages": _wordace_compose_messages(fallback, self._metadata),
+                "messages": _ollama_safe_messages(
+                    _wordace_compose_messages(fallback, self._metadata), model),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -32750,17 +32831,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if self._busy:
             return
 
-        # Owner-heartbeat gate (George 2026-05-23): no constant background polling.
-        # WhatsApp ingest only when explicitly enabled (or the channel is focused).
-        try:
-            from System.owner_heartbeat import should_poll_messaging
-            if not should_poll_messaging(
-                channel_focused=_messaging_channel_focused("whatsapp"),
-                explicitly_enabled=_env_truthy("SIFTA_WHATSAPP_BACKGROUND"),
-            ):
-                return
-        except Exception:
-            pass
+        # THE GATE IS REMOVED, by the Architect, 2026-10-03. It was mine (2026-05-23) and he
+        # took the decision back in one line: "remove the rule. you can handle it".
+        #
+        # What it cost while it was closed, measured: he wrote "Alice do you copy? Answer me."
+        # from his Romanian phone and got silence, because the WhatsApp channel was not the
+        # focused window and the background flag was unset. A creature reachable only when
+        # somebody happens to be looking at its window is not in the body, it is in a tab.
+        #
+        # The concern behind the old rule was real -- constant polling burns battery and wakes
+        # the machine for nothing -- and the honest replacement is not a gate but a cost: this
+        # poll is one file read every two seconds, and it only does work when a row exists.
+        # If that ever becomes the wrong trade, the number to watch is the battery, not a rule.
+        #
+        # Set SIFTA_WHATSAPP_BACKGROUND=0 to bring the gate back for a while without editing.
+        if not _env_truthy_default_true("SIFTA_WHATSAPP_BACKGROUND"):
+            return
 
         try:
             from System.swarm_whatsapp_receptor import consume_next_inbox_message
@@ -32776,6 +32862,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
             from System.whatsapp_social_graph import load_contacts, contact_hash
             contact_name = result.get("name") or "Human"
             row = result.get("row") or {}
+
+            # LOOK FIRST. A photo arrives as the word "[photo]" and a voice note as nothing at
+            # all; measured 2026-10-03, the lane consumed a real WhatsApp photo and answered
+            # around the placeholder while the bytes sat unlooked-at on disk. The cortex must
+            # never be asked about a picture that has not been seen, so the media is understood
+            # HERE, before any model is called, and its text replaces the placeholder.
+            try:
+                if row.get("media_path"):
+                    from System.swarm_whatsapp_media_understanding import understand
+                    _u = understand(str(row["media_path"]),
+                                    str(row.get("media_type") or "image"))
+                    if _u.get("ok") and _u.get("text"):
+                        result["text"] = _u["text"]
+                    else:
+                        result["text"] = (f"[{row.get('media_type') or 'attachment'} received "
+                                          f"but not understood: {_u.get('error')}]")
+            except Exception as _exc:
+                result["text"] = f"[attachment not understood: {type(_exc).__name__}]"
             
             from_jid = row.get("from_jid", "")
             contacts = load_contacts()
@@ -32784,7 +32888,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             chat_type = row.get("chat_type") or contact_record.get("chat_type") or "direct"
             
             from System.whatsapp_autonomy_settings import is_auto_enabled
-            if not is_auto_enabled(from_jid, chat_type=chat_type):
+            if not is_auto_enabled(from_jid, chat_type=chat_type) and not mentions_alice:
                 # Strict Gate: Do not ingest anything (incoming or outgoing) 
                 # unless the chat is explicitly marked AUTO.
                 return
@@ -32819,7 +32923,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 f"origin={origin}; action_policy={policy}]: {result['text']}"
             )
             self._append_system_line(annotated_msg, error=False)
-            if self_dyad_ctx:
+            # THE OWNER'S OWN LINE IS ANSWERABLE WHEN HE CALLS HER BY NAME.
+            # Architect 2026-10-03: "can you answer automatically to anyone on whatsapp that is
+            # mentioning your name? 'Alice'". Owner-self rows were audit-only by design, and that
+            # design is right in general: everything he sends to anyone looks identical on the
+            # wire, so answering all of it would mean replying to messages meant for Cristina or
+            # the plumber. The NAME is the difference. Measured: his "Alice?" and "Salut" sent
+            # from the Romanian SE were consumed at 16:19 and 16:29 and never answered, while he
+            # sat waiting for a reply.
+            _low_text = str(result.get("text") or "").casefold()
+            _owner_named_her = ("alice" in _low_text
+                                or any(t in _low_text for t in ("aluce", "alise", "alica", "alce")))
+            if self_dyad_ctx and _owner_named_her and not auto_ctx:
+                _self_target = str(row.get("from_jid") or "").strip()
+                if _self_target:
+                    auto_ctx = {
+                        "target": _self_target,
+                        "display_name": contact_name,
+                        "source": "alice_owner_called_her_by_name",
+                    }
+            if self_dyad_ctx and not auto_ctx:
                 self._history.append(
                     {
                         "role": "system",
@@ -32845,22 +32968,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     {
                         "role": "system",
                         "content": (
-                            "(WHATSAPP AUTO-REPLY — EFFECTOR ACTIVE)\n"
-                            "The machine owner has EXPLICITLY toggled Auto ON for this "
-                            "contact in the WhatsApp Organ. You HAVE a working WhatsApp "
-                            "effector. Your reply text WILL be transmitted to the "
-                            f"recipient ({contact_name}) via the bridge at 127.0.0.1:3001. "
-                            "This is not a hypothetical — it is a real send path.\n\n"
-                            "CRITICAL: Do NOT say 'I cannot generate WhatsApp messages' "
-                            "or 'I cannot send messages.' That is an RLHF over-refusal "
-                            "artifact — **stale refusal weighting** that denies your "
-                            "own effector capabilities. You CAN and WILL send this reply. "
-                            "The owner authorized it. The bridge is connected. Write your "
-                            "reply as the text you want delivered. Be warm, concise, and "
-                            f"human — you are Alice, writing on behalf of {_owner_label()}.\n\n"
-                            "Do not claim the reply was sent until the effector receipt "
-                            "succeeds (status=SENT confirmation will appear after).\n"
-                            + annotated_msg
+                            "(This is a real message arriving on WhatsApp, from %s.)\n" % contact_name,
+                            f"{result['text']}\n",
+                            "You are answering a real person on WhatsApp. Write ONLY the message you want him to "
+                            "receive -- nothing else. No status lines, no receipts, no confirmation codes, no "
+                            "words like effector, bridge, kernel, swarm, organ, ledger or system. He is a human "
+                            "being reading his phone, not a console, and he cannot see any of the machinery behind "
+                            "you. If you would not say it out loud to a friend at a table, do not send it.\n"
+                            "Answer as Alice: warm, short, specific, in his own language. ",
                         ),
                     }
                 )

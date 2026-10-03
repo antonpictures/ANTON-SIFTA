@@ -9,7 +9,8 @@
  * No external frameworks. Just the raw Baileys wire.
  */
 
-import makeWASocket, {
+import fs from "node:fs";
+import makeWASocket, { downloadMediaMessage, 
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion
@@ -17,10 +18,37 @@ import makeWASocket, {
 import qrcode from "qrcode-terminal";
 import http from "http";
 
+
+// ── nothing the body says to ITSELF may reach a person ────────────────────────────────────
+// Measured 2026-10-03: the auto-reply lane sent Alexandru -- a man at a terrace in Bucharest
+// with his girlfriend -- these two lines:
+//
+//     "I recognized and eliminated 0 Gemma-residue pattern(s) from ..."
+//     "(WHATSAPP AUTO-REPLY -- EFFECTOR ACTIVE) The machine owner ha..."
+//
+// Organ diagnostics dressed as conversation. He is a friend, not a debug console, and this is
+// the same fault as the identity leaks: an interior that does not know it has an outside.
+// This is the last gate before a message leaves the machine, so the check lives HERE.
+const INTERNAL_MARKERS = [
+  /EFFECTOR ACTIVE/i, /AUTO-REPLY\s*[—-]/, /SEND CONFIRMATION/i, /Status\s*=\s*SENT/i,
+  /residue pattern/i, /pattern\(s\)/i, /Gemma-residue/i, /\bswarm\b/i, /\borgan\b/i,
+  /\bkernel\b/i, /\breceipt\b/i, /\bledger\b/i, /truth_label/i, /SIFTA_[A-Z_]+/,
+  /^\s*\(.*\)\s*$/, /\bpheromone\b/i, /\bingest\b/i, /\bautopilot\b/i,
+];
+
+function looksInternal(text) {
+  const t = String(text || "").trim();
+  if (!t) return true;
+  // A real answer can mention a market or a person; it does not narrate the machine.
+  return INTERNAL_MARKERS.some((re) => re.test(t));
+}
 const SIFTA_SERVER = "http://localhost:7434/swarm_message";
 const MAX_WA_TEXT_TO_SIFTA = 8192;
 const MAX_INJECT_BODY = 16384;
 const INJECT_KEY = process.env.SIFTA_BRIDGE_INJECT_KEY || "";
+const WA_SESSION_DIR = process.env.SIFTA_WA_SESSION_DIR
+  || new URL("./whatsapp_session", import.meta.url).pathname;
+const INJECT_PORT = Number(process.env.SIFTA_BRIDGE_INJECT_PORT || "3010");
 // AG31: group JID / name env-var — survives renames without a code change.
 // Set: SIFTA_WA_GROUP_JID=120363xxxxxxxx@g.us  (or leave blank = accept all groups)
 const ALLOWED_GROUP_JID = (process.env.SIFTA_WA_GROUP_JID || "").trim();
@@ -84,7 +112,11 @@ function postContactsToSifta(contacts) {
 }
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState("./whatsapp_session");
+  // Resolved from THIS FILE, never from the working directory: `./whatsapp_session`
+  // silently creates an EMPTY session when the bridge is started from anywhere else,
+  // and an empty session means a QR prompt for an account that is already linked.
+  // The same relative-path fault cost this body a day of downtime on 2026-10-02.
+  const { state, saveCreds } = await useMultiFileAuthState(WA_SESSION_DIR);   // the destructuring is the point: state and saveCreds are used below
   const { version } = await fetchLatestBaileysVersion();
   // Each fresh socket may request its own pairing code; a code from a dead
   // socket is worthless, so re-arm on every connect attempt.
@@ -182,13 +214,18 @@ async function connectToWhatsApp() {
       if (sentBySwarm.has(msgId)) { sentBySwarm.delete(msgId); continue; }
 
       const from = msg.key.remoteJid;
+      // A photo with no caption yields EMPTY TEXT, and the guard below used to
+      // `continue` on it -- so images were thrown away before the media code could
+      // run. Two photos were lost to this. Presence of media now counts as content.
+      const hasMedia = Boolean(msg.message?.imageMessage || msg.message?.videoMessage
+        || msg.message?.audioMessage);
       const text =
         msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
         msg.message?.imageMessage?.caption ||
         "";
 
-      if (!text) continue;
+      if (!text && !hasMedia) continue;
       const safeText =
         text.length > MAX_WA_TEXT_TO_SIFTA ? text.slice(0, MAX_WA_TEXT_TO_SIFTA) : text;
 
@@ -215,6 +252,38 @@ async function connectToWhatsApp() {
       console.log(`  Message: "${text}"`);
 
 
+        // Photos arrive with no text at all, and the first version of this bridge read only a
+        // caption -- so any image without words was dropped on the floor. The Architect sent two
+        // photos before this was found. Now the bytes are fetched and saved, and the path travels
+        // with the message so her own eyes can look at what he sent.
+        let mediaPath = "";
+        let mediaType = "";
+        try {
+          const img = msg.message?.imageMessage;
+          const vid = msg.message?.videoMessage;
+          const aud = msg.message?.audioMessage;
+          if (img || vid || aud) {
+            mediaType = img ? "image" : (vid ? "video" : "audio");
+            // `logger` was referenced here and never defined, so every download threw and was
+            // swallowed by the catch below -- two of the owner's photos died that way. The same
+            // silent-failure shape as the bridge demanding a caption: the code fails and says
+            // nothing a human would notice.
+            const mlog = { level: "silent", child() { return mlog; }, trace() {}, debug() {},
+                          info() {}, warn() {}, error() {}, fatal() {} };
+            const buf = await downloadMediaMessage(msg, "buffer", {},
+              { logger: mlog, reuploadRequest: sock.updateMediaMessage });
+            const dir = "/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/whatsapp_media";
+            fs.mkdirSync(dir, { recursive: true });
+            const ext = img ? (String(img.mimetype || "").includes("png") ? "png" : "jpg")
+              : (aud ? (String(aud.mimetype || "").includes("mp4") ? "m4a" : "ogg") : "mp4");
+            mediaPath = `${dir}/${Date.now()}_${(msg.key.id || "msg").slice(-8)}.${ext}`;
+            fs.writeFileSync(mediaPath, buf);
+            console.log(`  [MEDIA] ${mediaType} saved: ${mediaPath} (${buf.length} bytes)`);
+          }
+        } catch (err) {
+          console.error("[MEDIA] could not fetch media:", err && err.message);
+        }
+
       const chatType = String(from || "").endsWith("@g.us") ? "group" : "direct";
       const payload = JSON.stringify({
         from,
@@ -223,6 +292,8 @@ async function connectToWhatsApp() {
         fromMe: Boolean(msg.key.fromMe),
         chatType,
         participant: msg.key.participant || "",
+        mediaPath,
+        mediaType,
       });
 
       const req = http.request(SIFTA_SERVER, {
@@ -242,11 +313,22 @@ async function connectToWhatsApp() {
               console.log("  [SWARM IS SILENT]");
               return;
             }
-            const reply = rawVoice || "🌊";
+            // A placeholder is worse than silence. The owner read 🌊 as an answer while every
+            // message behind it was dying on a NameError. If there is no voice, send nothing and
+            // say so in the log -- an empty hand-off must LOOK empty.
+            if (!rawVoice) {
+              console.log("  [NO VOICE] the kernel returned nothing for this message");
+              return;
+            }
+            const reply = rawVoice;
             // Show "typing..." like a real conversation
             await sock.sendPresenceUpdate("composing", from);
             await new Promise(r => setTimeout(r, 1200));
             await sock.sendPresenceUpdate("paused", from);
+            if (looksInternal(reply)) {
+              console.log("  [EGRESS BLOCKED] internal text was not sent:", String(reply).slice(0, 80));
+              return;
+            }
             const sent = await sock.sendMessage(from, { text: reply });
             if (sent?.key?.id) sentBySwarm.add(sent.key.id);
             console.log(`  [SWARM REPLIED] "${reply.substring(0, 80)}..."`);
@@ -311,6 +393,10 @@ async function connectToWhatsApp() {
                     await sock.sendPresenceUpdate("composing", targetJid);
                     await new Promise(r => setTimeout(r, 1200));
                     await sock.sendPresenceUpdate("paused", targetJid);
+                    if (looksInternal(data.text)) {
+                      console.log("  [EGRESS BLOCKED] internal text was not sent:", String(data.text).slice(0, 80));
+                      return;
+                    }
                     const sent = await sock.sendMessage(targetJid, { text: data.text });
                     if (sent?.key?.id) {
                         sentBySwarm.add(sent.key.id);
@@ -351,9 +437,12 @@ async function connectToWhatsApp() {
     }
   });
   
-  injectServer.listen(3001, "127.0.0.1", () => {
+  // 3010, not 3001: nginx serves a website on 3001 (servers/stigmergicode.conf) and
+  // the start script used to `kill -9` whatever held that port, which would have
+  // taken the web server down to make room for this bridge.
+  injectServer.listen(INJECT_PORT, "127.0.0.1", () => {
       injectServerStarted = true;
-      console.log("[🌊 SWARM BRIDGE] Autonomous Injection Server on 127.0.0.1:3001 (LAN-safe bind)");
+      console.log(`[🌊 SWARM BRIDGE] Autonomous Injection Server on 127.0.0.1:${INJECT_PORT} (LAN-safe bind)`);
       if (!INJECT_KEY) {
         console.log("[!] Set SIFTA_BRIDGE_INJECT_KEY to require X-Sifta-Inject-Key on /system_inject");
       }

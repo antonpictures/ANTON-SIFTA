@@ -27,6 +27,13 @@ export PYTHONPATH="$REPO_DIR:${PYTHONPATH:-}"
 # still suppress this with SIFTA_DESKTOP_SKIP_WM_AUTOSTART=1.
 export SIFTA_DESKTOP_ENABLE_AUTOSTART="${SIFTA_DESKTOP_ENABLE_AUTOSTART:-1}"
 
+# Architect 2026-10-03: "remove the rule. you can handle it". WhatsApp ingest no longer waits
+# for the owner to focus the channel: he wrote "Alice do you copy? Answer me." from his Romanian
+# phone and got silence, because that window was not focused. Stated at the owner-facing entry
+# point so the decision is visible where it takes effect, and reversible with
+# SIFTA_WHATSAPP_BACKGROUND=0.
+export SIFTA_WHATSAPP_BACKGROUND="${SIFTA_WHATSAPP_BACKGROUND:-1}"
+
 # Architect 2026-05-14: kill the fake "[BOOT] desktop photons : N" line
 # forever. The env var no longer drives anything in sifta_os_desktop.py
 # (Cowork removed the banner emit; see comment near line 4737 in that
