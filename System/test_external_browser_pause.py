@@ -218,26 +218,30 @@ def test_cdp_path() -> None:
     def mock_cdp_targets(port):
         return [{"type": "page", "url": "https://youtube.com/watch?v=test", "webSocketDebuggerUrl": "ws://fake"}]
 
-    # Mock websocket
-    class FakeWS:
-        def send(self, payload): pass
-        def recv(self):
-            import json
-            return json.dumps({"result": {"result": {"value": "ok|0|1|100.0|200.0"}}})
-        def close(self): pass
+    # Mock the CDP transport. This used to patch the third-party `websocket`
+    # client — which is not installed on python3.14, the interpreter the body
+    # calls, so every real Chrome pause ended at `websocket_client_missing`. The
+    # transport is stdlib now (2026-10-05) and `_cdp_eval` is the seam to mock.
+    # The intent is unchanged: the efferent path must return ok + paused from the
+    # page JS payload.
+    def mock_cdp_eval(ws_url, expression, timeout_s=6.0):
+        assert ws_url, "the effector must hand a CDP page socket to the transport"
+        assert isinstance(expression, str) and expression, "the effector must send page JS"
+        return "ok|0|1|100.0|200.0"
 
-    def mock_create_connection(url, timeout):
-        return FakeWS()
-
+    real_cdp_eval = eff._cdp_eval
     eff._port_is_open = mock_port_is_open
     eff._cdp_targets = mock_cdp_targets
-    with patch("websocket.create_connection", mock_create_connection):
+    eff._cdp_eval = mock_cdp_eval
+    try:
         result = eff._cdp_act("pause", "https://youtube.com/watch?v=test", 9222)
         assert result["ok"] is True, f"expected ok=True from CDP mock, got {result}"
         assert result.get("paused") is True
         print(f"  CDP mock ok={result['ok']} paused={result.get('paused')} url={result.get('url')}")
-    eff._port_is_open = real_port_is_open
-    eff._cdp_targets = real_cdp_targets
+    finally:
+        eff._cdp_eval = real_cdp_eval
+        eff._port_is_open = real_port_is_open
+        eff._cdp_targets = real_cdp_targets
 
 
 def test_organ_registered() -> None:

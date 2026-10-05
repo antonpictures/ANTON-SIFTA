@@ -191,6 +191,57 @@
     .chip{font-size:12px;padding:6px 12px}
     .composer-hold{padding:0 12px}
   }
+
+  /* ── /blueprint — the automations library ────────────────────────────────
+     Hermes ships /blueprint with sixteen built-in automations. This is the
+     desk's half: the ones a page can honestly run it runs, the ones it cannot
+     (a web page cannot open a mailbox) it stages as a spec for Alice's body
+     instead of pretending. Nothing here is allowed to claim it did work. */
+  .composer-hold{position:relative}
+  .bp-menu{position:absolute;left:20px;right:20px;bottom:calc(100% - 6px);background:#1c1c1c;
+    border:1px solid var(--line2);border-radius:14px;padding:6px;display:none;z-index:40;
+    box-shadow:0 12px 34px rgba(0,0,0,.55);max-height:min(320px,45vh);overflow-y:auto}
+  .bp-menu.on{display:block}
+  .bp-menu button{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;
+    background:transparent;border:0;color:var(--txt);font:inherit;font-size:13.5px;
+    padding:8px 10px;border-radius:9px;cursor:pointer}
+  .bp-menu button:hover,.bp-menu button.hi{background:#262626}
+  .bp-menu .cmd{color:var(--accent);font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
+    white-space:nowrap}
+  .bp-menu .what{color:var(--dimmer);font-size:12px;margin-left:auto;text-align:right}
+  .bp-list{display:flex;flex-direction:column;gap:3px;margin:0 -2px}
+  .bp-task{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;
+    background:#1b1b1b;border:1px solid var(--line);font-size:12.5px;color:#c9c6bf;cursor:pointer}
+  .bp-task:hover{border-color:var(--line2);color:var(--txt)}
+  .bp-task .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bp-task .nx{color:var(--dimmer);font-size:11px;white-space:nowrap}
+  .bp-task.off .nm,.bp-task.off .nx{opacity:.5}
+  .bp-card{border:1px solid var(--line2);border-radius:14px;padding:13px 15px;margin:12px 0;
+    background:#1a1a1a}
+  .bp-card h4{margin:0 0 3px;font:600 15.5px/1.3 Georgia,"Times New Roman",serif;color:#f2efe9}
+  .bp-card .cmd2{color:var(--accent);font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .bp-card .it{color:var(--dimmer);font-size:12.5px;margin:4px 0 0}
+  .bp-q{margin:12px 0 0;display:flex;flex-direction:column;gap:10px}
+  .bp-q label{display:block;font-size:13px;color:#d7d3cb;margin-bottom:4px}
+  .bp-q .help{color:var(--dimmer);font-size:11.5px;margin:3px 0 0}
+  .bp-q input,.bp-q select{width:100%;background:#141414;border:1px solid var(--line2);
+    color:var(--txt);border-radius:9px;padding:8px 10px;font:inherit;font-size:13.5px}
+  .bp-q input::placeholder{color:var(--dimmer)}
+  .bp-inline{display:flex;gap:8px;flex-wrap:wrap}
+  .bp-inline>div{flex:1;min-width:130px}
+  .bp-row{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap;align-items:center}
+  .bp-btn{background:var(--accent2);border:0;color:#fff;font:inherit;font-size:13.5px;
+    padding:8px 14px;border-radius:10px;cursor:pointer}
+  .bp-btn:hover{background:var(--accent)}
+  .bp-btn.g2{background:#2b2b2b}
+  .bp-btn.g2:hover{background:#3a3a3a}
+  .bp-note{font-size:12px;color:var(--dimmer);margin:9px 0 0}
+  .bp-note b{color:#cfcbc3;font-weight:600}
+  .bp-run{border-left:2px solid var(--accent2);padding:2px 0 2px 11px;margin:10px 0 0}
+  .bp-run .when{font-size:11.5px;color:var(--dimmer)}
+  .bp-tag{display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--dimmer);border:1px solid var(--line2);border-radius:999px;padding:2px 8px;margin-left:8px}
+  .bp-tag.desk{color:#e7c9a8;border-color:#4a3524}
 </style>
 </head>
 <body>
@@ -205,7 +256,13 @@
     <button id="newchat" class="active">＋ New chat</button>
     <button id="btnmarkets">◫ Markets now</button>
     <button id="btnnews">◈ Today's news</button>
+    <button id="btnblue">⌘ Automations <span style="color:var(--dimmer);font-size:12px">/blueprint</span></button>
   </nav>
+
+  <div id="bpwrap" style="display:none">
+    <div class="sidebar-label">Your automations</div>
+    <div class="bp-list" id="bplist"></div>
+  </div>
 
   <div class="sidebar-label">Your chats</div>
   <div class="chatlist" id="chatlist"></div>
@@ -262,8 +319,9 @@
   <section class="thread" id="thread"><div class="wrap" id="turns"></div></section>
 
   <div class="composer-hold">
+    <div class="bp-menu" id="bpmenu" role="listbox" aria-label="Commands"></div>
     <form class="composer" id="form">
-      <textarea id="q" rows="1" placeholder="Ask about any market — or paste a coin you are looking at…"></textarea>
+      <textarea id="q" rows="1" placeholder="Ask about any market — or type /blueprint to set up a recurring job…"></textarea>
       <div class="crow">
         <span class="seg"><button type="button" class="on">Chat</button><button type="button" disabled title="coming soon">Research</button></span>
         <span class="right">
@@ -456,7 +514,7 @@ const THINKING=[
   'give me a second, I\u2019m looking at the numbers\u2026',
   'coming \u2014 checking the market first\u2026',
   'just a moment, I\u2019m on it\u2026',
-  'hold on, let me look at what\u2019s actually trading\u2026'
+  'hold on, let me think at what\u2019s actually trading in your head\u2026'
 ];
 function pending(){
   const t=document.createElement('div'); t.className='turn';
@@ -571,9 +629,13 @@ async function redeemCode(card, btn){
       body:JSON.stringify({code:code})})).json();
     if(d.ok){
       credits();
-      card.innerHTML = '<div class="a">That worked \u2014 I have put $' +
-        Number(d.credited_usd || 0).toFixed(2) + ' on you, which is ' + d.questions +
-        ' questions. Go on, ask me.</div>';
+      // A credit confirmation is a NOTICE about the account, never a reply to whatever
+      // the visitor just said. Rendered with the answer class, a man telling Alice about the
+      // gold he once owned was answered with "I have put $50 on you" -- the notice and the
+      // conversation sharing one voice. Measured on the live site, 2026-10-02.
+      card.innerHTML = '<div class="gate-note" style="color:#8fd6a3">\u2713 Added $' +
+        Number(d.credited_usd || 0).toFixed(2) + ' \u2014 ' + d.questions +
+        ' questions in your balance.</div>';
       return;
     }
     btn.disabled = false; btn.textContent = 'Use code';
@@ -622,11 +684,23 @@ async function collectAnswer(job, pendingEl){
 }
 
 const ta=$('q');
-ta.addEventListener('input',function(){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px'; });
+ta.addEventListener('input',function(){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px'; bpMenuUpdate(); });
 ta.addEventListener('keydown',function(e){
-  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; ask(v); }
+  // A command menu is open: Enter picks the highlighted command, Escape closes it.
+  const menu=$('bpmenu');
+  if(menu && menu.classList.contains('on')){
+    if(e.key==='Escape'){ menu.classList.remove('on'); return; }
+    if(e.key==='Tab'){ e.preventDefault(); const f=bpFirst(); if(f) f.click(); return; }
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const f=bpFirst(); if(f) f.click(); else menu.classList.remove('on'); return; }
+  }
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; bpCompose(v); }
 });
-$('form').addEventListener('submit',function(e){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; ask(v); });
+$('form').addEventListener('submit',function(e){ e.preventDefault(); const v=ta.value; ta.value=''; ta.style.height='auto'; bpCompose(v); });
+document.addEventListener('click',function(e){
+  const menu=$('bpmenu'); if(!menu) return;
+  if(!menu.contains(e.target) && e.target!==ta) menu.classList.remove('on');
+});
+$('btnblue').onclick=function(){ drawerSet(false); bpLibrary(); ta.focus(); };
 
 $('newchat').onclick=function(){ conversationId=null; $('turns').textContent=''; showStage(); loadChats(); ta.focus(); };
 $('incognito').onclick=function(){ incognito=!incognito;
@@ -720,9 +794,403 @@ async function me(){
 function escapeText(t){ return String(t||'').replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
+/* ── /blueprint — the automations library ─────────────────────────────────────
+   Hermes ships /blueprint with sixteen built-in automations. This is the desk's
+   half of that idea, wired honestly. Every blueprint declares who can actually do
+   the work:
+     desk        the page runs it through /api/gmchat, with a receipt
+     local       the page alone — no question spent
+     alice-body  a browser tab cannot open a mailbox, so it stages the spec and
+                 says so instead of pretending to have checked
+   Rule: a blueprint may never report a run it did not perform.                   */
+const BP_KEY='sgc.blueprints.v2';
+const BP_CADENCES=[{v:'hourly',label:'every hour'},{v:'every3h',label:'every 3 hours'},
+  {v:'daily',label:'every day at'},{v:'weekdays',label:'weekdays at'},
+  {v:'weekly',label:'every week on'}];
+const BP_DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const BP_EXEC={desk:'the desk answers it',local:'this page · no question spent',
+  'alice-body':"Alice's body · not this page"};
+
+const BLUEPRINTS=[
+ {n:'01',id:'important-mail',executor:'alice-body',
+  title:'Important mail monitor',
+  it:'Controlla periodicamente la casella di posta e notifica solo le email che richiedono attenzione.',
+  qs:[{k:'mailbox',label:'Which mailbox?',ph:'Gmail · george@…'},
+      {k:'matters',label:'What counts as “needs attention”?',ph:'people, words, real deadlines'},
+      {k:'quiet',label:'Quiet hours',ph:'22:00 – 08:00'},
+      {k:'how',label:'How should it reach you?',ph:'notify me here, and mail the digest'}]},
+
+ {n:'02',id:'news-digest',executor:'desk',
+  title:'News digest',
+  it:'Fornisce un riepilogo giornaliero o settimanale degli argomenti di interesse dal web.',
+  qs:[{k:'topics',label:'Topics to follow',ph:'oil, gold, semis, Romania, AI capex'},
+      {k:'depth',label:'How deep?',ph:'three headlines, or a paragraph each'},
+      {k:'lang',label:'Language',ph:'English / Italiano / Română'}],
+  prompt:function(a){return 'News digest. Topics: '+(a.topics||'')+'. Depth: '+(a.depth||'three headlines')+
+    '. Write in '+(a.lang||'English')+'. Give me only what changed since yesterday, with the date of each '+
+    'item and where it came from, and say plainly if nothing moved.';}},
+
+ {n:'03',id:'daily-brief',executor:'desk',
+  title:'Daily brief',
+  it:'Consegna un briefing mattutino personalizzato con gli aggiornamenti chiave della giornata.',
+  qs:[{k:'focus',label:'What must the brief always cover?',ph:'positions, the market, one person, one task'},
+      {k:'tone',label:'Tone',ph:'short and blunt · warm'},
+      {k:'lang',label:'Language',ph:'English / Italiano / Română'}],
+  prompt:function(a){return 'Morning brief. It must always cover: '+(a.focus||'')+'. Tone: '+(a.tone||'short')+
+    '. Write in '+(a.lang||'English')+'. Open with the single thing that matters most today, then at most '+
+    'four short lines. No preamble, no good-morning.';}},
+
+ {n:'04',id:'weekly-review',executor:'desk',
+  title:'Weekly review',
+  it:'Genera un riepilogo settimanale dei progressi, degli elementi aperti e dei prossimi passi.',
+  qs:[{k:'scope',label:'What is the week about?',ph:'the coin, the swarm, the search'},
+      {k:'open',label:'What counts as still open?',ph:'things I said I would do and did not'},
+      {k:'lang',label:'Language',ph:'English / Italiano / Română'}],
+  prompt:function(a){return 'Weekly review of '+(a.scope||'')+'. Treat “'+(a.open||'')+'” as the definition of '+
+    'open. Write in '+(a.lang||'English')+'. Three parts: what moved, what is stuck, what is next — and name '+
+    'the one thing I should drop.';}},
+
+ {n:'05',id:'custom-reminder',executor:'local',
+  title:'Custom reminder',
+  it:'Crea un promemoria ricorrente per quando vuoi tu.',
+  qs:[{k:'what',label:'Remind me of what?',ph:'check the position · water the plants · call mum'},
+      {k:'say',label:'And what should I say when it fires?',ph:'one line, in your own words'}]}
+];
+function bpFind(id){ for(let i=0;i<BLUEPRINTS.length;i++) if(BLUEPRINTS[i].id===id) return BLUEPRINTS[i]; return null; }
+
+/* ── storage ─────────────────────────────────────────────────────────────── */
+function bpLoad(){
+  try{ const d=JSON.parse(localStorage.getItem(BP_KEY)||'{}');
+       return {tasks:d.tasks||[], runs:d.runs||[]}; }catch(e){ return {tasks:[],runs:[]}; }
+}
+function bpSave(db){ try{ localStorage.setItem(BP_KEY, JSON.stringify(db)); }catch(e){} }
+let BP= bpLoad();
+
+/* ── when does it next run ────────────────────────────────────────────────── */
+function bpNextRun(t, fromMs){
+  const now=new Date(fromMs||Date.now());
+  const bits=String(t.time||'08:00').split(':'), hh=Number(bits[0])||0, mm=Number(bits[1])||0;
+  const d=new Date(now.getTime());
+  if(t.cadence==='hourly'){ d.setMinutes(0,0,0); d.setHours(d.getHours()+1); return d.getTime(); }
+  if(t.cadence==='every3h'){ d.setMinutes(0,0,0); d.setHours(d.getHours()+(3-(d.getHours()%3))); return d.getTime(); }
+  if(t.cadence==='weekly'){
+    d.setHours(hh,mm,0,0);
+    const want=Number(t.day||0); let add=(want-d.getDay()+7)%7;
+    if(add===0 && d.getTime()<=now.getTime()) add=7;
+    d.setDate(d.getDate()+add); return d.getTime();
+  }
+  d.setHours(hh,mm,0,0);
+  if(d.getTime()<=now.getTime()) d.setDate(d.getDate()+1);
+  if(t.cadence==='weekdays'){ while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1); }
+  return d.getTime();
+}
+function bpWhen(ts){
+  if(!ts) return '—';
+  const d=new Date(ts), mins=Math.round((ts-Date.now())/60000);
+  const clock=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  if(mins<0) return 'due';
+  if(mins<60) return 'in '+mins+' min';
+  if(mins<60*20) return 'in '+Math.round(mins/60)+' h';
+  return BP_DAYS[d.getDay()].slice(0,3)+' '+clock;
+}
+function bpWhenDone(ts){
+  const d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function bpCadenceText(t){
+  const c=BP_CADENCES.filter(function(x){return x.v===t.cadence;})[0];
+  let s=(c?c.label:'every day');
+  if(t.cadence==='daily'||t.cadence==='weekdays') s+=' '+(t.time||'08:00');
+  if(t.cadence==='weekly') s+=' '+BP_DAYS[Number(t.day||0)]+' '+(t.time||'08:00');
+  return s;
+}
+
+/* ── thread bits ─────────────────────────────────────────────────────────── */
+function bpTurn(){
+  const t=document.createElement('div'); t.className='turn';
+  $('turns').appendChild(t); showThread(); scroll(); return t;
+}
+function bpNotify(title, body){
+  try{
+    if(typeof Notification==='undefined') return;
+    if(Notification.permission==='granted') new Notification('stigmergicoin · '+title,{body:body});
+  }catch(e){}
+}
+function bpCopy(text, btn){
+  const done=function(){ if(btn){ const old=btn.textContent; btn.textContent='copied ✓';
+    setTimeout(function(){btn.textContent=old;},1600); } };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done,function(){done();}); return; }
+  }catch(e){}
+  try{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+       ta.select(); document.execCommand('copy'); ta.remove(); done(); }catch(e){ done(); }
+}
+function bpSpec(task){
+  const bp=bpFind(task.bp)||{id:task.bp,title:task.bp};
+  const lines=['BLUEPRINT '+bp.id+' — '+(bp.title||''),'runs: '+bpCadenceText(task),
+    'executor: '+bp.executor,'answers:'];
+  Object.keys(task.answers||{}).forEach(function(k){ lines.push('  '+k+': '+task.answers[k]); });
+  lines.push('truth: created on stigmergicoin.com by its owner; hand this to Alice\'s body to run it for real.');
+  return lines.join('\n');
+}
+
+/* ── the library card ────────────────────────────────────────────────────── */
+function bpLibrary(){
+  const t=bpTurn();
+  let h='<div class="bp-card"><h4>⌘ Automations <span class="bp-tag" style="text-transform:none;letter-spacing:0">/blueprint</span></h4>'+
+    '<div class="it">Recurring jobs, set up by answering a few questions — no cron, no prompt-writing.'+
+    ' Hermes ships sixteen; these are the ones on the record here.</div>';
+  BLUEPRINTS.forEach(function(b){ h+='<div class="bp-card" style="margin:12px 0 0">'+
+    '<h4>'+esc(b.title)+'</h4><div class="cmd2">/blueprint '+esc(b.id)+'</div>'+
+    '<div class="it">'+esc(b.it)+'</div>'+
+    '<div class="bp-note">'+esc(BP_EXEC[b.executor])+'<span class="bp-tag'+(b.executor==='desk'?' desk':'')+
+    '">'+esc(b.executor)+'</span></div>'+
+    '<div class="bp-row"><button class="bp-btn" data-setup="'+esc(b.id)+'">Set it up</button></div></div>'; });
+  h+='<div class="bp-note" style="margin-top:12px">The other eleven of the sixteen are not written down '+
+     'here yet — paste 06–16 and they drop straight into this list.</div></div>';
+  t.innerHTML=h; scroll();
+  t.querySelectorAll('[data-setup]').forEach(function(btn){
+    btn.onclick=function(){ bpSetup(bpFind(btn.getAttribute('data-setup'))); };
+  });
+}
+
+/* ── the questions ───────────────────────────────────────────────────────── */
+function bpSetup(bp){
+  if(!bp) return;
+  const t=bpTurn();
+  let h='<div class="bp-card"><h4>'+esc(bp.title)+'</h4>'+
+    '<div class="cmd2">/blueprint '+esc(bp.id)+'</div><div class="it">'+esc(bp.it)+'</div>'+
+    '<div class="bp-note">'+esc(BP_EXEC[bp.executor])+'</div><div class="bp-q">';
+  bp.qs.forEach(function(q){
+    h+='<div><label for="bpq_'+esc(q.k)+'">'+esc(q.label)+'</label>'+
+       '<input id="bpq_'+esc(q.k)+'" data-k="'+esc(q.k)+'" placeholder="'+esc(q.ph||'')+'">'+
+       (q.help?'<div class="help">'+esc(q.help)+'</div>':'')+'</div>';
+  });
+  h+='<div class="bp-inline"><div><label for="bpq_cad">How often?</label><select id="bpq_cad">'+
+     BP_CADENCES.map(function(c){return '<option value="'+c.v+'">'+esc(c.label)+'</option>';}).join('')+
+     '</select></div>'+
+     '<div id="bp_timewrap"><label for="bpq_time">At what time?</label>'+
+     '<input id="bpq_time" type="time" value="08:00"></div>'+
+     '<div id="bp_daywrap" style="display:none"><label for="bpq_day">Which day?</label><select id="bpq_day">'+
+     BP_DAYS.map(function(d,i){return '<option value="'+i+'">'+d+'</option>';}).join('')+'</select></div></div>'+
+     '</div><div class="bp-row"><button class="bp-btn" id="bpgo">Set it up</button>'+
+     '<button class="bp-btn g2" id="bpcancel">Cancel</button></div>'+
+     '<div class="bp-note" id="bpmsg"></div></div>';
+  t.innerHTML=h; scroll();
+
+  const cad=t.querySelector('#bpq_cad');
+  cad.onchange=function(){
+    const v=cad.value, needsTime=(v==='daily'||v==='weekdays'||v==='weekly');
+    t.querySelector('#bp_timewrap').style.display=needsTime?'':'none';
+    t.querySelector('#bp_daywrap').style.display=(v==='weekly')?'':'none';
+  };
+  cad.onchange();
+  t.querySelector('#bpcancel').onclick=function(){ t.remove(); };
+  t.querySelector('#bpgo').onclick=function(){
+    const answers={}, miss=[];
+    bp.qs.forEach(function(q){
+      const el=t.querySelector('#bpq_'+q.k), v=(el&&el.value||'').trim();
+      if(!v) miss.push(q.label); else answers[q.k]=v;
+    });
+    const msg=t.querySelector('#bpmsg');
+    if(miss.length){ msg.textContent='Still needed: '+miss.join(' · '); return; }
+    const task={id:'b_'+Date.now().toString(36), bp:bp.id, answers:answers,
+      cadence:cad.value, time:(t.querySelector('#bpq_time').value||'08:00'),
+      day:Number((t.querySelector('#bpq_day')||{}).value||1), enabled:true,
+      created:Date.now(), runs:0, last_run:null};
+    task.next_run=bpNextRun(task);
+    BP.tasks.push(task); bpSave(BP); bpRender();
+    if(typeof Notification!=='undefined' && Notification.permission==='default'){
+      try{ Notification.requestPermission(); }catch(e){}
+    }
+    const done=bpTurn();
+    done.innerHTML='<div class="bp-card"><h4>Set · '+esc(bp.title)+'</h4>'+
+      '<div class="it">'+esc(bpCadenceText(task))+' — next one '+esc(bpWhen(task.next_run))+
+      (bp.executor==='desk'?', answered by the desk (one question each time it runs)':'.')+'</div>'+
+      '<div class="bp-row"><button class="bp-btn" id="bprunnow">Run it now</button>'+
+      '<button class="bp-btn g2" id="bpcopy">Copy the spec for Alice</button></div>'+
+      '<div class="bp-note">Keep this tab open: the run fires here. For a job that runs with the '+
+      'laptop closed, hand the spec to Alice\'s body.</div></div>';
+    scroll();
+    done.querySelector('#bprunnow').onclick=function(){ bpRun(task,true); };
+    done.querySelector('#bpcopy').onclick=function(e){ bpCopy(bpSpec(task), e.target); };
+  };
+}
+
+/* ── running one ─────────────────────────────────────────────────────────── */
+let bpBusy=false;
+async function bpRun(task, manual){
+  const bp=bpFind(task.bp); if(!bp) return;
+  const card=bpTurn();
+  const head='<h4>'+esc(bp.title)+'</h4><div class="bp-run"><div class="when">'+
+    (manual?'run by hand · ':'scheduled · ')+esc(bpWhenDone(Date.now()))+'</div>';
+  if(bp.executor==='local'){
+    const line=(task.answers.say||task.answers.what||bp.title);
+    card.innerHTML='<div class="bp-card">'+head+'<div class="a" style="margin-top:6px">'+esc(line)+
+      '</div></div></div>';
+    bpRecord(task,'local',line); bpNotify(bp.title,line); scroll(); return;
+  }
+  if(bp.executor==='alice-body'){
+    card.innerHTML='<div class="bp-card">'+head+
+      '<div class="a" style="margin-top:6px">I cannot open a mailbox from a browser tab — so I will not '+
+      'tell you your mail was checked. The spec is ready; hand it to Alice\'s body and she runs it for real, '+
+      'with or without this tab open.</div>'+
+      '<div class="bp-row"><button class="bp-btn" id="bpcopy2">Copy the spec for Alice</button></div>'+
+      '</div></div>';
+    card.querySelector('#bpcopy2').onclick=function(e){ bpCopy(bpSpec(task), e.target); };
+    bpRecord(task,'staged','spec staged for Alice\'s body — nothing was fetched'); scroll(); return;
+  }
+  /* executor: desk — a real run through the same worker the chat uses */
+  if(bpBusy||sending){ card.remove(); return; }        // one job at a time; retried on the next tick
+  bpBusy=true;
+  card.innerHTML='<div class="bp-card">'+head+
+    '<div class="a thinking">running it\u2026</div></div></div>';
+  scroll();
+  try{
+    const prompt=bp.prompt(task.answers||{});
+    if(!conversationId) conversationId='c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    const r0=await fetch('/api/gmchat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:prompt, conversation_id:conversationId, fingerprint:FP, async:true})});
+    const first=await r0.json();
+    if(!first.accepted||!first.job_id){
+      const why=first.message||first.error||first.reason||'the desk refused it';
+      card.innerHTML='<div class="bp-card">'+head+'<div class="a">Did not run: '+esc(why)+
+        '</div><div class="bp-note">Recorded as not run — I will try again at the next slot.</div></div></div>';
+      bpRecord(task,'refused',why); scroll(); return;
+    }
+    const d=await collectAnswer(first.job_id, card);
+    const ans=d.answer||d.error||'no answer';
+    card.innerHTML='<div class="bp-card">'+head+'<div class="a">'+render(ans)+'</div>'+
+      '<div class="src">'+esc(bp.id+(d.receipt_id?' · alice · '+String(d.receipt_id).slice(0,8):''))+
+      '</div></div></div>';
+    bpRecord(task,'ran',ans); bpNotify(bp.title, String(ans).slice(0,180));
+    credits(); if(!incognito) loadChats();
+  }catch(e){
+    card.innerHTML='<div class="bp-card">'+head+'<div class="a">Could not reach the desk: '+
+      esc(e.message)+'</div></div></div>';
+    bpRecord(task,'error',String(e.message));
+  }finally{ bpBusy=false; scroll(); }
+}
+function bpRecord(task, status, note){
+  task.runs=(task.runs||0)+1; task.last_run=Date.now(); task.last_status=status;
+  if(task.cadence) task.next_run=bpNextRun(task);
+  BP.runs.unshift({ts:Date.now(), task:task.id, bp:task.bp, status:status,
+    note:String(note||'').slice(0,600)});
+  BP.runs=BP.runs.slice(0,50);
+  bpSave(BP); bpRender();
+}
+function bpTick(){
+  const now=Date.now();
+  for(let i=0;i<BP.tasks.length;i++){
+    const t=BP.tasks[i];
+    if(!t.enabled) continue;
+    if(!t.next_run || t.next_run<=now){ bpRun(t,false); }
+  }
+}
+setInterval(bpTick, 30000);
+
+/* ── sidebar ─────────────────────────────────────────────────────────────── */
+function bpRender(){
+  const wrap=$('bpwrap'), box=$('bplist'); if(!wrap||!box) return;
+  if(!BP.tasks.length){ wrap.style.display='none'; box.textContent=''; return; }
+  wrap.style.display='';
+  box.textContent='';
+  BP.tasks.forEach(function(t){
+    const bp=bpFind(t.bp)||{title:t.bp,id:t.bp};
+    const row=document.createElement('div');
+    row.className='bp-task'+(t.enabled?'':' off');
+    row.title=bpCadenceText(t)+' · '+(t.enabled?('next '+bpWhen(t.next_run)):'paused')+
+      (t.last_run?(' · last '+bpWhenDone(t.last_run)+' ('+t.last_status+')'):' · never run yet');
+    row.innerHTML='<span class="nm">'+esc(bp.title)+'</span><span class="nx">'+
+      esc(t.enabled?bpWhen(t.next_run):'paused')+'</span>';
+    row.onclick=function(){ bpTaskCard(t); drawerSet(false); };
+    box.appendChild(row);
+  });
+}
+
+/* ── one task, in the thread ──────────────────────────────────────────────── */
+function bpTaskCard(task){
+  const bp=bpFind(task.bp)||{title:task.bp,id:task.bp,executor:'desk'};
+  const t=bpTurn();
+  let h='<div class="bp-card"><h4>'+esc(bp.title)+'</h4><div class="cmd2">/blueprint '+esc(bp.id)+
+    '</div><div class="it">'+esc(bpCadenceText(task))+' · '+
+    (task.enabled?'next '+esc(bpWhen(task.next_run)):'paused')+' · '+(task.runs||0)+' run(s)'+
+    (task.last_run?' · last '+esc(bpWhenDone(task.last_run))+' ('+esc(task.last_status||'')+')':'')+
+    '</div><div class="bp-note">'+esc(BP_EXEC[bp.executor]||'')+'</div><div class="bp-q">';
+  Object.keys(task.answers||{}).forEach(function(k){
+    h+='<div class="help">'+esc(k)+': '+esc(task.answers[k])+'</div>';
+  });
+  h+='</div><div class="bp-row">'+
+     '<button class="bp-btn" id="t_run">Run it now</button>'+
+     '<button class="bp-btn g2" id="t_tog">'+(task.enabled?'Pause':'Resume')+'</button>'+
+     '<button class="bp-btn g2" id="t_copy">Copy the spec for Alice</button>'+
+     '<button class="bp-btn g2" id="t_del">Delete</button></div></div>';
+  t.innerHTML=h; scroll();
+  t.querySelector('#t_run').onclick=function(){ bpRun(task,true); };
+  t.querySelector('#t_tog').onclick=function(){
+    task.enabled=!task.enabled;
+    if(task.enabled) task.next_run=bpNextRun(task);
+    bpSave(BP); bpRender(); t.querySelector('#t_tog').textContent=task.enabled?'Pause':'Resume'; scroll();
+  };
+  t.querySelector('#t_copy').onclick=function(e){ bpCopy(bpSpec(task), e.target); };
+  t.querySelector('#t_del').onclick=function(){
+    BP.tasks=BP.tasks.filter(function(x){return x.id!==task.id;}); bpSave(BP); bpRender(); t.remove();
+  };
+}
+
+/* ── the command line ─────────────────────────────────────────────────────── */
+function bpCommands(){
+  const out=[{cmd:'/blueprint', what:'all the automations'}];
+  BLUEPRINTS.forEach(function(b){ out.push({cmd:'/blueprint '+b.id, what:b.title}); });
+  return out;
+}
+function bpMenuUpdate(){
+  const menu=$('bpmenu'); if(!menu) return;
+  const v=($('q').value||'');
+  if(v.charAt(0)!=='/'){ menu.classList.remove('on'); menu.textContent=''; return; }
+  const q=v.toLowerCase();
+  const hits=bpCommands().filter(function(c){ return c.cmd.toLowerCase().indexOf(q)===0 || q.indexOf(c.cmd.toLowerCase())===0; });
+  if(!hits.length){ menu.classList.remove('on'); menu.textContent=''; return; }
+  menu.textContent='';
+  hits.forEach(function(c,i){
+    const b=document.createElement('button'); b.type='button';
+    b.className=(i===0?'hi':'');
+    b.innerHTML='<span class="cmd">'+esc(c.cmd)+'</span><span class="what">'+esc(c.what)+'</span>';
+    b.onclick=function(){ const ta=$('q'); ta.value=c.cmd+' '; ta.focus(); bpMenuUpdate(); };
+    menu.appendChild(b);
+  });
+  menu.classList.add('on');
+}
+function bpFirst(){ const m=$('bpmenu'); return m?m.querySelector('button'):null; }
+function bpCompose(v){
+  const t=(v||'').trim();
+  if(t.charAt(0)!=='/'){ ask(t); return; }
+  const m=t.match(/^\/(?:blueprint|bp)\b\s*([A-Za-z0-9_-]*)/i);
+  if(!m){ bpUnknown(t); return; }
+  const id=(m[1]||'').toLowerCase();
+  if(!id){ bpLibrary(); return; }
+  const bp=bpFind(id);
+  if(!bp){
+    const t2=bpTurn();
+    t2.innerHTML='<div class="bp-card"><h4>No blueprint called “'+esc(id)+'”</h4>'+
+      '<div class="it">On the record here: '+BLUEPRINTS.map(function(b){return esc(b.id);}).join(' · ')+
+      '</div></div>';
+    scroll(); return;
+  }
+  bpSetup(bp);
+}
+function bpUnknown(t){
+  const el=bpTurn();
+  el.innerHTML='<div class="bp-card"><h4>That is not a command</h4><div class="it">'+
+    'Type <b>/blueprint</b> to see the automations, or ask me a plain question about markets.</div></div>';
+  scroll();
+}
+
 me();
 loadChats();
 credits();
+bpRender();
+bpTick();
 if(location.search.indexOf('topup=done') >= 0){
   // the webhook may land a moment after the redirect
   setTimeout(credits, 2500); setTimeout(credits, 7000);

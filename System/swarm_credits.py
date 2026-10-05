@@ -326,6 +326,7 @@ def top_up(identity: str, usd: float, *, reference: str = "", provider: str = "s
 # ─────────────────────────────────────────────────────────────────────────────
 
 ACCESS_CODES = "access_codes.json"
+REDEMPTIONS = "access_code_redemptions.jsonl"
 TRUTH_LABEL_CODES = "SIFTA_ACCESS_CODES_V1"
 
 
@@ -380,7 +381,72 @@ def make_code(usd: float = DAILY_CREDIT_USD, *, uses: int = 1, note: str = "",
             "note": note[:120]}
 
 
+def _redactions_path(sd: Path) -> Path:
+    return sd / REDEMPTIONS
+
+
+def record_redemption(code: str, identity: str, *, usd: float, uses_left: int,
+                      context: dict[str, Any] | None = None,
+                      state_dir: Path | str | None = None) -> dict[str, Any]:
+    """Write down who used a code and everything anonymous we can honestly say about them.
+
+    The Architect asked for this the moment a code was handed to a person outside the house:
+    "record the uses, who used it, what ip, unique hardware, whatever unique, country, and all
+    info you can get if anonymous."
+
+    Honest limits, written into the row rather than discovered later: behind the Cloudflare
+    tunnel every request arrives from 127.0.0.1, so the only real address is CF-Connecting-IP,
+    and when that header is absent there is NO ip to record -- not a blank to interpret as
+    one. Country comes from CF-IPCountry, which is Cloudflare's reading, not ours. A browser
+    fingerprint is self-reported by the page and can be spoofed or absent entirely. Nothing
+    here identifies a person; it identifies a browser that used a code at a moment in time,
+    and every row says which of its fields are facts and which are claims.
+    """
+    sd = _state_dir(state_dir)
+    ctx = dict(context or {})
+    for key in ("ip", "country", "region", "city", "user_agent", "accept_language",
+                "referer", "cf_ray", "device_id", "visitor_id", "account_id",
+                "fingerprint", "ip_hash", "signed_in", "asn", "timezone"):
+        ctx.setdefault(key, "")
+    row = {"ts": time.time(), "kind": "code_redemption", "code": str(code).upper(),
+           "identity": identity, "usd": round(float(usd or 0), 2), "uses_left": int(uses_left),
+           "fields_from": {
+               "ip": "CF-Connecting-IP (the tunnel makes every request look like 127.0.0.1)",
+               "country": "Cloudflare's own reading, CF-IPCountry",
+               "fingerprint": "self-reported by the browser; can be absent or spoofed",
+               "device_id": "SIFTA device cookie, set by us",
+           },
+           "truth_label": TRUTH_LABEL}
+    row.update({k: (str(v)[:300] if v != "" else "") for k, v in ctx.items()})
+    sd.mkdir(parents=True, exist_ok=True)
+    with _locked(sd):
+        with _redactions_path(sd).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row
+
+
+def redemptions(code: str = "", *, state_dir: Path | str | None = None) -> list:
+    """Every use of a code, newest last. No code given: every code."""
+    sd = _state_dir(state_dir)
+    p = _redactions_path(sd)
+    if not p.exists():
+        return []
+    out = []
+    for line in p.open(encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not code or str(r.get("code")) == str(code).upper():
+            out.append(r)
+    return out
+
+
 def redeem_code(identity: str, code: str, *,
+                context: dict[str, Any] | None = None,
                 state_dir: Path | str | None = None) -> dict[str, Any]:
     """Turn a code into credit, once per visitor, for as many uses as it has."""
     sd = _state_dir(state_dir)
@@ -412,6 +478,8 @@ def redeem_code(identity: str, code: str, *,
         _save_codes(codes, sd)
     credited = top_up(identity, float(row.get("usd") or 0),
                       reference=f"code:{token}", provider="access_code", state_dir=sd)
+    record_redemption(token, identity, usd=float(row.get("usd") or 0),
+                      uses_left=int(row.get("uses_left") or 0), context=context, state_dir=sd)
     return {"ok": True, "code": token, "credited_usd": float(row.get("usd") or 0),
             "questions": int(float(row.get("usd") or 0) // PRICE_PER_QUESTION),
             "uses_left": int(row.get("uses_left") or 0),

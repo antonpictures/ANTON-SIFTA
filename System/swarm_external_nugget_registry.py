@@ -83,6 +83,41 @@ NUGGETS: tuple[Nugget, ...] = (
         notes="From George paste 2026-06-04: litert-lm CLI install/upgrade/uninstall via pip/uvx/uv; rm -r ~/.litert-lm for caches. Gallery: 'Discover private, offline models on device' 'Google AI Edge Gallery is the premier destination for running powerful open-source LLMs on your devices. Experience high-performance Generative AI directly on your hardware– fully offline, private, and lightning-fast.' 'Featuring the latest Gemma 4 models' 'Gemma 4 12B Unified reasoning model with image support' 'Explore multimodal AI use cases' 'text, vision, audio, and rich multimodal workflows' 'Configure settings, benchmark performance, and import your own models' 'Browse custom Agent Skills shared by other developers' '🚀 Announcing Agent Skills: Build, Share, and Get Your Skills Featured!' Skills include: Web-search, [Memory Tool], [Agent Skill] Second Brain v3.3 - Self-Evolving Autonomous AI Agent (100% Offline), [Universal Search]: Gemma Skill Search Optimized for Voice, [DuckDuckGo API Search], [Brave-Web-Search], [proxy-parser], Translator, Focus Flow, Knowledge-gram, etc. + '-- we borg - we connect the swarm -- we learn --'. Good for SIFTA per r501: directly addresses YouTube unacceptable via borg skills for browser limb; enriches field with community habits swimmers can stigmergically adopt/load/record; on-device Gemma4 for cortex consolidation / 12B vision without cloud; private offline aligns 'no restrictions but her own STIGMERGIC BODY' + sovereign nodes; 'we borg' is the swarm philosophy match.",
     ),
     Nugget(
+        name="Hermes /blueprint — 16 built-in automations library",
+        url="n/a — owner screenshot of the 'Hermes Release Watch' X thread, witnessed 2026-10-04 22:24:53 (no repo/URL verified yet)",
+        tier="C",
+        lane="recurring-habit blueprints / conversational automation authoring",
+        status="adopt_for_stigmergic_habits",
+        local_artifacts=(
+            "System/swarm_external_nugget_registry.py",
+            "System/swarm_skill_library.py",
+            "System/vigil_routines.py",
+            ".sifta_state/sol_landing_zone.json",
+        ),
+        adoption_action=(
+            "Borrow the pattern, vendor nothing: express recurring work as local habit blueprints "
+            "instantiated by question-answering instead of hand-written cron strings, executed with "
+            "agent reasoning over existing local schedulers (.sifta_state/stigmergic_schedule*.jsonl, "
+            "System/vigil_routines.py) and recorded as skill_library habits. Hermes itself is not "
+            "installed, not called, and its blueprints are not copied — only the shape is assimilated."
+        ),
+        covenant_risk="LOW_LOCAL_ONLY pattern borrow; no third-party install, no cloud call",
+        notes=(
+            "From George paste 2026-10-04 via the DSH session, after Alice's own description of the "
+            "screenshot (role=alice, model=gemma4:31b-cloud, ts 1791141893.036692, stored in "
+            ".sifta_state/sol_landing_zone.json); owner's instruction was the single word 'borg'. "
+            "Observed content: Hermes ships /blueprint, a library of 16 built-in automations; users set "
+            "up recurring tasks (morning briefings, news digests, meal planning) by answering a few "
+            "questions rather than writing complex prompts or manual cron schedules. Thread replies "
+            "contrast it with Zapier — Zapier composes triggers and actions, Hermes reaches the task by "
+            "agent-based reasoning — and one reply calls 'meal planning' in an automation library "
+            "unexpected but brilliant. SIFTA relevance: Alice already owns schedulers and a skill "
+            "library, so the gap this closes is authoring, not scheduling — the owner should be able to "
+            "say the outcome and answer a few questions, and the body builds the recurring habit itself "
+            "with receipts. Nothing here is probe-first by policy; it is a design pattern, not a runtime."
+        ),
+    ),
+    Nugget(
         name="browser-use / deterministic browser loop",
         url="https://github.com/browser-use/browser-use",
         tier="A",

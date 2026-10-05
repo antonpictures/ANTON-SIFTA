@@ -458,28 +458,16 @@ def _cdp_act(action: str, url_substring: str, port: int, indices: str = "") -> d
     else:
         return {"ok": False, "action": action, "browser": "chromium", "reason": "bad_action"}
 
-    try:
-        import websocket
-    except ImportError:
-        return {"ok": False, "action": action, "browser": "chromium", "reason": "websocket_client_missing"}
-
     ws_url = best.get("webSocketDebuggerUrl")
     if not ws_url:
         return {"ok": False, "action": action, "browser": "chromium", "reason": "no_ws_url"}
 
-    try:
-        ws = websocket.create_connection(ws_url, timeout=10)
-        ws.send(json.dumps({
-            "id": 1,
-            "method": "Runtime.evaluate",
-            "params": {"expression": js, "returnByValue": True},
-        }))
-        resp = json.loads(ws.recv())
-        ws.close()
-    except Exception as e:
-        return {"ok": False, "action": action, "browser": "chromium", "reason": f"cdp_error: {e}"}
-
-    val = (resp.get("result", {}) or {}).get("result", {}).get("value", "")
+    # stdlib transport (2026-10-05): the third-party `websocket` client is absent on
+    # python3.14, the interpreter the body actually calls, so every Chrome pause used
+    # to end at `websocket_client_missing`. Same protocol, no dependency.
+    val = _cdp_eval(ws_url, js, timeout_s=10.0)
+    if val is None:
+        return {"ok": False, "action": action, "browser": "chromium", "reason": "cdp_error"}
     parts = str(val).split(FIELD_SEP)
 
     def _f(x: str) -> Optional[float]:
@@ -523,6 +511,189 @@ _last_pause_url: Optional[str] = None
 _paused_targets: list[dict[str, Any]] = []
 
 
+# --------------------------------------------------------------------------------------
+# Reading the Chrome family's tabs over CDP (no third-party websocket client)
+# --------------------------------------------------------------------------------------
+# Two measured faults, both invisible until the port was finally open (2026-10-05):
+#   * the CDP effector died on `import websocket` — python3.14 (the interpreter the
+#     body calls) has no websocket-client, so Chrome could never be paused;
+#   * `browser_awareness_snapshot()` scanned Safari only, so even with the port open
+#     no Chrome tab could ever appear in `playing_tabs`, and `pause_only_if_playing()`
+#     answered "nothing_playing" while George's video kept playing.
+# The frame layer below is stdlib only: the organ stays sovereign on any interpreter.
+
+def _recv_exact(sock, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise OSError("socket closed during CDP frame")
+        buf += chunk
+    return buf
+
+
+def _ws_connect(ws_url: str, timeout_s: float = 6.0):
+    """Minimal RFC6455 handshake. Returns a socket or raises."""
+    import base64
+    import urllib.parse
+
+    u = urllib.parse.urlparse(ws_url)
+    host = u.hostname or LOCALHOST
+    port = int(u.port or 80)
+    path = u.path or "/"
+    sock = socket.create_connection((host, port), timeout=timeout_s)
+    key = base64.b64encode(os.urandom(16)).decode()
+    sock.sendall(
+        (
+            "GET %s HTTP/1.1\r\nHost: %s:%d\r\nUpgrade: websocket\r\n"
+            "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n" % (path, host, port, key)
+        ).encode()
+    )
+    head = b""
+    while b"\r\n\r\n" not in head:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise OSError("CDP closed during handshake")
+        head += chunk
+        if len(head) > 65536:
+            raise OSError("CDP handshake too large")
+    if b"101" not in head.split(b"\r\n")[0]:
+        raise OSError("CDP refused the websocket upgrade")
+    return sock
+
+
+def _ws_send_text(sock, text: str) -> None:
+    import struct
+
+    payload = text.encode("utf-8")
+    header = bytearray([0x81])
+    n = len(payload)
+    if n < 126:
+        header.append(0x80 | n)
+    elif n < 65536:
+        header.append(0x80 | 126)
+        header += struct.pack(">H", n)
+    else:
+        header.append(0x80 | 127)
+        header += struct.pack(">Q", n)
+    mask = os.urandom(4)
+    header += mask
+    sock.sendall(bytes(header) + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+
+def _ws_read_text(sock) -> str:
+    import struct
+
+    while True:
+        b1, b2 = _recv_exact(sock, 2)
+        opcode = b1 & 0x0F
+        n = b2 & 0x7F
+        if n == 126:
+            n = struct.unpack(">H", _recv_exact(sock, 2))[0]
+        elif n == 127:
+            n = struct.unpack(">Q", _recv_exact(sock, 8))[0]
+        payload = _recv_exact(sock, n) if n else b""
+        if opcode == 0x1:
+            return payload.decode("utf-8", "replace")
+        if opcode == 0x8:
+            raise OSError("CDP closed the websocket")
+        # ping / pong / continuation: keep reading until a text frame arrives
+
+
+def _cdp_eval(ws_url: Optional[str], expression: str, timeout_s: float = 6.0) -> Any:
+    """Runtime.evaluate on one CDP page. Returns the value, or None on any failure."""
+    if not ws_url:
+        return None
+    try:
+        sock = _ws_connect(ws_url, timeout_s)
+    except Exception:
+        return None
+    try:
+        _ws_send_text(
+            sock,
+            json.dumps(
+                {
+                    "id": 1,
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": expression, "returnByValue": True},
+                }
+            ),
+        )
+        for _ in range(12):
+            msg = json.loads(_ws_read_text(sock))
+            if msg.get("id") == 1:
+                return ((msg.get("result") or {}).get("result") or {}).get("value")
+        return None
+    except Exception:
+        return None
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def _cdp_family_name() -> str:
+    """Which Chrome-family app is up right now (its name is the BROWSER_PROFILES key)."""
+    running = running_browsers()
+    for name, profile in BROWSER_PROFILES.items():
+        if profile.get("effector") == "cdp" and name in running:
+            return name
+    return "Google Chrome"
+
+
+def _cdp_tab_scan(port: int = DEFAULT_CDP_PORT) -> list[dict[str, Any]]:
+    """The Chrome family's tabs over CDP, in the same shape as the Safari scan."""
+    tabs: list[dict[str, Any]] = []
+    if not _port_is_open(LOCALHOST, port):
+        return tabs
+    name = _cdp_family_name()
+    idx = 0
+    for target in _cdp_targets(port):
+        if target.get("type") != "page":
+            continue
+        url = target.get("url") or ""
+        if url.startswith("devtools://") or url.startswith("chrome-extension://"):
+            continue
+        raw = _cdp_eval(target.get("webSocketDebuggerUrl"), _CDP_VIDEO_JS)
+        video_count, paused, ct, dur = 0, None, None, None
+        if isinstance(raw, str):
+            parts = raw.split("|")
+            if len(parts) >= 4:
+                try:
+                    video_count = int(float(parts[0] or 0))
+                except ValueError:
+                    video_count = 0
+                if parts[1] in ("0", "1"):
+                    paused = parts[1] == "1"
+                try:
+                    ct = float(parts[2]) if parts[2] else None
+                except ValueError:
+                    ct = None
+                try:
+                    dur = float(parts[3]) if parts[3] else None
+                except ValueError:
+                    dur = None
+        tabs.append(
+            {
+                "browser": name,
+                "window_index": 0,
+                "tab_index": idx,
+                "url": url,
+                "title": target.get("title") or "",
+                "video_count": video_count,
+                "paused": paused,
+                "playing": (paused is False) and video_count > 0,
+                "current_time": ct,
+                "duration": dur,
+                "effector": "cdp",
+            }
+        )
+        idx += 1
+    return tabs
+
+
 def browser_awareness_snapshot() -> dict[str, Any]:
     """Full computer-use picture: which browsers are on, which holds a playing video."""
     running = running_browsers()
@@ -531,6 +702,10 @@ def browser_awareness_snapshot() -> dict[str, Any]:
 
     if "Safari" in running:
         tabs.extend(_safari_tab_scan())
+    # Chrome-family tabs, read over CDP. Without this the co-watch Chrome was
+    # invisible to the organ and every pause attempt answered "nothing_playing".
+    if any((BROWSER_PROFILES.get(b) or {}).get("effector") == "cdp" for b in running):
+        tabs.extend(_cdp_tab_scan(DEFAULT_CDP_PORT))
 
     snapshot = {
         "truth_label": TRUTH_LABEL,
@@ -833,11 +1008,148 @@ def detect_external_video_tab(url: str = "", port: int = DEFAULT_CDP_PORT) -> di
     }
 
 
-def ensure_cdp_port(port: int = DEFAULT_CDP_PORT) -> dict[str, Any]:
-    """Chrome-family only. Safari needs no port."""
+# --------------------------------------------------------------------------------------
+# Enabling the port (owner command, 2026-10-05)
+# --------------------------------------------------------------------------------------
+# George: "ENABLE THE PORT — Chrome must be started with --remote-debugging-port
+# (the organ has ensure_cdp_port() for exactly this)." He was right that the organ
+# had the *check* and not the *doing*. Two facts decide how the doing must work here:
+#
+#   1. Launching Chrome again while Chrome is already running does NOT open the port:
+#      the new invocation is forwarded to the running process and the flag is dropped.
+#      So the port cannot be added, after the fact, to the instance already up.
+#   2. Chrome refuses remote debugging on the *default* profile directory. Relaunching
+#      George's own Chrome with the flag would therefore neither open the port nor
+#      keep his windows — the worst of both.
+#
+# So the port needs its own instance with its own profile: a co-watch Chrome that
+# Alice can actually reach. This never touches, restarts or closes the running Chrome.
+
+_REPO = Path(__file__).resolve().parent.parent
+COWATCH_PROFILE_DIR = _REPO / ".sifta_state" / "chrome_cowatch_profile"
+_PAUSE_LEDGER = _REPO / ".sifta_state" / "external_browser_pause.jsonl"
+
+_CHROME_CANDIDATES = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+)
+
+
+def chrome_binary() -> Optional[str]:
+    """The Chrome-family binary to launch for CDP, or None if this Mac has none."""
+    for path in _CHROME_CANDIDATES:
+        if Path(path).exists():
+            return path
+    return None
+
+
+def _launch_ledger(row: dict[str, Any]) -> None:
+    try:
+        _PAUSE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        with _PAUSE_LEDGER.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def ensure_cdp_port(
+    port: int = DEFAULT_CDP_PORT,
+    *,
+    launch: bool = True,
+    wait_s: float = 15.0,
+    open_url: str = "",
+) -> dict[str, Any]:
+    """Chrome-family only. Safari needs no port.
+
+    When the port is closed and `launch` is true, start the co-watch Chrome with
+    `--remote-debugging-port` and its own `--user-data-dir`, then wait for the socket.
+    Returns a receipt; every launch attempt is written to
+    `.sifta_state/external_browser_pause.jsonl`. Never raises, never touches the
+    owner's running Chrome.
+    """
     if _port_is_open(LOCALHOST, port):
-        return {"ok": True, "port": port, "status": "listening"}
-    return {"ok": False, "port": port, "status": "closed", "note": "not needed for Safari"}
+        return {"ok": True, "port": port, "status": "listening", "action": "none"}
+    if not launch:
+        return {
+            "ok": False,
+            "port": port,
+            "status": "closed",
+            "action": "none",
+            "note": "not needed for Safari",
+        }
+
+    binary = chrome_binary()
+    if not binary:
+        receipt = {
+            "ok": False,
+            "port": port,
+            "status": "closed",
+            "action": "launch",
+            "reason": "no_chrome_family_binary",
+        }
+        _launch_ledger({"ts": time.time(), "truth_label": TRUTH_LABEL, "event": "ensure_cdp_port", **receipt})
+        return receipt
+
+    argv = [
+        binary,
+        "--remote-debugging-port=%d" % port,
+        "--user-data-dir=%s" % COWATCH_PROFILE_DIR,
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if open_url:
+        argv.append(open_url)
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as exc:
+        receipt = {
+            "ok": False,
+            "port": port,
+            "status": "closed",
+            "action": "launch",
+            "reason": "spawn_failed",
+            "details": str(exc),
+        }
+        _launch_ledger({"ts": time.time(), "truth_label": TRUTH_LABEL, "event": "ensure_cdp_port", **receipt})
+        return receipt
+
+    deadline = time.time() + max(1.0, wait_s)
+    while time.time() < deadline:
+        if _port_is_open(LOCALHOST, port):
+            receipt = {
+                "ok": True,
+                "port": port,
+                "status": "listening",
+                "action": "launched",
+                "pid": proc.pid,
+                "binary": binary,
+                "profile": str(COWATCH_PROFILE_DIR),
+                "note": "co-watch Chrome; the owner's own Chrome is untouched",
+            }
+            _launch_ledger({"ts": time.time(), "truth_label": TRUTH_LABEL, "event": "ensure_cdp_port", **receipt})
+            return receipt
+        time.sleep(0.5)
+
+    receipt = {
+        "ok": False,
+        "port": port,
+        "status": "closed",
+        "action": "launched",
+        "reason": "port_never_opened",
+        "pid": proc.pid,
+        "binary": binary,
+        "profile": str(COWATCH_PROFILE_DIR),
+        "waited_s": wait_s,
+    }
+    _launch_ledger({"ts": time.time(), "truth_label": TRUTH_LABEL, "event": "ensure_cdp_port", **receipt})
+    return receipt
 
 
 __all__ = [

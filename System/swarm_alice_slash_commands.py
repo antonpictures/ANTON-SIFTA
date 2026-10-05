@@ -65,6 +65,25 @@ def _installed_owner_ollama_models() -> List[str]:
     return out
 
 
+MERCURY_TAG = "mercury-2.5"
+
+
+def _mercury_available() -> tuple:
+    """Is Mercury reachable? Her key on disk, checked rather than assumed.
+
+    Mercury answers from Inception's API -- not Ollama, not this Mac. So she can never appear
+    in an `ollama list` inventory, which is why "/cortex llm" could not reach her even though
+    the desk has registered her as a cortex kind all along.
+    """
+    try:
+        from System.coin_server import _inception_key
+        if _inception_key():
+            return True, "key on disk"
+        return False, "no Inception key on disk"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}"
+
+
 def _owner_local_cortex_menu(installed: Optional[List[str]] = None) -> List[str]:
     """Return preferred local models first, then every live Ollama pull.
 
@@ -648,6 +667,14 @@ def _handle_owner_local_llm_menu(
     live_models = _installed_owner_ollama_models()
     installed = set(live_models)
     models = _owner_local_cortex_menu(live_models)
+    # Mercury does not live in Ollama -- she answers from Inception's API, with her key on
+    # disk, so an inventory built from `ollama list` could never show her and
+    # "/cortex llm <n>" could never reach her. She is a registered cortex kind in the desk
+    # (SIFTA_DESK_CORTEX=mercury-2.5), so she belongs on this menu, labelled as what she is.
+    mercury_ok, mercury_reason = _mercury_available()
+    if mercury_ok and MERCURY_TAG not in models:
+        models = [*models, MERCURY_TAG]
+        installed = {*installed, MERCURY_TAG}
     value = str(arg or "").strip()
     if value.lower() == "refresh":
         value = ""
@@ -658,7 +685,10 @@ def _handle_owner_local_llm_menu(
         labels: List[str] = []
         for index, model in enumerate(models, start=1):
             marker = "●" if model == current_cortex else " "
-            availability = "" if model in installed else "  (not installed)"
+            if model == MERCURY_TAG:
+                availability = "  (cloud · Inception API, not this Mac)"
+            else:
+                availability = "" if model in installed else "  (not installed)"
             size = (harness_report.get("sizes_gb") or {}).get(model, 0)
             size_label = f" ({size:.1f} GB)" if size else ""
             label = f"{model}{size_label}{availability}"
@@ -745,10 +775,36 @@ def _handle_owner_local_llm_menu(
     out["to_tag"] = target
     diary = "diary updated" if out["diary_ok"] else "diary write FAILED"
     out["reply"] = (
-        f"Local cortex switched: {current_cortex or '(unset)'} -> {target} ({diary})."
+        f"{cortex_switch_label(target)} Previous: {current_cortex or '(unset)'} ({diary})."
         f"{unload_note}"
     )
     return out
+
+
+def cortex_switch_label(target: str) -> str:
+    """Tell the truth about where the cortex that was just selected actually runs.
+
+    Measured 2026-10-02 20:22: the switch message read "Local cortex switched" while moving
+    the Talk lane from AliceG4U (6.3 GB, on this Mac) to
+    leonardoba500/deepseek-v41-uncensored (size "-", served from ollama.com). The word
+    "Local" was hardcoded into the sentence, so the body announced a privacy and billing
+    change as a local swap -- and model_is_local(), which can tell the difference, already
+    existed and went unused beside it.
+
+    Nothing is asserted here that model_is_local() has not checked; when even that cannot be
+    read, the label says so rather than guessing.
+    """
+    try:
+        from System.coin_server import model_is_local
+        local = bool(model_is_local(target))
+    except Exception as exc:
+        return (f"Cortex switched to {target} (I could not tell whether it runs on this Mac: "
+                f"{type(exc).__name__}). Treat it as remote until checked.")
+    if local:
+        return f"Local cortex switched: {target} -- it runs on this Mac."
+    where = ("Inception's API" if str(target).lower().startswith("mercury") else "ollama.com")
+    return (f"CLOUD cortex switched: {target} -- this one runs on {where}, NOT on this Mac. "
+            f"The conversation leaves the machine, and it is billed per token.")
 
 
 def _latest_grok_failover(state_dir: Path) -> Dict[str, Any]:

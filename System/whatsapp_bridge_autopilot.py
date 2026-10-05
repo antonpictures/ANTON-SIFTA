@@ -30,8 +30,13 @@ _STATE = _REPO / ".sifta_state"
 _CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
 _LEDGER = _STATE / "whatsapp_bridge_trace.jsonl"
 _OUTBOX = _STATE / "sifta_whatsapp_outbox.jsonl"
-_INJECT_URL = "http://127.0.0.1:3001/system_inject"
-_HEALTH_URL = "http://127.0.0.1:3001/health"
+_INJECT_URL = __import__("os").environ.get(
+    "SIFTA_WA_INJECT_URL", "http://127.0.0.1:3010/system_inject")
+_HEALTH_URL = __import__("os").environ.get(
+    "SIFTA_WA_HEALTH_URL", "http://127.0.0.1:3010/health")
+# 3010, not 3001: nginx serves a website on 3001 (servers/stigmergicode.conf).
+# The two URLs must move together -- when only the inject URL was moved, this
+# check reported BRIDGE_UNREACHABLE while WhatsApp was open and answering.
 
 SCHEMA = "SIFTA_WHATSAPP_EFFECTOR_V1"
 EVENT_KIND = "WHATSAPP_SEND_ATTEMPT"
@@ -141,7 +146,7 @@ def bridge_health(*, timeout: float = 2.0) -> Dict[str, Any]:
             "status": "BRIDGE_UNREACHABLE",
             "whatsapp_state": "unreachable",
             "result": (
-                f"Could not reach injection server at {_INJECT_URL}. "
+                f"Could not reach the bridge health door at {_HEALTH_URL}. "
                 f"Start the local WhatsApp bridge. Detail: {exc.reason}"
             ),
         }

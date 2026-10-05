@@ -187,6 +187,53 @@ SEARCH_BLOCKED_PATTERN = re.compile(
     r"yandex\.|baidu\.com/?$|bestjobs|bestsecret|accounts\.google)", re.I)
 
 
+# resolved from this file, not from the working directory: the same lesson as
+# swarm_file_attention_stigmergy, where a relative path found zero signals from /tmp
+BRAVE_KEY_FILE = __import__("pathlib").Path(__file__).resolve().parents[1] / ".sifta_state" / "brave_api_key"
+_LAST_SEARCH_ERROR = ""      # why the last search failed, so silence is never the whole story
+BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
+
+
+def brave_search(query: str, limit: int = 5) -> list[dict[str, str]]:
+    """A real search API, which is what this organ needed all along.
+
+    Measured 2026-10-02: the keyless scrapes had gone bad -- DuckDuckGo answered with a
+    challenge page and Bing matched on the word "best" -- so search stayed switched off and
+    the desk answered from memory alone. Brave's API returns titles, URLs and snippets that a
+    reader can actually open and check. The Free plan allows 2,000 requests a month at one per
+    second, which is why the honest fix was a key rather than a cleverer scraper.
+
+    The key lives on disk at 0600 and is never printed, logged or echoed.
+    """
+    key = ""
+    try:
+        key = BRAVE_KEY_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        return []
+    if not key:
+        return []
+    url = f"{BRAVE_URL}?q={urllib.parse.quote((query or '').strip()[:300])}&count={max(1, min(limit, 20))}"
+    global _LAST_SEARCH_ERROR
+    try:
+        # _UA is a header DICT, not a string. Handing it to User-Agent raised a TypeError that
+        # a broad except swallowed, so the organ looked like it had simply found nothing --
+        # the same silent failure this whole day has been about. Unpack it, and remember why
+        # when it fails.
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json", "X-Subscription-Token": key, **_UA})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as exc:
+        _LAST_SEARCH_ERROR = f"{type(exc).__name__}: {exc}"[:200]
+        return []
+    out: list[dict[str, str]] = []
+    for item in ((data.get("web") or {}).get("results") or [])[:limit]:
+        out.append({"title": str(item.get("title") or "")[:200],
+                    "url": str(item.get("url") or ""),
+                    "snippet": str(item.get("description") or "")[:400]})
+    return out
+
+
 def search(query: str, limit: int = 5) -> list[dict[str, str]]:
     """Web search — with the source's honesty check applied.
 
@@ -200,6 +247,10 @@ def search(query: str, limit: int = 5) -> list[dict[str, str]]:
     query. Junk is dropped rather than handed to her as FROM THE WEB, because a
     bad source dressed as a held fact is worse than saying she could not look.
     """
+    # A keyed API first: it is a real source, so it needs no junk filter to be trusted.
+    keyed = brave_search(query, limit=limit)
+    if keyed:
+        return keyed
     if not SEARCH_ENABLED:
         return []
     terms = [w.casefold() for w in re.findall(r"[A-Za-z0-9]{3,}", query or "") if w.casefold() not in STOPWORDS]

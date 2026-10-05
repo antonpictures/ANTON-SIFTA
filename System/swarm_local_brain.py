@@ -54,18 +54,46 @@ def available_models() -> List[str]:
         return []
 
 
-def _to_ollama_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Convert our standard [{"role": "...", "content": "..."}] to Ollama format."""
-    out = []
+def _to_ollama_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert our standard messages to the shape Ollama actually accepts.
+
+    Measured live 2026-10-03: every VISION model failed with
+
+        HTTP 400  json: cannot unmarshal array into Go struct field
+                  .ChatRequest.messages.content of type string
+
+    because a message carrying an image had `content` as a LIST of parts (the OpenAI
+    shape), and this function forwarded that list untouched. Ollama wants the opposite:
+    `content` a STRING, with the pixels in a separate `images` array of raw base64. The
+    owner watched both local eyes fail on the same 400 while a plain Python call with the
+    correct shape worked -- the eyes were never blind, the message was malformed.
+    """
+    out: List[Dict[str, Any]] = []
     for m in messages:
         role = m.get("role", "user")
         content = m.get("content", "")
-        if role == "system":
-            out.append({"role": "system", "content": content})
-        elif role == "assistant":
-            out.append({"role": "assistant", "content": content})
-        else:
-            out.append({"role": "user", "content": content})
+        images = list(m.get("images") or [])
+        if isinstance(content, list):
+            # OpenAI-style parts -> Ollama: text joined into one string, images split out.
+            texts: List[str] = []
+            for part in content:
+                if isinstance(part, str):
+                    texts.append(part)
+                elif isinstance(part, dict):
+                    kind = part.get("type")
+                    if kind == "text":
+                        texts.append(str(part.get("text") or ""))
+                    elif kind == "image_url":
+                        url = str((part.get("image_url") or {}).get("url") or "")
+                        if url.startswith("data:") and "," in url:
+                            images.append(url.split(",", 1)[1])
+                        elif url:
+                            images.append(url)
+            content = "\n".join(t for t in texts if t)
+        msg: Dict[str, Any] = {"role": role, "content": content}
+        if images:
+            msg["images"] = images
+        out.append(msg)
     return out
 
 

@@ -42,9 +42,18 @@ if [ ! -d "$BRIDGE_DIR/node_modules" ]; then
 fi
 
 # ─── Kill any ghost processes on local bridge ports ──────────────────────
-echo "[SETUP] Clearing ports 7434 and 3001..."
+echo "[SETUP] Clearing the kernel port 7434 and the bridge port 3010..."
 lsof -ti:7434 | xargs kill -9 2>/dev/null || true
-lsof -ti:3001 | xargs kill -9 2>/dev/null || true
+# 3010, not 3001. The old line killed whatever held 3001 -- and nginx serves a
+# website there (servers/stigmergicode.conf). A start script must never take the web
+# server down to make room for itself, so it checks what it is about to kill.
+for PID in $(lsof -ti:3010 2>/dev/null); do
+  if ps -o command= -p "$PID" 2>/dev/null | grep -qi nginx; then
+    echo "[REFUSED] 3010 is held by nginx; not killing a web server"
+  else
+    kill -9 "$PID" 2>/dev/null || true
+  fi
+done
 sleep 1
 
 # ─── 2. Start SIFTA Python Swarm Voice server in background ───────────────

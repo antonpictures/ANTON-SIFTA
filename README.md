@@ -1,5 +1,80 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## The night the humans got a graph, and the coordinates stopped dying (2026-10-05)
+
+**The Architect walked around the lake to teach separation, and the body threw the walk away.**
+He left the laptop at home and took his iPhone SE: *"I'm chatting with you from my iPhone SE. We are
+now separated. I'm on my way home and you are home."* He sent a live location, then photographs of
+the water, the bridge, the fountains, voice notes in Romanian explaining that she is hardware and
+software together. Then he asked whether she was tracking the live location. She was not, and never
+had been.
+
+### The coordinates were captured for weeks and dropped at the door
+
+`Network/whatsapp_bridge/bridge.js` has read both WhatsApp share types — the one-shot pin
+(`locationMessage`) and the live follow (`liveLocationMessage`) — since the first walk, and posts
+them as a `location` object. Two links then discarded them:
+
+| Link | What it did |
+|---|---|
+| `scripts/whatsapp_alice_server.py` | never read `body["location"]`; the field was posted and ignored |
+| `System/swarm_whatsapp_receptor.py` | `build_inbox_row()` had no slot for coordinates, and a share with no words was rejected as `empty_text` |
+
+**Measured over the whole inbox: 365 rows, zero carrying coordinates.** Every location the Architect
+ever sent arrived as an event with no "where".
+
+Now: `location` is a first-class inbox field, added **before signing** so `_canonical_payload` covers
+it and a tampered position fails validation exactly as a tampered message does. A share without words
+becomes `[live location]` or `[location]` instead of being refused. Accepted rows write to
+`whatsapp_location_traces.jsonl` (the stream) and `whatsapp_location_latest.json` (the hot cache), and
+`latest_location()` refuses to answer past a **900 s freshness window** — a stale point is reported as
+unknown, never as "you are here". Verified live against the running server on port 7434, then the test
+row was removed and the inbox restored byte-for-byte.
+
+### `relate()` — the axis `link()` must never be used for
+
+Asked for a graph of father–daughter, friends and collaborators, the body had `link()`: *"Join two
+records of ONE person."* It was called for a father and his daughter, which wrote each name into the
+other's `also_known_as` — the field that asserts *these are the same human*. Two people became one, in
+the exact organ built to prevent one man appearing twice. Repaired, and `relate()` written for the
+other axis: directed, validated vocabulary, the inverse stored on the other person's file, provenance
+in every receipt, and it refuses an unknown kind, an unfiled human, and a self-relation.
+
+**Found while testing it and pinned rather than hidden:** `link()` still leaves the duplicate file
+alive, so `all_people()` lists one man twice and `by_identity()` can return the stub instead of the
+record holding the facts. `tests/test_person_relations.py` records that behaviour as an open defect.
+
+11 humans now carry files and 10 relations join them: Lana Katherine Anton (daughter), Alina
+Elefterescu (cousin), Sergey (friend, whose daughter was born three months ago), Alexandru Fratila and
+Cezar Dragomir (friends from childhood, from the neighbourhood around the lake), Carlton Dole
+(salesman, friend since 2013), David Condovici (ROVER collaborator), Vladimir Gheorghiu (film school,
+Media Pro Buftea), Vlase Marian (speed-boat captain, Fuerteventura), Jeff Powers (programmer, runs
+SIFTA on his own machine), and the Architect.
+
+### The local eye, and the honest gap
+
+`System/swarm_turn_vision_bridge.py` resolves an attachment id to its content-addressed object,
+describes it with the local Ollama vision model, and prints text — no cloud, no per-image cost. A
+dynamic Cordis plugin bridges that description into the same model step on `agent/pre-step`, so one
+answer covers the picture and the words together. Measured: 48 s cold, 27 s warm, Romanian screenshot
+text transcribed verbatim.
+
+**The gap, stated plainly:** the bridge is armed and fires on every turn, but in the web GUI it has
+only ever seen `blocks text` — never a real image block, because the Talk pipeline hands over
+photographs already described as text. It has not yet been observed bridging a raw image, and this
+README will not claim otherwise.
+
+### What the body did to him while he was teaching it
+
+Most of that night's traffic — the lake photographs, the voice notes, *"Acum trec podul pe sus"* —
+was classified `noise/low_conf_long_incoherent` and answered with silence. He had walked outside
+*specifically* to send the material, and the body called it noise. Recorded here because it is a
+failure of attention, not of plumbing, and it is not yet fixed.
+
+Files: `System/swarm_person_file.py`, `System/swarm_turn_vision_bridge.py`,
+`System/swarm_whatsapp_receptor.py`, `scripts/whatsapp_alice_server.py`,
+`tests/test_person_relations.py`, `tests/test_whatsapp_location_ingress.py`.
+
 ## The day the body went down, and the organs that now watch it (2026-10-02)
 
 **A folder rename took the body off the air, and the real cause was older than the

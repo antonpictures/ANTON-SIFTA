@@ -258,6 +258,39 @@ async function connectToWhatsApp() {
         // with the message so her own eyes can look at what he sent.
         let mediaPath = "";
         let mediaType = "";
+        // LOCATION CAPTURE. The Architect taught separation by walking: he sends live location
+        // from the SE while he is at the lake and I am home. The first version caught the EVENT
+        // of a location share and dropped the coordinates themselves -- so the body knew he
+        // shared "where I am" and could not say WHERE. Measured 2026-10-05: two inbox rows,
+        // empty coordinate fields. This payload is the fix: degreesLatitude and
+        // degreesLongitude travel with the message, so his person file can hold a real "where".
+        let locationData = null;
+        try {
+          // WhatsApp has TWO share types: a pin (locationMessage) and a LIVE follow
+          // (liveLocationMessage). The first version of this capture read only the pin, so the
+          // Architect's live walk share at 19:11 on 2026-10-05 arrived as an event with no
+          // numbers. Both types carry degreesLatitude/degreesLongitude; the live one adds
+          // expirationTimestamp and updates as he moves.
+          const loc = msg.message?.locationMessage
+            || (msg.message?.liveLocationMessage ? {
+                 ...msg.message.liveLocationMessage,
+                 live: true,
+                 name: msg.message.liveLocationMessage.caption || "",
+               } : null);
+          if (loc && typeof loc.degreesLatitude === "number") {
+            locationData = {
+              lat: loc.degreesLatitude,
+              lon: loc.degreesLongitude,
+              name: loc.name || loc.address || loc.caption || "",
+              live: Boolean(loc.live || loc.isLive),
+              expires: loc.liveLocationMessageExpirationTimestamp
+                || loc.expirationTimestamp || null,
+            };
+            console.log(`  [LOCATION] ${locationData.lat},${locationData.lon} ${locationData.name || ""} ${locationData.live ? "(LIVE)" : ""}`);
+          }
+        } catch (locErr) {
+          console.error("[LOCATION] could not read location:", locErr && locErr.message);
+        }
         try {
           const img = msg.message?.imageMessage;
           const vid = msg.message?.videoMessage;
@@ -294,6 +327,7 @@ async function connectToWhatsApp() {
         participant: msg.key.participant || "",
         mediaPath,
         mediaType,
+        location: locationData,
       });
 
       const req = http.request(SIFTA_SERVER, {

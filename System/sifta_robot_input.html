@@ -456,7 +456,7 @@ const THINKING=[
   'give me a second, I\u2019m looking at the numbers\u2026',
   'coming \u2014 checking the market first\u2026',
   'just a moment, I\u2019m on it\u2026',
-  'hold on, let me look at what\u2019s actually trading\u2026'
+  'hold on, let me think at what\u2019s actually trading in your head\u2026'
 ];
 function pending(){
   const t=document.createElement('div'); t.className='turn';
@@ -571,9 +571,13 @@ async function redeemCode(card, btn){
       body:JSON.stringify({code:code})})).json();
     if(d.ok){
       credits();
-      card.innerHTML = '<div class="a">That worked \u2014 I have put $' +
-        Number(d.credited_usd || 0).toFixed(2) + ' on you, which is ' + d.questions +
-        ' questions. Go on, ask me.</div>';
+      // A credit confirmation is a NOTICE about the account, never a reply to whatever
+      // the visitor just said. Rendered with the answer class, a man telling Alice about the
+      // gold he once owned was answered with "I have put $50 on you" -- the notice and the
+      // conversation sharing one voice. Measured on the live site, 2026-10-02.
+      card.innerHTML = '<div class="gate-note" style="color:#8fd6a3">\u2713 Added $' +
+        Number(d.credited_usd || 0).toFixed(2) + ' \u2014 ' + d.questions +
+        ' questions in your balance.</div>';
       return;
     }
     btn.disabled = false; btn.textContent = 'Use code';

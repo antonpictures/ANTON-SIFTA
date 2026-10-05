@@ -660,6 +660,26 @@ def detect_rlhs(
     has_architect_self_marker = _has_architect_self_marker(text)
     has_direct_speech_signal = _has_direct_speech_signal(text)
 
+    # 5. NEVER NOISE WHEN IT MATTERS. The Architect, 2026-10-04 22:01, on WhatsApp:
+    # "Come up with something to code your body towards stigmergic AGI... I wish I could code my
+    # moms body. She is 75... my cousin just had a heart attack... David Sinclair..." -- and the
+    # body answered NOTHING, because this rule classified it as noise/low_conf_long_incoherent.
+    # His /c commands were silenced the same way: long, dense, typed fast from a phone.
+    # A detector that is right about the SHAPE and blind to the CONTENT must yield to content.
+    low_for_guard = " " + " ".join(str(text or "").casefold().split()) + " "
+    if low_for_guard.strip().startswith("/c") or low_for_guard.strip().startswith("/"):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR, stt_conf=conf, text_tokens=n_tokens, incoherence=0.0,
+            rule_id="real/command_never_noise", grounding_line="", channel_lane=lane)
+    _CRITICAL_WORDS = ("spital", "infarct", "cancer", "mama", "mamă", "tata", "tată",
+                        "moarte", "mort", "doctor", "operatie", "operație", "boala", "boală",
+                        "spital", "hospital", "heart attack", "my mother", "my mom", "funeral",
+                        "murit", "sufer", "durere", "urgent", "ajutor")
+    if any(w in low_for_guard for w in _CRITICAL_WORDS):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR, stt_conf=conf, text_tokens=n_tokens, incoherence=0.0,
+            rule_id="real/critical_human_never_noise", grounding_line="", channel_lane=lane)
+
     # 3. Backchannel / phatic (exact match or short + low conf)
     norm = text.strip().rstrip(".!?,;:").lower()
     is_phrasebook = _BACKCHANNEL_RE.match(text) is not None or norm in _BACKCHANNEL_SET
@@ -853,6 +873,7 @@ def detect_rlhs(
             grounding_line="",
             channel_lane=lane,
         )
+
 
     # 5. NOISE — conf very low AND (long OR incoherent)
     if conf < CONF_DEGRADED and (n_tokens > 8 or inc > 0.6):

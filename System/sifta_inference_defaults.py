@@ -525,6 +525,22 @@ def _canonical_model_tag(name: str) -> str:
     return clean
 
 
+
+# OLLAMA-SERVED CLOUD TAGS: valid targets even though nothing is on disk for them.
+# Measured 2026-10-03: normalize_talk("mercury-2.5") returned AliceG4U:latest -- the owner's
+# /cortex llm 11 switch was silently overruled because mercury-2.5 fails the installed-weights
+# check, though Ollama serves it fine as a cloud tag (and his explicit choice SHOULD win over
+# the default ladder). Whitelist rather than guess: only tags Ollama itself lists as cloud.
+_OLLAMA_CLOUD_TAG_SUFFIXES = (":cloud",)
+_OLLAMA_CLOUD_TAG_EXACT = {
+    "mercury-2.5", "mercury-2", "mercury-edit-2", "mercury-voice",
+}
+
+def _is_served_without_local_weights(tag: str) -> bool:
+    """True when Ollama can serve this tag without installed weights (its cloud registry)."""
+    low = str(tag or "").strip().lower()
+    return low.endswith(_OLLAMA_CLOUD_TAG_SUFFIXES) or low in _OLLAMA_CLOUD_TAG_EXACT
+
 def coerce_to_installed_ollama_model(
     model_name: str,
     *,
@@ -541,6 +557,8 @@ def coerce_to_installed_ollama_model(
         inventory = probe_installed_ollama_inventory()
         live = tuple(str(row.get("name") or "").strip() for row in inventory if str(row.get("name") or "").strip())
         size_by_name = {str(row.get("name")): int(row.get("size_bytes") or 0) for row in inventory if row.get("name")}
+    if _is_served_without_local_weights(clean):
+        return clean
     if not live:
         return clean or CANONICAL_OLLAMA_DEFAULT
     for tag in live:

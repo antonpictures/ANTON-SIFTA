@@ -1484,6 +1484,32 @@ GMCHAT_JOBS_MAX = 200          # bounded: this is a queue, not a memory
 GMCHAT_JOBS_TTL = 1800.0       # an unanswered job is forgotten after 30 minutes
 
 
+def _desk_conversation_for(visitor_id: str) -> str:
+    """The thread this visitor's desk turns belong to.
+
+    The page posts no conversation_id. So every desk question arrived with an empty one,
+    gm_chat could not read the thread, and the cortex was handed no prior turns -- which is
+    why the Architect asked "same as above.. see the question above?" on stigmergicoin.com
+    and was answered "I do not hold the question you are referring to."
+
+    The write side (append_exchange) and the read side (conversation_log) always met at the
+    same key; the key was simply never supplied. This supplies it: the visitor's newest
+    active thread if they have one, otherwise a stable per-visitor desk thread, so the two
+    halves of the same thread finally point at the same place.
+    """
+    if not visitor_id:
+        return ""
+    try:
+        from System.swarm_visitor_memory import conversations
+        for c in conversations(visitor_id, active_only=True) or []:
+            cid = str(c.get("id") or c.get("conversation_id") or "")
+            if cid:
+                return cid
+    except Exception:
+        pass
+    return f"c_desk_{visitor_id}"
+
+
 def _gmchat_job_new(visitor_id: str) -> str:
     job = uuid.uuid4().hex[:16]
     now = time.time()
@@ -1592,6 +1618,13 @@ class ChorusHandler(BaseHTTPRequestHandler):
             conversation_id = str(payload.get("conversation_id") or "")
             identity = self._visitor_id()
             acct = self._account_id()
+            if not conversation_id:
+                # The page sends no thread id, so the desk was handed no prior turns at all
+                # and a follow-up like "same as above" could not be answered. This runs
+                # AFTER identity exists: the first version of this fix read `identity` one
+                # line too early and killed the desk chat with an UnboundLocalError instead
+                # of fixing it.
+                conversation_id = _desk_conversation_for(identity)
 
             # ── the gate ─────────────────────────────────────────────────────
             # Charged BEFORE the model is called, so a refused question costs
@@ -1662,8 +1695,35 @@ class ChorusHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length)) if length else {}
             except Exception:
                 payload = {}
-            self._respond(200, redeem_code(self._account_id() or self._visitor_id(),
-                                           str(payload.get("code") or "")))
+            # Who used the code, and everything anonymous we can honestly say about
+            # them. Behind the tunnel every request arrives from 127.0.0.1, so the only
+            # real address is CF-Connecting-IP; country is Cloudflare's own reading; the
+            # fingerprint is self-reported by the page. Each of those is recorded as it
+            # is, and the ledger row says which fields are facts and which are claims.
+            from System.swarm_visitor_memory import ip_hash as _salted
+            _fp = str(payload.get("fingerprint") or "").strip()
+            _ip = self._client_ip()
+            _acct = self._account_id() or ""
+            _ctx = {
+                "ip": _ip,
+                "country": self.headers.get("CF-IPCountry") or "",
+                "region": self.headers.get("CF-Region") or "",
+                "city": self.headers.get("CF-IPCity") or "",
+                "asn": self.headers.get("CF-IPASN") or "",
+                "user_agent": self.headers.get("User-Agent") or "",
+                "accept_language": self.headers.get("Accept-Language") or "",
+                "referer": self.headers.get("Referer") or "",
+                "cf_ray": self.headers.get("CF-Ray") or "",
+                "device_id": self._device_id(),
+                "visitor_id": self._visitor_id(),
+                "account_id": _acct,
+                "signed_in": bool(_acct),
+                "fingerprint": _salted(_fp) if _fp else "",
+                "ip_hash": _salted(_ip) if _ip else "",
+            }
+            self._respond(200, redeem_code(_acct or self._visitor_id(),
+                                           str(payload.get("code") or ""),
+                                           context=_ctx))
         elif urlsplit(self.path).path == "/api/stripe/webhook":
             self._handle_stripe_webhook()
         elif urlsplit(self.path).path == "/api/stripe/topup":

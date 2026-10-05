@@ -480,6 +480,23 @@ class BrocaEgress:
         global _BROCA_LAST_SPOKE_TS
         with self._dispatch_lock:
             _BROCA_SPEAKING.set()
+            # ── Owner command 2026-10-05 (WhatsApp): every surface that speaks through
+            # Broca silences external browser media first and restores it after. Ordered
+            # pause-then-speak on purpose: an async pause lets the video bleed under her
+            # first words. Never raises, and a no-op when nothing is playing.
+            _media_pause_receipt = {}
+            try:
+                from System.swarm_external_browser_pause import (
+                    browser_control_enabled,
+                    pause_only_if_playing,
+                )
+
+                if browser_control_enabled():
+                    _media_pause_receipt = pause_only_if_playing() or {}
+                else:
+                    _media_pause_receipt = {"ok": False, "reason": "browser_control_disabled"}
+            except Exception as exc:
+                _media_pause_receipt = {"ok": False, "reason": "error", "details": str(exc)}
             try:
                 ro = _is_romanian(text)
                 ro_voice = _romanian_voice_name() if ro else ""
@@ -527,6 +544,16 @@ class BrocaEgress:
             finally:
                 _BROCA_SPEAKING.clear()
                 _BROCA_LAST_SPOKE_TS = time.time()
+                # She is done speaking: give the owner his media back, exactly what we
+                # silenced and nothing else. `resume_all_paused` no-ops when the pause
+                # recorded nothing, so this can never start a tab he had stopped.
+                try:
+                    if _media_pause_receipt and _media_pause_receipt.get("reason") != "nothing_playing":
+                        from System.swarm_external_browser_pause import resume_all_paused
+
+                        resume_all_paused()
+                except Exception:
+                    pass
 
     def _log_spoken(self, text: str, *, ok: bool, rc: int) -> None:
         try:

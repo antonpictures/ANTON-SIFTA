@@ -21,7 +21,11 @@ REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from System.swarm_whatsapp_receptor import build_inbox_row
+from System.swarm_whatsapp_receptor import (
+    build_inbox_row,
+    record_location_trace,
+    validate_inbox_row,
+)
 from System.whatsapp_social_graph import (
     contact_hash,
     display_name_for,
@@ -143,6 +147,7 @@ def _deposit_inbox(
     participant: str | None = None,
     media_path: str | None = None,
     media_type: str | None = None,
+    location: dict | None = None,
 ) -> None:
     """Deposit the incoming message to the SIFTA desktop inbox."""
     INBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +164,12 @@ def _deposit_inbox(
         # A placeholder reply is worse than silence: it looks like someone answered.
         media_path=media_path,
         media_type=media_type,
+        location=location,
     )
+    # The trace ledger is written only for a row that validated, so the stream the Architect
+    # produces by walking never outruns the signed record of it.
+    if validate_inbox_row(row)[0]:
+        record_location_trace(row)
     try:
         from System.jsonl_file_lock import append_line_locked
         append_line_locked(INBOX_FILE, json.dumps(row, ensure_ascii=False) + "\n")
@@ -226,6 +236,11 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
             # message, and the bridge answered the owner with a wave.
             media_path = str(body.get("mediaPath") or "") or None
             media_type = str(body.get("mediaType") or "") or None
+            # The bridge has captured location shares since the Architect first walked the lake,
+            # and this handler never read the field -- so the coordinates were posted, dropped
+            # here, and the body kept only the event of a share with no "where". Measured
+            # 2026-10-05: 365 inbox rows, zero carrying coordinates.
+            location = body.get("location") if isinstance(body.get("location"), dict) else None
             chat_type = _normalize_chat_type(body.get("chatType"), from_jid)
             participant = str(body.get("participant", "")).strip() or None
             _record_contact(from_jid, str(name) if name else None)
@@ -255,6 +270,7 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
                 participant=participant,
                 media_path=media_path,
                 media_type=media_type,
+                location=location,
             )
 
             # Do not wait for the LLM. Just tell the bridge it's queued.

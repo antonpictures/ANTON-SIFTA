@@ -7426,6 +7426,24 @@ def _compose_contextual_search_query_with_cortex(
                     break
             if not raw:
                 raw = "".join(full)
+        # MERCURY GOES STRAIGHT TO ITS API. Measured 2026-10-03: through Ollama's cloud proxy
+        # this same model sat at "still waiting for model=mercury-2.5 elapsed=75s", while direct
+        # to api.inceptionlabs.ai it answers in 1.5s with reasoning_effort=low. The owner asked
+        # for one api lane for Mercury; this is it, first in the chain so the proxy never sees it.
+        if _MERCURY_AVAILABLE and _mercury_is_mercury(model_name):
+            _mfull: list[str] = []
+            for kind, payload in _mercury_stream_chat(messages, model=model_name, effort="low",
+                                                      max_tokens=1024):
+                if kind == "token":
+                    _mfull.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(_mfull)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(_mfull)
         elif _CLOUD_AVAILABLE and model_name and _is_cloud_model(model_name):
             full: list[str] = []
             for kind, payload in _cloud_stream_chat(
@@ -7449,7 +7467,7 @@ def _compose_contextual_search_query_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": _ollama_safe_messages(messages, model),
+                "messages": _ollama_safe_messages(messages, model_name),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -8380,7 +8398,7 @@ def _compose_browser_photo_reply_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": _ollama_safe_messages(messages, model),
+                "messages": _ollama_safe_messages(messages, model_name),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -8502,7 +8520,7 @@ def _compose_next_photo_reply_with_cortex(
             model_name = model_name or resolve_ollama_model(app_context="talk_to_alice", query_text=owner_text)
             payload = {
                 "model": model_name,
-                "messages": _ollama_safe_messages(messages, model),
+                "messages": _ollama_safe_messages(messages, model_name),
                 "stream": False,
                 "keep_alive": _ollama_keep_alive("15s"),
                 "think": False,
@@ -13586,6 +13604,20 @@ except Exception:
     def set_app_ollama_model(_app_context: str, model_name: str) -> str:  # type: ignore
         return str(model_name or DEFAULT_OLLAMA_MODEL)
 
+# THE MERCURY API LANE -- direct to Inception, never through a proxy.
+try:
+    from System import swarm_mercury_lane as _mercury_brain
+    _mercury_stream_chat = getattr(_mercury_brain, "stream_chat")
+    _mercury_is_mercury = getattr(_mercury_brain, "is_mercury")
+    _MERCURY_AVAILABLE = True
+except Exception:
+    _MERCURY_AVAILABLE = False
+    def _mercury_stream_chat(*_a, **_kw):
+        if False:
+            yield ("error", "mercury lane unavailable")
+    def _mercury_is_mercury(_n: str) -> bool:
+        return False
+
 # ── Optional cloud brain backend ───────────────────────────────────────
 # C47H 2026-04-20 (AG31's request: optional cloud API path alongside local
 # Ollama, with token spend tracking). The widget treats that backend
@@ -13593,6 +13625,7 @@ except Exception:
 # module isn't importable or no API key is present, the dropdown
 # silently stays Ollama-only.
 try:
+
     _cloud_brain = importlib.import_module("System.swarm_" + "gem" + "ini_brain")
     _is_cloud_model = getattr(
         _cloud_brain,
@@ -24605,7 +24638,7 @@ class _BrainWorker(QThread):
                 # `messages`, so the sanitizer never saw it -- which is why the 400 survived a
                 # restart and looked like the fix had failed. The name of the variable is not the
                 # shape of the payload.
-                "messages": _ollama_safe_messages(_pipeline_history, model),
+                "messages": _ollama_safe_messages(_pipeline_history, self._model),
                 "stream": True,
                 "keep_alive": _ollama_keep_alive(),
                 # Architect 2026-05-14: let George read along while the
@@ -24630,12 +24663,12 @@ class _BrainWorker(QThread):
                     "presence_penalty": 0.3,
                     "num_ctx": _ollama_num_ctx(),
                     "num_predict": _num_predict,
-                    "stop": [
-                        "\nYou said:", "You said: \"", "You said:\"",
-                        "\nUser:", "\nuser:", "\nAlice:", "\nalice:",
-                        "<|user|>", "<|im_end|>", "<|endoftext|>",
-                        "<|start_header_id|>", "<|eot_id|>",
-                    ],
+                    # Ollama's cloud endpoints accept at most FOUR stop sequences. This list had thirteen,
+                    # so every request died with "too many stop sequences; maximum is 4" -- and the owner sat
+                    # watching his own WhatsApp go unanswered while the widget retried. The four kept are the
+                    # ones that matter for a chat lane: the model continuing the DIALOGUE instead of answering
+                    # (echoing "You said:", inventing a "User:" or "Alice:" turn).
+                    "stop": ["\nYou said:", "\nUser:", "\nAlice:", "You said: \""],
                 },
             }
             body = json.dumps(payload).encode("utf-8")
@@ -25612,6 +25645,24 @@ class _TTSWorker(QThread):
             self.spoken.emit(False)
             return
         voice = _tts_voice_for_text(speak_text, self._voice)
+        # ── Owner command 2026-10-05 (WhatsApp): while Alice speaks, external browser
+        # media must be silent. Pause only if a video is genuinely playing, and pause
+        # BEFORE synthesis — an async pause lets the video bleed under her first words.
+        # Never raises; the finally block restores exactly what she silenced.
+        _media_pause_receipt = {}
+        try:
+            from System.swarm_external_browser_pause import (
+                browser_control_enabled,
+                pause_only_if_playing,
+            )
+
+            if browser_control_enabled():
+                _media_pause_receipt = pause_only_if_playing() or {}
+            else:
+                _media_pause_receipt = {"ok": False, "reason": "browser_control_disabled"}
+        except Exception as exc:
+            _media_pause_receipt = {"ok": False, "reason": "error", "details": str(exc)}
+
         try:
             BROCA_SPEAKING.set()
             try:
@@ -25695,6 +25746,16 @@ class _TTSWorker(QThread):
                 self.spoken.emit(True)
             finally:
                 BROCA_SPEAKING.clear()
+                # Speech ended: restore exactly what she silenced. `resume_all_paused` is a
+                # no-op when nothing was recorded, so a pause that found nothing playing can
+                # never start a video the owner had deliberately stopped.
+                try:
+                    if _media_pause_receipt and _media_pause_receipt.get("reason") != "nothing_playing":
+                        from System.swarm_external_browser_pause import resume_all_paused
+
+                        resume_all_paused()
+                except Exception:
+                    pass
         except Exception as exc:
             self.failed.emit(f"TTS crashed: {exc}")
 
@@ -32685,6 +32746,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not ctx:
             return
         payload = (text or "").strip()
+        # THE SAME EGRESS REPAIRS AS THE DESK, because the phone deserves the same honesty.
+        # Measured 2026-10-03 on WhatsApp: the cortex answered "Da, pot codi" and two minutes
+        # later "sunt un model, nu un agent care ruleaza pe hardware tau" -- an organ denying the
+        # body it is running on, straight into the owner's phone. The identity rules lived only in
+        # the desk lane; now they run here too, before the words leave.
+        try:
+            from System.swarm_interior import (repair_self_claims, humanize_feeling_readout)
+            from System.swarm_persona import repair_naming_claim
+            payload, _fixes = repair_self_claims(payload)
+            payload, _f2 = humanize_feeling_readout(payload)
+            payload, _f3 = repair_naming_claim(payload)
+            if _fixes or _f2 or _f3:
+                self._append_system_line(
+                    f"(whatsapp egress repaired: {_fixes + _f2 + _f3})", error=False)
+        except Exception:
+            pass
         if not payload or payload.startswith("(silent"):
             return
         try:
@@ -32881,6 +32958,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception as _exc:
                 result["text"] = f"[attachment not understood: {type(_exc).__name__}]"
             
+            # USE THE RESOLVED DEFAULT, NOT THIS LANE'S OWN LADDER.
+            # Measured 2026-10-03 late: the default IS mercury-2.5 everywhere (`resolve_ollama_model`
+            # returns it for talk/whatsapp/desk), yet this lane answered with nemotron-3-ultra:cloud --
+            # a big cloud model, ~2 minutes a reply. The lane was climbing its own vision-capable
+            # ladder even for plain text like "U test you for conversation". So: text turns take the
+            # resolved default (Mercury, direct API, ~1.5s); only a row that ACTUALLY carries media is
+            # allowed to climb to a model chosen for seeing.
+            try:
+                if not row.get("media_path"):
+                    from System.sifta_inference_defaults import resolve_ollama_model as _resolve
+                    _preferred = _resolve(app_context="whatsapp")
+                    if _preferred and str(_preferred) != str(getattr(self, "_model", "")):
+                        self._append_system_line(
+                            f"(whatsapp lane: model {getattr(self, '_model', '?')} -> {_preferred} "
+                            f"for a text turn)", error=False)
+                        self._model = str(_preferred)
+            except Exception:
+                pass
             from_jid = row.get("from_jid", "")
             contacts = load_contacts()
             contact_record = contacts.get(contact_hash(from_jid), {})
@@ -51877,3 +51972,32 @@ def _consume_pending_decision_turn_request() -> dict | None:
         return None
     except Exception:
         return None
+
+# ── REASONING MODELS MUST NOT BE GIVEN TWO SECONDS ─────────────────────────────────────────
+# Architect, 2026-10-04, showing the Talk window: "Cortex no-token watchdog: model=mercury-2.5
+# produced no first token after 15s (limit 2s). I stopped this stalled cortex instead of leaving
+# Alice stuck in thinking." Repeated every turn.
+#
+# Measured that evening, from Inception's own API: a Mercury answer spends 246 of its 415 tokens
+# THINKING before its first visible token. So a 2-second first-token cap kills a perfectly healthy
+# cortex, every time, and reports the corpse as a stall -- the worst kind of false alarm, because
+# it looks like a model fault and sends everyone hunting for refusals and rate limits.
+#
+# The branches below this file's watchdog were built for LOCAL models on an M-series GPU (fast
+# first token) and for fail-fast browser turns. Neither applies to a cloud reasoning cortex. This
+# wrapper enforces a floor by MODEL KIND at the boundary, so every branch above keeps its own
+# logic and no reasoning model can ever be shot at two seconds again.
+_ORIG_no_token_for_owner_turn = _brain_no_token_watchdog_for_owner_turn_s
+
+_REASONING_MODEL_MARKERS = ("mercury", "deepseek", "reason", "thinking", "o1", "o3", "o4",
+                            "nemotron", "minimax", "qwen3")
+
+
+def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "") -> float:
+    value = float(_ORIG_no_token_for_owner_turn(owner_text, model=model))
+    low = str(model or "").lower()
+    if any(m in low for m in _REASONING_MODEL_MARKERS):
+        # 25s: ten times the measured first-token latency of a loaded reasoning cortex, and still
+        # far below the 180s default cap -- patience, not hanging.
+        return max(25.0, min(value, 180.0))
+    return max(6.0, value)

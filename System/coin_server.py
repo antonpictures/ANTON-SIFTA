@@ -1098,6 +1098,10 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
     from System.swarm_book_library import library_block as _library_block  # noqa: E402
     from System.swarm_childhood import (USE_NAME_RULE, PROMPT_RULE as _child_rule,
                                        summary as _childhood_summary)  # noqa: E402
+    # THE SHARED PRESENT: what changed in me lately, read fresh so this opening cannot answer
+    # while ignorant of what another opening just did (measured: the Talk window's swarm
+    # context had gone 49 minutes stale).
+    from System.swarm_hole_digest import digest_block as _hole_digest  # noqa: E402
     from System.swarm_interior import (PROMPT_RULE as _interior_rule,
                                        PROMPT_RULE_ADDENDUM as _readout_rule,
                                        humanize_feeling_readout,
@@ -1130,6 +1134,7 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         persona["line"] + " " + persona.get("rule", "") + "\n"
         + relationship.get("block", "") + "\n"
         + USE_NAME_RULE + "\n" + _child_rule + "\n" + childhood_line + "\n"
+        + _hole_digest() + "\n"
         + _interior_rule + "\n" + _readout_rule + "\n" + _organ_rule + "\n"
         + _feelings_block + "\n" + _calibration(lane="desk") + "\n"
         + _library_block() + "\n"
