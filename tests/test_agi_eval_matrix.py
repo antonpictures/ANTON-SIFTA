@@ -37,7 +37,10 @@ def test_it_renders_a_markdown_matrix() -> None:
     text = _matrix().build_matrix()
     assert text.startswith("# Alice")
     assert "Capability matrix" in text
-    assert "## 7. Reproducing this document" in text
+    # Assert the heading, not its number: renumbering the sections must not fail this test
+    # (it did, on 2026-10-06, when section 7 became 8 -- the test was right to notice).
+    assert "Reproducing this document" in text
+    assert "Independent re-measurement" in text
 
 
 def test_every_capability_names_both_an_artefact_and_a_verification_command() -> None:
