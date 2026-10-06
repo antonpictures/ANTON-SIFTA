@@ -44,6 +44,14 @@ OWNER_SELF_JIDS = {"100000000000001@lid"} | set(
 OWNER_NAME_ALIASES = {
     "george", "ioan", "ioan george anton", "george anton", "architect",
 } | {str(a).lower() for a in (_LOCAL_IDENTITY.get("owner_name_aliases") or [])}
+# The machine's OWN voice on WhatsApp, distinct from the machine owner. Until 2026-10-05 the
+# Architect's self-control identity rode in `owner_self_jids`, which made the graph state that
+# Alice was Ioan George Anton -- one record carrying two contradictory identities, so a send
+# request could resolve to him when the owner meant "my own account". Two bodies, two accounts.
+ALICE_SELF_JIDS = set(_LOCAL_IDENTITY.get("alice_self_jids") or [])
+ALICE_NAME_ALIASES = {
+    "alice", "alice gth4921yp3",
+} | {str(a).lower() for a in (_LOCAL_IDENTITY.get("alice_name_aliases") or [])}
 LOCAL_CONTROL_JIDS = {"local_reasoning_test@s.whatsapp.net"}
 STATUS_BROADCAST_JIDS = {"status@broadcast"}
 KNOWN_JID_DISPLAY_NAMES = {
@@ -79,6 +87,14 @@ def _canonical_display_name(jid: str, name: str) -> str:
     jid = str(jid or "").strip()
     name = str(name or "").strip()
     return KNOWN_JID_DISPLAY_NAMES.get(jid) or name
+
+
+def _is_alice_self(jid: str, name: str) -> bool:
+    """True for the machine's own WhatsApp account, never for a human contact."""
+    jid = str(jid or "").strip()
+    if jid in ALICE_SELF_JIDS:
+        return True
+    return _normalized(name) in ALICE_NAME_ALIASES
 
 
 def _is_owner_self(jid: str, name: str) -> bool:
@@ -139,9 +155,26 @@ def enrich_contact_record(
     chat_type = chat_type_for_jid(jid)
     row: Dict[str, Any] = dict(existing or {})
     clean_name = _canonical_display_name(jid, name or display_name_for(row))
+    # Alice's own account is decided BEFORE the owner's: her display name is built from the
+    # body name, and the owner branch asserts "this is Ioan George Anton", so order decides
+    # which of the two claims a record ends up carrying.
+    is_alice = _is_alice_self(jid, clean_name) and not _is_owner_self(jid, clean_name)
     is_owner = _is_owner_self(jid, clean_name)
     is_control = _is_local_control(jid)
-    if is_status_broadcast_jid(jid):
+    if is_alice:
+        relationship = "alice_self"
+        note = (
+            "This is Alice's own WhatsApp account, the machine's voice, on the machine's "
+            "own number. Not a human contact and not the machine owner; never a send target."
+        )
+        alice_context = (
+            "This is my own WhatsApp identity. Outbound requests to friends, clients or "
+            "third parties resolve to their own contacts, never to me and never to the "
+            "machine owner."
+        )
+        send_target_allowed = False
+        owner_social_graph = False
+    elif is_status_broadcast_jid(jid):
         relationship = "whatsapp_status_broadcast"
         note = (
             "WhatsApp status broadcast transport. This is not a stable person or "
@@ -188,7 +221,7 @@ def enrich_contact_record(
             "source": source,
             "synced_ts": row.get("synced_ts") or t,
             "last_seen_ts": t if source == "whatsapp" else row.get("last_seen_ts", 0.0),
-            "owner_social_graph": True,
+            "owner_social_graph": is_alice is False,
             "relationship_to_owner": relationship,
             "relationship_note": note,
             "alice_context": alice_context,

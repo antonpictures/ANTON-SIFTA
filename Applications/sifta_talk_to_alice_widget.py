@@ -24347,6 +24347,43 @@ class _BrainWorker(QThread):
                 except Exception as exc:
                     return None, f"Direct VLM brain crashed: {exc}"
 
+            # MERCURY IS ANSWERED HERE, NOT THROUGH THE PROXY. The direct lane already existed
+            # and was dispatched first inside `_compose_contextual_search_query_with_cortex`,
+            # which composes a search query -- so the talk turn never reached it. Measured
+            # 2026-10-05: model=mercury-2.5 produced no first token in 31s and the 25s watchdog
+            # killed the turn, while the same model answers direct in 1.9s. This branch sits
+            # before the cloud branch because `is_cloud_model("mercury-2.5")` is false, so the
+            # turn fell through to the Ollama attempt loop and its cloud proxy.
+            if _MERCURY_AVAILABLE and _mercury_is_mercury(self._model):
+                try:
+                    try:
+                        self.thinkingReceived.emit(f"[mercury] start model={self._model} direct\n")
+                    except Exception:
+                        pass
+                    full_m: List[str] = []
+                    for kind, payload in _mercury_stream_chat(
+                        self._history, model=self._model, effort="low", max_tokens=2048,
+                    ):
+                        if kind == "token":
+                            token = str(payload)
+                            full_m.append(token)
+                            self.tokenReceived.emit(token)
+                        elif kind == "done":
+                            try:
+                                self.thinkingReceived.emit("[mercury] done\n")
+                            except Exception:
+                                pass
+                            break
+                        elif kind == "error":
+                            try:
+                                self.thinkingReceived.emit(f"[mercury] error {payload}\n")
+                            except Exception:
+                                pass
+                            return None, str(payload)
+                    return "".join(full_m).strip(), None
+                except Exception as exc:
+                    return None, f"Mercury lane crashed: {exc}"
+
             if _CLOUD_AVAILABLE and _is_cloud_model(self._model):
                 try:
                     timeout_s = int(_cloud_brain_timeout_s(model=self._model, user_text=self._user_text))
@@ -51997,7 +52034,12 @@ def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "
     value = float(_ORIG_no_token_for_owner_turn(owner_text, model=model))
     low = str(model or "").lower()
     if any(m in low for m in _REASONING_MODEL_MARKERS):
-        # 25s: ten times the measured first-token latency of a loaded reasoning cortex, and still
-        # far below the 180s default cap -- patience, not hanging.
-        return max(25.0, min(value, 180.0))
+        # 60s, raised from 25s on 2026-10-05 evening after the Talk log showed the real sequence:
+        #     "Talk brain: layering built ... layering_chars=27052"
+        #     "Talk brain: still waiting for model=mercury-2.5 elapsed=14s"
+        #     "no first token after 29s (limit 25s)"  ← killed DURING context assembly
+        # The watchdog measures the WRONG INTERVAL: it starts before the 27k-char context is even
+        # assembled, so a slow assembly looks like a stalled cortex. 60s clears the measured
+        # assembly + first-token path with margin and still sits far below the 180s cap.
+        return max(60.0, min(value, 180.0))
     return max(6.0, value)

@@ -100,6 +100,56 @@ def remember(name: str, fact: str, *, kind: str = "note", identity: str = "",
             "file": str(_path(person["name"]))}
 
 
+def note_exchange(name: str, asked: str, said: str, *, channel: str = "whatsapp",
+                  identity: str = "", when: Optional[float] = None,
+                  write: bool = True) -> Dict[str, Any]:
+    """Write one exchange with a human onto that human's own file.
+
+    The Architect, 2026-10-05: "fi sigura cand raspunzi pe whatsapp to the person, have his
+    stigmergic file data ready and updated." The answer lane already READ the file before
+    speaking; this writes the encounter back, so the file carries the thread when the person
+    reappears instead of only the day it was first created.
+
+    Matching is EXACT, and that is deliberate. Elsewhere in this organ a fuzzy near-match is a
+    question, never an action -- and writing a fact to a near-match would be acting on one, putting
+    a stranger's words into someone else's file.
+
+    @param name - the name or identity that arrived with the message.
+    @param asked - what the human said, kept as their words.
+    @param said - what was answered.
+    @param channel - where the exchange happened, e.g. `whatsapp`.
+    @param identity - the jid it arrived from, recorded so later lookups resolve by identity.
+    @param when - the exchange time; defaults to now.
+    @param write - persist the file; False computes without writing.
+    @returns the remember() receipt, or ok=False naming the reason it refused.
+    """
+    key = str(name or "").strip().casefold()
+    if not key:
+        return {"ok": False, "error": "note_exchange needs a name"}
+    person = None
+    for candidate in all_people():
+        names = [str(candidate.get("name") or "")]
+        names += [str(a) for a in (candidate.get("also_known_as") or [])]
+        names += [str(i) for i in (candidate.get("identities") or [])]
+        if any(n.strip().casefold() == key for n in names):
+            person = candidate
+            break
+    if person is None:
+        return {"ok": False,
+                "error": f"no file matches {name!r} exactly; refusing to write a stranger's words",
+                "hint": "anchor them with remember(), or link() an alias if it is one person"}
+    stamp = time.strftime("%Y-%m-%d %H:%M",
+                          time.localtime(when if when is not None else time.time()))
+    parts = [f"{stamp} on {channel}: they said \"{str(asked).strip()[:220]}\""]
+    if str(said).strip():
+        parts.append(f"I answered \"{str(said).strip()[:220]}\"")
+    if identity:
+        parts.append(f"reached me as {identity}")
+    return remember(person["name"], ". ".join(parts), kind="whatsapp_exchange",
+                    identity=str(identity or ""),
+                    source="swarm_person_file.note_exchange", write=write)
+
+
 def link(name_a: str, name_b: str, *, why: str = "", write: bool = True) -> Dict[str, Any]:
     """Join two records of ONE person -- the operation that was missing when David asked."""
     a, b = load(name_a), load(name_b)

@@ -35,6 +35,12 @@ TRUTH_LABEL = "SIFTA_MERCURY_LANE_V1"
 DEFAULT_MODEL = "mercury-2.5"
 CLOUD_TAGS = ("mercury-2.5", "mercury-2", "mercury-voice")     # served without local weights
 
+# Measured 2026-10-06: three of eight identical calls came back unparseable. Three attempts with
+# a growing pause take that from ~37% to a few percent, and this lane is on the critical path of
+# every mercury turn.
+MERCURY_ATTEMPTS = 3
+MERCURY_RETRY_PAUSE_S = 1.0
+
 
 def api_key() -> str:
     """The key, from the body's own store, then the credentials file. 0600, never printed."""
@@ -68,14 +74,33 @@ def chat(messages: List[Dict[str, Any]], *, model: str = DEFAULT_MODEL,
     payload = {"model": model, "messages": messages, "max_completion_tokens": max_tokens,
                "reasoning_effort": effort}
     t0 = time.time()
-    try:
-        r = subprocess.run(["curl", "-s", "--max-time", str(timeout), "-X", "POST", URL,
-                            "-H", "Content-Type: application/json",
-                            "-H", f"Authorization: Bearer {key}",
-                            "-d", json.dumps(payload)], capture_output=True, text=True)
-        d = json.loads(r.stdout)
-    except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    # RETRIED, BECAUSE THE FAILURE IS INTERMITTENT. Measured 2026-10-06 over eight identical
+    # calls: five answered and three returned a body that would not parse ("JSONDecodeError:
+    # Expecting value: line 1 column 1"), while a hand-made request to the same endpoint returned
+    # HTTP 200 with valid JSON moments later. Nothing about the prompt or the budget caused it --
+    # 256, 700, 1500 and 2000 tokens all answered and one 1024 call failed -- so the lane was
+    # failing roughly a third of the Architect's turns on a mercury cortex and calling it a hard
+    # error. A retry is the whole fix.
+    d: Optional[Dict[str, Any]] = None
+    last_error = ""
+    attempts = 0
+    for attempt in range(MERCURY_ATTEMPTS):
+        attempts = attempt + 1
+        if attempt:
+            time.sleep(MERCURY_RETRY_PAUSE_S * attempt)
+        try:
+            r = subprocess.run(["curl", "-s", "--max-time", str(timeout), "-X", "POST", URL,
+                                "-H", "Content-Type: application/json",
+                                "-H", f"Authorization: Bearer {key}",
+                                "-d", json.dumps(payload)], capture_output=True, text=True)
+            d = json.loads(r.stdout)
+            break
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            d = None
+    if d is None:
+        return {"ok": False, "error": last_error or "mercury returned nothing",
+                "attempts": attempts, "seconds": round(time.time() - t0, 2)}
     el = time.time() - t0
     if d.get("error"):
         return {"ok": False, "error": str(d.get("error"))[:200], "seconds": el}
@@ -83,7 +108,8 @@ def chat(messages: List[Dict[str, Any]], *, model: str = DEFAULT_MODEL,
     text = str(msg.get("content") or "").strip()
     usage = d.get("usage") or {}
     out = {"ok": bool(text), "text": text, "seconds": round(el, 2), "usage": usage,
-           "model": model, "effort": effort, "truth_label": TRUTH_LABEL}
+           "model": model, "effort": effort, "attempts": attempts,
+           "truth_label": TRUTH_LABEL}
     if not text:
         # the reasoning-only answer: content None because every token went to thinking
         out["error"] = ("no visible content — the whole budget was spent reasoning; raise "

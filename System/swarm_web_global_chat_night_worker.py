@@ -224,25 +224,67 @@ def _ollama_turn(model: str, messages: list[dict[str, str]], *, timeout_s: float
         "keep_alive": "30m",
         "options": {"temperature": 0.65, "num_predict": 1800},
     }
-    request = urllib.request.Request(
-        OLLAMA_CHAT_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code != 400:
-            raise
-        payload.pop("think", None)
-        request = urllib.request.Request(
+    def _post(delay_s: float = 0.0) -> dict[str, Any]:
+        if delay_s:
+            time.sleep(delay_s)
+        req = urllib.request.Request(
             OLLAMA_CHAT_URL,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        with urllib.request.urlopen(req, timeout=timeout_s) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    try:
+        return _post()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 400:
+            # This Ollama rejected the `think` field; the identical request without it answers.
+            payload.pop("think", None)
+            return _post()
+        if 500 <= exc.code < 600:
+            # TRANSIENT, AND WORTH ONE RETRY. Measured 2026-10-06: the web node answered a turn
+            # normally, then two consecutive turns died, and the same call to the same model
+            # returned HTTP 200 minutes later. A 5xx from a local server that serves the very
+            # next request is a momentary condition -- a model mid-load under memory pressure --
+            # not a refusal. One retry after a pause is the difference between an answer and
+            # "My selected cortex could not complete this turn."
+            return _post(2.0)
+        raise
+
+
+def _cortex_turn(model: str, messages: list[dict[str, str]], *, timeout_s: float) -> dict[str, Any]:
+    """Answer from the cortex the owner selected, on the transport that cortex actually has.
+
+    Mercury is not an Ollama model. Measured 2026-10-06: posting `mercury-2.5` to
+    /api/chat returns HTTP 404, so every turn died as "My selected cortex could not complete
+    this turn" while the same model answered in 1.9s over its own API. The widget routes mercury
+    to the direct lane; this worker did not, and sifta_inference_defaults still records that
+    mercury used to be coerced to AliceG4U instead -- which silently overruled the owner's own
+    /cortex choice. So: honour the selection, on its own lane, and hand the caller back the same
+    response dict Ollama would have produced so nothing downstream changes.
+
+    Mercury is also a REASONING model that spends its budget thinking before it answers, so the
+    budget is generous: a four-token probe burned 238 reasoning tokens.
+    """
+    try:
+        from System.swarm_mercury_lane import chat as _mercury_chat
+        from System.swarm_mercury_lane import is_mercury as _is_mercury
+    except Exception:
+        _mercury_chat = None
+        _is_mercury = None
+    if _mercury_chat is not None and _is_mercury is not None and _is_mercury(model):
+        out = _mercury_chat(messages, model=model, effort="low",
+                            max_tokens=2000, timeout=int(timeout_s))
+        if not out.get("ok"):
+            raise RuntimeError(f"mercury lane failed: {str(out.get('error'))[:200]}")
+        return {
+            "message": {"role": "assistant", "content": str(out.get("text") or "")},
+            "model": str(out.get("model") or model),
+            "done": True,
+            "done_reason": "stop",
+        }
+    return _ollama_turn(model, messages, timeout_s=timeout_s)
 
 
 def _accumulate_stamp(total: dict[str, Any], stamp: dict[str, Any]) -> dict[str, Any]:
@@ -295,7 +337,7 @@ def answer_web_turn(
             break
     current_prompt = str(messages[-1].get("content") or "") if messages else text
     for continuation_index in range(3):
-        response = _ollama_turn(selected, messages, timeout_s=timeout_s)
+        response = _cortex_turn(selected, messages, timeout_s=timeout_s)
         piece = str((response.get("message") or {}).get("content") or "").strip()
         if not piece:
             raise RuntimeError("local cortex returned empty text")
@@ -319,7 +361,7 @@ def answer_web_turn(
                 + "\n\nThe draft repeated an earlier answer. Discard that draft and answer only "
                 "the latest user message. Do not restate the earlier answer."
             )
-            response = _ollama_turn(selected, retry_messages, timeout_s=timeout_s)
+            response = _cortex_turn(selected, retry_messages, timeout_s=timeout_s)
             piece = str((response.get("message") or {}).get("content") or "").strip()
             if not piece:
                 raise RuntimeError("local cortex returned empty text after repetition retry")
@@ -492,7 +534,15 @@ def process_claimed_turn(
             speak_requested=bool(queued.get("speak_requested")),
             ingress_path=ingress_path,
         )
-        _append_health("answer_failed", turn_id=turn_id, error=type(exc).__name__)
+        # The fallback message tells the owner "the failure was recorded", so it has to be true.
+        # Until 2026-10-06 this line kept only the exception TYPE, so eleven failures across a
+        # 25 MB ledger all read `"error": "HTTPError"` -- enough to know something broke, never
+        # enough to know what. str(exc) carries the code ("HTTP Error 500: Internal Server
+        # Error"). The cortex name is deliberately absent: `selected` lives in answer_web_turn,
+        # not in this recovery path, and naming it here cost a NameError inside the very handler
+        # meant to keep a failed turn graceful.
+        _append_health("answer_failed", turn_id=turn_id,
+                       error=f"{type(exc).__name__}: {str(exc)[:300]}")
         return row
 
 

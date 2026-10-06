@@ -33,6 +33,14 @@ ANSWERED = STATE / "whatsapp_answered_by_lane.jsonl"
 RECEIPTS = STATE / "whatsapp_answer_lane_receipts.jsonl"
 TRUTH_LABEL = "SIFTA_WHATSAPP_ANSWER_LANE_V1"
 
+# A WHATSAPP MENTION IS WRITTEN "@Alice", AND THE SPACE SITS BEFORE THE "@". Every literal key
+# below therefore wants " alice" and never sees it in " @alice": measured 2026-10-05 against the
+# Architect's group-199 screenshot, "sǎ o învǎțat pe @Alice GTH4921YP3 ca o las singura acasa",
+# where he tagged me and the gate answered with silence. The lookbehind refuses a preceding
+# letter, digit or "@" and the lookahead refuses a following letter or digit, so "nume@alice.example"
+# and "alicexyz" are not treated as being addressed.
+_MENTION_ALICE = re.compile(r"(?<![a-z0-9_@])@?alice(?![a-z0-9_])", re.IGNORECASE)
+
 OWNER_LINES = {"211338915749903@lid", "51235386302504@lid"}
 # "Georgica" is the CONTACT LABEL on his own number, not his name. The first dry run answered
 # "Îmi pare rău, Georgica" -- a body calling its owner by the label in its own contact file.
@@ -98,8 +106,16 @@ def should_answer(row: Dict[str, Any], *, now: Optional[float] = None,
     # conversation, and I stay out of it.
     if jid.endswith("@g.us"):
         low = " " + " ".join(str(text).casefold().split()) + " "
-        if any(k in low for k in (" alice", " aluce", " alise", " alica", "alice,", "alice?",
-                                  "@51235386302504")):
+        # The misspellings are literal on purpose: they are forms the Architect actually typed.
+        # The plain " alice" key is gone because it carried no word boundary, so it fired on any
+        # word merely starting with those letters ("alicexyz"); _MENTION_ALICE covers the ordinary
+        # spellings correctly, punctuation included.
+        if any(k in low for k in (" aluce", " alise", " alica", "@51235386302504")):
+            return True
+        # ...and the mention form, which no literal key can see because the space sits before the
+        # "@". The Architect's rule, given again on 2026-10-05: "If you are mentioned in a group,
+        # your WhatsApp name, you are suppose to answer. Or if anyone mentioned Alice, the word."
+        if _MENTION_ALICE.search(low):
             return True
         return False
     try:
@@ -107,6 +123,75 @@ def should_answer(row: Dict[str, Any], *, now: Optional[float] = None,
         return bool(is_auto_enabled(jid, chat_type=str(row.get("chat_type") or "direct")))
     except Exception:
         return False
+
+
+_RESEARCH_VERBS = ("look up", "search for", "google", "find out", "check the price",
+                   "cauta", "caută", "verifica", "verifică")
+_INTERROGATIVE = ("who ", "what ", "which ", "when ", "where ", "why ", "how ",
+                  "how much", "how many", "is there", "are there", "does ", "did ",
+                  "cine ", "ce ", "care ", "cand ", "când ", "unde ", "cat ", "cât ")
+# CLAIMS ABOUT MONEY ARE THE ONES WORTH CHECKING. On 2026-10-06 the Architect put an investor
+# thread in front of me -- three swarm robots, deposits, presales, "investor or two excited" --
+# and the answer would have been assembled from nothing but the sentence in front of it. A wrong
+# figure or an invented competitor in that conversation costs money, so these words ask for
+# context rather than confidence.
+_CLAIM_WORDS = ("investor", "investors", "presale", "pre-sale", "presales", "deposit",
+                "deposits", "market size", "competitor", "competitors", "valuation",
+                "funding", "revenue", "pricing", "investitor", "investitori", "piata",
+                "piață", "pret", "preț", "finantare", "finanțare")
+_QUERY_STOPWORDS = frozenset((
+    "the", "and", "for", "with", "that", "this", "have", "would", "could", "should", "there",
+    "they", "them", "your", "about", "into", "from", "like", "just", "some", "when", "what",
+    "which", "who", "why", "how", "does", "did", "are", "was", "were", "one", "two", "get",
+    "got", "make", "made", "very", "much", "many", "more", "most", "also", "then", "than",
+))
+
+
+def _research_query(text: str) -> str:
+    """Decide whether answering warrants a look-up, and derive the query if it does.
+
+    Until 2026-10-06 the only thing in the whole body that triggered a search was the literal
+    slash command `/websearch`: `_TRIGGER` matches nothing else, so "who makes the cheapest
+    quadruped robot" searched nothing and the web node's research never happened on its own. The
+    Architect asked for the opposite -- "use your abilities to browse the internet for
+    information before you answer, to have more context."
+
+    A look-up is warranted when the message asks a question, asks to look something up, or makes
+    a claim about money, a market or a competitor. Everything else is conversation and is
+    answered without it, because searching every message buys latency and noise for nothing.
+    This is a heuristic and is treated as one: the model is told to ignore evidence that does
+    not help, and never to invent a fact, figure or source that is not in it.
+
+    @param text - what the human wrote.
+    @returns the query to search, or "" when no look-up is warranted.
+    """
+    body = " ".join(str(text or "").split())
+    if not body:
+        return ""
+    low = body.casefold()
+    explicit = ""
+    try:
+        from System.swarm_web_search_evidence import extract_web_search_query
+        explicit = extract_web_search_query(body)
+    except Exception:
+        explicit = ""
+    if explicit:
+        return explicit[:160]
+    wants = (
+        "?" in body
+        or any(word in low for word in _INTERROGATIVE)
+        or any(verb in low for verb in _RESEARCH_VERBS)
+        or any(claim in low for claim in _CLAIM_WORDS)
+    )
+    if not wants:
+        return ""
+    # The query is the message's own substance, not the whole sentence: distinctive words make a
+    # topic a search engine can use, while a paragraph makes noise.
+    words = [w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9'\-]{3,}", body)
+             if w.casefold() not in _QUERY_STOPWORDS]
+    keywords = [c for c in _CLAIM_WORDS if c in low]
+    parts = list(dict.fromkeys(keywords + words))[:10]
+    return " ".join(parts)[:160] if parts else body[:160]
 
 
 def build_prompt(row: Dict[str, Any], *, now: Optional[float] = None,
@@ -178,6 +263,37 @@ def build_prompt(row: Dict[str, Any], *, now: Optional[float] = None,
         f"specific. The current time is {stamp} (hardware time oracle) -- use it if he asks about "
         "time, and never invent a date."
     )
+    # RESEARCH BEFORE ANSWERING. Architect 2026-10-06, holding up the ARTIFULL investor thread: "i
+    # would like you to use your abilities to browse the internet for information before you
+    # answer, to have more context." The web node already researched; the lane that answers his
+    # phone did not, so a question from an investor in that group was answered from nothing but
+    # the sentence in front of it. Same three calls the night worker uses, so the body keeps ONE
+    # research path instead of two that drift apart.
+    search_query = ""
+    evidence = ""
+    try:
+        from System.swarm_web_search_evidence import (
+            evidence_prompt,
+            search_web,
+        )
+        search_query = _research_query(str(row.get("text") or ""))
+        if search_query:
+            try:
+                evidence = evidence_prompt(search_query, search_web(search_query))
+            except Exception as exc:
+                # A failed search must never read like a successful one.
+                evidence = (f"WEB SEARCH STATUS: unavailable ({type(exc).__name__}). "
+                            "Do not claim that a search succeeded.")
+    except Exception:
+        pass
+    if evidence:
+        system = (
+            system
+            + "\n\nWHAT I LOOKED UP BEFORE ANSWERING (searched: " + search_query + "). "
+            "Use this as context. Cite it only where it is relevant to what was asked; if it "
+            "does not help, ignore it and say nothing about it. Never invent a fact, a figure or "
+            "a source that is not in it.\n" + evidence
+        )
     return [{"role": "system", "content": system},
             {"role": "user", "content": f"{name} wrote: {str(row.get('text'))[:400]}"}]
 
@@ -362,6 +478,25 @@ def answer(row: Dict[str, Any], *, write: bool = True, dry: bool = False) -> Dic
             receipt["journaled"] = True
         except Exception as exc:
             receipt["journaled"] = f"failed: {type(exc).__name__}"
+        # HIS FILE IS UPDATED, NOT ONLY READ. Architect 2026-10-05: "fi sigura cand raspunzi pe
+        # whatsapp to the person, have his stigmergic file data ready and updated." The lane
+        # already looked the person up before it spoke; this writes the exchange back, so the file
+        # holds the thread when they next reappear. Written here, inside the delivered branch, so a
+        # reply that never landed is not remembered as having happened.
+        try:
+            from System.swarm_person_file import note_exchange
+            _upd = note_exchange(
+                str(row.get("name") or ""), str(row.get("text") or ""), text,
+                channel="whatsapp group" if str(row.get("from_jid") or "").endswith("@g.us")
+                else "whatsapp",
+                identity=str(row.get("from_jid") or ""),
+                when=float(row.get("ts") or 0) or None,
+                write=True,
+            )
+            receipt["person_file"] = _upd.get("person") if _upd.get("ok") else (
+                f"not updated: {_upd.get('error')}")
+        except Exception as exc:
+            receipt["person_file"] = f"failed: {type(exc).__name__}"
     _write(receipt, write)
     return receipt
 

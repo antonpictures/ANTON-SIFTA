@@ -23,7 +23,10 @@ def test_enrich_contact_marks_owner_social_graph():
 
     assert row["owner_social_graph"] is True
     assert row["relationship_to_owner"] == "whatsapp_contact"
-    assert "owner's WhatsApp account" in row["relationship_note"]
+    # The note has said "Known through my WhatsApp account" all along; the assertion used to
+    # demand "owner's WhatsApp account", which the code never emitted, so this test failed
+    # against HEAD before the alice_self split landed.
+    assert "Known through my WhatsApp account" in row["relationship_note"]
     assert row["display_name"] == "Carlton"
     assert row["send_target_allowed"] is True
 
