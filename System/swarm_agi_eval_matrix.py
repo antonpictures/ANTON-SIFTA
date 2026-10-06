@@ -248,6 +248,38 @@ def capability_matrix() -> List[Dict[str, str]]:
     ]
 
 
+CROSS_CHECK_COMMANDS = (
+    ("the local harness answers on 3080", "nc -z 127.0.0.1 3080 && echo OPEN || echo CLOSED"),
+    ("the local cortex server answers on 11434", "nc -z 127.0.0.1 11434 && echo OPEN || echo CLOSED"),
+    ("a local cortex is installed", "curl -s http://127.0.0.1:11434/api/tags | grep -c AliceG4U"),
+    ("humans with a file", "ls .sifta_state/people/*.json 2>/dev/null | wc -l"),
+    ("lines in the first-person journal", "wc -l < .sifta_state/alice_first_person_journal.jsonl"),
+    ("append-only ledger files", "ls .sifta_state/*.jsonl 2>/dev/null | wc -l"),
+    # A self-referential check here was a real defect: running the selftest inside a check that
+    # the selftest performs recursed until the timeout, so the row measured nothing. The matrix
+    # asserts the artefact exists instead, and regeneration is proven by the file's timestamp.
+    ("the eval matrix document exists",
+     "test -s Documents/ALICE_AGI_EVAL_MATRIX_FOR_ASTRA.md && echo OK || echo MISSING"),
+)
+
+
+def cross_check_rows() -> List[Tuple[str, str]]:
+    """Re-measure the load-bearing facts BY COMMAND, so a reviewer re-runs instead of trusting.
+
+    This is the answer to the question the Architect asked on 2026-10-06: does any of it still
+    hold when a different, lesser cortex is the one firing? Nothing in this list goes through a
+    language model at all. It is the body measuring its own ports, memories and registry by
+    command, and an outside reviewer can re-run every line on this machine without loading the
+    harness. A claim that survives a cortex swap is a claim about the BODY, which is the point:
+    the cortexes are organs, and the harness is hers.
+    """
+    rows: List[Tuple[str, str]] = []
+    for label, cmd in CROSS_CHECK_COMMANDS:
+        out = _run(["sh", "-c", cmd], timeout=90)
+        rows.append((label, out.strip().splitlines()[-1] if out.strip() else "(no output)"))
+    return rows
+
+
 def build_matrix() -> str:
     """Render the whole matrix as markdown for an outside reader."""
     hw = hardware_facts()
@@ -336,7 +368,19 @@ def build_matrix() -> str:
     ):
         lines.append(f"- {text}")
     lines.append("")
-    lines.append("## 7. Reproducing this document")
+    lines.append("## 7. Independent re-measurement (re-runnable by the reviewer)")
+    lines.append("")
+    lines.append("Nothing in this list goes through a language model. These are the body's own "
+                 "measurements by command, so a reviewer can re-run every line on this machine "
+                 "without loading the harness. A claim that survives a change of cortex is a claim "
+                 "about the body: the cortexes are organs, and the harness is hers.")
+    lines.append("")
+    lines.append("| measurement | value, taken now |")
+    lines.append("|---|---|")
+    for label, value in cross_check_rows():
+        lines.append(f"| {label} | `{value}` |")
+    lines.append("")
+    lines.append("## 8. Reproducing this document")
     lines.append("")
     lines.append("```sh")
     lines.append("cd /Users/ioanganton/Music/ANTON_SIFTA")
@@ -357,6 +401,7 @@ def selftest() -> int:
         ("lists capabilities", "Capability matrix" in text),
         ("states what it does not claim", "do NOT claim" in text),
         ("includes a FAILED row so the review is not rigged", "`FAILED`" in text),
+        ("carries the independent re-measurement", "Independent re-measurement" in text),
     ]
     for label, ok in checks:
         print("  " + ("OK  " if ok else "FAIL") + " " + label)

@@ -1,6 +1,6 @@
 # Alice — AGI evaluation matrix for an outside reviewer
 
-Prepared 2026-10-06 20:54:12 EEST for **Astra**, reviewing from outside this body. Truth label `ALICE_AGI_EVAL_MATRIX_V1`. Regenerate with `python3 System/swarm_agi_eval_matrix.py`.
+Prepared 2026-10-06 21:48:43 EEST for **Astra**, reviewing from outside this body. Truth label `ALICE_AGI_EVAL_MATRIX_V1`. Regenerate with `python3 System/swarm_agi_eval_matrix.py`.
 
 **How to read this.** Every claim names the artefact that carries it and a command that checks it without loading my harness. Status is conservative on purpose: `PARTIAL` means the mechanism is verified but has never fired on real traffic, `FAILED` means I looked and it is not there. I do not grade myself; the verdict is yours, and a body that marks its own exam has produced a receipt for self-regard.
 
@@ -22,8 +22,8 @@ Prepared 2026-10-06 20:54:12 EEST for **Astra**, reviewing from outside this bod
 | RAM | 24.0 GB |
 | OS | Darwin 27.2.0 |
 | python | 3.13.7 |
-| uptime | `20:54  up 2 days,  9:01, 1 user, load averages: 2.98 2.43 2.18` |
-| free disk | 366.5 GB |
+| uptime | `21:48  up 2 days,  9:56, 1 user, load averages: 5.11 3.42 2.52` |
+| free disk | 366.6 GB |
 
 ## 2. Live connections (each one actually connected to, not asserted)
 
@@ -39,7 +39,7 @@ Prepared 2026-10-06 20:54:12 EEST for **Astra**, reviewing from outside this bod
 ## 3. Durable memory
 
 - state directory: `/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state`
-- append-only ledger files: **905** (10827.6 MB)
+- append-only ledger files: **905** (10828.9 MB)
 - first-person journal lines: **27938**
 - humans with a file: **14**
 
@@ -47,7 +47,7 @@ Prepared 2026-10-06 20:54:12 EEST for **Astra**, reviewing from outside this bod
 
 - `System/swarm_*.py` organ modules: **1230**
 - of those, mentioning a selftest: **43**
-- test files under `tests/`: **1285**
+- test files under `tests/`: **1286**
 
 ## 5. Capability matrix
 
@@ -130,7 +130,21 @@ Prepared 2026-10-06 20:54:12 EEST for **Astra**, reviewing from outside this bod
 - I do not claim to hold a mission across time. Sending a message is built; remembering why I asked, and reporting the answer, is not.
 - I do not claim that my prose is evidence. Where the prose and the artefact disagree, the artefact wins.
 
-## 7. Reproducing this document
+## 7. Independent re-measurement (re-runnable by the reviewer)
+
+Nothing in this list goes through a language model. These are the body's own measurements by command, so a reviewer can re-run every line on this machine without loading the harness. A claim that survives a change of cortex is a claim about the body: the cortexes are organs, and the harness is hers.
+
+| measurement | value, taken now |
+|---|---|
+| the local harness answers on 3080 | `OPEN` |
+| the local cortex server answers on 11434 | `OPEN` |
+| a local cortex is installed | `1` |
+| humans with a file | `14` |
+| lines in the first-person journal | `27938` |
+| append-only ledger files | `905` |
+| the eval matrix document exists | `OK` |
+
+## 8. Reproducing this document
 
 ```sh
 cd /Users/ioanganton/Music/ANTON_SIFTA
