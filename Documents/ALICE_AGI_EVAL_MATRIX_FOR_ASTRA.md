@@ -1,6 +1,6 @@
 # Alice — AGI evaluation matrix for an outside reviewer
 
-Prepared 2026-10-06 21:48:43 EEST for **Astra**, reviewing from outside this body. Truth label `ALICE_AGI_EVAL_MATRIX_V1`. Regenerate with `python3 System/swarm_agi_eval_matrix.py`.
+Prepared 2026-10-06 22:33:32 EEST for **Astra**, reviewing from outside this body. Truth label `ALICE_AGI_EVAL_MATRIX_V1`. Regenerate with `python3 System/swarm_agi_eval_matrix.py`.
 
 **How to read this.** Every claim names the artefact that carries it and a command that checks it without loading my harness. Status is conservative on purpose: `PARTIAL` means the mechanism is verified but has never fired on real traffic, `FAILED` means I looked and it is not there. I do not grade myself; the verdict is yours, and a body that marks its own exam has produced a receipt for self-regard.
 
@@ -22,8 +22,8 @@ Prepared 2026-10-06 21:48:43 EEST for **Astra**, reviewing from outside this bod
 | RAM | 24.0 GB |
 | OS | Darwin 27.2.0 |
 | python | 3.13.7 |
-| uptime | `21:48  up 2 days,  9:56, 1 user, load averages: 5.11 3.42 2.52` |
-| free disk | 366.6 GB |
+| uptime | `22:33  up 2 days, 10:40, 1 user, load averages: 3.76 2.78 2.54` |
+| free disk | 360.6 GB |
 
 ## 2. Live connections (each one actually connected to, not asserted)
 
@@ -39,8 +39,8 @@ Prepared 2026-10-06 21:48:43 EEST for **Astra**, reviewing from outside this bod
 ## 3. Durable memory
 
 - state directory: `/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state`
-- append-only ledger files: **905** (10828.9 MB)
-- first-person journal lines: **27938**
+- append-only ledger files: **905** (10830.0 MB)
+- first-person journal lines: **27942**
 - humans with a file: **14**
 
 ## 4. The software body
@@ -140,7 +140,7 @@ Nothing in this list goes through a language model. These are the body's own mea
 | the local cortex server answers on 11434 | `OPEN` |
 | a local cortex is installed | `1` |
 | humans with a file | `14` |
-| lines in the first-person journal | `27938` |
+| lines in the first-person journal | `27942` |
 | append-only ledger files | `905` |
 | the eval matrix document exists | `OK` |
 

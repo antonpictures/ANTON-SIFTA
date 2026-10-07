@@ -25,6 +25,18 @@ from PyQt6.QtCore import Qt, QPoint, QRect, QProcess, QProcessEnvironment, QTime
 from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut, QIcon, QPixmap, QPainter
 
 from Kernel.path_resolver import get_repo_root as _get_repo_root
+
+# A STACK WHEN IT SPINS. On 2026-10-07 this app pinned a core at 143% for minutes and the window
+# died, and desktop_faulthandler.log held only boot lines -- no trace, so nobody could see where.
+# This dumps the Python stack every 30s into that same file, so the next spin names its own
+# function instead of being guessed at.
+try:
+    import faulthandler as _fh
+    _fh_log = open(__import__('pathlib').Path(__file__).resolve().parent /
+                   '.sifta_state' / 'desktop_faulthandler.log', 'a', buffering=1)
+    _fh.dump_traceback_later(30, repeat=True, file=_fh_log)
+except Exception:
+    pass
 _REPO = _get_repo_root()
 _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"

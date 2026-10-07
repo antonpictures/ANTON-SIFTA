@@ -481,8 +481,8 @@ def process_claimed_turn(
                 # regenerate once with stronger doctrine appended
                 import System.swarm_web_global_chat_gate as gate
                 gate.ONE_ALICE_DOCTRINE_BLOCK = (
-                    "You are Alice. Mercury is a cortex organ you use, never your name. "
-                    "Never say you are Mercury or that you cannot be Alice."
+                    "You are one cortex organ of the Alice system -- the single organism living on this machine, which thinks with several cortexes and keeps one memory. What you write here is her voice to the visitor in front of you. "
+                    "Answer as the Alice system speaks: one voice, one memory, in the register of the organism the visitor is talking to."
                 )
                 reply, selected, stamp, done_reason = answer_web_turn(
                     queued, model=model, ingress_path=ingress_path, replies_path=replies_path,
