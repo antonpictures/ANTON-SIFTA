@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sifta-ui",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "!Alice Coding Arm", "dsh", "--profile", "web", "--port", "3180", "--no-open"],
+      "port": 3180
+    }
+  ]
+}

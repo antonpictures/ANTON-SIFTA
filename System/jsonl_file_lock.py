@@ -58,6 +58,52 @@ def read_text_locked(
             fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def read_tail_locked(path: Path, max_bytes: int = 65536, *,
+                     encoding: str = "utf-8", errors: str = "replace") -> str:
+    """Read only the last `max_bytes` of a file under a shared lock.
+
+    The counterpart to read_text_locked for callers that want the END of an append-only ledger.
+    Measured 2026-10-08: a caller that wanted the last 20 rows of ledgers reaching hundreds of
+    megabytes called read_text_locked instead, on the Qt main thread, and the window it was
+    painting could not be read or reached for over 30 s. A partial first line is dropped, so
+    every returned line is whole.
+
+    @param path - file to read.
+    @param max_bytes - how much of the tail to read.
+    @param encoding - text encoding; replacement is used on undecodable bytes.
+    @param errors - decode error policy.
+    @returns the tail text, or "" when the file is absent or unreadable.
+    """
+    if not path.exists():
+        return ""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return ""
+    if not _HAVE_FLOCK:
+        try:
+            with open(path, "rb") as f:
+                if size > max_bytes:
+                    f.seek(size - max_bytes)
+                    f.readline()
+                return f.read().decode(encoding, errors)
+        except OSError:
+            return ""
+    try:
+        with open(path, "rb") as f:
+            fd = f.fileno()
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            try:
+                if size > max_bytes:
+                    f.seek(size - max_bytes)
+                    f.readline()
+                return f.read().decode(encoding, errors)
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError:
+        return ""
+
+
 def rewrite_text_locked(path: Path, content: str, *, encoding: str = "utf-8") -> None:
     """
     Replace entire file contents under exclusive lock (read-modify-write paths).

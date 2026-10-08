@@ -102,8 +102,21 @@ def _row_ts(row: Mapping[str, Any], payload: Mapping[str, Any] | None = None) ->
         return 0.0
 
 
+from System.jsonl_file_lock import read_tail_locked as _rtl
 def _tail_jsonl(path: Path, n: int = 80) -> list[dict[str, Any]]:
-    text = read_text_locked(path)
+    """Last `n` rows, reading only the tail.
+
+    This used to call read_text_locked(), which reads the ENTIRE file under a shared lock
+    and then keeps only the last n lines -- a function whose whole purpose is the end of a
+    file, paying for all of it. Called on the Qt main thread from _start_brain via
+    self_realization_prompt_block, over ledgers that reach hundreds of megabytes, it froze
+    the Talk window: measured 2026-10-08 the main thread sat inside read_text_locked for
+    over 30 s and the window could not be read or reached. The Architect noticed it first:
+    "since I started speaking with you mostly from the harness hole, the talk window is
+    stuck" -- because the harness writes rows into these same ledgers, so talking to Alice
+    in one surface made the other slower.
+    """
+    text = _rtl(path)
     if not text:
         return []
     rows: list[dict[str, Any]] = []
