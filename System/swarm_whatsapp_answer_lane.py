@@ -65,8 +65,16 @@ def _rows(path: Path, limit: int = 400) -> List[Dict[str, Any]]:
 
 
 def row_key(row: Dict[str, Any]) -> str:
-    return str(row.get("message_sha256") or
+    base = str(row.get("message_sha256") or
                hashlib.sha256(str(row.get("text") or "").encode()).hexdigest()[:16])
+    media = str(row.get("media_path") or "")
+    if media:
+        # A photo message's message_sha256 is a fixed hash of the "[photo]" caption, so
+        # every photo in one message -- and every photo, ever -- collapses to one key and
+        # is dropped as "already answered" after the first. The media FILE is the real
+        # identity; bind the key to it so four photos are four keys, not one ghost.
+        return base + "|" + hashlib.sha256(media.encode()).hexdigest()[:16]
+    return base
 
 
 def already_answered() -> set:
@@ -310,6 +318,8 @@ def build_prompt(row: Dict[str, Any], *, now: Optional[float] = None,
 CORTEX_PIN = STATE / "whatsapp_cortex.json"
 
 CORTEX_CHOICES = {
+    "gemini:gemini-3.5-flash-lite":    "CLOUD · Gemini 3.5 Flash-Lite · cheapest · multimodal",
+    "gemini:gemini-3.8-flash":         "CLOUD · Gemini 3.8 Flash · best · multimodal",
     "mercury-2.5":                     "paid · Inception · ~1.3s · the one you selected in the app",
     "qwen/qwen3.8-27b:free":           "FREE · OpenRouter · ~2s · answers cheerfully",
     "nvidia/nemotron-3-super-120b-a12b:free": "FREE · OpenRouter · ~0.9s · the fastest measured tonight",
@@ -337,6 +347,31 @@ def set_cortex(name: str) -> Dict[str, Any]:
     return {"ok": True, "cortex": n or "(cleared: default cascade)",
             "known": n in CORTEX_CHOICES if n else True,
             "choices": CORTEX_CHOICES if not n else None}
+
+def _gemini_answer(messages: List[Dict[str, str]], model: str) -> Dict[str, Any]:
+    """Answer through the Gemini REST brain, in the lane's {ok, text, model, error} shape."""
+    try:
+        from System.swarm_gemini_brain import stream_chat
+    except Exception as exc:
+        return {"ok": False, "error": f"gemini brain unavailable: {type(exc).__name__}"}
+    parts: List[str] = []
+    full = ""
+    err = None
+    try:
+        for kind, val in stream_chat(model, messages, temperature=0.7):
+            if kind == "token":
+                parts.append(str(val))
+            elif kind == "done":
+                full = str(val)
+            elif kind == "error":
+                err = str(val)
+    except Exception as exc:
+        return {"ok": False, "error": f"gemini call failed: {type(exc).__name__}: {exc}"}
+    text = (full or "".join(parts)).strip()
+    if err and not text:
+        return {"ok": False, "error": err}
+    return {"ok": bool(text), "text": text, "model": model}
+
 
 def answer(row: Dict[str, Any], *, write: bool = True, dry: bool = False) -> Dict[str, Any]:
     """One answer, through Mercury direct, repaired, sent, receipted."""
@@ -377,7 +412,14 @@ def answer(row: Dict[str, Any], *, write: bool = True, dry: bool = False) -> Dic
         # EXACTLY the pinned cortex. No cascade: comparing behaviours requires the organ to hold
         # still between two sentences.
         try:
-            if pinned.endswith(":free") or "/" in pinned:
+            if pinned.startswith("gemini:"):
+                # CLOUD GEMINI — George asked to wire the cheapest/best back; the lane answers
+                # through the same Gemini REST brain the Talk widget uses.
+                t0 = time.time()
+                r = _gemini_answer(build_prompt(row, cortex=pinned), pinned)
+                receipt["seconds"] = round(time.time() - t0, 2)
+                receipt["free"] = False
+            elif pinned.endswith(":free") or "/" in pinned:
                 from System.swarm_openrouter_lane import chat as _or_chat
                 r = _or_chat(build_prompt(row, cortex=pinned), model=pinned, max_tokens=700,
                              write=True)
@@ -467,7 +509,7 @@ def answer(row: Dict[str, Any], *, write: bool = True, dry: bool = False) -> Dic
         # the one life this body keeps, in HER voice, through the writer that already existed.
         try:
             from System.swarm_first_person_journal import append_first_person_journal_row
-            who = "the free cortex" if receipt.get("free") else "mercury"
+            who = receipt.get("cortex") or ("the free cortex" if receipt.get("free") else "mercury")
             what = "photo" if receipt.get("media") else "message"
             append_first_person_journal_row({
                 "date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"),

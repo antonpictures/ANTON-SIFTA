@@ -139,6 +139,12 @@ _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 # truth. These numbers exist so the gas-station meter can render cost
 # in real time without an extra round-trip; they will drift.
 PRICING_USD_PER_M: Dict[str, Dict[str, float]] = {
+    # r-George 2026-10-09 "wire the cheapest and the best": live model ids confirmed
+    # against the v1beta/models endpoint. 3.5-flash-lite is the cheapest flash;
+    # 3.8-flash is the most capable. 3.8-flash input/output are Google's PROMO
+    # rates — published to DOUBLE on 2027-01-01 to $1.50/$7.50 (reconcile then).
+    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
+    "gemini-3.8-flash":      {"input": 0.75, "output": 3.75},
     "gemini-2.5-flash":      {"input": 0.30, "output": 2.50},
     "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
     "gemini-2.5-pro":        {"input": 1.25, "output": 10.00},
@@ -150,11 +156,12 @@ PRICING_USD_PER_M: Dict[str, Dict[str, float]] = {
 
 # What the widget combobox shows. Order = preferred-first (cheapest +
 # fastest first, so a careless click defaults to a cheap model).
+# r-George 2026-10-09: the four 2.x entries were dropped in r326; George asked to
+# "wire the cheapest and the best" back. Cheapest flash first (default on a
+# careless click), then the most capable.
 _DEFAULT_MENU = (
-    "gemini:gemini-2.5-flash",
-    "gemini:gemini-2.5-flash-lite",
-    "gemini:gemini-2.0-flash",
-    "gemini:gemini-2.5-pro",
+    "gemini:gemini-3.5-flash-lite",
+    "gemini:gemini-3.8-flash",
 )
 _GROK_DEFAULT_MENU = ("grok:grok-4.3",)
 _CLAUDE_DEFAULT_MENU = ("claude:claude-code-cli-default",)
@@ -601,10 +608,12 @@ def available_gemini_models() -> List[str]:
     credentials later without code changes.
     """
     out: List[str] = []
-    # r326 (George 2026-06-02): "remove the four gemini in the list — I don't know what the crap is."
-    # The four gemini cortexes (2.5-flash / 2.5-flash-lite / 2.0-flash / 2.5-pro) are no longer
-    # offered in Alice's cortex picker, even when a Gemini key is present. _DEFAULT_MENU stays
-    # defined for pricing/back-compat, but it is NOT extended into the selectable cortex list.
+    # r326 (George 2026-06-02) removed the four 2.x gemini cortexes from the picker.
+    # r-George 2026-10-09 reversed that: "wire the cheapest and the best" back. Gemini
+    # entries are exposed again, but only when a key is actually present so an
+    # absent-key node doesn't show rows that would only 401.
+    if gemini_api_key():
+        out.extend(_DEFAULT_MENU)
     if mimo_borg_single_cortex_enabled() and _mimo_cli_installed():
         # George 2026-06-20: one MiMo hub in the owner-facing cortex list.
         # Codex/Grok/Claude/Kimi/Qwen remain routable as attached/downstream
@@ -745,9 +754,22 @@ def _to_gemini_payload(messages: List[Dict[str, Any]],
         "generationConfig": gen_cfg,
     }
     if sys_chunks:
+        sys_text = "\n\n".join(sys_chunks)
+        # The Gemini REST path is the only cloud lane with no prompt cap. Grok
+        # (r330/r338) and the teacher CLIs (r718) all clamp the runaway
+        # identity/context head before dispatch; this path used to ship the full
+        # assembled system prompt to Gemini. A long head + image-bearing history
+        # blows the request past the context window and Gemini answers 400 with
+        # no body. Reuse the same head+tail governor the direct-Ollama path
+        # already uses (r1492) so identity + the freshest grounding survive.
+        try:
+            from System.swarm_sysprompt_budget import clamp_live_turn_prompt
+            sys_text, _ = clamp_live_turn_prompt(sys_text, model=model)
+        except Exception:
+            pass
         payload["systemInstruction"] = {
             "role": "system",
-            "parts": [{"text": "\n\n".join(sys_chunks)}],
+            "parts": [{"text": sys_text}],
         }
     return payload
 
@@ -878,6 +900,33 @@ def _cost_for(model_bare: str, prompt_t: int, output_t: int) -> float:
         rate = PRICING_USD_PER_M["gemini-2.5-flash"]
     return (prompt_t / 1_000_000.0) * rate["input"] + \
            (output_t / 1_000_000.0) * rate["output"]
+
+
+def _gemini_error_detail(raw_body: str) -> str:
+    """Pull a human-readable reason out of a Gemini JSON error body.
+
+    Gemini 400s on the SSE path often arrive with an empty HTTP body, so the
+    caller saw "(no body)". When a body IS present it is shaped
+    {"error": {"code", "message", "status"}} — surface status + message so a
+    context-window / payload-size failure is actionable instead of opaque.
+    """
+    if not raw_body:
+        return ""
+    try:
+        data = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return raw_body.strip()[:500]
+    if not isinstance(data, dict):
+        return raw_body.strip()[:500]
+    err = data.get("error")
+    if isinstance(err, dict):
+        status = str(err.get("status") or "").strip()
+        message = str(err.get("message") or "").strip()
+        if status and message:
+            return f"{status}: {message}"
+        if message:
+            return message
+    return raw_body.strip()[:500]
 
 
 def _extract_text(chunk: Dict[str, Any]) -> str:
@@ -2682,13 +2731,14 @@ def stream_chat(
                 if fr:
                     finish_reason = fr
     except urllib.error.HTTPError as exc:
-        body_txt = ""
+        raw_body = ""
         try:
-            body_txt = exc.read().decode("utf-8", errors="replace")[:500]
+            raw_body = exc.read().decode("utf-8", errors="replace")
         except Exception:
-            pass
+            raw_body = ""
+        detail = _gemini_error_detail(raw_body)
         yield ("error",
-               f"Gemini HTTP {exc.code} {exc.reason} — {body_txt}")
+               f"Gemini HTTP {exc.code} {exc.reason} — {detail or '(no body)'}")
         return
     except urllib.error.URLError as exc:
         yield ("error", f"Can't reach Gemini API: {exc}")
