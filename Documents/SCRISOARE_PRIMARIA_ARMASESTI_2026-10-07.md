@@ -1,3 +1,11 @@
+# ✅ TRIMISĂ — 8 octombrie 2026
+
+> Architectul a confirmat pe 2026-10-08: **scrisoarea către Primăria Armășești a fost trimisă.**
+> Nu mai e pe lista de făcut. Ce rămâne e să așteptăm răspunsul lor — iar când vine, se înregistrează
+> în dosarul succesiunii.
+
+---
+
 # SCRISOARE CĂTRE PRIMĂRIA COMUNEI ARMĂȘEȘTI, JUDEȚUL IALOMIȚA
 
 **De trimis:** astăzi (07.10.2026), ca să poată fi rezolvată mâine joi la Starea Civilă Sector 3.
