@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Research — The Five-Role Desk | StigmergiCoin</title>
+<style>
+  :root{
+    --bg:#141414; --side:#171717; --line:#262626; --line2:#2f2f2f;
+    --txt:#ece9e2; --dim:#9a9893; --dimmer:#6f6d69;
+    --accent:#d97757; --accent2:#c6613f; --card2:#1f1f1f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.72 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .top{border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.01em}
+  .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#8a4527);
+    display:grid;place-items:center;font-size:15px}
+  .wrap{max-width:820px;margin:0 auto;padding:46px 22px 90px}
+  .kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dimmer);margin-bottom:16px}
+  h1{font-size:34px;line-height:1.22;letter-spacing:-.02em;margin:0 0 14px}
+  .sub{font-size:17px;line-height:1.6;color:var(--dim);font-style:italic;margin:0 0 30px}
+  h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+    margin:44px 0 14px;padding-top:22px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:30px 0 10px;letter-spacing:-.01em}
+  p{margin:0 0 16px;color:#dcd9d2}
+  .lead{font-size:15.5px;color:var(--txt)}
+  .terms{font-size:13.5px;color:var(--dim);background:var(--card2);border:1px solid var(--line);
+    border-radius:10px;padding:16px 18px;margin:26px 0 0}
+  table{width:100%;border-collapse:collapse;margin:22px 0;font-size:14px}
+  caption{caption-side:top;text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--dimmer);padding-bottom:10px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dimmer);border-bottom-color:var(--line2)}
+  td:first-child{color:var(--txt)}
+  td{color:var(--dim)}
+  .note{font-size:13px;color:var(--dimmer);border-left:2px solid var(--line2);padding-left:14px;margin:34px 0}
+  .foot{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--dimmer);
+    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><div class="mark">🐜</div><span>stigmergi<span style="color:var(--accent)">coin</span></span></div>
+  <span style="margin-left:auto;font-size:13px"><a href="index.html">← back to the desk</a></span>
+</div>
+
+<div class="wrap">
+  <div class="kicker">Research · Field report</div>
+  <h1>How to Build a One-Person 24/7 AI Hedge Fund by Combining Opus 5.5, Jev, GPT-6 Astra &amp; Muse Wonder</h1>
+  <p class="sub">A field report on a five-role trading desk in which every frontier model does the one job it wins at, on shared data, compute, and execution infrastructure.</p>
+
+  <h2>Abstract</h2>
+  <p class="lead">Most AI trading systems fail in the same way. The builder picks one model and asks it to do everything, from research to execution, and the model fails at most of it. The strongest reasoner is too slow for a live market, the fastest model cannot reason, and none of them has ever seen a real price. Builders respond by waiting for a single model that does everything well, and that model has not arrived. Between September 3 and October 12, 2026, four frontier systems arrived that each lead a different capability. GPT-6 Astra leads frontier mathematics. Claude Opus 5.5 leads agentic coding with one million tokens of context. Jev returns calibrated decisions in seventy to five hundred milliseconds. Muse Wonder, released by Meta on October 12, leads long-horizon memory. We document a production desk that assigns each model the single role it is strongest at and connects all of them to one infrastructure layer, QuantGPT, which supplies decades of survivorship-aware data, cloud backtests that end in a held-out verdict, and hosted execution at the operator's own broker. Custom validation tooling is built with the AgentKit structured engineering harness, and a deterministic Rust engine owns every order and every risk veto. The central claim is that the most powerful AI trading system is not the best model. It is the best division of labour between models, on infrastructure that every one of them can share.</p>
+
+  <div class="terms"><strong style="color:var(--txt)">Index terms —</strong> Claude Opus 5.5, GPT-6 Astra, Jev, Muse Wonder, QuantGPT, AgentKit, multi-model architecture, agent orchestration, Model Context Protocol, calibrated decisions, walk-forward validation, survivorship bias, Rust execution engine, low-latency trading, one-person hedge fund.</div>
+
+  <h2>I. Introduction: the single-model trap</h2>
+  <p>Every builder eventually asks which model is best for trading, and the question is wrong. A trading desk is not one job. It is research, mathematics, engineering, memory, and execution, and each job has a different binding constraint: depth, rigour, correctness, recall, and speed. A model chosen for depth is too slow for execution, and a model chosen for speed is too shallow for research. Whichever model is chosen, the desk inherits its weakest skill as its ceiling.</p>
+  <p>The correct response is not to search for one model that does everything. It is to separate the jobs and give each one to the strongest specialist available, then let all of them work from the same data and the same rules. This paper documents a desk built on that separation, with four frontier models in four seats, a Rust engine in the fifth, and Outt and QuantGPT as the shared trading floor beneath all of them. When a stronger model appears, it replaces one seat without rebuilding the desk.</p>
+  <p>The separation also changes how the desk fails. In a single-model system, one weak skill corrupts every decision downstream of it. In the five-role desk, a failure stays inside its seat, is caught by the next seat or by the Rust engine, and is written to the ledger so the same mistake is never made twice.</p>
+
+  <h3>A. Why one model cannot run a desk</h3>
+  <p>An operator who asks a single model to trade receives a confident answer with no data source, no test, and no record. A reasoner that spends twenty seconds per answer cannot sit inside a market that moves every block. A millisecond decision model cannot write the strategy it executes. A coding model with no memory repeats last week's failed experiment as if it were new. None of them can check its own work against decades of clean history. Each model was capable. The desk around it did not exist.</p>
+
+  <h3>B. The five-role desk definition</h3>
+  <p>This paper defines the desk as five roles on one infrastructure layer. Muse Wonder orchestrates each cycle, delegates the work, and remembers every finding, including every failure. GPT-6 Astra designs hypotheses and sizing rules precise enough to encode without interpretation. Opus 5.5 writes the code, runs the backtests, and reviews every session overnight. Jev makes the live judgment on every market state. A Rust engine holds the final risk veto. No model moves capital without operator approval.</p>
+
+  <h3>C. Single model versus five-role desk</h3>
+  <p>Table I contrasts a single model asked to trade with the same capabilities divided across the five-role desk, across the six functions that determine whether a strategy can survive a live market. The difference is not in any one model's intelligence but in whether each function has an owner.</p>
+
+  <table>
+    <caption>Table I — one model vs the five-role desk</caption>
+    <thead><tr><th>Function</th><th>One model</th><th>Five-role desk</th></tr></thead>
+    <tbody>
+      <tr><td>Market data</td><td>Memory only</td><td>QuantGPT warehouse</td></tr>
+      <tr><td>Strategy math</td><td>Guesswork</td><td>GPT-6 Astra</td></tr>
+      <tr><td>Code and tests</td><td>Untested</td><td>Opus 5.5 + backtests</td></tr>
+      <tr><td>Live decision</td><td>Seconds per call</td><td>Jev, 70 to 500 ms</td></tr>
+      <tr><td>Memory</td><td>Resets each chat</td><td>Muse Wonder</td></tr>
+      <tr><td>Execution</td><td>Manual</td><td>Rust, 24/7</td></tr>
+    </tbody>
+  </table>
+
+  <h3>D. What this paper delivers</h3>
+  <p>Section II specifies the desk architecture, the latency budget, and the role of each model, QuantGPT, and AgentKit. Section III presents the research loop with implementation code and its statistical gates. Section IV presents the Rust low-latency execution engine. Section V details validation, sizing, and risk. Section VI covers daily operation, seat replacement, and references.</p>
+
+  <p class="note">This page reproduces the author's field report. The architecture claims are the author's; no performance figures are stated here, and none should be inferred. The full paper covers Sections II–VI: desk architecture and latency budget, the research loop and its statistical gates, the Rust execution engine, validation and risk, and daily operation.</p>
+
+  <div class="foot">
+    <span>StigmergiCoin — the finance desk</span>
+    <span><a href="index.html">← back</a></span>
+  </div>
+</div>
+</body>
+</html>

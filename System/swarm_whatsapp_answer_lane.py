@@ -102,6 +102,16 @@ def should_answer(row: Dict[str, Any], *, now: Optional[float] = None,
     jid = str(row.get("from_jid") or "")
     if jid in OWNER_LINES:
         return True
+    # ANY CHAT, ANY PERSON: naming Alice IS being addressed. Architect, 2026-10-15: "raspunde
+    # automat pe whatsapp la oricine care mentioneaza cuvantul Alice". This runs BEFORE the
+    # group/direct split, so a mention in a DIRECT chat no longer depends on that person being in
+    # the per-target consent list -- the name itself is the address. Groups keep their existing
+    # rule (below) for everything that is not a mention.
+    _low = " " + " ".join(str(text).casefold().split()) + " "
+    if any(k in _low for k in (" aluce", " alise", " alica", "@51235386302504")):
+        return True
+    if _MENTION_ALICE.search(_low):
+        return True
     # IN A GROUP, ONLY WHEN ADDRESSED — and "addressed" means narrow.
     # Architect 2026-10-04: "don't spam the group with my instructions. raspunde colegilor daca
     # te intreaba ceva, daca iti mentioneaza numele, Alice sau daca esti tu sigura ca vorbesc cu

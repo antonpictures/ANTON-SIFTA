@@ -93,8 +93,13 @@ _CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 _PENDING_SLIDESHOW = _STATE / "pending_slideshow.json"
 APP_HARDENING_ID = "queue-008:sifta_alice_browser_widget"
 _HARNESS_ROOT = REPO / "!Alice Coding Arm"
+_DSH_BIN = Path("/opt/homebrew/bin/dsh")
 _HARNESS_URL = "http://127.0.0.1:3080"
-_HARNESS_BOOT_LOG = _STATE / "deepseek_harness_boot.log"
+_DSH_AUTH_MARKER = "dsh web authentication required"
+# Where the launch token lands. It must sit outside ~/Music: the launchd unit
+# that owns port 3080 cannot open a TCC-protected path for its stdio and dies
+# with EX_CONFIG before writing a byte.
+_HARNESS_BOOT_LOG = Path.home() / ".dsh" / "logs" / "dsh-web.out.log"
 _HARNESS_LOCK = _STATE / "deepseek_harness_start.lock"
 _DESKTOP_CHROME_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -140,8 +145,41 @@ def _harness_is_ready() -> bool:
                 return False
             body = response.read(131072).decode("utf-8", "replace")
         return "__DSH_BOOT__" in body and "@deepseek-ai/dsh-client" in body
+    except urllib.error.HTTPError as exc:
+        # dsh >= 0.2.0 fences the UI behind a per-launch token. A tokenless probe
+        # is answered 401 with this exact sentence, which names the Harness as
+        # positively as the boot marker does, and no other listener raises it.
+        # Without this branch the widget reads its own healthy arm as a foreign
+        # service and fails every owner coding request with
+        # port_3080_non_dsh_service.
+        try:
+            body = exc.read(8192).decode("utf-8", "replace")
+        except OSError:
+            return False
+        return _DSH_AUTH_MARKER in body
     except (OSError, urllib.error.URLError, ValueError):
         return False
+
+
+def _harness_launch_token() -> str:
+    """The launch token dsh prints once per boot, read back from the boot log.
+
+    The token is single-use and only bootstraps a cookie; the cookie itself is
+    signed with a secret persisted in ``.credentials.yaml``, so a browser that
+    has exchanged the token once stays authenticated across restarts.
+    """
+    try:
+        text = _HARNESS_BOOT_LOG.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    found = re.findall(r"/\?token=([A-Za-z0-9_-]+)", text)
+    return found[-1] if found else ""
+
+
+def _harness_url() -> str:
+    """The token-bearing URL for opening the arm. 0.2.0 refuses a bare GET."""
+    token = _harness_launch_token()
+    return f"{_HARNESS_URL}/?token={token}" if token else _HARNESS_URL.rstrip("/")
 
 
 def _ensure_local_harness() -> str:
@@ -163,10 +201,11 @@ def _ensure_local_harness() -> str:
             reason="port_occupied_by_non_dsh_service",
         )
         return "port_conflict"
-    if not _HARNESS_ROOT.is_dir():
+    if not _DSH_BIN.exists():
         _record_browser_hardening(
             "deepseek_harness_missing",
             harness_root=str(_HARNESS_ROOT),
+            dsh_bin=str(_DSH_BIN),
         )
         return "missing"
     _STATE.mkdir(parents=True, exist_ok=True)
@@ -180,12 +219,20 @@ def _ensure_local_harness() -> str:
                 return "start_in_progress"
         log = _HARNESS_BOOT_LOG.open("a", encoding="utf-8")
         env = os.environ.copy()
-        # The launcher must run from its checkout, while sessions should edit SIFTA.
+        # Sessions edit SIFTA; the binary is the installed dsh, whose profile
+        # home is ~/.dsh independently of the working directory.
         env["DSH_CWD"] = str(REPO)
         env["SIFTA_WORKSPACE_ROOT"] = str(REPO)
+        env["PATH"] = f"/opt/homebrew/bin:{env.get('PATH', '')}"
         subprocess.Popen(
-            ["pnpm", "dsh", "--profile", "web", "--port", "3080"],
-            cwd=str(_HARNESS_ROOT),
+            [
+                str(_DSH_BIN),
+                "web",
+                "--no-open",
+                "--port",
+                "3080",
+            ],
+            cwd=str(REPO),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=log,
@@ -389,7 +436,7 @@ _HOME_HTML = """<!DOCTYPE html>
     <p class="subtitle">Stigmergic web access — every page visit is a receipt</p>
   </div>
   <div class="program">
-    <a href="http://127.0.0.1:3080">
+    <a href="__ARM_URL__">
       <strong>🧠 Program Alice Locally</strong>
       <small>Open the Stigmergic Coding Arm in the SIFTA workspace · local LLM · port 3080</small>
     </a>
@@ -1622,8 +1669,15 @@ class AliceBrowserWidget(QMainWindow):
             if found >= 0:
                 self._tabs.setCurrentIndex(found)
                 self._on_tab_changed(found)
+                # A tab opened before this boot was authenticated is sitting on
+                # the 401 page, so reusing it just shows that error again.
+                # Re-open it through this boot's token — exchanging a token only
+                # sets the cookie, so doing it on an authenticated tab is a no-op.
+                self._navigate(_harness_url())
             else:
-                self.new_tab(target)
+                # Match the tab on the bare URL (so an already-authenticated tab
+                # is reused) but open through the token when there is none yet.
+                self.new_tab(_harness_url())
             complete_task(task_id, status="OPENED", state_dir=_STATE)
             self._stigmergicode_waiting_task = None
             self._status.showMessage("Alice Browser opened the local coding Harness", 5000)
@@ -2100,7 +2154,12 @@ class AliceBrowserWidget(QMainWindow):
         except Exception:
             pass
         if url == _HOME_URL:
-            self._view.setHtml(_HOME_HTML, QUrl("sifta://home"))
+            # dsh >= 0.2.0 answers a tokenless GET with 401, so the start-page
+            # link has to carry this boot's token or it lands on the auth error.
+            self._view.setHtml(
+                _HOME_HTML.replace("__ARM_URL__", _harness_url()),
+                QUrl("sifta://home"),
+            )
             self._url_bar.setText(_HOME_URL)
             self._current_url = _HOME_URL
             self._publish_browser_context(source="navigate_home")

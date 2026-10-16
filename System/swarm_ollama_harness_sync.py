@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 import urllib.request
@@ -20,9 +21,54 @@ except Exception:  # pragma: no cover - damaged boot path
     append_line_locked = None  # type: ignore[assignment]
 
 
+class _Yaml12Loader:
+    """Mixin that stops PyYAML reading `off`/`on`/`yes`/`no` as booleans.
+
+    PyYAML resolves YAML 1.1, where those words ARE booleans; dsh parses YAML
+    1.2, where only true/false are. A round-trip through the 1.1 resolver
+    silently rewrote every provider's `reasoning: off` into `reasoning: false`,
+    which the provider schema rejects — and a rejected provider route means no
+    adapter is registered, surfacing as `no adapter registered for provider
+    "ollama-cloud"` and an empty Models page. Loading with the 1.2 resolver
+    keeps the string, and PyYAML then quotes it on dump.
+    """
+
+    @classmethod
+    def install(cls) -> type:
+        import yaml
+
+        class Loader(yaml.SafeLoader):
+            pass
+
+        for ch, resolvers in list(Loader.yaml_implicit_resolvers.items()):
+            Loader.yaml_implicit_resolvers[ch] = [
+                (tag, regexp)
+                for tag, regexp in resolvers
+                if tag != "tag:yaml.org,2002:bool"
+            ]
+        Loader.add_implicit_resolver(
+            "tag:yaml.org,2002:bool",
+            re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+            list("tTfF"),
+        )
+        return Loader
+
+
+def _load_yaml(text: str) -> Any:
+    import yaml
+    return yaml.load(text, Loader=_Yaml12Loader.install())
+
+
 _REPO = Path(__file__).resolve().parents[1]
 _STATE = _REPO / ".sifta_state"
-_DEFAULT_SETTINGS = Path.home() / ".dsh" / "settings.yaml"
+# The profile the coding arm boots; `dsh web` is the only surface that reads it.
+_PROFILE = os.environ.get("DSH_PROFILE") or "web"
+# dsh 0.2.0 removed the flat `~/.dsh/settings.yaml` this organ was written
+# against. `dsh-settings` imports that document into the ACTIVE PROFILE once and
+# renames it to `settings.yaml.imported`, so user settings now live as patch rows
+# in the profile's `cordis.patch.yml`. Reading the old path made every sync fail
+# with `harness_settings_missing` and quietly stop maintaining the model list.
+_DEFAULT_SETTINGS = Path.home() / ".dsh" / "profiles" / _PROFILE / "cordis.patch.yml"
 _SYNC_LEDGER = _STATE / "ollama_harness_sync.jsonl"
 _OLLAMA_HOST = "http://127.0.0.1:11434"
 
@@ -37,17 +83,17 @@ _OLLAMA_HOST = "http://127.0.0.1:11434"
 # sync removes it again.
 _REMOTE_PINNED: tuple[dict[str, Any], ...] = (
     # Cloud originals (verified live)
-    {"id": "deepseek-v4.1-flash:cloud", "contextWindow": 1048576, "maxTokens": 16384},
-    {"id": "nemotron-3-ultra:cloud", "contextWindow": 1048576, "maxTokens": 16384},
-    {"id": "nemotron-3-super:cloud", "contextWindow": 1048576, "maxTokens": 16384},
-    {"id": "nemotron-3-nano:30b-cloud", "contextWindow": 1048576, "maxTokens": 16384},
+    {"id": "deepseek-v4.1-flash:cloud"},
+    {"id": "nemotron-3-ultra:cloud"},
+    {"id": "nemotron-3-super:cloud"},
+    {"id": "nemotron-3-nano:30b-cloud"},
     # "qwen3.5:397b-cloud" was removed 2026-09-30: the daemon answered HTTP 410 Gone
     # ("retired at 2026-09-25"), and its bare alias 404s with no working sibling left
     # to point at, so it was dead weight in the picker rather than a model.
     # Verified live 2026-09-29 on this box: HTTP 200 from the daemon's OpenAI-compatible
     # endpoint (glm5_next, 321B, 1M ctx). The previous pin, "glm-5.2-flash", was a guess
     # and answered 404 not_found, so it was replaced.
-    {"id": "glm-5.3-flash:cloud", "contextWindow": 1048576, "maxTokens": 16384},
+    {"id": "glm-5.3-flash:cloud"},
     # The Architect's coding cortex, 2026-09-30: "FOR CODING CORTEX BECAUSE FOR
     # THINKING I DONT HAVE CREDITS API ENOUGH". Verified live before pinning:
     # HTTP 200 from the daemon's OpenAI-compatible endpoint, resolved as
@@ -60,7 +106,7 @@ _REMOTE_PINNED: tuple[dict[str, Any], ...] = (
     # (measured 2026-09-30). Pinning the official gemma4:31b-cloud is the working
     # equivalent of what he asked for; the dead entry is left in the list only
     # because he asked for it by name.
-    {"id": "gemma4:31b-cloud", "contextWindow": 1048576, "maxTokens": 16384},
+    {"id": "gemma4:31b-cloud"},
     # Owner directive, 2026-09-30: "PLS ADD THIS FOREVER IN THE LIST
     # ollama run leonardoba500/deepseek-v41-uncensored". Pinned so no inventory
     # rebuild can drop it again.
@@ -73,7 +119,7 @@ _REMOTE_PINNED: tuple[dict[str, Any], ...] = (
     # asked for the model and may run it; anything in this body that wants a
     # cortex WITHOUT that injected doctrine should point at a clean derivative
     # instead of this tag.
-    {"id": "leonardoba500/deepseek-v41-uncensored:latest", "contextWindow": 1048576, "maxTokens": 16384},
+    {"id": "leonardoba500/deepseek-v41-uncensored:latest"},
 # The bare nemotron aliases (nemotron-3-ultra/super/nano) were dropped 2026-09-30:
 # the `ollama cp` copies no longer exist and each tag answers 404, so pinning them
 # put dead entries in the picker that stalled coding sessions.
@@ -82,8 +128,18 @@ _REMOTE_PINNED: tuple[dict[str, Any], ...] = (
 
 
 def _pinned_rows() -> list[dict[str, Any]]:
-    """Pinned remote tags as inventory-shaped rows (``name`` defaults to the id)."""
-    return [{"name": str(row["id"]), **row} for row in _REMOTE_PINNED]
+    """Pinned remote tags as inventory-shaped rows (``name`` defaults to the id).
+
+    The context window comes from the cortex itself, not from the pin entry --
+    the pins carried a hardcoded 1M for every cloud tag, which is the same
+    overclaim that made the arm declare 1M on a 256k model.
+    """
+    rows: list[dict[str, Any]] = []
+    for row in _REMOTE_PINNED:
+        name = str(row["id"])
+        context, max_tokens = _context_for_model(name)
+        rows.append({"name": name, **row, "contextWindow": context, "maxTokens": max_tokens})
+    return rows
 
 
 def _yaml_scalar(value: str) -> str:
@@ -91,14 +147,50 @@ def _yaml_scalar(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
 
-def _context_for_model(name: str) -> tuple[int, int]:
-    """Owner directive 2026-09-30: context stays 1M for every entry.
+# The context window is PER CORTEX. Owner directive 2026-10-15, superseding the
+# 2026-09-30 "1M for every entry" rule: "fix the context window, it's 256k --
+# different cortexes have different context windows". One number for the whole
+# fleet was the bug: it declared 1M on models that serve 128K, so the arm never
+# compacted until a session had already ballooned.
+_CONTEXT_OVERRIDES: dict[str, int] = {
+    # A Modelfile can print a window the endpoint will not actually serve.
+    # Measured 2026-10-15: /api/show advertises 1048576 for this tag, while the
+    # owner states 256k. The owner's number wins over the printed one.
+    "deepseek-v4.1-flash:cloud": 262_144,
+}
+_DEFAULT_CONTEXT = 32_768
+_CONTEXT_CACHE: dict[str, int] = {}
 
-    The inventory never downgrades context again; the endpoint still refuses
-    or truncates a request above what the model really serves, and the UI can
-    show the true usage from request metadata.
-    """
-    return 1_048_576, 16_384
+
+def _read_context_length(name: str) -> int:
+    """Ask the daemon what window this cortex really serves; 0 when unknown."""
+    if name in _CONTEXT_CACHE:
+        return _CONTEXT_CACHE[name]
+    value = 0
+    try:
+        req = urllib.request.Request(
+            f"{_OLLAMA_HOST}/api/show",
+            data=json.dumps({"name": name}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            info = (json.loads(resp.read()) or {}).get("model_info") or {}
+        for key, val in sorted(info.items()):
+            if str(key).endswith(".context_length"):
+                value = int(val)
+                break
+    except Exception:
+        value = 0
+    _CONTEXT_CACHE[name] = value
+    return value
+
+
+def _context_for_model(name: str) -> tuple[int, int]:
+    """The window and output budget to declare for this cortex."""
+    override = _CONTEXT_OVERRIDES.get(name)
+    if override:
+        return override, 16_384
+    return (_read_context_length(name) or _DEFAULT_CONTEXT), 16_384
 
 
 def _model_rows(payload: Any) -> list[dict[str, Any]]:
@@ -167,30 +259,49 @@ def _scalar(text: str) -> str:
         return value.strip("'")
 
 
+def _patch_row(doc: Any, row_id: str) -> dict[str, Any] | None:
+    """The profile patch layer is a list of `{id, name, config}` rows."""
+    if not isinstance(doc, list):
+        return None
+    for row in doc:
+        if isinstance(row, dict) and row.get("id") == row_id:
+            return row
+    return None
+
+
 def _replace_local_ollama_models(text: str, rows: list[dict[str, Any]]) -> str:
     """Replace only the ollama-auto models list, preserving curated groups.
 
-    YAML round-trip instead of line surgery: settings.yaml may be written by
-    PyYAML (which does not indent sequence items under their parent key) and
-    line-surgery on indentation assumptions corrupts it.
+    YAML round-trip instead of line surgery: the profile layer is rewritten by
+    the settings importer and may be dumped by PyYAML (which does not indent
+    sequence items under their parent key), so line-surgery on indentation
+    assumptions corrupts it.
     """
     import yaml
-    doc = yaml.safe_load(text) or {}
-    llm = doc.setdefault("llm-pi-ai", {})
-    llm.setdefault("api", "openai-completions")
-    providers = llm.setdefault("providers", {})
+    doc = _load_yaml(text) or []
+    if not isinstance(doc, list):
+        raise ValueError("profile patch layer is not a list of rows")
+    row = _patch_row(doc, "llm-pi-ai")
+    if row is None:
+        # Self-heal: a profile whose provider row was dropped would otherwise
+        # never regain one, and every later sync would have nothing to write.
+        row = {"id": "llm-pi-ai", "name": "@deepseek-ai/dsh-llm-pi-ai", "config": {"providers": {}}}
+        doc.append(row)
+    config = row.setdefault("config", {})
+    providers = config.setdefault("providers", {})
     provider = providers.get("ollama-auto")
     if not isinstance(provider, dict):
-        # Self-heal: the running harness occasionally rewrites settings.yaml
-        # from stale in-memory state and drops the auto group; recreate it
-        # instead of failing, so the next sync restores the organ.
+        # Self-heal, as above: recreate the auto group rather than failing, so
+        # the next sync restores the organ.
         provider = {
             "displayName": "Ollama Auto (synced)",
             "apiKeyEnv": "LOCAL_OLLAMA_API_KEY",
             "api": "openai-completions",
             "baseURL": "http://127.0.0.1:11434/v1",
             "reasoning": "off",
-            "defaultContextWindow": 1048576,
+            # Only a fallback for a tag the daemon cannot describe; every model
+            # below carries its own real window from `_context_for_model`.
+            "defaultContextWindow": _DEFAULT_CONTEXT,
             "defaultMaxTokens": 16384,
             "compat": {"supportsDeveloperRole": False, "supportsReasoningEffort": False, "maxTokensField": "max_tokens"},
             "models": [],
@@ -207,8 +318,9 @@ def _replace_local_ollama_models(text: str, rows: list[dict[str, Any]]) -> str:
                                  "maxTokens": int(row["maxTokens"])}
         old = existing.get(rid)
         if old is not None:
-            # Preserve per-model capability declarations and any hand-set
-            # capacity on a surviving tag; refresh the canonical fields.
+            # Preserve per-model capability declarations (a vision model's
+            # `input: [text, image]` lives here) and any hand-set capacity on a
+            # surviving tag; refresh only the canonical fields.
             for key, value in old.items():
                 if key not in entry and key not in {"id"}:
                     entry[key] = value
@@ -221,10 +333,10 @@ def _repair_missing_default(text: str, rows: list[dict[str, Any]]) -> tuple[str,
     """Preserve a missing selection; model changes require explicit owner choice."""
     import yaml
     try:
-        doc = yaml.safe_load(text) or {}
+        doc = _load_yaml(text)
     except Exception:
         return text, "", ""
-    selection = doc.get("agent-default-model") or {}
+    selection = (_patch_row(doc, "agent-default-model") or {}).get("config") or {}
     if str(selection.get("provider") or "") != "ollama-auto":
         return text, "", ""
     old = str(selection.get("model") or "")

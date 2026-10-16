@@ -20,6 +20,17 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
+
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
@@ -119,7 +130,7 @@ def ask_local_ollama(
         "options": {
             "temperature": 0.0,
             "num_ctx": 8192,
-            "num_predict": 80,
+            "num_predict": _tok_floor(80),
         },
     }
     request = urllib.request.Request(

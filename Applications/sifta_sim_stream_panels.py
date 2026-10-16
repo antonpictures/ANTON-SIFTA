@@ -22,6 +22,17 @@ from pathlib import Path
 from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
+
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
@@ -375,7 +386,7 @@ class CyborgPanelWidget(QWidget):
                         "prompt": prompt,
                         "stream": False,
                         "temperature": 0.5,
-                        "num_predict": 80,
+                        "num_predict": _tok_floor(80),
                     }).encode("utf-8")
                     req = urllib.request.Request(
                         "http://127.0.0.1:11434/api/generate",

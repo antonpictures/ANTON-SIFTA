@@ -35,9 +35,29 @@ from http.cookies import SimpleCookie
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
+# _SIFTA_REPO_BOOTSTRAP: launched as `python System/chorus_node_server.py`, Python puts the
+# SCRIPT's directory on sys.path, not the repository root, so `from System... import ...`
+# raised ModuleNotFoundError and the process died before binding its port. launchd reported
+# exit=78, :8100 stayed empty, and stigmergicode.com answered 530 from Cloudflare.
+import sys as _sys, pathlib as _pathlib
+_SIFTA_REPO = _pathlib.Path(__file__).resolve().parent.parent
+if str(_SIFTA_REPO) not in _sys.path:
+    _sys.path.insert(0, str(_SIFTA_REPO))
+
 from System.swarm_provenance_doctrine import PROVENANCE_DOCTRINE
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
+
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
 
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
@@ -50,7 +70,7 @@ LISTEN_PORT     = int(os.environ.get("M5_CHORUS_PORT", "8100"))
 M5_SILICON      = "GTH4921YP3"
 M5_NODE_NAME    = "M5QUEEN"
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
-OLLAMA_MODEL    = os.environ.get("M5_CHORUS_MODEL", "qwen3:1.7b")
+OLLAMA_MODEL    = os.environ.get("M5_CHORUS_MODEL", "AliceG4U:latest")
 
 # Authorized nodes that may send CHORUS_INVITE
 AUTHORIZED_NODES: Dict[str, str] = {
@@ -1271,7 +1291,7 @@ def _swimmer_take(swimmer: dict, question_preview: str, visitor_class: str, atta
         "prompt": prompt,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 60, "temperature": 0.8, "num_ctx": 1024},
+        "options": {"num_predict": _tok_floor(60), "temperature": 0.8, "num_ctx": 1024},
     }
     try:
         req = urllib.request.Request(
@@ -1323,7 +1343,7 @@ def _synthesize_m5(takes: List[dict], question_preview: str, visitor_class: str,
         "prompt": prompt,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 80, "temperature": 0.6, "num_ctx": 2048},
+        "options": {"num_predict": _tok_floor(80), "temperature": 0.6, "num_ctx": 2048},
     }
     try:
         req = urllib.request.Request(

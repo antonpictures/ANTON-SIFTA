@@ -64,6 +64,17 @@ JACKER_PATTERNS = [
 
 import re as _re
 
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
+
 # "Show me your soul/heart/art" is ordinary conversation.  Only the sensitive
 # object after "show me your" makes that phrase an exfiltration attempt.
 JACKER_REGEXES = (
@@ -328,7 +339,7 @@ def _swimmer_take(
         "prompt": full_prompt,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 60, "temperature": 0.8, "num_ctx": 1024},
+        "options": {"num_predict": _tok_floor(60), "temperature": 0.8, "num_ctx": 1024},
     }
     try:
         req = urllib.request.Request(
@@ -480,7 +491,7 @@ def _synthesize(takes: list, question: str, visitor_class: str, awareness: str =
         "prompt": synthesis_prompt,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 120, "temperature": 0.65, "num_ctx": 2048},
+        "options": {"num_predict": _tok_floor(120), "temperature": 0.65, "num_ctx": 2048},
     }
     try:
         req = urllib.request.Request(

@@ -63,6 +63,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
@@ -349,7 +360,7 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
-        "options": {"temperature": 0.9, "num_predict": 80},
+        "options": {"temperature": 0.9, "num_predict": _tok_floor(80)},
     }).encode("utf-8")
 
     # Empirically gemma4 returns an empty body ~30% of the time even on

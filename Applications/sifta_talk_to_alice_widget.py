@@ -78,6 +78,17 @@ import hashlib
 import importlib
 import os
 import random
+
+try:
+    from System.swarm_token_floor import floor_tokens as _tok_floor
+except Exception:  # a body module must never fail to import because of a budget helper
+    def _tok_floor(n, *a, **k):
+        try:
+            n = int(n)
+        except Exception:
+            return 0
+        return max(400, n) if n > 0 else 0
+
 import re
 import shutil
 import subprocess
@@ -7475,7 +7486,7 @@ def _compose_contextual_search_query_with_cortex(
                     "temperature": 0.2,
                     "top_p": 0.8,
                     "num_ctx": min(4096, _ollama_num_ctx(4096)),
-                    "num_predict": 80,
+                    "num_predict": _tok_floor(80),
                     "repeat_penalty": 1.08,
                 },
             }
@@ -8406,7 +8417,7 @@ def _compose_browser_photo_reply_with_cortex(
                     "temperature": 0.2,
                     "top_p": 0.85,
                     "num_ctx": min(4096, _ollama_num_ctx(4096)),
-                    "num_predict": 120,
+                    "num_predict": _tok_floor(120),
                     "repeat_penalty": 1.08,
                 },
             }
@@ -8528,7 +8539,7 @@ def _compose_next_photo_reply_with_cortex(
                     "temperature": 0.25,
                     "top_p": 0.85,
                     "num_ctx": min(4096, _ollama_num_ctx(4096)),
-                    "num_predict": 120,
+                    "num_predict": _tok_floor(120),
                     "repeat_penalty": 1.08,
                 },
             }
