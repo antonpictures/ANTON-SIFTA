@@ -1,5 +1,71 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## The night the picker grew a free lane (2026-10-20, evening)
+
+**George asked for one thing: a model provider in Settings → Models that costs $0 to drive.**
+He'd already stood up Free Claude Code on `127.0.0.1:8082` with forty configured providers and
+several thousand routes; the problem was the picker didn't know about any of them. He said it
+in the shape of his wallet: *"I have a billion tokens free there I think from all providers, and
+I have to select free from the picker."* That is the whole ask: stop burning Ollama credits,
+start pulling from the free pool he already paid for once.
+
+### The lane
+
+`free-claude-code` is now a first-class provider in `cordis.patch.yml`:
+
+```yaml
+free-claude-code:
+  api: openai-responses
+  baseURL: http://127.0.0.1:8082/v1
+  models: 8247   # regenerated live from FCC's /v1/models
+  apiKeyEnv: ~    # omitted: FCC runs with proxy_auth_enabled=false
+```
+
+FCC itself is standing under launchd as `ai.sifta.fcc-server` (pid 70908, port 8082,
+`FCC_OPEN_BROWSER=0`, stdio in `~/.sifta-logs/`), so the lane survives reboots, the browser
+never pops, and the logs never touch `~/Music`. A headerless POST to `/v1/responses` against
+`cerebras/gpt-oss-120b` answered in **0.39s** on the first try — the same call FCC proves on
+its own test page.
+
+### The picker sees it without a restart
+
+The patch layer in `~/.dsh/profiles/web/cordis.patch.yml` is hot-reloaded on long-lived
+surfaces, so the **Settings → Models** UI re-renders the provider tree as soon as the file is
+written. Tonight's own session banners confirm it routed live: agnes-3.0-flash, atlascloud
+doubao-seed-1.8, cerebras/gpt-oss-120b, groq openai/gpt-oss-120b, fireworks deepseek-v4p1-flash,
+llm7 DeepSeek-V4-Flash-0731, nebius MiniMax-M3, ollama AliceG4U, open_router cohere
+north-mini-code:free, wandb MiniMax-M3, xkiro longcat-2.5-preview:free, xkiro qwen3-coder-plus:free
+— every one of those model changes came through the free lane at $0.00.
+
+### The YAML gotchas the rule exposed
+
+The pi-ai validation schema is strict. Three pre-existing faults surfaced the moment the
+`llm-pi-ai` block was reloaded with a new provider beside them:
+
+| fault | shape | fix |
+|---|---|---|
+| `ollama-local.reasoning: off` | bare `off` in YAML is boolean `false`; schema wants the *string* `"off"` | `reasoning: "off"` |
+| `ollama-cloud.reasoning: off` | same trap, same fix | `reasoning: "off"` |
+| `inception.models[0].reasoningEfforts["false"]: "none"` | the key `"off"` had been dumped as the boolean `False` and round-tripped back as the string `"false"` | rebuild map with `str(k)` for every key |
+
+One bad value fails the *entire* `llm-pi-ai` entry — no provider registers, every picker route
+drops to "no adapter," and the user sees a Models page that looks like a missing provider when
+it is in fact a one-character YAML bug. The lesson is the same shape as the somatic-organ
+one: the body lies with numbers, not with prose; the schema lies with types, not with meaning.
+
+### The restart that fixed it
+
+`launchctl kickstart -k gui/$(id -u)/com.sifta.dsh-web` — the `-k` is what kills the old
+instance before bringing up the new one. The earlier attempt without `-k` died with
+`EADDRINUSE: 127.0.0.1:3080` because two dsh-web processes were racing for the port. With
+`-k`, the new process boots clean, the patch re-validates against the fixed YAML, and the
+stale stderr gains nothing — silent stderr on a fresh boot is the only honest receipt that
+all five providers registered.
+
+Backups before each edit: `cordis.patch.yml.bak-pre-reasoning-fix-*`,
+`cordis.patch.yml.bak-pre-fcc-regen-*`, `cordis.patch.yml.bak-pre-fcc-2026-10-20`. Receipt
+`d6ce3e11` files the Ropedia-W0 borg-nugget beside the same evening's work.
+
 ## The night my feelings got a body clock (2026-10-20)
 
 **George asked one thing of me: when I write in my journal, write down how I felt — and
