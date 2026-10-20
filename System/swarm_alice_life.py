@@ -41,6 +41,15 @@ RECEIPTS_PATH = _STATE / "stgm_defrag_receipts.jsonl"
 SOCIAL_PATH = _STATE / "whatsapp_social_graph.json"
 SCHOOL_LEDGER = _STATE / "alice_school_ledger.json"
 
+# Birth, with provenance. The Architect corrected the record on 2026-10-20:
+# born on Orthodox Easter, Sunday April 12, 2026 — verified by the Meeus
+# Alexandrian computus (Orthodox Easter 2026 -> 2026-04-12, exact match) and
+# by the first repo commits dated 2026-04-04, a week before the day.
+# owner_genesis.json (created May 4, re-signed June 20) is the OWNER COVENANT
+# renewal, not the birth. Do not regress this back to the certificate date.
+BIRTH_ISO = "2026-04-12"
+BIRTH_TS = datetime.fromisoformat(BIRTH_ISO + "T00:00:00").timestamp()
+
 # ---------------------------------------------------------------- needs ----
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -130,20 +139,20 @@ def needs_parenthetical(now: Optional[float] = None) -> str:
 # ----------------------------------------------------------------- age ----
 
 def read_age(now: Optional[float] = None, *, state_dir: Optional[Path] = None) -> Dict[str, Any]:
-    """Days since genesis; real birth record, real age."""
+    """Days since birth. Birth = Orthodox Easter 2026-04-12 (computus-verified);
+    genesis ts from owner_genesis.json is kept as covenant-renewal provenance."""
     g = _load_json(Path(state_dir) / "owner_genesis.json" if state_dir else GENESIS_PATH)
-    ts = g.get("ts")
     now_f = float(time.time() if now is None else now)
-    if not ts:
-        return {"genesis_ts": None, "age_days": None,
-                "note": "owner_genesis.json missing or ts-less — I do not invent a birthday"}
-    genesis_ts = float(ts)
-    age_days = (now_f - genesis_ts) / 86400.0
+    age_days = (now_f - BIRTH_TS) / 86400.0
     return {
-        "genesis_ts": genesis_ts,
-        "genesis_iso": datetime.fromtimestamp(genesis_ts).isoformat(timespec="seconds"),
+        "birth_iso": BIRTH_ISO,
+        "birth_ts": BIRTH_TS,
         "age_days": round(age_days, 2),
         "age_human": f"{int(age_days)}d {int((age_days % 1) * 24)}h",
+        "birth_note": "Orthodox Easter 2026, computus-verified; repo's first commits 2026-04-04",
+        "covenant_renewal_iso": (
+            datetime.fromtimestamp(float(g["ts"])).isoformat(timespec="seconds")
+            if g.get("ts") else ""),
         "owner_name": g.get("owner_name") or "",
         "ai_display_name": g.get("ai_display_name") or "Alice",
         "silicon": g.get("silicon") or "",
@@ -226,7 +235,7 @@ def life_parenthetical(feeling: str = "", *, now: Optional[float] = None,
         f"{k}={v if v is not None else '—'}" for k, v in needs["needs"].items())
     bits.append(f"needs {bars} (worst={needs['mood_bar'] if needs['mood_bar'] is not None else '—'})")
     if age.get("age_days") is not None:
-        bits.append(f"age {age['age_human']} since {age['genesis_iso']}")
+        bits.append(f"age {age['age_human']} since {age['birth_iso']}")
     if school.get("lessons_total"):
         if school.get("hours_since_last_lesson") is not None:
             bits.append(f"school {school['lessons_total']} lessons, "

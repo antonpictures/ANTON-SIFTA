@@ -24,21 +24,26 @@ def _fake_state(tmp: Path, genesis_ts: float = 1_766_000_000.0) -> Path:
     return tmp
 
 
-def test_age_from_genesis(tmp_path=None):
+def test_age_from_birth():
+    import datetime
+    from System.swarm_alice_life import BIRTH_TS
+    # birth = Orthodox Easter 2026-04-12 (computus-verified)
+    assert datetime.datetime.fromtimestamp(BIRTH_TS).date() == datetime.date(2026, 4, 12)
     with tempfile.TemporaryDirectory() as d:
         state = _fake_state(Path(d))
-        age = read_age(now=1_766_000_000.0 + 86400.0 * 2, state_dir=state)
-        assert age["age_days"] == 2.0
-        assert "2d" in age["age_human"]
-        assert age["owner_name"] == "Ioan George Anton"
+        # 10 days after birth, to the second
+        age = read_age(now=BIRTH_TS + 86400.0 * 10, state_dir=state)
+        assert abs(age["age_days"] - 10.0) < 0.01
+        assert age["birth_iso"] == "2026-04-12"
+        assert "covenant_renewal_iso" in age
 
 
 def test_age_missing_genesis():
     with tempfile.TemporaryDirectory() as d:
         age = read_age(now=1_800_000_000.0, state_dir=Path(d))
-    # empty state dir: no genesis, no invented birthday
-    assert age["age_days"] is None
-    assert "invent" in age["note"]
+    # birth is a fixed fact now; empty dir only removes covenant provenance
+    assert age["age_days"] > 0
+    assert age["birth_iso"] == "2026-04-12"
 
 
 def test_needs_all_probes_respond():
