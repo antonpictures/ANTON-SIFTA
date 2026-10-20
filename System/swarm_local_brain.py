@@ -121,7 +121,7 @@ def stream_chat(
 
             bare_model = resolve_live_local_ollama_default()
         except Exception:
-            bare_model = "alice-m5-cortex-8b-6.3gb:latest"
+            bare_model = "AliceG4U"
 
     payload = {
         "model": bare_model,
@@ -185,4 +185,4 @@ def get_default_model() -> str:
     models = available_models()
     if models:
         return models[0]
-    return "ollama:alice-m5-cortex-8b-6.3gb:latest"
+    return "ollama:AliceG4U"

@@ -45,7 +45,7 @@ TRUTH_LABEL = "ALICE_SELF_PLAN_ROUNDS_V1"
 # 2026-07-11 live desk: ornith:35b not installed — prefer live tags.
 DEFAULT_CORTEX_PLAN = "ornith:latest"
 DEFAULT_CORTEX_CODE = "satgeze/qwenpaw-9b-heretic-1m:latest"
-FALLBACK_CORTEX_CODE = "krishairnd/Gemma-4-Uncensored:latest"
+FALLBACK_CORTEX_CODE = "AliceG4U"
 # Prefer order when resolving coder cortex against live ollama list.
 PREFERRED_CODER_CORTEXES: tuple[str, ...] = (
     "satgeze/qwenpaw-9b-heretic-1m:latest",
@@ -53,7 +53,7 @@ PREFERRED_CODER_CORTEXES: tuple[str, ...] = (
     "north-mini-code-1.0:latest",
     "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0",
     "ornith:latest",
-    "krishairnd/Gemma-4-Uncensored:latest",
+    "AliceG4U",
 )
 
 # The four worst fails from George's live scorecard → first campaign rounds.

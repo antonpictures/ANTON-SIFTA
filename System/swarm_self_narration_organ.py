@@ -125,7 +125,7 @@ _TRUTH_LABEL = "SWARM_SELF_NARRATION_V1"
 # ── cortex config ─────────────────────────────────────────────────────────
 _SAFE_CORTEX_MODEL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 _HEAVY_CORTEX_MODELS = {
-    "alice-m5-cortex-8b-6.3gb:latest",
+    "AliceG4U",
     "alice-extra-cortex-25.8b-17gb:latest",
 }
 _OLLAMA_GENERATE = os.environ.get(

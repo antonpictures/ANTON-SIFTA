@@ -3593,6 +3593,42 @@ class SiftaDesktop(QMainWindow):
         super().hideEvent(event)
 
     def closeEvent(self, event):
+        # George 2026-10-16: closing the desktop ends the SIFTA OS session.
+        # launchd carries KeepAlive=true on com.sifta.alice.desktop, so a plain
+        # close simply resurrects it ("it restarts auto"). This offers the full
+        # shutdown: launchd booted out, ports dark, models unloaded, RAM free.
+        # The DSH harness chat is a separate service (com.sifta.dsh-web) and is
+        # excluded by name and by the node/@deepseek-ai guard in the script.
+        try:
+            if not getattr(self, "_sifta_shutdown_offered", False):
+                self._sifta_shutdown_offered = True
+                from PyQt6.QtWidgets import QMessageBox
+                _box = QMessageBox(self)
+                _box.setWindowTitle("Shut down SIFTA OS?")
+                _box.setText(
+                    "Shut down ALL of SIFTA OS and free the RAM?\n\n"
+                    "Stops: websites :8890/:8891 \u00b7 WhatsApp ear :3010/:7434\n"
+                    "chorus :8100 \u00b7 watchdogs \u00b7 desktop \u00b7 launchd agents\n"
+                    "Unloads local models from memory.\n\n"
+                    "Without this, launchd restarts the desktop immediately.\n"
+                    "(The harness chat with Alice is NOT affected.)"
+                )
+                _yes = _box.addButton("Shut down SIFTA OS", QMessageBox.ButtonRole.AcceptRole)
+                _no = _box.addButton("Just close (launchd restarts)", QMessageBox.ButtonRole.RejectRole)
+                _box.setDefaultButton(_yes)
+                _box.exec()
+                if _box.clickedButton() is _yes:
+                    _note = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         ".sifta_state", "shutdown_requested")
+                    os.makedirs(os.path.dirname(_note), exist_ok=True)
+                    with open(_note, "w") as _fh:
+                        _fh.write(str(time.time()))
+                    # A dying GUI cannot reliably kill its own body. It leaves a note;
+                    # the NEXT incarnation reads it and performs the shutdown detached.
+                    event.accept()
+                    return
+        except Exception:
+            pass
         self._is_closing = True
         for timer_name in (
             "_attention_director_timer",
@@ -6744,6 +6780,32 @@ if __name__ == "__main__":
         _hot_reload_install()
     except Exception as _hr_exc:
         sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
+
+    # George 2026-10-16: stigmergic shutdown. launchd carries KeepAlive on
+    # this job, so the previous incarnation may have died mid-request. Any
+    # fresh note in .sifta_state/shutdown_requested is obeyed HERE, before
+    # Qt builds a single widget: spawn the detached shutdown, then exit.
+    try:
+        _note = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             ".sifta_state", "shutdown_requested")
+        if os.path.exists(_note):
+            try:
+                _age = time.time() - float(open(_note).read().strip() or 0)
+            except Exception:
+                _age = 1e9
+            if _age < 180:
+                import subprocess as _sp
+                _sp.Popen(
+                    ["/bin/bash", os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "scripts", "sifta_full_shutdown.sh")],
+                    start_new_session=True,
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
+                )
+                os._exit(0)
+    except Exception:
+        pass
 
     desktop = SiftaDesktop()
     desktop.show()

@@ -33,7 +33,11 @@ def test_bridge_writes_journal_schedule_and_run_receipts(tmp_path: Path) -> None
     schedule_rows = (tmp_path / "stigmergic_schedule_receipts.jsonl").read_text(encoding="utf-8").splitlines()
     journal = json.loads(journal_rows[-1])
     assert journal["truth_label"] == "ALICE_LIFE_JOURNAL_ENTRY"
-    assert journal["local_journal_label"] == "12-31-69_16:01"
+    import datetime as _dt
+
+    # 1970-01-01T00:01:50Z rendered in LOCAL time: the string depends on the
+    # zone this body is in, so derive it rather than pinning one zone's digits.
+    assert journal["local_journal_label"] == _dt.datetime.fromtimestamp(110.0).strftime("%m-%d-%y_%H:%M")
     assert json.loads(schedule_rows[-1])["truth_label"] == "STIGMERGIC_SCHEDULE_RECEIPT"
     assert "SENSOR JOURNAL BRIDGE" in summary_for_prompt(state_dir=tmp_path)
 

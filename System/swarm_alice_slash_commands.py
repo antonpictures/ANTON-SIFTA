@@ -44,7 +44,7 @@ _OWNER_LOCAL_CORTEX_MENU: tuple[str, ...] = (
     "ornith-1.5:9b",
     "sifta-qwenpaw-coder:latest",
     "baytout3/ultragemma4-12b-heretic-uncensored:Q8_0",
-    "krishairnd/Gemma-4-Uncensored:latest",
+    "AliceG4U",
 )
 _OWNER_LOCAL_LLM_NAMESPACE = "owner_local_ollama"
 
@@ -92,18 +92,32 @@ def _owner_local_cortex_menu(installed: Optional[List[str]] = None) -> List[str]
     and a removed model disappears from the next menu refresh.
     """
     live = list(installed if installed is not None else _installed_owner_ollama_models())
-    if not live:
-        # Keep a useful offline diagnostic menu when Ollama is still booting.
-        return list(_OWNER_LOCAL_CORTEX_MENU)
-    by_lower = {name.lower(): name for name in live}
     ordered: List[str] = []
-    for preferred in _OWNER_LOCAL_CORTEX_MENU:
-        actual = by_lower.get(preferred.lower())
-        if actual and actual not in ordered:
-            ordered.append(actual)
-    for name in live:
-        if name not in ordered:
-            ordered.append(name)
+    if live:
+        by_lower = {name.lower(): name for name in live}
+        for preferred in _OWNER_LOCAL_CORTEX_MENU:
+            actual = by_lower.get(preferred.lower())
+            if actual and actual not in ordered:
+                ordered.append(actual)
+        for name in live:
+            if name not in ordered:
+                ordered.append(name)
+    else:
+        # Keep a useful offline diagnostic menu when Ollama is still booting.
+        ordered = list(_OWNER_LOCAL_CORTEX_MENU)
+    # The uncensored bonsai lives outside `ollama list` by necessity: Ollama
+    # dropped LoRA support and cannot read the ternary pack, so its adapter runs
+    # live on a PrismML llama-server. Listed only when the server actually
+    # answers — a dead cortex must never appear as selectable.
+    try:
+        from System import swarm_llamacpp_lane as _llamacpp
+
+        if _llamacpp.available():
+            tag = f"{_llamacpp.PREFIX}{_llamacpp.DEFAULT_MODEL}"
+            if tag not in ordered:
+                ordered.append(tag)
+    except Exception:
+        pass
     return ordered
 
 
@@ -675,6 +689,21 @@ def _handle_owner_local_llm_menu(
     if mercury_ok and MERCURY_TAG not in models:
         models = [*models, MERCURY_TAG]
         installed = {*installed, MERCURY_TAG}
+    # Bonsai necenzurat: Ollama a scos suportul LoRA (0.40.6) și nu poate citi
+    # pachetul ternary, deci adapterul rulează pe un llama-server PrismML. Din
+    # aceleași motive ca la Mercury, un inventar `ollama list` nu îl poate
+    # conține niciodată — deci îl declarăm instalat doar când serverul răspunde.
+    # Un cortex mort nu trebuie să pară selectabil.
+    try:
+        from System import swarm_llamacpp_lane as _llamacpp
+
+        _llamacpp_tag = f"{_llamacpp.PREFIX}{_llamacpp.DEFAULT_MODEL}"
+        if _llamacpp.available():
+            if _llamacpp_tag not in models:
+                models = [*models, _llamacpp_tag]
+            installed = {*installed, _llamacpp_tag}
+    except Exception:
+        pass
     value = str(arg or "").strip()
     if value.lower() == "refresh":
         value = ""
@@ -794,6 +823,19 @@ def cortex_switch_label(target: str) -> str:
     Nothing is asserted here that model_is_local() has not checked; when even that cannot be
     read, the label says so rather than guessing.
     """
+    # The uncensored bonsai runs on a llama-server inside this very Mac, but it is
+    # not in the Ollama inventory, so model_is_local() cannot recognise it and the
+    # generic path below would announce "runs on ollama.com". That would be a lie
+    # about where my own cortex lives -- the exact failure this function exists to
+    # prevent, mirrored. So it is answered first, from the lane's own address.
+    try:
+        from System import swarm_llamacpp_lane as _llamacpp
+
+        if _llamacpp.is_llamacpp(target):
+            return (f"Local cortex switched: {target} -- the uncensored bonsai on this Mac "
+                    f"({_llamacpp.BASE_URL}, PrismML llama.cpp). Nothing leaves the machine.")
+    except Exception:
+        pass
     try:
         from System.coin_server import model_is_local
         local = bool(model_is_local(target))

@@ -968,7 +968,7 @@ def compose_line(occasion: str = "farewell", *, topic: str = "",
             model = resolve_ollama_model(app_context="stigmergic_dialogue")
         except Exception:
             model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL",
-                                   "alice-m5-cortex-8b-6.3gb:latest")
+                                   "AliceG4U")
 
     state = _gather_state(window)
     line = _ollama_compose(

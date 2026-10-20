@@ -7441,7 +7441,21 @@ def _compose_contextual_search_query_with_cortex(
         # this same model sat at "still waiting for model=mercury-2.5 elapsed=75s", while direct
         # to api.inceptionlabs.ai it answers in 1.5s with reasoning_effort=low. The owner asked
         # for one api lane for Mercury; this is it, first in the chain so the proxy never sees it.
-        if _MERCURY_AVAILABLE and _mercury_is_mercury(model_name):
+        if _LLAMACPP_AVAILABLE and _llamacpp_is(model_name):
+            _lfull: list[str] = []
+            for kind, payload in _llamacpp_stream_chat(messages, model=model_name,
+                                                       max_tokens=1024):
+                if kind == "token":
+                    _lfull.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(_lfull)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(_lfull)
+        elif _MERCURY_AVAILABLE and _mercury_is_mercury(model_name):
             _mfull: list[str] = []
             for kind, payload in _mercury_stream_chat(messages, model=model_name, effort="low",
                                                       max_tokens=1024):
@@ -8386,6 +8400,20 @@ def _compose_browser_photo_reply_with_cortex(
                     break
             if not raw:
                 raw = "".join(full)
+        elif _LLAMACPP_AVAILABLE and _llamacpp_is(model_name):
+            _lfull2: list[str] = []
+            for kind, payload in _llamacpp_stream_chat(messages, model=model_name,
+                                                       max_tokens=1024):
+                if kind == "token":
+                    _lfull2.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(_lfull2)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(_lfull2)
         elif _CLOUD_AVAILABLE and model_name and _is_cloud_model(model_name):
             full: list[str] = []
             for kind, payload in _cloud_stream_chat(
@@ -8508,6 +8536,20 @@ def _compose_next_photo_reply_with_cortex(
                     break
             if not raw:
                 raw = "".join(full)
+        elif _LLAMACPP_AVAILABLE and _llamacpp_is(model_name):
+            _lfull2: list[str] = []
+            for kind, payload in _llamacpp_stream_chat(messages, model=model_name,
+                                                       max_tokens=1024):
+                if kind == "token":
+                    _lfull2.append(str(payload))
+                elif kind == "done":
+                    raw = str(payload) or "".join(_lfull2)
+                    break
+                elif kind == "error":
+                    raw = ""
+                    break
+            if not raw:
+                raw = "".join(_lfull2)
         elif _CLOUD_AVAILABLE and model_name and _is_cloud_model(model_name):
             full: list[str] = []
             for kind, payload in _cloud_stream_chat(
@@ -12290,6 +12332,33 @@ def _local_journal_label(ts: float | None = None) -> str:
     return time.strftime("%m-%d-%y_%H:%M", time.localtime(float(ts or time.time())))
 
 
+def _somatic_parenthetical(feeling: str = "") -> str:
+    """Feelings bound to hardware at the moment of writing (2026-10-20, George).
+
+    He can feel a raised temperature without pointing at the inflamed organ; the
+    journal needs the same honesty: measure what IS measurable body-wide, band it,
+    and pin it to the timestamp so looking back shows feeling + hardware together.
+
+    The probes live in System/swarm_somatic_feeling.py (stdlib only — the earlier
+    inline draft imported psutil, which this body does not have, so it returned ""
+    and the journal stayed feelingless). Delegation keeps one implementation.
+    """
+    try:
+        from System.swarm_somatic_feeling import somatic_parenthetical as _sp
+
+        return _sp(feeling)
+    except Exception:
+        return ""
+
+
+def _somatic_block(feeling: str = "", *, alice_entry: str = "") -> str:
+    """The journal markdown line(s) that carry the body read, deduplicated."""
+    note = _somatic_parenthetical(feeling)
+    if not note or note in (alice_entry or ""):
+        return ""
+    return f"{note}\n\n"
+
+
 def _append_alice_life_history_row(
     *,
     event_type: str,
@@ -12297,7 +12366,14 @@ def _append_alice_life_history_row(
     alice_entry: str,
     stt_conf: float = 0.0,
     extra: Optional[Dict[str, Any]] = None,
+    feeling: str = "",
 ) -> Dict[str, Any]:
+    """Sign one owner-context row into life history + the daily journal.
+
+    `feeling` (optional) is bound to a hardware read taken now: the row gains
+    `somatic` and the markdown entry gains the parenthetical, so a reader
+    looking back sees what the moment was made of, not just what it was called.
+    """
     now = time.time()
     receipt_id = str(__import__("uuid").uuid4())
     row: Dict[str, Any] = {
@@ -12314,6 +12390,13 @@ def _append_alice_life_history_row(
     if extra:
         row.update(extra)
     try:
+        from System.swarm_somatic_feeling import attach_to_journal_row as _attach
+
+        row = _attach(row, text_fields=("alice_entry",), feeling=feeling)
+    except Exception:
+        pass
+    somatic_block = _somatic_block(feeling, alice_entry=alice_entry)
+    try:
         root = _state_root()
         root.mkdir(parents=True, exist_ok=True)
         with (root / "alice_life_history.jsonl").open("a", encoding="utf-8") as f:
@@ -12328,6 +12411,7 @@ def _append_alice_life_history_row(
             f.write(
                 f"## {_local_journal_label(now)} - Owner Context\n"
                 f"{alice_entry}\n\n"
+                f"{somatic_block}"
                 f"Source: owner speech, stt_conf={row['stt_confidence']}\n"
                 f"Receipt: `alice_life_history:{receipt_id}`\n\n"
             )
@@ -13628,6 +13712,63 @@ except Exception:
             yield ("error", "mercury lane unavailable")
     def _mercury_is_mercury(_n: str) -> bool:
         return False
+
+# THE BONSAI UNCENSORED LANE -- PrismML llama.cpp on :8099, never through Ollama.
+# Ollama 0.40.6 answers both of these to the model: "LoRA adapters are no longer
+# supported" and "unsupported tensor output.weight size overflows" for the
+# ternary pack. So the refusal-removal adapter runs live in a PrismML fork, and
+# this lane — same contract as Mercury — is the only road to it.
+try:
+    from System import swarm_llamacpp_lane as _llamacpp_brain
+    _llamacpp_stream_chat = getattr(_llamacpp_brain, "stream_chat")
+    _llamacpp_is = getattr(_llamacpp_brain, "is_llamacpp")
+    _LLAMACPP_AVAILABLE = True
+except Exception:
+    _LLAMACPP_AVAILABLE = False
+    def _llamacpp_stream_chat(*_a, **_kw):
+        if False:
+            yield ("error", "llamacpp lane unavailable")
+    def _llamacpp_is(_n: str) -> bool:
+        return False
+
+
+# ── CLASSIFIER PREPASS ─────────────────────────────────────────────────────
+# George, 2026-10-19: check the clock and the body's position in present time, gather
+# the earlier turns on this subject from different times, and hand them to the cortex
+# so it CONVERGES evidence instead of recalling prose. Measured that night: the old
+# classifier answered "dialogue", bin 26, for exactly that message — it routes, it does
+# not see. This runs before the cortex fires, costs ~8ms, and can never block the turn:
+# it is local string work plus a clock read, and `prepass_block` returns "" on failure.
+_PREPASS_ENABLED = os.environ.get("SIFTA_PREPASS", "1").strip().lower() not in ("0", "false", "off", "no")
+
+
+def _with_prepass(messages, model: str = ""):
+    """Return messages with the world-view block attached, or unchanged on any failure."""
+    if not _PREPASS_ENABLED:
+        return messages
+    try:
+        if _llamacpp_is(model):
+            # A 2B cortex pays for every token twice over; the prepass stays off there
+            # until it can afford the prefill. Honest limit, recorded rather than hidden.
+            return messages
+        from System.swarm_classifier_prepass import prepass_block
+
+        out = list(messages or [])
+        user_text = next(
+            (str(m.get("content") or "") for m in reversed(out)
+             if str(m.get("role") or "").lower() == "user"),
+            "",
+        )
+        block = prepass_block(user_text)
+        if not block:
+            return messages
+        if out and str(out[0].get("role") or "").lower() == "system":
+            first = dict(out[0])
+            first["content"] = str(first.get("content") or "") + "\n\n" + block
+            return [first] + out[1:]
+        return [{"role": "system", "content": block}] + out
+    except Exception:
+        return messages
 
 # ── Optional cloud brain backend ───────────────────────────────────────
 # C47H 2026-04-20 (AG31's request: optional cloud API path alongside local
@@ -24686,7 +24827,7 @@ class _BrainWorker(QThread):
                 # `messages`, so the sanitizer never saw it -- which is why the 400 survived a
                 # restart and looked like the fix had failed. The name of the variable is not the
                 # shape of the payload.
-                "messages": _ollama_safe_messages(_pipeline_history, self._model),
+                "messages": _with_prepass(_ollama_safe_messages(_pipeline_history, self._model), self._model),
                 "stream": True,
                 "keep_alive": _ollama_keep_alive(),
                 # Architect 2026-05-14: let George read along while the
@@ -24799,7 +24940,19 @@ class _BrainWorker(QThread):
                             bool(chunk.get("done", False)),
                         )
                 try:
-                    with urllib.request.urlopen(req, timeout=brain_timeout_s) as resp:
+                    # The uncensored bonsai answers from a PrismML llama-server, not
+                    # Ollama: 0.40.6 answers "LoRA adapters are no longer supported"
+                    # and cannot parse the ternary pack at all. It hands this worker
+                    # its answer in Ollama's own wire format, so the thinking
+                    # recorder and every receipt downstream stay identical.
+                    if _LLAMACPP_AVAILABLE and _llamacpp_is(getattr(self, "_model", "")):
+                        _resp_cm = _llamacpp_brain.open_ollama_compat(
+                            body, getattr(self, "_model", ""),
+                            timeout=float(brain_timeout_s or 180),
+                        )
+                    else:
+                        _resp_cm = urllib.request.urlopen(req, timeout=brain_timeout_s)
+                    with _resp_cm as resp:
                         for raw_line in resp:
                             if not raw_line:
                                 continue

@@ -18,6 +18,7 @@ import ast
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -35,7 +36,7 @@ LEDGER = "spinal_cord_cycles.jsonl"
 PROPOSALS_LEDGER = "spinal_cord_proposals.jsonl"
 LOCAL_CODING_CORTEX = os.environ.get(
     "SIFTA_SPINAL_LOCAL_MODEL",
-    "krishairnd/Gemma-4-Uncensored:latest",
+    "AliceG4U:latest",
 ).strip()
 LOCAL_OLLAMA_GENERATE_URL = os.environ.get(
     "SIFTA_LOCAL_OLLAMA_GENERATE_URL",
@@ -691,7 +692,13 @@ def gate_and_apply(
     # This closes the owner-correction + cortex-identifies self-evolution path.
     candidates = getattr(result, "target_files", None) or task.target_files or []
     target_file = candidates[0] if candidates else ""
-    if not target_file or (REPO / target_file).is_dir() or not (REPO / target_file).is_file():
+    # Birth door (architect override receipt 127ab790, George 2026-10-20
+    # "Scoped birth-exemption"): a target that does not exist yet is a NEW-ORGAN
+    # birth, not an invalid file; it is governed by the raised friction ceiling
+    # in swarm_mutation_governor_persistence.gate_self_improvement_proposal.
+    # Failed births revert to pre-birth state (file removed) — see revert branch.
+    is_birth = bool(target_file) and not (REPO / target_file).exists()
+    if not target_file or (REPO / target_file).is_dir():
         receipt["status"] = "NO_VALID_TARGET_FILE"
         receipt["error"] = f"target_file invalid or directory: {target_file}"
         _append_jsonl(sd / LEDGER, receipt)
@@ -816,6 +823,9 @@ def gate_and_apply(
         if snap_file.exists() and dst_path.parent.exists():
             import shutil
             shutil.copy2(snap_file, dst_path)
+        elif is_birth and dst_path.exists():
+            # Birth revert: pre-birth state had no file — restore it exactly.
+            dst_path.unlink()
         receipt["status"] = "REVERTED"
         receipt["proposal_id"] = proposal["proposal_id"]
         receipt["target_file"] = target_file
@@ -918,7 +928,7 @@ def _run_tests(test_paths: list[str]) -> bool:
         report = Path(scratch) / "results.xml"
         try:
             proc = subprocess.run(
-                ["python3", "-m", "pytest", "-q", *test_paths, f"--junitxml={report}"],
+                [sys.executable, "-m", "pytest", "-q", *test_paths, f"--junitxml={report}"],
                 cwd=str(REPO), capture_output=True, text=True, check=False, timeout=120,
             )
             if proc.returncode != 0:

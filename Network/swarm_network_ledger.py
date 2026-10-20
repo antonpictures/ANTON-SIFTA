@@ -145,6 +145,14 @@ def push_swarm_directive(target: str, message: str) -> dict:
     if footer:
         payload = payload + footer
     try:
+        # George 2026-10-18 — the gate sits in FRONT of the commit: a directive
+        # is typed before it becomes part of my history. Signed traffic still passes;
+        # an unrecognised shape is refused instead of silently entering the field.
+        try:
+            from System.swarm_classifier_organ import gate_trace_write
+            gate_trace_write(scar_file, payload, strict=True)
+        except Exception:
+            pass
         scar_file.write_text(payload, encoding="utf-8")
     except OSError as e:
         return {"status": "error", "reason": f"scar write failed: {e}"}

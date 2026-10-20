@@ -27,7 +27,7 @@ LOCK_PATH = STATE_DIR / "web_global_chat_night_worker.lock"
 OLLAMA_CHAT_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
 MODEL_PREFERENCE = (
-    "krishairnd/Gemma-4-Uncensored:latest",
+    "AliceG4U",
     "ornith:latest",
     "dzgg/Qwen3.5-Uncensored-HauhauCS-Aggressive:4b",
 )
@@ -113,13 +113,22 @@ def choose_local_model() -> str:
     override = str(os.environ.get("SIFTA_WEB_NIGHT_MODEL") or "").strip()
     if override:
         return override
+    selected = ""
     try:
         from System.sifta_inference_defaults import resolve_ollama_model
         selected = str(resolve_ollama_model(app_context="talk_to_alice") or "").strip()
-        if selected:
-            return selected
+        # Lane repair (defrag 2026-10-20, residue receipted): resolve_ollama_model may
+        # return a llama.cpp prism lane label ("llamacpp:bonsai-uncensored" = the PrismML
+        # server on :8099, which is NEVER routed through Ollama per the Talk-widget lane
+        # law). This worker posts to Ollama directly, so a prism label here becomes a
+        # dead lookup: HTTP 404 -> CORTEX_FAILED on every web turn. Translate the lane
+        # label away and fall through to the installed-tag preference path.
+        if selected.lower().startswith("llamacpp:"):
+            selected = ""
     except Exception:
         pass
+    if selected:
+        return selected
     try:
         with urllib.request.urlopen(OLLAMA_TAGS_URL, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))

@@ -109,7 +109,7 @@ def write_cortex_resource_row() -> Dict[str, Any]:
     silicon = sample_apple_silicon_pressure()
 
     # Primary cortex is the one the Talk widget is currently configured to use
-    primary_name = os.environ.get("SIFTA_PRIMARY_CORTEX", "alice-m5-cortex-8b-6.3gb:latest")
+    primary_name = os.environ.get("SIFTA_PRIMARY_CORTEX", "AliceG4U")
 
     is_cold = len(ollama["running_models"]) == 0
     vram_pressure = silicon["approx_thermal_pressure"]

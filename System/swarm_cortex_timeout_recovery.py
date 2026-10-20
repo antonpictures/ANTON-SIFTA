@@ -190,7 +190,7 @@ def _fallback_local_model() -> str:
             return str(DEFAULT_OLLAMA_MODEL)
     except Exception:
         pass
-    return "alice-m5-cortex-8b-6.3gb:latest"
+    return "AliceG4U"
 
 
 def record_cortex_reroute(

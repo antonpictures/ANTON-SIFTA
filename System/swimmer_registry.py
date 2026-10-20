@@ -62,8 +62,8 @@ _REGISTRY = _STATE / "swimmer_registry.jsonl"
 try:
     from System.sifta_inference_defaults import resolve_ollama_model, get_default_ollama_model
 except ImportError:
-    def resolve_ollama_model(**kw): return "alice-m5-cortex-8b-6.3gb:latest"
-    def get_default_ollama_model(): return "alice-m5-cortex-8b-6.3gb:latest"
+    def resolve_ollama_model(**kw): return "AliceG4U"
+    def get_default_ollama_model(): return "AliceG4U"
 
 
 class SwimmerStatus(str, Enum):

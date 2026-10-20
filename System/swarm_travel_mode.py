@@ -49,7 +49,7 @@ TRAVEL_PLAN_RE = re.compile(
 )
 FLIGHT_RE = re.compile(r"\b(?:flight|airport|turkish|airlines?|baggage|luggage)\b", re.IGNORECASE)
 CONSULATE_RE = re.compile(r"\b(?:consulate|passport|visa|embassy)\b", re.IGNORECASE)
-LOCAL_MODEL_FALLBACK = "alice-m5-cortex-8b-6.3gb:latest"
+LOCAL_MODEL_FALLBACK = "AliceG4U"
 
 
 def _state_dir(state_dir: Path | str | None = None) -> Path:

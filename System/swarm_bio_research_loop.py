@@ -25,7 +25,7 @@ from System.jsonl_file_lock import append_line_locked, read_text_locked
 try:
     from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
 except Exception:
-    CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
+    CANONICAL_OLLAMA_DEFAULT = "AliceG4U"
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"

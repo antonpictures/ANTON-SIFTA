@@ -39,7 +39,7 @@ if str(_REPO) not in sys.path:
 try:
     from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
 except Exception:
-    CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
+    CANONICAL_OLLAMA_DEFAULT = "AliceG4U"
 
 try:
     from Kernel.inference_economy import record_inference_fee, calculate_fee

@@ -10,6 +10,16 @@
 # He asked never to do this by hand again, so this supervisor checks and repairs on a loop, and
 # writes one line per repair. It does not hide anything: every action is appended, not summarised.
 REPO="/Users/ioanganton/Music/ANTON_SIFTA"
+
+# George 2026-10-16: honor the shutdown sentinel — never restart organs
+# behind the owner's back after a full SIFTA OS shutdown. Forgets after 12 h.
+SIFTA_STATE_DIR="$REPO/.sifta_state"
+if [ -f "$SIFTA_STATE_DIR/shutdown_active" ]; then
+  _mt=$(stat -f%m "$SIFTA_STATE_DIR/shutdown_active" 2>/dev/null || echo 0)
+  if [ $(( $(date +%s) - _mt )) -lt 43200 ]; then
+    exit 0
+  fi
+fi
 LOG="$REPO/.sifta_state/body_essentials.log"
 RECEIPT="$REPO/.sifta_state/body_essentials_receipts.jsonl"
 cd "$REPO" || exit 1

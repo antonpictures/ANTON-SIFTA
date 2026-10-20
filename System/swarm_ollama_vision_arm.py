@@ -48,9 +48,9 @@ _LOCAL_VISION_NEEDLES: tuple[str, ...] = (
 # should be his local gemma4, not a paid cloud arm.
 # George 2026-06-18: Krishna (krishairnd/Gemma-4) is the default local image/video eye —
 # reuse the warm Ollama cortex instead of loading a second MLX VLM into RAM.
-LOCAL_VISION_EYE_DEFAULT = "krishairnd/Gemma-4-Uncensored:latest"  # r1386: renamed identifier only; real Ollama tag unchanged
+LOCAL_VISION_EYE_DEFAULT = "AliceG4U"  # r1386: renamed identifier only; real Ollama tag unchanged
 _PREFERRED_VISION_NEEDLES: tuple[str, ...] = (
-    "krishairnd/gemma-4-uncensored",
+    "AliceG4U",
     "sifta-gemma4-alice",
     "gemma4",
     "gemma-4",

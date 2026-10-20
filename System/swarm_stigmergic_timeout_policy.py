@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
 
 SCHEMA = "SIFTA_STIGMERGIC_TIMEOUT_POLICY_V1"
 LEDGER_NAME = "stigmergic_timeout_policy.jsonl"
-LOCAL_UNCENSORED_CORTEX_FALLBACK = "krishairnd/Gemma-4-Uncensored:latest"  # r1386: renamed identifier only; real Ollama tag unchanged
+LOCAL_UNCENSORED_CORTEX_FALLBACK = "AliceG4U"  # r1386: renamed identifier only; real Ollama tag unchanged
 
 
 def _state_dir(state_dir: str | Path | None = None) -> Path:

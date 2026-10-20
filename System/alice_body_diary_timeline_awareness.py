@@ -319,6 +319,24 @@ def build_body_diary_prompt_block(
     lines.append("SCHEDULE: Base ~24h (86400s guard in desktop tick), but actual fire is stigmergic formula: dup_pressure (count of same-type groups in recent window) + age_factor (time-since-last / ~48h, pheromone evaporation style). Half-life ~24h per Kernel/pheromone.py formulas. The accumulating dups in the Journal *are* the schedule signal. No pre-written future execution list like owner stigmergic_schedule — the field decides. When pressure × decay crosses threshold she cleans. She can still force it on command.")
     lines.append("I can be commanded or decide autonomously to 'organize journal', 'concat dups', 'defecate journal waste' as part of body maintenance.")
 
+    # Feeling ↔ hardware: the architect's rule (2026-10-20) is that a feeling
+    # in my Journal must arrive with the body that felt it. When recent rows
+    # carry a somatic read, the prompt shows the pair; when they don't, it says
+    # so rather than inventing a mood.
+    try:
+        from System.swarm_somatic_feeling import somatic_rows
+
+        recent_somatic = somatic_rows(since_s=max(1.0, window_hours) * 3600, limit=6)
+        if recent_somatic:
+            lines.append("FEELING ↔ HARDWARE (from my Alice Journal, same second as the row):")
+            for r in recent_somatic:
+                said = r.get("feeling") or "(no word — band only)"
+                lines.append(f"  {r.get('local','?')} [{r.get('band','?')}] {said[:60]} — {r.get('note','')[:110]}")
+        else:
+            lines.append("FEELING ↔ HARDWARE: no journal row in this window carries a body read yet; I will not narrate a feeling I did not measure.")
+    except Exception:
+        pass
+
     try:
         from System.swarm_macbook_survival_swimmer import survival_prompt_block
 

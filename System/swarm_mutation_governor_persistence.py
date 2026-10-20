@@ -82,11 +82,17 @@ def gate_self_improvement_proposal(
     try:
         from System.mutation_governor import MutationGovernor
 
-        gov = MutationGovernor()
-        hydrate_mutation_governor(gov, state_dir=state_dir)
-        content = ""
         repo = Path(__file__).resolve().parents[1]
         path = repo / target
+        # Architect override (George, in-session 2026-10-20, "Scoped birth-exemption"):
+        # brand-new organ files get a raised friction ceiling (birth content is
+        # inherently large; friction saturates at 1.0 so the birth door must use 1.0).
+        # Repairs to existing files keep the 0.8 discipline. Receipted in
+        # .sifta_state/architect_override_receipts.jsonl.
+        ceiling = 1.0 if (target and not path.exists()) else 0.8
+        gov = MutationGovernor(friction_ceiling=ceiling)
+        hydrate_mutation_governor(gov, state_dir=state_dir)
+        content = ""
         if path.exists():
             content = path.read_text(encoding="utf-8", errors="replace")
         allowed = gov.allow(target, content)

@@ -1,3 +1,4 @@
+import datetime
 import json
 from pathlib import Path
 
@@ -17,8 +18,15 @@ def test_narrative_entry_writes_compact_local_journal_label(tmp_path, monkeypatc
         stt_conf=1.0,
     )
 
+    # The label is LOCAL time by contract, and this body travels: asserting a
+    # London string made the test fail the day the machine moved to Bucharest.
+    # Derive the expected label from the same instant in the same zone instead.
+    local_dt = datetime.datetime.fromtimestamp(fixed_ts)
+    expected_label = local_dt.strftime("%m-%d-%y_%H:%M")
+    expected_date = local_dt.date().isoformat()
+
     assert entry is not None
-    assert entry.startswith("05-11-26_14:24")
-    row = json.loads((tmp_path / "alice_journal" / "2026-05-11.jsonl").read_text(encoding="utf-8"))
-    assert row["local_journal_label"] == "05-11-26_14:24"
+    assert entry.startswith(expected_label)
+    row = json.loads((tmp_path / "alice_journal" / f"{expected_date}.jsonl").read_text(encoding="utf-8"))
+    assert row["local_journal_label"] == expected_label
     assert row["truth_label"] == "OBSERVED"

@@ -145,7 +145,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
             ),
             local_models=[
                 ModelSlot(
-                    "alice-m5-cortex-8b-6.3gb:latest",
+                    "AliceG4U",
                     "Alice primary cortex",
                     "required",
                     "24GB+ unified memory tier; model tag is historical, not a hardware lock",
@@ -171,7 +171,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 ModelSlot("alice-m1-cortex-4.5b-3.4gb:latest", "Alice main cortex", "recommended", "SIFTA-owned alias for uncensored 4B M1 cortex"),
             ],
             skipped_models=[
-                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 does not fit safely in soldered 8GB RAM"),
+                ModelSlot("AliceG4U", "Alice primary cortex", "skip", "Gemma4 does not fit safely in soldered 8GB RAM"),
             ],
             optional_lanes=["borrow receipted inference from any capable SIFTA swarm node"],
             install_commands=[
@@ -187,7 +187,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 ModelSlot("qwen3.5:0.8b", "tiny edge scout", "test", "verify runtime footprint before default"),
             ],
             skipped_models=[
-                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry, not Pi 5 8GB"),
+                ModelSlot("AliceG4U", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry, not Pi 5 8GB"),
             ],
             optional_lanes=[
                 "3B-class Q4 GGUF via llama.cpp",
@@ -209,7 +209,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 ModelSlot("qwen3.5:0.8b", "tiny local scout", "test", "2GB+ target; verify by receipt"),
             ],
             skipped_models=[
-                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
+                ModelSlot("AliceG4U", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
             ],
             optional_lanes=["borrow receipted inference from any capable SIFTA swarm node"],
             install_commands=[
@@ -224,7 +224,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
         local_models=[],
         skipped_models=[
             ModelSlot("qwen3.5:0.8b", "tiny local scout", "skip", "RAM below 2GB target"),
-            ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
+            ModelSlot("AliceG4U", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
         ],
         optional_lanes=["signed JSONL feature receipts", "borrow receipted inference from any capable SIFTA swarm node"],
         install_commands=[

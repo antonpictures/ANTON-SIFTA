@@ -237,8 +237,13 @@ def test_consolidator_opens_journal_and_receipt_rows(tmp_path: Path) -> None:
     journal = _rows(journal_files[0])[-1]
     assert journal["kind"] == "EPISODIC_NARRATIVE"
     assert journal["event_type"] == "owner_activity_observed"
-    assert journal["local_journal_label"] == "05-08-26_12:53"
-    assert journal["local_date"] == "2026-05-08"
+    # LOCAL by contract: derive from the instant, so a timezone move (travel
+    # mode) cannot break a journal assertion.
+    import datetime as _dt
+
+    _local = _dt.datetime.fromtimestamp(now)
+    assert journal["local_journal_label"] == _local.strftime("%m-%d-%y_%H:%M")
+    assert journal["local_date"] == _local.date().isoformat()
     assert "I observed George coding" in journal["entry"]
 
     receipt = _rows(tmp_path / "journal_schedule_receipts.jsonl")[-1]
@@ -247,9 +252,11 @@ def test_consolidator_opens_journal_and_receipt_rows(tmp_path: Path) -> None:
     assert receipt["evidence"]["camera_presence"]["owner_present"] is True
     assert receipt["evidence"]["audio_activity"]["voice_activity"] is True
 
-    journal_md = (tmp_path / "alice_journal" / "2026-05-08.md").read_text(encoding="utf-8")
-    assert "# 2026-05-08" in journal_md
-    assert "### 05-08-26_12:53" in journal_md
+    journal_md = (tmp_path / "alice_journal" / f"{_local.date().isoformat()}.md").read_text(
+        encoding="utf-8"
+    )
+    assert f"# {_local.date().isoformat()}" in journal_md
+    assert f"### {_local.strftime('%m-%d-%y_%H:%M')}" in journal_md
     assert "I observed George coding" in journal_md
     assert "camera=owner_present" in journal_md
     assert "audio=voice_activity" in journal_md

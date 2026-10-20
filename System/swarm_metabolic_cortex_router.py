@@ -87,7 +87,7 @@ def _get_installed_capable() -> List[Dict[str, Any]]:
     except Exception:
         # safe fallback: common installed
         return [
-            {"id": "alice-m5-cortex-8b-6.3gb:latest", "is_vision_capable": True, "is_tool_capable": True},
+            {"id": "AliceG4U", "is_vision_capable": True, "is_tool_capable": True},
             {"id": "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest", "is_vision_capable": False, "is_tool_capable": False},
         ]
 
@@ -154,7 +154,7 @@ def route_cortex(turn_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         if diauxic.get("tier") == TIER_HOLD and diauxic.get("lag_phase"):
             write_lag_phase_receipt(diauxic, state_dir=_get_state_dir())
             # Hold: prefer local canonical until next turn after lag receipt.
-            pick = str(turn.get("local_model") or "alice-m5-cortex-8b-6.3gb:latest")
+            pick = str(turn.get("local_model") or "AliceG4U")
             reason = f"diauxic_lag_phase:{diauxic.get('reason')}"
             rec = {
                 "ts": ts,
@@ -203,7 +203,7 @@ def route_cortex(turn_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         return {"model": chosen, "reason": reason, "receipt_id": rid}
 
     if not installed:
-        pick = "alice-m5-cortex-8b-6.3gb:latest"
+        pick = "AliceG4U"
         reason = "no installed models discovered; fallback to canonical 8B"
         rec = {"ts": ts, "round": "r498", "chosen_model": pick, "reason": reason, "receipt_id": rid, "turn": {k: turn.get(k) for k in ("has_images","needs_tools","task_type","owner_override") if k in turn}}
         _append_route_receipt(rec)
@@ -272,7 +272,7 @@ def route_cortex(turn_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any
     # Higher speed_hint means faster/cheaper. Prefer that when no warm model
     # narrows the list, so a cold 27B does not beat a cold capable 8B.
     scored = sorted(pick_list, key=lambda m: _get_speed_hint(str(m.get("id") or "")), reverse=True)
-    pick = str(scored[0].get("id") or "alice-m5-cortex-8b-6.3gb:latest")
+    pick = str(scored[0].get("id") or "AliceG4U")
 
     # 6. reason with all signals
     warm_used = bool(warm_capable)

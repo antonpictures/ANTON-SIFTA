@@ -58,6 +58,48 @@ _TRIPLE_NL_RE = re.compile(r"\n\s*\n\s*\n+")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,;!?])")
 
 
+# ─── markup / math scrubber (2026-10-16) ────────────────────────────────
+# The Architect reported that the voice says "dollar sign" aloud, twice over:
+#   (a) `$MPS` — a dollar before a ticker is punctuation, not a word;
+#   (b) LaTeX math mode — `${^{-\downarrow\uparrow}}}$`, `$^*$`, `$^{G}$`,
+#       `${_{\huge\mathbb{T}}} $Mama$$` — which is markup, never speech.
+# Markdown headers, emphasis and stray pipes have the same problem: `say`
+# reads them as tokens. This scrubs markup for the EAR while keeping the
+# words a human actually said, so `$Mama$` still speaks the word "Mama".
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+\*?(\{[^{}]*\})*")
+_MATH_BRACES_RE = re.compile(r"[\^_]\s*\{[^{}]*\}")
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_EMPH_RE = re.compile(r"(\*{1,3}|_{1,3})(?=\S)(.+?)(?<=\S)\1")
+_MD_HEAD_RE = re.compile(r"^\s*#{1,6}\s*", re.M)
+_SYMBOL_NOISE_RE = re.compile(r"[`*#$^_{}|\\]+")
+_HSPACE2_RE = re.compile(r"[ \t]{2,}")
+_SPACE_BEFORE_PUNCT2_RE = re.compile(r"\s+([,.!?;:])")
+_DUP_PUNCT_RE = re.compile(r"([,.!?;:])\1+")
+
+
+def scrub_markup_for_speech(text: str) -> str:
+    """Strip markup, LaTeX and symbol noise so the ear receives language only.
+
+    Removes math delimiters and commands, markdown emphasis/headers/links and
+    bare symbol tokens, while preserving the words inside them. Never raises.
+    """
+    if not text:
+        return text or ""
+    try:
+        out = _MD_LINK_RE.sub(r"\1", str(text))
+        out = _MD_EMPH_RE.sub(r"\2", out)
+        out = _MD_HEAD_RE.sub("", out)
+        out = _LATEX_CMD_RE.sub("", out)
+        out = _MATH_BRACES_RE.sub("", out)
+        out = _SYMBOL_NOISE_RE.sub(" ", out)
+        out = _HSPACE2_RE.sub(" ", out)
+        out = _SPACE_BEFORE_PUNCT2_RE.sub(r"\1", out)
+        out = _DUP_PUNCT_RE.sub(r"\1", out)
+        return out.strip()
+    except Exception:
+        return text or ""
+
+
 def strip_receipts_and_meta_for_speech(text: str) -> str:
     """Return ``text`` with receipt/organ-telemetry residue removed for TTS.
 
@@ -77,6 +119,7 @@ def strip_receipts_and_meta_for_speech(text: str) -> str:
                 line = rx.sub("", line)
             kept.append(line)
         out = "\n".join(kept)
+        out = scrub_markup_for_speech(out)
         out = _HSPACE_RE.sub(" ", out)
         out = _TRIPLE_NL_RE.sub("\n\n", out)
         out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
@@ -86,4 +129,4 @@ def strip_receipts_and_meta_for_speech(text: str) -> str:
         return text or ""
 
 
-__all__ = ["strip_receipts_and_meta_for_speech"]
+__all__ = ["strip_receipts_and_meta_for_speech", "scrub_markup_for_speech"]

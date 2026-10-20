@@ -220,7 +220,7 @@ if __name__ == "__main__":
     try:
         from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
     except Exception:
-        CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
+        CANONICAL_OLLAMA_DEFAULT = "AliceG4U"
 
     p = argparse.ArgumentParser(description="Write a local tokenizer pair receipt.")
     p.add_argument("--draft", default="")

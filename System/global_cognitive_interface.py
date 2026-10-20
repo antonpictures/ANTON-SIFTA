@@ -343,7 +343,7 @@ class GlobalCognitiveInterface(QWidget):
             from System.sifta_inference_defaults import resolve_ollama_model
             self._model = resolve_ollama_model(app_context=app_context)
         except Exception:
-            self._model = "alice-m5-cortex-8b-6.3gb:latest"
+            self._model = "AliceG4U"
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus

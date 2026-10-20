@@ -1,0 +1,3 @@
+- insert:
+    - id: sifta-brand
+      name: '@local/sifta-brand'

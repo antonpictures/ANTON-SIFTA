@@ -173,6 +173,11 @@ def _write_differential_scar(matrix: dict, checks: dict,
         "authors": "AG31+C47H",
     }
     try:
+        try:
+            from System.swarm_classifier_organ import gate_trace_write
+            gate_trace_write(_LEDGER, json.dumps(scar, separators=(",", ":")), strict=True)
+        except Exception:
+            pass
         with open(_LEDGER, "a") as f:
             f.write(json.dumps(scar, separators=(",", ":")) + "\n")
         print(f"[DIFF] SCAR written → repair_log.jsonl  event=SUBSTRATE_CLOSURE_DIFFERENTIAL")

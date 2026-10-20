@@ -44,7 +44,7 @@ except Exception:  # pragma: no cover
     CANONICAL_CLOUD_CLAUDE = "claude:claude-code-cli-default"
     CANONICAL_CLOUD_CODEX = "codex:gpt-5.5"
     CANONICAL_CLOUD_GROK = "grok:grok-4.3"
-    CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"
+    CANONICAL_OLLAMA_DAILY = "AliceG4U"
     CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 

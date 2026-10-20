@@ -216,6 +216,10 @@ _NON_OLLAMA_RUNTIME_PREFIXES: tuple[str, ...] = (
     "mlx:",
     "mlx-vlm:",
     "diffusion:",
+    # Bonsai necenzurat: llama-server din fork-ul PrismML, nu Ollama.
+    # Ollama a scos LoRA în 0.40.6 și nu citește pachetul ternary, deci
+    # acest cortex trăiește în afara inventarului `ollama list`.
+    "llamacpp:",
 )
 
 

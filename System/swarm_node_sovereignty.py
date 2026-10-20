@@ -42,7 +42,7 @@ SMALL_LOCAL_MODELS: tuple[str, ...] = (
 )
 
 HEAVY_LOCAL_MODELS: tuple[str, ...] = (
-    "alice-m5-cortex-8b-6.3gb:latest",
+    "AliceG4U",
     "huihui_ai/gemma-4-abliterated:latest",
     "gemma-4:latest",
 )

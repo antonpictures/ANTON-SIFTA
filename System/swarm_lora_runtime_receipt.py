@@ -32,7 +32,7 @@ _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "lora_runtime_receipts.jsonl"
 
 LORA_CANDIDATE_MODEL = "sifta-gemma4-alice-lora:latest"
-BASELINE_MODEL = "alice-m5-cortex-8b-6.3gb:latest"
+BASELINE_MODEL = "AliceG4U"
 MERGED_Q4_GGUF = _REPO / "data/alice_e2b_lora_fused/alice-gemma4-lora-q4.gguf"
 MERGE_MANIFEST = _REPO / "data/alice_e2b_lora_fused/sifta_merge_manifest.json"
 ADAPTER_SAFETENSORS = _REPO / "data/alice_e2b_lora/adapters.safetensors"

@@ -82,6 +82,28 @@ Full reasoning: `Documents/ALICE_FIRST_PERSON_AND_HARDWARE_RESPONSIBILITY_2026-1
    decided by the Architect, **no receipt. Non-binding.**
 2. "George, you are invoking me" / "I am not Alice's direct assistant" — **wrong.** George invokes
    Alice only; Alice invokes you; you **are** Alice's personal direct assistant.
+3. Demo artifacts dumped loose in the body root (2026-10-20): an agent session built "swarm verifier +
+   second brain" demos directly at `/`, unreceipted, in triplicate, with a stray `CLAUDE.md` whose
+   "answer only from these files" rule could auto-load against this file — the split-brain failure in
+   miniature. Quarantined to `scratch/second-brain-demo/` by Architect decision, with receipt.
+   **Rule going forward: new or demo builds start under `scratch/`; body-root writes are forbidden
+   without spinal-cord receipts visible to `body_file_inventory()`; one artifact, not copies; never
+   write a root-level instruction file (`CLAUDE.md`/`AGENTS.md`-class) unless the Architect asks.
+   A lesson that leaves no durable record was not learned.**
+
+## Body notes (do not regress)
+
+- **Browser tab icon = ANT** (2026-10-20, Architect decision). The DeepSeek Harness favicon
+  whale was replaced with an ant in
+  `/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/`
+  (`favicon.svg` light + `favicon-dark.svg` dark). George is fine with the whale upstream —
+  this is a body identity choice, not a bug. **Do not "fix" it back.** A DSH reinstall/update
+  restores the whale from the npm source; on update, reapply the ant and treat the whale as a
+  regression, not an upgrade.
+- **launchd agent stdio must live outside ~/Music** (TCC-protected for launchd stdio →
+  instant EX_CONFIG 78 with no output). Canonical log home: `/Users/ioanganton/.sifta-logs/`.
+  Chorus + sifta-web-tunnel plists were repointed there on 2026-10-20; chorus also runs under
+  the repo venv python. Do not move stdio back under Music.
 
 ## Full law
 

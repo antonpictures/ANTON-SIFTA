@@ -57,11 +57,11 @@ except Exception:  # pragma: no cover - direct fallback so import never fails
     CANONICAL_CLOUD_QWEN = "qwen:accounts/fireworks/models/gpt-oss-20b"
     CANONICAL_CLOUD_QWEN_LONG_DEEPSEEK_FLASH = "qwen:accounts/fireworks/models/deepseek-v4-flash"
     CANONICAL_CLOUD_QWEN_PREMIUM_KIMI = "qwen:accounts/fireworks/models/kimi-k2p6"
-    CANONICAL_OLLAMA_DAILY = "krishairnd/G4U:latest"
-    CANONICAL_OLLAMA_FALLBACK = "krishairnd/G4U:latest"
-    CANONICAL_OLLAMA_GEMMA4_SMALL = "krishairnd/G4U:latest"
-    CANONICAL_OLLAMA_LOW_RAM = "krishairnd/G4U:latest"
-    CANONICAL_OLLAMA_REFLEX = "krishairnd/G4U:latest"
+    CANONICAL_OLLAMA_DAILY = "AliceG4U"
+    CANONICAL_OLLAMA_FALLBACK = "AliceG4U"
+    CANONICAL_OLLAMA_GEMMA4_SMALL = "AliceG4U"
+    CANONICAL_OLLAMA_LOW_RAM = "AliceG4U"
+    CANONICAL_OLLAMA_REFLEX = "AliceG4U"
 
     def set_default_ollama_model(model: str) -> dict:  # type: ignore
         return {"ok": False, "error": "import_failed", "model": model}

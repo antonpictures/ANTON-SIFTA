@@ -22,7 +22,7 @@ from typing import Any, Callable, Iterable
 
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_MODEL = "krishairnd/Gemma-4-Uncensored:latest"
+DEFAULT_MODEL = "AliceG4U"
 DEFAULT_OUTPUT_ROOT = REPO / "outputs" / "model_silicon_foundry"
 DEFAULT_LEDGER = REPO / ".sifta_state" / "model_silicon_foundry.jsonl"
 TRUTH_LABEL = "PRE_SILICON_DEVELOPMENT_ONLY"
