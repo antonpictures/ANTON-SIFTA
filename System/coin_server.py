@@ -1582,7 +1582,12 @@ if __name__ == "__main__":
         def _respond(self, method: str):
             raw = self.path
             path = raw.split("?")[0]
-            query = dict(p.split("=", 1) for p in raw.split("?")[1].split("&") if "=" in p) if "?" in raw else {}
+            # 2026-10-21: values were never URL-decoded, so "symbols=GC%3DF"
+            # stayed "GC%3DF" and Yahoo answered nothing — the strip got [].
+            import urllib.parse as _up
+            query = {k: _up.unquote(v)
+                     for k, v in (p.split("=", 1)
+                                  for p in raw.split("?")[1].split("&") if "=" in p)} if "?" in raw else {}
             body: Dict[str, Any] = {}
             if method == "POST":
                 length = int(self.headers.get("Content-Length", 0) or 0)
