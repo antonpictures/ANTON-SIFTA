@@ -64,13 +64,18 @@
   .m.meta{align-self:center;background:transparent;border:0;color:var(--dimmer);font-size:11px;padding:0}
   .m.wait{color:var(--dim);font-style:italic}
 
-  .starters{display:flex;gap:8px;flex-wrap:wrap;padding:0 17px 12px}
-  .starter{background:#191922;border:1px solid var(--line);color:var(--dim);border-radius:999px;
-    padding:7px 13px;font:inherit;font-size:12.5px;cursor:pointer;transition:.15s;
-    max-width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* fixed 3-slot grid: a swap changes text inside its slot only — the row
+     never reflows, the other chips never flicker or move (owner rule) */
+  .starters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;padding:0 17px 12px}
+  .starter{background:#191922;border:1px solid var(--line);color:var(--dim);
+    border-radius:12px;width:100%;height:42px;display:flex;align-items:center;
+    gap:6px;padding:0 12px;font:inherit;font-size:12.5px;cursor:pointer;
+    transition:border-color .15s,background .15s;text-align:left;min-width:0}
+  .starter.txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .starter:hover{color:var(--txt);border-color:var(--accent);background:#20202b}
-  .starter.roll-in{animation:rollin .5s ease}
-  @keyframes rollin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .starter.roll-in{animation:rollin .45s ease}
+  @keyframes rollin{from{opacity:0}to{opacity:1}}
 
   .composer{display:flex;gap:9px;padding:13px 15px 15px;border-top:1px solid var(--line);background:#12121a}
   .composer input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
@@ -108,6 +113,7 @@
     .wrap{grid-template-columns:1fr;gap:16px;padding:14px}
     .desk{min-height:64vh}
     .side{position:static;order:2}
+    .starters{grid-template-columns:1fr;gap:7px}
   }
 </style>
 </head>
@@ -292,10 +298,10 @@ const FALLBACK_STARTS=[
    chip in order — slot 1, then 2, then 3, then back to 1 — pulling the next
    title from the latest 20 Yahoo Finance headlines. No full-row re-render:
    only the swapped chip animates in. ── */
-const ROLL_STEP_MS=2500, ROLL_SLOTS=3;
+const ROLL_STEP_MS=3000, ROLL_SLOTS=3;
 let rollRows=[], rollCursor=ROLL_SLOTS, rollTimer=null, rollTick=0;
 function chipHTML(s){
-  return `${s.icon} ${String(s.label).replace(/"/g,'&quot;')}`;
+  return `${s.icon} <span class="txt">${String(s.label).replace(/"/g,'&quot;')}</span>`;
 }
 function wireChips(){
   $('starters').querySelectorAll('.starter').forEach(b=>
