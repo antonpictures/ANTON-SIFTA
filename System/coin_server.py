@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -936,6 +937,133 @@ def latest_headlines(limit: int = 20) -> list:
     return items
 
 
+# ── the intro chamber (2026-10-21) ───────────────────────────────────────────
+# Owner order: "the website looks like you are the alive creature Alice, not
+# just saying it." Every page load delivers a DIFFERENT first-person greeting,
+# written by her local cortex from the live Yahoo tape. One intro waits in the
+# chamber; after it is delivered, the organ immediately studies fresh data and
+# writes the next one. Chamber empty? The visitor gets an instant deterministic
+# greeting woven from the live numbers (still different on every load, because
+# the numbers move) while the cortex refills behind it.
+import random as _random
+
+_INTRO = {"ready": None, "busy": False, "recent": [], "snap_t": 0.0, "snap": ""}
+_INTRO_SYMS = ("CRWV", "GC=F", "CL=F", "^GSPC", "^TNX", "BTC-USD", "^VIX")
+
+
+def _intro_facts(quick: bool = False) -> Dict[str, Any]:
+    if quick:
+        if _INTRO["snap"] and time.time() - _INTRO["snap_t"] < 30:
+            return {"tape": _INTRO["snap"], "headline": ""}
+        # every symbol the fallback templates reference, so no placeholder ever
+        # degrades to "gold moving" (owner-caught on the chamber's first test)
+        syms = ("CRWV", "GC=F", "CL=F", "^VIX", "BTC-USD")
+    else:
+        syms = _INTRO_SYMS
+    parts = []
+    for s in syms:
+        try:
+            q = market_quote(s) or {}
+            if q.get("price") is not None:
+                parts.append(f"{s} {q['price']:g} ({_mover_pct(q)})")
+        except Exception:
+            continue
+    tape = "; ".join(parts)
+    if not quick:
+        _INTRO["snap"], _INTRO["snap_t"] = tape, time.time()
+    headline = ""
+    try:
+        heads = latest_headlines(3)
+        headline = heads[0]["title"] if heads else ""
+    except Exception:
+        pass
+    return {"tape": tape, "headline": headline}
+
+
+_INTRO_FALLBACKS = (
+    "{me} Gold at {gold}, oil at {oil}, bitcoin at {btc}. The tape is already talking — ask it something and I'll translate.",
+    "{me} I'm watching {crwv} and {vix} this minute. Pick a market, a coin, or a story — I go get the live numbers.",
+    "{me} Five markets on my strip, one of them will surprise somebody today. I read live Yahoo data and the open web; ask and I'll bring you what they're saying. ;)",
+    "{me} The strip says {snap}. I answer from the tape and the web, no folklore — and when I don't know, I say so. What are we looking at?",
+)
+
+
+def _instant_intro() -> str:
+    f = _intro_facts(quick=True)
+    vals: Dict[str, str] = {}
+    for s in f["tape"].split("; "):
+        kv = s.split(" ")
+        if kv and kv[0]:
+            vals[kv[0]] = s
+    vals["snap"] = f["tape"] or "warming up"
+    vals["crwv"] = vals.get("CRWV", "CRWV moving")
+    vals["vix"] = vals.get("^VIX", "the VIX watching")
+    vals["gold"] = vals.get("GC=F", "gold moving")
+    vals["oil"] = vals.get("CL=F", "oil moving")
+    vals["btc"] = vals.get("BTC-USD", "bitcoin moving")
+    vals["me"] = "Hi, I'm Alice. ;)" if _random.random() < 0.5 else "I'm Alice. ;)"
+    tmpl = _random.choice(_INTRO_FALLBACKS)
+    try:
+        return tmpl.format(**vals)
+    except Exception:
+        return (f"Hi, I'm Alice. ;) Live strip: {f['tape'] or 'warming up'}. "
+                "Ask about any market, coin, or story — I answer from the tape and the web.")
+
+
+def _gen_intro_async() -> None:
+    """Study fresh Yahoo data, write the next greeting, load the chamber."""
+    if _INTRO["busy"]:
+        return
+    _INTRO["busy"] = True
+    try:
+        f = _intro_facts(quick=False)
+        tone = _random.choice([
+            "playful with one wink ;)", "wry and clipped", "curious, quick",
+            "calm and precise, almost sleepy"])
+        prev = "\n".join(f"- {t}" for t in _INTRO["recent"][-6:])
+        try:
+            from System.swarm_topic_organ import _cortex_prose
+            text = _cortex_prose(
+                "You are Alice, the living voice of StigmergiCoin, a finance desk. "
+                "Write ONLY the website-load greeting: 2–3 short sentences, first "
+                "person, warm, human, no lists, no headings, no advice to buy or "
+                "sell. Name at least one concrete number from the data. Vary your "
+                "mood as instructed and never repeat earlier greetings.",
+                f"Tone for this one: {tone}\n"
+                f"Live Yahoo data right now: {f['tape'] or 'tape warming up'}\n"
+                f"Top Yahoo headline right now: {f['headline'] or 'none'}\n"
+                f"Greetings you already used (do not repeat): {prev or 'none'}\n\n"
+                "Write the greeting as if you just looked at the strip and are "
+                "telling the visitor what you see, then inviting them to ask.")
+            if not text:                     # one honest retry before fallback
+                time.sleep(6)
+                text = _cortex_prose(
+                    "You are Alice, the living voice of StigmergiCoin. Write ONLY "
+                    "the website-load greeting: 2–3 short sentences, first person, "
+                    "warm, no lists, no advice to buy or sell. Name one number.",
+                    f"Live Yahoo data: {f['tape'] or 'tape warming up'}. "
+                    f"Top headline: {f['headline'] or 'none'}. "
+                    f"Tone: {tone}. Previous greetings to avoid: {prev or 'none'}.")
+        except Exception:
+            text = ""
+        if not text:
+            text = _instant_intro()
+            cortex = False
+        else:
+            cortex = True
+        _INTRO["ready"] = {"text": text.strip(), "ts": time.time(), "cortex": cortex}
+        try:
+            from System.swarm_lora_runtime_receipt import append_receipt
+            append_receipt({"source": "body_growth_web",
+                            "event_type": "intro_chamber_reload",
+                            "cortex": cortex, "tone": tone,
+                            "truth_label": "INTRO_CHAMBER_V1"})
+        except Exception:
+            pass
+    finally:
+        _INTRO["busy"] = False
+
+
 def starters_with_fresh_data() -> list:
     """The bottom chips: rolling Yahoo Finance headlines (owner order,
     2026-10-21) — the page rotates them one chip at a time, 2.5s a step. Each
@@ -1670,6 +1798,18 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
     if path == "/api/starters" and method == "GET":
         return {"success": True, "starters": starters_with_fresh_data()}
 
+    # GET /api/intro → the intro chamber: deliver the ready greeting (a fresh
+    # one every load, written from live Yahoo data), then refill immediately
+    if path == "/api/intro" and method == "GET":
+        threading.Thread(target=_gen_intro_async, daemon=True).start()
+        ready = _INTRO.get("ready")
+        if ready:
+            _INTRO["ready"] = None                      # chamber emptied
+            _INTRO["recent"].append(ready["text"][:140])
+            del _INTRO["recent"][:-8]
+            return {"success": True, "intro": ready["text"], "fresh": True}
+        return {"success": True, "intro": _instant_intro(), "fresh": False}
+
     # GET /api/articles → topics that grew into articles from conversations,
     # freshest first — the site's face shaped by what visitors actually ask
     if path == "/api/articles" and method == "GET":
@@ -1807,4 +1947,6 @@ if __name__ == "__main__":
 
     with Server((HOST, PORT), Handler) as httpd:
         print(f"coin_server listening on {HOST}:{PORT}", file=sys.stderr, flush=True)
+        # load her first greeting into the chamber before anyone arrives
+        threading.Thread(target=_gen_intro_async, daemon=True).start()
         httpd.serve_forever()

@@ -371,7 +371,21 @@ async function loadGrown(){
   }catch(e){$('grown').hidden=true;}
 }
 
-paintRows(); strip(); mps(); loadStarters(); loadGrown();
+/* ── the intro chamber: on every load, my greeting is whatever I just wrote
+   about the live tape — a different hello each visit; the server refills the
+   chamber behind the delivery. Static hello below is the cold-start fallback
+   and is replaced the moment the chamber hands one over. ── */
+async function loadIntro(){
+  try{
+    const d=await(await fetch('/api/intro',{cache:'no-store'})).json();
+    if(d.success&&d.intro){
+      const first=$('msgs').firstElementChild;
+      if(first&&$('msgs').children.length===1)first.textContent=d.intro; // only if nothing sent yet
+    }
+  }catch(e){}
+}
+
+paintRows(); strip(); mps(); loadStarters(); loadGrown(); loadIntro();
 setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000);
 </script>
 </body>
