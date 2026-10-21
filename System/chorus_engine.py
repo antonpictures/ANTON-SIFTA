@@ -33,21 +33,32 @@ from typing import Optional
 _REPO           = Path(__file__).resolve().parent.parent
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
 # M1 web host default. M5 can still override with SIFTA_WEB_OLLAMA_MODEL or
-# SIFTA_DEFAULT_OLLAMA_MODEL; do not point the M1 public chat at stale gemma4.
+# SIFTA_DEFAULT_OLLAMA_MODEL. 2026-10-21: the old default qwen3.5:0.8b was
+# deleted from this Mac on 2026-09-23 — a default pointing at a missing weight
+# file guaranteed an empty chorus for any process started without the env var.
+# The default is her live local cortex now.
 OLLAMA_MODEL    = (
     os.environ.get("SIFTA_WEB_OLLAMA_MODEL")
     or os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL")
-    or "qwen3.5:0.8b"
+    or "AliceG4U:latest"
 )
 ANTIBODY_LOG    = _REPO / "antibody_ledger.jsonl"
 WEB_CHAT_LOG    = _REPO / ".sifta_state" / "wormhole_cache" / "web_chats"
 
 # Cross-node: M5QUEEN node (optional — chorus works without it)
 M5_NODE_IP      = os.environ.get("M5_NODE_IP", "")          # e.g. "192.168.1.50"
-M5_CHORUS_PORT  = os.environ.get("M5_CHORUS_PORT", "8100")
+M5_CHORUS_PORT  = os.environ.get("M5_CHORUS_PORT", "8101")
 M5_PUBKEY_PATH  = Path(os.environ.get("M5_PUBKEY", os.path.expanduser("~/.sifta/authorized_keys/m5queen.pub")))
 
 WEB_CHAT_LOG.mkdir(parents=True, exist_ok=True)
+
+# 2026-10-21 — LITE public lane. Measured: the full r1504 awareness injection
+# (body+diary+timeline+predictions+continuity) put every swimmer well past the
+# 50s pool cap on this Mac (4 of 6 died; total 112s), and Cloudflare's edge
+# drops proxied responses that do not begin ~100s — a live visitor saw nothing.
+# Public web lanes run lite by default: three swimmers, one short body line,
+# 35s pool. Set SIFTA_CHORUS_LITE=0 for the full deliberation.
+LITE = os.environ.get("SIFTA_CHORUS_LITE", "1") == "1"
 
 # ── Rate limiter (simple in-memory) ─────────────────────────────────────────
 _RATE: dict = {}   # session_id → [timestamps]
@@ -339,6 +350,7 @@ def _swimmer_take(
         "prompt": full_prompt,
         "stream": False,
         "think": False,
+        "keep_alive": "60m",
         "options": {"num_predict": _tok_floor(60), "temperature": 0.8, "num_ctx": 1024},
     }
     try:
@@ -491,6 +503,7 @@ def _synthesize(takes: list, question: str, visitor_class: str, awareness: str =
         "prompt": synthesis_prompt,
         "stream": False,
         "think": False,
+        "keep_alive": "60m",
         "options": {"num_predict": _tok_floor(120), "temperature": 0.65, "num_ctx": 2048},
     }
     try:
@@ -559,6 +572,17 @@ def chorus(question: str, session_id: str, session_history: list, attachment_con
             _awareness = (_awareness + "\n\n" + _continuity_block) if _awareness else _continuity_block
     except Exception:
         pass
+    if LITE:
+        # 2026-10-21: the full r1504 awareness stack pushed the 1024-ctx swimmer
+        # prompt past the pool timeout on this Mac (measured 112s for 2 takes).
+        # Lite keeps ONE body line — the swimmers stay aware she has a body,
+        # without prefilling the whole diary into every turn.
+        _lite_body = {}
+        try:
+            _lite_body = _body or get_current_body_state()
+        except Exception:
+            pass
+        _awareness = f"BODY: {str(_lite_body)[:200]}" if _lite_body else ""
     attachment_context = str(attachment_context or "").strip()
 
     # 0. Rate limit
@@ -602,6 +626,12 @@ def chorus(question: str, session_id: str, session_history: list, attachment_con
     else:
         active_swimmers = [s for s in SWIMMERS if s["id"] != "SENTINEL"]
         print(f"[CHORUS] CURIOUS mode — 6-swimmer chorus")
+    if LITE:
+        # Public web lane: 3 fast swimmers (HERMES spoke cleanest in the probe),
+        # shorter pool. SIFTA_CHORUS_LITE=0 restores the full deliberation.
+        _lite_ids = ["HERMES", "M1THER", "CURSOR"]
+        active_swimmers = [s for s in active_swimmers if s["id"] in _lite_ids] or active_swimmers
+        print(f"[CHORUS] LITE lane — {len(active_swimmers)} swimmers, 35s pool")
 
     # For SMARTASS, give all swimmers the Will Hunting behavioral context
     if visitor_class == "SMARTASS":
@@ -613,14 +643,15 @@ def chorus(question: str, session_id: str, session_history: list, attachment_con
 
     # 4. Local swimmer takes (parallel with thread pool)
     takes = []
-    with ThreadPoolExecutor(max_workers=min(len(active_swimmers), 4)) as pool:
+    _pool_secs = 35 if LITE else 50
+    with ThreadPoolExecutor(max_workers=min(len(active_swimmers), 3)) as pool:
         futures = {
             pool.submit(_swimmer_take, swimmer, question, visitor_class, _awareness, attachment_context, _body): swimmer
             for swimmer in active_swimmers
         }
         try:
             from concurrent.futures import TimeoutError as FuturesTimeoutError
-            for future in as_completed(futures, timeout=50):
+            for future in as_completed(futures, timeout=_pool_secs):
                 try:
                     result = future.result()
                     if result:

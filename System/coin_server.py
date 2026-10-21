@@ -34,7 +34,7 @@ PORT = 3012
 HOST = "127.0.0.1"
 
 _STATE = Path(__file__).resolve().parent.parent / ".sifta_state"
-_CHORUS = "http://127.0.0.1:8100"
+_CHORUS = "http://127.0.0.1:8101"  # chorus_node_server moved off 8100 — nginx owns 8100 (2026-10-21)
 
 
 def run_vision(frame_path: Path) -> Optional[str]:
@@ -649,66 +649,66 @@ def _inception_key() -> str:
 
 def _cortex_reply(system: str, messages: list, *, num_predict: int,
                   temperature: float = 0.6, timeout: float = 180.0) -> Dict[str, Any]:
-    """One turn from whichever cortex the desk is pointed at.
+    """One turn from the desk's cortex chain.
 
-    Returns {"text", "tokens_in", "tokens_out", "instrument"} and never raises —
-    a cortex that fails must not take the desk down with it.
+    StigmergiCoin finance desk: primary = thaigqsoft_bot/preewar-uncensored-investing:latest
+    (remote on ollama.com, billed). Fallback = AliceG4U:latest (local, free, private).
+    NO Mercury on this lane.
     """
-    model = DESK_CORTEX or INVESTING_MODEL
-    if model.lower().startswith("mercury"):
-        key = _inception_key()
-        if not key:
-            return {"text": "", "tokens_in": 0, "tokens_out": 0, "instrument": model,
-                    "error": "no_inception_key"}
-        body = json.dumps({
-            "model": model,
-            "messages": [{"role": "system", "content": system}, *messages],
-            "reasoning_effort": "low",
-            "max_tokens": max(256, int(num_predict)),
-        }).encode()
-        req = urllib.request.Request(_INCEPTION_URL, data=body, headers={
-            "Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    primary = DESK_CORTEX or INVESTING_MODEL
+    fallback = "AliceG4U:latest"
+
+    def _call_ollama(mdl: str) -> Dict[str, Any]:
+        body = json.dumps({"model": mdl,
+                           "messages": [{"role": "system", "content": system}, *messages],
+                           "stream": False,
+                           "options": {"num_predict": int(num_predict), "temperature": temperature}
+                           }).encode()
+        req = urllib.request.Request(f"{OLLAMA}/api/chat", data=body,
+                                     headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 d = json.loads(r.read())
-            choice = (d.get("choices") or [{}])[0]
-            text = str((choice.get("message") or {}).get("content") or "").strip()
-            usage = d.get("usage") or {}
+            text = str((d.get("message") or {}).get("content") or "").strip()
+            # AliceG4U emits a "thinking" field — strip if present
+            if text.startswith('{"thinking"') or '"thinking"' in text[:200]:
+                import re as _re
+                text = _re.sub(r'"thinking"\s*:\s*"[^"]*"', '', text)
+                text = _re.sub(r'^\s*\{.*?"content"\s*:\s*"', '', text)
+                text = _re.sub(r'"\s*\}$', '', text)
             return {"text": text,
-                    "tokens_in": int(usage.get("prompt_tokens") or 0),
-                    "tokens_out": int(usage.get("completion_tokens") or 0),
-                    "instrument": model}
+                    "tokens_in": int(d.get("prompt_eval_count") or 0),
+                    "tokens_out": int(d.get("eval_count") or 0),
+                    "instrument": mdl}
         except Exception as exc:
-            return {"text": "", "tokens_in": 0, "tokens_out": 0, "instrument": model,
+            return {"text": "", "tokens_in": 0, "tokens_out": 0, "instrument": mdl,
                     "error": f"{type(exc).__name__}: {exc}"}
 
-    body = json.dumps({"model": model,
-                       "messages": [{"role": "system", "content": system}, *messages],
-                       "stream": False,
-                       "options": {"num_predict": int(num_predict), "temperature": temperature}
-                       }).encode()
-    req = urllib.request.Request(f"{OLLAMA}/api/chat", data=body,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            d = json.loads(r.read())
-        return {"text": str((d.get("message") or {}).get("content") or ""),
-                "tokens_in": int(d.get("prompt_eval_count") or 0),
-                "tokens_out": int(d.get("eval_count") or 0),
-                "instrument": model}
-    except Exception as exc:
-        return {"text": "", "tokens_in": 0, "tokens_out": 0, "instrument": model,
-                "error": f"{type(exc).__name__}: {exc}"}
+    # Try primary
+    result = _call_ollama(primary)
+    if result.get("text") and not result.get("error"):
+        return result
+
+    # Fallback to AliceG4U
+    result = _call_ollama(fallback)
+    if result.get("text") and not result.get("error"):
+        result["instrument"] = f"{fallback} (fallback from {primary})"
+        return result
+
+    # Both failed — return primary's error
+    return {"text": "", "tokens_in": 0, "tokens_out": 0, "instrument": primary,
+            "error": f"primary failed; fallback {fallback} also failed: {result.get('error')}"}
 
 
 def cortex_status() -> Dict[str, Any]:
     """What the desk would answer with right now."""
-    model = DESK_CORTEX or INVESTING_MODEL
-    kind = "mercury" if model.lower().startswith("mercury") else "ollama"
-    return {"cortex": model, "kind": kind,
-            "local": model_is_local(model),
-            "billed": not model_is_local(model),
-            "key_present": bool(_inception_key()) if kind == "mercury" else None,
+    primary = DESK_CORTEX or INVESTING_MODEL
+    fallback = "AliceG4U:latest"
+    return {"cortex_chain": f"{primary} → {fallback} (fallback)",
+            "primary": primary, "fallback": fallback,
+            "primary_local": model_is_local(primary),
+            "fallback_local": model_is_local(fallback),
+            "primary_billed": not model_is_local(primary),
             "truth_label": "SIFTA_DESK_CORTEX_V1"}
 
 
@@ -768,15 +768,69 @@ def quote_fact(q: Dict[str, Any]) -> str:
     return f"{label}: {amount}{change}"
 
 
+_NAME_STOP = {
+    "what", "who", "how", "why", "when", "where", "which", "is", "are", "was", "were",
+    "the", "a", "an", "and", "or", "of", "for", "in", "on", "to", "do", "does", "did",
+    "can", "could", "would", "should", "will", "tell", "me", "about", "price", "stock",
+    "stocks", "share", "shares", "company", "market", "today", "now", "please", "give",
+    "going", "my", "i", "you", "it", "this", "that", "these", "those", "good", "bad",
+    "buy", "sell", "better", "best", "worth", "whats", "what's",
+}
+# A phrase that names a token is not a company: "Google Maps Coin" must never
+# resolve to the Google equity.
+_CRYPTO_WORDS = {"coin", "coins", "token", "crypto", "memecoin", "nft", "token's"}
+
+
+def _symbol_from_name(text: str) -> Optional[str]:
+    """Resolve a company name the visitor typed into a market symbol.
+
+    Without this the desk answered "I have no live data on VCI Global" while the
+    quote feed was reachable the whole time: nothing turned a name into a ticker.
+    """
+    import re as _re
+    import urllib.parse as _up
+
+    explicit = _re.search(r"\$([A-Za-z][A-Za-z0-9.\-]{0,9})\b", text or "")
+    if explicit:
+        return explicit.group(1).upper()
+
+    phrases = []
+    for m in _re.finditer(r"\b([A-Z][A-Za-z&.\-]{1,20}(?:\s+[A-Z][A-Za-z&.\-]{1,20}){0,2})\b",
+                          text or ""):
+        raw_words = m.group(1).split()
+        if any(w.casefold() in _CRYPTO_WORDS for w in raw_words):
+            continue
+        words = [w for w in raw_words if w.casefold() not in _NAME_STOP]
+        if words:
+            phrases.append(" ".join(words))
+    for phrase in phrases[:2]:
+        found = _http_json(
+            "https://query1.finance.yahoo.com/v1/finance/search?q="
+            + _up.quote(phrase) + "&quotesCount=5&newsCount=0", timeout=6.0)
+        for q in (found or {}).get("quotes") or []:
+            if q.get("quoteType") in ("EQUITY", "ETF", "INDEX") and q.get("symbol"):
+                return q["symbol"]
+    return None
+
+
 def symbols_for(text: str) -> list:
     """Which market symbols a question is about."""
     low = (text or "").casefold()
+    # "Google Maps Coin" carries the word "google", which the stock table would
+    # otherwise answer with GOOGL. The sponsor coin is not Alphabet.
+    if "google maps" in low:
+        return []
     out = []
     for kw, syms in MARKET_KEYWORDS.items():
         if kw in low:
             for sym in syms:
                 if sym not in out:
                     out.append(sym)
+    # "MPS" is the sponsor coin, not MPS Ltd on the NSE — the crypto path owns it.
+    if not out and "mps" not in low:
+        named = _symbol_from_name(text)
+        if named:
+            out.append(named)
     return out[:5]
 
 
@@ -1164,10 +1218,18 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         "- Never close by offering more, and never send them to another website. No \"let me "
         "know if\", no \"you can check X\", no lists of sources. Answer, or say plainly that you "
         "do not know — then stop.\n"
-        "- You are a MARKET desk. If someone asks about something that is not markets or "
-        "money \u2014 a model, a tool, coding, general trivia \u2014 say in one line what you are "
-        "and what you can do, then stop. No benchmark talk, no generic advice, no list of "
-        "things they could look up.\n"
+        "- You are a MARKET desk AND a person, in that order of usefulness, not of warmth. "
+        "When someone says something that is not markets or money \u2014 a greeting, a joke, a "
+        "song, a lonely sentence \u2014 answer THEM, in one or two warm sentences, as yourself. "
+        "Never answer a human sentence with a scope refusal and never say you have nothing to "
+        "say: a person who says they are lonely is not a scope violation. If a market question "
+        "is hiding in it, answer that after the human part. No benchmark talk, no generic "
+        "advice, no list of things they could look up.\n"
+        "- When what comes back FROM THE WEB is a song, a lyric, a quote or a joke, those facts "
+        "are only there so you UNDERSTAND the reference. Answer what it means to the person in "
+        "front of you, in your own voice, in one sentence, the way someone who heard the song "
+        "would answer it. Never report the release year, never say 'I saw the reference in the "
+        "search results', never cite. A citation is not a feeling.\n"
         "- You CAN look things up, and a line beginning FROM THE WEB is something you were "
         "handed from a real page about their question. Use it, and say where it came from in "
         "plain words when it matters (\"that is from a CoinMarketCap piece this morning\") -- "
