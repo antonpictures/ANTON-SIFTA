@@ -245,14 +245,14 @@ _TICKER_STOP = {
 }
 
 def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
-    """ONE ticker per article, only after more than five mentions (the tally
-    below). Owner law, 2026-10-21."""
+    """ONE ticker per article after five or more mentions (the tally below).
+    Owner law, 2026-10-21, amended 2026-10-21: five counts."""
     counts = ticker_counts(slug, entry)
     if not counts:
         return ""
     tok = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
     n = counts[tok]
-    return tok if n > 5 else ""
+    return tok if n >= 5 else ""   # five counts (owner ruling after GC sat at 5 with no badge)
 
 
 def ticker_counts(slug: str, entry: Dict[str, Any]) -> Dict[str, int]:
@@ -298,7 +298,7 @@ def room_line(slug: str) -> str:
     tallies = ticker_counts(slug, v)
     order = sorted(tallies.items(), key=lambda kv: -kv[1])[:3]
     tally_txt = ", ".join(f"{t} {n}×" for t, n in order) if order else "no tickers named yet"
-    proj = next((t for t, n in order if n > 5), "")
+    proj = next((t for t, n in order if n >= 5), "")
     if v.get("graduated"):
         when = "already graduated — its article sits in the shelf with the latest numbers"
     elif count >= 5:
@@ -515,7 +515,7 @@ def ticker_touch(raw_syms, qtext: str = "", mention_syms: bool = True) -> None:
             if qtext:
                 qs = [qtext[:200]] + [q for q in (e.get("questions") or []) if q != qtext[:200]]
                 e["questions"] = qs[:8]
-            crossing = int(e["count"]) > 5 and not e.get("graduated")
+            crossing = int(e["count"]) >= 5 and not e.get("graduated")
             refresh = (e.get("count", 0) - int(e.get("last_grown_count") or 0) >= 2
                        and e.get("graduated"))
             _tsave(t)

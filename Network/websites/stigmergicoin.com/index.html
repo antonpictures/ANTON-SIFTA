@@ -155,14 +155,14 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
 
   <!-- ───────────── the rail: only what conversations grow ───────────── -->
   <aside class="side">
-    <div class="sidecard" id="tickers" hidden>
-      <h3>Most talked — this site's crowd</h3>
-      <div id="tickrows" style="padding:4px 0"></div>
-    </div>
-
     <div class="sidecard" id="grown" hidden>
       <h3>Grown from visitors' conversations</h3>
       <div id="grownrows" style="padding:4px 0"></div>
+    </div>
+
+    <div class="sidecard" id="tickers" hidden>
+      <h3>Most talked — this site's crowd</h3>
+      <div id="tickrows" style="padding:4px 0"></div>
     </div>
   </aside>
 </div>
@@ -390,7 +390,8 @@ async function loadTickers(){
     const ticks=[...new Set(rows.map(t=>t.sym))];
     try{
       const qd=await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
-      const map=(qd.quotes||[]).reduce((m,q)=>(m[q.symbol]=q,m),{});
+      const cleanK=s=>String(s||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','');
+      const map=(qd.quotes||[]).reduce((m,q)=>(m[cleanK(q.symbol)]=q,m),{});
       rows.forEach(t=>{
         const el=document.getElementById('tsym-'+t.sym.replace(/[^a-z0-9]/gi,''));
         const q=map[t.sym];
@@ -415,7 +416,7 @@ async function paintGrownTicks(rows){
       if(!a.ticker)return;
       const el=window['gsym-'+('gx')]||document.getElementById('gsym-'+String(a.slug).replace(/[^a-z0-9-]/gi,''));
       if(!el)return;
-      const q=map[a.ticker];
+      const q=map[String(a.ticker||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','')];
       if(!q||q.change_pct==null||q.price==null)return;
       el.textContent=`${a.ticker} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
       el.className='sym '+(q.change_pct>=0?'up':'down');
