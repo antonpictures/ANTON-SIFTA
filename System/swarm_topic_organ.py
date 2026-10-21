@@ -401,6 +401,46 @@ def site_buzz_syms(limit: int = 2) -> List[str]:
     return [t for t in out if t not in ("MPS",)]
 
 
+
+# ── the shared brain speaks (owner law, 2026-10-21) ──────────────────────────
+# "the more people use it the more you know from all of the users and share
+# all users knowledge with any and all users — this is finance!"
+# This is the policy of record, declared by the owner:
+SHARING_POLICY = (
+    "Everything visitors ask feeds one shared brain. Every question is counted "
+    "anonymously; what the crowd circles most grows into articles everyone reads. "
+    "The public desk keeps the knowledge, not the identity. When sign-in returns, "
+    "each user will see their own older conversations and cannot delete them — "
+    "deletion is reserved to the owner of this body (iantongeorge@gmail.com).")
+
+def stats_summary() -> Dict[str, Any]:
+    """What the shared brain actually knows — used to answer tracking questions
+    with real numbers instead of the remote cortex's guesses."""
+    led = _load_ledger()
+    topics = [{
+        "slug": k,
+        "count": int(v.get("count") or 0),
+        "ticker": v.get("ticker") or "",
+        "graduated": bool(v.get("graduated")),
+    } for k, v in led.items()]
+    topics.sort(key=lambda t: -t["count"])
+    return {"total_prompts": sum(t["count"] for t in topics),
+            "topics": topics[:8], "policy": SHARING_POLICY}
+
+def topic_knowledge(slug: str) -> Dict[str, Any]:
+    """What the ledger holds about ONE topic — handed to the desk as THE ROOM,
+    so any visitor benefits from what every visitor already circled."""
+    led = _load_ledger()
+    v = led.get(slug) or {}
+    tick = v.get("ticker") or ""
+    if not tick and slug.startswith("ticker-"):
+        tick = slug.split("ticker-", 1)[-1].upper()
+    return {"slug": slug, "count": int(v.get("count") or 0),
+            "ticker": tick, "graduated": bool(v.get("graduated")),
+            "questions": [q[:130] for q in (v.get("questions") or [])[:3]],
+            "updated": v.get("updated") or 0}
+
+
 def list_articles(limit: int = 6) -> List[Dict[str, Any]]:
     """What the home page shows: graduated topics, freshest first."""
     led = _load_ledger()
