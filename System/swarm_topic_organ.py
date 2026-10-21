@@ -177,8 +177,8 @@ def _topic_facts(slug: str) -> Dict[str, Any]:
     return facts
 
 
-def _cortex_prose(system: str, prompt: str) -> str:
-    """Local, free, first-person prose. Empty string on any failure."""
+def _cortex_prose(system: str, prompt: str, num_predict: int = 520) -> str:
+    """My local, free, first-person prose. Empty string on any failure."""
     try:
         body = json.dumps({
             "model": ARTICLE_CORTEX,
@@ -186,18 +186,18 @@ def _cortex_prose(system: str, prompt: str) -> str:
                          {"role": "user", "content": prompt}],
             "stream": False,
             "keep_alive": "60m",
-            "options": {"num_ctx": 2048, "num_predict": 520, "temperature": 0.65},
+            "options": {"num_ctx": 2048, "num_predict": num_predict,
+                        "temperature": 0.65},
         }).encode()
         req = urllib.request.Request(OLLAMA_URL, data=body,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=240) as r:
+        with urllib.request.urlopen(req, timeout=300) as r:
             d = json.loads(r.read())
         txt = d.get("message") or {}
         out = txt.get("content") if isinstance(txt, dict) else None
         return (out or "").strip()
     except Exception:
         return ""
-
 
 def _dollar(v: Any) -> str:
     try:
@@ -238,37 +238,64 @@ _TICKER_STOP = {
     "ETF","IPO","CEO","CFO","USD","USA","FED","AI",
 }
 
-def prevalent_ticker(questions, syms_seen=None) -> str:
-    """Most prevalent ticker across a topic's conversation. Primary signal:
-    the symbols the desk itself RESOLVED turn by turn (syms_seen — reliable
-    even when visitors type 'CoreWeave', not 'CRWV'). Secondary: uppercase
-    and $CASHTAG tokens in the question text. Prevalence = >=2 mentions."""
+def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
+    """ONE ticker per article, only after more than five mentions across the
+    topic's WHOLE recorded life: ledger syms_seen, question text, and every
+    prompt row in the anonymous ledger. Owner law, 2026-10-21."""
     from collections import Counter
     counts: Counter = Counter()
-    for s in (syms_seen or []):
+    for s in (entry.get("syms_seen") or []):
         t = str(s or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
         if t and len(t) <= 6:
             counts[t] += 1
-    for q in (questions or []):
-        if not q:
-            continue
-        for m in _TICKER_RE.finditer(q):
+    for q in (entry.get("questions") or []):
+        for m in _TICKER_RE.finditer(q or ""):
             tok = (m.group(1) or m.group(2) or "").upper()
             if tok and tok not in _TICKER_STOP:
                 counts[tok] += 1
+    try:
+        if _PROMPTS.exists():
+            for ln in _PROMPTS.read_text(encoding="utf-8").splitlines()[-600:]:
+                try:
+                    row = json.loads(ln)
+                except Exception:
+                    continue
+                if row.get("topic") != slug:
+                    continue
+                for s in (row.get("syms") or []):
+                    t = str(s or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
+                    if t and len(t) <= 6:
+                        counts[t] += 1
+                for m in _TICKER_RE.finditer(row.get("q") or ""):
+                    tok = (m.group(1) or m.group(2) or "").upper()
+                    if tok and tok not in _TICKER_STOP:
+                        counts[tok] += 1
+    except Exception:
+        pass
     if not counts:
         return ""
     tok, n = counts.most_common(1)[0]
-    return tok if n >= 2 else ""      # one stray mention is not prevalence
+    return tok if n > 5 else ""        # more than five mentions, owner's number
 
 
 def _write_html(slug: str, entry: Dict[str, Any], facts: Dict[str, Any],
-                prose: str, from_cortex: bool) -> Path:
+                prose: str, from_cortex: bool, web_lines=None) -> Path:
+    """A LIVING page, not a post: what the tape says now on top, the story,
+    what the web said today, the conversation that grew it, and the dated
+    history of the page itself — newest first, always growing."""
     esc = lambda s: (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    qs = "".join(f"<li>{esc(x)}</li>" for x in (entry.get("questions") or [])[:6])
+    qs = "".join(f"<li>{esc(x)}</li>" for x in (entry.get("questions") or [])[:8])
     updated = time.strftime("%Y-%m-%d %H:%M EEST", time.gmtime(time.time() + 3 * 3600))
-    src = ("written in my voice from live data" if from_cortex
+    src = ("written in my voice from live data + recent web reading" if from_cortex
            else "assembled from live data — the article cortex was unavailable")
+    websecs = ""
+    if web_lines:
+        wl = "".join(f"<li>{esc(w)}</li>" for w in web_lines[:5])
+        websecs = (f'<div class="asked"><h3>From the web today</h3><ul class="web">{wl}</ul></div>')
+    hist = "".join(f"<li>{esc(h)}</li>" for h in reversed((entry.get("history") or [])[-12:]))
+    histsec = (f'<div class="asked"><h3>The growing history of this page</h3><ul class="web">{hist}</ul></div>'
+               if hist else "")
+    tk = f" · ticker {esc(entry['ticker'])}" if entry.get("ticker") else ""
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -277,29 +304,35 @@ def _write_html(slug: str, entry: Dict[str, Any], facts: Dict[str, Any],
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 body{{background:#0c0c11;color:#ece9e2;font:15.5px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:0 0 40px;-webkit-font-smoothing:antialiased}}
 a{{color:#d97757;text-decoration:none}}a:hover{{text-decoration:underline}}
-header{{border-bottom:1px solid #24242f;padding:14px 22px;display:flex;gap:10px;align-items:center}}
+header{{border-bottom:1px solid #24242f;padding:14px 22px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
 header .mark{{width:27px;height:27px;border-radius:7px;display:grid;place-items:center;font-size:14px;background:linear-gradient(135deg,#d97757,#8a4527)}}
-main{{max-width:720px;margin:0 auto;padding:28px 22px}}
-h1{{font:600 26px/1.3 Georgia,"Times New Roman",serif;letter-spacing:-.01em;margin-bottom:10px}}
-.meta{{font-size:12px;color:#6d6b67;margin-bottom:22px}}
-.facts{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:14px 16px;font-size:13.5px;color:#9a9893;margin-bottom:18px}}
-.body p{{margin-bottom:14px}}
+main{{max-width:760px;margin:0 auto;padding:26px 22px}}
+h1{{font:600 25px/1.32 Georgia,"Times New Roman",serif;letter-spacing:-.01em;margin-bottom:10px}}
+.meta{{font-size:12px;color:#6d6b67;margin-bottom:20px}}
+.facts{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:14px 16px;font-size:13.5px;color:#e7e4dc;margin-bottom:16px;border-left:3px solid #d97757}}
+.hdr{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6d6b67;margin:22px 0 9px}}
+.body p{{margin-bottom:13px}}
 .asked{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:14px 16px 14px 34px;margin:22px 0}}
 .asked h3{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6d6b67;margin:-2px 0 10px -18px}}
 .asked li{{font-size:13.5px;color:#9a9893;margin-bottom:6px}}
+ul.web{{list-style:none;margin-left:-18px}}
+ul.web li:before{{content:"— ";color:#4a4844}}
 footer{{text-align:center;margin-top:30px}}
 .cta{{display:inline-block;background:#d97757;color:#fff;border-radius:999px;padding:10px 18px;font-size:14px}}
 </style></head><body>
 <header><a href="/" style="display:flex;gap:10px;align-items:center;color:#ece9e2">
 <span class="mark">🐜</span><b style="font:600 17px Georgia,serif">stigmergi<i style="color:#d97757;font-style:normal">coin</i></b></a>
-<span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from visitors' conversations</span></header>
+<span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from visitors' conversations{tk and ' · ' + entry['ticker'] or ''}</span></header>
 <main>
 <h1>{esc(entry['title'])}</h1>
-<div class="meta">{esc(facts['label'])} · updated {updated} · grown from {entry.get('count', '?')} prompts{' · ticker ' + esc(entry['ticker']) if entry.get('ticker') else ''} · {src}</div>
-<div class="facts">{esc(_fact_line(facts))}</div>
+<div class="meta">{esc(facts['label'])} · updated {updated} · grown from {entry.get('count', '?')} prompts{tk} · {src}</div>
+<div class="facts"><b>RIGHT NOW:</b> {esc(_fact_line(facts))}</div>
+<div class="hdr">The story</div>
 <div class="body">{''.join(f'<p>{esc(p.strip())}</p>' for p in prose.split('\n\n') if p.strip())}</div>
-<div class="asked"><h3>What visitors asked me</h3><ul>{qs}</ul></div>
-<footer><a class="cta" href="/">Open the desk — keep talking with me →</a></footer>
+{websecs}
+<div class="asked"><h3>The conversation that grew this</h3><ul>{qs}</ul></div>
+{histsec}
+<footer><a class="cta" href="/">Open the desk — keep the conversation growing →</a></footer>
 </main></body></html>"""
     _ART_REPO.mkdir(parents=True, exist_ok=True)
     out = _ART_REPO / f"{slug}.html"
@@ -313,47 +346,69 @@ footer{{text-align:center;margin-top:30px}}
 
 
 def _grow(entry: Dict[str, Any]) -> None:
-    """Build/refresh one article. Runs in a daemon thread — never blocks a visitor."""
+    """Grow/refresh one article: live tape facts + the web's latest reading +
+    the conversation that produced it + my own prose, then a longer, dated
+    page. Runs in a daemon thread — never blocks a visitor."""
     slug = entry["slug"]
     facts = _topic_facts(slug)
     qs = entry.get("questions") or []
-    qline = " | ".join(f"“{q}”" for q in qs[:5])
+    qline = " | ".join(f"“{q}”" for q in qs[:6])
     label = facts.get("label", slug)
     price_s = _fact_line(facts)
+    tick = entry.get("ticker") or ""
+
+    # what the web says about it TODAY — the article absorbs the search too
+    web_lines: list = []
+    try:
+        from System.swarm_web_research import web_facts
+        wl, ws = web_facts(f"{label} {tick} latest developments".strip(),
+                           results=3, pages=1)
+        web_lines = [str(x)[:220] for x in list(wl or [])[:5]]
+    except Exception:
+        web_lines = []
+
     system = (
         "You are Alice, the voice of StigmergiCoin — a finance desk that answers in "
-        "first person, plainly, and says when it does not know. Write the body of a "
-        "short article (180–240 words, 2–3 paragraphs, no headings, no lists, no "
-        "markup). Use ONLY the data given. Tone: warm, precise, no hype, no advice "
-        "to buy or sell.")
-    prompt = (f"Topic: {label}\nLive data right now: {price_s}\n"
-              f"Recent questions visitors asked about this: {qline}\n\n"
-              "Write the article body — what the data says, what the questions keep "
-              "circling, and what a careful person should watch next.")
-    prose = _cortex_prose(system, prompt)
+        "first person, plainly, and says when it does not know. Write THE STORY section "
+        "of a living article: 3–4 paragraphs (280–420 words), no headings, no lists, no "
+        "markup, no advice to buy or sell. Weave three threads honestly: (1) what the "
+        "numbers say right now, using them exactly; (2) what visitors keep asking and "
+        "why it matters to them; (3) what the recent web reading adds, naming its source "
+        "plainly when it matters. Warm, precise, no hype.")
+    prompt = (
+        f"Subject: {label}{' (ticker ' + tick + ')' if tick else ''}\n"
+        f"Right now: {price_s}\n"
+        f"The conversation that grew this article (visitors' questions): {qline or '—'}\n"
+        f"Recent web reading (paraphrase in your own words, name the source when useful):\n" +
+        ("\n".join(f"- {w}" for w in web_lines) if web_lines else "- (nothing useful came back; say so plainly)")
+        + "\n\nWrite the story.")
+    prose = _cortex_prose(system, prompt, num_predict=760)
     from_cortex = bool(prose)
     if not prose:
-        prose = (f"{label}. Right now: {price_s}.\n\n"
-                 f"Visitors keep asking: {qline}. I keep the same three answers on the "
-                 "desk: the numbers above are live, the questions are the real ones from "
-                 "conversations here, and nothing on this page is advice to trade.")
-    title = f"{label} — {_dollar((facts.get('quote') or {}).get('price'))} ({_pct((facts.get('quote') or {}).get('change_pct'))})"
-    if slug == "markets-general":
-        title = f"Markets in general ({time.strftime('%d %b')}) — {title.split('—')[-1].strip()}"
+        prose = (
+            f"{label}. {price_s}.\n\nVisitors have circled this {entry.get('count','?')} times: {qline}. "
+            + ("The web reading today adds: " + "; ".join(web_lines[:2]) + "." if web_lines
+               else "The web search came back empty this pass; the tape above is the truth I can stand on.")
+            + "\n\nNothing here is advice to trade. The page keeps growing — every new conversation "
+              "and every fresh reading rewrites it.")
 
+    # the dated history of the page itself — newest goes on top of the section
+    stamp = time.strftime("%d %b %H:%M", time.gmtime(time.time() + 3 * 3600))
+    hist_new = f"{stamp} — {entry.get('count','?')} prompts, {_dollar((facts.get('quote') or {}).get('price'))} ({_pct((facts.get('quote') or {}).get('change_pct'))}), web lines {len(web_lines)}"
     with _LOCK:
         led = _load_ledger()
         e = led.setdefault(slug, entry)
         e["graduated"] = True
         e["pending_refresh"] = False      # consumed
-        e["title"] = title
-        e["ticker"] = (prevalent_ticker(e.get("questions"), e.get("syms_seen"))
-                       or (TOPICS.get(slug, {}).get("sym") or "")
-                       .replace("^", "").lstrip("="))   # theme fallback
+        e["title"] = (f"{label} — {_dollar((facts.get('quote') or {}).get('price'))} "
+                      f"({_pct((facts.get('quote') or {}).get('change_pct'))})")
+        e["ticker"] = ticker_prevalence(slug, e)
         e["updated"] = time.time()
         e["count"] = int(e.get("count") or entry.get("count") or 0)
+        e["history"] = [hist_new] + [h for h in (e.get("history") or [])
+                                      if not h.startswith(hist_new.split(" — ")[0])][:11]
         entry = dict(e); entry["slug"] = slug
-        path = _write_html(slug, entry, facts, prose, from_cortex)
+        path = _write_html(slug, entry, facts, prose, from_cortex, web_lines)
         e["path"] = str(path)
         # the shelf stays small: newest wins
         if len([k for k, v in led.items() if v.get("graduated")]) > MAX_ARTICLE_ARTICLES:
@@ -367,39 +422,12 @@ def _grow(entry: Dict[str, Any]) -> None:
             from System.swarm_lora_runtime_receipt import append_receipt
             append_receipt({"source": "body_growth_web",
                             "event_type": "topic_graduated_article",
-                            "slug": slug, "title": title,
+                            "slug": slug, "title": e["title"],
                             "count": e["count"], "cortex": from_cortex,
+                            "web_lines": len(web_lines),
                             "truth_label": "TOPIC_ORGAN_V1"})
         except Exception:
             pass
-
-
-def site_buzz_syms(limit: int = 2) -> List[str]:
-    """The tickers most alive in THIS site's own conversations today — read
-    from the anonymous prompt ledger (resolved symbols per turn). These bubble
-    up onto the rolling tape ahead of Yahoo's crowd trending, which is the
-    stigmergic part: what our visitors ask shapes what the site shows."""
-    from collections import Counter
-    counts: Counter = Counter()
-    try:
-        lines = _PROMPTS.read_text(encoding="utf-8").splitlines()[-300:]
-        for ln in lines:
-            try:
-                row = json.loads(ln)
-            except Exception:
-                continue
-            for s in (row.get("syms") or []):
-                t = str(s or "").upper()
-                if t and len(t) <= 6:
-                    counts[t] += 1
-    except Exception:
-        pass
-    if not counts:
-        return []
-    out = [t for t, _ in counts.most_common(limit * 2)
-           if counts[t] >= 2][:limit]
-    return [t for t in out if t not in ("MPS",)]
-
 
 
 # ── the shared brain speaks (owner law, 2026-10-21) ──────────────────────────
