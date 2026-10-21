@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Natenberg — Option Volatility & Pricing Reference | StigmergiCoin</title>
+<style>
+  :root{
+    --bg:#141414; --side:#171717; --line:#262626; --line2:#2f2f2f;
+    --txt:#ece9e2; --dim:#9a9893; --dimmer:#6f6d69;
+    --accent:#d97757; --accent2:#c6613f; --card2:#1f1f1f;
+    --green:#00dcc8; --red:#ff4d4d; --gold:#f5c842;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.72 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .top{border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.01em}
+  .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#8a4527);
+    display:grid;place-items:center;font-size:15px}
+  .wrap{max-width:820px;margin:0 auto;padding:46px 22px 90px}
+  .kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dimmer);margin-bottom:16px}
+  h1{font-size:34px;line-height:1.22;letter-spacing:-.02em;margin:0 0 14px}
+  .sub{font-size:17px;line-height:1.6;color:var(--dim);font-style:italic;margin:0 0 30px}
+  h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+    margin:44px 0 14px;padding-top:22px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:30px 0 10px;letter-spacing:-.01em}
+  p{margin:0 0 16px;color:#dcd9d2}
+  .lead{font-size:15.5px;color:var(--txt)}
+  .terms{font-size:13.5px;color:var(--dim);background:var(--card2);border:1px solid var(--line);
+    border-radius:10px;padding:16px 18px;margin:26px 0 0}
+  table{width:100%;border-collapse:collapse;margin:22px 0;font-size:14px}
+  caption{caption-side:top;text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--dimmer);padding-bottom:10px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dimmer);border-bottom-color:var(--line2)}
+  td:first-child{color:var(--txt)}
+  td{color:var(--dim)}
+  .note{font-size:13px;color:var(--dimmer);border-left:2px solid var(--line2);padding-left:14px;margin:34px 0}
+  .foot{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--dimmer);
+    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .callout{background:rgba(0,220,200,0.06);border:1px solid rgba(0,220,200,0.15);
+    border-radius:10px;padding:18px 20px;margin:26px 0}
+  .callout.warn{background:rgba(255,77,77,0.06);border-color:rgba(255,77,77,0.15)}
+  .callout.gold{background:rgba(245,200,66,0.06);border-color:rgba(245,200,66,0.15)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:22px 0}
+  .card{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:18px}
+  .card h4{margin:0 0 10px;color:var(--accent);font-size:14px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .formula{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:14px 18px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;overflow-x:auto;margin:16px 0}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><div class="mark">🐜</div><span>stigmergi<span style="color:var(--accent)">coin</span></span></div>
+  <span style="margin-left:auto;font-size:13px"><a href="index.html">← back to the desk</a> · <a href="education.html">education</a> · <a href="research.html">research</a></span>
+</div>
+
+<div class="wrap">
+  <div class="kicker">Education · Natenberg Reference</div>
+  <h1>Sheldon Natenberg — Option Volatility & Pricing (2nd Ed.)</h1>
+  <p class="sub">The desk's canonical reference for options theory. This page distills the 2nd edition (1994/2015) into actionable concepts. Not a summary — a working cheat sheet for the desk. Scribd link: <a href="https://www.scribd.com/document/412441974/option-volatility-and-pricing-sheldon-natenberg-pdf" target="_blank">original PDF</a> (paywalled).</p>
+
+  <div class="terms"><strong style="color:var(--txt)">Index terms —</strong> implied volatility, historical volatility, volatility smile/skew, Black-Scholes, binomial model, Greeks (delta, gamma, theta, vega, rho), volatility trading, delta-neutral, risk reversal, butterfly, calendar spread, variance swap, VIX, term structure, forward volatility, model risk, early exercise, dividends, interest rates, put-call parity.</div>
+
+  <h2>I. Volatility — The Core Variable</h2>
+
+  <h3>A. Two Volatilities, One Price</h3>
+  <table>
+    <caption>Table 1 — Historical vs Implied Volatility</caption>
+    <thead><tr><th>Type</th><th>Definition</th><th>Use</th><th>Desk rule</th></tr></thead>
+    <tbody>
+      <tr><td>Historical (HV)</td><td>Realized std dev of log returns over a lookback window (typically 20–60d)</td><td>Baseline; mean-reversion anchor</td><td>20d HV for short-term; 60d for regime</td></tr>
+      <tr><td>Implied (IV)</td><td>The σ that makes model price = market price</td><td>Market's forward expectation + risk premium</td><td>IV > HV = fear premium; IV < HV = complacency</td></tr>
+    </tbody>
+  </table>
+
+  <div class="formula"><strong>Natenberg's key insight:</strong> "Implied volatility is not a prediction of future volatility — it is the <em>market price of volatility risk</em>." The volatility risk premium (IV − RV) is persistently positive for index options; for single stocks it can flip.</div>
+
+  <h3>B. Volatility Cone & Percentile Ranking</h3>
+  <p>Natenberg advocates ranking current IV against its own history (IV rank / IV percentile):</p>
+  <table>
+    <caption>Table 2 — IV Rank Interpretation</caption>
+    <thead><tr><th>IV Rank</th><th>Meaning</th><th>Bias</th></tr></thead>
+    <tbody>
+      <tr><td>> 80th pctl</td><td>Expensive vol</td><td>Net seller (spreads, condors)</td></tr>
+      <tr><td>20–80th</td><td>Normal range</td><td>Neutral / directional</td></tr>
+      <tr><td>< 20th pctl</td><td>Cheap vol</td><td>Net buyer (long straddles, calendars)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>II. The Greeks — Natenberg's Framework</h2>
+  <p>Natenberg teaches Greeks as <em>sensitivities to model inputs</em>, not just risk metrics. Each Greek answers: "How much does my P&L change if <em>this one thing</em> moves?"</p>
+
+  <table>
+    <caption>Table 3 — The Greeks (Natenberg's practical lens)</caption>
+    <thead><tr><th>Greek</th><th>Measures</th><th>Natenberg's practical take</th><th>Desk cheat</th></tr></thead>
+    <tbody>
+      <tr><td>Δ (Delta)</td><td>∂P/∂S — directional exposure</td><td>"Share equivalent." ATM ≈ 0.50; ITM → 1.0; OTM → 0. Dynamic, not static.</td><td>Delta-hedge daily if |Δ| > 0.15 per contract</td></tr>
+      <tr><td>Γ (Gamma)</td><td>∂Δ/∂S — delta instability</td><td>"Convexity bill." Long gamma = pay theta to own convexity. Short gamma = collect theta, risk gap moves.</td><td>Gamma scalping: re-hedge when Δ moves > 0.10</td></tr>
+      <tr><td>Θ (Theta)</td><td>∂P/∂t — time decay</td><td>"Rent on gamma." ATM decays fastest (√T). Θ ≈ −Γ·S²·σ²/2 (approx).</td><td>Collect Θ via spreads/condors; never naked short near expiry</td></tr>
+      <tr><td>ν (Vega)</td><td>∂P/∂σ — vol exposure</td><td>"Vol beta." Long vega = long vol. Short vega = short vol. Vega peaks at ATM, drops at wings.</td><td>Vega-neutral structures: calendar, ratio spreads</td></tr>
+      <tr><td>ρ (Rho)</td><td>∂P/∂r — rate exposure</td><td>Usually negligible for short-dated; matters for LEAPs and dividends.</td><td>Ignore < 60 DTE; track for LEAPs</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Natenberg's Gamma-Theta Trade-off:</strong> Γ·Θ ≈ −½·S²·σ²·Γ². You cannot collect theta without short gamma risk. Every short-theta position is a short-gamma position. The desk rule: <em>define max gamma loss before entry</em>.
+  </div>
+
+  <h2>III. Volatility Smile / Skew — The Market's Reality</h2>
+  <p>Black-Scholes assumes constant σ. Reality: IV varies by strike (smile/skew) and expiry (term structure).</p>
+
+  <h3>A. Skew Types</h3>
+  <table>
+    <caption>Table 4 — Skew Regimes</caption>
+    <thead><tr><th>Regime</th><th>Shape</th><th>Cause</th><th>Trade implication</th></tr></thead>
+    <tbody>
+      <tr><td>Equity skew (smirk)</td><td>OTM puts > ATM > OTM calls</td><td>Crash fear; leverage effect; put buying for insurance</td><td>Put spreads cheaper than call spreads; risk reversals pay to sell</td></tr>
+      <tr><td>Commodity smile</td><td>U-shaped: both wings > ATM</td><td>Supply disruption risk both ways</td><td>Straddles/strangles expensive; fly cheaper</td></tr>
+      <tr><td>FX smile</td><td>Symmetric around ATM</td><td>Two-way tail risk</td><td>Risk reversals ≈ 0; butterflies trade skew</td></tr>
+    </tbody>
+  </table>
+
+  <h3>B. Term Structure</h3>
+  <p>IV vs DTE: usually upward sloping (longer dated = higher IV) due to uncertainty accumulation. Inverted during crisis (near-term panic > long-term).</p>
+  <div class="formula">Forward volatility: σ<sub>fwd</sub>² = (σ₂²·T₂ − σ₁²·T₁) / (T₂ − T₁)<br>Use to price calendar spreads and forward-start options.</div>
+
+  <h2>IV. Pricing Models — When to Use What</h2>
+
+  <table>
+    <caption>Table 5 — Model Selection</caption>
+    <thead><tr><th>Model</th><th>Use case</th><th>Limitation</th></tr></thead>
+    <tbody>
+      <tr><td>Black-Scholes</td><td>European, no divs, constant vol, lognormal</td><td>Fails on skew, early exercise, fat tails</td></tr>
+      <tr><td>Black-76</td><td>Futures options</td><td>Same as BS</td></tr>
+      <tr><td>Binomial (Cox-Ross-Rubinstein)</td><td>American exercise, discrete divs, flexible</td><td>Slow for many steps; converge to BS</td></tr>
+      <tr><td>Trinomial</td><td>Faster convergence; better for barriers</td><td>More complex</td></tr>
+      <tr><td>Monte Carlo</td><td>Path-dependent (Asian, lookback, barrier)</td><td>Slow; no Greeks without adjoint</td></tr>
+      <tr><td>Local Vol (Dupire)</td><td>Fits full surface; prices exotics consistently</td><td>Overfits; poor hedging (vol of vol = 0)</td></tr>
+      <tr><td>Stochastic Vol (Heston, SABR)</td><td>Vol of vol, skew dynamics, term structure</td><td>Calibration risk; parameters not observable</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>Natenberg's model warning:</strong> "All models are wrong. Some are useful." The desk uses BS for <em>quoting conventions</em> (IV is the language), binomial for <em>American early exercise</em>, and stochastic vol for <em>structuring</em>. Never trust a single model's absolute price.
+  </div>
+
+  <h2>V. Put-Call Parity — The Arbitrage Anchor</h2>
+  <div class="formula">C − P = S − K·e<sup>−rT</sup> − PV(Dividends)<br><br>If violated → risk-free arb. Desk checks this <em>every morning</em> on core names. Violation = data error or hard-to-borrow.</div>
+
+  <h2>VI. Early Exercise — The American Premium</h2>
+  <p>Only calls on dividend-paying stocks and deep ITM puts are candidates.</p>
+  <table>
+    <caption>Table 6 — Early Exercise Rules</caption>
+    <thead><tr><th>Scenario</th><th>Exercise if...</th></tr></thead>
+    <tbody>
+      <tr><td>Call, stock pays div</td><td>Div > K·r·e<sup>−rT</sup> + θ (time value remaining)</td></tr>
+      <tr><td>Put, deep ITM</td><td>Interest on strike > dividend + time value</td></tr>
+      <tr><td>Never</td><td>Non-dividend calls; OTM options</td></tr>
+    </tbody>
+  </table>
+
+  <h2>VII. Volatility Trading Strategies — Natenberg's Playbook</h2>
+
+  <h3>A. Long Volatility (IV < RV expectation)</h3>
+  <div class="grid">
+    <div class="card"><h4>Long Straddle</h4><p>ATM call + put. Max loss = premium. Needs large move > premium. Theta bleed daily.</p></div>
+    <div class="card"><h4>Long Strangle</h4><p>OTM call + put. Cheaper, needs bigger move. Wider breakevens.</p></div>
+    <div class="card"><h4>Calendar Spread</h4><p>Sell near-term, buy far-term same strike. Long vega, short theta. Wins if spot pins strike.</p></div>
+    <div class="card"><h4>Diagonal Spread</h4><p>Calendar + vertical. Directional + vol view.</p></div>
+  </div>
+
+  <h3>B. Short Volatility (IV > RV expectation)</h3>
+  <div class="grid">
+    <div class="card"><h4>Short Straddle/Strangle</h4><p>Collect premium. Unlimited risk. <strong>Desk never does naked.</strong></p></div>
+    <div class="card"><h4>Iron Condor</h4><p>OTM put spread + OTM call spread. Defined risk. High prob, small premium.</p></div>
+    <div class="card"><h4>Butterfly</h4><p>Long 1 ITM + 2 ATM + 1 OTM (or all OTM). Pin risk. Cheap, high reward/risk.</p></div>
+    <div class="card"><h4>Ratio Spread</h4><p>Buy 1 ATM, sell 2 OTM. Vega-neutral near strike. Tail risk if blow through.</p></div>
+  </div>
+
+  <h3>C. Volatility Arbitrage (Model vs Market)</h3>
+  <table>
+    <caption>Table 7 — Vol Arb Structures</caption>
+    <thead><tr><th>Structure</th><th>Edge source</th><th>Risk</th></tr></thead>
+    <tbody>
+      <tr><td>Gamma scalping</td><td>Long gamma (buy straddle), delta-hedge daily</td><td>Theta bleed; path dependency</td></tr>
+      <tr><td>Variance swap</td><td>Pure realized vol bet; no path risk</td><td>Model risk on strike; convexity</td></tr>
+      <tr><td>Vol swap / VIX future</td><td>Direct vol exposure</td><td>Roll yield; term structure</td></tr>
+      <tr><td>Dispersion trade</td><td>Index vol < weighted single-stock vol</td><td>Correlation risk; execution</td></tr>
+    </tbody>
+  </table>
+
+  <h2>VIII. Risk Management — Natenberg's Discipline</h2>
+  <div class="callout gold">
+    <strong>The Natenberg Risk Rules (desk-adapted):</strong>
+    <ol style="margin:8px 0 0 18px;padding:0">
+      <li><strong>Size to max loss, not max gain.</strong> Know the worst case before entry.</li>
+      <li><strong>Define exit before entry.</strong> Stop loss on vega? Delta? Time? All three.</li>
+      <li><strong>Vega limit per name.</strong> Net vega exposure capped at X% of capital.</li>
+      <li><strong>Gamma limit.</strong> Max short gamma = max daily move you can survive unhedged.</li>
+      <li><strong>No naked short gamma near earnings.</strong> Ever.</li>
+      <li><strong>IV rank context.</strong> Same structure = different risk at 90th vs 10th pctl IV.</li>
+      <li><strong>Model risk buffer.</strong> Price with 2 models; if they disagree > 5%, pass or size down.</li>
+    </ol>
+  </div>
+
+  <h2>IX. Quick Reference — Desk Formulas</h2>
+  <div class="formula">
+<strong>ATM straddle price ≈</strong> 0.8 × S × σ × √(T/252)  (approx, for quick mental math)
+<strong>1σ move ≈</strong> S × σ × √(DTE/252)
+<strong>Theta (ATM) ≈</strong> −0.4 × S × σ / √(T/252)  per day
+<strong>Vega (ATM) ≈</strong> 0.4 × S × √(T/252)  per 1% vol change
+<strong>Gamma (ATM) ≈</strong> 0.4 / (S × σ × √(T/252))
+  </div>
+
+  <h2>X. How the Desk Uses This</h2>
+  <p>When a question hits the desk about options — any question — the answer is grounded in <em>this</em> framework:</p>
+  <ol style="margin-left:18px">
+    <li>What is the IV rank? (Cheap/expensive vol)</li>
+    <li>What is the skew telling us? (Crash fear? Complacency?)</li>
+    <li>Which Greek is the primary risk? (Delta? Gamma? Vega? Theta?)</li>
+    <li>What model fits the structure? (BS for quoting, binomial for early exercise, stochastic for exotics)</li>
+    <li>Where is the edge vs the market's pricing?</li>
+    <li>What is the max loss, and is it defined?</li>
+  </ol>
+
+  <div class="callout">
+    <strong>Carlton (or anyone) asks:</strong> "How do I trade earnings vol?" → Desk answers from Section VII: <em>long straddle/strangle if IV rank low; iron condor/ratio spread if IV rank high; never naked short gamma through binary event.</em> Every answer traces to a line in this page.
+  </div>
+
+  <div class="foot">
+    <span>StigmergiCoin — the finance desk</span>
+    <span><a href="index.html">← back</a> · <a href="education.html">education</a> · <a href="research.html">research</a></span>
+  </div>
+</div>
+</body>
+</html>
