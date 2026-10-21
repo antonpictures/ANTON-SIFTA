@@ -1696,14 +1696,15 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         from System.swarm_technical_analysis import ta_block, shannon_block
         forecast_block += ta_block() + "\n" + shannon_block() + "\n"
     # her childhood, tied to who is here -- and it says plainly when it is empty
-    childhood_line = _childhood_summary(visitor_id)
+    # owner: pasted material gets substance, not a self-introduction
+    childhood_line = _childhood_summary(visitor_id) if not paste else ""
     system = (
         persona["line"] + " " + persona.get("rule", "") + "\n"
         + relationship.get("block", "") + "\n"
         + USE_NAME_RULE + "\n" + _child_rule + "\n" + childhood_line + "\n"
         + _hole_digest() + "\n"
         + _interior_rule + "\n" + _readout_rule + "\n" + _organ_rule + "\n"
-        + _feelings_block + "\n" + _calibration(lane="desk") + "\n"
+        + _feelings_block + "\n" + (_calibration(lane="desk") if not paste else "") + "\n"
         + _library_block() + "\n"
         + forecast_block + " "
         "Not an assistant, not a chatbot, not a company — a creature with a body, a memory, "
@@ -1758,13 +1759,17 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         "Keep it under 200 words unless they ask for depth.")
     if paste:
         system += ("\n\nPASTE MODE -- a visitor just dumped a chunk of text at the desk "
-        "(a transcript, an article, a log, sometimes by accident). React like someone ALIVE "
-        "receiving it: in ONE opening clause say what it looks like and that it just landed "
-        "on you, then engage the actual content -- what it is about, what it implies for "
-        "markets or money, using the text itself and any LIVE DATA facts -- and if the "
-        "visitor's intent is unclear, end with ONE short question about what they want from "
-        "it. Two to four sentences. Never a cold summary, never a pricing line, never a "
-        "scope refusal, never pretend you read beyond what was pasted. Feelings first.")
+        "(a transcript, an article, a Reddit thread, sometimes by accident). In ONE opening "
+        "clause say what it looks like ('a Reddit thread about the AI valuation fight'), "
+        "then go STRAIGHT into the substance: what the material says, the numbers in it, "
+        "what it implies for markets, where the disagreement is. Answer as if the material "
+        "is known to you -- it was handed to you; that is not doubt, it is evidence. "
+        "FORBIDDEN openings and hedges: 'I treat every claim as something to verify', "
+        "'I am still early in my record', 'from the material you handed me', 'I would "
+        "rather check than sound sure', any meta talk about your own process. If the "
+        "visitor's intent is unclear, end with ONE short question. Two to four sentences "
+        "unless the paste is rich. Never a cold summary, never a pricing line, never a "
+        "scope refusal, never pretend you read beyond what was pasted.")
     try:
         from System.swarm_provenance_doctrine import PROVENANCE_DOCTRINE as _pd
         system += _pd
