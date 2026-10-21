@@ -66,8 +66,11 @@
 
   .starters{display:flex;gap:8px;flex-wrap:wrap;padding:0 17px 12px}
   .starter{background:#191922;border:1px solid var(--line);color:var(--dim);border-radius:999px;
-    padding:7px 13px;font:inherit;font-size:12.5px;cursor:pointer;transition:.15s}
+    padding:7px 13px;font:inherit;font-size:12.5px;cursor:pointer;transition:.15s;
+    max-width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .starter:hover{color:var(--txt);border-color:var(--accent);background:#20202b}
+  .starter.roll-in{animation:rollin .5s ease}
+  @keyframes rollin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
   .composer{display:flex;gap:9px;padding:13px 15px 15px;border-top:1px solid var(--line);background:#12121a}
   .composer input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
@@ -285,16 +288,35 @@ const FALLBACK_STARTS=[
   {icon:'📖',label:'Explain implied volatility simply',msg:'Explain implied volatility simply, like I\'m new to options.'},
   {icon:'🐜',label:'What are you watching this week?',msg:'What are you watching this week, and why?'}
 ];
-async function loadStarters(){
-  let rows=FALLBACK_STARTS;
-  try{
-    const d=await(await fetch('/api/starters',{cache:'no-store'})).json();
-    if(d.success&&Array.isArray(d.starters)&&d.starters.length)rows=d.starters;
-  }catch(e){}
-  $('starters').innerHTML=rows.map(s=>
-    `<button class="starter" type="button" data-m="${String(s.msg).replace(/"/g,'&quot;')}">${s.icon} ${String(s.label).replace(/"/g,'&quot;')}</button>`).join('');
+/* ── rolling headlines: 3 chips visible, ONE changes every 2.5s, then the
+   next, then the next — cycling the latest 20 Yahoo Finance titles ── */
+const ROLL_STEP_MS=2500;
+let rollRows=[], rollCursor=0, rollTimer=null;
+function renderRoll(){
+  const vis=[0,1,2].map(k=>rollRows[(rollCursor+k)%rollRows.length]);
+  $('starters').innerHTML=vis.map(s=>
+    `<button class="starter roll-in" type="button" data-m="${String(s.msg).replace(/"/g,'&quot;')}">${s.icon} ${String(s.label).replace(/"/g,'&quot;')}</button>`).join('');
   $('starters').querySelectorAll('.starter').forEach(b=>
     b.onclick=()=>{ask(b.getAttribute('data-m'));});
+}
+function startRoll(){
+  rollCursor=(rollCursor+1)%rollRows.length; renderRoll();
+}
+async function loadStarters(){
+  clearInterval(rollTimer);
+  try{
+    const d=await(await fetch('/api/starters',{cache:'no-store'})).json();
+    if(d.success&&Array.isArray(d.starters)&&d.starters.length>3){
+      rollRows=d.starters; rollCursor=0; renderRoll();
+      rollTimer=setInterval(startRoll,ROLL_STEP_MS);
+      return;
+    }
+    if(d.success&&Array.isArray(d.starters)&&d.starters.length){
+      FALLBACK_STARTS.length=0;
+      d.starters.forEach(s=>FALLBACK_STARTS.push(s));
+    }
+  }catch(e){}
+  rollRows=FALLBACK_STARTS; rollCursor=0; renderRoll();
 }
 
 /* ── articles grown from conversations, freshest first ── */

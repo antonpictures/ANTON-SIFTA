@@ -884,11 +884,79 @@ def _mover_pct(q: Dict[str, Any]) -> str:
         return "n/a"
 
 
+# ── latest headlines from Yahoo Finance's own RSS (2026-10-21) ───────────────
+# Owner order: the bottom chips roll with the latest 20 Yahoo titles instead of
+# three canned questions, one chip changing every 2.5 seconds. The RSS feeds
+# are Yahoo's own durable surface; yfinance 1.7.0's .news returned [] for every
+# ticker (that sub-API breaks when Yahoo moves endpoints). Merged across
+# desk-relevant feeds, deduped, newest first, cached 5 minutes.
+_HEADLINE_FEEDS = (
+    ("^GSPC", "🏦"),   # market news
+    ("CRWV", "💸"),    # the AI-debt story
+    ("BTC-USD", "₿"),  # crypto
+    ("NVDA", "🧠"),    # AI engines
+)
+_HEADLINES_CACHE: Dict[str, Any] = {"t": 0.0, "items": []}
+
+
+def latest_headlines(limit: int = 20) -> list:
+    if time.time() - float(_HEADLINES_CACHE.get("t") or 0) < 300 and _HEADLINES_CACHE["items"]:
+        return _HEADLINES_CACHE["items"]
+    import email.utils
+    import urllib.parse as _up
+    import xml.etree.ElementTree as ET
+    seen, items = set(), []
+    for sym, icon in _HEADLINE_FEEDS:
+        try:
+            url = (f"https://feeds.finance.yahoo.com/rss/2.0/headline"
+                   f"?s={_up.quote(sym)}&region=US&lang=en-US")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            root = ET.fromstring(urllib.request.urlopen(req, timeout=12).read())
+            for it in root.findall(".//item"):
+                title = (it.findtext("title") or "").strip()
+                if not title or title.casefold() in seen:
+                    continue
+                seen.add(title.casefold())
+                ts = 0.0
+                try:
+                    ts = email.utils.parsedate_to_datetime(
+                        it.findtext("pubDate") or "").timestamp()
+                except Exception:
+                    pass
+                items.append({"title": title, "icon": icon, "sym": sym,
+                              "link": (it.findtext("link") or "").strip(),
+                              "ts": ts})
+        except Exception:
+            continue
+    items.sort(key=lambda x: x["ts"], reverse=True)
+    items = items[:limit]
+    if items:
+        _HEADLINES_CACHE["t"] = time.time()
+        _HEADLINES_CACHE["items"] = items
+    return items
+
+
 def starters_with_fresh_data() -> list:
-    """The owner's three rolling questions, each wired to the live tape
-    (yfinance). Chip labels stay short and readable; the fresh numbers ride
-    inside the message that gets sent to the desk, so every click is about
-    TODAY, not a phrase frozen in HTML. Cached 60 seconds."""
+    """The bottom chips: rolling Yahoo Finance headlines (owner order,
+    2026-10-21) — the page rotates them one chip at a time, 2.5s a step. Each
+    chip carries the full headline in the message sent to the desk, so a click
+    asks me about THAT story while it is still news. Falls back to the three
+    fresh-data questions if the feeds fail."""
+    try:
+        heads = latest_headlines()
+    except Exception:
+        heads = []
+    if heads:
+        out = []
+        for h in heads:
+            t = h["title"]
+            label = t if len(t) <= 68 else t[:67].rstrip() + "…"
+            out.append({"icon": h["icon"], "label": label,
+                        "msg": (f"“{t}” — what's the latest on this story? A few "
+                                "sentences: what happened, who said it, and why it "
+                                "matters for the tape."),
+                        "link": h.get("link") or "", "sym": h.get("sym") or ""})
+        return out
     if time.time() - float(_STARTERS_CACHE.get("t") or 0) < 60 and _STARTERS_CACHE["rows"]:
         return _STARTERS_CACHE["rows"]
 
