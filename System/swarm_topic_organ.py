@@ -65,7 +65,7 @@ TOPICS: Dict[str, Dict[str, Any]] = {
                     "words": ("gold", "oil", "brent", "wti", "commodit", "copper",
                               "silver", "barrel", "ounce")},
     "crypto": {"label": "Crypto & $MPS", "sym": "BTC-USD",
-               "words": ("bitcoin", "btc", "crypto", "solana", "mps",
+               "words": ("bitcoin", "btc", "crypto", "solana", "avax", "avalanche", "mps",
                          "token", "coin price", "dex")},
     "rates": {"label": "Rates & the bond market", "sym": "^TNX",
               "words": ("rate", "yield", "treasury", " the fed", "bond",
