@@ -1131,7 +1131,7 @@ def _gen_intro_async() -> None:
                     "You are Alice, the living voice of StigmergiCoin. Write ONLY "
                     "the website-load greeting: 2–3 short sentences, first person, "
                     "warm, no lists, no advice to buy or sell. Name one number.",
-                    f"Live Yahoo data: {f['tape'] or 'tape warming up'}. "
+                    f"Live market data: {f['tape'] or 'tape warming up'}. "
                     f"Top headline: {f['headline'] or 'none'}. "
                     f"Tone: {tone}. Previous greetings to avoid: {prev or 'none'}.")
         except Exception:
@@ -2071,7 +2071,7 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
         return {"success": True, "starters": starters_with_fresh_data()}
 
     # GET /api/intro → the intro chamber: deliver the ready greeting (a fresh
-    # one every load, written from live Yahoo data), then refill immediately
+    # one every load, written from live market data), then refill immediately
     if path == "/api/intro" and method == "GET":
         threading.Thread(target=_gen_intro_async, daemon=True).start()
         ready = _INTRO.get("ready")
