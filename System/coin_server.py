@@ -543,8 +543,15 @@ _PRICING_VISIBLE = os.environ.get("SIFTA_PRICING_VISIBLE", "0") == "1"
 
 
 def pricing_question(text: str) -> bool:
-    """Is this visitor asking about the desk — what she costs, what is free?"""
-    low = (text or "").casefold()
+    """Is this visitor asking about the desk — what she costs, what is free?
+
+    2026-10-21 owner catch: a PASTED conference transcript containing the lone
+    word "free" was hijacked into the pricing answer. Substring matching is
+    only valid for a short question ABOUT the desk — long pasted text (a
+    transcript, an article) goes to the conversation, never to this detector."""
+    low = (text or "").casefold().strip()
+    if not low or len(low) > 300:
+        return False
     return any(term in low for term in PRICING_TERMS)
 
 
