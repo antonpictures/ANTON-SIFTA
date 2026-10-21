@@ -239,49 +239,14 @@ _TICKER_STOP = {
 }
 
 def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
-    """ONE ticker per article, only after more than five mentions across the
-    topic's whole recorded life. 2026-10-21 fix (owner caught it): talking
-    about the SUBJECT talks about its ticker — every recorded prompt row on a
-    themed topic counts as a mention of that ticker (a row entered the topic
-    by naming its subject), plus explicit uppercase/$CASHTAG tokens anywhere.
-    syms_seen is not added on top — those rows are the same turns."""
-    from collections import Counter
-    counts: Counter = Counter()
-    theme = (TOPICS.get(slug) or {}).get("sym") or ""
-    if not theme and slug.startswith("ticker-"):
-        theme = slug.split("ticker-", 1)[-1].upper()
-    clean = lambda t: str(t or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
-    topic_rows: list = []
-    try:
-        if _PROMPTS.exists():
-            for ln in _PROMPTS.read_text(encoding="utf-8").splitlines()[-600:]:
-                try:
-                    row = json.loads(ln)
-                except Exception:
-                    continue
-                if row.get("topic") != slug:
-                    continue
-                topic_rows.append(row)
-                for m in _TICKER_RE.finditer(row.get("q") or ""):
-                    tok = (m.group(1) or m.group(2) or "").upper()
-                    if tok and tok not in _TICKER_STOP:
-                        counts[tok] += 1
-    except Exception:
-        pass
-    if theme:
-        th = clean(theme)
-        if th and len(th) <= 6:
-            counts[th] += len(topic_rows)          # the talk itself, honestly
-    for q in (entry.get("questions") or []):
-        for m in _TICKER_RE.finditer(q or ""):
-            tok = (m.group(1) or m.group(2) or "").upper()
-            if tok and tok not in _TICKER_STOP:
-                counts[tok] += 1
+    """ONE ticker per article, only after more than five mentions (the tally
+    below). Owner law, 2026-10-21."""
+    counts = ticker_counts(slug, entry)
     if not counts:
         return ""
-    tok, n = counts.most_common(1)[0]
-    return tok if n > 5 else ""        # more than five mentions, owner's number
-
+    tok = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    n = counts[tok]
+    return tok if n > 5 else ""
 
 
 def ticker_counts(slug: str, entry: Dict[str, Any]) -> Dict[str, int]:
@@ -316,15 +281,6 @@ def ticker_counts(slug: str, entry: Dict[str, Any]) -> Dict[str, int]:
         if th and len(th) <= 8:
             counts[th] += rows_n                 # talking the subject IS its ticker
     return dict(counts)
-
-def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
-    """ONE ticker per article, only after more than five mentions (the tally
-    above). Owner law."""
-    counts = ticker_counts(slug, entry)
-    if not counts:
-        return ""
-    tok, n = counts.most_common(1)[0]
-    return tok if n > 5 else ""
 
 def room_line(slug: str) -> str:
     """One truthful sentence about what the room already covered — counts,
