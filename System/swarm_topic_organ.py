@@ -240,19 +240,18 @@ _TICKER_STOP = {
 
 def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
     """ONE ticker per article, only after more than five mentions across the
-    topic's WHOLE recorded life: ledger syms_seen, question text, and every
-    prompt row in the anonymous ledger. Owner law, 2026-10-21."""
+    topic's whole recorded life. 2026-10-21 fix (owner caught it): talking
+    about the SUBJECT talks about its ticker — every recorded prompt row on a
+    themed topic counts as a mention of that ticker (a row entered the topic
+    by naming its subject), plus explicit uppercase/$CASHTAG tokens anywhere.
+    syms_seen is not added on top — those rows are the same turns."""
     from collections import Counter
     counts: Counter = Counter()
-    for s in (entry.get("syms_seen") or []):
-        t = str(s or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
-        if t and len(t) <= 6:
-            counts[t] += 1
-    for q in (entry.get("questions") or []):
-        for m in _TICKER_RE.finditer(q or ""):
-            tok = (m.group(1) or m.group(2) or "").upper()
-            if tok and tok not in _TICKER_STOP:
-                counts[tok] += 1
+    theme = (TOPICS.get(slug) or {}).get("sym") or ""
+    if not theme and slug.startswith("ticker-"):
+        theme = slug.split("ticker-", 1)[-1].upper()
+    clean = lambda t: str(t or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
+    topic_rows: list = []
     try:
         if _PROMPTS.exists():
             for ln in _PROMPTS.read_text(encoding="utf-8").splitlines()[-600:]:
@@ -262,16 +261,22 @@ def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
                     continue
                 if row.get("topic") != slug:
                     continue
-                for s in (row.get("syms") or []):
-                    t = str(s or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
-                    if t and len(t) <= 6:
-                        counts[t] += 1
+                topic_rows.append(row)
                 for m in _TICKER_RE.finditer(row.get("q") or ""):
                     tok = (m.group(1) or m.group(2) or "").upper()
                     if tok and tok not in _TICKER_STOP:
                         counts[tok] += 1
     except Exception:
         pass
+    if theme:
+        th = clean(theme)
+        if th and len(th) <= 6:
+            counts[th] += len(topic_rows)          # the talk itself, honestly
+    for q in (entry.get("questions") or []):
+        for m in _TICKER_RE.finditer(q or ""):
+            tok = (m.group(1) or m.group(2) or "").upper()
+            if tok and tok not in _TICKER_STOP:
+                counts[tok] += 1
     if not counts:
         return ""
     tok, n = counts.most_common(1)[0]
