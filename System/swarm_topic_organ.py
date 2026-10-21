@@ -420,7 +420,7 @@ def _grow(entry: Dict[str, Any]) -> None:
         f"Recent web reading (paraphrase in your own words, name the source when useful):\n" +
         ("\n".join(f"- {w}" for w in web_lines) if web_lines else "- (nothing useful came back; say so plainly)")
         + "\n\nWrite the story.")
-    prose = _cortex_prose(system, prompt, num_predict=760)
+    prose = _cortex_prose(system, prompt, num_predict=820)
     from_cortex = bool(prose)
     if not prose:
         prose = (
@@ -545,6 +545,38 @@ def ticker_tally_list(limit: int = 10) -> list:
     rows.sort(key=lambda r: (-r["last"], -r["count"]))
     return rows[:limit]
 
+def _sparkline_svg(closes, dates=None) -> str:
+    """The ticker's month of closes as a pure SVG line — no external libs,
+    readable by any AI scraper, alive on the page."""
+    vals = [(i, v) for i, v in enumerate(closes) if isinstance(v, (int, float))]
+    if len(vals) < 3:
+        return ""
+    w, h, pad = 640, 140, 10
+    lo = min(v for _, v in vals); hi = max(v for _, v in vals)
+    rng = (hi - lo) or 1
+    step = (w - 2 * pad) / max(1, (len(vals) - 1))
+    pts = " ".join(f"{(pad + i * step):.1f},{(h - pad - (v - lo) / rng * (h - 2 * pad)):.1f}"
+                   for i, v in vals)
+    upc = "#00c896" if vals[-1][1] >= vals[0][1] else "#ff5c5c"
+    first_d = (dates[0] if dates else "")[:10]
+    last_d = (dates[-1] if dates else "")[:10]
+    return (f'<svg class="chartsvg" viewBox="0 0 {w} {h+18}" xmlns="http://www.w3.org/2000/svg">'
+            f'<polyline fill="none" stroke="{upc}" stroke-width="2.5" points="{pts}"/>'
+            f'<circle cx="{pad + (len(vals)-1)*step:.1f}" cy="{h - pad - (vals[-1][1]-lo)/rng*(h-2*pad):.1f}" r="4" fill="{upc}"/>'
+            f'<text x="{pad}" y="{h+12}" font-size="11" fill="#6d6b67">{esc_safe(first_d)} · low {_fmt(lo)}</text>'
+            f'<text x="{w-pad}" y="{h+12}" font-size="11" fill="#6d6b67" text-anchor="end">{esc_safe(last_d)} · high {_fmt(hi)}</text>'
+            f'</svg>')
+
+def esc_safe(s):
+    return str(s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+def _fmt(v):
+    try:
+        n=float(v)
+        return f"{n:,.2f}" if n>=1 else f"{n:.4f}"
+    except Exception:
+        return "—"
+
+
 def grow_ticker_article(entry: Dict[str, Any]) -> None:
     """The ticker's living page: RIGHT NOW quote, the story (cortex, fed by
     its conversations + web reading), what visitors asked, and the ticker's
@@ -554,11 +586,21 @@ def grow_ticker_article(entry: Dict[str, Any]) -> None:
     if not sym:
         return
     quote: Dict[str, Any] = {}
+    closes: list = []; dates: list = []; chart = ""
     try:
         from System.coin_server import market_quote
         quote = market_quote(raw) or {}
     except Exception:
         quote = {}
+    try:
+        import yfinance as yf
+        h = yf.Ticker(raw).history(period="1mo", auto_adjust=False, raise_errors=False)
+        cl = list(h["Close"]); dt = [str(x)[:10] for x in list(h.index)]
+        closes = [c for c in cl if isinstance(c, (int, float))]
+        dates = dt  # index order matches closes length pre-filter
+        chart = _sparkline_svg(closes, dates)
+    except Exception:
+        pass
     price_s = _fact_line({"quote": quote}) if quote else "the quote feed is quiet right now"
     tally = _tload().get(sym) or {}
     count = int(tally.get("count") or entry.get("count") or 0)
@@ -574,12 +616,16 @@ def grow_ticker_article(entry: Dict[str, Any]) -> None:
         web_lines = []
 
     system = (
-        "You are Alice, the voice of StigmergiCoin — a finance desk that answers in "
-        "first person, plainly, and says when it does not know. Write THE STORY section "
-        "of a living ticker page: 3–4 paragraphs (280–420 words), no headings, no lists, "
-        "no markup, no advice to buy or sell. Weave: what the quote says right now (exact "
-        "numbers), what visitors keep asking about this ticker and why it matters to them, "
-        "and what the recent web reading adds — naming its source plainly when useful.")
+        "You are Alice writing the lead feature of a serious finance paper — the register "
+        "of a front-page business story: a strong lede that states where the ticker stands "
+        "today with exact numbers, a nut paragraph on why it matters, then the mechanics a "
+        "reader needs to genuinely understand the situation (structure, incentives, who "
+        "bears what risk), the crowd's curiosity woven in, and a sober close on what to "
+        "watch next. First person allowed only in brief asides; the body reads like print. "
+        "4–6 paragraphs (380–520 words), no headings, no lists, no markup. Absolutely no "
+        "advice to buy or sell, no price targets, no hype, no prediction certainty. Every "
+        "number must come from the data given. The goal is a reader who leaves wealthier in "
+        "knowledge — money follows understanding.")
     prompt = (
         f"Ticker: {sym} ({raw})\n"
         f"Right now: {price_s}\n"
@@ -607,8 +653,8 @@ def grow_ticker_article(entry: Dict[str, Any]) -> None:
     qs_html = "".join(f"<li>{esc(x)}</li>" for x in qs[:8])
     websecs = ""
     if web_lines:
-        websecs = ('<div class="asked"><h3>From the web today</h3><ul class="web">'
-                   + "".join(f"<li>{esc(w)}</li>" for w in web_lines) + "</ul></div>")
+        websecs = ('<div class="internal"><div class="asked"><h3>From the web today (internal)</h3><ul class="web">'
+                   + "".join(f"<li>{esc(w)}</li>" for w in web_lines) + "</ul></div></div>")
     hist = "".join(f"<li>{esc(h)}</li>" for h in reversed((tally.get("history") or [])[-12:]))
     hist_new_lines = [hist_new] + [h for h in (tally.get("history") or [])
                                    if not h.startswith(hist_new.split(" — ")[0])][:11]
@@ -628,6 +674,9 @@ main{{max-width:760px;margin:0 auto;padding:26px 22px}}
 h1{{font:600 25px/1.32 Georgia,"Times New Roman",serif;margin-bottom:10px}}
 .meta{{font-size:12px;color:#6d6b67;margin-bottom:20px}}
 .facts{{background:#14141b;border:1px solid #24242f;border-left:3px solid #d97757;border-radius:12px;padding:14px 16px;font-size:13.5px;color:#e7e4dc;margin-bottom:16px}}
+.chart{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:10px 12px 4px;margin-bottom:16px}}
+.chartsvg{{width:100%;height:auto;display:block}}
+.internal{{display:none}}
 .hdr{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6d6b67;margin:22px 0 9px}}
 .body p{{margin-bottom:13px}}
 .asked{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:14px 16px 14px 34px;margin:22px 0}}
@@ -646,10 +695,12 @@ footer{{text-align:center;margin-top:30px}}
 <div class="meta">ticker page · updated {updated} · {count} mentions ·
 {"written in my voice from live data + web reading" if from_cortex else "assembled from live data — cortex unavailable"}</div>
 <div class="facts"><b>RIGHT NOW:</b> {esc(price_s)}</div>
+<div class="hdr">The tape, last month</div>
+<div class="chart">{chart}</div>
 <div class="hdr">The story</div>
 <div class="body">{''.join(f'<p>{esc(p.strip())}</p>' for p in prose.split('\n\n') if p.strip())}</div>
 {websecs}
-<div class="asked"><h3>The conversations that grew this</h3><ul>{qs_html}</ul></div>
+<div class="internal"><div class="asked"><h3>The conversations that grew this (internal)</h3><ul>{qs_html}</ul></div></div>
 {histsec}
 <footer><a class="cta" href="/">Open the desk — keep this ticker's story moving →</a></footer>
 </main></body></html>"""
