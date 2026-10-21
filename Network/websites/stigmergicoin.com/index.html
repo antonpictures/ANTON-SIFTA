@@ -11,6 +11,7 @@
     --bg:#0d0d12; --panel:#15151c; --panel2:#1a1a23;
     --line:#262633; --txt:#ece9e2; --dim:#9a9893; --dimmer:#6f6d69;
     --accent:#d97757; --up:#00c896; --down:#ff5c5c; --gold:#f5c842;
+    --top-h:96px;
   }
   html{scroll-behavior:smooth}
   body{background:var(--bg);color:var(--txt);
@@ -20,60 +21,84 @@
   ::-webkit-scrollbar{width:8px;height:8px}
   ::-webkit-scrollbar-thumb{background:#2c2c38;border-radius:8px}
 
-  /* ── top bar (Yahoo: brand · search · actions) ── */
+  /* ── top bar (no second input — one box on the page, in the chat panel) ── */
   header{position:sticky;top:0;z-index:30;background:rgba(13,13,18,.94);
     backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-  .top{max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:18px;
-    padding:12px 20px}
+  .top{max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:12px 20px}
   .brand{display:flex;align-items:center;gap:10px;flex:0 0 auto;text-decoration:none;color:var(--txt)}
   .brand .mark{width:30px;height:30px;border-radius:8px;
     background:linear-gradient(135deg,var(--accent),#8a4527);display:grid;place-items:center;font-size:15px}
   .brand b{font:600 20px/1 Georgia,"Times New Roman",serif}
   .brand b i{color:var(--accent);font-style:normal}
-  .topsearch{flex:1;max-width:420px;margin:0 auto}
-  .topsearch input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);
-    border-radius:10px;padding:9px 14px;font:inherit;font-size:14px}
-  .topsearch input::placeholder{color:var(--dimmer)}
   .top .pill{font-size:12px;color:var(--dim);background:#1d1d27;border:1px solid var(--line);
-    border-radius:999px;padding:5px 12px;flex:0 0 auto}
+    border-radius:999px;padding:5px 12px;margin-left:auto;flex:0 0 auto}
   .top .pill b{color:var(--accent)}
 
-  /* ── market strip (Yahoo: quote ticker) ── */
+  /* ── market strip ── */
   .strip{border-bottom:1px solid var(--line);background:#101018}
   .strip .in{max-width:1240px;margin:0 auto;display:flex;gap:26px;overflow-x:auto;
     padding:9px 20px;scrollbar-width:none}
   .strip .in::-webkit-scrollbar{display:none}
-  .q{flex:0 0 auto;cursor:pointer}
+  .q{flex:0 0 auto;cursor:pointer;line-height:1.3}
   .q .n{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dimmer)}
   .q .v{font-size:15px;font-weight:600}
   .q .c{font-size:12.5px;margin-left:6px}
   .c.up{color:var(--up)} .c.down{color:var(--down)}
 
-  /* ── layout: feed + right rail (Yahoo grid) ── */
+  /* ── layout ── */
   .grid{max-width:1240px;margin:0 auto;display:grid;
-    grid-template-columns:minmax(0,1fr) 340px;gap:22px;padding:20px}
+    grid-template-columns:minmax(0,1fr) 340px;gap:22px;padding:18px 20px;align-items:start}
   main{min-width:0}
-  .rail{min-width:0}
+  .rail{min-width:0;position:sticky;top:calc(var(--top-h) + 10px)}
 
-  .sechead{display:flex;align-items:baseline;gap:12px;margin:6px 0 14px}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin:4px 0 12px}
   .sechead h2{font-size:19px;letter-spacing:-.01em}
   .sechead span{font-size:12px;color:var(--dimmer)}
 
-  /* article cards (Yahoo news feed) */
-  .card{display:flex;gap:16px;background:var(--panel);border:1px solid var(--line);
-    border-radius:12px;padding:16px;margin-bottom:14px;text-decoration:none;color:var(--txt)}
-  .card:hover{border-color:var(--accent2);text-decoration:none;background:var(--panel2)}
-  .card .img{flex:0 0 116px;height:78px;border-radius:8px;display:grid;place-items:center;
-    font-size:34px;background:linear-gradient(135deg,#20202c,#16161f)}
-  .card .body{flex:1;min-width:0}
-  .card .src{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-bottom:5px}
-  .card h3{font-size:16.5px;line-height:1.35;letter-spacing:-.01em;margin-bottom:6px}
-  .card p{font-size:13.5px;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;
-    -webkit-box-orient:vertical;overflow:hidden}
-  .card .meta{font-size:11.5px;color:var(--dimmer);margin-top:8px}
-  .card.wide .img{flex-basis:180px;height:110px}
+  /* ── news: featured story + selectable list ── */
+  .featured{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:16px}
+  .featured .photo{height:210px;position:relative;transition:background .35s ease;
+    background:radial-gradient(circle at 30% 20%, #2b2138, #14101c)}
+  .featured .photo .glyph{position:absolute;inset:0;display:grid;place-items:center;
+    font-size:74px;text-shadow:0 4px 26px rgba(0,0,0,.5)}
+  .featured .photo .tag{position:absolute;left:14px;bottom:12px;font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;background:rgba(0,0,0,.45);
+    border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:4px 11px;color:#fff}
+  .featured .body{padding:15px 17px}
+  .featured .src{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+  .featured h3{font-size:21px;line-height:1.3;letter-spacing:-.015em;margin-bottom:8px}
+  .featured p{font-size:14px;color:var(--dim)}
+  .featured .row{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .featured .row .open{margin-left:auto;font-size:13px}
+  .latestbtn{background:var(--accent);color:#fff;border:0;border-radius:999px;
+    padding:8px 15px;font:inherit;font-size:13px;cursor:pointer}
+  .latestbtn:hover{background:var(--accent2)}
 
-  /* modules in the rail */
+  .story{display:flex;gap:12px;align-items:center;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:10px;
+    cursor:pointer}
+  .story:hover{border-color:var(--accent2);background:var(--panel2)}
+  .story.on{border-color:var(--accent);background:var(--panel2)}
+  .story .ic{flex:0 0 44px;height:44px;border-radius:9px;display:grid;place-items:center;font-size:21px}
+  .story .t{flex:1;min-width:0}
+  .story .t .src{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)}
+  .story .t h4{font-size:14.5px;line-height:1.35;letter-spacing:-.01em;display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .story .when{font-size:11px;color:var(--dimmer);flex:0 0 auto;text-align:right;line-height:1.45}
+  .tick{font-size:11.5px;font-weight:600;white-space:nowrap;display:block;margin-top:3px}
+  .tick.up{color:var(--up)} .tick.down{color:var(--down)}
+
+  /* plain article cards under the news block */
+  .card{background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:15px;margin-bottom:12px;text-decoration:none;color:var(--txt)}
+  .card:hover{border-color:var(--accent2);text-decoration:none;background:var(--panel2)}
+  .card .src{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-bottom:5px}
+  .card h3{font-size:16px;line-height:1.35;letter-spacing:-.01em;margin-bottom:6px}
+  .card p{font-size:13.5px;color:var(--dim)}
+  .card .meta{font-size:11.5px;color:var(--dimmer);margin-top:7px}
+  .card.dashed{border-style:dashed;opacity:.65;cursor:default}
+
+  /* modules */
   .mod{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:15px;margin-bottom:16px}
   .mod h4{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dimmer);margin-bottom:11px}
@@ -83,14 +108,14 @@
   .tell .k{color:var(--dim);flex:0 0 26px}
   .tell code{color:var(--dimmer);font-size:11px;margin-left:auto}
 
-  /* the chat panel (the desk, docked right) */
-  .chat{position:sticky;top:112px;display:flex;flex-direction:column;
+  /* ── THE chat panel — the only input on the page ── */
+  .chat{display:flex;flex-direction:column;
     background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .chathead{padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
   .chathead .dot{width:8px;height:8px;border-radius:50%;background:var(--up)}
   .chathead b{font-size:14px}
   .chathead span{font-size:11.5px;color:var(--dimmer);margin-left:auto}
-  .msgs{height:380px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .msgs{height:340px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
   .m{max-width:92%;padding:9px 13px;border-radius:13px;font-size:13.8px;line-height:1.52;
     white-space:pre-wrap;word-wrap:break-word}
   .m.ai{background:#20202c;border:1px solid var(--line);border-bottom-left-radius:5px;align-self:flex-start}
@@ -105,18 +130,16 @@
   .chatform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
     color:var(--txt);border-radius:10px;padding:9px 13px;font:inherit;font-size:14px}
   .chatform button{background:var(--accent);border:0;color:#fff;border-radius:10px;
-    padding:0 16px;font:inherit;font-size:15px;cursor:pointer}
+    padding:0 15px;font:inherit;font-size:15px;cursor:pointer}
   .chatform button[disabled]{opacity:.5}
-  .mkt{font-size:11px;color:var(--dimmer);padding:0 14px 11px}
-  .mkt b{color:var(--gold)}
 
   footer{border-top:1px solid var(--line);margin-top:26px}
   .foot{max-width:1240px;margin:0 auto;padding:18px 20px 28px;display:flex;gap:16px;
     font-size:12px;color:var(--dimmer);flex-wrap:wrap;justify-content:space-between}
+
   @media (max-width:980px){
     .grid{grid-template-columns:1fr}
-    .chat{position:relative;top:0}
-    .top .topsearch{display:none}
+    .rail{position:relative;top:0}
   }
 </style>
 </head>
@@ -124,85 +147,98 @@
 <header>
   <div class="top">
     <a class="brand" href="/"><div class="mark">🐜</div><b>stigmergi<i>coin</i></b></a>
-    <div class="topsearch"><input id="topq" placeholder="Gold, oil, CRWV, rates — ask the desk"></div>
+    <a href="#articles" style="font-size:13.5px;color:var(--dim)">Articles</a>
+    <a href="#news" style="font-size:13.5px;color:var(--dim)">Markets</a>
     <span class="pill"><b>live</b> · measured, not narrated</span>
   </div>
 </header>
 
 <div class="strip"><div class="in" id="strip">
-  <span class="q" style="color:var(--dimmer)">loading live quotes…</span>
+  <span class="q" style="color:var(--dimmer);cursor:default">loading live quotes…</span>
 </div></div>
 
 <div class="grid">
   <main>
-    <div class="sechead"><h2>The desk's articles</h2><span>measured recon, written for humans</span></div>
-    <a class="card wide" href="education.html">
-      <div class="img">🔍</div>
-      <div class="body">
-        <div class="src">Field report · CoreWeave</div>
-        <h3>Options mechanics and the CoreWeave debt architecture — who built it, and what the financing actually is</h3>
-        <p>Founded as a crypto-mining vehicle by commodities traders; Nvidia invests in its own customer; the first-ever GPU-collateralized loan; the 2008 rhyme is literal (Magnetar). Options: why 2-day chains are lottery tickets, and the structures that survive earnings.</p>
-        <div class="meta">Baseline $62.13 · −56.2% from high · earnings Nov 9 · receipt fbb4a732</div>
+    <!-- ── NEWS: latest first; the selected story shows up HERE, with its photo ── -->
+    <section id="news">
+      <div class="sechead"><h2>Top stories <span style="color:var(--accent)">›</span></h2><span>tap a story — the photo opens above, and the desk reads the web for the latest on it</span></div>
+
+      <div class="featured" id="featured">
+        <div class="photo" id="fphoto"><div class="glyph" id="fglyph">🔍</div><span class="tag" id="ftag"></span></div>
+        <div class="body">
+          <div class="src" id="fsrc"></div>
+          <h3 id="ftitle"></h3>
+          <p id="fsum"></p>
+          <div class="row">
+            <button class="latestbtn" id="flatest">What's the latest on this story?</button>
+            <a class="open" id="flink" href="#">read the full piece →</a>
+          </div>
+        </div>
       </div>
-    </a>
-    <a class="card" href="natenberg.html">
-      <div class="img">📖</div>
-      <div class="body">
-        <div class="src">Reference · Options theory</div>
-        <h3>Natenberg, distilled: implied vs realized vol, the Greeks, skew — and the seven risk rules the desk keeps</h3>
-        <p>The canonical volatility-and-pricing framework as a working cheat sheet: IV rank, gamma-theta trade-off, smile regimes, model selection, sizing to max loss.</p>
-        <div class="meta">desk reference · v1</div>
-      </div>
-    </a>
-    <a class="card" href="research.html">
-      <div class="img">🧪</div>
-      <div class="body">
-        <div class="src">Research · Architecture</div>
-        <h3>A one-person, 24/7 AI hedge fund: five frontier roles, shared infrastructure, statistical gates</h3>
-        <p>The five-role desk field report — per-model capability lanes, latency budget, Rust execution, validation harness, sizing and risk.</p>
-        <div class="meta">reproduced with the author's claims kept honest</div>
-      </div>
-    </a>
-    <a class="card" href="education.html#watch">
-      <div class="img">🐜</div>
-      <div class="body">
-        <div class="src">Watch · daily</div>
-        <h3>The five tells of the AI-debt edifice — what the bond market knows that the equity market hasn't said yet</h3>
-        <p>T1 measured daily by her own organ; T2–T5 (rating actions, Anthropic IPO, neocloud bond yields ≥15%, post-election vol) scored on each check.</p>
-        <div class="meta">next check: with the next reading of swarm_market_watch</div>
-      </div>
-    </a>
-    <div class="card" style="border-style:dashed;opacity:.65;cursor:default">
-      <div class="img">＋</div>
-      <div class="body">
+
+      <div id="stories"></div>
+    </section>
+
+    <!-- ── ARTICLES: newest first, next daily reading reserved at the top ── -->
+    <section id="articles">
+      <div class="sechead"><h2>The desk's articles</h2><span>newest on top</span></div>
+
+      <div class="card dashed">
         <div class="src">Next on the desk</div>
-        <h3>Tomorrow's article lands here</h3>
-        <p>The next recon reading and whatever the edifice did overnight goes in this slot, by the desk itself.</p>
+        <h3>Tomorrow's reading lands here</h3>
+        <p>The next recon check and whatever the edifice did overnight publishes at the top of this feed, by the desk itself.</p>
       </div>
-    </div>
+
+      <a class="card" href="education.html">
+        <div class="src">Field report · CoreWeave · <span style="color:var(--dimmer)">today</span></div>
+        <h3>Options mechanics and the CoreWeave debt architecture</h3>
+        <p>Commodities traders built a mining shell that became the neocloud; Nvidia invests in its own customer; the first GPU-collateralized loan; and the options structures that survive a binary earnings.</p>
+        <div class="meta">Baseline $62.13 · −56.2% from high · receipt fbb4a732</div>
+      </a>
+
+      <a class="card" href="natenberg.html">
+        <div class="src">Reference · Options theory</div>
+        <h3>Natenberg, distilled: implied vs realized vol, the Greeks, skew</h3>
+        <p>IV rank, the gamma-theta trade-off, smile regimes, model selection, and the seven risk rules the desk keeps.</p>
+        <div class="meta">desk reference · v1</div>
+      </a>
+
+      <a class="card" href="research.html">
+        <div class="src">Research · Architecture</div>
+        <h3>A one-person, 24/7 AI hedge fund: five frontier roles</h3>
+        <p>Per-model capability lanes on shared data, compute and execution — latency budget, statistical gates, Rust engine, validation, sizing.</p>
+        <div class="meta">reproduced with the author's claims kept honest</div>
+      </a>
+
+      <a class="card" href="education.html#tells">
+        <div class="src">Watch · daily</div>
+        <h3>The five tells of the AI-debt edifice</h3>
+        <p>What the bond market knows that the equity market hasn't said: CRWV distance, rating actions, the Anthropic IPO clock, neocloud yields, post-election volatility.</p>
+        <div class="meta">T1 measured in every morning check</div>
+      </a>
+    </section>
   </main>
 
   <aside class="rail">
     <div class="chat">
-      <div class="chathead"><span class="dot"></span><b>Ask the desk</b><span>answers with live data</span></div>
+      <div class="chathead"><span class="dot"></span><b>Ask the desk</b><span>live data · real search</span></div>
       <div class="msgs" id="msgs">
-        <div class="m ai">Morning. Gold is trading with the rates story; ask me anything — prices, why the tape is doing what it's doing, or how a structure works. I say plainly when I don't know.</div>
+        <div class="m ai">Morning. Ask me anything — prices, why the tape did what it did, how a structure works. Tap a story on the left and I'll pull the latest on it from the web. I say plainly when I don't know.</div>
       </div>
       <div class="chipsbar" id="chips"></div>
       <form class="chatform" id="f">
         <input id="q" placeholder="Your question…" autocomplete="off">
         <button id="send" type="submit">↑</button>
       </form>
-      <div class="mkt" id="mk">market data unavailable</div>
     </div>
 
     <div class="mod">
       <h4>The five tells</h4>
-      <div class="tell"><span class="k">T1</span><span>CRWV distance from 52w high</span><code>measured daily</code></div>
-      <div class="tell"><span class="k">T2</span><span>rating actions · new-issue yields</span><code>manual</code></div>
-      <div class="tell"><span class="k">T3</span><span>Anthropic IPO — the appreciation rate</span><code>manual</code></div>
+      <div class="tell"><span class="k">T1</span><span>CRWV distance from 52w high</span><code>daily</code></div>
+      <div class="tell"><span class="k">T2</span><span>rating actions · issue yields</span><code>manual</code></div>
+      <div class="tell"><span class="k">T3</span><span>Anthropic IPO clock</span><code>manual</code></div>
       <div class="tell"><span class="k">T4</span><span>neocloud bonds ≥15%</span><code>manual</code></div>
-      <div class="tell"><span class="k">T5</span><span>post-election volatility</span><code>pending</code></div>
+      <div class="tell"><span class="k">T5</span><span>post-election vol</span><code>pending</code></div>
     </div>
 
     <div class="mod">
@@ -227,6 +263,78 @@ const usd=(n,d)=>{d=d||8;n=Number(n);if(!isFinite(n)||n===0)return'—';
   if(n>=1)return'$'+n.toLocaleString(undefined,{maximumFractionDigits:2});
   return'$'+n.toFixed(d).replace(/0+$/,'');};
 
+/* ── STORIES: newest first, Yahoo-Top-Stories style. Each carries its own
+   photo (gradient + glyph), a related symbol whose LIVE % renders in the row,
+   and an age label. Selecting a story swaps the photo and the on-screen text
+   above the list, then the desk reads the web for the latest on it. ── */
+const STORIES=[
+  {src:"StigmergiCoin desk", age:"2h ago", sym:"CRWV", icon:"💸", grad:"radial-gradient(circle at 30% 20%, #2b1f22, #180f14)",
+   title:"CoreWeave: the debt clock is running",
+   sum:"$62.13, 56% off the high, ~$50B of debt against a $34B market cap, bonds in the teens, earnings Nov 9. The five tells are live.",
+   link:"education.html", q:"What is the latest news on CoreWeave (CRWV) and its debt?"},
+  {src:"StigmergiCoin desk", age:"5h ago", sym:"^TNX", icon:"🏦", grad:"radial-gradient(circle at 70% 20%, #1b2a24, #101815)",
+   title:"The 10-year at 5%: the cost of money returns",
+   sum:"Every financing decision in the AI buildout reprices at these yields — the bond market speaks before equities do.",
+   link:"natenberg.html", q:"What is the latest on US Treasury yields and the cost of capital for AI companies?"},
+  {src:"StigmergiCoin desk", age:"8h ago", sym:"BZ=F", icon:"🛢️", grad:"radial-gradient(circle at 40% 30%, #17222e, #0f141d)",
+   title:"Oil under pressure into the election",
+   sum:"Brent off again with talk of managed supply and manipulation incentives ahead of the vote.",
+   link:"natenberg.html", q:"What is the latest news on oil prices and OPEC?"},
+  {src:"StigmergiCoin desk", age:"1d ago", sym:"BTC-USD", icon:"₿", grad:"radial-gradient(circle at 50% 10%, #241d2d, #131019)",
+   title:"Crypto holds its bid while vol stays paid",
+   sum:"BTC near 82.7k as the strip breathes; the desk watches funding, not feelings.",
+   link:"natenberg.html", q:"What is the latest on bitcoin and crypto markets right now?"},
+  {src:"StigmergiCoin desk", age:"1d ago", sym:"NVDA", icon:"🧪", grad:"radial-gradient(circle at 30% 25%, #1f1a2d, #120f18)",
+   title:"The five-role AI hedge fund",
+   sum:"One person, five frontier models, statistical gates and a Rust engine. The full field report.",
+   link:"research.html", q:"What is the latest on AI hedge funds and multi-model trading desks?"}
+];
+let cur=0;
+function openStory(i){
+  cur=i; const s=STORIES[i];
+  $('fphoto').style.background=s.grad;
+  $('fglyph').textContent=s.icon;
+  $('ftag').textContent=s.src;
+  $('fsrc').textContent=s.src+" · selected";
+  $('ftitle').textContent=s.title;
+  $('fsum').textContent=s.sum;
+  $('flink').href=s.link;
+  document.querySelectorAll('.story').forEach((el,j)=>el.classList.toggle('on',j===i));
+  history.replaceState(null,'','#news');
+  askLatest();
+}
+function askLatest(){
+  const s=STORIES[cur];
+  $('q').value=`${s.q} Summarize what is happening in a few short sentences.`;
+  ask($('q').value, true);
+}
+function buildStories(){
+  $('stories').innerHTML=STORIES.map((s,i)=>
+    `<div class="story${i===0?' on':''}" data-i="${i}">
+      <div class="ic" style="background:${s.grad.replace('circle at','circle at')};display:grid;place-items:center">${s.icon}</div>
+      <div class="t"><div class="src">${s.src} · <span style="color:var(--dimmer)">${s.age}</span></div><h4>${s.title}</h4></div>
+      <div class="when"><span class="tick" id="tk${i}" title="live ${s.sym}">…</span></div>
+    </div>`).join('');
+  $('stories').querySelectorAll('.story').forEach(el=>
+    el.onclick=()=>openStory(+el.getAttribute('data-i')));
+  paintTickers();
+}
+async function paintTickers(){
+  /* each story row carries its symbol's LIVE change, red/green — the Yahoo
+     reference detail: a story is tagged with the market it moves */
+  const syms=[...new Set(STORIES.map(s=>s.sym))];
+  try{
+    const d=await(await fetch('/api/quotes?symbols='+syms.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
+    const map=(d.quotes||[]).reduce((m,q)=>(m[q.symbol]=q,m),{});
+    STORIES.forEach((s,i)=>{
+      const q=map[s.sym]; const el=$('tk'+i); if(!el)return;
+      if(!q||q.change_pct==null){el.textContent=s.sym+' ·';el.className='tick';return;}
+      el.textContent=`${s.sym} ${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%`;
+      el.className='tick '+(q.change_pct>=0?'up':'down');
+    });
+  }catch(e){}
+}
+
 /* ── market strip ── */
 const QS=[['GC=F','gold'],['CL=F','wti oil'],['^GSPC','s&p 500'],['^IXIC','nasdaq'],
           ['^VIX','vix'],['^TNX','us 10y'],['BTC-USD','bitcoin']];
@@ -235,27 +343,26 @@ async function loadStrip(){
     const d=await(await fetch('/api/quotes?symbols='+QS.map(q=>encodeURIComponent(q[0])).join(','),{cache:'no-store'})).json();
     let h='';
     for(const q of (d.quotes||[])){
-      const nm=(QS.find(x=>x[0].replace(/[^A-Z^=.-]/g,'')===q.symbol)||[])[1]||q.name;
+      const nm=((QS.find(x=>x[0]===q.symbol)||[])[1])||q.name;
       const chg=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%</span>`;
       const val=(q.symbol==='^TNX')?`${Number(q.price).toFixed(2)}%`:usd(q.price,2);
-      h+=`<div class="q" onclick="askTop('${q.name||q.symbol}')"><div class="n">${nm}</div><div class="v">${val}${chg}</div></div>`;
+      h+=`<div class="q" onclick="chipAsk('${nm}','${(q.change_pct==null?'':q.change_pct.toFixed(2))}')"
+           title="ask the desk about ${nm}"><div class="n">${nm}</div><div class="v">${val}${chg}</div></div>`;
     }
-    if(h)$('strip').innerHTML=h;
+    $('strip').innerHTML=h||'<span class="q" style="color:var(--dimmer);cursor:default">quotes unavailable</span>';
+    paintTickers();
   }catch(e){}
 }
-function askTop(name){$('q').value=`What is ${name} doing today?`;$('q').focus();}
+function chipAsk(name,chg){$('q').value=`What is ${name} doing today?`;ask($('q').value);}
 
-/* ── the desk chat ── */
-const hist=[]; const chips3=['What is pumping today?','How risky is CoreWeave debt?','Explain implied volatility simply'];
-function chipRow(){
-  $('chips').innerHTML=chips3.map(c=>`<button type="button" data-q="${c.replace(/"/g,'&quot;')}">${c}</button>`).join('');
-  $('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=$('q');v.value=b.getAttribute('data-q');ask(v.value);v.value='';});
-}
+/* ── chat ── */
+const hist=[];
 function node(t,cls){const d=document.createElement('div');d.className='m '+cls;d.textContent=t;return d;}
-async function ask(text){
+async function ask(text,quiet){
   text=(text||'').trim(); if(!text)return;
-  $('msgs').appendChild(node(text,'me'));
-  const wait=node('reading live data…','ai'); $('msgs').appendChild(wait);
+  if(!quiet)$('msgs').appendChild(node(text,'me'));
+  const wait=node(quiet?'reading the web on this story…':'reading live data…','ai');
+  $('msgs').appendChild(wait);
   $('send').disabled=true; const msgs=$('msgs'); msgs.scrollTop=msgs.scrollHeight;
   try{
     const d=await(await fetch('/api/gmchat',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -265,16 +372,16 @@ async function ask(text){
       hist.push({role:'user',content:text},{role:'assistant',content:d.answer});
       const used=(d.news_used||0)+(d.web_used||0)+(d.search_used||0)+(d.assets_used||0);
       if(used)wait.after(node(`with ${used} live source${used>1?'s':''}`,'meta'));
-    }else{
-      wait.textContent=d.message||d.error||'the desk is unavailable right now';
-    }
+    }else{wait.textContent=d.message||d.error||'the desk is unavailable right now';}
   }catch(e){wait.textContent='could not reach the desk: '+e.message;}
   finally{$('send').disabled=false;$('q').focus();msgs.scrollTop=msgs.scrollHeight;}
 }
-$('f').onsubmit=(e)=>{e.preventDefault();const v=$('q');$('q').value='';ask(v);};
-$('topq').addEventListener('keydown',(e)=>{if(e.key==='Enter'){e.preventDefault();ask($('topq').value);$('topq').value='';}});
+$('f').onsubmit=(e)=>{e.preventDefault();const v=$('q');$('q').value='';ask(v);}
+const chips3=['What is pumping today?','How risky is CoreWeave debt?','Explain implied volatility simply'];
+$('chips').innerHTML=chips3.map(c=>`<button type="button" data-q="${c}">${c}</button>`).join('');
+$('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=$('q');v.value=b.getAttribute('data-q');ask(v.value);v.value='';});
 
-/* ── coin card in market strip (MPS, the sponsor) ── */
+/* ── $MPS chip at the end of the strip ── */
 async function loadMps(){
   try{
     const d=await(await fetch('/api/gmprice',{cache:'no-store'})).json();
@@ -282,11 +389,15 @@ async function loadMps(){
     const px=ds.price_usd||gt.price_usd; if(!px)return;
     const chg=ds.price_change_24h?`<span class="c ${ds.price_change_24h>=0?'up':'down'}">${ds.price_change_24h>0?'+':''}${ds.price_change_24h}%</span>`:'';
     const el=document.createElement('div'); el.className='q';
+    el.onclick=()=>{$('q').value='What is $MPS doing today?';ask($('q').value);};
     el.innerHTML=`<div class="n">$mps · solana</div><div class="v">${usd(px)}${chg}</div>`;
-    $('strip').appendChild(el);
+    const old=$('strip').getElementsByClassName('mps')[0]; if(old)old.remove();
+    el.classList.add('mps'); $('strip').appendChild(el);
   }catch(e){}
 }
-loadStrip(); loadMps(); chipRow();
+buildStories(); openStory(0);
+$('flatest').onclick=askLatest;
+loadStrip(); loadMps();
 setInterval(loadStrip,60000); setInterval(loadMps,60000);
 </script>
 </body>
