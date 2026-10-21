@@ -1216,7 +1216,7 @@ def tape_rows() -> list:
         if q.get("price") is None:
             continue
         rows.append({"symbol": q.get("symbol") or s,
-                     "name": (q.get("name") or s)[:26],
+                     "name": _TAPE_DISPLAY.get(s, (q.get("name") or s))[:26],
                      "price": q.get("price"), "change_pct": q.get("change_pct"),
                      "kind": "buzz" if s in (_TREND.get("buzz") or set()) else "trending"})
     rows = rows[:18]
@@ -1226,8 +1226,8 @@ def tape_rows() -> list:
     return rows
 
 
-_TAPE_DISPLAY = {"GC=F": "gold", "CL=F": "wti", "^GSPC": "s&p", "^IXIC": "nasdaq",
-                 "^VIX": "vix", "^TNX": "us 10y", "BTC-USD": "bitcoin"}
+_TAPE_DISPLAY = {"GC=F": "gold", "CL=F": "wti", "BZ=F": "brent", "^GSPC": "s&p", "^IXIC": "nasdaq",
+                 "^VIX": "vix", "^TNX": "us 10y", "BTC-USD": "bitcoin", "^NSEI": "nifty 50"}
 
 
 def starters_with_fresh_data() -> list:
@@ -1489,17 +1489,9 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
                 "cost_usd": 0.0, "answer_empty": False}
 
     try:
-        from System.swarm_topic_organ import detect_topic as _dtopic, topic_knowledge as _tknow
+        from System.swarm_topic_organ import detect_topic as _dtopic, room_line as _rline
         _slug = _dtopic(msg, syms)
-        _room = _tknow(_slug)
-        if _room.get("count"):
-            _qs = "; ".join(chr(39)+str(q).strip(chr(39))+chr(39) for q in (_room.get("questions") or [])[:2]) or "their first questions"
-            _grad = " A grown article on this already sits in the shelf." if _room.get("graduated") else ""
-            tick = _room.get("ticker") or "—"
-            facts.append(
-                f"THE ROOM: {_room['count']} prompt(s) across all visitors on this subject"
-                f"{f' (ticker fingerprint {tick})' if _room.get('ticker') else ''};"
-                f" they asked: {_qs}.{_grad} Use THE ROOM as shared knowledge when it helps:")
+        facts.append(_rline(_slug))     # counts, per-ticker tally, projected badge
     except Exception:
         pass
     for q in (market_quotes(syms) if syms else []):

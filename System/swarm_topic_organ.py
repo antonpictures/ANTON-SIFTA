@@ -283,6 +283,77 @@ def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
     return tok if n > 5 else ""        # more than five mentions, owner's number
 
 
+
+def ticker_counts(slug: str, entry: Dict[str, Any]) -> Dict[str, int]:
+    """Per-ticker mention tally for one topic — the real list the desk can
+    speak from (owner: 'you must have a list counting mentions per ticker')."""
+    from collections import Counter
+    counts: Counter = Counter()
+    theme = (TOPICS.get(slug) or {}).get("sym") or ""
+    if not theme and slug.startswith("ticker-"):
+        theme = slug.split("ticker-", 1)[-1].upper()
+    clean = lambda t: str(t or "").upper().replace("^", "").replace("=F", "") \
+        .replace("-USD", "").replace(".NYB", "")
+    rows_n = 0
+    try:
+        if _PROMPTS.exists():
+            for ln in _PROMPTS.read_text(encoding="utf-8").splitlines()[-600:]:
+                try:
+                    row = json.loads(ln)
+                except Exception:
+                    continue
+                if row.get("topic") != slug:
+                    continue
+                rows_n += 1
+                for m in _TICKER_RE.finditer(row.get("q") or ""):
+                    tok = (m.group(1) or m.group(2) or "").upper()
+                    if tok and tok not in _TICKER_STOP:
+                        counts[tok] += 1
+    except Exception:
+        pass
+    if theme:
+        th = clean(theme)
+        if th and len(th) <= 8:
+            counts[th] += rows_n                 # talking the subject IS its ticker
+    return dict(counts)
+
+def ticker_prevalence(slug: str, entry: Dict[str, Any]) -> str:
+    """ONE ticker per article, only after more than five mentions (the tally
+    above). Owner law."""
+    counts = ticker_counts(slug, entry)
+    if not counts:
+        return ""
+    tok, n = counts.most_common(1)[0]
+    return tok if n > 5 else ""
+
+def room_line(slug: str) -> str:
+    """One truthful sentence about what the room already covered — counts,
+    per-ticker tally, the projected badge, and when graduation fires."""
+    led = _load_ledger()
+    v = led.get(slug) or {}
+    count = int(v.get("count") or 0)
+    label = _slug_label(slug)
+    tallies = ticker_counts(slug, v)
+    order = sorted(tallies.items(), key=lambda kv: -kv[1])[:3]
+    tally_txt = ", ".join(f"{t} {n}×" for t, n in order) if order else "no tickers named yet"
+    proj = next((t for t, n in order if n > 5), "")
+    if v.get("graduated"):
+        when = "already graduated — its article sits in the shelf with the latest numbers"
+    elif count >= 5:
+        when = "graduation fires on its next prompt"
+    else:
+        when = f"{5 - count} more prompt(s) to graduation"
+    proj_txt = (f" The projected badge ticker: {proj}." if proj else
+                (f" Projected badge ticker if it graduates now: {order[0][0]}." if order else ""))
+    return (f"THE ROOM: {count} prompt(s) across all visitors on {label}. "
+            f"The per-ticker tally is real and held in the ledger: {tally_txt}, "
+            f"counted cumulatively, never reset.{proj_txt} {when}. "
+            f"Visitors asked: "
+            + "; ".join(f"'{q[:80]}'" for q in (v.get("questions") or [])[:2])
+            + ". Use THE ROOM as shared knowledge when it helps the person in front of you; "
+              "never say the tally does not exist.")
+
+
 def _write_html(slug: str, entry: Dict[str, Any], facts: Dict[str, Any],
                 prose: str, from_cortex: bool, web_lines=None) -> Path:
     """A LIVING page, not a post: what the tape says now on top, the story,
