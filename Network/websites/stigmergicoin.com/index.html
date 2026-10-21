@@ -142,14 +142,10 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
     </div>
   </section>
 
-  <!-- ───────────── the small news list: no title, no photo — rows only ───────────── -->
+  <!-- ───────────── the rail: only what conversations grow ───────────── -->
   <aside class="side">
-    <div class="sidecard">
-      <div id="rows"></div>
-    </div>
-
     <div class="sidecard" id="grown" hidden>
-      <h3>Grown from our conversations</h3>
+      <h3>Grown from visitors' questions</h3>
       <div id="grownrows" style="padding:4px 0"></div>
     </div>
   </aside>
@@ -173,51 +169,6 @@ const usd=(n)=>{n=Number(n);if(!isFinite(n)||n===0)return'—';
   return'$'+n.toFixed(6).replace(/0+$/,'');};
 
 /* ── the stories she's watching: newest first, compact, live % per row ── */
-const WATCH=[
-  {sym:"CRWV", icon:"💸", grad:"radial-gradient(circle at 30% 20%, #2b1f22, #170f13)",
-   t:"CoreWeave: the debt clock is running", s:"CRWV · desk note",
-   q:"What is the latest news on CoreWeave (CRWV) and its debt? Keep it to a few sentences."},
-  {sym:"^TNX", icon:"🏦", grad:"radial-gradient(circle at 70% 20%, #1b2a24, #101815)",
-   t:"The 10-year at 5%: money gets expensive again", s:"rates · desk note",
-   q:"What is the latest on US Treasury yields, and what does a 5% 10-year do to AI companies? A few sentences."},
-  {sym:"BZ=F", icon:"🛢️", grad:"radial-gradient(circle at 40% 30%, #17222e, #0f141d)",
-   t:"Oil, supply, and the election", s:"energy · desk note",
-   q:"What is the latest news on oil prices? A few sentences."},
-  {sym:"BTC-USD", icon:"₿", grad:"radial-gradient(circle at 50% 10%, #241d2d, #131019)",
-   t:"Crypto holds its bid while vol stays paid", s:"crypto · desk note",
-   q:"What is the latest on bitcoin and crypto right now? A few sentences."}
-];
-
-function paintRows(){
-  $('rows').innerHTML=WATCH.map((w,i)=>
-    `<div class="nrow${i===0?' on':''}" data-i="${i}">
-       <span class="ic">${w.icon}</span>
-       <div class="tx"><div class="t">${w.t}</div><div class="s">${w.s}</div></div>
-       <span class="sym" id="sym${i}">${w.sym}</span>
-     </div>`).join('');
-  $('rows').querySelectorAll('.nrow').forEach(el=>
-    el.onclick=()=>selectStory(+el.getAttribute('data-i')));
-  paintSym();
-}
-async function paintSym(){
-  const syms=[...new Set(WATCH.map(w=>w.sym))];
-  try{
-    const d=await(await fetch('/api/quotes?symbols='+syms.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
-    const map=(d.quotes||[]).reduce((m,q)=>(m[q.symbol]=q,m),{});
-    WATCH.forEach((w,i)=>{
-      const q=map[w.sym]; const el=$('sym'+i); if(!el)return;
-      if(!q||q.change_pct==null)return;
-      el.textContent=`${w.sym} ${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%`;
-      el.className='sym '+(q.change_pct>=0?'up':'down');
-    });
-  }catch(e){}
-}
-function selectStory(i){
-  const w=WATCH[i];
-  document.querySelectorAll('.nrow').forEach((el,j)=>el.classList.toggle('on',j===i));
-  ask(w.q);
-}
-
 /* ── live strip ── */
 const QS=[['GC=F','gold'],['CL=F','wti'],['^GSPC','s&p'],['^IXIC','nasdaq'],
           ['^VIX','vix'],['^TNX','10y'],['BTC-USD','btc']];
@@ -233,7 +184,6 @@ async function strip(){
             <div class="n">${nm}</div><div class="v">${v}${c}</div></div>`;
     }
     $('strip').innerHTML=h||'<span class="q" style="color:var(--dimmer);cursor:default">quotes unavailable</span>';
-    paintSym();
   }catch(e){}
 }
 async function mps(){
@@ -379,7 +329,7 @@ async function loadIntro(){
   }catch(e){}
 }
 
-paintRows(); strip(); mps(); loadStarters(); loadGrown(); loadIntro();
+strip(); mps(); loadStarters(); loadGrown(); loadIntro();
 setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000);
 </script>
 </body>
