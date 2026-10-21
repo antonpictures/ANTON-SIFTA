@@ -148,6 +148,12 @@ def record_turn(message: str, syms: Optional[List[str]] = None) -> Dict[str, Any
         e_copy = dict(e)
         e_copy["slug"] = slug
         threading.Thread(target=_grow, args=(e_copy,), daemon=True).start()
+    # owner reframe: the ticker ledger counts EVERY ticker globally — the most
+    # talked-about tickers earn living pages from the conversations about them
+    try:
+        ticker_touch([str(s) for s in (syms or [])], row["q"])
+    except Exception:
+        pass
     return {"topic": slug, "count": int(e["count"]), "graduated_now": graduated}
 
 
@@ -461,6 +467,222 @@ def _grow(entry: Dict[str, Any]) -> None:
         except Exception:
             pass
 
+
+
+# ── the ticker ledger (owner reframe, 2026-10-21) ────────────────────────────
+# "commodities is a category of tickers, we can have ANY tickers that are
+# available. the idea is what is most talked about tickers on our website,
+# with living articles built from the latest conversations — added history to
+# the ticker, latest at the top." Every mention of every ticker is counted
+# globally; past five, THE TICKER gets its own living page; every further
+# wave of talk refreshes it. Categories only help detection; tickers win.
+_TICKER_TALLY = _STATE / "ticker_ledger.json"
+_TLEDGER_LOCK = threading.Lock()
+_tclean = lambda s: str(s or "").upper().replace("^", "").replace("=F", "") \
+    .replace("-USD", "").replace(".NYB", "").replace(".", "")
+
+def _tload() -> Dict[str, Any]:
+    try:
+        return json.loads(_TICKER_TALLY.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def _tsave(t: Dict[str, Any]) -> None:
+    _STATE.mkdir(parents=True, exist_ok=True)
+    tmp = _TICKER_TALLY.with_suffix(".tmp")
+    tmp.write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True),
+                   encoding="utf-8")
+    tmp.replace(_TICKER_TALLY)
+
+def ticker_touch(raw_syms, qtext: str = "", mention_syms: bool = True) -> None:
+    """Record one turn's tickers into the global tally (idempotent per call)."""
+    now = time.time()
+    with _TLEDGER_LOCK:
+        t = _tload()
+        for raw in dict.fromkeys(str(s or "").strip() for s in (raw_syms or [])):
+            if not raw:
+                continue
+            sym = _tclean(raw)
+            if not sym or len(sym) > 6:
+                continue
+            e = t.setdefault(sym, {"count": 0, "raw": raw, "questions": [],
+                                   "history": [], "graduated": False,
+                                   "path": "", "title": "", "updated": 0.0,
+                                   "last_grown_count": 0})
+            e["count"] = int(e.get("count") or 0) + 1
+            e["raw"] = raw or e.get("raw") or raw
+            e["last"] = now
+            if qtext:
+                qs = [qtext[:200]] + [q for q in (e.get("questions") or []) if q != qtext[:200]]
+                e["questions"] = qs[:8]
+            crossing = int(e["count"]) > 5 and not e.get("graduated")
+            refresh = (e.get("count", 0) - int(e.get("last_grown_count") or 0) >= 2
+                       and e.get("graduated"))
+            _tsave(t)
+        # fire growth waves OUTSIDE the tally write (copies, not live dicts)
+        for raw in dict.fromkeys(str(s or "").strip() for s in (raw_syms or [])):
+            sym = _tclean(raw)
+            e = (t.get(sym) or {})
+            if int(e.get("count") or 0) > 5 and (
+                    not e.get("graduated")
+                    or int(e.get("count") or 0) - int(e.get("last_grown_count") or 0) >= 2):
+                ec = dict(e); ec["sym"] = sym; ec["sym_raw"] = e.get("raw") or raw
+                threading.Thread(target=grow_ticker_article, args=(ec,),
+                                 daemon=True).start()
+
+def ticker_tally_list(limit: int = 10) -> list:
+    """The rail order: most recently talked tickers first, counts attached."""
+    t = _tload()
+    rows = [{
+        "sym": s,
+        "raw": (v.get("raw") or s),
+        "count": int(v.get("count") or 0),
+        "graduated": bool(v.get("graduated")),
+        "url": (v.get("path") or ""),
+        "last": v.get("last") or 0,
+        "last_q": ((v.get("questions") or [""])[0])[:140],
+    } for s, v in t.items() if int(v.get("count") or 0) > 0]
+    rows.sort(key=lambda r: (-r["last"], -r["count"]))
+    return rows[:limit]
+
+def grow_ticker_article(entry: Dict[str, Any]) -> None:
+    """The ticker's living page: RIGHT NOW quote, the story (cortex, fed by
+    its conversations + web reading), what visitors asked, and the ticker's
+    dated history — refreshed in waves of new talk."""
+    sym = entry.get("sym") or _tclean(entry.get("sym_raw") or "")
+    raw = entry.get("sym_raw") or entry.get("raw") or sym
+    if not sym:
+        return
+    quote: Dict[str, Any] = {}
+    try:
+        from System.coin_server import market_quote
+        quote = market_quote(raw) or {}
+    except Exception:
+        quote = {}
+    price_s = _fact_line({"quote": quote}) if quote else "the quote feed is quiet right now"
+    tally = _tload().get(sym) or {}
+    count = int(tally.get("count") or entry.get("count") or 0)
+    qs = [q for q in (tally.get("questions") or entry.get("questions") or [])]
+    qline = " | ".join(f"“{q}”" for q in qs[:6]) or "—"
+
+    web_lines = []
+    try:
+        from System.swarm_web_research import web_facts
+        wl, _ws = web_facts(f"{raw} {sym} latest news and developments", results=3, pages=1)
+        web_lines = [str(x)[:220] for x in list(wl or [])[:5]]
+    except Exception:
+        web_lines = []
+
+    system = (
+        "You are Alice, the voice of StigmergiCoin — a finance desk that answers in "
+        "first person, plainly, and says when it does not know. Write THE STORY section "
+        "of a living ticker page: 3–4 paragraphs (280–420 words), no headings, no lists, "
+        "no markup, no advice to buy or sell. Weave: what the quote says right now (exact "
+        "numbers), what visitors keep asking about this ticker and why it matters to them, "
+        "and what the recent web reading adds — naming its source plainly when useful.")
+    prompt = (
+        f"Ticker: {sym} ({raw})\n"
+        f"Right now: {price_s}\n"
+        f"Mentions on this site so far: {count}\n"
+        f"Visitor questions about it: {qline}\n"
+        f"Recent web reading (paraphrase in your own words):\n" +
+        ("\n".join(f"- {w}" for w in web_lines) if web_lines else "- (nothing useful came back; say so plainly)")
+        + "\n\nWrite the story.")
+    prose = _cortex_prose(system, prompt, num_predict=760)
+    from_cortex = bool(prose)
+    if not prose:
+        prose = (f"{sym}. {price_s}\n\nThis page has grown from {count} mentions on the desk. "
+                 f"Visitors asked: {qline}. "
+                 + ("The web reading adds: " + "; ".join(web_lines[:2]) + "." if web_lines
+                    else "The web search came back empty this pass; the tape above is what I can stand on.")
+                 + "\n\nNothing here is advice to trade — the page grows with every wave of talk.")
+
+    stamp = time.strftime("%d %b %H:%M", time.gmtime(time.time() + 3 * 3600))
+    hist_new = f"{stamp} — {count} mentions, {_dollar(quote.get('price'))} ({_pct(quote.get('change_pct'))}), web lines {len(web_lines)}"
+    px = quote.get("price")
+    chg = _pct(quote.get("change_pct")) if quote.get("change_pct") is not None else "—"
+    title = f"{sym} — {_dollar(px)} ({chg})"
+    esc = lambda s: (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    updated = time.strftime("%Y-%m-%d %H:%M EEST", time.gmtime(time.time() + 3 * 3600))
+    qs_html = "".join(f"<li>{esc(x)}</li>" for x in qs[:8])
+    websecs = ""
+    if web_lines:
+        websecs = ('<div class="asked"><h3>From the web today</h3><ul class="web">'
+                   + "".join(f"<li>{esc(w)}</li>" for w in web_lines) + "</ul></div>")
+    hist = "".join(f"<li>{esc(h)}</li>" for h in reversed((tally.get("history") or [])[-12:]))
+    hist_new_lines = [hist_new] + [h for h in (tally.get("history") or [])
+                                   if not h.startswith(hist_new.split(" — ")[0])][:11]
+    histsec = (f'<div class="asked"><h3>The ticker\'s own history</h3><ul class="web">'
+               + "".join(f"<li>{esc(h)}</li>" for h in reversed(hist_new_lines[-12:])) + "</ul></div>")
+    html = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(title)} — StigmergiCoin</title>
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0c0c11;color:#ece9e2;font:15.5px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:0 0 40px;-webkit-font-smoothing:antialiased}}
+a{{color:#d97757;text-decoration:none}}a:hover{{text-decoration:underline}}
+header{{border-bottom:1px solid #24242f;padding:14px 22px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
+header .mark{{width:27px;height:27px;border-radius:7px;display:grid;place-items:center;font-size:14px;background:linear-gradient(135deg,#d97757,#8a4527)}}
+main{{max-width:760px;margin:0 auto;padding:26px 22px}}
+h1{{font:600 25px/1.32 Georgia,"Times New Roman",serif;margin-bottom:10px}}
+.meta{{font-size:12px;color:#6d6b67;margin-bottom:20px}}
+.facts{{background:#14141b;border:1px solid #24242f;border-left:3px solid #d97757;border-radius:12px;padding:14px 16px;font-size:13.5px;color:#e7e4dc;margin-bottom:16px}}
+.hdr{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6d6b67;margin:22px 0 9px}}
+.body p{{margin-bottom:13px}}
+.asked{{background:#14141b;border:1px solid #24242f;border-radius:12px;padding:14px 16px 14px 34px;margin:22px 0}}
+.asked h3{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6d6b67;margin:-2px 0 10px -18px}}
+.asked li{{font-size:13.5px;color:#9a9893;margin-bottom:6px}}
+ul.web{{list-style:none;margin-left:-18px}}
+ul.web li:before{{content:"— ";color:#4a4844}}
+footer{{text-align:center;margin-top:30px}}
+.cta{{display:inline-block;background:#d97757;color:#fff;border-radius:999px;padding:10px 18px;font-size:14px}}
+</style></head><body>
+<header><a href="/" style="display:flex;gap:10px;align-items:center;color:#ece9e2">
+<span class="mark">🐜</span><b style="font:600 17px Georgia,serif">stigmergi<i style="color:#d97757;font-style:normal">coin</i></b></a>
+<span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from visitors' conversations · {esc(sym)}</span></header>
+<main>
+<h1>{esc(title)}</h1>
+<div class="meta">ticker page · updated {updated} · {count} mentions ·
+{"written in my voice from live data + web reading" if from_cortex else "assembled from live data — cortex unavailable"}</div>
+<div class="facts"><b>RIGHT NOW:</b> {esc(price_s)}</div>
+<div class="hdr">The story</div>
+<div class="body">{''.join(f'<p>{esc(p.strip())}</p>' for p in prose.split('\n\n') if p.strip())}</div>
+{websecs}
+<div class="asked"><h3>The conversations that grew this</h3><ul>{qs_html}</ul></div>
+{histsec}
+<footer><a class="cta" href="/">Open the desk — keep this ticker's story moving →</a></footer>
+</main></body></html>"""
+    _ART_REPO.mkdir(parents=True, exist_ok=True)
+    out = _ART_REPO / f"t-{sym}.html"
+    out.write_text(html, encoding="utf-8")
+    try:
+        _ART_LIVE.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(out, _ART_LIVE / out.name)
+    except Exception:
+        pass
+    with _TLEDGER_LOCK:
+        t = _tload()
+        e = t.setdefault(sym, {"count": count, "raw": raw, "questions": [], "history": [],
+                               "graduated": False, "path": "", "title": "", "updated": 0.0,
+                               "last_grown_count": 0})
+        e.update({"graduated": True, "path": str(out), "title": title,
+                  "updated": time.time(), "last_grown_count": count,
+                  "history": hist_new_lines, "raw": raw})
+        for q in (qs or [])[:8]:
+            e.setdefault("questions", [])
+            if q not in e["questions"]:
+                e["questions"].insert(0, q)
+        e["questions"] = e["questions"][:8]
+        _tsave(t)
+    try:
+        from System.swarm_lora_runtime_receipt import append_receipt
+        append_receipt({"source": "body_growth_web", "event_type": "ticker_page_grown",
+                        "sym": sym, "title": title, "count": count,
+                        "cortex": from_cortex, "web_lines": len(web_lines),
+                        "truth_label": "TICKER_LEDGER_V1"})
+    except Exception:
+        pass
 
 # ── the shared brain speaks (owner law, 2026-10-21) ──────────────────────────
 # "the more people use it the more you know from all of the users and share

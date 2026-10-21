@@ -155,6 +155,11 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
 
   <!-- ───────────── the rail: only what conversations grow ───────────── -->
   <aside class="side">
+    <div class="sidecard" id="tickers" hidden>
+      <h3>Most talked — this site's crowd</h3>
+      <div id="tickrows" style="padding:4px 0"></div>
+    </div>
+
     <div class="sidecard" id="grown" hidden>
       <h3>Grown from visitors' conversations</h3>
       <div id="grownrows" style="padding:4px 0"></div>
@@ -361,6 +366,42 @@ async function loadStarters(){
   rollRows=FALLBACK_STARTS; rollCursor=0; renderRoll();
 }
 
+/* ── the crowd's tickers: most talked, latest first; graduated ones open
+   their living page, everyone else asks the desk on click ── */
+async function loadTickers(){
+  try{
+    const d=await(await fetch('/api/tickers',{cache:'no-store'})).json();
+    const rows=(d.tickers||[]).filter(t=>t.sym);
+    if(!rows.length){$('tickers').hidden=true;return;}
+    $('tickers').hidden=false;
+    $('tickrows').innerHTML=rows.map(t=>{
+      const badge=`<span class="sym" id="tsym-${t.sym.replace(/[^a-z0-9]/gi,'')}">${escH(t.sym)}</span>`;
+      const when=t.last?new Date(t.last*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):'';
+      const inner=`<span class="ic">${t.graduated?'📄':'💬'}</span>
+        <div class="tx"><div class="t">$${escH(t.sym)}</div>
+        <div class="s">${t.count} talks${when?' · last '+when:''}</div></div>${badge}`;
+      return t.graduated&&t.url
+        ? `<a class="nrow" style="display:flex" href="${t.url}">${inner}</a>`
+        : `<div class="nrow" style="display:flex" data-ask="${encodeURIComponent('What is the latest on $'+t.sym+'?')}">${inner}</div>`;
+    }).join('');
+    $('tickrows').querySelectorAll('.nrow').forEach(el=>{
+      el.onclick=()=>{const a=el.getAttribute('data-ask'); if(a)prefill(decodeURIComponent(a));};
+    });
+    const ticks=[...new Set(rows.map(t=>t.sym))];
+    try{
+      const qd=await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
+      const map=(qd.quotes||[]).reduce((m,q)=>(m[q.symbol]=q,m),{});
+      rows.forEach(t=>{
+        const el=document.getElementById('tsym-'+t.sym.replace(/[^a-z0-9]/gi,''));
+        const q=map[t.sym];
+        if(!el||!q||q.change_pct==null||q.price==null)return;
+        el.textContent=`${t.sym} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
+        el.className='sym '+(q.change_pct>=0?'up':'down');
+      });
+    }catch(e){}
+  }catch(e){$('tickers').hidden=true;}
+}
+
 /* ── articles grown from conversations, freshest first ── */
 /* every grown tile carries ITS ticker's latest price, green or red with the
    tape — the tile is a live quote of the conversation, not a static link */
@@ -413,8 +454,8 @@ async function loadIntro(){
   }catch(e){}
 }
 
-strip(); mps(); loadStarters(); loadGrown(); loadIntro();
-setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000);
+strip(); mps(); loadStarters(); loadTickers(); loadGrown(); loadIntro();
+setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000); setInterval(loadTickers,120000);
 </script>
 </body>
 </html>

@@ -2059,6 +2059,15 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
             return {"success": True, "intro": ready["text"], "fresh": True}
         return {"success": True, "intro": _instant_intro(), "fresh": False}
 
+    # GET /api/tickers → the crowd's most-talked tickers, latest first — the
+    # rail's heartbeat; graduated ones carry their living ticker page
+    if path == "/api/tickers" and method == "GET":
+        try:
+            from System.swarm_topic_organ import ticker_tally_list
+            return {"success": True, "tickers": ticker_tally_list(10)}
+        except Exception:
+            return {"success": True, "tickers": []}
+
     # GET /api/articles → topics that grew into articles from conversations,
     # freshest first — the site's face shaped by what visitors actually ask
     if path == "/api/articles" and method == "GET":
