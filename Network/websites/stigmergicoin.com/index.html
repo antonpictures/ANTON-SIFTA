@@ -89,8 +89,6 @@
   .sidecard{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
   .sidecard > h3{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dimmer);
     padding:11px 13px 9px;border-bottom:1px solid var(--line)}
-  .thumb{height:86px;display:grid;place-items:center;font-size:32px;transition:background .35s ease;
-    border-bottom:1px solid var(--line)}
   .nrow{display:flex;gap:9px;align-items:flex-start;padding:9px 13px;cursor:pointer;
     border-bottom:1px solid var(--line);transition:.15s}
   .nrow:last-child{border-bottom:0}
@@ -144,11 +142,9 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
     </div>
   </section>
 
-  <!-- ───────────── the small news list ───────────── -->
+  <!-- ───────────── the small news list: no title, no photo — rows only ───────────── -->
   <aside class="side">
     <div class="sidecard">
-      <h3>What I'm watching</h3>
-      <div class="thumb" id="thumb">💸</div>
       <div id="rows"></div>
     </div>
 
@@ -218,8 +214,6 @@ async function paintSym(){
 }
 function selectStory(i){
   const w=WATCH[i];
-  $('thumb').style.background=w.grad;
-  $('thumb').textContent=w.icon;
   document.querySelectorAll('.nrow').forEach((el,j)=>el.classList.toggle('on',j===i));
   ask(w.q);
 }

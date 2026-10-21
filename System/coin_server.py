@@ -921,30 +921,39 @@ def latest_headlines(limit: int = 20) -> list:
     import xml.etree.ElementTree as ET
     seen, items = set(), []
     for sym, icon in _HEADLINE_FEEDS:
-        try:
-            url = (f"https://feeds.finance.yahoo.com/rss/2.0/headline"
-                   f"?s={_up.quote(sym)}&region=US&lang=en-US")
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            root = ET.fromstring(urllib.request.urlopen(req, timeout=12).read())
-            for it in root.findall(".//item"):
-                title = (it.findtext("title") or "").strip()
-                if not title or title.casefold() in seen:
+        # one honest retry per feed: a single timed-out read used to leave a
+        # thin merge (3 items, one per surviving feed) that then poisoned the
+        # 5-minute cache — two loads of "the rolling stopped" (owner-caught)
+        for attempt in (1, 2):
+            try:
+                url = (f"https://feeds.finance.yahoo.com/rss/2.0/headline"
+                       f"?s={_up.quote(sym)}&region=US&lang=en-US")
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                root = ET.fromstring(urllib.request.urlopen(req, timeout=12).read())
+                for it in root.findall(".//item"):
+                    title = (it.findtext("title") or "").strip()
+                    if not title or title.casefold() in seen:
+                        continue
+                    seen.add(title.casefold())
+                    ts = 0.0
+                    try:
+                        ts = email.utils.parsedate_to_datetime(
+                            it.findtext("pubDate") or "").timestamp()
+                    except Exception:
+                        pass
+                    items.append({"title": title, "icon": icon, "sym": sym,
+                                  "link": (it.findtext("link") or "").strip(),
+                                  "ts": ts})
+                break                          # feed done; skip the retry
+            except Exception:
+                if attempt == 2:
                     continue
-                seen.add(title.casefold())
-                ts = 0.0
-                try:
-                    ts = email.utils.parsedate_to_datetime(
-                        it.findtext("pubDate") or "").timestamp()
-                except Exception:
-                    pass
-                items.append({"title": title, "icon": icon, "sym": sym,
-                              "link": (it.findtext("link") or "").strip(),
-                              "ts": ts})
-        except Exception:
-            continue
+                time.sleep(1.5)
     items.sort(key=lambda x: x["ts"], reverse=True)
     items = items[:limit]
-    if items:
+    # never cache a thin result: half-fed merges make the next five minutes
+    # of page loads look broken. Serve what we got, but let it be refetched.
+    if len(items) >= 10:
         _HEADLINES_CACHE["t"] = time.time()
         _HEADLINES_CACHE["items"] = items
     return items
