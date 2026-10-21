@@ -1090,6 +1090,95 @@ def _gen_intro_async() -> None:
         _INTRO["busy"] = False
 
 
+# ── the tape (2026-10-21): base strip quotes + top trending tickers ─────────
+# Owner order: the quotes roll like StockTwits' top-right tape, "add the top
+# trending tickers, adjust stigmergically how many, to feel alive". Blend:
+#   - Yahoo's public trending list (the whole market's crowd)
+#   - this site's own buzz (tickers our visitors keep asking about — organ)
+#   - the evergreen strip (gold, oil, indices, rates, BTC, $MPS stays client-side)
+# Response is cached 45s so every visitor shares one fetch; the trending set
+# itself refreshes in a background thread every 10 minutes.
+_TAPE: Dict[str, Any] = {"t": 0.0, "rows": []}
+_TREND: Dict[str, Any] = {"t": 0.0, "syms": []}
+_TAPE_BASE_SYMS = ("GC=F", "CL=F", "^GSPC", "^IXIC", "^VIX", "^TNX", "BTC-USD")
+
+
+def trending_symbols_refresh() -> None:
+    """Reload the trending symbol set: Yahoo trending + our own site buzz."""
+    if time.time() - _TREND["t"] < 600:
+        return
+    _TREND["t"] = time.time()
+    syms: list = []
+    try:
+        req = urllib.request.Request(
+            "https://query1.finance.yahoo.com/v1/finance/trending/US?count=10",
+            headers={"User-Agent": "Mozilla/5.0"})
+        d = _http_json.__wrapped__ if False else None  # (kept simple below)
+        import json as _json
+        with urllib.request.urlopen(req, timeout=12) as r:
+            d = _json.loads(r.read())
+        qq = ((d.get("finance") or {}).get("result") or [{}])[0].get("quotes") or []
+        syms = [str(q.get("symbol") or "").strip() for q in qq]
+        syms = [s for s in syms if s and len(s) <= 8][:10]
+    except Exception:
+        syms = []
+    try:
+        from System.swarm_topic_organ import site_buzz_syms
+        buzz = site_buzz_syms(2) or []
+    except Exception:
+        buzz = []
+    # our visitors first, then the market's crowd — stigmergic order
+    merged, seen = [], set()
+    for s in buzz + syms:
+        u = s.upper()
+        if u not in seen:
+            seen.add(u)
+            merged.append(u)
+    _TREND["syms"] = merged
+    _TREND["buzz"] = {s.upper() for s in buzz}
+
+
+def tape_rows() -> list:
+    """One cached snapshot: base strip + trending chips, quoted and ready."""
+    if time.time() - _TAPE["t"] < 45 and _TAPE["rows"]:
+        return _TAPE["rows"]
+    threading.Thread(target=trending_symbols_refresh, daemon=True).start()
+    rows: list = []
+    for s in _TAPE_BASE_SYMS:
+        try:
+            q = market_quote(s) or {}
+        except Exception:
+            q = {}
+        if q.get("price") is not None:
+            rows.append({"symbol": q.get("symbol") or s,
+                         "name": _TAPE_DISPLAY.get(s, q.get("name") or s),
+                         "price": q.get("price"), "change_pct": q.get("change_pct"),
+                         "kind": "base"})
+    tset = list(_TREND["syms"])[:9]
+    for s in tset:
+        if any(r["symbol"].upper() == s for r in rows):
+            continue
+        try:
+            q = market_quote(s) or {}
+        except Exception:
+            q = {}
+        if q.get("price") is None:
+            continue
+        rows.append({"symbol": q.get("symbol") or s,
+                     "name": (q.get("name") or s)[:26],
+                     "price": q.get("price"), "change_pct": q.get("change_pct"),
+                     "kind": "buzz" if s in (_TREND.get("buzz") or set()) else "trending"})
+    rows = rows[:18]
+    if len(rows) >= 5:
+        _TAPE["t"] = time.time()
+        _TAPE["rows"] = rows
+    return rows
+
+
+_TAPE_DISPLAY = {"GC=F": "gold", "CL=F": "wti", "^GSPC": "s&p", "^IXIC": "nasdaq",
+                 "^VIX": "vix", "^TNX": "us 10y", "BTC-USD": "bitcoin"}
+
+
 def starters_with_fresh_data() -> list:
     """The bottom chips: rolling Yahoo Finance headlines (owner order,
     2026-10-21) — the page rotates them one chip at a time, 2.5s a step. Each
@@ -1812,6 +1901,15 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
         raw = str(query.get("symbols") or "GC=F,CL=F,^GSPC")
         syms = [x.strip() for x in raw.split(",") if x.strip()][:8]
         return {"success": True, "quotes": market_quotes(syms)}
+
+    # GET /api/tape → the rolling tape in one shot: base strip + top trending
+    # (Yahoo crowd) + this site's own buzz (what visitors here keep asking
+    # about), cached 45s so all visitors share the fetch
+    if path == "/api/tape" and method == "GET":
+        try:
+            return {"success": True, "rows": tape_rows()}
+        except Exception:
+            return {"success": True, "rows": []}
 
     # POST /api/gmchat → remote investing model + live data + internet search
     if path == "/api/gmchat" and method == "POST":

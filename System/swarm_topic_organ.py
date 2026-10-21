@@ -374,6 +374,33 @@ def _grow(entry: Dict[str, Any]) -> None:
             pass
 
 
+def site_buzz_syms(limit: int = 2) -> List[str]:
+    """The tickers most alive in THIS site's own conversations today — read
+    from the anonymous prompt ledger (resolved symbols per turn). These bubble
+    up onto the rolling tape ahead of Yahoo's crowd trending, which is the
+    stigmergic part: what our visitors ask shapes what the site shows."""
+    from collections import Counter
+    counts: Counter = Counter()
+    try:
+        lines = _PROMPTS.read_text(encoding="utf-8").splitlines()[-300:]
+        for ln in lines:
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            for s in (row.get("syms") or []):
+                t = str(s or "").upper()
+                if t and len(t) <= 6:
+                    counts[t] += 1
+    except Exception:
+        pass
+    if not counts:
+        return []
+    out = [t for t, _ in counts.most_common(limit * 2)
+           if counts[t] >= 2][:limit]
+    return [t for t in out if t not in ("MPS",)]
+
+
 def list_articles(limit: int = 6) -> List[Dict[str, Any]]:
     """What the home page shows: graduated topics, freshest first."""
     led = _load_ledger()

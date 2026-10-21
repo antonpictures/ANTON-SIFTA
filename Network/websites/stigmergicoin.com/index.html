@@ -108,6 +108,9 @@
   .nrow .tx .s{font-size:10.5px;color:var(--dimmer);margin-top:2px}
   .nrow .sym{font-size:10.5px;font-weight:600;white-space:nowrap;padding-top:2px}
   .sym.up{color:var(--up)} .sym.down{color:var(--down)}
+  .buzzdot{display:inline-block;width:5px;height:5px;border-radius:50%;
+    background:var(--accent);margin-right:5px;vertical-align:1px;
+    box-shadow:0 0 6px rgba(217,119,87,.8)}
 
   footer{max-width:1140px;margin:0 auto;padding:2px 22px 34px;display:flex;gap:14px;
     font-size:11.5px;color:var(--dimmer);flex-wrap:wrap;justify-content:space-between}
@@ -183,32 +186,66 @@ const QS=[['GC=F','gold'],['CL=F','wti'],['^GSPC','s&p'],['^IXIC','nasdaq'],
 /* ── rolling quote tape: two identical halves flow left forever; the poll
    updates values IN PLACE so the animation never stutters or restarts.
    Pause: hover, or the ❚❚ toggle (StockTwits-style). ── */
-let stripBuilt=false, stripPaused=false;
-function qHTML(q){
-  const nm=((QS.find(x=>x[0]===q.symbol)||[])[1])||q.name;
-  const c=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%</span>`;
-  const v=(q.symbol==='^TNX')?Number(q.price).toFixed(2)+'%':usd(q.price);
-  return `<div class="q" data-sym="${q.symbol.replace(/"/g,'&quot;')}"
-    onclick="prefill('What is ${nm} doing today?')" title="ask about ${nm}">
-    <div class="n">${nm}</div><div class="v">${v}${c}</div></div>`;
+const escH=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function valueHTML(q){
+  const c=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%</span>`;
+  const v=String(q.symbol||'').startsWith('^TNX')?Number(q.price).toFixed(2)+'%':usd(q.price);
+  return v+c;
 }
+function qHTML(q){
+  const nm=escH(q.name||q.symbol);
+  const dot=(q.kind==='buzz')?'<span class="buzzdot" title="alive on this site"></span>':'';
+  return `<div class="q" data-sym="${escH(q.symbol)}" data-ask="${encodeURIComponent('What is '+(q.name||q.symbol)+' doing today?')}" title="ask about ${nm}">
+    <div class="n">${dot}${nm}</div><div class="v">${valueHTML(q)}</div></div>`;
+}
+function tapePass(rows){
+  return rows.map(r=>qHTML(r)).join('')+
+    `<div class="q" data-sym="MPS" data-ask="${encodeURIComponent('What is $MPS doing today?')}" title="ask about $mps">
+     <div class="n"><span class="buzzdot" title="alive on this site"></span>$mps</div><div class="v"><span class="mpsph">…</span></div></div>`;
+}
+/* the seam must never show: repeat the pass until a half is wider than the
+   screen the tape rolls through (owner caught the empty gap) */
+function fillHalves(passHTML){
+  const flow=$('strip');
+  flow.innerHTML=`<div class="half">${passHTML}</div><div class="half">${passHTML}</div>`;
+  const need=Math.max(window.innerWidth*1.25,1000);
+  document.querySelectorAll('#strip .half').forEach(hf=>{
+    const pass=hf.innerHTML; let guard=0;
+    while(hf.scrollWidth<need && guard++<12) hf.insertAdjacentHTML('beforeend',pass);
+  });
+}
+let stripBuilt=false, stripSig='', stripPaused=false;
 async function strip(){
   try{
-    const d=await(await fetch('/api/quotes?symbols='+QS.map(x=>encodeURIComponent(x[0])).join(','),{cache:'no-store'})).json();
-    const quotes=(d.quotes||[]);
-    if(!quotes.length)return;
-    if(!stripBuilt||!document.querySelector('#strip .half')){
-      const h=quotes.map(qHTML).join('');
-      $('strip').innerHTML=`<div class="half">${h}</div><div class="half">${h}</div>`;
-      stripBuilt=true;
+    const d=await(await fetch('/api/tape',{cache:'no-store'})).json();
+    const rows=(d.rows||[]);
+    if(!rows.length)return;
+    const sig=rows.map(r=>r.symbol).join(',')+'|'+rows.length;
+    if(!stripBuilt||!document.querySelector('#strip .half')||sig!==stripSig){
+      const flowEl=$('strip');
+      let x=0;
+      try{x=new DOMMatrixReadOnly(getComputedStyle(flowEl).transform).m41;}catch(_e){}
+      const half=flowEl.querySelector('.half');
+      const halfW=half?half.scrollWidth:0;
+      const phase=halfW>0?(((-x)%halfW)+halfW)%halfW/halfW:0;
+      fillHalves(tapePass(rows));
+      flowEl.style.animation='none';
+      void flowEl.offsetWidth;
+      flowEl.style.animation='flowX 45s linear infinite';
+      flowEl.style.animationDelay=`-${(phase*45).toFixed(3)}s`;
+      stripSig=sig; stripBuilt=true;
       return;
     }
-    for(const q of quotes){
-      document.querySelectorAll(`#strip .q[data-sym="${(q.symbol||'').replace(/"/g,'\\"')}"] .v`)
-        .forEach(el=>{el.innerHTML=qHTML(q).match(/<div class="v">(.*?)<\/div>/)[1];});
+    for(const r of rows){
+      document.querySelectorAll(`#strip .q[data-sym="${(r.symbol||'').replace(/"/g,'\\"')}"] .v`)
+        .forEach(el=>{el.innerHTML=valueHTML(r);});
     }
   }catch(e){}
 }
+$('strip').onclick=(e)=>{
+  const q=e.target.closest('.q');
+  if(q&&q.dataset.ask)prefill(decodeURIComponent(q.dataset.ask));
+};
 $('pt').onclick=()=>{
   stripPaused=!stripPaused;
   $('stripwrap').classList.toggle('paused',stripPaused);
@@ -220,15 +257,8 @@ async function mps(){
     const ds=(d.sources||{}).dexscreener||{},gt=(d.sources||{}).geckoterminal||{};
     const p=ds.price_usd||gt.price_usd; if(!p)return;
     const c=ds.price_change_24h?`<span class="c ${ds.price_change_24h>=0?'up':'down'}">${ds.price_change_24h>0?'+':''}${ds.price_change_24h}%</span>`:'';
-    const chip=`<div class="q" data-sym="MPS" onclick="prefill('What is \\$MPS doing today?')" title="ask about $mps">
-      <div class="n">$mps</div><div class="v">${usd(p)}${c}</div></div>`;
-    const halves=document.querySelectorAll('#strip .half');
-    if(!halves.length)return;
-    halves.forEach(hf=>{
-      const ex=hf.querySelector('.q[data-sym="MPS"]');
-      if(ex){const v=ex.querySelector('.v'); if(v)v.innerHTML=`${usd(p)}${c}`;}
-      else hf.insertAdjacentHTML('beforeend',chip);
-    });
+    document.querySelectorAll('#strip .q[data-sym="MPS"] .v')
+      .forEach(el=>{el.innerHTML=`${usd(p)}${c}`;});
   }catch(e){}
 }
 
