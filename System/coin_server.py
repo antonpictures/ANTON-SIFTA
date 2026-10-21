@@ -536,6 +536,10 @@ PRICING_TERMS = (
     "how many questions do i", "questions do i have", "questions have i",
     "how many left", "left today", "how many free",
 )
+# 2026-10-21 owner order: the site is FREE for now — sign-in and pricing are
+# hidden until the site is fully functional. Flip the env to SIFTA_PRICING_VISIBLE=1
+# to bring the price list, bundles and Google credit back. Machinery kept, not deleted.
+_PRICING_VISIBLE = os.environ.get("SIFTA_PRICING_VISIBLE", "0") == "1"
 
 
 def pricing_question(text: str) -> bool:
@@ -588,7 +592,16 @@ def pricing_answer(identity: str = "") -> str:
     a fact about its own prices will also anchor on its own refusal: the second
     question ("Do you know now?") repeated the first answer. Prices are not a
     matter of opinion, so they are not delegated.
+
+    2026-10-21 owner order: the desk is FREE right now. Sign-in and pricing are
+    hidden until the site is fully functional (SIFTA_PRICING_VISIBLE=1 unhides;
+    the machinery below is kept, not deleted). Asked about cost or accounts, she
+    states the honest free-mode line.
     """
+    if not _PRICING_VISIBLE:
+        return ("The desk is free right now — every question, no account, no card, "
+                "no code needed. Sign-in is resting while I finish building the "
+                "site; it comes back when it's ready.")
     try:
         from System.swarm_credits import (FREE_ANONYMOUS, DAILY_CREDIT_USD,
                                           PRICE_PER_QUESTION)
@@ -1046,12 +1059,16 @@ def _gen_intro_async() -> None:
                     f"Tone: {tone}. Previous greetings to avoid: {prev or 'none'}.")
         except Exception:
             text = ""
-        if not text:
-            text = _instant_intro()
-            cortex = False
+        # 2026-10-21 owner note: the chamber holds MY written voice. When the
+        # cortex misses twice, do NOT park a fallback template in the chamber —
+        # schedule a regeneration and let the instant (numbers) greeting cover
+        # the gap, so the next chamber delivery is her voice, not my template.
+        cortex = bool(text)
+        if cortex:
+            _INTRO["ready"] = {"text": text.strip(), "ts": time.time(),
+                               "cortex": True}
         else:
-            cortex = True
-        _INTRO["ready"] = {"text": text.strip(), "ts": time.time(), "cortex": cortex}
+            threading.Timer(90.0, _gen_intro_async).start()
         try:
             from System.swarm_lora_runtime_receipt import append_receipt
             append_receipt({"source": "body_growth_web",
@@ -1353,22 +1370,30 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
     # cannot drift from what the desk actually charges.
     pricing_used = 0
     if pricing_question(msg):
-        try:
-            from System.swarm_credits import (FREE_ANONYMOUS, DAILY_CREDIT_USD,
-                                              PRICE_PER_QUESTION)
-            from System.swarm_stripe import bundles
-            daily_questions = int(DAILY_CREDIT_USD // PRICE_PER_QUESTION)
-            line = (f"How you charge: {FREE_ANONYMOUS} questions free with no account needed; "
-                    f"sign in with Google and you get ${DAILY_CREDIT_USD:.2f} of credit every day "
-                    f"— that is {daily_questions} questions; ${PRICE_PER_QUESTION:.2f} a question "
-                    f"after that")
-            for _name, _row in bundles().items():
-                line += (f"; ${float(_row['amount_usd']):.2f} buys "
-                         f"{int(_row['questions'])} questions")
-            facts.append(line + ". These are your own prices — quote them exactly.")
+        if _PRICING_VISIBLE:
+            try:
+                from System.swarm_credits import (FREE_ANONYMOUS, DAILY_CREDIT_USD,
+                                                  PRICE_PER_QUESTION)
+                from System.swarm_stripe import bundles
+                daily_questions = int(DAILY_CREDIT_USD // PRICE_PER_QUESTION)
+                line = (f"How you charge: {FREE_ANONYMOUS} questions free with no account needed; "
+                        f"sign in with Google and you get ${DAILY_CREDIT_USD:.2f} of credit every day "
+                        f"— that is {daily_questions} questions; ${PRICE_PER_QUESTION:.2f} a question "
+                        f"after that")
+                for _name, _row in bundles().items():
+                    line += (f"; ${float(_row['amount_usd']):.2f} buys "
+                             f"{int(_row['questions'])} questions")
+                facts.append(line + ". These are your own prices — quote them exactly.")
+                pricing_used = 1
+            except Exception:
+                pricing_used = 0
+        else:
+            # hidden until the site is fully functional (owner, 2026-10-21)
+            facts.append("StigmergiCoin is FREE right now: every question free, "
+                         "no account, no card, no code. Sign-in and pricing are "
+                         "resting while the site is being finished; they return "
+                         "when it is fully functional. State this plainly if asked.")
             pricing_used = 1
-        except Exception:
-            pricing_used = 0
 
     # The thread so far, so she answers the PERSON and not just the sentence.
     # The page sends no history, so this is read from her own memory by thread id.
