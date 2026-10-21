@@ -32,11 +32,18 @@
     border:1px solid var(--line);border-radius:999px;padding:4px 11px}
   .top .pill b{color:var(--accent)}
 
-  /* ── one thin live strip ── */
-  .strip{border-bottom:1px solid var(--line);background:#101017}
-  .strip .in{max-width:1140px;margin:0 auto;display:flex;gap:24px;overflow-x:auto;
-    padding:7px 22px;scrollbar-width:none}
-  .strip .in::-webkit-scrollbar{display:none}
+  /* ── one thin live strip, rolling like a tape (StockTwits-style) ── */
+  .strip{position:relative;overflow:hidden;border-bottom:1px solid var(--line);background:#101017}
+  .strip .flow{display:flex;width:max-content;padding:7px 0;
+    animation:flowX 45s linear infinite}
+  .strip .half{display:flex;gap:26px;padding-right:26px}
+  .strip:hover .flow,.strip.paused .flow{animation-play-state:paused}
+  @keyframes flowX{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .strip .pt{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+    background:rgba(16,16,23,.92);border:1px solid var(--line);color:var(--dim);
+    border-radius:999px;width:26px;height:22px;font-size:10px;line-height:1;
+    cursor:pointer;display:grid;place-items:center}
+  .strip .pt:hover{color:var(--txt);border-color:var(--accent)}
   .q{flex:0 0 auto;cursor:pointer;line-height:1.25}
   .q:hover .v{color:var(--accent)}
   .q .n{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--dimmer)}
@@ -121,9 +128,10 @@
   </div>
 </header>
 
-<div class="strip"><div class="in" id="strip">
-  <span class="q" style="color:var(--dimmer);cursor:default">quotes…</span>
-</div></div>
+<div class="strip" id="stripwrap">
+  <div class="flow" id="strip"><span class="q" style="color:var(--dimmer);cursor:default">quotes…</span></div>
+  <button class="pt" id="pt" type="button" aria-label="pause ticker">❚❚</button>
+</div>
 
 <div class="wrap">
   <!-- ───────────── the conversation: compose at the top ───────────── -->
@@ -172,31 +180,55 @@ const usd=(n)=>{n=Number(n);if(!isFinite(n)||n===0)return'—';
 /* ── live strip ── */
 const QS=[['GC=F','gold'],['CL=F','wti'],['^GSPC','s&p'],['^IXIC','nasdaq'],
           ['^VIX','vix'],['^TNX','10y'],['BTC-USD','btc']];
+/* ── rolling quote tape: two identical halves flow left forever; the poll
+   updates values IN PLACE so the animation never stutters or restarts.
+   Pause: hover, or the ❚❚ toggle (StockTwits-style). ── */
+let stripBuilt=false, stripPaused=false;
+function qHTML(q){
+  const nm=((QS.find(x=>x[0]===q.symbol)||[])[1])||q.name;
+  const c=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%</span>`;
+  const v=(q.symbol==='^TNX')?Number(q.price).toFixed(2)+'%':usd(q.price);
+  return `<div class="q" data-sym="${q.symbol.replace(/"/g,'&quot;')}"
+    onclick="prefill('What is ${nm} doing today?')" title="ask about ${nm}">
+    <div class="n">${nm}</div><div class="v">${v}${c}</div></div>`;
+}
 async function strip(){
   try{
     const d=await(await fetch('/api/quotes?symbols='+QS.map(x=>encodeURIComponent(x[0])).join(','),{cache:'no-store'})).json();
-    let h='';
-    for(const q of (d.quotes||[])){
-      const nm=((QS.find(x=>x[0]===q.symbol)||[])[1])||q.name;
-      const c=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${q.change_pct.toFixed(2)}%</span>`;
-      const v=(q.symbol==='^TNX')?Number(q.price).toFixed(2)+'%':usd(q.price);
-      h+=`<div class="q" onclick="prefill('What is ${nm} doing today?')" title="ask about ${nm}">
-            <div class="n">${nm}</div><div class="v">${v}${c}</div></div>`;
+    const quotes=(d.quotes||[]);
+    if(!quotes.length)return;
+    if(!stripBuilt||!document.querySelector('#strip .half')){
+      const h=quotes.map(qHTML).join('');
+      $('strip').innerHTML=`<div class="half">${h}</div><div class="half">${h}</div>`;
+      stripBuilt=true;
+      return;
     }
-    $('strip').innerHTML=h||'<span class="q" style="color:var(--dimmer);cursor:default">quotes unavailable</span>';
+    for(const q of quotes){
+      document.querySelectorAll(`#strip .q[data-sym="${(q.symbol||'').replace(/"/g,'\\"')}"] .v`)
+        .forEach(el=>{el.innerHTML=qHTML(q).match(/<div class="v">(.*?)<\/div>/)[1];});
+    }
   }catch(e){}
 }
+$('pt').onclick=()=>{
+  stripPaused=!stripPaused;
+  $('stripwrap').classList.toggle('paused',stripPaused);
+  $('pt').textContent=stripPaused?'▶':'❚❚';
+};
 async function mps(){
   try{
     const d=await(await fetch('/api/gmprice',{cache:'no-store'})).json();
     const ds=(d.sources||{}).dexscreener||{},gt=(d.sources||{}).geckoterminal||{};
     const p=ds.price_usd||gt.price_usd; if(!p)return;
     const c=ds.price_change_24h?`<span class="c ${ds.price_change_24h>=0?'up':'down'}">${ds.price_change_24h>0?'+':''}${ds.price_change_24h}%</span>`:'';
-    const old=$('strip').getElementsByClassName('mps')[0]; if(old)old.remove();
-    const el=document.createElement('div'); el.className='q mps';
-    el.onclick=()=>prefill('What is $MPS doing today?');
-    el.innerHTML=`<div class="n">$mps</div><div class="v">${usd(p)}${c}</div>`;
-    $('strip').appendChild(el);
+    const chip=`<div class="q" data-sym="MPS" onclick="prefill('What is \\$MPS doing today?')" title="ask about $mps">
+      <div class="n">$mps</div><div class="v">${usd(p)}${c}</div></div>`;
+    const halves=document.querySelectorAll('#strip .half');
+    if(!halves.length)return;
+    halves.forEach(hf=>{
+      const ex=hf.querySelector('.q[data-sym="MPS"]');
+      if(ex){const v=ex.querySelector('.v'); if(v)v.innerHTML=`${usd(p)}${c}`;}
+      else hf.insertAdjacentHTML('beforeend',chip);
+    });
   }catch(e){}
 }
 
