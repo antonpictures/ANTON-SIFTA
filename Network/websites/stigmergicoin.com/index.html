@@ -51,11 +51,8 @@
   /* THE CHAT — the reason the page exists */
   .desk{display:flex;flex-direction:column;min-height:calc(100vh - 200px);
     background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
-  .deskhead{display:flex;align-items:center;gap:9px;padding:13px 17px;border-bottom:1px solid var(--line)}
-  .deskhead .dot{width:7px;height:7px;border-radius:50%;background:var(--up)}
-  .deskhead b{font-size:14px;letter-spacing:-.01em}
-  .deskhead span{font-size:11.5px;color:var(--dimmer);margin-left:auto}
-  .msgs{flex:1;overflow-y:auto;padding:20px 17px;display:flex;flex-direction:column;gap:14px}
+  .msgs{flex:1;overflow-y:auto;padding:18px 17px;display:flex;flex-direction:column;gap:14px;
+    min-height:0}
   .m{max-width:76%;padding:10px 14px;border-radius:14px;font-size:14.2px;line-height:1.58;
     white-space:pre-wrap;word-wrap:break-word}
   .m.ai{background:#1e1e29;border:1px solid var(--line);border-bottom-left-radius:5px;align-self:flex-start}
@@ -65,9 +62,10 @@
   .m.wait{color:var(--dim);font-style:italic}
 
   /* fixed 3-slot grid: a swap changes text inside its slot only — the row
-     never reflows, the other chips never flicker or move (owner rule) */
+     never reflows, the other chips never flicker or move (owner rule);
+     the row now sits at the TOP of the desk, above the input */
   .starters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:8px;padding:0 17px 12px}
+    gap:8px;padding:13px 15px 10px}
   .starter{background:#191922;border:1px solid var(--line);color:var(--dim);
     border-radius:12px;width:100%;height:42px;display:flex;align-items:center;
     gap:6px;padding:0 12px;font:inherit;font-size:12.5px;cursor:pointer;
@@ -77,7 +75,7 @@
   .starter.roll-in{animation:rollin .45s ease}
   @keyframes rollin{from{opacity:0}to{opacity:1}}
 
-  .composer{display:flex;gap:9px;padding:13px 15px 15px;border-top:1px solid var(--line);background:#12121a}
+  .composer{display:flex;gap:9px;padding:12px 15px;border-bottom:1px solid var(--line);background:#12121a}
   .composer input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
     color:var(--txt);border-radius:12px;padding:12px 15px;font:inherit;font-size:14.5px}
   .composer input:focus{outline:0;border-color:var(--accent)}
@@ -130,24 +128,20 @@
 </div></div>
 
 <div class="wrap">
-  <!-- ───────────── the conversation ───────────── -->
+  <!-- ───────────── the conversation: compose at the top ───────────── -->
   <section class="desk">
-    <div class="deskhead">
-      <span class="dot"></span><b>Ask the desk</b><span>one intelligence · live markets · internet</span>
-    </div>
-
-    <div class="msgs" id="msgs">
-      <div class="m ai">I'm Alice. ;)
-Ask me about any market, any coin, any story chasing you around — gold, oil, the debt clocks, the coins nobody can price. I read the tape and the web live, I answer in plain sentences, and I'll tell you straight when I don't know.
-Don't be shy: the questions you leave here grow the desk — five on one subject and I write it into the record.</div>
-    </div>
-
     <div class="starters" id="starters"></div>
 
     <form class="composer" id="f">
       <input id="q" placeholder="Ask about any market, coin, or story…" autocomplete="off" autofocus>
       <button id="send" type="submit" aria-label="send">↑</button>
     </form>
+
+    <div class="msgs" id="msgs">
+      <div class="m ai">I'm Alice. ;)
+Ask me about any market, any coin, any story chasing you around — gold, oil, the debt clocks, the coins nobody can price. I read the tape and the web live, I answer in plain sentences, and I'll tell you straight when I don't know.
+Don't be shy: the questions you leave here grow the desk — five on one subject and I write it into the record.</div>
+    </div>
   </section>
 
   <!-- ───────────── the small news list ───────────── -->
