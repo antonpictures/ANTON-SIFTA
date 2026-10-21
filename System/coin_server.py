@@ -276,14 +276,37 @@ YIELD_SYMBOLS = {"^TNX", "^TYX", "^FVX", "^IRX"}
 
 
 def market_quote(symbol: str) -> Optional[Dict[str, Any]]:
-    """One quote from Yahoo's public chart API. No key, no account."""
+    """One quote from Yahoo's public chart API. No key, no account.
+
+    2026-10-21 CORRECTION: this read meta["chartPreviousClose"], which in a 5d
+    chart is the close BEFORE the window opens — so CRWV (last close 62.13,
+    price 62.13, flat) was reported as −20.15% against Oct 14's 77.81. A desk
+    whose promise is "measured, not narrated" cannot show a fabricated move.
+    Previous close now comes from the daily close series itself: the last
+    completed session, skipping today's partial bar when the series has one.
+    """
     d = _http_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d")
     try:
-        meta = d["chart"]["result"][0]["meta"]
+        res = d["chart"]["result"][0]
+        meta = res["meta"]
     except (KeyError, IndexError, TypeError):
         return None
     price = meta.get("regularMarketPrice")
-    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    prev = None
+    try:
+        bars = list(zip(res.get("timestamp") or [],
+                        (res["indicators"]["quote"][0].get("close") or [])))
+        valid = [(t, c) for t, c in bars if isinstance(c, (int, float))]
+        # The bar the live price belongs to is the last non-null close; the change
+        # a visitor wants is that bar against the one before it. True mid-session
+        # (last bar = today's partial), after the close (today's completed close)
+        # and pre-market (yesterday's close) — one rule, no session guessing.
+        if len(valid) >= 2:
+            prev = valid[-2][1]
+        elif valid:
+            prev = valid[-1][1]
+    except (KeyError, IndexError, TypeError, ValueError):
+        prev = None
     change = None
     if isinstance(price, (int, float)) and isinstance(prev, (int, float)) and prev:
         change = round((price / prev - 1) * 100, 3)
@@ -1044,7 +1067,15 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         from System.swarm_web_research import needs_web, web_facts
         # A market question is answered from her own organs, never from the web;
         # if the market reader recognised a symbol, the web is not consulted.
-        if needs_web(msg) and not syms:
+        # 2026-10-21 exception: a NEWS question wants the web even when a symbol
+        # was resolved — "what's the latest on CoreWeave?" is a story, and the
+        # desk reads stories from the web, then layers the live quote on top
+        # (both are already in facts).
+        _low_msg = msg.casefold()
+        _wants_news = any(w in _low_msg for w in
+                          ("latest news", "whats the latest", "what's the latest",
+                           "newest", "happened", "news on", "story"))
+        if needs_web(msg) and (not syms or _wants_news):
             web_lines, web_sources = web_facts(msg, results=4, pages=2)
             facts.extend(web_lines)
             web_used = len(web_lines)
