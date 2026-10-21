@@ -218,6 +218,9 @@ MARKET_KEYWORDS = {
     "tesla": ["TSLA"], "nvidia": ["NVDA"], "apple": ["AAPL"], "microsoft": ["MSFT"],
     "nio": ["NIO"], "amazon": ["AMZN"], "google": ["GOOGL"], "meta": ["META"],
     "solana": ["SOL-USD"], "sol": ["SOL-USD"],
+    # owner typo-taught 2026-10-21: he typed $AQXAX meaning Avalanche —
+    # AVAX joins the vocabulary so the intent still lands in crypto
+    "avalanche": ["AVAX-USD"], "avax": ["AVAX-USD"],
     # ── the cost of money ────────────────────────────────────────────────────
     # Rates were absent from this desk, so "what does this mean for the cost of
     # money" was answered with "I see no yields, go and check the 10-year" —

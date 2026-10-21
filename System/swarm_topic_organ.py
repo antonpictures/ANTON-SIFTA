@@ -784,6 +784,8 @@ def list_articles(limit: int = 6) -> List[Dict[str, Any]]:
         "label": _slug_label(k),
         "count": v.get("count"),
         "ticker": v.get("ticker") or "",
+        "sym_raw": (TOPICS.get(k, {}).get("sym")
+                    or (k.split("ticker-", 1)[-1].upper() if k.startswith("ticker-") else "")),
         "updated": v.get("updated") or 0,
         "url": f"/articles/{k}.html",
     } for k, v in led.items() if v.get("graduated") and v.get("path")]
