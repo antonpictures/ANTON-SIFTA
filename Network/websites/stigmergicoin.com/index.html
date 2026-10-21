@@ -156,7 +156,7 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
   <!-- ───────────── the rail: only what conversations grow ───────────── -->
   <aside class="side">
     <div class="sidecard" id="grown" hidden>
-      <h3>Grown from visitors' questions</h3>
+      <h3>Grown from visitors' conversations</h3>
       <div id="grownrows" style="padding:4px 0"></div>
     </div>
   </aside>
@@ -362,6 +362,26 @@ async function loadStarters(){
 }
 
 /* ── articles grown from conversations, freshest first ── */
+/* every grown tile carries ITS ticker's latest price, green or red with the
+   tape — the tile is a live quote of the conversation, not a static link */
+async function paintGrownTicks(rows){
+  const ticks=[...new Set((rows||[]).map(a=>a.ticker).filter(Boolean))];
+  if(!ticks.length)return;
+  try{
+    const d=await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
+    const map=(d.quotes||[]).reduce((m,q)=>(m[q.symbol]=q,m),{});
+    rows.forEach(a=>{
+      if(!a.ticker)return;
+      const el=window['gsym-'+('gx')]||document.getElementById('gsym-'+String(a.slug).replace(/[^a-z0-9-]/gi,''));
+      if(!el)return;
+      const q=map[a.ticker];
+      if(!q||q.change_pct==null||q.price==null)return;
+      el.textContent=`${a.ticker} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
+      el.className='sym '+(q.change_pct>=0?'up':'down');
+    });
+  }catch(e){}
+}
+
 async function loadGrown(){
   try{
     const d=await(await fetch('/api/articles',{cache:'no-store'})).json();
@@ -370,11 +390,12 @@ async function loadGrown(){
     $('grown').hidden=false;
     $('grownrows').innerHTML=rows.map(a=>{
       const when=a.updated?new Date(a.updated*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-      const tick=a.ticker?`<span class="sym" style="color:var(--accent)">${String(a.ticker).replace(/</g,'&lt;')}</span>`:'';
+      const tick=a.ticker?`<span class="sym" id="gsym-${a.slug.replace(/[^a-z0-9-]/gi,'')}">${escH(a.ticker)}</span>`:'';
       return `<a class="nrow" style="display:flex" href="${a.url}">
         <span class="ic">🌱</span>
         <div class="tx"><div class="t">${String(a.title||a.label).replace(/</g,'&lt;')}</div>
         <div class="s">updated ${when} · from ${a.count} prompts</div></div>${tick}</a>`;}).join('');
+    paintGrownTicks(rows);
   }catch(e){$('grown').hidden=true;}
 }
 

@@ -292,7 +292,7 @@ footer{{text-align:center;margin-top:30px}}
 </style></head><body>
 <header><a href="/" style="display:flex;gap:10px;align-items:center;color:#ece9e2">
 <span class="mark">🐜</span><b style="font:600 17px Georgia,serif">stigmergi<i style="color:#d97757;font-style:normal">coin</i></b></a>
-<span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from our conversations</span></header>
+<span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from visitors' conversations</span></header>
 <main>
 <h1>{esc(entry['title'])}</h1>
 <div class="meta">{esc(facts['label'])} · updated {updated} · grown from {entry.get('count', '?')} prompts{' · ticker ' + esc(entry['ticker']) if entry.get('ticker') else ''} · {src}</div>
