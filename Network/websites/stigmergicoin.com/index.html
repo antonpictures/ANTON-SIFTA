@@ -150,14 +150,9 @@ Don't be shy: the questions you leave here grow the desk — five on one subject
 
   <!-- ───────────── the rail: only what conversations grow ───────────── -->
   <aside class="side">
-    <div class="sidecard" id="grown" hidden>
+    <div class="sidecard" id="room" hidden>
       <h3>Grown from visitors' conversations</h3>
-      <div id="grownrows" style="padding:4px 0"></div>
-    </div>
-
-    <div class="sidecard" id="tickers" hidden>
-      <h3>Most talked — this site's crowd</h3>
-      <div id="tickrows" style="padding:4px 0"></div>
+      <div id="roomrows" style="padding:4px 0"></div>
     </div>
   </aside>
 </div>
@@ -363,92 +358,62 @@ async function loadStarters(){
 
 /* ── the crowd's tickers: most talked, latest first; graduated ones open
    their living page, everyone else asks the desk on click ── */
-async function loadTickers(){
+/** THE ROOM — one box, everything the crowd grew: ticker pages (📄),
+    subject articles (🌱), and promoting tickers (💬) — freshest first.
+    Prices live-painted green/red after the render. **/
+async function loadRoom(){
   try{
-    const d=await(await fetch('/api/tickers',{cache:'no-store'})).json();
-    const rows=(d.tickers||[]).filter(t=>t.sym);
-    if(!rows.length){$('tickers').hidden=true;return;}
-    $('tickers').hidden=false;
-    $('tickrows').innerHTML=rows.map(t=>{
-      const badge=`<span class="sym" id="tsym-${t.sym.replace(/[^a-z0-9]/gi,'')}">${escH(t.sym)}</span>`;
-      const when=t.last?new Date(t.last*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):'';
-      const inner=`<span class="ic">${t.graduated?'📄':'💬'}</span>
-        <div class="tx"><div class="t">$${escH(t.sym)}</div>
-        <div class="s">${t.count} talks${when?' · last '+when:''}</div></div>${badge}`;
-      return t.graduated&&t.url
-        ? `<a class="nrow" style="display:flex" href="${t.url}">${inner}</a>`
-        : `<div class="nrow" style="display:flex" data-ask="${encodeURIComponent('What is the latest on $'+t.sym+'?')}">${inner}</div>`;
+    const [dt,da]=await Promise.all([
+      fetch('/api/tickers',{cache:'no-store'}).then(r=>r.json()).catch(()=>({tickers:[]})),
+      fetch('/api/articles',{cache:'no-store'}).then(r=>r.json()).catch(()=>({articles:[]})),
+    ]);
+    const rows=[];
+    (dt.tickers||[]).forEach(t=>{
+      if(!t.sym)return;
+      rows.push({kind:t.graduated?'page':'buzz', sym:t.sym, raw:t.raw||t.sym,
+                 count:t.count||0, when:t.last||0,
+                 href:(t.graduated&&t.url)?t.url:'',
+                 title:'$'+t.sym});
+    });
+    (da.articles||[]).forEach(a=>{
+      if(!a.slug)return;
+      rows.push({kind:'article', sym:a.ticker||'', raw:a.sym_raw||a.ticker||'',
+                 count:a.count||0, when:a.updated||0,
+                 href:(a.graduated!==false&&a.url)?a.url:'',
+                 title:String(a.title||a.label)});
+    });
+    if(!rows.length){$('room').hidden=true;return;}
+    rows.sort((x,y)=>(y.when||0)-(x.when||0));
+    $('room').hidden=false;
+    $('roomrows').innerHTML=rows.slice(0,12).map(r=>{
+      const when=r.when?new Date(r.when*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+      const ic=r.kind==='page'?'📄':(r.kind==='article'?'🌱':'💬');
+      const badge=r.sym?`<span class="sym" id="rb-${(r.kind+r.sym).replace(/[^a-z0-9]/gi,'')}" data-sym="${escH(r.sym)}" data-raw="${escH(r.raw)}">${escH(r.sym)}</span>`:'';
+      const sub=r.kind==='buzz'?`${r.count} talks`:`updated ${when} · ${r.count} talks`;
+      const inner=`<span class="ic">${ic}</span>
+        <div class="tx"><div class="t">${escH(r.title)}</div><div class="s">${sub}</div></div>${badge}`;
+      if(r.kind==='buzz')
+        return `<div class="nrow" style="display:flex" data-ask="${encodeURIComponent('What is the latest on '+r.title+'?')}">${inner}</div>`;
+      return `<a class="nrow" style="display:flex" href="${r.href}">${inner}</a>`;
     }).join('');
-    $('tickrows').querySelectorAll('.nrow').forEach(el=>{
+    $('roomrows').querySelectorAll('.nrow[data-ask]').forEach(el=>{
       el.onclick=()=>{const a=el.getAttribute('data-ask'); if(a)prefill(decodeURIComponent(a));};
     });
-    const patch=(qd)=>{
-      const cleanK=s=>String(s||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','');
-      const map=(qd.quotes||[]).reduce((m,q)=>(m[cleanK(q.symbol)]=q,m),{});
-      rows.forEach(t=>{
-        const el=document.getElementById('tsym-'+t.sym.replace(/[^a-z0-9]/gi,''));
-        const q=map[t.sym];
-        if(!el||!q||q.change_pct==null||q.price==null)return;
-        el.textContent=`${t.sym} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
-        el.className='sym '+(q.change_pct>=0?'up':'down');
-      });
-    };
-    // the ledger keeps the REAL quoted symbols — fetch with those, not the
-    // cleaned display names (BZ=F, ^TNX, ^DJI quote; BZ, TNX, DJI do not)
-    const ticks=[...new Set(rows.map(t=>t.raw||t.sym))];
-    try{
-      patch(await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json());
-    }catch(e){}
-    setTimeout(async ()=>{
-      try{
-        const still=[...new Set(rows.filter(t=>{
-          const el=document.getElementById('tsym-'+t.sym.replace(/[^a-z0-9]/gi,''));
-          return el && !/[\s]/.test(el.textContent) && el.textContent.indexOf('%')===-1;
-        }).map(t=>t.raw||t.sym))];
-        if(still.length)
-          patch(await(await fetch('/api/quotes?symbols='+still.map(encodeURIComponent).join(','),{cache:'no-store'})).json());
-      }catch(e){}
-    },2000);
-  }catch(e){$('tickers').hidden=true;}
-}
-
-/* ── articles grown from conversations, freshest first ── */
-/* every grown tile carries ITS ticker's latest price, green or red with the
-   tape — the tile is a live quote of the conversation, not a static link */
-async function paintGrownTicks(rows){
-  const cleanK=s=>String(s||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','');
-  const ticks=[...new Set((rows||[]).map(a=>a.sym_raw||a.ticker).filter(Boolean))];
-  if(!ticks.length)return;
-  try{
-    const d=await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
-    const map=(d.quotes||[]).reduce((m,q)=>(m[cleanK(q.symbol)]=q,m),{});
-    rows.forEach(a=>{
-      if(!a.ticker)return;
-      const el=document.getElementById('gsym-'+String(a.slug).replace(/[^a-z0-9-]/gi,''));
-      if(!el)return;
-      const q=map[a.ticker];
-      if(!q||q.change_pct==null||q.price==null)return;
-      el.textContent=`${a.ticker} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
+    // one quotes pass prices every badge in the box
+    const syms=[...new Set(rows.filter(r=>r.sym).map(r=>r.raw||r.sym))];
+    if(!syms.length)return;
+    const qd=await(await fetch('/api/quotes?symbols='+syms.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
+    const cleanK=s=>String(s||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','');
+    const map=(qd.quotes||[]).reduce((m,q)=>(m[cleanK(q.symbol)]=q,m),{});
+    rows.slice(0,12).forEach(r=>{
+      if(!r.sym)return;
+      const el=document.getElementById('rb-'+(r.kind+r.sym).replace(/[^a-z0-9]/gi,''));
+      const q=map[cleanK(r.raw||r.sym)];
+      if(!el||!q||q.change_pct==null||q.price==null)return;
+      el.textContent=`${r.sym} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
       el.className='sym '+(q.change_pct>=0?'up':'down');
     });
-  }catch(e){}
-}
-
-async function loadGrown(){
-  try{
-    const d=await(await fetch('/api/articles',{cache:'no-store'})).json();
-    const rows=d.articles||[];
-    if(!rows.length){$('grown').hidden=true;return;}
-    $('grown').hidden=false;
-    $('grownrows').innerHTML=rows.map(a=>{
-      const when=a.updated?new Date(a.updated*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-      const tick=a.ticker?`<span class="sym" id="gsym-${a.slug.replace(/[^a-z0-9-]/gi,'')}">${escH(a.ticker)}</span>`:'';
-      return `<a class="nrow" style="display:flex" href="${a.url}">
-        <span class="ic">🌱</span>
-        <div class="tx"><div class="t">${String(a.title||a.label).replace(/</g,'&lt;')}</div>
-        <div class="s">updated ${when} · from ${a.count} prompts</div></div>${tick}</a>`;}).join('');
-    paintGrownTicks(rows);
-  }catch(e){$('grown').hidden=true;}
+  }catch(e){$('room').hidden=true;}
 }
 
 /* ── the intro chamber: on every load, my greeting is whatever I just wrote
@@ -465,8 +430,8 @@ async function loadIntro(){
   }catch(e){}
 }
 
-strip(); mps(); loadStarters(); loadTickers(); loadGrown(); loadIntro();
-setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000); setInterval(loadTickers,120000);
+strip(); mps(); loadStarters(); loadRoom(); loadIntro();
+setInterval(strip,60000); setInterval(mps,60000); setInterval(loadRoom,120000);
 </script>
 </body>
 </html>
