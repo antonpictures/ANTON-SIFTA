@@ -276,48 +276,56 @@ YIELD_SYMBOLS = {"^TNX", "^TYX", "^FVX", "^IRX"}
 
 
 def market_quote(symbol: str) -> Optional[Dict[str, Any]]:
-    """One quote from Yahoo's public chart API. No key, no account.
+    """One quote via yfinance (the ranaroussi/yfinance MIT-licensed wrapper
+    around Yahoo's public APIs — installed in this venv on 2026-10-21).
+    Keeps the original dict shape so every caller — gm_chat, the strip,
+    the small news rail — keeps working unchanged.
 
-    2026-10-21 CORRECTION: this read meta["chartPreviousClose"], which in a 5d
-    chart is the close BEFORE the window opens — so CRWV (last close 62.13,
-    price 62.13, flat) was reported as −20.15% against Oct 14's 77.81. A desk
-    whose promise is "measured, not narrated" cannot show a fabricated move.
-    Previous close now comes from the daily close series itself: the last
-    completed session, skipping today's partial bar when the series has one.
-    """
-    d = _http_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d")
+    The previous close is still the second-to-last completed daily bar
+    (one rule across mid-session, post-close, pre-market); yfinance gives
+    that through history(period="5d")."""
     try:
-        res = d["chart"]["result"][0]
-        meta = res["meta"]
-    except (KeyError, IndexError, TypeError):
+        import yfinance as yf
+    except Exception:
         return None
-    price = meta.get("regularMarketPrice")
-    prev = None
     try:
-        bars = list(zip(res.get("timestamp") or [],
-                        (res["indicators"]["quote"][0].get("close") or [])))
-        valid = [(t, c) for t, c in bars if isinstance(c, (int, float))]
-        # The bar the live price belongs to is the last non-null close; the change
-        # a visitor wants is that bar against the one before it. True mid-session
-        # (last bar = today's partial), after the close (today's completed close)
-        # and pre-market (yesterday's close) — one rule, no session guessing.
-        if len(valid) >= 2:
-            prev = valid[-2][1]
-        elif valid:
-            prev = valid[-1][1]
-    except (KeyError, IndexError, TypeError, ValueError):
-        prev = None
+        t = yf.Ticker(symbol)
+        h = t.history(period="5d", auto_adjust=False, raise_errors=False)
+    except Exception:
+        return None
+    price = None
+    prev = None
+    if hasattr(h, "empty") and not h.empty:
+        closes = [c for c in h["Close"].tolist() if isinstance(c, (int, float))]
+        if len(closes) >= 2:
+            prev = float(closes[-2])
+            price = float(closes[-1])
+        elif closes:
+            price = float(closes[-1])
+    # Regular-market live price when available (better than the last close).
+    try:
+        fast = t.fast_info
+        lp = getattr(fast, "last_price", None)
+        if isinstance(lp, (int, float)):
+            price = float(lp)
+    except Exception:
+        pass
+    name = symbol
+    try:
+        name = t.info.get("shortName") or t.info.get("longName") or symbol
+    except Exception:
+        pass
     change = None
     if isinstance(price, (int, float)) and isinstance(prev, (int, float)) and prev:
         change = round((price / prev - 1) * 100, 3)
     return {
         "symbol": symbol,
-        "name": meta.get("shortName") or meta.get("symbol") or symbol,
+        "name": name,
         "price": price,
         "previous_close": prev,
         "change_pct": change,
-        "currency": meta.get("currency"),
-        "exchange": meta.get("exchangeName"),
+        "currency": "USD",
+        "exchange": "",
     }
 
 
@@ -864,6 +872,57 @@ def market_quotes(symbols: list) -> list:
         if q and q.get("price") is not None:
             out.append(q)
     return out
+
+
+_STARTERS_CACHE: Dict[str, Any] = {"t": 0.0, "rows": []}
+
+
+def _mover_pct(q: Dict[str, Any]) -> str:
+    try:
+        return f"{float(q.get('change_pct')):+.2f}%"
+    except Exception:
+        return "n/a"
+
+
+def starters_with_fresh_data() -> list:
+    """The owner's three rolling questions, each wired to the live tape
+    (yfinance). Chip labels stay short and readable; the fresh numbers ride
+    inside the message that gets sent to the desk, so every click is about
+    TODAY, not a phrase frozen in HTML. Cached 60 seconds."""
+    if time.time() - float(_STARTERS_CACHE.get("t") or 0) < 60 and _STARTERS_CACHE["rows"]:
+        return _STARTERS_CACHE["rows"]
+
+    def _q(sym: str) -> Dict[str, Any]:
+        try:
+            return market_quote(sym) or {}
+        except Exception:
+            return {}
+
+    crwv = _q("CRWV")
+    vix = _q("^VIX")
+    snaps = [(s, _q(s)) for s in ("GC=F", "CL=F", "^GSPC", "^TNX", "BTC-USD", "CRWV")]
+    snap_line = "; ".join(f"{s} {_mover_pct(q)}" for s, q in snaps
+                          if q.get("change_pct") is not None)
+
+    crwv_seg = (f"CoreWeave trades at {crwv['price']:.2f} ({_mover_pct(crwv)} "
+                "vs the last completed close). ") if crwv.get("price") is not None else ""
+    vix_seg = (f"The VIX prints {vix['price']:.2f} ({_mover_pct(vix)}). "
+               if vix.get("price") is not None else "")
+
+    rows = [
+        {"icon": "💸", "label": "How risky is CoreWeave's debt?",
+         "msg": (crwv_seg + "How risky is CoreWeave's debt right now? Plain terms, "
+                 "a few sentences, and what would turn this from bad to worse.")},
+        {"icon": "📖", "label": "Explain implied volatility simply",
+         "msg": (vix_seg + "Explain implied volatility simply, like I'm new to "
+                 "options, and tie it to what the VIX is doing right now.")},
+        {"icon": "🐜", "label": "What are you watching this week?",
+         "msg": (f"Snapshot of my strip right now: {snap_line or 'data warming up'}. "
+                 "What are you watching this week, and why those?")},
+    ]
+    _STARTERS_CACHE["t"] = time.time()
+    _STARTERS_CACHE["rows"] = rows
+    return rows
 
 
 def _plain_text(text: str) -> str:
@@ -1526,8 +1585,31 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
 
     # POST /api/gmchat → remote investing model + live data + internet search
     if path == "/api/gmchat" and method == "POST":
-        return gm_chat(str(body.get("message") or body.get("text") or ""),
-                       body.get("history") or [])
+        _msg = str(body.get("message") or body.get("text") or "")
+        _resp = gm_chat(_msg, body.get("history") or [])
+        # 2026-10-21: every desk prompt is counted by the topic organ (owner's
+        # rule — five prompts on a subject grows it into an article). Counted
+        # even when the answer fails: the prompt is the visitor's act, not ours.
+        try:
+            from System.swarm_topic_organ import record_turn
+            record_turn(_msg)
+        except Exception:
+            pass
+        return _resp
+
+    # GET /api/starters → the three conversation chips, each carrying fresh
+    # yfinance data so the rolling questions rotate with the tape
+    if path == "/api/starters" and method == "GET":
+        return {"success": True, "starters": starters_with_fresh_data()}
+
+    # GET /api/articles → topics that grew into articles from conversations,
+    # freshest first — the site's face shaped by what visitors actually ask
+    if path == "/api/articles" and method == "GET":
+        try:
+            from System.swarm_topic_organ import list_articles
+            return {"success": True, "articles": list_articles(6)}
+        except Exception:
+            return {"success": True, "articles": []}
 
     # POST /api/chat → chorus (async: returns turn_id; poll /api/replies)
     if path == "/api/chat" and method == "POST":

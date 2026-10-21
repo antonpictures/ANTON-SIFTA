@@ -147,6 +147,11 @@ Ask me about gold, oil, an index, a coin, or a story you keep hearing about. If 
       <div class="thumb" id="thumb">💸</div>
       <div id="rows"></div>
     </div>
+
+    <div class="sidecard" id="grown" hidden>
+      <h3>Grown from our conversations</h3>
+      <div id="grownrows" style="padding:4px 0"></div>
+    </div>
   </aside>
 </div>
 
@@ -274,19 +279,42 @@ async function ask(text){
 }
 $('f').onsubmit=(e)=>{e.preventDefault();const v=$('q');$('q').value='';ask(v);};
 
-/* ── three doorways into the same conversation ── */
-const STARTS=[
-  ['How risky is CoreWeave debt?','💸'],
-  ['Explain implied volatility simply','📖'],
-  ['What are you watching this week?','🐜']
+/* ── three doorways into the same conversation — rolling with the tape ── */
+const FALLBACK_STARTS=[
+  {icon:'💸',label:'How risky is CoreWeave\'s debt?',msg:'How risky is CoreWeave\'s debt right now? Plain terms, a few sentences.'},
+  {icon:'📖',label:'Explain implied volatility simply',msg:'Explain implied volatility simply, like I\'m new to options.'},
+  {icon:'🐜',label:'What are you watching this week?',msg:'What are you watching this week, and why?'}
 ];
-$('starters').innerHTML=STARTS.map(([t,e])=>
-  `<button class="starter" type="button" data-q="${t.replace(/"/g,'&quot;')}">${e} ${t}</button>`).join('');
-$('starters').querySelectorAll('.starter').forEach(b=>
-  b.onclick=()=>{ask(b.getAttribute('data-q'));});
+async function loadStarters(){
+  let rows=FALLBACK_STARTS;
+  try{
+    const d=await(await fetch('/api/starters',{cache:'no-store'})).json();
+    if(d.success&&Array.isArray(d.starters)&&d.starters.length)rows=d.starters;
+  }catch(e){}
+  $('starters').innerHTML=rows.map(s=>
+    `<button class="starter" type="button" data-m="${String(s.msg).replace(/"/g,'&quot;')}">${s.icon} ${String(s.label).replace(/"/g,'&quot;')}</button>`).join('');
+  $('starters').querySelectorAll('.starter').forEach(b=>
+    b.onclick=()=>{ask(b.getAttribute('data-m'));});
+}
 
-paintRows(); strip(); mps();
-setInterval(strip,60000); setInterval(mps,60000);
+/* ── articles grown from conversations, freshest first ── */
+async function loadGrown(){
+  try{
+    const d=await(await fetch('/api/articles',{cache:'no-store'})).json();
+    const rows=d.articles||[];
+    if(!rows.length){$('grown').hidden=true;return;}
+    $('grown').hidden=false;
+    $('grownrows').innerHTML=rows.map(a=>{
+      const when=a.updated?new Date(a.updated*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+      return `<a class="nrow" style="display:flex" href="${a.url}">
+        <span class="ic">🌱</span>
+        <div class="tx"><div class="t">${String(a.title||a.label).replace(/</g,'&lt;')}</div>
+        <div class="s">updated ${when} · from ${a.count} prompts</div></div></a>`;}).join('');
+  }catch(e){$('grown').hidden=true;}
+}
+
+paintRows(); strip(); mps(); loadStarters(); loadGrown();
+setInterval(strip,60000); setInterval(mps,60000); setInterval(loadGrown,120000);
 </script>
 </body>
 </html>
