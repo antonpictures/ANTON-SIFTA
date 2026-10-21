@@ -337,6 +337,21 @@ def build_body_diary_prompt_block(
     except Exception:
         pass
 
+    # Time ↔ now: the architect's rule (2026-10-21) — check the body clock
+    # BEFORE answering anything current. An LLM cortex answers "what year"
+    # from frozen training weights; Alice answers from the clock she lives
+    # on. The guard line below is measured, not recalled.
+    try:
+        from System.swarm_body_time_guard import body_now_line, flagged_ratio
+
+        lines.append("BODY TIME ↔ NOW (check before answering anything current; measured, not recalled):")
+        lines.append("  " + body_now_line())
+        _ratio = flagged_ratio()
+        if _ratio is not None:
+            lines.append(f"  recent time-connected compliance: {_ratio:.0%}")
+    except Exception:
+        pass
+
     try:
         from System.swarm_macbook_survival_swimmer import survival_prompt_block
 
