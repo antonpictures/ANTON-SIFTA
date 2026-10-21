@@ -271,19 +271,23 @@ function prefill(t){$('q').value=t;ask(t);}
    follow-ups vanished before printing. Fixed to pass .value. Also: a typed
    question sent while an answer is still in flight is QUEUED, printed, and
    answered in order — nothing a visitor types is ever dropped again. ── */
+/* ── feed order (owner rule): the LATEST chat stays at the TOP. Every new
+   node is prepended — the newest answer sits above its question, previous
+   turns sink beneath, the greeting sinks last. The freshest words are the
+   first thing on screen. ── */
 let inFlight=false; const qQueue=[];
 async function ask(text){
   text=String(text==null?'':text).trim(); if(!text)return;
   const box=$('msgs');
-  $('msgs').appendChild(node(text,'me')); box.scrollTop=box.scrollHeight;
+  $('msgs').prepend(node(text,'me')); box.scrollTop=0;
   if(inFlight){                                   // still reading the last one
     qQueue.push(text);
-    $('msgs').appendChild(node("queued — I'll answer it right after this one",'meta'));
-    box.scrollTop=box.scrollHeight; return;
+    $('msgs').prepend(node("queued — I'll answer it right after this one",'meta'));
+    box.scrollTop=0; return;
   }
   inFlight=true; $('send').disabled=true;
-  const wait=node('reading…','ai wait'); $('msgs').appendChild(wait);
-  box.scrollTop=box.scrollHeight;
+  const wait=node('reading…','ai wait'); $('msgs').prepend(wait);
+  box.scrollTop=0;
   try{
     const d=await(await fetch('/api/gmchat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text,history:hist.slice(-6)})})).json();
@@ -297,7 +301,7 @@ async function ask(text){
   }catch(e){
     wait.textContent='could not reach the desk: '+e.message; wait.classList.remove('wait');
   }finally{
-    inFlight=false; $('send').disabled=false; $('q').focus(); box.scrollTop=box.scrollHeight;
+    inFlight=false; $('send').disabled=false; $('q').focus(); box.scrollTop=0;
     if(qQueue.length)setTimeout(()=>ask(qQueue.shift()),400);
   }
 }
