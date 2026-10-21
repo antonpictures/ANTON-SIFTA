@@ -113,7 +113,8 @@ def record_turn(message: str, syms: Optional[List[str]] = None) -> Dict[str, Any
     """Count one desk prompt. Thread-safe; graduates in the background."""
     slug = detect_topic(message, syms)
     now = time.time()
-    row = {"ts": now, "topic": slug, "q": (message or "")[:280]}
+    syms = [s for s in (syms or []) if s]
+    row = {"ts": now, "topic": slug, "q": (message or "")[:280], "syms": syms}
     try:
         _STATE.mkdir(parents=True, exist_ok=True)
         with _PROMPTS.open("a", encoding="utf-8") as f:
@@ -124,12 +125,19 @@ def record_turn(message: str, syms: Optional[List[str]] = None) -> Dict[str, Any
     graduated = False
     with _LOCK:
         led = _load_ledger()
-        e = led.setdefault(slug, {"count": 0, "questions": [], "graduated": False,
-                                  "title": "", "path": "", "updated": 0.0})
+        e = led.setdefault(slug, {"count": 0, "questions": [], "syms_seen": [],
+                                  "graduated": False, "title": "", "path": "",
+                                  "updated": 0.0})
+        e["syms_seen"] = ([s.upper() for s in syms] +
+                          [s for s in (e.get("syms_seen") or [])])[:24]
         e["count"] = int(e.get("count") or 0) + 1
         qs = [row["q"]] + [q for q in (e.get("questions") or []) if q != row["q"]]
         e["questions"] = qs[:8]
-        if int(e["count"]) >= GRADUATE_AFTER and not e.get("graduated"):
+        # General chat — "looks good", "say ok", greetings — is the desk's daily
+        # life, not a subject. It is counted, but a topicless bucket never grows
+        # an article (owner caught the first "Markets in general" piece today).
+        if int(e["count"]) >= GRADUATE_AFTER and not e.get("graduated") \
+                and slug != "markets-general":
             e["graduated"] = True
             graduated = True
         if e.get("graduated"):
@@ -215,6 +223,45 @@ def _fact_line(f: Dict[str, Any]) -> str:
     return base + (". " + "; ".join(extras) if extras else "")
 
 
+# The ticker most prevalent in the conversation itself (owner, 2026-10-21):
+# it is the fingerprint of what the crowd actually talked about. Uppercase
+# 2–5 letter tokens and $CASHTAGS, minus everyday words — honest rule: if the
+# conversation never named a ticker, no badge appears.
+_TICKER_RE = re.compile(r"(?:\$([A-Z]{1,6})|\b([A-Z]{2,5})\b)")
+_TICKER_STOP = {
+    "THE","AND","FOR","FROM","WITH","THIS","THAT","WHAT","WHEN","WHY","HOW",
+    "NEW","NOW","NOT","BUT","ALL","ANY","GET","GOT","HAS","HAD","ITS","ONE",
+    "TWO","WHO","SAY","SAID","ASK","YOU","YOUR","OUR","OUT","OFF","TOP","CAN",
+    "WILL","WOULD","COULD","SHOULD","MAY","MIGHT","JUST","LIKE","ONLY","STILL",
+    "ABOUT","AFTER","BEFORE","OVER","INTO","THAN","THEN","THEM","THEY","WERE",
+    "MORE","MOST","SOME","SUCH","HERE","THERE","HAVE","BEEN","WAS","ARE","DOES",
+    "ETF","IPO","CEO","CFO","USD","USA","FED","AI",
+}
+
+def prevalent_ticker(questions, syms_seen=None) -> str:
+    """Most prevalent ticker across a topic's conversation. Primary signal:
+    the symbols the desk itself RESOLVED turn by turn (syms_seen — reliable
+    even when visitors type 'CoreWeave', not 'CRWV'). Secondary: uppercase
+    and $CASHTAG tokens in the question text. Prevalence = >=2 mentions."""
+    from collections import Counter
+    counts: Counter = Counter()
+    for s in (syms_seen or []):
+        t = str(s or "").upper().replace("^", "").replace("=F", "").replace("-USD", "")
+        if t and len(t) <= 6:
+            counts[t] += 1
+    for q in (questions or []):
+        if not q:
+            continue
+        for m in _TICKER_RE.finditer(q):
+            tok = (m.group(1) or m.group(2) or "").upper()
+            if tok and tok not in _TICKER_STOP:
+                counts[tok] += 1
+    if not counts:
+        return ""
+    tok, n = counts.most_common(1)[0]
+    return tok if n >= 2 else ""      # one stray mention is not prevalence
+
+
 def _write_html(slug: str, entry: Dict[str, Any], facts: Dict[str, Any],
                 prose: str, from_cortex: bool) -> Path:
     esc = lambda s: (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -248,7 +295,7 @@ footer{{text-align:center;margin-top:30px}}
 <span style="margin-left:auto;font-size:11.5px;color:#9a9893">grown from our conversations</span></header>
 <main>
 <h1>{esc(entry['title'])}</h1>
-<div class="meta">{esc(facts['label'])} · updated {updated} · grown from {entry.get('count', '?')} prompts · {src}</div>
+<div class="meta">{esc(facts['label'])} · updated {updated} · grown from {entry.get('count', '?')} prompts{' · ticker ' + esc(entry['ticker']) if entry.get('ticker') else ''} · {src}</div>
 <div class="facts">{esc(_fact_line(facts))}</div>
 <div class="body">{''.join(f'<p>{esc(p.strip())}</p>' for p in prose.split('\n\n') if p.strip())}</div>
 <div class="asked"><h3>What visitors asked me</h3><ul>{qs}</ul></div>
@@ -300,6 +347,9 @@ def _grow(entry: Dict[str, Any]) -> None:
         e["graduated"] = True
         e["pending_refresh"] = False      # consumed
         e["title"] = title
+        e["ticker"] = (prevalent_ticker(e.get("questions"), e.get("syms_seen"))
+                       or (TOPICS.get(slug, {}).get("sym") or "")
+                       .replace("^", "").lstrip("="))   # theme fallback
         e["updated"] = time.time()
         e["count"] = int(e.get("count") or entry.get("count") or 0)
         entry = dict(e); entry["slug"] = slug
@@ -333,6 +383,7 @@ def list_articles(limit: int = 6) -> List[Dict[str, Any]]:
         "full_title": v.get("title") or _slug_label(k),
         "label": _slug_label(k),
         "count": v.get("count"),
+        "ticker": v.get("ticker") or "",
         "updated": v.get("updated") or 0,
         "url": f"/articles/{k}.html",
     } for k, v in led.items() if v.get("graduated") and v.get("path")]

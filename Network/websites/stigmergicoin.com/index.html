@@ -308,10 +308,11 @@ async function loadGrown(){
     $('grown').hidden=false;
     $('grownrows').innerHTML=rows.map(a=>{
       const when=a.updated?new Date(a.updated*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+      const tick=a.ticker?`<span class="sym" style="color:var(--accent)">${String(a.ticker).replace(/</g,'&lt;')}</span>`:'';
       return `<a class="nrow" style="display:flex" href="${a.url}">
         <span class="ic">🌱</span>
         <div class="tx"><div class="t">${String(a.title||a.label).replace(/</g,'&lt;')}</div>
-        <div class="s">updated ${when} · from ${a.count} prompts</div></div></a>`;}).join('');
+        <div class="s">updated ${when} · from ${a.count} prompts</div></div>${tick}</a>`;}).join('');
   }catch(e){$('grown').hidden=true;}
 }
 

@@ -1820,9 +1820,11 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
         # 2026-10-21: every desk prompt is counted by the topic organ (owner's
         # rule — five prompts on a subject grows it into an article). Counted
         # even when the answer fails: the prompt is the visitor's act, not ours.
+        # The desk's own resolved symbols ride along — prevalence of a ticker
+        # across a conversation's turns is what stamps its grown article.
         try:
             from System.swarm_topic_organ import record_turn
-            record_turn(_msg)
+            record_turn(_msg, symbols_for(_msg))
         except Exception:
             pass
         return _resp
