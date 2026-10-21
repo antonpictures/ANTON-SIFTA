@@ -32,7 +32,7 @@
     border:1px solid var(--line);border-radius:999px;padding:4px 11px}
   .top .pill b{color:var(--accent)}
 
-  /* ── one thin live strip, rolling like a tape (StockTwits-style) ── */
+  /* ── one thin live strip, rolling like a tape (ticker-tape style) ── */
   .strip{position:relative;overflow:hidden;border-bottom:1px solid var(--line);background:#101017}
   .strip .flow{display:flex;width:max-content;padding:7px 0;
     animation:flowX 45s linear infinite}
@@ -190,7 +190,7 @@ const QS=[['GC=F','gold'],['CL=F','wti'],['^GSPC','s&p'],['^IXIC','nasdaq'],
           ['^VIX','vix'],['^TNX','10y'],['BTC-USD','btc']];
 /* ── rolling quote tape: two identical halves flow left forever; the poll
    updates values IN PLACE so the animation never stutters or restarts.
-   Pause: hover, or the ❚❚ toggle (StockTwits-style). ── */
+   Pause: hover, or the ❚❚ toggle (ticker-tape style). ── */
 const escH=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function valueHTML(q){
   const c=(q.change_pct==null)?'':`<span class="c ${q.change_pct>=0?'up':'down'}">${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%</span>`;
@@ -320,7 +320,7 @@ const FALLBACK_STARTS=[
 ];
 /* ── rolling headlines: 3 PERSISTENT chips; each 2.5s tick swaps EXACTLY ONE
    chip in order — slot 1, then 2, then 3, then back to 1 — pulling the next
-   title from the latest 20 Yahoo Finance headlines. No full-row re-render:
+   title from the latest 20 financial headlines. No full-row re-render:
    only the swapped chip animates in. ── */
 const ROLL_STEP_MS=3000, ROLL_SLOTS=3;
 let rollRows=[], rollCursor=ROLL_SLOTS, rollTimer=null, rollTick=0;

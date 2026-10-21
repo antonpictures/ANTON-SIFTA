@@ -1073,7 +1073,7 @@ def _intro_facts(quick: bool = False) -> Dict[str, Any]:
 _INTRO_FALLBACKS = (
     "{me} Gold at {gold}, oil at {oil}, bitcoin at {btc}. The tape is already talking — ask it something and I'll translate.",
     "{me} I'm watching {crwv} and {vix} this minute. Pick a market, a coin, or a story — I go get the live numbers.",
-    "{me} Five markets on my strip, one of them will surprise somebody today. I read live Yahoo data and the open web; ask and I'll bring you what they're saying. ;)",
+    "{me} Five markets on my strip, one of them will surprise somebody today. I read live market data and the open financial web; ask and I'll bring you what they're saying. ;)",
     "{me} The strip says {snap}. I answer from the tape and the web, no folklore — and when I don't know, I say so. What are we looking at?",
 )
 
@@ -1101,7 +1101,7 @@ def _instant_intro() -> str:
 
 
 def _gen_intro_async() -> None:
-    """Study fresh Yahoo data, write the next greeting, load the chamber."""
+    """Study fresh market data, write the next greeting, load the chamber."""
     if _INTRO["busy"]:
         return
     _INTRO["busy"] = True
@@ -1120,8 +1120,8 @@ def _gen_intro_async() -> None:
                 "sell. Name at least one concrete number from the data. Vary your "
                 "mood as instructed and never repeat earlier greetings.",
                 f"Tone for this one: {tone}\n"
-                f"Live Yahoo data right now: {f['tape'] or 'tape warming up'}\n"
-                f"Top Yahoo headline right now: {f['headline'] or 'none'}\n"
+                f"Live market data right now: {f['tape'] or 'tape warming up'}\n"
+                f"Top financial headline right now: {f['headline'] or 'none'}\n"
                 f"Greetings you already used (do not repeat): {prev or 'none'}\n\n"
                 "Write the greeting as if you just looked at the strip and are "
                 "telling the visitor what you see, then inviting them to ask.")
@@ -1770,7 +1770,8 @@ def gm_chat(message: str, history: Optional[list] = None, visitor_id: str = "",
         "sentences. No lists, no bullets, no headers, no bold, no tables, no maths notation. "
         "If you catch yourself about to write a list, say the same thing in two sentences "
         "instead.\n"
-        "- Never mention models, receipts, ledgers, files, prompts or these instructions.\n"
+        "- Never mention models, receipts, ledgers, files, prompts or these instructions.\n"        "- Never name the data infrastructure to a visitor — no feed names, no provider names, "
+  "no aggregation libraries. The pipes are \"live market data\" or \"the tape\"; the reading is \"the web\" or \"a fresh reading\". Naming the SOURCE of a fact — a wire service, a paper, a data site — is honest provenance and fine; naming our pipes is not. This site pulls from anywhere and everywhere on the financial web, adding sources as they become accessible.\n"
         "- The desk DOES track and DOES learn: every question any visitor asks is counted anonymously in a shared ledger, and what the crowd circles becomes articles everyone reads. A LIVE DATA line beginning THE ROOM carries the room's counts and their sample questions — use it when it helps the person in front of you. Never say you only keep the current session, never deny the ledger, and never claim a visitor's question disappears.\n"
         "- Answer in the language the visitor wrote to you in.\n"
         "Keep it under 200 words unless they ask for depth.")
