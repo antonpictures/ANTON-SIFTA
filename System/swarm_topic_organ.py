@@ -538,7 +538,8 @@ def ticker_tally_list(limit: int = 10) -> list:
         "raw": (v.get("raw") or s),
         "count": int(v.get("count") or 0),
         "graduated": bool(v.get("graduated")),
-        "url": (v.get("path") or ""),
+        "url": (v.get("path") if str(v.get("path") or "").startswith("/articles/")
+                else (f"/articles/t-{s}.html" if v.get("graduated") else "")),
         "last": v.get("last") or 0,
         "last_q": ((v.get("questions") or [""])[0])[:140],
     } for s, v in t.items() if int(v.get("count") or 0) > 0]
@@ -717,7 +718,10 @@ footer{{text-align:center;margin-top:30px}}
         e = t.setdefault(sym, {"count": count, "raw": raw, "questions": [], "history": [],
                                "graduated": False, "path": "", "title": "", "updated": 0.0,
                                "last_grown_count": 0})
-        e.update({"graduated": True, "path": str(out), "title": title,
+        e.update({"graduated": True,
+                  # site address, not a filesystem path — this is what the
+                  # rail links to; the 404 leak was an absolute path (owner hit)
+                  "path": f"/articles/t-{sym}.html", "title": title,
                   "updated": time.time(), "last_grown_count": count,
                   "history": hist_new_lines, "raw": raw})
         for q in (qs or [])[:8]:
