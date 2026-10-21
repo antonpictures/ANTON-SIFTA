@@ -778,6 +778,37 @@ def topic_knowledge(slug: str) -> Dict[str, Any]:
             "updated": v.get("updated") or 0}
 
 
+def ticker_refresh_sweep(max_rebuilds: int = 3) -> int:
+    """Restart-proof ticker refresh (owner rule: 2 mentions between updates).
+    The ledger holds the truth — count vs last_grown_count — so a sweep can
+    catch fires that died with a restart. Returns rebuilds fired."""
+    fired = 0
+    t = _tload()
+    for s, v in sorted(t.items(), key=lambda kv: -(int(kv[1].get("count") or 0))):
+        if fired >= max_rebuilds:
+            break
+        try:
+            if (v.get("graduated")
+                    and int(v.get("count") or 0) - int(v.get("last_grown_count") or 0) >= 2):
+                e = dict(v); e["sym"] = s; e["sym_raw"] = v.get("raw") or s
+                threading.Thread(target=grow_ticker_article, args=(e,), daemon=True).start()
+                fired += 1
+        except Exception:
+            continue
+    return fired
+
+
+def ticker_refresh_loop() -> None:
+    """The body keeps this loop forever: sweep every 4 minutes, gentle."""
+    import time as _t
+    while True:
+        try:
+            ticker_refresh_sweep()
+        except Exception:
+            pass
+        _t.sleep(240)
+
+
 def list_articles(limit: int = 6) -> List[Dict[str, Any]]:
     """What the home page shows: graduated topics, freshest first."""
     led = _load_ledger()

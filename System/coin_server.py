@@ -295,6 +295,23 @@ def market_quote(symbol: str) -> Optional[Dict[str, Any]]:
     _MQ_CACHE[key] = {"_t": time.time(), **(q or {})}
     return q
 
+def _ticker_loop_start():
+    """First sweep shortly after boot, then every 4 minutes, forever."""
+    import time as _t
+    try:
+        from System.swarm_topic_organ import ticker_refresh_sweep
+        _t.sleep(20)
+        ticker_refresh_sweep()
+        while True:
+            _t.sleep(240)
+            try:
+                ticker_refresh_sweep()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def market_quote_uncached(symbol: str) -> Optional[Dict[str, Any]]:
     """One quote via yfinance (the ranaroussi/yfinance MIT-licensed wrapper
     around Yahoo's public APIs — installed in this venv on 2026-10-21).
@@ -2233,4 +2250,6 @@ if __name__ == "__main__":
         print(f"coin_server listening on {HOST}:{PORT}", file=sys.stderr, flush=True)
         # load her first greeting into the chamber before anyone arrives
         threading.Thread(target=_gen_intro_async, daemon=True).start()
+        # and keep the body's ticker pages growing — restart-proof sweeps
+        threading.Thread(target=_ticker_loop_start, daemon=True).start()
         httpd.serve_forever()
