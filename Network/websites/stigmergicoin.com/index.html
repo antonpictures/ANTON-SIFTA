@@ -288,27 +288,44 @@ const FALLBACK_STARTS=[
   {icon:'📖',label:'Explain implied volatility simply',msg:'Explain implied volatility simply, like I\'m new to options.'},
   {icon:'🐜',label:'What are you watching this week?',msg:'What are you watching this week, and why?'}
 ];
-/* ── rolling headlines: 3 chips visible, ONE changes every 2.5s, then the
-   next, then the next — cycling the latest 20 Yahoo Finance titles ── */
-const ROLL_STEP_MS=2500;
-let rollRows=[], rollCursor=0, rollTimer=null;
-function renderRoll(){
-  const vis=[0,1,2].map(k=>rollRows[(rollCursor+k)%rollRows.length]);
-  $('starters').innerHTML=vis.map(s=>
-    `<button class="starter roll-in" type="button" data-m="${String(s.msg).replace(/"/g,'&quot;')}">${s.icon} ${String(s.label).replace(/"/g,'&quot;')}</button>`).join('');
+/* ── rolling headlines: 3 PERSISTENT chips; each 2.5s tick swaps EXACTLY ONE
+   chip in order — slot 1, then 2, then 3, then back to 1 — pulling the next
+   title from the latest 20 Yahoo Finance headlines. No full-row re-render:
+   only the swapped chip animates in. ── */
+const ROLL_STEP_MS=2500, ROLL_SLOTS=3;
+let rollRows=[], rollCursor=ROLL_SLOTS, rollTimer=null, rollTick=0;
+function chipHTML(s){
+  return `${s.icon} ${String(s.label).replace(/"/g,'&quot;')}`;
+}
+function wireChips(){
   $('starters').querySelectorAll('.starter').forEach(b=>
     b.onclick=()=>{ask(b.getAttribute('data-m'));});
 }
-function startRoll(){
-  rollCursor=(rollCursor+1)%rollRows.length; renderRoll();
+function renderRoll(){
+  $('starters').innerHTML=[...Array(Math.min(ROLL_SLOTS,rollRows.length))].map((_,i)=>
+    `<button class="starter" type="button" data-slot="${i}"
+      data-m="${String(rollRows[i].msg).replace(/"/g,'&quot;')}">${chipHTML(rollRows[i])}</button>`).join('');
+  wireChips();
+}
+function rollStep(){
+  rollTick+=1;
+  const slot=(rollTick-1)%ROLL_SLOTS;                 // 0 → 1 → 2 → 0 …
+  const next=rollRows[rollCursor%rollRows.length];    // next headline in order
+  rollCursor=(rollCursor+1)%rollRows.length;
+  const b=$('starters').querySelector(`.starter[data-slot="${slot}"]`);
+  if(!b)return;
+  b.innerHTML=chipHTML(next);
+  b.setAttribute('data-m',String(next.msg).replace(/"/g,'&quot;'));
+  b.classList.remove('roll-in'); void b.offsetWidth;  // restart the fade
+  b.classList.add('roll-in');                         // ONLY this chip moves
 }
 async function loadStarters(){
-  clearInterval(rollTimer);
+  clearInterval(rollTimer); rollTick=0; rollCursor=ROLL_SLOTS;
   try{
     const d=await(await fetch('/api/starters',{cache:'no-store'})).json();
     if(d.success&&Array.isArray(d.starters)&&d.starters.length>3){
-      rollRows=d.starters; rollCursor=0; renderRoll();
-      rollTimer=setInterval(startRoll,ROLL_STEP_MS);
+      rollRows=d.starters; renderRoll();
+      rollTimer=setInterval(rollStep,ROLL_STEP_MS);
       return;
     }
     if(d.success&&Array.isArray(d.starters)&&d.starters.length){
