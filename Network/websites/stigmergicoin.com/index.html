@@ -265,11 +265,24 @@ async function mps(){
 const hist=[];
 function node(t,cls){const d=document.createElement('div');d.className='m '+cls;d.textContent=t;return d;}
 function prefill(t){$('q').value=t;ask(t);}
+/* ── the conversation. 2026-10-21 owner-caught bug: the submit handler
+   passed the INPUT ELEMENT to ask() instead of its value, so typed
+   follow-ups vanished before printing. Fixed to pass .value. Also: a typed
+   question sent while an answer is still in flight is QUEUED, printed, and
+   answered in order — nothing a visitor types is ever dropped again. ── */
+let inFlight=false; const qQueue=[];
 async function ask(text){
-  text=(text||'').trim(); if(!text)return;
-  $('msgs').appendChild(node(text,'me'));
+  text=String(text==null?'':text).trim(); if(!text)return;
+  const box=$('msgs');
+  $('msgs').appendChild(node(text,'me')); box.scrollTop=box.scrollHeight;
+  if(inFlight){                                   // still reading the last one
+    qQueue.push(text);
+    $('msgs').appendChild(node("queued — I'll answer it right after this one",'meta'));
+    box.scrollTop=box.scrollHeight; return;
+  }
+  inFlight=true; $('send').disabled=true;
   const wait=node('reading…','ai wait'); $('msgs').appendChild(wait);
-  $('send').disabled=true; const box=$('msgs'); box.scrollTop=box.scrollHeight;
+  box.scrollTop=box.scrollHeight;
   try{
     const d=await(await fetch('/api/gmchat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text,history:hist.slice(-6)})})).json();
@@ -283,10 +296,11 @@ async function ask(text){
   }catch(e){
     wait.textContent='could not reach the desk: '+e.message; wait.classList.remove('wait');
   }finally{
-    $('send').disabled=false; $('q').focus(); box.scrollTop=box.scrollHeight;
+    inFlight=false; $('send').disabled=false; $('q').focus(); box.scrollTop=box.scrollHeight;
+    if(qQueue.length)setTimeout(()=>ask(qQueue.shift()),400);
   }
 }
-$('f').onsubmit=(e)=>{e.preventDefault();const v=$('q');$('q').value='';ask(v);};
+$('f').onsubmit=(e)=>{e.preventDefault();const v=$('q');const t=String(v.value??'');v.value='';ask(t);};
 
 /* ── three doorways into the same conversation — rolling with the tape ── */
 const FALLBACK_STARTS=[

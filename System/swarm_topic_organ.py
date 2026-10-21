@@ -54,6 +54,9 @@ _LOCK = threading.Lock()
 TOPICS: Dict[str, Dict[str, Any]] = {
     "coreweave-debt": {"label": "CoreWeave & AI debt", "sym": "CRWV",
                        "words": ("crwv", "coreweave", "weave", "neocloud", "ai debt")},
+    "ark-invest": {"label": "Cathie Wood & Ark Invest", "sym": "ARKK",
+                   "words": ("cathie wood", "kathy wood", "ark invest", "arkk",
+                             "disruptive innovation")},
     "options-volatility": {"label": "Options & volatility", "sym": "^VIX",
                            "words": ("option", "volatility", "implied vol", "greeks",
                                      "gamma", "vega", "theta", "delta", "skew",
