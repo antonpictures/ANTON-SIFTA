@@ -277,7 +277,22 @@ SYMBOL_LABELS = {
 YIELD_SYMBOLS = {"^TNX", "^TYX", "^FVX", "^IRX"}
 
 
+_MQ_CACHE: Dict[str, Any] = {}
+
 def market_quote(symbol: str) -> Optional[Dict[str, Any]]:
+    """Cached one (45s) — callers batch symbols and Yahoo rate-limits bursts."""
+    key = str(symbol or "").strip().upper()
+    if not key:
+        return None
+    cached = _MQ_CACHE.get(key)
+    if isinstance(cached, dict) and time.time() - (cached.get("_t") or 0) < 45:
+        cached.pop("_t", None)
+        return dict(cached)
+    q = market_quote_uncached(symbol)
+    _MQ_CACHE[key] = {"_t": time.time(), **(q or {})}
+    return q
+
+def market_quote_uncached(symbol: str) -> Optional[Dict[str, Any]]:
     """One quote via yfinance (the ranaroussi/yfinance MIT-licensed wrapper
     around Yahoo's public APIs — installed in this venv on 2026-10-21).
     Keeps the original dict shape so every caller — gm_chat, the strip,
@@ -931,8 +946,10 @@ def symbols_for(text: str) -> list:
 
 
 def market_quotes(symbols: list) -> list:
+    """2026-10-21: the strip/rail now ask for more than 5 at once (the tape,
+    the crowd list) — the [:5] cap silently dropped quotes 6+. Cap 14."""
     out = []
-    for sym in symbols[:5]:
+    for sym in symbols[:14]:
         q = market_quote(sym)
         if q and q.get("price") is not None:
             out.append(q)
@@ -2019,7 +2036,7 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
     # GET /api/quotes?symbols=GC=F,CL=F → any market, no key needed
     if path == "/api/quotes" and method == "GET":
         raw = str(query.get("symbols") or "GC=F,CL=F,^GSPC")
-        syms = [x.strip() for x in raw.split(",") if x.strip()][:8]
+        syms = [x.strip() for x in raw.split(",") if x.strip()][:14]
         return {"success": True, "quotes": market_quotes(syms)}
 
     # GET /api/tape → the rolling tape in one shot: base strip + top trending

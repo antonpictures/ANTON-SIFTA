@@ -387,9 +387,7 @@ async function loadTickers(){
     $('tickrows').querySelectorAll('.nrow').forEach(el=>{
       el.onclick=()=>{const a=el.getAttribute('data-ask'); if(a)prefill(decodeURIComponent(a));};
     });
-    const ticks=[...new Set(rows.map(t=>t.sym))];
-    try{
-      const qd=await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json();
+    const patch=(qd)=>{
       const cleanK=s=>String(s||'').toUpperCase().replace('^','').replace('=F','').replace('-USD','').replace('.NYB','');
       const map=(qd.quotes||[]).reduce((m,q)=>(m[cleanK(q.symbol)]=q,m),{});
       rows.forEach(t=>{
@@ -399,7 +397,23 @@ async function loadTickers(){
         el.textContent=`${t.sym} ${usd(q.price)} ${q.change_pct>0?'+':''}${Number(q.change_pct).toFixed(2)}%`;
         el.className='sym '+(q.change_pct>=0?'up':'down');
       });
+    };
+    // the ledger keeps the REAL quoted symbols — fetch with those, not the
+    // cleaned display names (BZ=F, ^TNX, ^DJI quote; BZ, TNX, DJI do not)
+    const ticks=[...new Set(rows.map(t=>t.raw||t.sym))];
+    try{
+      patch(await(await fetch('/api/quotes?symbols='+ticks.map(encodeURIComponent).join(','),{cache:'no-store'})).json());
     }catch(e){}
+    setTimeout(async ()=>{
+      try{
+        const still=[...new Set(rows.filter(t=>{
+          const el=document.getElementById('tsym-'+t.sym.replace(/[^a-z0-9]/gi,''));
+          return el && !/[\s]/.test(el.textContent) && el.textContent.indexOf('%')===-1;
+        }).map(t=>t.raw||t.sym))];
+        if(still.length)
+          patch(await(await fetch('/api/quotes?symbols='+still.map(encodeURIComponent).join(','),{cache:'no-store'})).json());
+      }catch(e){}
+    },2000);
   }catch(e){$('tickers').hidden=true;}
 }
 
