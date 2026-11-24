@@ -71,6 +71,10 @@ export SIFTA_CLAUDE_ARM_MODEL="${SIFTA_CLAUDE_ARM_MODEL:-claude-fable-5}"
 
 # r1352: Python 3.14 + Qt WebEngine SIGABRT on CrBrowserMain (live crash 2026-06-19).
 # Prefer the first interpreter that can import WebEngine — usually /usr/local/bin/python3 (3.13).
+
+# Ensure chorus listens on port 8100 to match the root cloudflared daemon routing
+# (the system daemon routes stigmergicoin.com to :8100)
+export M5_CHORUS_PORT=8100
 if [ -n "${SIFTA_PYTHON_BIN:-}" ] && [ -x "$SIFTA_PYTHON_BIN" ]; then
   PYTHON_BIN="$SIFTA_PYTHON_BIN"
 else

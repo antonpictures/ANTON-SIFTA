@@ -1,0 +1,537 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Document parts map to Anthropic document blocks and OpenAI input_file; unknown ones are dropped."""
+
+import asyncio
+import json
+
+import httpx
+
+from core.inference import external_provider as ep_mod
+from core.inference.external_provider import ExternalProviderClient
+
+
+def _drive(coro):
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def _capture(monkeypatch, *, provider: str, base_url: str, messages) -> dict:
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode("utf-8"))
+        if provider == "anthropic":
+            body = b"event: message_stop\n" b'data: {"type": "message_stop"}\n\n'
+        else:
+            body = (
+                b"event: response.completed\n"
+                b'data: {"type":"response.completed",'
+                b'"response":{"output":[],"usage":{"input_tokens":0,'
+                b'"output_tokens":0}}}\n\n'
+            )
+        return httpx.Response(
+            200,
+            content = body,
+            headers = {"content-type": "text/event-stream"},
+        )
+
+    monkeypatch.setattr(
+        ep_mod,
+        "_http_client",
+        httpx.AsyncClient(transport = httpx.MockTransport(handler)),
+    )
+
+    async def run():
+        client = ExternalProviderClient(
+            provider_type = provider,
+            base_url = base_url,
+            api_key = "sk-test",
+        )
+        kwargs = {
+            "messages": messages,
+            "model": "claude-opus-4-7" if provider == "anthropic" else "gpt-5.5",
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "max_tokens": 32,
+        }
+        if provider == "openai":
+            kwargs["reasoning_effort"] = "medium"
+        async for _ in client.stream_chat_completion(**kwargs):
+            pass
+        await client.close()
+
+    _drive(run())
+    return captured
+
+
+_TINY_PDF_B64 = "JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDw+PgplbmRvYmoK"
+_PDF_DATA_URI = f"data:application/pdf;base64,{_TINY_PDF_B64}"
+
+
+def _strip_cache(p: dict) -> dict:
+    return {k: v for k, v in p.items() if k != "cache_control"}
+
+
+def test_anthropic_base64_pdf_becomes_document_block(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Summarise this paper."},
+                    {
+                        "type": "input_document",
+                        "file_data": _PDF_DATA_URI,
+                        "filename": "paper.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    user_msg = captured["body"]["messages"][0]
+    parts = user_msg["content"]
+    types = [p.get("type") for p in parts]
+    assert "document" in types, parts
+    doc = _strip_cache(next(p for p in parts if p.get("type") == "document"))
+    assert doc == {
+        "type": "document",
+        "source": {
+            "type": "base64",
+            "media_type": "application/pdf",
+            "data": _TINY_PDF_B64,
+        },
+        "citations": {"enabled": True},
+        "title": "paper.pdf",
+    }
+
+
+def test_anthropic_url_pdf_becomes_document_block(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this URL."},
+                    {
+                        "type": "input_document",
+                        "file_url": "https://example.com/doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["messages"][0]["content"]
+    doc = _strip_cache(next(p for p in parts if p.get("type") == "document"))
+    assert doc == {
+        "type": "document",
+        "source": {"type": "url", "url": "https://example.com/doc.pdf"},
+        "citations": {"enabled": True},
+    }
+
+
+def test_anthropic_empty_document_part_is_dropped(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Hi."},
+                    {"type": "input_document"},
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["messages"][0]["content"]
+    types = [p.get("type") for p in parts]
+    assert "document" not in types, parts
+
+
+def test_anthropic_empty_only_document_drops_whole_message(monkeypatch):
+    # Anthropic 400s on an empty-content message.
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {"role": "user", "content": [{"type": "input_document"}]},
+            {"role": "user", "content": "but THIS one is fine"},
+        ],
+    )
+    msgs = captured["body"]["messages"]
+    assert len(msgs) == 1, msgs
+
+
+def test_anthropic_empty_data_uri_payload_is_dropped(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "still here"},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,",
+                        "filename": "empty.pdf",
+                    },
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,   ",
+                        "filename": "whitespace.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["messages"][0]["content"]
+    assert all(p.get("type") != "document" for p in parts), parts
+
+
+def test_anthropic_empty_data_uri_falls_back_to_file_url(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this."},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,",
+                        "file_url": "https://example.com/doc.pdf",
+                        "filename": "doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["messages"][0]["content"]
+    doc = _strip_cache(next(p for p in parts if p.get("type") == "document"))
+    assert doc == {
+        "type": "document",
+        "source": {"type": "url", "url": "https://example.com/doc.pdf"},
+        "citations": {"enabled": True},
+        "title": "doc.pdf",
+    }
+
+
+def test_anthropic_whitespace_only_data_uri_falls_back_to_file_url(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "anthropic",
+        base_url = "https://api.anthropic.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this."},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,    ",
+                        "file_url": "https://example.com/doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["messages"][0]["content"]
+    doc = _strip_cache(next(p for p in parts if p.get("type") == "document"))
+    assert doc == {
+        "type": "document",
+        "source": {"type": "url", "url": "https://example.com/doc.pdf"},
+        "citations": {"enabled": True},
+    }
+
+
+def test_openai_base64_pdf_becomes_input_file(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Summarise this paper."},
+                    {
+                        "type": "input_document",
+                        "file_data": _PDF_DATA_URI,
+                        "filename": "paper.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    user_msg = captured["body"]["input"][0]
+    parts = user_msg["content"]
+    fileblk = next(p for p in parts if p.get("type") == "input_file")
+    assert fileblk == {"type": "input_file", "file_data": _PDF_DATA_URI, "filename": "paper.pdf"}
+
+
+def test_openai_url_pdf_becomes_input_file(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this URL."},
+                    {
+                        "type": "input_document",
+                        "file_url": "https://example.com/doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["input"][0]["content"]
+    fileblk = next(p for p in parts if p.get("type") == "input_file")
+    assert fileblk == {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+
+
+def test_openai_empty_data_uri_falls_back_to_file_url(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this."},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,",
+                        "file_url": "https://example.com/doc.pdf",
+                        "filename": "doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["input"][0]["content"]
+    fileblk = next(p for p in parts if p.get("type") == "input_file")
+    assert "file_data" not in fileblk, fileblk
+    assert fileblk["file_url"] == "https://example.com/doc.pdf"
+    assert fileblk["filename"] == "doc.pdf"
+
+
+def test_openai_whitespace_only_data_uri_falls_back_to_file_url(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this."},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,    ",
+                        "file_url": "https://example.com/doc.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["input"][0]["content"]
+    fileblk = next(p for p in parts if p.get("type") == "input_file")
+    assert "file_data" not in fileblk, fileblk
+    assert fileblk["file_url"] == "https://example.com/doc.pdf"
+
+
+def test_openai_empty_data_uri_without_fallback_is_dropped(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Hi."},
+                    {
+                        "type": "input_document",
+                        "file_data": "data:application/pdf;base64,",
+                        "filename": "empty.pdf",
+                    },
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["input"][0]["content"]
+    types = [p.get("type") for p in parts]
+    assert "input_file" not in types, parts
+
+
+def test_openai_empty_document_part_is_dropped(monkeypatch):
+    captured = _capture(
+        monkeypatch,
+        provider = "openai",
+        base_url = "https://api.openai.com/v1",
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Hi."},
+                    {"type": "input_document"},
+                ],
+            }
+        ],
+    )
+    parts = captured["body"]["input"][0]["content"]
+    types = [p.get("type") for p in parts]
+    assert "input_file" not in types, parts
+
+
+def test_chat_message_accepts_input_document_part():
+    from models.inference import ChatMessage
+
+    msg = ChatMessage.model_validate(
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "look"},
+                {
+                    "type": "input_document",
+                    "file_data": _PDF_DATA_URI,
+                    "filename": "paper.pdf",
+                    "media_type": "application/pdf",
+                },
+            ],
+        }
+    )
+    assert isinstance(msg.content, list)
+    assert msg.content[1].type == "input_document"
+    assert msg.content[1].file_data == _PDF_DATA_URI
+    assert msg.content[1].filename == "paper.pdf"
+    assert msg.content[1].media_type == "application/pdf"
+
+
+def test_build_external_messages_passes_input_document_for_native_and_custom_responses():
+    from models.inference import ChatMessage
+    from routes.inference import _build_external_messages
+
+    msgs = [
+        ChatMessage.model_validate(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "summarise"},
+                    {
+                        "type": "input_document",
+                        "file_url": "https://example.com/doc.pdf",
+                        "filename": "doc.pdf",
+                    },
+                ],
+            }
+        )
+    ]
+    for provider, api_type in (("anthropic", None), ("openai", None), ("custom", "responses")):
+        out = _build_external_messages(
+            msgs, supports_vision = True, provider_type = provider, api_type = api_type
+        )
+        assert len(out) == 1, (provider, out)
+        parts = out[0]["content"]
+        assert parts[0] == {"type": "text", "text": "summarise"}, provider
+        assert parts[1] == {
+            "type": "input_document",
+            "file_url": "https://example.com/doc.pdf",
+            "filename": "doc.pdf",
+        }, provider
+
+
+def test_build_external_messages_strips_input_document_for_unmapped_providers():
+    # Generic /chat/completions passthrough providers forward messages verbatim; strip input_document.
+
+    from models.inference import ChatMessage
+    from routes.inference import _build_external_messages
+
+    msgs = [
+        ChatMessage.model_validate(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "summarise"},
+                    {
+                        "type": "input_document",
+                        "file_url": "https://example.com/doc.pdf",
+                        "filename": "doc.pdf",
+                    },
+                ],
+            }
+        )
+    ]
+    for provider in ("gemini", "mistral", "kimi", "openrouter", "deepseek", "qwen", "custom"):
+        api_type = "chat_completions" if provider == "custom" else None
+        out = _build_external_messages(
+            msgs, supports_vision = True, provider_type = provider, api_type = api_type
+        )
+        assert len(out) == 1, (provider, out)
+        parts = out[0]["content"]
+        types = [p.get("type") for p in parts if isinstance(p, dict)]
+        assert "input_document" not in types, (provider, parts)
+        assert {"type": "text", "text": "summarise"} in parts, (provider, parts)
+
+
+def test_build_external_messages_strips_input_document_when_provider_type_unknown():
+    from models.inference import ChatMessage
+    from routes.inference import _build_external_messages
+
+    msgs = [
+        ChatMessage.model_validate(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "summarise"},
+                    {
+                        "type": "input_document",
+                        "file_data": _PDF_DATA_URI,
+                    },
+                ],
+            }
+        )
+    ]
+    out = _build_external_messages(msgs, supports_vision = True)
+    parts = out[0]["content"]
+    types = [p.get("type") for p in parts if isinstance(p, dict)]
+    assert "input_document" not in types, parts
+
+
+def test_build_external_messages_drops_input_document_for_non_vision_provider():
+    from models.inference import ChatMessage
+    from routes.inference import _build_external_messages
+
+    msgs = [
+        ChatMessage.model_validate(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "summarise"},
+                    {
+                        "type": "input_document",
+                        "file_data": _PDF_DATA_URI,
+                    },
+                ],
+            }
+        )
+    ]
+    out = _build_external_messages(msgs, supports_vision = False)
+    assert out == [{"role": "user", "content": "summarise"}]

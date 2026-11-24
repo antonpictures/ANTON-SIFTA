@@ -1,0 +1,1943 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Text-to-video route round-trips against a fake backend; no torch, diffusers or GPU is needed."""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+
+import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+
+import core.inference.gpu_arbiter as gpu_arbiter
+import core.inference.video as video_module
+import core.inference.video_gallery as gallery_module
+from auth.authentication import authenticated_via_api_key, get_current_subject
+from core.inference.video_families import (
+    VIDEO_CANCELLED_MSG,
+    VIDEO_GENERATION_BUSY_MSG,
+    VIDEO_NOT_LOADED_MSG,
+)
+import routes.video as video_routes
+from routes.video import router as video_router
+
+
+def _shared_setup_1(client):
+    client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "unsloth/LTX-2.3-GGUF", "gguf_filename": "q.gguf"},
+    )
+
+
+def _shared_setup_2(monkeypatch):
+    backend = video_module.get_video_backend()
+    monkeypatch.setattr(
+        backend,
+        "validate_load_request",
+        video_module.VideoBackend.validate_load_request.__get__(backend),
+        raising = False,
+    )
+    return backend
+
+
+def _shared_setup_3(monkeypatch):
+    import types
+
+    import core.inference.diffusion_device as devmod
+
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda: types.SimpleNamespace(device = "cuda")
+    )
+    return devmod
+
+
+def _shared_setup_4(client):
+    resp = client.post("/api/inference/video/generate", json = {"prompt": "p"})
+    assert resp.status_code == 200
+    progress = _wait_terminal(client)
+    assert progress["phase"] == "failed"
+    return progress
+
+
+def _shared_setup_5(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "Lightricks/LTX-2.3", "transformer_quant": "nvfp4"},
+    )
+    return resp
+
+
+def _defaults():
+    return {
+        "steps": 40,
+        "guidance": 4.0,
+        "num_frames": 121,
+        "fps": 24,
+        "frame_step": 8,
+        "resolution_multiple": 32,
+        "resolution_presets": [[768, 512], [1216, 704]],
+    }
+
+
+def _unloaded_status():
+    return {
+        "loaded": False,
+        "repo_id": None,
+        "family": None,
+        "base_repo": None,
+        "device": None,
+        "dtype": None,
+        "model_kind": None,
+        "offload_policy": None,
+        "vae_tiling": False,
+        "memory_mode": None,
+        "speed_mode": None,
+        "speed_optims": [],
+        "attention_backend": None,
+        "transformer_cache": None,
+        "transformer_quant": None,
+        "text_encoder_quant": None,
+        "has_audio": False,
+        "defaults": None,
+        "resolved": None,
+    }
+
+
+class _FakeBackend(video_module.VideoBackend):
+    """Fakes load/generate/status, inheriting the real async job machinery under test."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_load_kwargs: dict = {}
+        self.loading: tuple = ()
+
+    @property
+    def loaded(self) -> bool:
+        return self._state is not None
+
+    @loaded.setter
+    def loaded(self, value: bool) -> None:
+        import types
+
+        from core.inference.video_families import detect_video_family
+        self._state = (
+            types.SimpleNamespace(
+                family = detect_video_family("Lightricks/LTX-2"),
+                h3_task = None,
+                engine = "diffusers",
+            )
+            if value
+            else None
+        )
+
+    def loading_repo_ids(self) -> tuple:
+        return tuple(self.loading)
+
+    def validate_load_request(
+        self,
+        model_path,
+        *,
+        gguf_filename = None,
+        base_repo = None,
+        family_override = None,
+        display_repo_id = None,
+        model_kind = None,
+        transformer_quant = None,
+        text_encoder_quant = None,
+        h3_task = None,
+    ):
+        from pathlib import Path
+
+        kind = (model_kind or ("gguf" if gguf_filename else "pipeline")).lower()
+        if kind in ("gguf", "single_file") and not gguf_filename:
+            raise ValueError("A gguf/single_file load needs the checkpoint filename.")
+        trusted = model_path.lower().startswith(("unsloth/", "lightricks/", "minimaxai/")) or (
+            Path(model_path).expanduser().exists()
+        )
+        if kind != "gguf" and not trusted:
+            raise ValueError(
+                f"Non-GGUF video loads are limited to unsloth/* repos, the official family "
+                f"base repos, and local paths; '{model_path}' is neither."
+            )
+        if "ltx" not in model_path.lower() and family_override is None:
+            raise ValueError(
+                f"'{model_path}' is not a supported text-to-video model. Supported families: ltx-2."
+            )
+        return object()
+
+    def begin_load(self, model_path, **kwargs):
+        self.loaded = True
+        self.last_load_kwargs = dict(kwargs)
+        return {
+            **_unloaded_status(),
+            "loaded": True,
+            "repo_id": model_path,
+            "family": "ltx-2",
+            "base_repo": kwargs.get("base_repo") or "Lightricks/LTX-2",
+            "device": "cpu",
+            "dtype": "float32",
+            "model_kind": kwargs.get("model_kind")
+            or ("gguf" if kwargs.get("gguf_filename") else "pipeline"),
+            "memory_mode": kwargs.get("memory_mode") or "auto",
+            "has_audio": True,
+            "defaults": _defaults(),
+        }
+
+    def load_progress(self):
+        return {
+            "phase": "ready" if self.loaded else None,
+            "downloaded_bytes": 0,
+            "expected_bytes": None,
+            "error": None,
+        }
+
+    def generate(
+        self,
+        *,
+        prompt,
+        seed = None,
+        cancel_event = None,
+        **kwargs,
+    ):
+        if not self.loaded:
+            raise RuntimeError(VIDEO_NOT_LOADED_MSG)
+        return {
+            "mp4_bytes": b"MP4-FAKE-BYTES",
+            "seed": seed if seed is not None else 4242,
+            "repo_id": "unsloth/LTX-2.3-GGUF",
+            "width": kwargs.get("width") or 768,
+            "height": kwargs.get("height") or 512,
+            "num_frames": kwargs.get("num_frames") or 121,
+            "fps": kwargs.get("fps") or 24,
+            "duration_s": 5.0,
+            "has_audio": True,
+            "conditioning": "t2va",
+            "flow_shift": None,
+            "audio_flow_shift": None,
+            "steps": kwargs.get("steps") or 40,
+            "guidance": 4.0 if kwargs.get("guidance") is None else kwargs.get("guidance"),
+        }
+
+    def unload(self):
+        self.loaded = False
+        return _unloaded_status()
+
+    def status(self):
+        if not self.loaded:
+            return _unloaded_status()
+        return {
+            **_unloaded_status(),
+            "loaded": True,
+            "repo_id": "unsloth/LTX-2.3-GGUF",
+            "family": "ltx-2",
+            "has_audio": True,
+            "defaults": _defaults(),
+        }
+
+
+@pytest.fixture(autouse = True)
+def _pin_video_fetch_to_the_named_repo(monkeypatch):
+    """These tests are about plan / load decisions, written against the UPSTREAM ids their fake Hub serves. The fetch
+    swap onto the unsloth mirrors depends on the developer's own HF cache, so it is pinned off here, as the image
+    offline-load tests do; tests/test_video_unsloth_mirrors.py covers the swap itself."""
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_NO_MIRROR", "1")
+
+
+@pytest.fixture(autouse = True)
+def _healthy_diffusers(healthy_diffusers):
+    """Fakes diffusers: the H3 download plan imports it, and backend CI installs none."""
+
+
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    backend = _FakeBackend()
+    monkeypatch.setattr(video_module, "get_video_backend", lambda: backend)
+    monkeypatch.setattr(gpu_arbiter, "_owner", None)
+    monkeypatch.setitem(gpu_arbiter._EVICTORS, gpu_arbiter.CHAT, lambda: None)
+    monkeypatch.setitem(gpu_arbiter._EVICTORS, gpu_arbiter.DIFFUSION, lambda: None)
+    monkeypatch.setitem(gpu_arbiter._EVICTORS, gpu_arbiter.VIDEO, lambda: None)
+
+    import types
+
+    import core.inference.diffusion_device as devmod
+
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda: types.SimpleNamespace(device = "cpu")
+    )
+
+    monkeypatch.setattr(gallery_module, "gallery_dir", lambda: tmp_path)
+
+    app = FastAPI()
+    app.include_router(video_router, prefix = "/api/inference")
+    app.dependency_overrides[get_current_subject] = lambda: "test-user"
+    app.dependency_overrides[authenticated_via_api_key] = lambda: False
+    return TestClient(app)
+
+
+def _wait_terminal(client, timeout = 5.0) -> dict:
+    """Poll generate-progress until the background job records a terminal phase.
+    Generation is asynchronous now (the POST returns as soon as the job starts),
+    so its outcome is only observable here."""
+    deadline = time.monotonic() + timeout
+    progress: dict = {}
+    while time.monotonic() < deadline:
+        progress = client.get("/api/inference/video/generate-progress").json()
+        if progress.get("phase") in ("completed", "failed"):
+            return progress
+        time.sleep(0.01)
+    raise AssertionError(f"generation never reached a terminal state: {progress}")
+
+
+def _generate_and_wait(client, payload) -> dict:
+    """Start a generation, assert the immediate accepted response, and return the
+    saved gallery record the completed progress state carries."""
+    resp = client.post("/api/inference/video/generate", json = payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "started" and body["video"] is None
+    progress = _wait_terminal(client)
+    assert progress["phase"] == "completed", progress
+    assert progress["active"] is False and progress["error"] is None
+    return progress["video"]
+
+
+def test_load_happy_path_and_arbiter_acquired(client, monkeypatch):
+    devmod = _shared_setup_3(monkeypatch)
+    acquired: list = []
+
+    def _fake_acquire(
+        role,
+        register = None,
+        admit = None,
+    ):
+        acquired.append(role)
+        if admit is not None:
+            admit()
+        return register() if register is not None else None
+
+    monkeypatch.setattr(gpu_arbiter, "acquire_for", _fake_acquire)
+
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "ltx-2.3-distilled-Q4_K_M.gguf",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["loaded"] is True and body["family"] == "ltx-2"
+    assert body["has_audio"] is True
+    assert body["defaults"]["num_frames"] == 121
+    assert acquired == [gpu_arbiter.VIDEO]
+
+
+def test_load_forwards_the_gpu_selection(client, monkeypatch):
+    import types
+
+    import core.inference.diffusion_device as devmod
+    import core.inference.video as video_module
+
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda: types.SimpleNamespace(device = "cuda")
+    )
+    monkeypatch.setattr(devmod, "resolve_selected_cuda_ordinal", lambda ids: max(ids))
+    monkeypatch.setattr(
+        gpu_arbiter, "acquire_for", lambda role, register = None, admit = None: register()
+    )
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "ltx-2.3-distilled-Q4_K_M.gguf",
+            "gpu_ids": [1],
+        },
+    )
+    assert resp.status_code == 200
+    assert video_module.get_video_backend().last_load_kwargs["gpu_ids"] == [1]
+
+
+def test_load_refuses_a_gpu_index_this_host_does_not_have(client, monkeypatch):
+    devmod = _shared_setup_3(monkeypatch)
+
+    def _refuse(_ids):
+        raise ValueError("Requested GPU [7] but this host has 2 CUDA device(s).")
+
+    monkeypatch.setattr(devmod, "resolve_selected_cuda_ordinal", _refuse)
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "ltx-2.3-distilled-Q4_K_M.gguf",
+            "gpu_ids": [7],
+        },
+    )
+    assert resp.status_code == 400
+    assert "2 CUDA device" in resp.json()["detail"]
+    assert gpu_arbiter._owner is None
+
+
+def test_load_value_error_returns_400(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "x/some-image-model", "gguf_filename": "q.gguf"},
+    )
+    assert resp.status_code == 400
+    assert "supported text-to-video model" in resp.json()["detail"]
+    assert gpu_arbiter._owner is None
+
+
+def test_load_threads_options_through_to_backend(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "q.gguf",
+            "memory_mode": "low_vram",
+            "attention_backend": "cudnn",
+            "transformer_cache": "fbcache",
+            "transformer_cache_threshold": 0.1,
+        },
+    )
+    assert resp.status_code == 200
+    kwargs = video_module.get_video_backend().last_load_kwargs
+    assert kwargs.get("memory_mode") == "low_vram"
+    assert kwargs.get("attention_backend") == "cudnn"
+    assert kwargs.get("transformer_cache") == "fbcache"
+    assert kwargs.get("transformer_cache_threshold") == 0.1
+
+
+def test_load_threads_transformer_quant_and_guidance_2(client, monkeypatch):
+    monkeypatch.setattr(video_module, "assert_video_precision_available", lambda fam, **kw: None)
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "q.gguf",
+            "transformer_quant": "fp8",
+        },
+    )
+    assert resp.status_code == 200
+    kwargs = video_module.get_video_backend().last_load_kwargs
+    assert kwargs.get("transformer_quant") == "fp8"
+
+    video = _generate_and_wait(client, {"prompt": "a sloth", "guidance": 5.0, "guidance_2": 3.0})
+    assert video["guidance"] == 5.0 and video["guidance_2"] == 3.0
+
+
+def test_load_rejects_bad_transformer_quant_422(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "q.gguf",
+            "transformer_quant": "bogus",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_load_threads_text_encoder_quant(client, monkeypatch):
+    # Precision escape hatch: fp8 encoder availability is host dependent.
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_ALLOW_PRECISION_FALLBACK", "1")
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "q.gguf",
+            "text_encoder_quant": "fp8",
+        },
+    )
+    assert resp.status_code == 200
+    kwargs = video_module.get_video_backend().last_load_kwargs
+    assert kwargs.get("text_encoder_quant") == "fp8"
+
+
+def test_load_rejects_bad_text_encoder_quant_422(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "q.gguf",
+            "text_encoder_quant": "bogus",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_load_progress_route(client, monkeypatch):
+    resets = []
+    monkeypatch.setattr(video_routes, "reset_media_load_progress", resets.append)
+    idle = client.get("/api/inference/video/load-progress")
+    assert idle.status_code == 200 and idle.json()["phase"] is None
+    _shared_setup_1(client)
+    ready = client.get("/api/inference/video/load-progress")
+    assert ready.json()["phase"] == "ready"
+    assert resets == ["video"]
+
+
+def test_load_progress_route_logs_backend_snapshot(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        video_routes,
+        "log_media_load_progress",
+        lambda media, phase, fraction: seen.append((media, phase, fraction)),
+    )
+    backend = video_module.get_video_backend()
+    backend.load_progress = lambda: {
+        "phase": "downloading",
+        "downloaded_bytes": 30,
+        "expected_bytes": 100,
+        "error": None,
+    }
+
+    response = client.get("/api/inference/video/load-progress")
+
+    assert response.status_code == 200
+    assert seen == [("video", "downloading", 0.3)]
+
+
+def test_load_local_single_file_dir_routes_through_single_file(client, tmp_path):
+    d = tmp_path / "ltx-2.3-local"
+    d.mkdir()
+    (d / "ltx-dit.safetensors").write_bytes(b"0")
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": str(d), "model_kind": "pipeline"},
+    )
+    assert resp.status_code == 200
+    kwargs = video_module.get_video_backend().last_load_kwargs
+    assert kwargs["model_kind"] == "single_file"
+    assert kwargs["gguf_filename"] == "ltx-dit.safetensors"
+
+
+def test_load_local_pipeline_dir_stays_pipeline(client, tmp_path):
+    d = tmp_path / "ltx-2.3-pipeline"
+    d.mkdir()
+    (d / "model_index.json").write_text("{}")
+    (d / "diffusion_pytorch_model.safetensors").write_bytes(b"0")
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": str(d), "model_kind": "pipeline"},
+    )
+    assert resp.status_code == 200
+    kwargs = video_module.get_video_backend().last_load_kwargs
+    assert kwargs["model_kind"] == "pipeline"
+    assert not kwargs.get("gguf_filename")
+
+
+def test_generate_happy_path_persists_and_reports_record(client, monkeypatch):
+    resets = []
+    monkeypatch.setattr(video_routes, "reset_media_generation_progress", resets.append)
+    _shared_setup_1(client)
+    video = _generate_and_wait(client, {"prompt": "a sloth surfing", "seed": 7})
+    assert resets == ["video"]
+    assert video["seed"] == 7 and video["prompt"] == "a sloth surfing" and video["id"]
+    assert video["has_audio"] is True
+    assert video["model"] == "unsloth/LTX-2.3-GGUF"
+    assert video["url"].endswith(f"/gallery/{video['id']}/file")
+    assert video["created_at"]
+
+    listed = client.get("/api/inference/video/gallery").json()["videos"]
+    assert [v["id"] for v in listed] == [video["id"]]
+    fetched = client.get(video["url"])
+    assert fetched.status_code == 200
+    assert fetched.headers["content-type"] == "video/mp4"
+    assert "immutable" in fetched.headers["cache-control"]
+    assert fetched.content == b"MP4-FAKE-BYTES"
+
+
+def test_generate_accepts_a_half_specified_size_without_a_keyframe(client):
+    """A half-given size is only ambiguous with a keyframe; the route must accept it without one."""
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    video = _generate_and_wait(client, {"prompt": "a cat", "width": 768})
+    assert (video["width"], video["height"]) == (768, 512)
+
+    resp = client.post(
+        "/api/inference/video/generate",
+        json = {
+            "prompt": "a cat",
+            "width": 768,
+            "first_frame": "data:image/png;base64,AAAA",
+        },
+    )
+    assert resp.status_code == 422
+    assert "width and height must be sent together" in str(resp.json())
+
+
+def test_generate_without_load_returns_409(client):
+    resp = client.post("/api/inference/video/generate", json = {"prompt": "p"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == VIDEO_NOT_LOADED_MSG
+
+
+def test_generate_cancelled_reports_failed_with_sentinel(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _cancel(**kwargs):
+        raise RuntimeError(VIDEO_CANCELLED_MSG)
+
+    monkeypatch.setattr(backend, "generate", _cancel)
+    progress = _shared_setup_4(client)
+    assert progress["error"] == VIDEO_CANCELLED_MSG
+    assert progress["active"] is False
+
+
+def test_generate_pipeline_error_reports_sanitized_failure(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _oom(**kwargs):
+        raise RuntimeError("CUDA out of memory. Tried to allocate 40.00 GiB")
+
+    monkeypatch.setattr(backend, "generate", _oom)
+    progress = _shared_setup_4(client)
+    assert progress["error"].startswith("Video generation failed.")
+    assert "ran out of memory" in progress["error"]
+    assert "CUDA" not in progress["error"]
+    assert "40.00 GiB" not in progress["error"]
+
+
+def test_generate_unclassified_error_keeps_the_bare_fallback(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _odd(**kwargs):
+        raise RuntimeError("something went sideways in /home/u/models/secret.safetensors")
+
+    monkeypatch.setattr(backend, "generate", _odd)
+    progress = _shared_setup_4(client)
+    assert progress["error"] == "Video generation failed."
+    assert "secret.safetensors" not in progress["error"]
+
+
+def test_generate_native_crash_points_at_the_log(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _crash(**kwargs):
+        raise RuntimeError("worker process exited with signal 6")
+
+    monkeypatch.setattr(backend, "generate", _crash)
+    progress = _shared_setup_4(client)
+    assert "Settings > Logs" in progress["error"]
+
+
+@pytest.mark.parametrize("code", ["-6", "3221225477"])
+def test_generate_native_sd_cli_exit_points_at_the_log(client, monkeypatch, code):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _crash(**kwargs):
+        raise RuntimeError(f"sd-cli exited {code}. Last output:\nGGML_ASSERT(n_dims == 3) failed")
+
+    monkeypatch.setattr(backend, "generate", _crash)
+    progress = _shared_setup_4(client)
+    assert "Settings > Logs" in progress["error"]
+    assert "GGML_ASSERT" not in progress["error"]
+
+
+def test_generate_value_error_reports_reason(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _bad(**kwargs):
+        raise ValueError("negative_prompt is not supported by this family.")
+
+    monkeypatch.setattr(backend, "generate", _bad)
+    progress = _shared_setup_4(client)
+    assert "not supported" in progress["error"]
+
+
+def test_generate_concurrent_second_returns_409(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+    release = threading.Event()
+    real_generate = _FakeBackend.generate
+
+    def _slow(**kwargs):
+        assert release.wait(5)
+        return real_generate(backend, **kwargs)
+
+    monkeypatch.setattr(backend, "generate", _slow)
+    first = client.post("/api/inference/video/generate", json = {"prompt": "a", "seed": 1})
+    assert first.status_code == 200 and first.json()["status"] == "started"
+
+    second = client.post("/api/inference/video/generate", json = {"prompt": "b"})
+    assert second.status_code == 409
+    assert second.json()["detail"] == VIDEO_GENERATION_BUSY_MSG
+
+    running = client.get("/api/inference/video/generate-progress").json()
+    assert running["active"] is True
+
+    release.set()
+    progress = _wait_terminal(client)
+    assert progress["phase"] == "completed" and progress["video"]["seed"] == 1
+    assert _generate_and_wait(client, {"prompt": "c", "seed": 2})["seed"] == 2
+
+
+def test_generate_progress_route(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        video_routes,
+        "log_media_generation_progress",
+        lambda media, progress: seen.append((media, dict(progress))),
+    )
+    resp = client.get("/api/inference/video/generate-progress")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is False
+    assert body["phase"] is None and body["video"] is None and body["error"] is None
+    assert seen == [("video", {"active": False, "total_steps": 0, "fraction": 0.0})]
+
+
+def test_cancel_generation_route(client):
+    resp = client.post("/api/inference/video/generate/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["cancelled"] is False
+
+
+def test_cancel_running_job(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    backend.loaded = True
+
+    def _wait_for_cancel(*, cancel_event = None, **kwargs):
+        assert cancel_event is not None and cancel_event.wait(5)
+        raise RuntimeError(VIDEO_CANCELLED_MSG)
+
+    monkeypatch.setattr(backend, "generate", _wait_for_cancel)
+    resp = client.post("/api/inference/video/generate", json = {"prompt": "p"})
+    assert resp.status_code == 200
+
+    cancelled = client.post("/api/inference/video/generate/cancel")
+    assert cancelled.status_code == 200 and cancelled.json()["cancelled"] is True
+
+    progress = _wait_terminal(client)
+    assert progress["phase"] == "failed"
+    assert progress["error"] == VIDEO_CANCELLED_MSG
+    assert client.get("/api/inference/video/gallery").json()["videos"] == []
+
+
+def test_file_endpoint_404_for_bad_id(client):
+    resp = client.get("/api/inference/video/gallery/does-not-exist/file")
+    assert resp.status_code == 404
+
+
+def test_serve_and_export_refuse_orphan_mp4(client, tmp_path):
+    (tmp_path / "recording.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    assert client.get("/api/inference/video/gallery/recording/file").status_code == 404
+    assert client.get("/api/inference/video/gallery/recording/export?format=gif").status_code == 404
+
+
+def test_delete_and_clear(client):
+    _shared_setup_1(client)
+    first = _generate_and_wait(client, {"prompt": "a"})
+    second = _generate_and_wait(client, {"prompt": "b"})
+    assert len(client.get("/api/inference/video/gallery").json()["videos"]) == 2
+
+    assert client.delete(f"/api/inference/video/gallery/{first['id']}").status_code == 200
+    assert client.delete(f"/api/inference/video/gallery/{first['id']}").status_code == 404
+    remaining = client.get("/api/inference/video/gallery").json()["videos"]
+    assert [v["id"] for v in remaining] == [second["id"]]
+
+    cleared = client.delete("/api/inference/video/gallery")
+    assert cleared.status_code == 200 and cleared.json()["removed"] == 1
+    assert client.get("/api/inference/video/gallery").json()["videos"] == []
+
+
+def test_deleting_a_clip_clears_the_terminal_generation_record(client):
+    """The completed record outlives its job so a page mounting late still sees the clip. Once the
+    clip is deleted that record points at a file that is gone, and the Video page merged it back on
+    every reload as a card whose fetch 404s."""
+    _shared_setup_1(client)
+    clip = _generate_and_wait(client, {"prompt": "a"})
+    progress = client.get("/api/inference/video/generate-progress").json()
+    assert progress["phase"] == "completed" and progress["video"]["id"] == clip["id"]
+
+    assert client.delete(f"/api/inference/video/gallery/{clip['id']}").status_code == 200
+
+    after = client.get("/api/inference/video/generate-progress").json()
+    assert after.get("video") is None
+    assert after.get("phase") != "completed"
+    assert after["active"] is False
+
+
+def test_clearing_the_gallery_clears_the_terminal_generation_record(client):
+    _shared_setup_1(client)
+    _generate_and_wait(client, {"prompt": "a"})
+    assert client.delete("/api/inference/video/gallery").status_code == 200
+
+    after = client.get("/api/inference/video/generate-progress").json()
+    assert after.get("video") is None
+    assert after["active"] is False
+
+
+def test_deleting_a_different_clip_leaves_the_terminal_record_alone(client):
+    """Only the terminal clip's own deletion clears it: deleting an older clip must not drop the
+    record the page needs to show the run that just finished."""
+    _shared_setup_1(client)
+    older = _generate_and_wait(client, {"prompt": "a"})
+    newest = _generate_and_wait(client, {"prompt": "b"})
+
+    assert client.delete(f"/api/inference/video/gallery/{older['id']}").status_code == 200
+
+    after = client.get("/api/inference/video/generate-progress").json()
+    assert after["phase"] == "completed" and after["video"]["id"] == newest["id"]
+
+
+def test_gallery_pagination(client):
+    _shared_setup_1(client)
+    for i in range(5):
+        _generate_and_wait(client, {"prompt": f"clip {i}", "seed": i})
+    page1 = client.get("/api/inference/video/gallery?limit=2&offset=0").json()
+    assert len(page1["videos"]) == 2 and page1["has_more"] is True
+    last = client.get("/api/inference/video/gallery?limit=2&offset=4").json()
+    assert len(last["videos"]) == 1 and last["has_more"] is False
+
+
+def test_status_passthrough(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    resolved = {
+        "speed_mode": {"value": "eager", "source": "auto", "reason": "GGUF default"},
+        "transformer_cache": {"value": None, "source": "auto", "reason": "few-step model"},
+        "transformer_quant": {
+            "value": "off",
+            "requested": "nvfp4",
+            "source": "explicit",
+            "status": "unsupported",
+            "reason": "this GPU has no NVFP4 cores",
+        },
+        "text_encoder_quant": {
+            "value": "fp8",
+            "requested": "int8",
+            "source": "explicit",
+            "status": "fell_back",
+            "reason": "int8 has no measured keep-bf16 schedule for this family",
+        },
+    }
+    monkeypatch.setattr(
+        backend,
+        "status",
+        lambda: {
+            **_unloaded_status(),
+            "loaded": True,
+            "family": "ltx-2",
+            "has_audio": True,
+            "defaults": _defaults(),
+            "resolved": resolved,
+        },
+    )
+    body = client.get("/api/inference/video/status").json()
+    assert body["loaded"] is True and body["family"] == "ltx-2"
+    assert body["resolved"]["transformer_quant"] == {
+        **resolved["transformer_quant"],
+        "artifact": None,
+        "replaced": None,
+        "steps": None,
+    }
+    assert body["resolved"]["text_encoder_quant"] == {
+        **resolved["text_encoder_quant"],
+        "artifact": None,
+        "replaced": None,
+        "steps": None,
+    }
+    assert body["resolved"]["speed_mode"]["requested"] is None
+    assert body["resolved"]["speed_mode"]["status"] == "applied"
+    assert body["defaults"]["frame_step"] == 8
+
+
+def test_status_resolved_defaults_to_null(client):
+    body = client.get("/api/inference/video/status").json()
+    assert body["resolved"] is None and body["defaults"] is None
+
+
+def _load_fake_video(client):
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "unsloth/LTX-2.3-GGUF", "gguf_filename": "q.gguf"},
+    )
+    assert resp.status_code == 200
+
+
+def test_saved_clip_records_the_engaged_build(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    real_generate = backend.generate
+
+    def _generate(**kwargs):
+        return {
+            **real_generate(**kwargs),
+            "model_kind": "gguf",
+            "gguf_filename": "ltx-2.3-Q4_K_M.gguf",
+            "transformer_quant": None,
+            "text_encoder_quant": "fp8",
+            "memory_mode": "low_vram",
+            "offload_policy": "sequential",
+        }
+
+    monkeypatch.setattr(backend, "generate", _generate)
+    _load_fake_video(client)
+    video = _generate_and_wait(client, {"prompt": "a sloth", "seed": 3})
+    assert video["model_kind"] == "gguf"
+    assert video["gguf_filename"] == "ltx-2.3-Q4_K_M.gguf"
+    assert video["transformer_quant"] is None
+    assert video["text_encoder_quant"] == "fp8"
+    assert video["memory_mode"] == "low_vram"
+    assert video["offload_policy"] == "sequential"
+    listed = client.get("/api/inference/video/gallery").json()["videos"]
+    assert listed[0]["text_encoder_quant"] == "fp8"
+    assert listed[0]["gguf_filename"] == "ltx-2.3-Q4_K_M.gguf"
+
+
+def test_sidecars_without_the_build_fields_still_list(client):
+    _load_fake_video(client)
+    video = _generate_and_wait(client, {"prompt": "a sloth"})
+    assert video["model_kind"] is None and video["transformer_quant"] is None
+    listed = client.get("/api/inference/video/gallery").json()["videos"]
+    assert len(listed) == 1 and listed[0]["text_encoder_quant"] is None
+
+
+def test_load_refuses_an_unusable_explicit_precision_with_409(client, monkeypatch):
+    from core.inference.diffusion_auto_policy import precision_refusal_message
+
+    backend = video_module.get_video_backend()
+    refusal = precision_refusal_message(
+        "transformer_quant",
+        "nvfp4",
+        "'nvfp4' is not usable for family 'ltx-2' on this GPU",
+        off_label = "Off to run the DiT at bf16",
+    )
+
+    def _refuse(model_path, **kwargs):
+        raise RuntimeError(refusal)
+
+    monkeypatch.setattr(backend, "begin_load", _refuse)
+    resp = _shared_setup_5(client)
+    assert resp.status_code == 409
+    assert "transformer_quant='nvfp4' could not be used" in resp.json()["detail"]
+    assert client.get("/api/inference/video/status").json()["loaded"] is False
+
+
+def test_precision_refusal_precedes_eviction(client, monkeypatch):
+    # Refusal must happen before acquire_for evicts chat.
+    from core.inference.diffusion_auto_policy import precision_refusal_message
+
+    backend = video_module.get_video_backend()
+    evicted = []
+    monkeypatch.setitem(gpu_arbiter._EVICTORS, gpu_arbiter.CHAT, lambda: evicted.append("chat"))
+    monkeypatch.setattr(gpu_arbiter, "_owner", gpu_arbiter.CHAT)
+    refusal = precision_refusal_message(
+        "transformer_quant",
+        "nvfp4",
+        "'nvfp4' is not usable for family 'ltx-2' on this GPU",
+        off_label = "Off to run the DiT at bf16",
+    )
+
+    def _refuse(fam, **kwargs):
+        raise RuntimeError(refusal)
+
+    monkeypatch.setattr(video_module, "assert_video_precision_available", _refuse)
+    monkeypatch.setattr(
+        backend,
+        "begin_load",
+        lambda *a, **k: pytest.fail("begin_load ran after an impossible precision"),
+    )
+    resp = _shared_setup_5(client)
+    assert resp.status_code == 409
+    assert "transformer_quant='nvfp4' could not be used" in resp.json()["detail"]
+    assert evicted == []
+    assert gpu_arbiter.current_owner() == gpu_arbiter.CHAT
+
+
+def test_unload_releases_arbiter(client, monkeypatch):
+    monkeypatch.setattr(gpu_arbiter, "_owner", gpu_arbiter.VIDEO)
+    resp = client.post("/api/inference/video/unload")
+    assert resp.status_code == 200 and resp.json()["loaded"] is False
+    assert gpu_arbiter.current_owner() is None
+
+
+def test_unload_keeps_ownership_when_a_load_is_in_flight(client, monkeypatch):
+    # Ownership must be kept for an in-flight load or a later load skips eviction and OOMs.
+    backend = video_module.get_video_backend()
+    monkeypatch.setattr(gpu_arbiter, "_owner", gpu_arbiter.VIDEO)
+
+    backend.loaded = False
+    backend.loading = ("unsloth/ltx-video-2b",)
+    resp = client.post("/api/inference/video/unload")
+    assert resp.status_code == 200 and resp.json()["loaded"] is False
+    assert gpu_arbiter.current_owner() == gpu_arbiter.VIDEO
+
+    backend.loading = ()
+
+
+def test_load_refused_during_training(client, monkeypatch):
+    import core.training as core_training
+
+    monkeypatch.setattr(gpu_arbiter, "_owner", gpu_arbiter.CHAT)
+    evicted: list = []
+    monkeypatch.setitem(gpu_arbiter._EVICTORS, gpu_arbiter.CHAT, lambda: evicted.append(True))
+
+    class _Training:
+        def is_training_active(self):
+            return True
+
+    monkeypatch.setattr(core_training, "get_training_backend", lambda: _Training())
+
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "unsloth/LTX-2.3-GGUF", "gguf_filename": "q.gguf"},
+    )
+    assert resp.status_code == 409
+    assert "training" in resp.json()["detail"].lower()
+    assert evicted == []
+    assert gpu_arbiter.current_owner() == gpu_arbiter.CHAT
+
+
+def test_generate_missing_prompt_returns_422(client):
+    resp = client.post("/api/inference/video/generate", json = {})
+    assert resp.status_code == 422
+
+
+def test_routes_require_auth():
+    app = FastAPI()
+    app.include_router(video_router, prefix = "/api/inference")
+    unauth = TestClient(app)
+    assert unauth.get("/api/inference/video/status").status_code in (401, 403)
+
+
+def test_export_endpoint_validation(client, monkeypatch):
+    resp = client.get("/api/inference/video/gallery/x/export?format=avi")
+    assert resp.status_code == 400
+    resp = client.get("/api/inference/video/gallery/does-not-exist/export?format=gif")
+    assert resp.status_code == 404
+
+    def _boom(video_id, fmt):
+        raise RuntimeError("WebM export needs the 'av' package (PyAV).")
+
+    monkeypatch.setattr(gallery_module, "transcode_to_file", _boom)
+    _shared_setup_1(client)
+    video = _generate_and_wait(client, {"prompt": "a"})
+    resp = client.get(f"/api/inference/video/gallery/{video['id']}/export?format=webm")
+    assert resp.status_code == 501
+    assert "PyAV" in resp.json()["detail"]
+
+
+def test_delete_guard_protects_the_loaded_video_companion_base(monkeypatch):
+    from hub.services.models import deletion
+
+    class _Backend:
+        def status(self):
+            return {
+                "loaded": True,
+                "repo_id": "unsloth/LTX-2.3-GGUF",
+                "base_repo": "unsloth/LTX-2.3",
+            }
+
+        def loading_repo_ids(self):
+            return ()
+
+    monkeypatch.setattr(video_module, "get_video_backend", lambda: _Backend())
+    assert deletion._video_blocks_delete("unsloth/LTX-2.3-GGUF") is not None
+    assert deletion._video_blocks_delete("unsloth/LTX-2.3") is not None
+    assert deletion._video_blocks_delete("unsloth/something-else") is None
+
+
+def test_delete_guard_protects_the_native_video_companion_repos(monkeypatch):
+    from hub.services.models import deletion
+
+    class _Backend:
+        def status(self):
+            return {
+                "loaded": True,
+                "repo_id": "unsloth/MiniMax-H3-GGUF",
+                "base_repo": "MiniMaxAI/MiniMax-H3",
+            }
+
+        def loaded_repo_ids(self):
+            return ("unsloth/MiniMax-H3-GGUF", "Comfy-Org/MiniMax-H3")
+
+        def loading_repo_ids(self):
+            return ()
+
+    monkeypatch.setattr(video_module, "get_video_backend", lambda: _Backend())
+    assert deletion._video_blocks_delete("Comfy-Org/MiniMax-H3") is not None
+    assert deletion._video_blocks_delete("unsloth/something-else") is None
+
+
+def test_delete_guard_protects_the_native_video_companion_repos_mid_load(monkeypatch):
+    from hub.services.models import deletion
+
+    class _Backend:
+        def status(self):
+            return {"loaded": False, "repo_id": None, "base_repo": None}
+
+        def loaded_repo_ids(self):
+            return ()
+
+        def loading_repo_ids(self):
+            return (
+                "leejet/MiniMax-H3-GGUF",
+                "MiniMaxAI/MiniMax-H3",
+                "unsloth/MiniMax-H3-GGUF",
+                "Comfy-Org/MiniMax-H3",
+            )
+
+    monkeypatch.setattr(video_module, "get_video_backend", lambda: _Backend())
+    assert deletion._video_blocks_delete("Comfy-Org/MiniMax-H3") is not None
+    assert deletion._video_blocks_delete("unsloth/MiniMax-H3-GGUF") is not None
+    assert deletion._video_blocks_delete("unsloth/something-else") is None
+
+
+def test_video_download_plan_forwards_the_encoder_policy(client, monkeypatch):
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_ALLOW_PRECISION_FALLBACK", "1")
+    backend = video_module.get_video_backend()
+    seen: dict = {}
+
+    def _plan(model_path, **kwargs):
+        seen["model_path"] = model_path
+        seen.update(kwargs)
+        return {"entries": [], "total_bytes": 0}
+
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "hf_token": "hf_secret",
+            "text_encoder_quant": "fp8",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert seen["text_encoder_quant"] == "fp8"
+    assert seen["hf_token"] == "hf_secret"
+
+
+def test_the_video_plan_refuses_an_impossible_precision_before_anything_is_staged(
+    client, monkeypatch
+):
+    import core.inference.video as video_core
+
+    backend = video_module.get_video_backend()
+
+    def _refuse(fam, **kwargs):
+        raise RuntimeError(
+            "text_encoder_quant='fp8' could not be used: this device cannot cast the encoder."
+        )
+
+    monkeypatch.setattr(video_core, "assert_video_precision_available", _refuse)
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda *a, **k: pytest.fail("the plan was built for a precision that cannot be honoured"),
+        raising = False,
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "text_encoder_quant": "fp8",
+        },
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert "could not be used" in resp.json()["detail"]
+
+
+def test_video_load_guard_still_checks_diffusion_when_the_llm_probe_raises(client, monkeypatch):
+    import core.training as core_training
+    import routes.video as video_routes
+
+    class _Broken:
+        def is_training_active(self):
+            raise RuntimeError("training backend unavailable")
+
+    class _Diffusion:
+        def is_active(self):
+            return True
+
+    monkeypatch.setattr(core_training, "get_training_backend", lambda: _Broken())
+    monkeypatch.setattr(
+        "core.training.diffusion_training_service.get_diffusion_training_service",
+        lambda: _Diffusion(),
+        raising = False,
+    )
+
+    resp = client.post(
+        "/api/inference/video/load",
+        json = {"model_path": "unsloth/LTX-2.3-GGUF", "gguf_filename": "q.gguf"},
+    )
+    assert resp.status_code == 409
+    assert "training" in resp.json()["detail"].lower()
+    assert video_routes is not None
+
+
+def test_signed_video_link_streams_without_a_bearer(client):
+    _shared_setup_1(client)
+    video = _generate_and_wait(client, {"prompt": "a"})
+    vid = video["id"]
+
+    minted = client.get(f"/api/inference/video/gallery/{vid}/signed-url")
+    assert minted.status_code == 200, minted.text
+    url = minted.json()["url"]
+    assert url.startswith(f"/api/inference/video/gallery/{vid}/file-signed?token=")
+
+    signed = client.get(url, headers = {})
+    assert signed.status_code == 200
+    assert signed.headers["content-type"] == "video/mp4"
+    assert signed.content == client.get(f"/api/inference/video/gallery/{vid}/file").content
+
+    ranged = client.get(url, headers = {"Range": "bytes=0-3"})
+    assert ranged.status_code == 206
+    assert len(ranged.content) == 4
+
+
+def test_keyless_caller_cannot_mint_a_signed_video_link(client):
+    from routes import video as video_routes
+
+    _shared_setup_1(client)
+    video_id = _generate_and_wait(client, {"prompt": "a"})["id"]
+    client.app.dependency_overrides[video_routes.request_admitted_without_credential] = lambda: True
+
+    response = client.get(f"/api/inference/video/gallery/{video_id}/signed-url")
+
+    assert response.status_code == 403
+    assert "API key" in response.json()["detail"]
+
+
+def test_signed_video_link_rejects_tampering_and_other_ids(client):
+    _shared_setup_1(client)
+    first = _generate_and_wait(client, {"prompt": "a"})["id"]
+    second = _generate_and_wait(client, {"prompt": "b"})["id"]
+    token = (
+        client.get(f"/api/inference/video/gallery/{first}/signed-url")
+        .json()["url"]
+        .split("token=", 1)[1]
+    )
+
+    assert (
+        client.get(f"/api/inference/video/gallery/{second}/file-signed?token={token}").status_code
+        == 401
+    )
+    assert (
+        client.get(
+            f"/api/inference/video/gallery/{first}/file-signed?token={token[:-1]}x"
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(f"/api/inference/video/gallery/{first}/file-signed?token=nonsense").status_code
+        == 401
+    )
+    from routes import video as video_routes
+
+    expired = video_routes._sign_video_id(first)
+    payload, _sig = expired.rsplit(".", 1)
+    stale_id, _exp = payload.rsplit(".", 1)
+    import hashlib
+    import hmac
+
+    stale_payload = f"{stale_id}.1"
+    stale_sig = hmac.new(
+        video_routes._VIDEO_LINK_SECRET, stale_payload.encode(), hashlib.sha256
+    ).hexdigest()
+    assert (
+        client.get(
+            f"/api/inference/video/gallery/{first}/file-signed?token={stale_payload}.{stale_sig}"
+        ).status_code
+        == 401
+    )
+
+
+def test_signed_url_mint_is_bearer_gated_and_404s_for_an_unknown_clip(client):
+    assert client.get("/api/inference/video/gallery/does-not-exist/signed-url").status_code == 404
+
+
+def test_video_download_plan_forwards_the_denoiser_policy(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    seen: dict = {}
+
+    def _plan(model_path, **kwargs):
+        seen["model_path"] = model_path
+        seen.update(kwargs)
+        return {"entries": [], "total_bytes": 0}
+
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+    # Stub the precision gate; this test is about forwarding into download_plan.
+    monkeypatch.setattr(
+        video_module, "assert_video_precision_available", lambda fam, **kw: None, raising = False
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "transformer_quant": "int8",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert seen["transformer_quant"] == "int8"
+
+
+def test_video_download_plan_does_not_stage_the_hosted_fp8_dit_for_an_offloaded_load(
+    client, monkeypatch
+):
+    import types
+
+    import core.inference.diffusion_device as devmod
+    from core.inference.diffusion import DiffusionBackend
+
+    class _Sibling:
+        def __init__(self, rfilename, size):
+            self.rfilename = rfilename
+            self.size = size
+
+    repos = {
+        "Lightricks/LTX-2.3": [
+            _Sibling("ltx-2.3-22b-distilled.safetensors", 46_000_000_000),
+            _Sibling("ltx-2.3-22b-dev.safetensors", 46_000_000_000),
+        ],
+        "unsloth/LTX-2.3-FP8": [_Sibling("LTX-2.3-FP8.pt", 19_057_628_489)],
+        "unsloth/LTX-2.3-GGUF": [
+            _Sibling("vae/ltx-2.3-22b-distilled_video_vae.safetensors", 2_400_000_000),
+            _Sibling("vae/ltx-2.3-22b-distilled_audio_vae.safetensors", 200_000_000),
+            _Sibling(
+                "text_encoders/ltx-2.3-22b-distilled_embeddings_connectors.safetensors", 900_000_000
+            ),
+        ],
+        "Lightricks/LTX-2": [
+            _Sibling("model_index.json", 1000),
+            _Sibling("tokenizer/tokenizer.json", 5_000_000),
+            _Sibling("text_encoder/model-00001-of-00005.safetensors", 10_000_000_000),
+            _Sibling("transformer/diffusion_pytorch_model.safetensors", 37_800_000_000),
+        ],
+    }
+
+    class _Api:
+        def model_info(
+            self,
+            repo_id,
+            files_metadata = False,
+            token = None,
+        ):
+            return types.SimpleNamespace(siblings = repos[repo_id])
+
+    monkeypatch.setattr("huggingface_hub.HfApi", lambda *a, **k: _Api())
+    monkeypatch.setattr(
+        DiffusionBackend,
+        "_hub_file_is_cached",
+        staticmethod(lambda repo_id, filename, revision = None, expected_size = None, **kwargs: False),
+    )
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_ALLOW_PRECISION_FALLBACK", "1")
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda **kw: types.SimpleNamespace(device = "cuda")
+    )
+    monkeypatch.setattr(video_module, "dense_transformer_supported", lambda target: True)
+    monkeypatch.setattr(
+        video_module,
+        "select_transformer_quant_scheme",
+        lambda target, mode, family = None, **_k: "fp8",
+    )
+    monkeypatch.setattr(
+        video_module, "assert_video_precision_available", lambda fam, **kw: None, raising = False
+    )
+    monkeypatch.setattr(video_routes, "_training_is_active", lambda: False)
+
+    def _staged(memory_mode):
+        body = {
+            "model_path": "Lightricks/LTX-2.3",
+            "gguf_filename": "ltx-2.3-22b-distilled.safetensors",
+            "model_kind": "single_file",
+            "family_override": "ltx-2",
+            "transformer_quant": "fp8",
+        }
+        if memory_mode is not None:
+            body["memory_mode"] = memory_mode
+        resp = client.post("/api/inference/video/download-plan", json = body)
+        assert resp.status_code == 200, resp.text
+        return {e["repo_id"] for e in resp.json()["entries"]}
+
+    assert "unsloth/LTX-2.3-FP8" in _staged(None)
+    assert "unsloth/LTX-2.3-FP8" in _staged("fast")
+    for memory_mode in ("balanced", "low_vram"):
+        assert "unsloth/LTX-2.3-FP8" not in _staged(memory_mode), memory_mode
+
+
+def test_video_download_plan_does_not_probe_fp8_while_training(client, monkeypatch):
+    import types
+
+    import core.inference.diffusion_device as devmod
+    import core.inference.diffusion_transformer_quant as tq
+    from core.inference.diffusion import DiffusionBackend
+
+    class _Sibling:
+        def __init__(self, rfilename, size):
+            self.rfilename = rfilename
+            self.size = size
+
+    repos = {
+        "Lightricks/LTX-2.3": [_Sibling("ltx-2.3-22b-distilled.safetensors", 46_000_000_000)],
+        "unsloth/LTX-2.3-FP8": [_Sibling("LTX-2.3-FP8.pt", 19_057_628_489)],
+        "unsloth/LTX-2.3-GGUF": [],
+        "Lightricks/LTX-2": [_Sibling("model_index.json", 1000)],
+    }
+
+    class _Api:
+        def model_info(
+            self,
+            repo_id,
+            files_metadata = False,
+            token = None,
+        ):
+            return types.SimpleNamespace(siblings = repos[repo_id])
+
+    monkeypatch.setattr("huggingface_hub.HfApi", lambda *a, **k: _Api())
+    monkeypatch.setattr(
+        DiffusionBackend,
+        "_hub_file_is_cached",
+        staticmethod(lambda repo_id, filename, revision = None, expected_size = None, **kwargs: False),
+    )
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda **kw: types.SimpleNamespace(device = "cuda")
+    )
+    monkeypatch.setattr(video_module, "dense_transformer_supported", lambda target: True)
+    monkeypatch.setattr(tq, "dense_transformer_supported", lambda target: True)
+    monkeypatch.setattr(tq, "_smoke_cache_device_key", lambda device: "cuda:0")
+    monkeypatch.setattr(
+        video_module,
+        "select_transformer_quant_scheme",
+        lambda *a, **k: pytest.fail("the plan probed the fp8 scheme while training"),
+    )
+    monkeypatch.setattr(
+        video_module,
+        "assert_video_precision_available",
+        lambda *a, **k: pytest.fail("the precision gate ran while training"),
+        raising = False,
+    )
+    monkeypatch.setattr(video_routes, "_training_is_active", lambda: True)
+    monkeypatch.setattr(tq, "_SMOKE_CACHE", {})
+
+    def _staged():
+        resp = client.post(
+            "/api/inference/video/download-plan",
+            json = {
+                "model_path": "Lightricks/LTX-2.3",
+                "gguf_filename": "ltx-2.3-22b-distilled.safetensors",
+                "model_kind": "single_file",
+                "family_override": "ltx-2",
+                "transformer_quant": "fp8",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        return {e["repo_id"] for e in resp.json()["entries"]}
+
+    assert "unsloth/LTX-2.3-FP8" in _staged()
+    tq._SMOKE_CACHE[("fp8", "cuda:0")] = False
+    assert "unsloth/LTX-2.3-FP8" not in _staged()
+
+
+def test_video_download_plan_forwards_the_h3_partition(client, monkeypatch):
+    backend = video_module.get_video_backend()
+    seen: dict = {}
+
+    def _plan(model_path, **kwargs):
+        seen["model_path"] = model_path
+        seen.update(kwargs)
+        return {"entries": [], "total_bytes": 0}
+
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+    monkeypatch.setattr(
+        video_module, "assert_video_precision_available", lambda fam, **kw: None, raising = False
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/MiniMax-H3",
+            "model_kind": "pipeline",
+            "family_override": "minimax-h3",
+            "h3_task": "ref2va",
+        },
+    )
+
+    assert resp.status_code == 200, resp.json()
+    assert seen["h3_task"] == "ref2va"
+
+
+def test_video_download_plan_judges_a_quantized_reference_pick_per_partition(client, monkeypatch):
+    # Stub the host precision gate so the partition refusal is tested on CPU CI too.
+    monkeypatch.setattr(
+        video_module, "assert_video_precision_available", lambda fam, **kw: None, raising = False
+    )
+    backend = _shared_setup_2(monkeypatch)
+    seen: dict = {}
+
+    def _plan(model_path, **kwargs):
+        seen.update(kwargs)
+        return {"entries": [], "total_bytes": 0}
+
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+
+    def _ask(scheme):
+        return client.post(
+            "/api/inference/video/download-plan",
+            json = {
+                "model_path": "MiniMaxAI/MiniMax-H3",
+                "family_override": "minimax-h3",
+                "model_kind": "pipeline",
+                "transformer_quant": scheme,
+                "h3_task": "ref2va",
+            },
+        )
+
+    served = _ask("int8")
+    assert served.status_code == 200, served.json()
+    assert seen["h3_task"] == "ref2va"
+    assert seen["transformer_quant"] == "int8"
+
+    seen.clear()
+    refused = _ask("nvfp4")
+    assert refused.status_code == 400
+    detail = refused.json()["detail"]
+    assert "ref2va" in detail
+    assert "int8" in detail and "fp8" in detail
+    assert not seen, "download_plan must not be reached for a refused pick"
+
+
+def test_video_download_plan_refuses_an_unsupported_combination_before_staging(client, monkeypatch):
+    backend = _shared_setup_2(monkeypatch)
+
+    def _plan(model_path, **kwargs):  # pragma: no cover - reaching this IS the regression
+        raise AssertionError("download_plan must not be reached for a refused pick")
+
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "MiniMaxAI/MiniMax-H3",
+            # Only a ComfyUI-quantized denoiser loads as an H3 single file; the conditioner never does.
+            "gguf_filename": "qwen3vl_32b_minimax_h3_bf16.safetensors",
+            "model_kind": "single_file",
+        },
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "MiniMaxAI/MiniMax-H3" in detail
+    assert "unsloth/MiniMax-H3-GGUF" in detail
+
+
+def test_video_download_plan_refuses_an_unavailable_transformer_quant(client, monkeypatch):
+    backend = _shared_setup_2(monkeypatch)
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be reached")),
+        raising = False,
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "MiniMaxAI/MiniMax-H3",
+            "model_kind": "pipeline",
+            "transformer_quant": "nvfp4",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "nvfp4" in resp.json()["detail"]
+
+
+def test_video_download_plan_refuses_a_quantized_reference_task(client, monkeypatch):
+    backend = _shared_setup_2(monkeypatch)
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be reached")),
+        raising = False,
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "MiniMaxAI/MiniMax-H3",
+            "model_kind": "pipeline",
+            "transformer_quant": "nvfp4",
+            "h3_task": "ref2va",
+        },
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "nvfp4" in detail
+    assert "int8" in detail and "fp8" in detail
+
+
+def test_video_download_plan_hands_the_h3_task_to_validation(client, monkeypatch):
+    # Validation is stubbed: its transformer_class probe imports diffusers.
+    backend = video_module.get_video_backend()
+    fam = video_module._detect_load_family("MiniMaxAI/MiniMax-H3", None, None)
+    assert fam is not None
+    seen: dict = {}
+
+    def _validate(model_path, **kwargs):
+        seen["validate"] = kwargs
+        return fam
+
+    def _plan(model_path, **kwargs):
+        seen["plan"] = kwargs
+        return {"files": [], "total_bytes": 0, "cached_bytes": 0}
+
+    monkeypatch.setattr(backend, "validate_load_request", _validate, raising = False)
+    monkeypatch.setattr(backend, "download_plan", _plan, raising = False)
+    monkeypatch.setattr(
+        video_module, "assert_video_precision_available", lambda *a, **k: None, raising = False
+    )
+
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "MiniMaxAI/MiniMax-H3",
+            "model_kind": "pipeline",
+            "transformer_quant": "fp8",
+            "h3_task": "fl2va",
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert seen["validate"]["h3_task"] == "fl2va"
+    assert seen["validate"]["transformer_quant"] == "fp8"
+    assert seen["plan"]["h3_task"] == "fl2va"
+
+
+def test_the_training_guard_runs_before_the_precision_probe(client, monkeypatch):
+    # The precision check opens a CUDA context, so the training guard must run first.
+    import routes.video as video_routes
+
+    def _refuse_training() -> None:
+        raise HTTPException(status_code = 409, detail = "Training is running.")
+
+    monkeypatch.setattr(video_routes, "_guard_video_load_against_training", _refuse_training)
+    monkeypatch.setattr(
+        video_module,
+        "assert_video_precision_available",
+        lambda fam, **kw: pytest.fail("the precision probe ran while training was active"),
+    )
+    resp = _shared_setup_5(client)
+    assert resp.status_code == 409 and resp.json()["detail"] == "Training is running."
+
+
+@pytest.mark.parametrize("memory", ["balanced", "low_vram"])
+def test_the_video_precision_gate_sees_the_memory_request(monkeypatch, memory):
+    """balanced and low_vram settle the offload policy before anything is measured, and an
+    offloaded DiT skips the torchao build -- so load_pipeline's strict refusal arrived after
+    acquire_for and the teardown had already evicted the resident model."""
+    import types
+
+    monkeypatch.setattr(video_module, "precision_fallback_allowed", lambda: False)
+    monkeypatch.setattr(
+        video_module,
+        "resolve_diffusion_device_target",
+        lambda: types.SimpleNamespace(device = "cuda", dtype = "bfloat16"),
+    )
+    monkeypatch.setattr(video_module, "dense_transformer_supported", lambda target: True)
+    with pytest.raises(RuntimeError) as excinfo:
+        video_module.assert_video_precision_available(
+            types.SimpleNamespace(name = "wan2.2"),
+            model_kind = "pipeline",
+            transformer_quant = "fp8",
+            memory_mode = memory,
+        )
+    assert "transformer_quant='fp8' could not be used" in str(excinfo.value)
+    assert "offload" in str(excinfo.value)
+
+
+def test_the_video_gate_leaves_a_measured_memory_mode_alone(monkeypatch):
+    """fast and auto are decided from the measured footprint, so this gate cannot judge them."""
+    import types
+
+    monkeypatch.setattr(video_module, "precision_fallback_allowed", lambda: False)
+    monkeypatch.setattr(
+        video_module,
+        "resolve_diffusion_device_target",
+        lambda: types.SimpleNamespace(device = "cuda", dtype = "bfloat16"),
+    )
+    monkeypatch.setattr(video_module, "dense_transformer_supported", lambda target: True)
+    monkeypatch.setattr(video_module, "select_transformer_quant_scheme", lambda *a, **k: "fp8")
+    video_module.assert_video_precision_available(
+        types.SimpleNamespace(name = "wan2.2"),
+        model_kind = "pipeline",
+        transformer_quant = "fp8",
+        memory_mode = "fast",
+    )
+
+
+def test_video_download_plan_sizes_its_file_set_for_the_selected_card(client, monkeypatch):
+    import types
+
+    import core.inference.diffusion_device as devmod
+
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_ALLOW_PRECISION_FALLBACK", "1")
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda: types.SimpleNamespace(device = "cuda")
+    )
+    ranked: list = []
+    monkeypatch.setattr(
+        devmod,
+        "resolve_selected_cuda_ordinal",
+        lambda ids: (ranked.append(list(ids)), 1)[1],
+    )
+    backend = video_module.get_video_backend()
+    seen: dict = {}
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda model_path, **kwargs: (seen.update(kwargs), {"entries": [], "total_bytes": 0})[1],
+        raising = False,
+    )
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "gpu_ids": [0, 1],
+        },
+    )
+    assert resp.status_code == 200
+    assert seen["gpu_ordinal"] == 1
+    assert ranked == [[0, 1]]
+
+
+def test_video_download_plan_refuses_a_gpu_index_this_host_does_not_have(client, monkeypatch):
+    devmod = _shared_setup_3(monkeypatch)
+
+    def _refuse(_ids):
+        raise ValueError("Requested GPU [7] but none of them are visible to this process")
+
+    monkeypatch.setattr(devmod, "resolve_selected_cuda_ordinal", _refuse)
+    backend = video_module.get_video_backend()
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda *a, **k: pytest.fail("a refused GPU pick must not reach the planner"),
+        raising = False,
+    )
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "gpu_ids": [7],
+        },
+    )
+    assert resp.status_code == 400
+    assert "visible to this process" in resp.json()["detail"]
+
+
+def test_video_download_plan_still_refuses_a_bad_gpu_while_training_holds_the_cards(
+    client, monkeypatch
+):
+    import types
+
+    import core.inference.diffusion_device as devmod
+    from routes import video as routes_video
+
+    monkeypatch.setattr(
+        devmod, "resolve_diffusion_device_target", lambda: types.SimpleNamespace(device = "cuda")
+    )
+    monkeypatch.setattr(routes_video, "_training_is_active", lambda: True)
+    seen: dict = {}
+
+    def _resolve(ids, *, allow_ranking = True):
+        seen["ids"], seen["allow_ranking"] = list(ids), allow_ranking
+        raise ValueError("Requested GPU [7] but none of them are visible to this process")
+
+    monkeypatch.setattr(devmod, "resolve_selected_cuda_ordinal", _resolve)
+    backend = video_module.get_video_backend()
+    monkeypatch.setattr(
+        backend,
+        "download_plan",
+        lambda *a, **k: pytest.fail("a refused GPU pick must not reach the planner"),
+        raising = False,
+    )
+    resp = client.post(
+        "/api/inference/video/download-plan",
+        json = {
+            "model_path": "unsloth/LTX-2.3-GGUF",
+            "gguf_filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "model_kind": "gguf",
+            "gpu_ids": [7],
+        },
+    )
+    assert resp.status_code == 400
+    assert seen == {"ids": [7], "allow_ranking": False}
+
+
+@pytest.fixture
+def token_client(client, monkeypatch):
+    """The client, with begin_load and unload moving the load epoch as the real backend's do."""
+    from core.inference import media_load_ids
+
+    media_load_ids._reset_for_tests()
+    backend = video_module.get_video_backend()
+    begin, unload = backend.begin_load, backend.unload
+    backend.unloads = 0
+
+    def begin_load(model_path, **kwargs):
+        backend._load_token += 1
+        return begin(model_path, **kwargs)
+
+    def counted_unload(**kwargs):
+        only_if = kwargs.get("only_if")
+        if only_if is not None and not only_if():
+            return None
+        backend.unloads += 1
+        backend._load_token += 1
+        return unload()
+
+    monkeypatch.setattr(backend, "begin_load", begin_load)
+    monkeypatch.setattr(backend, "unload", counted_unload)
+    yield client, backend
+    media_load_ids._reset_for_tests()
+
+
+def _load_with(client, token):
+    body = {"model_path": "unsloth/LTX-2.3-GGUF", "gguf_filename": "q.gguf"}
+    return client.post(
+        "/api/inference/video/load", json = {**body, **({"load_token": token} if token else {})}
+    )
+
+
+def test_an_unload_naming_the_load_token_unloads_that_load(token_client):
+    client, backend = token_client
+    assert _load_with(client, "t1").status_code == 200
+    resp = client.post("/api/inference/video/unload", json = {"expected_load_id": "t1"})
+    assert resp.status_code == 200
+    assert (resp.json()["outcome"], resp.json()["unloaded"], resp.json()["loaded"]) == (
+        "unloaded",
+        True,
+        False,
+    )
+    assert backend.unloads == 1
+
+
+@pytest.mark.parametrize("newer", [None, "t2"])
+def test_an_unload_naming_a_stale_token_leaves_the_newer_load_alone(token_client, newer):
+    client, backend = token_client
+    assert _load_with(client, "t1").status_code == 200
+    assert _load_with(client, newer).status_code == 200
+    resp = client.post("/api/inference/video/unload", json = {"expected_load_id": "t1"})
+    assert resp.status_code == 200
+    assert resp.json() == {"unloaded": False, "outcome": "superseded"}
+    assert backend.unloads == 0 and backend.loaded
+
+
+def test_an_unload_naming_a_load_not_started_yet_refuses_that_load(token_client):
+    client, backend = token_client
+    resp = client.post("/api/inference/video/unload", json = {"expected_load_id": "t1"})
+    assert resp.json() == {"unloaded": False, "outcome": "cancelled"}
+    refused = _load_with(client, "t1")
+    assert refused.status_code == 409
+    assert "cancelled" in refused.json()["detail"]
+    assert backend.unloads == 0 and not backend.loaded
+    assert _load_with(client, None).status_code == 200 and backend.loaded
+
+
+def test_an_unload_without_a_body_unloads_whatever_is_loaded(token_client):
+    client, backend = token_client
+    assert _load_with(client, "t1").status_code == 200
+    resp = client.post("/api/inference/video/unload")
+    assert resp.status_code == 200 and "outcome" not in resp.json()
+    assert backend.unloads == 1 and not backend.loaded
+
+
+def test_status_names_the_load_an_unload_can_name(token_client):
+    client, backend = token_client
+    assert client.get("/api/inference/video/status").json()["load_id"] is None
+    assert _load_with(client, None).status_code == 200
+    made = client.get("/api/inference/video/status").json()["load_id"]
+    assert made.startswith("studio-")
+    resp = client.post("/api/inference/video/unload", json = {"expected_load_id": made})
+    assert resp.json()["outcome"] == "unloaded" and backend.unloads == 1
+
+
+def test_status_and_load_id_name_the_same_load(token_client):
+    # A load admitted while status reads the backend makes it read again, so the id in the answer
+    # never names a load the answer does not show.
+    from core.inference import media_load_ids
+    from hub.services.models import account_access
+
+    client, backend = token_client
+    assert _load_with(client, "t1").status_code == 200
+    read = backend.status
+    admitted = []
+
+    def newer_load():
+        with account_access.media_load_lock:
+            prior = media_load_ids.admitting("video", backend, "t2")
+            backend._load_token += 1
+            backend.loading = ("unsloth/LTX-2.3-GGUF",)
+            media_load_ids.admitted("video", backend, "t2", prior)
+            admitted.append(True)
+
+    reads = []
+
+    def racing_status():
+        # The first read is slow and a load is admitted meanwhile, which it does not hold up.
+        reads.append(True)
+        if len(reads) == 1:
+            worker = threading.Thread(target = newer_load)
+            worker.start()
+            worker.join(5)
+            assert not worker.is_alive()
+        return read()
+
+    backend.status = racing_status
+    try:
+        answer = client.get("/api/inference/video/status").json()
+    finally:
+        backend.status = read
+    deadline = time.monotonic() + 5
+    while not admitted and time.monotonic() < deadline:
+        time.sleep(0.01)
+    # The read that straddled the admission was read again, so the id is that of the state it shows.
+    assert answer["load_id"] == "t2" and len(reads) == 2
+    assert admitted == [True]
+    backend.loading = ()
+
+
+def test_the_unload_answers_are_declared_in_the_schema(token_client):
+    client, backend = token_client
+    schema = client.app.openapi()
+    answer = schema["paths"]["/api/inference/video/unload"]["post"]["responses"]["200"]
+    refs = json.dumps(answer)
+    for model in ("VideoLoadUnloadedResponse", "MediaUnloadOutcome", "VideoStatusResponse"):
+        assert f"#/components/schemas/{model}" in refs
+    outcome = schema["components"]["schemas"]["MediaUnloadOutcome"]
+    assert set(outcome["required"]) == {"unloaded", "outcome"}
+    assert _load_with(client, "t1").status_code == 200
+    plain = client.post("/api/inference/video/unload").json()
+    assert set(plain) == set(video_routes.VideoStatusResponse.model_fields)
+    assert _load_with(client, "t2").status_code == 200
+    named = client.post("/api/inference/video/unload", json = {"expected_load_id": "t2"}).json()
+    assert set(named) == set(plain) | {"unloaded", "outcome"}
+    assert (named["unloaded"], named["outcome"]) == (True, "unloaded")

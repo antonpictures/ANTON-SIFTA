@@ -1,0 +1,686 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+from __future__ import annotations
+
+import sys
+import types as _types
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+_loggers_stub = _types.ModuleType("loggers")
+_loggers_stub.get_logger = lambda name: __import__("logging").getLogger(name)
+sys.modules.setdefault("loggers", _loggers_stub)
+
+_structlog_stub = _types.ModuleType("structlog")
+_structlog_stub.get_logger = lambda *a, **k: __import__("logging").getLogger("stub")
+sys.modules.setdefault("structlog", _structlog_stub)
+
+import httpx  # noqa: F401
+
+from core.inference.llama_cpp import (
+    GgufLoadIntent,
+    LlamaCppBackend,
+    _emitted_n_batch,
+    _extra_args_n_ubatch,
+)
+from core.inference.llama_server_args import BATCH_MAX, BATCH_MIN, strip_shadowing_flags
+from models.inference import LoadRequest, ValidateModelRequest
+from utils.openai_auto_switch_settings import (
+    model_override_load_kwargs,
+    normalize_model_override,
+)
+
+
+@pytest.mark.parametrize("field", ["n_batch", "n_ubatch"])
+def test_load_request_bounds(field):
+    assert getattr(LoadRequest(model_path = "owner/repo"), field) is None
+    assert getattr(LoadRequest(model_path = "owner/repo", **{field: BATCH_MAX}), field) == BATCH_MAX
+    for bad in (BATCH_MIN - 1, BATCH_MAX + 1):
+        with pytest.raises(ValueError):
+            LoadRequest(model_path = "owner/repo", **{field: bad})
+    assert getattr(ValidateModelRequest(model_path = "owner/repo", **{field: 256}), field) == 256
+
+
+@pytest.mark.parametrize("field", ["n_batch", "n_ubatch"])
+@pytest.mark.parametrize("model", [LoadRequest, ValidateModelRequest])
+def test_batch_fields_reject_json_booleans(model, field):
+    # bool is an int subclass; reject it so `true` is not --batch-size 1.
+    with pytest.raises(ValueError):
+        model(model_path = "owner/repo", **{field: True})
+    assert getattr(model(model_path = "owner/repo", **{field: "4096"}), field) == 4096
+    assert getattr(model(model_path = "owner/repo", **{field: 4096}), field) == 4096
+
+
+def test_effective_ubatch_prefers_first_class_over_env():
+    env = {"LLAMA_ARG_BATCH": "128", "LLAMA_ARG_UBATCH": "128"}
+    assert _extra_args_n_ubatch(None, env = env, n_batch = 4096, n_ubatch = 1024) == 1024
+
+
+def test_effective_ubatch_lets_extras_override_first_class():
+    assert _extra_args_n_ubatch(["-ub", "256"], env = {}, n_ubatch = 1024) == 256
+
+
+def test_effective_ubatch_caps_at_batch_and_ctx():
+    assert _extra_args_n_ubatch(None, env = {}, n_batch = 512, n_ubatch = 2048) == 512
+    assert _extra_args_n_ubatch(None, env = {}, n_ubatch = 4096, n_ctx = 1024) == 1024
+    assert _extra_args_n_ubatch(None, env = {}) is None
+
+
+def _loaded_backend() -> LlamaCppBackend:
+    backend = LlamaCppBackend()
+    backend._process = object()
+    backend._healthy = True
+    backend._model_identifier = "owner/repo"
+    backend._hf_variant = "Q4_K_M"
+    backend._requested_n_ctx = 8192
+    backend._requested_spec_mode = "auto"
+    return backend
+
+
+def _intent(**kwargs) -> GgufLoadIntent:
+    return GgufLoadIntent(
+        model_identifier = "owner/repo",
+        hf_variant = "Q4_K_M",
+        n_ctx = 8192,
+        speculative_type = "auto",
+        **kwargs,
+    )
+
+
+def test_dedupe_matches_same_batch_sizes():
+    backend = _loaded_backend()
+    backend._requested_n_batch = 4096
+    matches = backend._runtime_matches_intent(_intent(n_batch = 4096), None)
+    assert matches is True
+
+
+def test_dedupe_reloads_on_batch_change():
+    backend = _loaded_backend()
+    assert backend._runtime_matches_intent(_intent(n_batch = 4096), None) is False
+    backend._requested_n_ubatch = 512
+    assert backend._runtime_matches_intent(_intent(n_ubatch = 1024), None) is False
+
+
+def test_dedupe_ignores_batch_for_diffusion():
+    backend = _loaded_backend()
+    backend._is_diffusion = True
+    backend._diffusion_requested_ngl = None
+    backend._gpu_layers = -1
+    assert backend._runtime_matches_intent(_intent(n_batch = 4096), None) is True
+
+
+def test_strip_shadowing_flags_batch_toggles():
+    args = ["-b", "4096", "--ubatch-size=256", "--top-k", "20"]
+    assert strip_shadowing_flags(args, strip_batch = True) == ["--ubatch-size=256", "--top-k", "20"]
+    assert strip_shadowing_flags(args, strip_ubatch = True) == ["-b", "4096", "--top-k", "20"]
+    assert strip_shadowing_flags(args) == args
+
+
+def test_override_store_round_trip():
+    entry = normalize_model_override({"n_batch": 4096, "n_ubatch": 1024})
+    assert entry == {"n_batch": 4096, "n_ubatch": 1024}
+    assert normalize_model_override({"n_batch": 0, "n_ubatch": True}) == {}
+    kwargs = model_override_load_kwargs(entry, is_gguf = True)
+    assert kwargs["n_batch"] == 4096 and kwargs["n_ubatch"] == 1024
+    assert "n_batch" not in model_override_load_kwargs(entry, is_gguf = False)
+
+
+def test_fast_path_intent_strips_inherited_batch_flags_when_field_set():
+    from routes.inference import _active_gguf_intent
+
+    backend = _loaded_backend()
+    backend._extra_args = ["-b", "512", "--top-k", "20"]
+    backend._extra_args_source = ("owner/repo", "Q4_K_M")
+
+    kwargs = dict(
+        model_identifier = "owner/repo",
+        chat_template_override = None,
+        n_parallel = 1,
+        native_grant_backed = False,
+    )
+    overriding = _active_gguf_intent(
+        LoadRequest(model_path = "owner/repo", n_batch = 4096), backend, **kwargs
+    )
+    assert overriding.extra_args == ("--top-k", "20")
+    assert overriding.extra_args_inherited is False
+
+    inheriting = _active_gguf_intent(LoadRequest(model_path = "owner/repo"), backend, **kwargs)
+    assert inheriting.extra_args == ("-b", "512", "--top-k", "20")
+    assert inheriting.extra_args_inherited is True
+
+
+def test_slow_path_intent_strips_inherited_batch_flags_when_field_set(monkeypatch):
+    # A bare repo id skips _active_gguf_intent, so the dedupe needs the same bookkeeping.
+    from types import SimpleNamespace
+
+    from routes import inference as route
+
+    backend = _loaded_backend()
+    backend._extra_args = ["-b", "512", "--top-k", "20"]
+    backend._requested_extra_args = ["-b", "512", "--top-k", "20"]
+    backend._extra_args_source = ("owner/repo", "Q4_K_M")
+    monkeypatch.setattr(route, "get_llama_cpp_backend", lambda: backend)
+
+    config = SimpleNamespace(
+        identifier = "owner/repo",
+        is_gguf = True,
+        gguf_hf_repo = "owner/repo",
+        gguf_variant = "Q4_K_M",
+        gguf_file = None,
+        gguf_mmproj_file = None,
+        gguf_mtp_file = None,
+        is_vision = False,
+    )
+    request = LoadRequest(model_path = "owner/repo", n_batch = 4096, max_seq_length = 8192)
+    resolved = route._resolve_inherited_extra_args(request, config, config.identifier, None)
+    assert resolved == ["--top-k", "20"]
+
+    intent = route._resolve_gguf_load_intent(
+        config,
+        request,
+        native_grant_backed = False,
+        chat_template_override = None,
+        extra_args = resolved,
+        placement = SimpleNamespace(
+            resolved_gpu_ids = None, gpu_ids_are_vulkan_ordinals = None, requested_gpu_ids = None
+        ),
+        n_parallel = 1,
+    )
+    assert intent.extra_args_inherited is False
+    # Match the resident batch so the stripped -b is the only reason to reload.
+    backend._requested_n_batch = 4096
+    assert backend._runtime_matches_intent(intent, ["--top-k", "20"]) is False
+    assert (
+        backend._runtime_matches_intent(
+            replace(intent, extra_args_inherited = True), ["--top-k", "20"]
+        )
+        is True
+    )
+
+    plain = LoadRequest(model_path = "owner/repo", max_seq_length = 8192)
+    plain_args = route._resolve_inherited_extra_args(plain, config, config.identifier, None)
+    plain_intent = route._resolve_gguf_load_intent(
+        config,
+        plain,
+        native_grant_backed = False,
+        chat_template_override = None,
+        extra_args = plain_args,
+        placement = SimpleNamespace(
+            resolved_gpu_ids = None, gpu_ids_are_vulkan_ordinals = None, requested_gpu_ids = None
+        ),
+        n_parallel = 1,
+    )
+    assert plain_args == ["-b", "512", "--top-k", "20"]
+    assert plain_intent.extra_args_inherited is True
+
+
+def test_remote_gguf_guard_counts_explicit_micro_batch():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    config = SimpleNamespace(
+        gguf_file = None,
+        gguf_mmproj_file = None,
+        gguf_mtp_file = None,
+        gguf_hf_repo = "owner/repo",
+        gguf_variant = "Q4_K_M",
+    )
+    remote_variant = SimpleNamespace(quant = "Q4_K_M", size_bytes = 1024**3)
+    with (
+        patch(
+            "utils.models.model_config.list_gguf_variants",
+            return_value = ([remote_variant], False),
+        ),
+        patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+    ):
+        base = route._estimate_gguf_required_gb(config, max_seq_length = 32768)
+        big = route._estimate_gguf_required_gb(
+            config, max_seq_length = 32768, n_batch = 65536, n_ubatch = 65536
+        )
+    assert base > 1.5
+    assert big > base + 2.0
+
+    with (
+        patch(
+            "utils.models.model_config.list_gguf_variants",
+            return_value = ([remote_variant], False),
+        ),
+        patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+    ):
+        auto_ctx = route._estimate_gguf_required_gb(
+            config, max_seq_length = 0, n_batch = 65536, n_ubatch = 65536
+        )
+        diffusion = route._estimate_gguf_required_gb(
+            config,
+            max_seq_length = 32768,
+            n_batch = 65536,
+            n_ubatch = 65536,
+            is_diffusion = True,
+        )
+    assert auto_ctx > base + 2.0
+    assert diffusion == pytest.approx(1.0)
+
+
+def _header_reader(**dims):
+    """Replace the reader itself: _estimate_gguf_kv_gb builds its own backend, so instance patches miss."""
+
+    def _reader(self, *args, **kwargs):
+        for key, value in dims.items():
+            setattr(self, f"_{key}", value)
+
+    return _reader
+
+
+_QWEN3_8B = dict(
+    vocab_size = 151936,
+    embedding_length = 4096,
+    n_layers = 36,
+    n_heads = 32,
+    n_kv_heads = 8,
+    head_dim = 128,
+    context_length = 262144,
+    architecture = "qwen3",
+)
+
+
+def test_guard_rebuilds_the_compute_buffer_when_the_header_lost_its_vocab():
+    # A truncated header keeps dims but drops vocab; the flat reserve overcharged.
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    novocab = dict(_QWEN3_8B, vocab_size = None)
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**_QWEN3_8B)):
+        complete = route._estimate_gguf_kv_gb("/x.gguf", 8192, n_parallel = 1)
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**novocab)):
+        rebuilt = route._estimate_gguf_kv_gb("/x.gguf", 8192, n_parallel = 1)
+        tensor = route._estimate_gguf_kv_gb(
+            "/x.gguf", 8192, n_parallel = 1, n_devices = 4, tensor_parallel = True
+        )
+    assert rebuilt == pytest.approx(complete, abs = 0.01)
+    assert tensor < complete + 4.0
+
+
+def test_guard_floors_a_header_with_no_dimensions_at_all():
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    blind = dict(_QWEN3_8B, vocab_size = None, embedding_length = None, kv_lora_rank = 512)
+    reserve_gb = LlamaCppBackend._TENSOR_PARALLEL_BUFFER_RESERVE_MIB / 1024
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**blind)):
+        one = route._estimate_gguf_kv_gb("/x.gguf", 8192, n_parallel = 1)
+        four = route._estimate_gguf_kv_gb(
+            "/x.gguf", 8192, n_parallel = 1, n_devices = 4, tensor_parallel = True
+        )
+    assert one > reserve_gb
+    assert four == pytest.approx(one, abs = 0.01)
+
+
+def test_batch_bounds_stay_standard_json_schema():
+    # An Annotated BeforeValidator would leak ge/le out of the int schema.
+    from models.inference import LoadRequest, ValidateModelRequest
+    for model in (LoadRequest, ValidateModelRequest):
+        props = model.model_json_schema()["properties"]
+        sibling = next(s for s in props["n_parallel"]["anyOf"] if s.get("type") == "integer")
+        for field in ("n_batch", "n_ubatch"):
+            schema = next(s for s in props[field]["anyOf"] if s.get("type") == "integer")
+            assert set(schema) == set(sibling), f"{model.__name__}.{field}: {schema}"
+            assert schema["minimum"] == BATCH_MIN
+            assert schema["maximum"] == BATCH_MAX
+
+
+@pytest.mark.parametrize(
+    "n_batch,n_parallel,expected",
+    [
+        (1, 1, 2),  # GGML_ASSERT(n_tokens_all <= cparams.n_batch); a slots-only
+        (1, 2, 2),  # floor would emit 1 here and abort
+        (2, 1, 2),
+        (1, 8, 8),  # GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max)
+        (4, 8, 8),
+        (7, 8, 8),
+        (8, 8, 8),
+        (32, 64, 64),
+        (64, 64, 64),
+        (64, 1, 64),
+        (4096, 8, 4096),
+    ],
+)
+def test_emitted_batch_clears_both_llama_server_floors(n_batch, n_parallel, expected):
+    """Measured against the bundled binary: b1/p1 and b1/p2 abort, b2/p1 and b2/p2 load,
+    b4/p8 aborts, b8/p8 loads, b32/p64 aborts, b64/p64 loads. So the floor is
+    max(slots, 2). The per-field bounds cannot express it, so the loader raises instead."""
+    assert _emitted_n_batch(n_batch, n_parallel) == expected
+    assert _emitted_n_batch(None, n_parallel) is None
+
+
+def test_budgets_use_the_raised_batch_not_the_requested_one():
+    """Budget the micro-batch after the loader raises batch size to max(slots, 2).
+    A batch of 1 with 64 slots and ubatch 64 must be priced at ubatch 64."""
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    assert _emitted_n_batch(1, 64) == 64
+    assert _extra_args_n_ubatch(None, env = {}, n_ctx = 32768, n_batch = 1, n_ubatch = 64) == 1
+    assert _extra_args_n_ubatch(None, env = {}, n_ctx = 32768, n_batch = 64, n_ubatch = 64) == 64
+
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**_QWEN3_8B)):
+        raised = route._estimate_gguf_kv_gb("/x.gguf", 32768, n_parallel = 64, n_batch = 1, n_ubatch = 64)
+        explicit = route._estimate_gguf_kv_gb(
+            "/x.gguf", 32768, n_parallel = 64, n_batch = 64, n_ubatch = 64
+        )
+        unraised = route._estimate_gguf_kv_gb(
+            "/x.gguf", 32768, n_parallel = 64, n_batch = 1, n_ubatch = 1
+        )
+    assert raised == pytest.approx(explicit, abs = 0.01)
+    probe = LlamaCppBackend()
+    _header_reader(**_QWEN3_8B)(probe, "/x.gguf")
+    grown = (
+        probe._estimate_compute_buffer_bytes(n_ubatch = 64, n_parallel = 64)
+        + probe._compute_buffer_ctx_bytes(32768, 64)
+        - probe._estimate_compute_buffer_bytes(n_ubatch = 1, n_parallel = 64)
+        - probe._compute_buffer_ctx_bytes(32768, 1)
+    ) / 1024**3
+    assert grown > 0.05
+    assert raised - unraised == pytest.approx(grown, abs = 0.001)
+
+    from types import SimpleNamespace
+
+    config = SimpleNamespace(
+        gguf_file = None,
+        gguf_mmproj_file = None,
+        gguf_mtp_file = None,
+        gguf_hf_repo = "owner/repo",
+        gguf_variant = "Q4_K_M",
+    )
+    remote_variant = SimpleNamespace(quant = "Q4_K_M", size_bytes = 1024**3)
+    with (
+        patch(
+            "utils.models.model_config.list_gguf_variants",
+            return_value = ([remote_variant], False),
+        ),
+        patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+    ):
+        remote_raised = route._estimate_gguf_required_gb(
+            config, max_seq_length = 262144, n_parallel = 64, n_batch = 1, n_ubatch = 65536
+        )
+        remote_explicit = route._estimate_gguf_required_gb(
+            config, max_seq_length = 262144, n_parallel = 64, n_batch = 64, n_ubatch = 65536
+        )
+        remote_unraised = route._estimate_gguf_required_gb(
+            config, max_seq_length = 262144, n_parallel = 64, n_batch = 1, n_ubatch = 1
+        )
+    assert remote_raised == pytest.approx(remote_explicit, abs = 0.01)
+    assert remote_raised > remote_unraised + 0.04
+
+    assert _emitted_n_batch(4096, 8) == 4096
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**_QWEN3_8B)):
+        above_floor = route._estimate_gguf_kv_gb(
+            "/x.gguf", 32768, n_parallel = 8, n_batch = 4096, n_ubatch = 512
+        )
+        defaults = route._estimate_gguf_kv_gb("/x.gguf", 32768, n_parallel = 8)
+        ubatch_only = route._estimate_gguf_kv_gb("/x.gguf", 32768, n_parallel = 8, n_ubatch = 512)
+    assert above_floor == pytest.approx(ubatch_only, abs = 0.01)
+    assert defaults == pytest.approx(ubatch_only, abs = 0.01)
+
+
+def test_remote_guard_drops_the_split_mask_when_pipelining_is_disabled():
+    # Remote must gate the 4x KQ-mask multiplier like the local rule.
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    config = SimpleNamespace(
+        gguf_file = None,
+        gguf_mmproj_file = None,
+        gguf_mtp_file = None,
+        gguf_hf_repo = "owner/repo",
+        gguf_variant = "Q4_K_M",
+    )
+    remote_variant = SimpleNamespace(quant = "Q4_K_M", size_bytes = 1024**3)
+
+    def _required(extra_args):
+        with (
+            patch(
+                "utils.models.model_config.list_gguf_variants",
+                return_value = ([remote_variant], False),
+            ),
+            patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+        ):
+            return route._estimate_gguf_required_gb(
+                config,
+                max_seq_length = 32768,
+                n_ubatch = 2048,
+                n_devices = 2,
+                llama_extra_args = extra_args,
+            )
+
+    split = _required(None)
+    for disabling in (["-ot", r"\.ffn_.*_exps\.=CPU"], ["-ncmoe", "8"], ["--no-kv-offload"]):
+        assert _required(disabling) < split, disabling
+
+
+def test_guard_device_count_follows_the_split_the_loader_would_pick():
+    from unittest.mock import patch
+
+    from routes.inference import _guard_device_count
+
+    pool = [(0, 8192, 8192), (1, 8192, 8192), (2, 8192, 8192)]
+    with patch.object(
+        LlamaCppBackend,
+        "_effective_gpu_count",
+        lambda ids = None: len(ids) if ids else 0,
+    ):
+        assert _guard_device_count(None, pool, tensor_parallel = True) == 3
+        assert _guard_device_count([1, 2], pool, tensor_parallel = True) == 2
+        assert _guard_device_count(None, [], tensor_parallel = True) == 1
+        assert _guard_device_count(None, pool) == 1
+        assert _guard_device_count([1, 2], pool) == 2
+
+
+def test_override_strips_shadowing_batch_flags():
+    kwargs = model_override_load_kwargs(
+        {"n_batch": 4096, "llama_extra_args": ["-b", "512", "--top-k", "20"]},
+        is_gguf = True,
+    )
+    assert kwargs["llama_extra_args"] == ["--top-k", "20"]
+    kwargs = model_override_load_kwargs(
+        {"llama_extra_args": ["-ub", "256"]},
+        is_gguf = True,
+    )
+    assert kwargs["llama_extra_args"] == ["-ub", "256"]
+
+
+def test_the_local_guard_charges_diffusion_nothing_for_the_batch_flags():
+    """Diffusion runners take no batch flags, so the local guard must not price a micro-batch."""
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    swa_header = dict(_QWEN3_8B, sliding_window = 1024, kv_key_length = 128, kv_value_length = 128)
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**swa_header)):
+        quiet = route._estimate_gguf_kv_gb("/x.gguf", 131072, n_parallel = 1, is_diffusion = True)
+        loud = route._estimate_gguf_kv_gb(
+            "/x.gguf",
+            131072,
+            n_parallel = 1,
+            n_batch = 8192,
+            n_ubatch = 8192,
+            is_diffusion = True,
+        )
+        chat_quiet = route._estimate_gguf_kv_gb("/x.gguf", 131072, n_parallel = 1)
+        chat_loud = route._estimate_gguf_kv_gb(
+            "/x.gguf", 131072, n_parallel = 1, n_batch = 8192, n_ubatch = 8192
+        )
+    assert loud == pytest.approx(quiet, abs = 0.001)
+    assert chat_loud > chat_quiet + 0.7
+
+
+def test_embedding_guard_prices_the_slots_that_will_launch():
+    """The loader clamps embedding slots to a smaller physical micro-batch.
+    The training coexistence guard must not 409 that reduced process by pricing
+    the original slot request."""
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    embedding = dict(_QWEN3_8B, pooling_type = 2)
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**embedding)):
+        clamped = route._estimate_gguf_kv_gb("/x.gguf", 32768, n_parallel = 4, n_batch = 4, n_ubatch = 2)
+        launched = route._estimate_gguf_kv_gb("/x.gguf", 32768, n_parallel = 2, n_batch = 4, n_ubatch = 2)
+    assert clamped == pytest.approx(launched, abs = 0.01)
+
+
+def test_embedding_guard_uses_identifier_when_pooling_is_missing():
+    """An embedding name must clamp the admission estimate even when the cached
+    filename and GGUF architecture are generic."""
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    def _generic_embedding_header(self, path):
+        _header_reader(**_QWEN3_8B)(self)
+        self._gguf_path = path
+
+    with patch.object(LlamaCppBackend, "_read_gguf_metadata", _generic_embedding_header):
+        clamped = route._estimate_gguf_kv_gb(
+            "/x.gguf",
+            32768,
+            n_parallel = 4,
+            n_batch = 4,
+            n_ubatch = 2,
+            model_identifier = "unsloth/Qwen3-Embedding-4B",
+        )
+        launched = route._estimate_gguf_kv_gb(
+            "/x.gguf",
+            32768,
+            n_parallel = 2,
+            n_batch = 4,
+            n_ubatch = 2,
+            model_identifier = "unsloth/Qwen3-Embedding-4B",
+        )
+    assert clamped == pytest.approx(launched, abs = 0.01)
+
+
+def test_the_recorded_micro_batch_is_derived_from_the_slots_that_launched():
+    """Micro-batch must come from the launched slot count, as fit reduction can cut slots after sizing."""
+    import ast
+    import inspect
+    import textwrap
+
+    src = textwrap.dedent(inspect.getsource(LlamaCppBackend.load_model))
+    tree = ast.parse(src)
+    calls = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_ubatch_for_slots"
+    ]
+    # sizing pass, embedding slot clamp, candidate split pricing, fit-time reduction, the
+    # MoE expert-spill raise, the post-launch record, the drafter probe's four
+    # (per-slot compute buffer, candidate footprint, one-slot trim, slot commit; #8872)
+    # the slot restore when GPU selection abandons that cut, and the plan repriced when a
+    # drafterless retry restores it
+    assert len(calls) == 12, f"expected twelve re-derivations, found {len(calls)}"
+    # the record must not reuse the sizing pass's value
+    compact = "".join(src.split())
+    assert "self._n_ubatch=max(0,int(self._DEFAULT_N_UBATCHif_launched_ubatchisNone" in compact
+    assert "_launched_ubatch=_ubatch_for_slots(n_parallel)" in compact
+    assert compact.index("_launched_ubatch=_ubatch_for_slots") > compact.index(
+        "gpu_indices,use_fit,n_parallel=_gi_slots,False,_slots"
+    )
+
+
+def test_the_guard_prices_the_output_rows_of_the_build_it_launches():
+    """An older llama.cpp (before ggml-org/llama.cpp#23861) reserves an output row for
+    every micro-batch token; the guard asks the binary rather than assuming the cap."""
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    def _gb(older):
+        with (
+            patch.object(LlamaCppBackend, "_read_gguf_metadata", _header_reader(**_QWEN3_8B)),
+            patch.object(LlamaCppBackend, "reserves_micro_batch_outputs", lambda *a, **k: older),
+        ):
+            return route._estimate_gguf_kv_gb("/x.gguf", 8192, n_parallel = 1, n_ubatch = 2048)
+
+    rows = (2048 - 1) * 151936 * 4 * LlamaCppBackend._COMPUTE_BUFFER_SAFETY / 1024**3
+    assert _gb(True) - _gb(False) == pytest.approx(rows, abs = 0.001)
+
+
+def test_the_remote_guard_charges_the_flat_output_buffer():
+    """Unknown headers still need an activation reserve beyond the KQ mask.
+    Activations scale with ubatch; extra slots add output rows."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from routes import inference as route
+
+    config = SimpleNamespace(
+        gguf_file = None,
+        gguf_mmproj_file = None,
+        gguf_mtp_file = None,
+        gguf_hf_repo = "owner/repo",
+        gguf_variant = "Q4_K_M",
+    )
+    remote_variant = SimpleNamespace(quant = "Q4_K_M", size_bytes = 1024**3)
+    with (
+        patch(
+            "utils.models.model_config.list_gguf_variants",
+            return_value = ([remote_variant], False),
+        ),
+        patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+    ):
+
+        def _gb(**kwargs):
+            return route._estimate_gguf_required_gb(config, max_seq_length = 32768, **kwargs)
+
+        blank_1 = _gb(n_parallel = 1)
+        blank_4 = _gb(n_parallel = 4)
+        big_1 = _gb(n_parallel = 1, n_batch = 32768, n_ubatch = 32768)
+        big_2 = _gb(n_parallel = 2, n_batch = 32768, n_ubatch = 32768)
+        typical_4 = _gb(n_parallel = 4, n_batch = 2048, n_ubatch = 512)
+
+    assert blank_1 > 1.5
+    assert blank_1 < blank_4 < blank_1 + 0.5
+    assert big_1 > blank_1 + 30.0
+    assert big_1 < big_2 < big_1 + 1.0
+    assert typical_4 < 4.0
+
+    # Scale per device only in tensor mode; the layer path adds the buffer once.
+    with (
+        patch(
+            "utils.models.model_config.list_gguf_variants",
+            return_value = ([remote_variant], False),
+        ),
+        patch.object(route, "_remote_gguf_companion_bytes", return_value = 0),
+    ):
+
+        def _split(tensor, devices):
+            return route._estimate_gguf_required_gb(
+                config,
+                max_seq_length = 32768,
+                n_parallel = 2,
+                n_batch = 32768,
+                n_ubatch = 32768,
+                n_devices = devices,
+                tensor_parallel = tensor,
+            )
+
+        layer_1, layer_2 = _split(False, 1), _split(False, 2)
+        tensor_1, tensor_2 = _split(True, 1), _split(True, 2)
+    assert layer_2 - layer_1 < 30.0
+    assert tensor_2 > tensor_1 * 1.8

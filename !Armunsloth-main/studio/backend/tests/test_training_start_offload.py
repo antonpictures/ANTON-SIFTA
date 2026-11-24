@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""start_training runs off the event loop, since its before_spawn unload can block for seconds."""
+
+import asyncio
+import contextlib
+import threading
+from types import SimpleNamespace
+
+import routes.training as tr
+from models import TrainingStartRequest
+
+
+class _FakeBackend:
+    def __init__(self, result = True):
+        self._result = result
+        self.start_thread = None
+        self.hook = None
+        self.current_job_id = None
+
+    def is_training_active(self):
+        return False
+
+    def start_training(
+        self,
+        job_id,
+        *,
+        before_spawn = None,
+        **kwargs,
+    ):
+        # before_spawn runs synchronously here, so this is the hook's thread.
+        self.start_thread = threading.current_thread()
+        self.hook = before_spawn
+        self.current_job_id = job_id
+        return self._result
+
+
+def _request() -> TrainingStartRequest:
+    return TrainingStartRequest(
+        model_name = "unsloth/tiny-model",
+        training_type = "LoRA/QLoRA",
+        format_type = "alpaca",
+        hf_dataset = "org/data",
+        load_in_4bit = False,
+        # Skip the YAML trust_remote_code lookup (needs the model catalog on disk).
+        trust_remote_code = True,
+    )
+
+
+def test_start_route_offloads_blocking_start(monkeypatch):
+    fake = _FakeBackend()
+    monkeypatch.setattr(tr, "get_training_backend", lambda: fake)
+    monkeypatch.setattr(tr, "_diffusion_training_active", lambda: False)
+    monkeypatch.setattr(tr, "_diffusion_gpu_admission", contextlib.nullcontext)
+    monkeypatch.setattr(
+        tr,
+        "_reject_untrainable_model_request",
+        lambda request, *_args: SimpleNamespace(
+            model_name = request.model_name,
+            cached_model_pin = None,
+            model_local_path = None,
+        ),
+    )
+    monkeypatch.setattr(tr, "_preflight_hf_dataset_request", lambda *_args: None)
+    monkeypatch.setattr("utils.hardware.ensure_hardware_detected", lambda: None)
+
+    async def _run():
+        return threading.current_thread(), await tr.start_training(
+            request = _request(), current_subject = "test-user", via_api_key = False
+        )
+
+    loop_thread, resp = asyncio.run(_run())
+
+    assert resp.status == "queued", resp
+    assert fake.hook is not None
+    assert fake.start_thread is not None
+    assert fake.start_thread is not loop_thread
+
+
+def test_backend_start_guard_blocks_overlapping_starts():
+    # Offloaded routes can overlap start_training; the reservation lets exactly one proceed.
+    from core.training.training import TrainingBackend
+
+    backend = TrainingBackend()
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    results = {}
+
+    def _slow_impl(
+        job_id,
+        *,
+        before_spawn = None,
+        **kwargs,
+    ):
+        first_entered.set()
+        release_first.wait(timeout = 5.0)
+        return True
+
+    backend._start_training_with_lifecycle_reserved = _slow_impl
+
+    def _first():
+        results["first"] = backend.start_training("job-a")
+
+    t = threading.Thread(target = _first, daemon = True)
+    t.start()
+    assert first_entered.wait(timeout = 5.0)
+    results["second"] = backend.start_training("job-b")
+    release_first.set()
+    t.join(timeout = 5.0)
+
+    assert results["first"] is True
+    assert results["second"] is False
+    assert backend._spawn_in_progress is False
+    assert backend._new_job_spawn_id is None
+
+
+def test_is_training_active_true_during_start_reservation():
+    # Reserved-but-not-spawned must read active, or other pipelines race for freed VRAM.
+    from core.training.training import TrainingBackend
+
+    backend = TrainingBackend()
+    assert backend.is_training_active() is False
+
+    entered = threading.Event()
+    release = threading.Event()
+    captured = {}
+
+    def _slow_impl(
+        job_id,
+        *,
+        before_spawn = None,
+        **kwargs,
+    ):
+        entered.set()
+        release.wait(timeout = 5.0)
+        return True
+
+    backend._start_training_with_lifecycle_reserved = _slow_impl
+
+    t = threading.Thread(target = lambda: backend.start_training("job-a"), daemon = True)
+    t.start()
+    assert entered.wait(timeout = 5.0)
+    captured["in_window"] = backend.is_training_active()
+    release.set()
+    t.join(timeout = 5.0)
+
+    assert captured["in_window"] is True
+    assert backend.is_training_active() is False

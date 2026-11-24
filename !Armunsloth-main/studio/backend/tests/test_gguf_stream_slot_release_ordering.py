@@ -1,0 +1,274 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+"""Release the slot before send() at [DONE], and only for a stream llama-server has finished."""
+
+import asyncio
+import json
+import threading
+
+import pytest
+from fastapi import FastAPI
+
+from auth.authentication import get_current_subject
+from core.inference import llama_admission
+import routes.inference as inference_route
+from .llama_backend_double import FakeLlamaCppBackend
+from .asgi_stream_helpers import wait_for_frame
+
+
+@pytest.fixture(autouse = True)
+def _fresh_queues():
+    llama_admission.reset_llama_admission_queues()
+    yield
+    llama_admission.reset_llama_admission_queues()
+
+
+def _active_slots() -> int:
+    with llama_admission._QUEUES_LOCK:
+        queues = list(llama_admission._QUEUES.values())
+    return sum(queue.snapshot().active for queue in queues)
+
+
+class _OneSlotBackend(FakeLlamaCppBackend):
+    """A loaded 1-parallel GGUF backend, the shape CI runs."""
+
+    base_url = "http://llama.test"
+    effective_parallel_slots = 1
+
+    def __init__(self):
+        self.closing = threading.Event()
+        self.finish_close = threading.Event()
+        self.closed = threading.Event()
+        self.cancel_event = None
+
+    def generate_chat_completion(self, **kwargs):
+        raise NotImplementedError
+
+
+class _CompletingBackend(_OneSlotBackend):
+    def generate_chat_completion(self, **kwargs):
+        yield "hi"
+        yield {
+            "type": "metadata",
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+            "timings": {"prompt_n": 3, "predicted_n": 1},
+            "finish_reason": "stop",
+        }
+
+
+class _FailsMidStreamBackend(_OneSlotBackend):
+    """gen stays parked on its yield until the finally closes it, which drops the llama-server stream."""
+
+    def generate_chat_completion(self, **kwargs):
+        try:
+            yield "a"
+            yield "ab"
+            yield "abc"
+        except GeneratorExit:
+            self.closing.set()
+            # Simulates llama-server's delay in freeing the slot.
+            self.finish_close.wait(10.0)
+            self.closed.set()
+            raise
+
+
+class _CancelledMidStreamBackend(_OneSlotBackend):
+    """Cancelled by the user halfway through, the Stop-button path."""
+
+    def generate_chat_completion(
+        self,
+        cancel_event = None,
+        **kwargs,
+    ):
+        self.cancel_event = cancel_event
+        try:
+            yield "a"
+            cancel_event.set()
+            yield "ab"
+            yield "abc"
+        except GeneratorExit:
+            self.closed.set()
+            raise
+
+
+def _scope(app, body: bytes) -> dict:
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/chat/completions",
+        "raw_path": b"/chat/completions",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "app": app,
+    }
+
+
+def _build_app(monkeypatch, backend):
+    monkeypatch.setattr(inference_route, "get_llama_cpp_backend", lambda: backend)
+    monkeypatch.setattr(inference_route, "_effective_enable_tools", lambda payload: False)
+    app = FastAPI()
+    app.include_router(inference_route.router)
+    app.dependency_overrides[get_current_subject] = lambda: "test-user"
+    return app
+
+
+def _request_body() -> bytes:
+    return json.dumps({"messages": [{"role": "user", "content": "hi"}], "stream": True}).encode()
+
+
+def test_slot_is_free_before_the_done_frame_reaches_send(monkeypatch):
+    """Release must not sit behind await send(); a non-reading client parks the body iterator forever."""
+    backend = _CompletingBackend()
+    app = _build_app(monkeypatch, backend)
+
+    async def _drive():
+        body = _request_body()
+        frames = []
+        slots_at_done = []
+        finished = asyncio.Event()
+
+        async def receive():
+            if not frames:
+                return {"type": "http.request", "body": body, "more_body": False}
+            await asyncio.Event().wait()
+
+        async def send(message):
+            frames.append(message)
+            if message.get("type") != "http.response.body":
+                return
+            if message.get("body", b"").decode() == "data: [DONE]\n\n":
+                slots_at_done.append(_active_slots())
+                finished.set()
+
+        task = asyncio.create_task(app(_scope(app, body), receive, send))
+        try:
+            await wait_for_frame(finished, task, what = "the finishing frame")
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions = True)
+
+        assert slots_at_done == [0], (
+            "the slot was still held while the [DONE] frame was being written; "
+            "a client that stops reading would pin it there indefinitely"
+        )
+
+    asyncio.run(_drive())
+
+
+def test_error_sentinel_keeps_the_slot_until_the_generator_is_closed(monkeypatch):
+    """An error SSE ending in [DONE] is not a finish, so the slot stays held until gen is closed."""
+    backend = _FailsMidStreamBackend()
+    app = _build_app(monkeypatch, backend)
+
+    calls = {"n": 0}
+
+    def _boom(monitor_id, text):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("chunk handling failed")
+
+    monkeypatch.setattr(inference_route.api_monitor, "append_reply", _boom)
+
+    async def _drive():
+        body = _request_body()
+        frames = []
+        saw_error = asyncio.Event()
+
+        async def receive():
+            if not frames:
+                return {"type": "http.request", "body": body, "more_body": False}
+            await asyncio.Event().wait()
+
+        async def send(message):
+            frames.append(message)
+            if message.get("type") != "http.response.body":
+                return
+            chunk = message.get("body", b"").decode()
+            if chunk.endswith("data: [DONE]\n\n") and chunk != "data: [DONE]\n\n":
+                saw_error.set()
+
+        task = asyncio.create_task(app(_scope(app, body), receive, send))
+        try:
+            await wait_for_frame(saw_error, task, what = "the error sentinel")
+            # Wait until cleanup reaches gen.close(), while llama-server still holds the slot.
+            for _ in range(500):
+                if backend.closing.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert backend.closing.is_set(), "cleanup never reached gen.close()"
+            assert _active_slots() == 1, (
+                "slot handed out while the failed request still owned "
+                "llama-server; the next request would exceed the configured "
+                "parallelism"
+            )
+        finally:
+            backend.finish_close.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions = True)
+
+    asyncio.run(_drive())
+
+
+def test_cancelled_stream_keeps_the_slot_until_the_generator_is_closed(monkeypatch):
+    """A cancelled stream's [DONE] can arrive with gen still open, so the slot must stay held."""
+    backend = _CancelledMidStreamBackend()
+    app = _build_app(monkeypatch, backend)
+
+    wedged = asyncio.Event()
+
+    async def _hang(watcher, *args, **kwargs):
+        watcher.cancel()
+        await wedged.wait()
+
+    monkeypatch.setattr(inference_route, "_stop_local_disconnect_cancel_watcher", _hang)
+
+    async def _drive():
+        body = _request_body()
+        frames = []
+        saw_done = asyncio.Event()
+
+        async def receive():
+            if not frames:
+                return {"type": "http.request", "body": body, "more_body": False}
+            await asyncio.Event().wait()
+
+        async def send(message):
+            frames.append(message)
+            if message.get("type") != "http.response.body":
+                return
+            if message.get("body", b"").decode() == "data: [DONE]\n\n":
+                saw_done.set()
+
+        task = asyncio.create_task(app(_scope(app, body), receive, send))
+        try:
+            await wait_for_frame(saw_done, task, what = "the [DONE] frame")
+            for _ in range(50):
+                if _active_slots() == 0:
+                    break
+                await asyncio.sleep(0.01)
+            assert backend.cancel_event is not None and backend.cancel_event.is_set()
+            assert (
+                not backend.closed.is_set()
+            ), "test setup: the generator should still be open here"
+            assert _active_slots() == 1, (
+                "slot freed on a cancelled stream whose llama-server request is "
+                "still open; the next request would exceed the configured "
+                "parallelism"
+            )
+        finally:
+            wedged.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions = True)
+
+    asyncio.run(_drive())

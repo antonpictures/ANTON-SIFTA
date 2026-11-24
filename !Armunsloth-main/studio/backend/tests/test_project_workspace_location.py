@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Project workspaces are the only thing written to Documents, and OneDrive can repoint that folder."""
+
+import os
+import re
+from pathlib import Path
+
+import pytest
+
+from utils.paths.storage_roots import (
+    _documents_from_registry_value,
+    _windows_documents_dir,
+    documents_root,
+    project_workspaces_root,
+    shared_project_workspaces_root,
+)
+
+
+def test_a_redirected_documents_folder_is_read_as_written():
+    """REG_SZ is already absolute, including the OneDrive case this is for."""
+    assert _documents_from_registry_value(r"C:\Users\t\OneDrive\Documents", False) == Path(
+        r"C:\Users\t\OneDrive\Documents"
+    )
+    assert _documents_from_registry_value(r"%NOT_A_REAL_VAR%\Documents", True) == Path(
+        r"%NOT_A_REAL_VAR%\Documents"
+    )
+
+
+def test_expansion_uses_windows_syntax(monkeypatch):
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\tombino")
+    assert _documents_from_registry_value(r"%USERPROFILE%\Documents", True) == Path(
+        r"C:\Users\tombino\Documents"
+    )
+    assert _documents_from_registry_value(r"%USERPROFILE%\Documents", False) == Path(
+        r"%USERPROFILE%\Documents"
+    )
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", 123])
+def test_an_unusable_registry_value_falls_through(value):
+    """Anything but a real string has to fall back, not become Path('.')."""
+    assert _documents_from_registry_value(value, True) is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason = "the registry read is the point on Windows")
+def test_the_registry_is_only_read_on_windows():
+    assert _windows_documents_dir() is None
+
+
+def test_the_override_still_wins(tmp_path, monkeypatch):
+    """Whatever Documents resolves to, this is the documented way out."""
+    monkeypatch.setenv("UNSLOTH_STUDIO_DOCUMENTS_HOME", str(tmp_path / "elsewhere"))
+    assert documents_root() == tmp_path / "elsewhere"
+    assert project_workspaces_root() == (tmp_path / "elsewhere" / "Unsloth Studio" / "Projects")
+
+
+def test_the_projects_override_wins_outright(tmp_path, monkeypatch):
+    monkeypatch.setenv("UNSLOTH_STUDIO_DOCUMENTS_HOME", str(tmp_path / "documents"))
+    monkeypatch.setenv("UNSLOTH_STUDIO_PROJECTS_HOME", str(tmp_path / "projects"))
+    assert project_workspaces_root() == tmp_path / "projects"
+
+
+@pytest.mark.parametrize("dockerfile", ["Dockerfile.studio", "Dockerfile.studio-rocm"])
+def test_the_studio_images_keep_project_folders_on_the_studio_volume(
+    dockerfile, tmp_path, monkeypatch
+):
+    text = (Path(__file__).resolve().parents[3] / "docker" / dockerfile).read_text(encoding = "utf-8")
+    block = text[text.index("ENV UNSLOTH_STUDIO_HOME=") :]
+    image_env = dict(re.findall(r"(\w+)=(\S+)", block[: block.index("\n\n")]))
+    for name in ("UNSLOTH_STUDIO_DOCUMENTS_HOME", "UNSLOTH_STUDIO_PROJECTS_HOME"):
+        monkeypatch.delenv(name, raising = False)
+    for name, value in image_env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+
+    assert project_workspaces_root().is_relative_to(image_env["UNSLOTH_STUDIO_HOME"])
+    # The owner has no OS confinement and its project root is silent, so it must not contain Accounts/.
+    assert not shared_project_workspaces_root().is_relative_to(project_workspaces_root())
+
+
+def _probe_payload():
+    from routes import chat_history
+    return chat_history.ChatProject(
+        id = "11111111-2222-3333-4444-555555555555",
+        name = "Probe",
+        instructions = "",
+        archived = False,
+        createdAt = 1,
+        updatedAt = 1,
+    )
+
+
+def test_the_workspace_error_carries_the_folder_it_could_not_make(tmp_path, monkeypatch):
+    """Name the failing folder itself: an existing project's rootPath can sit outside the projects root."""
+    from storage import studio_db
+    from storage.studio_db import ProjectWorkspaceError, _ensure_project_workspace
+
+    blocked = tmp_path / "read-only" / "child"
+
+    # Stubbed, not chmod: root ignores read-only dirs and Windows does not enforce it.
+    def refuse(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(studio_db, "ensure_dir", refuse)
+    with pytest.raises(ProjectWorkspaceError) as caught:
+        _ensure_project_workspace(str(blocked))
+    assert caught.value.path == str(blocked)
+
+
+def test_creating_a_project_says_which_folder_failed(tmp_path, monkeypatch):
+    """A project folder that cannot be created must yield an error naming that folder, not a bare 500."""
+    from fastapi import HTTPException
+
+    from routes import chat_history
+    from storage.studio_db import ProjectWorkspaceError
+
+    blocked = tmp_path / "no-entry"
+    monkeypatch.setattr(
+        chat_history,
+        "upsert_chat_project",
+        lambda payload: (_ for _ in ()).throw(
+            ProjectWorkspaceError(str(blocked), PermissionError(13, "Permission denied"))
+        ),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        chat_history.save_project(_probe_payload(), current_subject = "tester")
+
+    assert caught.value.status_code == 500
+    detail = str(caught.value.detail)
+    assert str(blocked) in detail
+    assert "UNSLOTH_STUDIO_PROJECTS_HOME" in detail
+    assert "Permission denied" not in detail
+
+
+def test_a_database_folder_failure_is_not_blamed_on_the_projects_folder(monkeypatch):
+    """A studio.db folder failure must not blame UNSLOTH_STUDIO_PROJECTS_HOME, which is not that folder."""
+    from routes import chat_history
+
+    monkeypatch.setattr(
+        chat_history,
+        "upsert_chat_project",
+        lambda payload: (_ for _ in ()).throw(PermissionError(13, "studio.db")),
+    )
+
+    with pytest.raises(PermissionError):
+        chat_history.save_project(_probe_payload(), current_subject = "tester")

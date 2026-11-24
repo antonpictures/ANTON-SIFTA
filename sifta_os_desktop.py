@@ -53,6 +53,44 @@ _DESKTOP_CRASH_BLACKBOX_INSTALLED = False
 _DESKTOP_FAULTHANDLER_FILE = None
 
 
+def _launch_full_sifta_shutdown() -> bool:
+    """Start the detached full-body shutdown worker.
+
+    The worker boots the SIFTA launch agents out before it kills the desktop,
+    so launchd cannot immediately resurrect the GUI. Returning a status lets
+    the caller leave the old startup marker as a fallback if spawning fails.
+    """
+    script = _REPO / "scripts" / "sifta_full_shutdown.sh"
+    if not script.is_file():
+        return False
+    try:
+        env = os.environ.copy()
+        env["SIFTA_REPO"] = str(_REPO)
+        subprocess.Popen(
+            ["/bin/bash", str(script)],
+            cwd=str(_REPO),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _write_sifta_shutdown_fallback() -> None:
+    """Leave a short-lived shutdown request for the next launcher attempt."""
+    note = _REPO / ".sifta_state" / "shutdown_requested"
+    try:
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(str(time.time()), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _sifta_mdi_app_start_mode() -> str:
     """Return the SIFTA child-window start mode.
 
@@ -3604,29 +3642,36 @@ class SiftaDesktop(QMainWindow):
                 self._sifta_shutdown_offered = True
                 from PyQt6.QtWidgets import QMessageBox
                 _box = QMessageBox(self)
-                _box.setWindowTitle("Shut down SIFTA OS?")
+                _box.setWindowTitle("SIFTA OS power")
                 _box.setText(
-                    "Shut down ALL of SIFTA OS and free the RAM?\n\n"
+                    "What should SIFTA OS do?\n\n"
                     "Stops: websites :8890/:8891 \u00b7 WhatsApp ear :3010/:7434\n"
                     "chorus :8100 \u00b7 watchdogs \u00b7 desktop \u00b7 launchd agents\n"
-                    "Unloads local models from memory.\n\n"
-                    "Without this, launchd restarts the desktop immediately.\n"
-                    "(The harness chat with Alice is NOT affected.)"
+                    "Shut down frees the local model memory.\n\n"
+                    "Restart closes this session and launchd brings SIFTA back.\n"
+                    "(The harness chat with Alice is not affected.)"
                 )
-                _yes = _box.addButton("Shut down SIFTA OS", QMessageBox.ButtonRole.AcceptRole)
-                _no = _box.addButton("Just close (launchd restarts)", QMessageBox.ButtonRole.RejectRole)
-                _box.setDefaultButton(_yes)
+                _shutdown = _box.addButton(
+                    "Shut down SIFTA OS", QMessageBox.ButtonRole.AcceptRole
+                )
+                _restart = _box.addButton(
+                    "Restart SIFTA OS", QMessageBox.ButtonRole.ActionRole
+                )
+                _cancel = _box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                _box.setDefaultButton(_restart)
                 _box.exec()
-                if _box.clickedButton() is _yes:
-                    _note = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                         ".sifta_state", "shutdown_requested")
-                    os.makedirs(os.path.dirname(_note), exist_ok=True)
-                    with open(_note, "w") as _fh:
-                        _fh.write(str(time.time()))
-                    # A dying GUI cannot reliably kill its own body. It leaves a note;
-                    # the NEXT incarnation reads it and performs the shutdown detached.
-                    event.accept()
+                _clicked = _box.clickedButton()
+                if _clicked is _cancel or _clicked is None:
+                    self._sifta_shutdown_offered = False
+                    event.ignore()
                     return
+                if _clicked is _shutdown and not _launch_full_sifta_shutdown():
+                    # The normal path starts the worker now. Keep the marker
+                    # only if process creation failed, so the launcher can
+                    # finish the shutdown on its next KeepAlive attempt.
+                    _write_sifta_shutdown_fallback()
+                # Restart deliberately falls through to the ordinary close
+                # teardown; launchd's KeepAlive starts a fresh GUI instance.
         except Exception:
             pass
         self._is_closing = True
@@ -6635,15 +6680,20 @@ if __name__ == "__main__":
     # Shell script already printed the full banner with live theme+organ data.
     # Python only emits the app path so crash logs are traceable.
     _install_desktop_crash_blackbox()
-    sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
-    sys.stderr.flush()
+    try:
+        sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
+    except BrokenPipeError:
+        pass
 
     # Native location is optional and must never block desktop startup.
     try:
         from System.swarm_gps_sensor import request_location_refresh
         request_location_refresh()
     except Exception as exc:
-        sys.stderr.write(f"  [BOOT] location: unavailable: {type(exc).__name__}\n")
+        try:
+            sys.stderr.write(f"  [BOOT] location: unavailable: {type(exc).__name__}\n")
+        except BrokenPipeError:
+            pass
 
     # Keep the external local Ollama harness aligned with the live Ollama
     # inventory before the desktop surfaces expose cortex choices.
@@ -6756,18 +6806,27 @@ if __name__ == "__main__":
         _clock.link_wake_bus()
         _clock.link_app_focus()
     except Exception as exc:
-        sys.stderr.write(f"[BOOT] behavior_clock not installed: {exc}\n")
+        try:
+            sys.stderr.write(f"[BOOT] behavior_clock not installed: {exc}\n")
+        except BrokenPipeError:
+            pass
 
     # ── Owner unified field — STIGTIME + schedule + presence (Event 119+) ─
     try:
         from System.swarm_owner_unified_field_boot import anchor_owner_unified_field_on_boot
 
         _boot_anchor = anchor_owner_unified_field_on_boot()
-        sys.stderr.write(
-            f"  [BOOT] owner_unified_field trace={_boot_anchor.get('receipt_trace_id')}\n"
-        )
+        try:
+            sys.stderr.write(
+                f"  [BOOT] owner_unified_field trace={_boot_anchor.get('receipt_trace_id')}\n"
+            )
+        except BrokenPipeError:
+            pass
     except Exception as exc:
-        sys.stderr.write(f"[BOOT] owner_unified_field_boot skipped: {exc}\n")
+        try:
+            sys.stderr.write(f"[BOOT] owner_unified_field_boot skipped: {exc}\n")
+        except BrokenPipeError:
+            pass
 
     # ── Hot-Reload Organ (Epoch 4, C47H) — install once at boot. ─────────
     # After this, code patches to whitelisted modules can land via:

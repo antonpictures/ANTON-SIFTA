@@ -1,0 +1,270 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Deadline handler shuts down only while the seeded admin password is unchanged."""
+
+import time
+from types import SimpleNamespace
+
+from auth.bootstrap_timeout import (
+    DEFAULT_BOOTSTRAP_TIMEOUT_SECONDS,
+    _format_duration,
+    arm_bootstrap_timeout,
+    bootstrap_deadline_remaining_seconds,
+    bootstrap_timeout_seconds,
+    clear_bootstrap_deadline,
+    enforce_bootstrap_password_deadline,
+    record_bootstrap_deadline,
+    should_arm_bootstrap_timeout,
+)
+
+
+def test_default_when_unset():
+    assert bootstrap_timeout_seconds(env = {}) == DEFAULT_BOOTSTRAP_TIMEOUT_SECONDS
+
+
+def test_default_when_empty():
+    assert bootstrap_timeout_seconds(env = {"UNSLOTH_STUDIO_BOOTSTRAP_TIMEOUT": "  "}) == (
+        DEFAULT_BOOTSTRAP_TIMEOUT_SECONDS
+    )
+
+
+def test_explicit_value_parsed():
+    assert bootstrap_timeout_seconds(env = {"UNSLOTH_STUDIO_BOOTSTRAP_TIMEOUT": "1800"}) == 1800
+
+
+def test_zero_disables():
+    assert bootstrap_timeout_seconds(env = {"UNSLOTH_STUDIO_BOOTSTRAP_TIMEOUT": "0"}) == 0
+
+
+def test_negative_disables():
+    assert bootstrap_timeout_seconds(env = {"UNSLOTH_STUDIO_BOOTSTRAP_TIMEOUT": "-5"}) == 0
+
+
+def test_invalid_falls_back_to_default():
+    assert bootstrap_timeout_seconds(env = {"UNSLOTH_STUDIO_BOOTSTRAP_TIMEOUT": "abc"}) == (
+        DEFAULT_BOOTSTRAP_TIMEOUT_SECONDS
+    )
+
+
+def _arm_kwargs(**overrides):
+    kwargs = dict(
+        host = "0.0.0.0",
+        secure = False,
+        api_only = False,
+        frontend_served = True,
+        is_colab = False,
+        requires_change = True,
+        timeout_seconds = 3600,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_arm_exposed_wildcard_web_ui():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs()) is True
+
+
+def test_arm_secure_loopback_bind():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(host = "127.0.0.1", secure = True)) is True
+
+
+def test_no_arm_loopback_bind():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(host = "127.0.0.1", secure = False)) is False
+
+
+def test_no_arm_api_only():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(api_only = True)) is False
+
+
+def test_no_arm_no_frontend():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(frontend_served = False)) is False
+
+
+def test_no_arm_colab():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(is_colab = True)) is False
+
+
+def test_no_arm_password_already_changed():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(requires_change = False)) is False
+
+
+def test_no_arm_timeout_disabled():
+    assert should_arm_bootstrap_timeout(**_arm_kwargs(timeout_seconds = 0)) is False
+
+
+def _fake_storage(requires_change: bool):
+    return SimpleNamespace(
+        DEFAULT_ADMIN_USERNAME = "unsloth",
+        requires_password_change = lambda _username: requires_change,
+    )
+
+
+def test_deadline_shuts_down_when_password_unchanged():
+    calls = []
+    result = enforce_bootstrap_password_deadline(
+        _fake_storage(requires_change = True),
+        lambda: calls.append("shutdown"),
+        timeout_seconds = 3600,
+    )
+    assert result is True
+    assert calls == ["shutdown"]
+
+
+def test_deadline_keeps_running_when_password_changed():
+    calls = []
+    result = enforce_bootstrap_password_deadline(
+        _fake_storage(requires_change = False),
+        lambda: calls.append("shutdown"),
+        timeout_seconds = 3600,
+    )
+    assert result is False
+    assert calls == []
+
+
+def test_deadline_swallows_shutdown_errors():
+    def _boom():
+        raise RuntimeError("shutdown failed")
+
+    result = enforce_bootstrap_password_deadline(
+        _fake_storage(requires_change = True),
+        _boom,
+        timeout_seconds = 3600,
+    )
+    assert result is True
+
+
+def test_format_duration_sub_minute_uses_seconds():
+    assert _format_duration(30) == "30 seconds"
+
+
+def test_format_duration_singular_second():
+    assert _format_duration(1) == "1 second"
+
+
+def test_format_duration_exact_minutes():
+    assert _format_duration(60) == "1 minute"
+    assert _format_duration(3600) == "60 minutes"
+
+
+def test_format_duration_minutes_and_seconds():
+    assert _format_duration(90) == "1 minute 30 seconds"
+
+
+def test_shutdown_message_uses_formatted_duration():
+    logged = []
+
+    class _Logger:
+        def warning(self, msg, *args):
+            logged.append(msg)
+
+    enforce_bootstrap_password_deadline(
+        _fake_storage(requires_change = True),
+        lambda: None,
+        timeout_seconds = 3600,
+        logger = _Logger(),
+    )
+    assert any("60 minutes" in m for m in logged)
+    assert not any("minute(s)" in m for m in logged)
+
+
+def test_no_deadline_reported_when_nothing_armed():
+    clear_bootstrap_deadline()
+    assert bootstrap_deadline_remaining_seconds() is None
+
+
+def test_recorded_deadline_counts_down():
+    record_bootstrap_deadline(3600)
+    try:
+        remaining = bootstrap_deadline_remaining_seconds()
+        assert remaining is not None
+        assert 3595 <= remaining <= 3600
+    finally:
+        clear_bootstrap_deadline()
+
+
+def test_a_disabled_timeout_records_no_deadline():
+    """None means not time-boxed, which is a different answer from an expired 0."""
+    record_bootstrap_deadline(0)
+    assert bootstrap_deadline_remaining_seconds() is None
+
+
+def test_an_expired_deadline_floors_at_zero_rather_than_going_negative():
+    """The timer and this clock are read separately, so a caller can land in the gap."""
+    record_bootstrap_deadline(1)
+    try:
+        import auth.bootstrap_timeout as bt
+        bt._deadline_at = time.monotonic() - 30
+        assert bootstrap_deadline_remaining_seconds() == 0
+    finally:
+        clear_bootstrap_deadline()
+
+
+def test_arming_publishes_the_deadline():
+    """Arming is the only thing that starts the clock, so it must be what records it."""
+    clear_bootstrap_deadline()
+    timer = arm_bootstrap_timeout(
+        _fake_storage(requires_change = True),
+        lambda: None,
+        timeout_seconds = 1800,
+    )
+    try:
+        remaining = bootstrap_deadline_remaining_seconds()
+        assert remaining is not None and 1795 <= remaining <= 1800
+    finally:
+        timer.cancel()
+        clear_bootstrap_deadline()
+
+
+def _flaky_storage(failures: int, requires_change: bool):
+    reads = []
+
+    def _requires_password_change(_username):
+        reads.append(1)
+        if len(reads) <= failures:
+            raise OSError("unable to open database file")
+        return requires_change
+
+    return SimpleNamespace(
+        DEFAULT_ADMIN_USERNAME = "unsloth",
+        requires_password_change = _requires_password_change,
+    )
+
+
+def test_deadline_retries_an_unreadable_storage(monkeypatch):
+    # A failed read is not "changed": the timer is one-shot, so giving up would drop the deadline for good.
+    monkeypatch.setattr("auth.bootstrap_timeout.STORAGE_RETRY_SECONDS", 0)
+    calls = []
+    result = enforce_bootstrap_password_deadline(
+        _flaky_storage(failures = 2, requires_change = True),
+        lambda: calls.append("shutdown"),
+        timeout_seconds = 3600,
+    )
+    assert result is True
+    assert calls == ["shutdown"]
+
+
+def test_unreadable_storage_does_not_stop_a_changed_password(monkeypatch):
+    monkeypatch.setattr("auth.bootstrap_timeout.STORAGE_RETRY_SECONDS", 0)
+    calls = []
+    result = enforce_bootstrap_password_deadline(
+        _flaky_storage(failures = 2, requires_change = False),
+        lambda: calls.append("shutdown"),
+        timeout_seconds = 3600,
+    )
+    assert result is False
+    assert calls == []
+
+
+def test_storage_unreadable_for_the_whole_window_fails_closed(monkeypatch):
+    # Unknown for the whole retry window is treated as unsecured, not as "changed".
+    monkeypatch.setattr("auth.bootstrap_timeout.STORAGE_RETRY_SECONDS", 0)
+    monkeypatch.setattr("auth.bootstrap_timeout.STORAGE_RETRY_WINDOW_SECONDS", 0)
+    calls = []
+    result = enforce_bootstrap_password_deadline(
+        _flaky_storage(failures = 10_000, requires_change = False),
+        lambda: calls.append("shutdown"),
+        timeout_seconds = 3600,
+    )
+    assert result is True
+    assert calls == ["shutdown"]

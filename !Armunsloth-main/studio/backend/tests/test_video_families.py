@@ -1,0 +1,583 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Video family registry: detection, shape snapping, generation defaults.
+Pure-module tests: no torch, no network."""
+
+import pytest
+
+from core.inference.video_families import (
+    VIDEO_CANCELLED_MSG,
+    VIDEO_NOT_LOADED_MSG,
+    default_video_generation_params,
+    detect_video_family,
+    pipeline_available_video_families,
+    resolve_video_base_repo,
+    snap_num_frames,
+    snap_video_size,
+    supported_video_family_names,
+)
+from core.inference.video_minimax_h3 import (
+    estimate_h3_diffusers_host_ram_gb,
+    estimate_h3_diffusers_vram_gb,
+)
+
+
+def test_h3_measured_diffusers_memory_estimates():
+    assert estimate_h3_diffusers_vram_gb(960, 544, 124) == pytest.approx(73.68, abs = 0.02)
+    assert estimate_h3_diffusers_vram_gb(1344, 768, 124) == pytest.approx(78.74, abs = 0.02)
+    assert estimate_h3_diffusers_vram_gb(1344, 768, 345) == pytest.approx(96.98, abs = 0.02)
+    assert estimate_h3_diffusers_host_ram_gb(126) == 150
+    assert estimate_h3_diffusers_host_ram_gb(132) == 85
+
+
+def test_the_host_floor_tracks_the_components_the_load_holds():
+    """The VRAM floor is rebuilt from the engaged components; the host floor has to be too, or an
+    80 GB device running the int8 conditioner and the int8 denoiser clears the VRAM check at 55 GB
+    and is then told it needs 150 GB of system RAM for 47.5 GB of weights."""
+    from core.inference.video_minimax_h3 import (
+        H3_TEXT_ENCODER_BF16_GB,
+        H3_TRANSFORMER_BF16_GB,
+    )
+
+    assert estimate_h3_diffusers_host_ram_gb(
+        126, text_encoder_gb = H3_TEXT_ENCODER_BF16_GB, transformer_gb = H3_TRANSFORMER_BF16_GB
+    ) == pytest.approx(150.0, abs = 0.001)
+    assert estimate_h3_diffusers_host_ram_gb(
+        126, text_encoder_gb = 27.2, transformer_gb = 20.3
+    ) == pytest.approx(64.5, abs = 0.001)
+    assert estimate_h3_diffusers_host_ram_gb(132, text_encoder_gb = 27.2, transformer_gb = 20.3) == 85
+
+
+@pytest.mark.parametrize(
+    "repo_id",
+    [
+        "unsloth/LTX-2.3-GGUF",
+        "Lightricks/LTX-2",
+        "Lightricks/LTX-2.3-fp8",
+        "lightricks/ltx-2.3",
+        "some/dir/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
+    ],
+)
+def test_detect_ltx2(repo_id):
+    fam = detect_video_family(repo_id)
+    assert fam is not None and fam.name == "ltx-2"
+    assert fam.pipeline_class == "LTX2Pipeline"
+    assert fam.has_audio is True
+
+
+def test_detect_override_and_unknown():
+    assert detect_video_family("x", override = "ltx-2").name == "ltx-2"
+    assert detect_video_family("x", override = "ltx2").name == "ltx-2"
+    assert detect_video_family("x", override = "nope") is None
+    assert detect_video_family("someorg/deluxtreme-model") is None
+
+
+@pytest.mark.parametrize(
+    "repo_id",
+    [
+        "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "wan-ai/wan2.2-ti2v-5b-diffusers",
+        "unsloth/Wan2.2-TI2V-5B-GGUF",
+        "QuantStack/Wan2.2-TI2V-5B-GGUF",
+        "some/dir/wan2.2-ti2v-5b-Q4_K_M.gguf",
+    ],
+)
+def test_detect_wan_ti2v_5b(repo_id):
+    fam = detect_video_family(repo_id)
+    assert fam is not None and fam.name == "wan2.2-ti2v-5b"
+    assert fam.pipeline_class == "WanPipeline"
+    assert fam.transformer_class == "WanTransformer3DModel"
+    assert fam.is_moe is False
+    assert fam.cfg2_kwarg is None
+    assert fam.has_audio is False
+    assert fam.frame_step == 4  # Wan VAE temporal factor is 4 (4k+1)
+
+
+@pytest.mark.parametrize(
+    "repo_id",
+    [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "wan-ai/wan2.2-t2v-a14b-diffusers",
+        "QuantStack/Wan2.2-T2V-A14B-GGUF",
+        "some/dir/wan2.2-t2v-a14b-Q4_K_M.gguf",
+    ],
+)
+def test_detect_wan_t2v_a14b(repo_id):
+    fam = detect_video_family(repo_id)
+    assert fam is not None and fam.name == "wan2.2-t2v-a14b"
+    assert fam.pipeline_class == "WanPipeline"
+    assert fam.transformer2_class == "WanTransformer3DModel"
+    assert fam.is_moe is True
+    assert fam.cfg2_kwarg == "guidance_scale_2"
+    assert fam.has_audio is False
+    assert fam.frame_step == 4
+
+
+def test_detect_wan_overrides():
+    assert detect_video_family("x", override = "wan2.2-5b").name == "wan2.2-ti2v-5b"
+    assert detect_video_family("x", override = "wan-ti2v").name == "wan2.2-ti2v-5b"
+    assert detect_video_family("x", override = "wan2.2-14b").name == "wan2.2-t2v-a14b"
+    assert detect_video_family("x", override = "wan-t2v").name == "wan2.2-t2v-a14b"
+
+
+def test_wan_and_ltx_do_not_cross_route():
+    assert detect_video_family("Lightricks/LTX-2").name == "ltx-2"
+    assert detect_video_family("unsloth/LTX-2.3-GGUF").name == "ltx-2"
+    assert detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers").name == "wan2.2-ti2v-5b"
+
+
+def test_sentinels_are_video_specific():
+    assert "video" in VIDEO_NOT_LOADED_MSG.lower()
+    assert "video" in VIDEO_CANCELLED_MSG.lower()
+
+
+def test_resolve_base_repo():
+    fam = detect_video_family("unsloth/LTX-2.3-GGUF")
+    assert resolve_video_base_repo(fam, None) == "Lightricks/LTX-2"
+    assert resolve_video_base_repo(fam, "  ") == "Lightricks/LTX-2"
+    assert resolve_video_base_repo(fam, "other/base") == "other/base"
+
+
+def test_snap_num_frames_lattice():
+    fam = detect_video_family("unsloth/LTX-2.3-GGUF")
+    assert snap_num_frames(fam, 121) == 121
+    assert snap_num_frames(fam, 120) == 113
+    assert snap_num_frames(fam, 122) == 121
+    assert snap_num_frames(fam, 1) == 1
+    assert snap_num_frames(fam, 0) == 1
+    assert snap_num_frames(fam, 9) == 9
+
+
+def test_snap_video_size_multiple():
+    fam = detect_video_family("unsloth/LTX-2.3-GGUF")
+    assert snap_video_size(fam, 768, 512) == (768, 512)
+    assert snap_video_size(fam, 1000, 700) == (992, 672)
+    assert snap_video_size(fam, 1, 1) == (32, 32)
+
+
+def test_generation_defaults_distilled_vs_dev():
+    assert default_video_generation_params(
+        "distilled-1.1/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf", "Lightricks/LTX-2"
+    ) == (8, 1.0)
+    assert default_video_generation_params(None, "Lightricks/LTX-2") == (40, 4.0)
+    assert default_video_generation_params("unknown/thing") == (40, 4.0)
+
+
+def test_supported_names():
+    assert supported_video_family_names() == (
+        "minimax-h3",
+        "ltx-2.5",
+        "ltx-2",
+        "wan2.2-ti2v-5b",
+        "wan2.2-t2v-a14b",
+        "wan2.1-t2v-1.3b",
+        "wan2.1-t2v-14b",
+        "hunyuanvideo-1.5",
+        "hunyuanvideo-1.5-720p",
+    )
+
+
+@pytest.mark.parametrize(
+    "device, blocked, hidden",
+    [(None, {"minimax-h3", "ltx-2"}, {"minimax-h3", "ltx-2"}), ("mps", set(), {"minimax-h3"})],
+)
+def test_pipeline_available_families_filter_the_override_selector(
+    monkeypatch, device, blocked, hidden
+):
+    monkeypatch.setattr(
+        "core.inference.diffusion_families.family_selectable", lambda fam: fam.name not in blocked
+    )
+    available = {fam.name for fam in pipeline_available_video_families(device = device)}
+    assert set(supported_video_family_names()) - available == hidden
+
+
+def test_minimax_h3_family_and_frame_lattice():
+    fam = detect_video_family("MiniMaxAI/MiniMax-H3")
+    assert fam is not None and fam.name == "minimax-h3"
+    assert fam.modular_workflow == "fl2va"
+    assert fam.has_audio is True
+    assert fam.supports_keyframes is True
+    assert fam.supports_cfg is False
+    assert fam.frame_step == 17
+    assert fam.frame_offset == 5
+    assert snap_num_frames(fam, 124) == 124
+    assert snap_num_frames(fam, 125) == 141
+    assert snap_num_frames(fam, 1) == 124
+    assert snap_num_frames(fam, 999) == 345
+
+
+def test_wan_snap_num_frames_4k_plus_1():
+    fam = detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers")
+    assert fam.frame_step == 4
+    assert snap_num_frames(fam, 81) == 81
+    assert snap_num_frames(fam, 121) == 121
+    assert snap_num_frames(fam, 120) == 117  # floors to 4*29 + 1
+    assert snap_num_frames(fam, 3) == 1
+    assert snap_num_frames(fam, 5) == 5
+
+
+def test_wan_snap_video_size_16():
+    fam = detect_video_family("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    assert fam.resolution_multiple == 16
+    # A14B native 720p is true 1280x720, not the 1280x704 TI2V-5B's /32 VAE floors to.
+    assert fam.resolution_presets[0] == (1280, 720)
+    assert snap_video_size(fam, 1280, 720) == (1280, 720)
+    assert snap_video_size(fam, 1000, 700) == (992, 688)
+
+
+def test_wan_generation_defaults():
+    assert default_video_generation_params(None, "Wan-AI/Wan2.2-TI2V-5B-Diffusers") == (20, 5.0)
+    assert default_video_generation_params(None, "Wan-AI/Wan2.2-T2V-A14B-Diffusers") == (20, 3.5)
+    assert default_video_generation_params("wan2.2-14b") == (20, 3.5)
+    assert default_video_generation_params(
+        "wan2.2-ti2v-5b-Q4_K_M.gguf", "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+    ) == (20, 5.0)
+
+
+def test_generation_defaults_fallback_honors_family():
+    assert default_video_generation_params("/models/my-clip", "/models/my-clip") == (40, 4.0)
+    assert default_video_generation_params(
+        "/models/my-clip", "/models/my-clip", fallback = (50, 5.0)
+    ) == (50, 5.0)
+    assert default_video_generation_params("wan2.2-ti2v-5b", fallback = (8, 1.0)) == (20, 5.0)
+
+
+def test_prompt_hint_defaults_none_and_reaches_video_status():
+    import dataclasses
+
+    import core.inference.video as video_module
+    from core.inference import video_families
+    from models.inference import VideoStatusResponse
+
+    assert video_families.VideoFamily.__dataclass_fields__["prompt_hint"].default is None
+    # No video family has a vetted prompt tip yet.
+    assert [f.name for f in video_families._FAMILIES if f.prompt_hint is not None] == []
+
+    fam = detect_video_family("", override = "ltx-2")
+    backend = video_module.VideoBackend()
+    for hint in (None, "Describe the motion first."):
+        backend._state = video_module._VideoLoadState(
+            pipe = object(),
+            family = dataclasses.replace(fam, prompt_hint = hint),
+            repo_id = "unsloth/ltx-2",
+            base_repo = fam.base_repo,
+            device = "cpu",
+            dtype = "bfloat16",
+            kind = "pipeline",
+        )
+        assert backend.status()["prompt_hint"] == hint
+        assert VideoStatusResponse(**backend.status()).prompt_hint == hint
+    backend._state = None
+    assert VideoStatusResponse(**backend.status()).prompt_hint is None
+
+
+def test_generation_defaults_wan_is_segment_not_substring():
+    assert default_video_generation_params(
+        "user/swan-video", "Lightricks/LTX-2", fallback = (40, 4.0)
+    ) == (40, 4.0)
+    assert default_video_generation_params(
+        "taiwan-clips.gguf", "user/taiwan-clips", fallback = (40, 4.0)
+    ) == (40, 4.0)
+    assert default_video_generation_params("wan2.2-ti2v-5b-Q4_K_M.gguf") == (20, 5.0)
+    assert default_video_generation_params(None, "Wan-AI/Wan2.2-T2V-A14B") == (20, 3.5)
+    assert default_video_generation_params("ltxv-2.3-distilled") == (8, 1.0)
+    assert default_video_generation_params("Lightricks/LTXV-2.3") == (40, 4.0)
+
+
+def test_wan_size_tables_present():
+    ti2v = detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers")
+    a14b = detect_video_family("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    assert ti2v.bf16_components_gb is not None and a14b.bf16_components_gb is not None
+    # Wan ships FP32 on disk; the table holds halved bf16 resident sizes.
+    assert ti2v.bf16_components_gb[0] == 10.0
+    assert a14b.bf16_components_gb[0] == 57.2
+    assert a14b.bf16_components_gb[0] > ti2v.bf16_components_gb[0] * 3
+    assert any(h > w for (w, h) in ti2v.resolution_presets)
+
+
+def test_wan_ti2v_5b_snaps_to_32_not_16():
+    # TI2V-5B's VAE is 16x spatial with patch 2, so sizes floor to /32.
+    fam = detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers")
+    assert fam.resolution_multiple == 32
+    assert snap_video_size(fam, 1280, 720) == (1280, 704)
+    assert snap_video_size(fam, 1280, 704) == (1280, 704)
+    a14b = detect_video_family("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    assert a14b.resolution_multiple == 16
+
+
+def test_wan_families_force_vae_fp32():
+    # Wan's VAE must decode in fp32 to avoid banding or black frames.
+    assert detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers").vae_force_fp32 is True
+    assert detect_video_family("Wan-AI/Wan2.2-T2V-A14B-Diffusers").vae_force_fp32 is True
+    assert detect_video_family("unsloth/LTX-2.3-GGUF").vae_force_fp32 is False
+
+
+def test_family_size_table_present():
+    fam = detect_video_family("unsloth/LTX-2.3-GGUF")
+    assert fam.bf16_components_gb is not None
+    transformer_gb, text_encoder_gb, companions_gb = fam.bf16_components_gb
+    assert transformer_gb > text_encoder_gb > 20.0
+    assert text_encoder_gb < 30.0
+    assert companions_gb > 0.0
+
+
+def test_hv15_detection_and_flags():
+    fam = detect_video_family("hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v")
+    assert fam is not None and fam.name == "hunyuanvideo-1.5"
+    assert fam.guidance_via_guider is True
+    assert fam.frame_step == 4 and fam.resolution_multiple == 16
+    assert fam.has_audio is False
+    assert detect_video_family("x/y", override = "hv15") is fam
+    assert detect_video_family("hunyuanvideo-community/HunyuanVideo") is None
+
+
+def test_hv15_generation_defaults():
+    assert default_video_generation_params(
+        None, "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v"
+    ) == (20, 6.0)
+
+
+def test_hv15_720p_checkpoints_never_route_to_the_480p_family():
+    """720p checkpoints must not route to the 480p family, since the tier is baked into the weights."""
+    for repo_id in (
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v",
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v",
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v_distilled",
+        "QuantStack/HunyuanVideo-1.5-GGUF/720p_t2v-Q4_K_M.gguf",
+    ):
+        fam = detect_video_family(repo_id)
+        assert fam is not None and fam.name == "hunyuanvideo-1.5-720p", repo_id
+        assert fam.base_repo.endswith("720p_t2v"), repo_id
+    for repo_id in (
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v",
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v",
+    ):
+        assert detect_video_family(repo_id).name == "hunyuanvideo-1.5", repo_id
+
+
+def test_video_resolution_presets_are_upstream_sanctioned():
+    """Presets must be trained sizes: HV15 uses its own tier's buckets; Wan2.2 uses SUPPORTED_SIZES."""
+
+    def buckets(base_size, patch_size = 16):
+        num_patches = round((base_size / patch_size) ** 2)
+        out, wp, hp = [], num_patches, 1
+        while wp > 0:
+            if max(wp, hp) / min(wp, hp) <= 4.0:
+                out.append((wp * patch_size, hp * patch_size))
+            if (hp + 1) * wp <= num_patches:
+                hp += 1
+            else:
+                wp -= 1
+        return out
+
+    for name, base_size in (("hunyuanvideo-1.5", 640), ("hunyuanvideo-1.5-720p", 960)):
+        fam = detect_video_family("x/y", override = name)
+        allowed = buckets(base_size)
+        for size in fam.resolution_presets:
+            assert size in allowed, f"{name}: {size} is not a bucket of this tier"
+
+    ti2v = detect_video_family("Wan-AI/Wan2.2-TI2V-5B-Diffusers")
+    assert set(ti2v.resolution_presets) == {(1280, 704), (704, 1280)}
+
+
+def test_curated_gguf_repos_are_unsloth_mirrors():
+    """Curated video GGUF picks must be Unsloth mirrors, since a takedown upstream would 404 them."""
+    from core.inference.video_families import _FAMILIES
+
+    curated = {fam.name: fam.gguf_repo for fam in _FAMILIES if fam.gguf_repo}
+    assert curated["wan2.2-ti2v-5b"] == "unsloth/Wan2.2-TI2V-5B-GGUF"
+    assert all(repo.startswith("unsloth/") for repo in curated.values()), curated
+
+
+def test_minimax_h3_offers_every_advertised_aspect_ratio():
+    from core.inference.video_minimax_h3 import H3_CANVAS_MAX_PIXELS, h3_canvas_for_aspect
+
+    fam = detect_video_family("MiniMaxAI/MiniMax-H3")
+    presets = fam.resolution_presets
+    ratios = {round(w / h, 3) for w, h in presets}
+    for aspect in ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16)):
+        derived = h3_canvas_for_aspect(*aspect)
+        assert round(derived[0] / derived[1], 3) in ratios, f"{aspect} has no preset"
+    assert fam.resolution_presets[0] == (1344, 768), "16:9 stays the default"
+
+    for width, height in presets:
+        assert width % 32 == 0 and height % 32 == 0, (width, height)
+        if (width, height) == (1024, 1024):
+            continue
+        assert width * height <= H3_CANVAS_MAX_PIXELS, (width, height)
+        rule_width, rule_height = h3_canvas_for_aspect(width, height)
+        assert width <= rule_width and height <= rule_height, (width, height)
+
+
+def _resident_fam(**kwargs):
+    from core.inference.video_families import VideoFamily
+
+    base = dict(
+        name = "test-video",
+        pipeline_class = "TestPipeline",
+        transformer_class = "TestTransformer3DModel",
+        base_repo = "org/test-video",
+    )
+    base.update(kwargs)
+    return VideoFamily(**base)
+
+
+def test_the_per_scheme_row_wins_and_the_float_is_the_fallback():
+    from core.inference.video_families import video_family_prequant_resident_gb
+
+    fam = _resident_fam(
+        prequant_resident_gb = 20.3,
+        prequant_resident_gb_by_scheme = (("nvfp4", 8.1), ("fp8", 13.6)),
+    )
+    assert video_family_prequant_resident_gb(fam, "nvfp4") == pytest.approx(8.1)
+    assert video_family_prequant_resident_gb(fam, "fp8") == pytest.approx(13.6)
+    assert video_family_prequant_resident_gb(fam, "int8") == pytest.approx(20.3)
+
+
+def test_an_unmeasured_family_reports_nothing_rather_than_guessing():
+    import types
+
+    from core.inference.video_families import video_family_prequant_resident_gb
+
+    assert video_family_prequant_resident_gb(_resident_fam(), "nvfp4") is None
+    assert video_family_prequant_resident_gb(types.SimpleNamespace(), "nvfp4") is None
+    fam = _resident_fam(prequant_resident_gb_by_scheme = (("nvfp4",), ("nvfp4", "big")))
+    assert video_family_prequant_resident_gb(fam, "nvfp4") is None
+
+
+def test_the_h3_measurement_still_answers_through_the_helper():
+    from core.inference.video_families import video_family_prequant_resident_gb
+
+    fam = detect_video_family("MiniMaxAI/MiniMax-H3")
+    assert video_family_prequant_resident_gb(fam, "int8") == pytest.approx(fam.prequant_resident_gb)
+    assert video_family_prequant_resident_gb(fam, "fp8") == pytest.approx(fam.prequant_resident_gb)
+
+
+def test_every_hosted_nvfp4_denoiser_carries_its_measured_resident_size():
+    from core.inference.video_families import (
+        _FAMILIES,
+        video_family_prequant_resident_gb,
+    )
+
+    expected = {
+        "wan2.2-ti2v-5b": 2.9,
+        "wan2.2-t2v-a14b": 16.2,
+        "hunyuanvideo-1.5": 4.8,
+        "hunyuanvideo-1.5-720p": 4.8,
+    }
+    hosting = {
+        fam.name
+        for fam in _FAMILIES
+        if any(scheme == "nvfp4" for scheme, _repo in fam.prequant_repos)
+    }
+    assert hosting == set(expected)
+    for fam in _FAMILIES:
+        if fam.name not in expected:
+            continue
+        assert video_family_prequant_resident_gb(fam, "nvfp4") == pytest.approx(expected[fam.name])
+
+
+def test_the_measured_nvfp4_size_is_a_4_bit_fraction_of_the_term_it_replaces():
+    from core.inference.video_families import (
+        _FAMILIES,
+        video_family_prequant_resident_gb,
+    )
+
+    seen = 0
+    for fam in _FAMILIES:
+        if not any(scheme == "nvfp4" for scheme, _repo in fam.prequant_repos):
+            continue
+        measured = video_family_prequant_resident_gb(fam, "nvfp4")
+        if measured is None or not fam.bf16_components_gb:
+            continue
+        seen += 1
+        assert (
+            0.2 * fam.bf16_components_gb[0] < measured < 0.4 * fam.bf16_components_gb[0]
+        ), fam.name
+    assert seen == 4
+
+
+def test_the_a14b_row_prices_both_experts_not_one():
+    from core.inference.video_families import (
+        detect_video_family,
+        video_family_prequant_resident_gb,
+    )
+
+    fam = detect_video_family("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    assert fam.is_moe
+    names = {entry[-1] for entry in fam.prequant_filenames if entry[0] == "nvfp4"}
+    assert len(names) == 2
+    measured = video_family_prequant_resident_gb(fam, "nvfp4")
+    assert measured == pytest.approx(16.2)
+    assert measured > 0.25 * fam.bf16_components_gb[0]
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [
+        "/data/h3_backup/models",
+        "/home/wan/models",
+        "/mnt/ltx-2/archive",
+        "/srv/flux.1/cache",
+        "C:\\Users\\h3\\models",
+        "/tmp/pytest-of-u/2.14_h3/test_x0",
+    ],
+)
+def test_a_parent_folder_keyword_does_not_pick_the_video_family(parent):
+    sep = "\\" if "\\" in parent else "/"
+    assert detect_video_family(sep.join([parent, "my-videos"])) is None
+    assert detect_video_family(sep.join([parent, "my-videos", "model-Q4_K_M.gguf"])) is None
+    assert (
+        detect_video_family(sep.join([parent, "my-videos", "transformer", "model.safetensors"]))
+        is None
+    )
+    ltx = detect_video_family(sep.join([parent, "ltx-2.3-gguf", "ltx-2.3-22b-dev-Q4_K_M.gguf"]))
+    assert ltx is not None and ltx.name == "ltx-2"
+
+
+def test_the_model_own_folder_or_file_still_names_the_video_family():
+    def name(path):
+        fam = detect_video_family(path)
+        return fam.name if fam else None
+
+    assert name("/data/models/plain/ltx-2-19b-dev-Q4_K_M.gguf") == "ltx-2"
+    assert name("/data/models/LTX-2-GGUF/model-Q4_K_M.gguf") == "ltx-2"
+    assert name("/data/models/LTX-2-GGUF/Q4_K_M/model.gguf") == "ltx-2"
+    assert name("/data/models/LTX-2") == "ltx-2"
+    assert name("/data/models/LTX-2/") == "ltx-2"
+    assert name("/data/models/LTX-2/weights/model.safetensors") == "ltx-2"
+    assert name("/data/models/LTX-2/checkpoints/model.safetensors") == "ltx-2"
+    assert (
+        name("/data/models/MiniMax-H3/transformer/diffusion_pytorch_model.safetensors")
+        == "minimax-h3"
+    )
+    assert name("/data/models/Wan2.2-T2V-A14B-Diffusers") == "wan2.2-t2v-a14b"
+    cache = "/home/h3/.cache/huggingface/hub/models--Lightricks--LTX-2/snapshots/0123abc"
+    assert name(cache) == "ltx-2"
+    assert name(cache + "/ltx-2-19b-dev-fp8.safetensors") == "ltx-2"
+    assert (
+        name(
+            "/home/ltx/.cache/huggingface/hub/models--org--clip/snapshots/0123abc/model.safetensors"
+        )
+        is None
+    )
+    assert name("MiniMaxAI/MiniMax-H3") == "minimax-h3"
+    assert name("unsloth/LTX-2.3-GGUF/ltx-2.3-22b-dev-Q4_K_M.gguf") == "ltx-2"
+
+
+def test_a_parent_folder_keyword_does_not_pick_the_video_defaults():
+    plain = default_video_generation_params("/data/plain/model.gguf", fallback = (7, 7.0))
+    assert plain == (7, 7.0)
+    for parent in ("/data/wan2.1/x", "/home/ltx/x", "/srv/distilled/x"):
+        assert (
+            default_video_generation_params(parent + "/plain/model.gguf", fallback = (7, 7.0))
+            == plain
+        )
+    assert default_video_generation_params(
+        "/data/x/wan2.1-t2v-14b-Q4_K_M.gguf", fallback = (7, 7.0)
+    ) == (20, 6.0)
+    assert (
+        default_video_generation_params("/data/x/ltx-2-19b-distilled/model.gguf", fallback = (7, 7.0))
+        != plain
+    )

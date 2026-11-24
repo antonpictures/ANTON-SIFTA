@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Closing a tool stream while its next() still runs raises ValueError and skips cleanup."""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+
+import pytest
+
+from routes.inference import _drain_pending_worker
+
+
+def test_drain_before_close_avoids_generator_already_executing():
+    cancel_event = threading.Event()
+    entered = threading.Event()
+    finally_ran = threading.Event()
+
+    def blocking_gen():
+        try:
+            entered.set()
+            cancel_event.wait()
+            yield "value"
+        finally:
+            finally_ran.set()
+
+    async def scenario():
+        gen = blocking_gen()
+        next_task = asyncio.create_task(asyncio.to_thread(next, gen, object()))
+        await asyncio.to_thread(entered.wait)
+
+        # Closing mid-next races and raises, leaving the finally unrun.
+        with pytest.raises(ValueError):
+            gen.close()
+        assert not finally_ran.is_set()
+
+        # Draining sets the cancel flag so the worker returns; then close is
+        # clean and the generator's finally runs.
+        await _drain_pending_worker(next_task, cancel_event)
+        gen.close()
+        return
+
+    asyncio.run(scenario())
+    assert finally_ran.is_set()
+
+
+def test_drain_pending_worker_is_noop_without_task():
+    cancel_event = threading.Event()
+
+    asyncio.run(_drain_pending_worker(None, cancel_event))
+    assert not cancel_event.is_set()
+
+
+def test_drain_pending_worker_returns_when_worker_finishes():
+    cancel_event = threading.Event()
+    release = threading.Event()
+
+    def gen():
+        release.wait()
+        yield "done"
+
+    async def scenario():
+        g = gen()
+        task = asyncio.create_task(asyncio.to_thread(next, g, object()))
+        release.set()
+        await _drain_pending_worker(task, cancel_event)
+        assert task.done()
+
+    asyncio.run(scenario())
+    assert cancel_event.is_set()

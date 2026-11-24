@@ -1,0 +1,590 @@
+# Copyright 2023-present Daniel Han-Chen & the Unsloth team. All rights reserved.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+__all__ = [
+    "is_hip",
+    "npu_is_available",
+    "get_device_type",
+    "DEVICE_TYPE",
+    "DEVICE_TYPE_TORCH",
+    "DEVICE_COUNT",
+    "ALLOW_PREQUANTIZED_MODELS",
+    "ALLOW_BITSANDBYTES",
+    "get_device_stats",
+    "clean_gpu_cache",
+    "get_current_device",
+    "resolve_hip_gpu_stats_name",
+    "arch_lacks_bf16",
+    "hip_visible_archs",
+    "is_mlx_available",
+]
+
+import functools
+import importlib.util
+import inspect
+import os
+import re
+from unsloth_zoo.utils import Version
+from .bnb_availability import native_kernels_ready
+
+
+def is_mlx_available():
+    try:
+        from unsloth_zoo.mlx import is_mlx_available as _is_mlx_available
+    except ImportError:
+        return False
+    return _is_mlx_available()
+
+
+_IS_MLX = is_mlx_available()
+
+if not _IS_MLX:
+    import torch
+
+
+@functools.cache
+def is_hip():
+    if _IS_MLX:
+        return False
+    return bool(getattr(getattr(torch, "version", None), "hip", None))
+
+
+@functools.cache
+def npu_is_available():
+    """True only when torch.npu is present AND usable.
+
+    Only torch_npu >= 2.5.1 autoloads the namespace, and importing it without a driver
+    raises, so an unguarded probe would break `import unsloth` on CUDA, ROCm and XPU too.
+    """
+    if _IS_MLX:
+        return False
+    npu = getattr(torch, "npu", None)
+    if npu is None:
+        if importlib.util.find_spec("torch_npu") is None:
+            return False
+        try:
+            import torch_npu  # noqa: F401
+        except Exception:
+            return False
+        npu = getattr(torch, "npu", None)
+        if npu is None:
+            return False
+    try:
+        return bool(npu.is_available())
+    except Exception:
+        return False
+
+
+def _zoo_cpu_backend(name):
+    """The CPU-fallback rules live in unsloth_zoo.device_type; an older zoo has none.
+
+    Only consulted once `import unsloth` has imported unsloth_zoo (as _gpu_init does before this
+    module). Importing it from here would pull the whole zoo package into anything that loads
+    unsloth.device_type on its own (Studio's hardware probes, the test harness's preload).
+    """
+    import sys
+
+    _zoo_device_type = sys.modules.get("unsloth_zoo.device_type")
+    check = getattr(_zoo_device_type, name, None)
+    return bool(check()) if callable(check) else False
+
+
+@functools.cache
+def get_device_type():
+    # MLX first: torch is never imported on the MLX runtime, so claiming "cuda" here would NameError in
+    # get_device_count. Matches unsloth/__init__.py and unsloth_zoo.device_type.
+    if _IS_MLX:
+        return "mlx"
+    # Test-only CPU fallback: report "cuda" so every DEVICE_TYPE == "cuda" branch behaves identically.
+    # Read once per process (function is cached).
+    if os.environ.get("UNSLOTH_ALLOW_CPU", "0") == "1":
+        return "cuda"
+    if _zoo_cpu_backend("cpu_backend_forced"):
+        return "cpu"
+    if hasattr(torch, "cuda") and torch.cuda.is_available():
+        if is_hip():
+            return "hip"
+        return "cuda"
+    elif hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    # After xpu: a host exposing both keeps selecting xpu, as it did before NPU.
+    elif npu_is_available():
+        return "npu"
+    accelerator = None
+    if hasattr(torch, "accelerator"):
+        if not torch.accelerator.is_available():
+            if _zoo_cpu_backend("cpu_backend_allowed"):
+                return "cpu"
+            raise NotImplementedError("Unsloth cannot find any torch accelerator? You need a GPU.")
+        accelerator = str(torch.accelerator.current_accelerator())
+        # Listed, not returned: torch.npu is unusable here, so it only defers the AttributeError.
+        if accelerator in ("cuda", "xpu", "hip", "npu"):
+            raise RuntimeError(
+                f"Unsloth: Weirdly `torch.cuda.is_available()`, `torch.xpu.is_available()`, `torch.npu.is_available()` and `is_hip` all failed.\n"
+                f"But `torch.accelerator.current_accelerator()` works with it being = `{accelerator}`\n"
+                f"Please reinstall torch - it's most likely broken :("
+            )
+    if accelerator is None and _zoo_cpu_backend("cpu_backend_allowed"):
+        return "cpu"
+    # torch.accelerator only exists from torch 2.6, so below that there is no name.
+    raise NotImplementedError(
+        f"Unsloth does not currently work on {accelerator}."
+        if accelerator
+        else "Unsloth does not currently work on this device."
+    )
+
+
+DEVICE_TYPE: str = get_device_type()
+# HIP fails for autocast and other torch functions. Use CUDA instead
+DEVICE_TYPE_TORCH = DEVICE_TYPE
+if DEVICE_TYPE_TORCH == "hip":
+    DEVICE_TYPE_TORCH = "cuda"
+elif DEVICE_TYPE_TORCH == "mlx":
+    DEVICE_TYPE_TORCH = "mps"
+
+
+@functools.cache
+def get_device_count():
+    if DEVICE_TYPE in ("cuda", "hip"):
+        return torch.cuda.device_count()
+    elif DEVICE_TYPE == "xpu":
+        return torch.xpu.device_count()
+    elif DEVICE_TYPE == "npu":
+        return torch.npu.device_count()
+    elif DEVICE_TYPE == "cpu":
+        return 0
+    else:
+        return 1
+
+
+DEVICE_COUNT: int = get_device_count()
+
+# 4-bit quantization requires a block size of 64: Instinct (MI) has a warp size of 64 against 32
+# elsewhere. Since bitsandbytes 0.49.0 pre-quantized 64-blockwise models work on Radeon (Navi)
+# but not Instinct (bitsandbytes-foundation/bitsandbytes#1748); since 0.49.2 blocksize=64 4-bit
+# is supported on CDNA (MI Instinct / gfx9xx) too (#1856).
+
+ALLOW_PREQUANTIZED_MODELS: bool = True
+# HSA_STATUS_ERROR_EXCEPTION checks - sometimes AMD fails for BnB
+ALLOW_BITSANDBYTES: bool = True
+# Unusable bitsandbytes on any backend, not just hip: clear the flags the loader reads before it
+# picks a 4bit checkpoint. A guarded import, not find_spec, since importable is not usable: from
+# 0.46 a dead native library still resolves every ctypes handle to a closure that raises only when
+# called, so 4bit would die mid-run rather than fall back here.
+try:
+    import bitsandbytes as _bnb_probe
+except Exception:
+    ALLOW_PREQUANTIZED_MODELS = False
+    ALLOW_BITSANDBYTES = False
+else:
+    if not native_kernels_ready(_bnb_probe, DEVICE_TYPE):
+        ALLOW_PREQUANTIZED_MODELS = False
+        ALLOW_BITSANDBYTES = False
+    del _bnb_probe
+
+
+def hip_visible_archs():
+    """Guarded per device: one unreadable device must not discard the archs beside it, or a
+    gfx10 keeps bf16 and dies in Triton (#7922). Only an unreadable count returns []."""
+    try:
+        count = torch.cuda.device_count()
+    except Exception:
+        return []
+    archs = []
+    for i in range(count):
+        try:
+            archs.append(str(getattr(torch.cuda.get_device_properties(i), "gcnArchName", "")))
+        except Exception:
+            continue
+    return archs
+
+
+def cuda_visible_capabilities(with_index = False):
+    """(major, minor) of every visible CUDA device, guarded per device like hip_visible_archs:
+    process-wide gates (bf16, compile) must hold on the weakest card layers may land on.
+    with_index yields (device_index, (major, minor)), since unreadable cards are skipped."""
+    try:
+        count = torch.cuda.device_count()
+    except Exception:
+        return []
+    caps = []
+    for i in range(count):
+        try:
+            cap = tuple(torch.cuda.get_device_capability(i))
+        except Exception:
+            continue
+        caps.append((i, cap) if with_index else cap)
+    return caps
+
+
+def cuda_gate_capabilities():
+    """Capabilities a process-wide gate should judge: every card that could be read, which
+    always includes the current device (the pre-mixed-host rule) when it is readable, so a
+    gate is never less strict than before and still sees a known old card beside it."""
+    caps = cuda_visible_capabilities()
+    if caps:
+        return caps
+    try:
+        return [tuple(torch.cuda.get_device_capability())]
+    except Exception:
+        return []
+
+
+def cuda_order_mismatch_names():
+    """Visible NVIDIA names when they differ and CUDA_DEVICE_ORDER is unset, else []."""
+    if is_hip() or os.environ.get("CUDA_DEVICE_ORDER", "").strip():
+        return []
+    try:
+        count = torch.cuda.device_count()
+    except Exception:
+        return []
+    if count <= 1:
+        return []
+    names = []
+    for i in range(count):
+        try:
+            names.append(str(torch.cuda.get_device_name(i)))
+        except Exception:
+            continue
+    names = list(dict.fromkeys(names))
+    return names if len(names) > 1 else []
+
+
+def _xpu_launch_indices():
+    """Under torchrun / accelerate, the XPUs this node's ranks use (LOCAL_WORLD_SIZE of them, clipped
+    to the visible count), else None. Unsloth is imported before a rank selects its XPU, so the
+    current device then reads XPU 0 on every rank; judging the ranks' devices together keeps every
+    rank on one dtype and is never narrower than the all-visible rule."""
+
+    def _env_int(name):
+        try:
+            return int(os.environ.get(name, ""))
+        except ValueError:
+            return None
+
+    local_world = _env_int("LOCAL_WORLD_SIZE")
+    world = _env_int("WORLD_SIZE")
+    if (local_world or 1) <= 1 and (world or 1) <= 1:
+        return None
+    try:
+        count = int(torch.xpu.device_count())
+    except Exception:
+        return None
+    if count <= 0:
+        return None
+    return list(range(min(local_world, count) if local_world and local_world > 0 else count))
+
+
+def _xpu_selected_indices(device = None):
+    """XPU indices to judge: `device` (an index, "xpu:N", a torch.device or several of them), else
+    the XPUs of a distributed launch (_xpu_launch_indices), else the current device, which
+    torch.xpu.is_bf16_supported() also asks. None when unreadable."""
+    items = device if isinstance(device, (list, tuple, set, frozenset)) else [device]
+    indices = []
+    for item in items:
+        try:
+            if item is None:
+                launch = _xpu_launch_indices()
+                if launch is not None:
+                    indices.extend(i for i in launch if i not in indices)
+                    continue
+                index = torch.xpu.current_device()
+            elif isinstance(item, int) and not isinstance(item, bool):
+                index = item
+            else:
+                item = torch.device(item)
+                if item.type != "xpu":
+                    continue
+                index = torch.xpu.current_device() if item.index is None else item.index
+        except Exception:
+            return None
+        if index not in indices:
+            indices.append(int(index))
+    return indices
+
+
+def _xpu_device_lacks_native_bf16(index):
+    """True only when this device is proven to emulate bf16. Its own aspects decide whether the probe
+    can be trusted: without libocloc (absent in torch-xpu wheels) every SYCL aspect reads False."""
+    aspects = (
+        "has_bfloat16_conversions",
+        "has_subgroup_matrix_multiply_accumulate",
+        "has_subgroup_matrix_multiply_accumulate_tensor_float32",
+        "has_subgroup_2d_block_io",
+    )
+    try:
+        props = torch.xpu.get_device_properties(index)
+    except Exception:
+        return False
+    lacks_bf16 = getattr(props, "has_bfloat16_conversions", True) is False
+    return lacks_bf16 and any(getattr(props, name, False) is True for name in aspects)
+
+
+def xpu_supports_native_bf16(device = None):
+    """Native bf16 on the XPU(s) in use: `device`, else the current XPU, the one
+    torch.xpu.is_bf16_supported() asks. An unused sibling never narrows it, and emulated bf16 still
+    runs on any XPU a split model reaches. Unknown means True.
+    Must match unsloth_zoo.device_type._xpu_bf16_supported."""
+    indices = _xpu_selected_indices(device)
+    if indices is None:
+        return True
+    return not any(_xpu_device_lacks_native_bf16(index) for index in indices)
+
+
+def xpu_keeps_explicit_bf16():
+    """An explicit bf16 request on XPU stays bf16 (emulated if need be) only beside an unsloth_zoo
+    that does the same for vLLM, so the engine and the HF weights it shares agree on one dtype."""
+    if DEVICE_TYPE != "xpu":
+        return False
+    try:
+        import unsloth_zoo.device_type as zoo_device_type
+    except Exception:
+        return False
+    return bool(getattr(zoo_device_type, "XPU_KEEPS_EXPLICIT_BF16", False))
+
+
+def zoo_shares_xpu_bf16():
+    """True once unsloth_zoo has _xpu_bf16_supported. An older zoo still counts emulated bf16 for
+    trainer AMP, gradient checkpointing and vLLM, so keep the old XPU answer there to load alike."""
+    try:
+        import unsloth_zoo.device_type as zoo_device_type
+    except Exception:
+        return False
+    return hasattr(zoo_device_type, "_xpu_bf16_supported")
+
+
+# Pre-Volta NVIDIA (Maxwell / Pascal, sm < 7.0): Inductor refuses to emit Triton for these
+# (GPUTooOldForTriton mid-training), while Unsloth's own Triton kernels still run, so train eagerly.
+def apply_pre_volta_compile_workaround(
+    major,
+    environ = None,
+    dynamo_config = None,
+) -> bool:
+    """Turn torch.compile off for compute capability < 7. An explicit TORCHDYNAMO_DISABLE wins.
+
+    The env vars alone miss regions torch.compile already wrapped while unsloth_zoo imported:
+    those read the Dynamo config per call, the env var only at wrap time (MoE hit this).
+    """
+    if major is None or major >= 7:
+        return False
+    if environ is None:
+        environ = os.environ
+    if environ.get("TORCHDYNAMO_DISABLE", "1") != "1":
+        return False
+    environ["TORCHDYNAMO_DISABLE"] = "1"
+    environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+    environ.setdefault("UNSLOTH_COMPILE_DISABLE", "1")
+    if dynamo_config is None:
+        import torch._dynamo
+        dynamo_config = torch._dynamo.config
+    dynamo_config.disable = True
+    # torch >= 2.12 keeps that assignment per thread, and backward (checkpoint recompute) runs on
+    # autograd worker threads, so also set the process-wide default those threads fall back to.
+    entry = getattr(dynamo_config, "_config", {}).get("disable", None)
+    if entry is not None and hasattr(entry, "default"):
+        entry.default = True
+    return True
+
+
+# gfx906 (MI50 / Radeon VII / Vega 20): Dynamo/Inductor codegen is broken on this legacy GCN arch
+# (ROCm dropped it after 6.3), so compiled graphs crash or miscompile while eager trains fine.
+# Any visible gfx906 counts: compile is process-wide and layers may land on it. Same switch as
+# pre-Volta, so regions compiled while unsloth_zoo imported are turned off too.
+if DEVICE_TYPE == "hip":
+    if any(arch.split(":")[0].strip().lower() == "gfx906" for arch in hip_visible_archs()):
+        os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+        os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+        os.environ.setdefault("UNSLOTH_COMPILE_DISABLE", "1")
+        apply_pre_volta_compile_workaround(0)  # the live Dynamo config, unless explicitly enabled
+        print(
+            "Unsloth: gfx906 (MI50 / Radeon VII) detected - torch.compile disabled "
+            "(community-maintained legacy GCN path)."
+        )
+
+
+if DEVICE_TYPE == "cuda" and torch.cuda.is_available():
+    # Weakest visible card: compile is process-wide and layers may land on any of them.
+    _cuda_major = min((cap[0] for cap in cuda_gate_capabilities()), default = None)
+    if apply_pre_volta_compile_workaround(_cuda_major):
+        print(
+            "Unsloth: GPUs older than Volta (compute capability < 7.0) cannot run "
+            "torch.compile - training without it."
+        )
+    del _cuda_major
+if DEVICE_TYPE == "hip":
+    try:
+        import bitsandbytes
+    except:
+        print(
+            "Unsloth: `bitsandbytes` is not installed - 4bit QLoRA unallowed, but 16bit and full finetuning works."
+        )
+        ALLOW_PREQUANTIZED_MODELS = False
+        ALLOW_BITSANDBYTES = False
+    if ALLOW_BITSANDBYTES:
+        ALLOW_BITSANDBYTES = Version(bitsandbytes.__version__) > Version("0.48.2.dev0")
+        if Version(bitsandbytes.__version__) >= Version("0.49.2"):
+            pass
+        elif Version(bitsandbytes.__version__) >= Version("0.49.0"):
+            try:
+                # Pre-quantized bitsandbytes models use blocksize 64.
+                from bitsandbytes.cextension import ROCM_WARP_SIZE_64
+                ALLOW_PREQUANTIZED_MODELS = not ROCM_WARP_SIZE_64
+            except Exception as e:
+                print(
+                    "Unsloth: Checking `from bitsandbytes.cextension import ROCM_WARP_SIZE_64` had error = \n"
+                    f"{str(e)}\n"
+                    "4bit QLoRA disabled for now, but 16bit and full finetuning works."
+                )
+                ALLOW_PREQUANTIZED_MODELS = False
+                ALLOW_BITSANDBYTES = False
+        elif ALLOW_BITSANDBYTES:
+            from bitsandbytes.nn.modules import Params4bit
+            if "blocksize = 64 if not HIP_ENVIRONMENT else 128" in inspect.getsource(Params4bit):
+                ALLOW_PREQUANTIZED_MODELS = False
+
+
+def arch_lacks_bf16(gcn_arch):
+    """gfx10 (RDNA 1/2) claims bf16 it lacks, and Triton's dot then kills the process in LLVM
+    with no Python exception (issue 7922). gfx11 has bf16, so the prefix must stay 5 chars."""
+    return str(gcn_arch or "").split(":", 1)[0].strip().lower().startswith("gfx10")
+
+
+def arch_lacks_buffer_ops(gcn_arch):
+    """RDNA1 reads Triton's gfx10.3-layout buffer descriptors wrongly: kernels launch and write
+    nothing. gfx103x (RDNA2) is fine and must not match (#11614)."""
+    return str(gcn_arch or "").split(":", 1)[0].strip().lower().startswith("gfx101")
+
+
+_GFX101X_TRITON_WORKAROUND_APPLIED = False
+
+
+def gfx101x_triton_workaround_applied():
+    return _GFX101X_TRITON_WORKAROUND_APPLIED
+
+
+def apply_gfx101x_triton_workaround(environ = None, triton_home = None):
+    """Turn Triton's buffer ops off and give Triton and Inductor separate caches: Inductor's cache
+    key ignores the knob, so stale buffer-op kernels gave -inf/nan. A user-set value that Triton
+    reads as on is left alone; user-chosen cache dirs are kept. Returns whether ops end up off."""
+    global _GFX101X_TRITON_WORKAROUND_APPLIED
+    is_process_env = environ is None
+    environ = os.environ if environ is None else environ
+    current = environ.get("AMDGCN_USE_BUFFER_OPS")
+    # Triton's getenv_bool: only these spellings mean on, anything else is off.
+    if current is not None and current.strip().lower() in ("1", "true", "on", "yes", "y"):
+        return False
+    environ.setdefault("AMDGCN_USE_BUFFER_OPS", "0")
+    if "TRITON_CACHE_DIR" not in environ:
+        home = triton_home or environ.get("TRITON_HOME") or os.path.expanduser("~")
+        environ["TRITON_CACHE_DIR"] = os.path.join(home, ".triton", "cache-no-buffer-ops")
+    default_inductor = _default_inductor_cache_dir()
+    inductor = environ.get("TORCHINDUCTOR_CACHE_DIR")
+    # `import torch._dynamo` already wrote the shared default into os.environ; not a user choice.
+    if inductor is None or os.path.abspath(inductor) == os.path.abspath(default_inductor):
+        environ["TORCHINDUCTOR_CACHE_DIR"] = default_inductor + "_no_buffer_ops"
+    if is_process_env:
+        _GFX101X_TRITON_WORKAROUND_APPLIED = True
+    return True
+
+
+def _default_inductor_cache_dir():
+    try:
+        from torch._inductor.runtime.cache_dir_utils import default_cache_dir
+        return default_cache_dir()
+    except Exception:
+        pass
+    import getpass
+    import tempfile
+
+    # getuser raises for a uid with no passwd entry (containers); same fallback as torch.
+    try:
+        user = getpass.getuser()
+    except (KeyError, ModuleNotFoundError, OSError):
+        getuid = getattr(os, "getuid", None)
+        user = f"uid_{getuid()}" if callable(getuid) else "unknown_user"
+    user = re.sub(r'[\\/:*?"<>|]', "_", user)
+    return os.path.join(tempfile.gettempdir(), "torchinductor_" + user)
+
+
+def resolve_hip_gpu_stats_name(gpu_stats):
+    name = str(getattr(gpu_stats, "name", "") or "").strip()
+    name = re.sub(r"\s*\([^)]*\)\s*$", "", name).strip()
+    normalized_name = name.lower().strip(". ")
+    if normalized_name and normalized_name not in ("amd radeon graphics",):
+        return name + ". "
+
+    try:
+        torch_name = str(torch.cuda.get_device_name(0) or "").strip()
+        torch_name = re.sub(r"\s*\([^)]*\)\s*$", "", torch_name).strip()
+    except Exception:
+        torch_name = ""
+    normalized_torch_name = torch_name.lower().strip(". ")
+    if normalized_torch_name and normalized_torch_name not in ("amd radeon graphics",):
+        return torch_name + ". "
+
+    arch_name = ""
+    for key in ("gcnArchName", "gcn_arch_name", "arch_name", "gfx_arch_name"):
+        value = getattr(gpu_stats, key, None)
+        if value is not None and str(value).strip():
+            arch_name = str(value).strip()
+            break
+
+    if arch_name:
+        match = re.search(r"(gfx[0-9a-z]+)", arch_name, flags = re.I)
+        if match:
+            return f"AMD {match.group(1).lower()} GPU. "
+    return "AMD GPU. "
+
+
+_DEVICE_MODULE = None if _IS_MLX else getattr(torch, DEVICE_TYPE_TORCH, None)
+if not _IS_MLX and _DEVICE_MODULE is None:
+    raise RuntimeError(f"Unsloth: PyTorch does not provide the {DEVICE_TYPE_TORCH} backend.")
+
+
+def get_device_stats() -> tuple[str, str, float]:
+    """Return (name, stats_snippet, max_memory_gb)."""
+    if _DEVICE_MODULE is None:
+        raise RuntimeError("Unsloth: GPU statistics are unavailable on the MLX runtime.")
+    gpu_stats = _DEVICE_MODULE.get_device_properties(0)
+    max_memory = round(gpu_stats.total_memory / 1024**3, 3)
+
+    if DEVICE_TYPE == "hip":
+        name = resolve_hip_gpu_stats_name(gpu_stats)
+        snippet = f"ROCm Toolkit: {torch.version.hip}."
+    elif DEVICE_TYPE == "xpu":
+        name = gpu_stats.name + ". " if gpu_stats.name else "Intel XPU Device. "
+        snippet = f"Intel Toolkit: {torch.version.xpu}."
+    elif DEVICE_TYPE == "npu":
+        # Named for the vendor, like the arms either side of it: torch.npu and torch_npu are
+        # Ascend's, so an unnamed one is an Ascend NPU the driver declined to name, not some
+        # generic NPU. #10686 added the tests that say so and the code that did not.
+        name = gpu_stats.name + ". " if gpu_stats.name else "Ascend NPU Device. "
+        # Report the toolkit like the cuda/xpu arms, not the name already in `name`.
+        try:
+            import torch_npu
+            snippet = f"Ascend NPU. torch_npu: {torch_npu.__version__}."
+        except Exception:
+            snippet = "Ascend NPU."
+    else:
+        name = gpu_stats.name + ". " if gpu_stats.name else "NVIDIA GPU Device. "
+        snippet = f"CUDA: {gpu_stats.major}.{gpu_stats.minor}. CUDA Toolkit: {torch.version.cuda}."
+    return name, snippet, max_memory
+
+
+def clean_gpu_cache() -> None:
+    """Clear GPU cache for current device type."""
+    if _DEVICE_MODULE is not None:
+        _DEVICE_MODULE.empty_cache()
+
+
+def get_current_device() -> int:
+    """Get current device index."""
+    return 0 if _DEVICE_MODULE is None else _DEVICE_MODULE.current_device()

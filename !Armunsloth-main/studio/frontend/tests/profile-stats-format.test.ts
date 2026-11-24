@@ -1,0 +1,415 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  type ActivityGridColumn,
+  activitySummaryForMode,
+  buildActivityColumns,
+  formatCompactNumber,
+  formatDayCount,
+  formatDuration,
+  formatFullNumber,
+  formatMilliseconds,
+  formatProfileCount,
+  heatLevel,
+  heatThresholds,
+  monthLabelColumns,
+  parseDayKey,
+  seriesForMode,
+  toLocalDayKey,
+  weekChartPoints,
+  windowBaseline,
+} from "../src/features/profile/utils/stats-format.ts";
+
+test("compact numbers match the tile format", () => {
+  assert.equal(formatCompactNumber(0, "en"), "0");
+  assert.equal(formatCompactNumber(999, "en"), "999");
+  assert.equal(formatCompactNumber(1000, "en"), "1K");
+  assert.equal(formatCompactNumber(12_340, "en"), "12.3K");
+  assert.equal(formatCompactNumber(1_900_000_000, "en"), "1.9B");
+  assert.equal(formatCompactNumber(19_800_000_000, "en"), "19.8B");
+  // Past 100 of a unit the decimal is noise.
+  assert.equal(formatCompactNumber(123_400, "en"), "123K");
+  assert.equal(formatCompactNumber(Number.NaN, "en"), "0");
+});
+
+test("sub-unit counts stay whole, in every locale", () => {
+  // Whole tokens: the unit boundary is per-locale (ja/de compact later), not a fixed 1000.
+  assert.equal(formatCompactNumber(12.5, "en"), "13");
+  assert.equal(formatCompactNumber(12.4, "en"), "12");
+  assert.equal(formatCompactNumber(0.5, "en"), "1");
+  // Intl rounds half away from zero, unlike Math.round; pinned so the difference is deliberate.
+  assert.equal(formatCompactNumber(-12.5, "en"), "-13");
+  // ja does not compact below \u4e07, so a four-digit value is still whole there.
+  assert.equal(formatCompactNumber(5000.4, "ja"), "5000");
+  assert.equal(formatCompactNumber(12_340, "en"), "12.3K");
+  assert.equal(formatCompactNumber(12_340, "ja"), "1.2\u4e07");
+});
+
+test("a non-Latin numbering system keeps its decimal", () => {
+  // Non-ASCII digits once made the threshold NaN; pin ar-EG since `arab` default varies by ICU.
+  const arab = "ar-EG" as Parameters<typeof formatCompactNumber>[1];
+  const onePointNine = formatCompactNumber(1_900_000, arab);
+  assert.ok(
+    /\u0661[\u066b.,]\u0669/.test(onePointNine),
+    `expected a 1.9-style value, got ${onePointNine}`,
+  );
+  assert.ok(
+    !/[\u066b.,]/.test(formatCompactNumber(190_000_000, arab)),
+    "expected no decimal past 100 of a unit",
+  );
+});
+
+test("the latn probe does not change which unit Intl picked", () => {
+  // Unit grouping is a locale property, so probing in latn must not change ja/zh/hi.
+  assert.equal(formatCompactNumber(1_900_000, "ja"), "190\u4e07");
+  assert.equal(formatCompactNumber(190_000_000, "ja"), "1.9\u5104");
+  assert.equal(formatCompactNumber(1_900_000, "zh-CN"), "190\u4e07");
+  assert.equal(formatCompactNumber(1_234, "en"), "1.2K");
+});
+
+test("rounding up a unit steps to the next suffix", () => {
+  // Rounding 999.5K to "1000K" is four digits, which is not compact.
+  assert.equal(formatCompactNumber(999_999, "en"), "1M");
+  assert.equal(formatCompactNumber(999_500, "en"), "1M");
+  assert.equal(formatCompactNumber(999_999_999, "en"), "1B");
+  assert.equal(formatCompactNumber(999_999_999_999, "en"), "1T");
+  assert.equal(formatCompactNumber(-999_999, "en"), "-1M");
+  assert.equal(formatCompactNumber(999_499, "en"), "999K");
+});
+
+test("compact numbers use each locale's own magnitude units", () => {
+  // K/M/B is English-only; ja/ko/zh/hi group differently.
+  assert.equal(formatCompactNumber(12_340, "ja"), "1.2万");
+  assert.equal(formatCompactNumber(1_900_000_000, "ja"), "19億");
+  assert.equal(formatCompactNumber(12_340, "zh-CN"), "1.2万");
+  assert.equal(formatCompactNumber(1_900_000_000, "zh-CN"), "19亿");
+  // CLDR uses U+00A0 here, so a normal space silently fails.
+  assert.equal(formatCompactNumber(1_900_000, "hi"), "19\u00a0लाख");
+  assert.equal(formatCompactNumber(1_900_000, "de"), "1,9\u00a0Mio.");
+  assert.equal(formatCompactNumber(1_900_000, "ru"), "1,9\u00a0млн");
+  // German CLDR has no short form below a million.
+  assert.equal(formatCompactNumber(12_340, "de"), "12.340");
+});
+
+test("full numbers group the way the chosen locale groups", () => {
+  assert.equal(formatFullNumber(1_234_567, "en"), "1,234,567");
+  assert.equal(formatFullNumber(1_234_567, "de"), "1.234.567");
+  // Indian grouping is 2-2-3, not 3-3-3.
+  assert.equal(formatFullNumber(1_234_567, "hi"), "12,34,567");
+  assert.equal(formatFullNumber(Number.NaN, "en"), "0");
+});
+
+test("durations read the way the header does", () => {
+  assert.equal(formatDuration(0), "0m");
+  assert.equal(formatDuration(45), "45s");
+  assert.equal(formatDuration(90), "1m 30s");
+  assert.equal(formatDuration(14_880), "4h 8m");
+  assert.equal(formatDuration(180_000), "2d 2h");
+  assert.equal(formatMilliseconds(420), "420ms");
+  assert.equal(formatMilliseconds(2500), "2.5s");
+  assert.equal(formatMilliseconds(0), "—");
+});
+
+test("day counts follow each locale's plural rules", () => {
+  assert.equal(formatDayCount(1, "en"), "1 day");
+  assert.equal(formatDayCount(2, "en"), "2 days");
+  assert.equal(formatDayCount(1, "it"), "1 giorno");
+  assert.equal(formatDayCount(2, "it"), "2 giorni");
+  assert.equal(formatDayCount(1, "ar"), "يوم");
+  assert.equal(formatDayCount(2, "ar"), "يومان");
+  assert.equal(formatDayCount(3, "ar"), "3 أيام");
+  assert.equal(formatDayCount(11, "ar"), "11 يومًا");
+  assert.equal(formatDayCount(100, "ar"), "100 يوم");
+});
+
+test("profile counts follow the selected locale's plural rules", () => {
+  assert.equal(formatProfileCount(1, "step", "en"), "1 step");
+  assert.equal(formatProfileCount(2, "step", "en"), "2 steps");
+  assert.equal(formatProfileCount(1, "week", "es"), "1 semana");
+  assert.equal(formatProfileCount(2, "week", "es"), "2 semanas");
+
+  assert.equal(formatProfileCount(1, "week", "it"), "1 settimana");
+  assert.equal(formatProfileCount(2, "week", "it"), "2 settimane");
+  assert.equal(formatProfileCount(1, "message", "it"), "1 messaggio");
+  assert.equal(formatProfileCount(2, "message", "it"), "2 messaggi");
+  assert.equal(formatProfileCount(2, "token", "it"), "2 token");
+  assert.equal(formatProfileCount(2, "step", "it"), "2 step");
+  assert.equal(formatProfileCount(1, "message", "sv"), "1 meddelande");
+  assert.equal(formatProfileCount(2, "message", "sv"), "2 meddelanden");
+  assert.equal(formatProfileCount(5, "token", "en", "$&"), "$& tokens");
+  assert.equal(formatProfileCount(5, "token", "en", "$'"), "$' tokens");
+
+  assert.equal(formatProfileCount(1, "step", "ru"), "1 шаг");
+  assert.equal(formatProfileCount(2, "step", "ru"), "2 шага");
+  assert.equal(formatProfileCount(5, "step", "ru"), "5 шагов");
+  assert.equal(formatProfileCount(21, "step", "ru"), "21 шаг");
+
+  assert.equal(formatProfileCount(1, "message", "ar"), "رسالة واحدة");
+  assert.equal(formatProfileCount(2, "message", "ar"), "رسالتان");
+  assert.equal(formatProfileCount(3, "message", "ar"), "3 رسائل");
+  assert.equal(formatProfileCount(11, "message", "ar"), "11 رسالة");
+  assert.equal(formatProfileCount(100, "message", "ar"), "100 رسالة");
+  assert.equal(formatProfileCount(1, "message", "he"), "הודעה אחת");
+  assert.equal(formatProfileCount(2, "message", "he"), "2 הודעות");
+  assert.equal(formatProfileCount(5, "token", "he"), "5 טוקנים");
+  assert.equal(formatProfileCount(1200, "token", "ar", "1.2K"), "1.2K توكن");
+});
+
+test("heat levels split the active days into quartiles", () => {
+  const days = [0, 0, 100, 200, 300, 400, 500, 600, 700, 50_000];
+  const thresholds = heatThresholds(days);
+  assert.deepEqual(thresholds, [300, 500, 700, 50_000]);
+  assert.equal(heatLevel(0, thresholds), 0);
+  assert.equal(heatLevel(100, thresholds), 1);
+  assert.equal(heatLevel(400, thresholds), 2);
+  assert.equal(heatLevel(600, thresholds), 3);
+  // One outlier no longer drops every other day to the faintest shade.
+  assert.equal(heatLevel(50_000, thresholds), 4);
+  assert.notEqual(heatLevel(700, thresholds), 1);
+});
+
+test("a lone active day, or days all alike, take the strongest shade", () => {
+  assert.equal(heatLevel(5, heatThresholds([0, 5, 0])), 4);
+  assert.equal(heatLevel(80, heatThresholds([80, 80, 80])), 4);
+  assert.deepEqual(heatThresholds([0, 0]), [0, 0, 0, 0]);
+  // Coinciding quartiles promote only the days at them, not a smaller day below.
+  const repeated = heatThresholds([10, 100, 100, 100, 100, 100, 100, 100]);
+  assert.equal(heatLevel(100, repeated), 4);
+  assert.equal(heatLevel(10, repeated), 1);
+});
+
+test("the busiest day takes the strongest shade with only a few active days", () => {
+  for (const days of [
+    [1_000, 50_000],
+    [1_000, 20_000, 50_000],
+    [1_000, 8_000, 20_000, 50_000],
+  ]) {
+    const thresholds = heatThresholds(days);
+    assert.equal(heatLevel(50_000, thresholds), 4, String(days));
+    assert.equal(heatLevel(1_000, thresholds), 1, String(days));
+  }
+});
+
+test("the grid ends on today's week and pads only real gaps", () => {
+  // Wed 2026-10-07 .. Wed 2026-10-21: three Monday-started weeks.
+  const daily = Array.from({ length: 15 }, (_, index) => ({
+    date: `2026-10-${String(7 + index).padStart(2, "0")}`,
+    tokens: index,
+  }));
+  const grid = buildActivityColumns(daily, seriesForMode(daily, "daily"), 10, "daily");
+  assert.equal(grid.length, 3);
+  assert.ok(grid.every((column) => column.length === 7));
+  // Monday and Tuesday before the first day, Thursday to Sunday after today.
+  assert.deepEqual(grid[0]?.slice(0, 2).map((cell) => cell.day), [null, null]);
+  assert.equal(grid[2]?.[2]?.day?.date, "2026-10-21");
+  assert.deepEqual(grid[2]?.slice(3).map((cell) => cell.day), [null, null, null, null]);
+  // Narrower than the series: the oldest week falls off, today stays.
+  const narrow = buildActivityColumns(daily, seriesForMode(daily, "daily"), 2, "daily");
+  assert.equal(narrow.length, 2);
+  assert.equal(narrow[0]?.[0]?.day?.date, "2026-10-12");
+});
+
+test("every month whose 1st is shown gets a label, and a leading sliver yields", () => {
+  const days = (from: string, count: number) => {
+    const start = parseDayKey(from);
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+      return { date: toLocalDayKey(date), tokens: 0 };
+    });
+  };
+  // Starts Mon 2025-12-22: Dec is a sliver two columns before January.
+  const winter = days("2025-12-22", 60);
+  const grid = buildActivityColumns(winter, seriesForMode(winter, "daily"), 20, "daily");
+  const labels = monthLabelColumns(grid).map((label) => label.date.slice(0, 7));
+  assert.deepEqual(labels, ["2026-01", "2026-02"]);
+  // A sliver with room before the next month keeps its label.
+  const autumn = days("2025-09-08", 60);
+  const autumnGrid = buildActivityColumns(autumn, seriesForMode(autumn, "daily"), 20, "daily");
+  assert.equal(monthLabelColumns(autumnGrid)[0]?.date, "2025-09-08");
+  assert.equal(monthLabelColumns(autumnGrid)[1]?.date, "2025-10-01");
+});
+
+test("day keys parse as local dates, not UTC", () => {
+  const parsed = parseDayKey("2026-03-09");
+  assert.equal(parsed.getFullYear(), 2026);
+  assert.equal(parsed.getMonth(), 2);
+  assert.equal(parsed.getDate(), 9);
+});
+
+test("activity summaries follow the selected chart mode", () => {
+  const grid = [
+    [
+      { day: { tokens: 10 } },
+      { day: { tokens: 20 } },
+      { day: null },
+      { day: null },
+      { day: null },
+      { day: null },
+      { day: null },
+    ],
+    [
+      { day: { tokens: 100 } },
+      { day: { tokens: 50 } },
+      { day: null },
+      { day: null },
+      { day: null },
+      { day: null },
+      { day: null },
+    ],
+  ];
+
+  assert.equal(activitySummaryForMode(grid, "daily"), 180);
+  assert.equal(activitySummaryForMode(grid, "cumulative"), 180);
+  assert.equal(activitySummaryForMode(grid, "weekly"), 150);
+  assert.equal(activitySummaryForMode([], "daily"), 0);
+});
+
+test("daily and cumulative still total the window, as the card always did", () => {
+  const legacyVisibleTotal = (grid: ActivityGridColumn[]) =>
+    grid.reduce(
+      (sum, column) =>
+        column.reduce((total, cell) => total + (cell.day?.tokens ?? 0), sum),
+      0,
+    );
+
+  let seed = 20260908;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+  for (let trial = 0; trial < 200; trial += 1) {
+    const grid: ActivityGridColumn[] = Array.from(
+      { length: 1 + Math.floor(random() * 55) },
+      () =>
+        Array.from({ length: 7 }, () =>
+          random() < 0.3
+            ? { day: null }
+            : { day: { tokens: Math.floor(random() * 50_000) } },
+        ),
+    );
+    const expected = legacyVisibleTotal(grid);
+    assert.equal(activitySummaryForMode(grid, "daily"), expected);
+    assert.equal(activitySummaryForMode(grid, "cumulative"), expected);
+    assert.ok(activitySummaryForMode(grid, "weekly") <= expected);
+  }
+});
+
+test("the shapes a real grid actually takes summarise without NaN", () => {
+  // Columns are padded to Monday-started weeks, so nulls are normal and the last column is short.
+  const allPadding = [Array.from({ length: 7 }, () => ({ day: null }))];
+  const ragged = [
+    [
+      { day: { tokens: 1 } },
+      { day: { tokens: 2 } },
+      { day: { tokens: 3 } },
+      { day: { tokens: 4 } },
+      { day: { tokens: 5 } },
+      { day: { tokens: 6 } },
+      { day: { tokens: 7 } },
+    ],
+    [{ day: { tokens: 100 } }, { day: { tokens: 200 } }],
+  ];
+
+  for (const mode of ["daily", "weekly", "cumulative"] as const) {
+    assert.equal(activitySummaryForMode(allPadding, mode), 0);
+    assert.ok(!Number.isNaN(activitySummaryForMode(ragged, mode)));
+  }
+  assert.equal(activitySummaryForMode(ragged, "daily"), 328);
+  assert.equal(activitySummaryForMode(ragged, "weekly"), 300);
+});
+
+test("series modes reshape the same daily data", () => {
+  // 2026-03-02 is a Monday, so this spans exactly two calendar weeks.
+  const daily = [
+    { date: "2026-03-02", tokens: 10 },
+    { date: "2026-03-03", tokens: 20 },
+    { date: "2026-03-08", tokens: 5 },
+    { date: "2026-03-09", tokens: 100 },
+  ];
+
+  assert.deepEqual(seriesForMode(daily, "daily"), [10, 20, 5, 100]);
+  assert.deepEqual(seriesForMode(daily, "cumulative"), [10, 30, 35, 135]);
+  assert.deepEqual(seriesForMode(daily, "weekly"), [35, 35, 35, 100]);
+  assert.deepEqual(seriesForMode([], "weekly"), []);
+});
+
+test("a trimmed cumulative window rebases off the last hidden day", () => {
+  const daily = [
+    { date: "2026-01-01", tokens: 1000 },
+    { date: "2026-01-02", tokens: 2000 },
+    { date: "2026-01-03", tokens: 5 },
+    { date: "2026-01-04", tokens: 10 },
+  ];
+  const values = seriesForMode(daily, "cumulative");
+  assert.deepEqual(values, [1000, 3000, 3005, 3015]);
+
+  // Without rebasing both bars sit near 3000 and the 5 vs 10 difference is invisible.
+  const baseline = windowBaseline(values, 2, "cumulative");
+  assert.equal(baseline, 3000);
+  assert.deepEqual(
+    values.slice(2).map((value) => value - baseline),
+    [5, 15],
+  );
+});
+
+test("nothing is rebased when the window shows everything", () => {
+  const values = [1, 3, 6];
+  assert.equal(windowBaseline(values, 0, "cumulative"), 0);
+});
+
+test("only cumulative rebases: daily and weekly are already per-window", () => {
+  const values = [10, 20, 5];
+  assert.equal(windowBaseline(values, 2, "daily"), 0);
+  assert.equal(windowBaseline(values, 2, "weekly"), 0);
+});
+
+test("week chart points carry the week total and the running total", () => {
+  // Monday 2026-09-07 through Wednesday 2026-09-16: one full week, one partial.
+  const daily = [
+    { date: "2026-09-07", tokens: 100 },
+    { date: "2026-09-08", tokens: 0 },
+    { date: "2026-09-09", tokens: 50 },
+    { date: "2026-09-10", tokens: 0 },
+    { date: "2026-09-11", tokens: 0 },
+    { date: "2026-09-12", tokens: 0 },
+    { date: "2026-09-13", tokens: 25 },
+    { date: "2026-09-14", tokens: 10 },
+    { date: "2026-09-15", tokens: 0 },
+    { date: "2026-09-16", tokens: 5 },
+  ];
+  const columns = (values: number[]) => [
+    daily.slice(0, 7).map((day, index) => ({ day, value: values[index] ?? 0 })),
+    [
+      ...daily
+        .slice(7)
+        .map((day, index) => ({ day, value: values[7 + index] ?? 0 })),
+      { day: null, value: 0 },
+    ],
+  ];
+  assert.deepEqual(weekChartPoints(columns(seriesForMode(daily, "weekly"))), [
+    { week: "2026-09-07", tokens: 175 },
+    { week: "2026-09-14", tokens: 15 },
+  ]);
+  assert.deepEqual(
+    weekChartPoints(columns(seriesForMode(daily, "cumulative"))),
+    [
+      { week: "2026-09-07", tokens: 175 },
+      { week: "2026-09-14", tokens: 190 },
+    ],
+  );
+  // Leading pad cells before the first shown day do not create a point.
+  assert.deepEqual(
+    weekChartPoints([
+      [
+        { day: null, value: 0 },
+        { day: { date: "2026-09-16" }, value: 7 },
+      ],
+      [{ day: null, value: 0 }],
+    ]),
+    [{ week: "2026-09-16", tokens: 7 }],
+  );
+});

@@ -1,0 +1,2388 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+"""Estimator and GGUF parser tests; no GPU, network or libraries beyond pytest, so cross-platform."""
+
+import io
+import json
+import struct
+import sys
+import types as _types
+from pathlib import Path
+
+import pytest
+
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+_loggers_stub = _types.ModuleType("loggers")
+_loggers_stub.get_logger = lambda name: __import__("logging").getLogger(name)
+# __path__ so loggers.media_progress resolves; a bare ModuleType shadows the package.
+_loggers_stub.__path__ = [str(Path(_BACKEND_DIR) / "loggers")]
+sys.modules.setdefault("loggers", _loggers_stub)
+
+# Process-wide stub (first importer wins); freshness_flow calls get_logger at import.
+_structlog_stub = _types.ModuleType("structlog")
+_structlog_stub.get_logger = lambda *a, **k: __import__("logging").getLogger("stub")
+sys.modules.setdefault("structlog", _structlog_stub)
+
+# Stub httpx only if missing: huggingface_hub.errors imports HTTPError/Response at load.
+try:
+    import httpx as _httpx_real  # noqa: F401
+except ImportError:
+    _httpx_stub = _types.ModuleType("httpx")
+    for _exc_name in (
+        "ConnectError",
+        "TimeoutException",
+        "ReadTimeout",
+        "ReadError",
+        "RemoteProtocolError",
+        "CloseError",
+        "HTTPError",
+        "RequestError",
+    ):
+        setattr(_httpx_stub, _exc_name, type(_exc_name, (Exception,), {}))
+
+    class _FakeTimeout:
+        def __init__(self, *a, **kw):
+            pass
+
+    _httpx_stub.Timeout = _FakeTimeout
+    _httpx_stub.Response = type("Response", (), {})
+    _httpx_stub.Client = type(
+        "Client",
+        (),
+        {
+            "__init__": lambda self, **kw: None,
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        },
+    )
+    sys.modules["httpx"] = _httpx_stub
+
+from core.inference.llama_cpp import _CTX_FIT_VRAM_FRACTION, _FIT_MIN_CTX, LlamaCppBackend
+from core.inference import llama_cpp as lc
+
+
+def _runtime_kv_cells(
+    n_ctx: int,
+    *,
+    slots: int = 1,
+    unified: bool = True,
+) -> int:
+    """Total KV cells allocated by llama.cpp across all streams."""
+    slots = max(1, slots)
+    padded_ctx = ((n_ctx + 255) // 256) * 256
+    streams = 1 if unified else slots
+    cells_per_stream = padded_ctx if unified else ((max(1, padded_ctx // slots) + 255) // 256) * 256
+    return cells_per_stream * streams
+
+
+def _runtime_swa_cells(
+    n_ctx: int,
+    sliding_window: int,
+    *,
+    slots: int = 1,
+    unified: bool = True,
+    n_ubatch: int = 512,
+) -> tuple[int, int]:
+    """Return total non-SWA and compact-SWA cells allocated by llama.cpp."""
+    slots = max(1, slots)
+    streams = 1 if unified else slots
+    base_cells = _runtime_kv_cells(n_ctx, slots = slots, unified = unified)
+    cells_per_stream = base_cells // streams
+    swa_limit = sliding_window * (slots if unified else 1) + n_ubatch
+    swa_cells_per_stream = min(cells_per_stream, swa_limit)
+    swa_cells_per_stream = ((swa_cells_per_stream + 255) // 256) * 256
+    return base_cells, swa_cells_per_stream * streams
+
+
+def _make_gguf_bytes(arch: str, kv_pairs: dict) -> bytes:
+    """Supports only the scalar and simple array metadata that the parser reads."""
+    buf = io.BytesIO()
+    buf.write(struct.pack("<I", 0x46554747))  # GGUF magic
+    buf.write(struct.pack("<I", 3))
+    buf.write(struct.pack("<Q", 0))
+    buf.write(struct.pack("<Q", len(kv_pairs)))
+
+    for key, val in kv_pairs.items():
+        key_bytes = key.encode("utf-8")
+        buf.write(struct.pack("<Q", len(key_bytes)))
+        buf.write(key_bytes)
+        if isinstance(val, str):
+            buf.write(struct.pack("<I", 8))
+            val_bytes = val.encode("utf-8")
+            buf.write(struct.pack("<Q", len(val_bytes)))
+            buf.write(val_bytes)
+        elif isinstance(val, list):
+            buf.write(struct.pack("<I", 9))
+            is_bool_array = all(isinstance(x, bool) for x in val)
+            buf.write(struct.pack("<I", 7 if is_bool_array else 5))
+            buf.write(struct.pack("<Q", len(val)))
+            if is_bool_array:
+                for item in val:
+                    buf.write(struct.pack("<?", item))
+            else:
+                for item in val:
+                    buf.write(struct.pack("<i", item))
+        elif isinstance(val, int):
+            if val <= 0xFFFFFFFF:
+                buf.write(struct.pack("<I", 4))
+                buf.write(struct.pack("<I", val))
+            else:
+                buf.write(struct.pack("<I", 10))
+                buf.write(struct.pack("<Q", val))
+        else:
+            raise TypeError(f"Unsupported value type: {type(val)}")
+    return buf.getvalue()
+
+
+def _backend_from_gguf(
+    arch: str,
+    fields: dict,
+    general: dict | None = None,
+) -> LlamaCppBackend:
+    """general adds general.* keys to exercise the dynamic SWA source-repo hint lookup."""
+    kv = {"general.architecture": arch}
+    for k, v in (general or {}).items():
+        kv[k] = v
+    for k, v in fields.items():
+        kv[f"{arch}.{k}"] = v
+    import tempfile, os
+
+    data = _make_gguf_bytes(arch, kv)
+    fd, path = tempfile.mkstemp(suffix = ".gguf")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        b = LlamaCppBackend()
+        b._read_gguf_metadata(path)
+        return b
+    finally:
+        os.unlink(path)
+
+
+class TestGGUFParserNewFields:
+    """Architecture-aware fields are parsed correctly."""
+
+    @pytest.mark.parametrize(
+        "field,gguf_key,value",
+        [
+            ("_kv_key_length", "attention.key_length", 128),
+            ("_kv_value_length", "attention.value_length", 128),
+            ("_sliding_window", "attention.sliding_window", 1024),
+            ("_full_attention_interval", "full_attention_interval", 4),
+            ("_kv_lora_rank", "attention.kv_lora_rank", 512),
+            ("_key_length_mla", "attention.key_length_mla", 256),
+            ("_ssm_inner_size", "ssm.inner_size", 6144),
+            ("_ssm_state_size", "ssm.state_size", 128),
+            ("_ssm_group_count", "ssm.group_count", 16),
+            ("_ssm_conv_kernel", "ssm.conv_kernel", 4),
+            ("_feed_forward_length", "feed_forward_length", 12288),
+            ("_expert_used_count", "expert_used_count", 8),
+            ("_expert_feed_forward_length", "expert_feed_forward_length", 512),
+            ("_expert_shared_feed_forward_length", "expert_shared_feed_forward_length", 512),
+            ("_expert_shared_count", "expert_shared_count", 1),
+            ("_embedding_length_per_layer_input", "embedding_length_per_layer_input", 256),
+        ],
+    )
+    def test_field_parsed(self, field, gguf_key, value):
+        b = _backend_from_gguf("testarch", {gguf_key: value})
+        assert getattr(b, field) == value
+
+    def test_missing_fields_are_none(self):
+        b = _backend_from_gguf("testarch", {"block_count": 10})
+        for attr in [
+            "_kv_key_length",
+            "_kv_value_length",
+            "_sliding_window",
+            "_sliding_window_pattern",
+            "_full_attention_interval",
+            "_kv_lora_rank",
+            "_key_length_mla",
+            "_kv_key_length_swa",
+            "_kv_value_length_swa",
+            "_ssm_inner_size",
+            "_ssm_state_size",
+            "_ssm_group_count",
+            "_ssm_conv_kernel",
+        ]:
+            assert getattr(b, attr) is None
+
+    def test_array_fields_parsed(self):
+        b = _backend_from_gguf(
+            "gemma4",
+            {
+                "block_count": 6,
+                "attention.head_count_kv": [8, 8, 8, 8, 8, 2],
+                "attention.sliding_window_pattern": [
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    False,
+                ],
+            },
+        )
+        assert b._n_kv_heads_by_layer == [8, 8, 8, 8, 8, 2]
+        # ...and mirrored into the scalar field as a conservative max.
+        assert b._n_kv_heads == 8
+        assert b._sliding_window_pattern == [True, True, True, True, True, False]
+
+    def test_per_layer_feed_forward_length_keeps_the_widest(self):
+        # Gemma 4 E2B has per-layer FFN widths; the widest sets the compute buffer.
+        b = _backend_from_gguf(
+            "gemma4", {"block_count": 3, "feed_forward_length": [6144, 12288, 6144]}
+        )
+        assert b._feed_forward_length == 12288
+
+
+class TestArchSwaPatternDefaults:
+    """Bootstrap arch table fires when GGUF reports `sliding_window` but
+    no per-layer pattern (true for every Gemma 2/3/3n/gpt-oss GGUF today)."""
+
+    @pytest.mark.parametrize(
+        "arch,n_layers,expected_period",
+        [
+            ("gemma2", 26, 2),
+            ("gemma3", 18, 6),
+            ("gemma3n", 35, 5),
+            ("gpt_oss", 24, 2),
+            ("cohere2", 32, 4),
+        ],
+    )
+    def test_arch_default_pattern_applied(self, arch, n_layers, expected_period):
+        b = _backend_from_gguf(
+            arch,
+            {
+                "block_count": n_layers,
+                "attention.head_count": 4,
+                "attention.head_count_kv": 1,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+                "attention.sliding_window": 512,
+            },
+        )
+        expected_pattern = [(i + 1) % expected_period != 0 for i in range(n_layers)]
+        assert (
+            b._sliding_window_pattern == expected_pattern
+        ), f"{arch} should expand to period={expected_period}"
+
+    def test_unknown_arch_no_default(self):
+        b = _backend_from_gguf(
+            "totallymadeupv7",
+            {
+                "block_count": 24,
+                "attention.head_count": 4,
+                "attention.head_count_kv": 1,
+                "attention.key_length": 128,
+                "attention.value_length": 128,
+                "attention.sliding_window": 1024,
+            },
+        )
+        assert b._sliding_window_pattern is None
+
+    def test_explicit_pattern_overrides_arch_default(self):
+        # gemma3 default is period=6; the explicit array must win.
+        b = _backend_from_gguf(
+            "gemma3",
+            {
+                "block_count": 6,
+                "attention.head_count": 4,
+                "attention.head_count_kv": 1,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+                "attention.sliding_window": 512,
+                "attention.sliding_window_pattern": [
+                    True,
+                    False,
+                    True,
+                    False,
+                    True,
+                    False,
+                ],
+            },
+        )
+        assert b._sliding_window_pattern == [True, False, True, False, True, False]
+
+    def test_no_sliding_window_no_pattern(self):
+        b = _backend_from_gguf(
+            "gemma3",
+            {
+                "block_count": 18,
+                "attention.head_count": 4,
+                "attention.head_count_kv": 1,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+            },
+        )
+        assert b._sliding_window_pattern is None
+
+    @pytest.mark.parametrize(
+        "arch", ["llama", "qwen2", "qwen3", "mistral", "mistral3", "glm4", "llama4"]
+    )
+    def test_non_swa_arch_uses_full_attention_path(self, arch):
+        b = _backend_from_gguf(
+            arch,
+            {
+                "block_count": 32,
+                "attention.head_count": 32,
+                "attention.head_count_kv": 8,
+                "attention.key_length": 128,
+                "attention.value_length": 128,
+                "embedding_length": 4096,
+            },
+        )
+        assert b._sliding_window_pattern is None
+        assert b._sliding_window is None
+        kv = b._estimate_kv_cache_bytes(8192, "f16")
+        gqa_expected = 32 * 8192 * 8 * (128 + 128) * 2
+        assert kv == gqa_expected
+
+    def test_arch_default_reduces_kv_estimate_vs_legacy(self):
+        common = {
+            "block_count": 62,
+            "attention.head_count": 32,
+            "attention.head_count_kv": 16,
+            "attention.key_length": 128,
+            "attention.value_length": 128,
+            "attention.sliding_window": 1024,
+            "embedding_length": 5376,
+        }
+        with_default = _backend_from_gguf("gemma3", common)
+        without_default = _backend_from_gguf("totallymadeupv7", common)
+
+        kv_default = with_default._estimate_kv_cache_bytes(131072, "f16")
+        kv_legacy = without_default._estimate_kv_cache_bytes(131072, "f16")
+        assert kv_default > 0
+        assert kv_legacy > 0
+        assert kv_default < kv_legacy, (
+            f"arch fallback should under-shoot legacy estimate: " f"{kv_default} >= {kv_legacy}"
+        )
+
+    def test_scalar_sliding_window_pattern_expanded(self):
+        block_count = 8
+        b = _backend_from_gguf(
+            "gemma3",
+            {
+                "attention.sliding_window_pattern": 4,
+                "block_count": block_count,
+                "attention.head_count_kv": 4,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+                "attention.sliding_window": 1024,
+            },
+        )
+        expected = [(i + 1) % 4 != 0 for i in range(block_count)]
+        assert isinstance(b._sliding_window_pattern, list)
+        assert b._sliding_window_pattern == expected
+        assert b._estimate_kv_cache_bytes(4096, "f16") > 0
+
+    def test_all_fields_parsed_together(self):
+        fields = {
+            "context_length": 131072,
+            "block_count": 62,
+            "attention.head_count_kv": 16,
+            "attention.head_count": 32,
+            "embedding_length": 5376,
+            "attention.key_length": 128,
+            "attention.value_length": 128,
+            "attention.sliding_window": 1024,
+            "attention.sliding_window_pattern": [True, False],
+            "full_attention_interval": 6,
+            "attention.kv_lora_rank": 512,
+            "attention.key_length_mla": 256,
+            "attention.key_length_swa": 64,
+            "attention.value_length_swa": 64,
+            "ssm.inner_size": 4096,
+            "ssm.state_size": 128,
+            "ssm.group_count": 16,
+            "ssm.conv_kernel": 4,
+        }
+        b = _backend_from_gguf("testarch", fields)
+        assert b._context_length == 131072
+        assert b._n_layers == 62
+        assert b._n_kv_heads == 16
+        assert b._n_heads == 32
+        assert b._embedding_length == 5376
+        assert b._kv_key_length == 128
+        assert b._kv_value_length == 128
+        assert b._sliding_window == 1024
+        assert b._sliding_window_pattern == [True, False]
+        assert b._full_attention_interval == 6
+        assert b._kv_lora_rank == 512
+        assert b._key_length_mla == 256
+        assert b._kv_key_length_swa == 64
+        assert b._kv_value_length_swa == 64
+        assert b._ssm_inner_size == 4096
+        assert b._ssm_state_size == 128
+        assert b._ssm_group_count == 16
+        assert b._ssm_conv_kernel == 4
+
+
+_SWA_FIELDS = {
+    "block_count": 12,
+    "attention.head_count": 4,
+    "attention.head_count_kv": 1,
+    "attention.key_length": 256,
+    "attention.value_length": 256,
+    "attention.sliding_window": 512,
+}
+
+
+class TestDynamicSwaResolver:
+    """4-tier resolver: GGUF metadata, on-disk cache, bootstrap, HF fetch."""
+
+    def _isolate_cache(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("UNSLOTH_STUDIO_HOME", str(tmp_path))
+        monkeypatch.setattr(lc, "_SWA_CACHE", None)
+        return tmp_path
+
+    def test_period_from_layer_types_finds_smallest_period(self):
+        from core.inference.llama_cpp import _period_from_layer_types
+
+        assert _period_from_layer_types((["sliding_attention"] * 5 + ["full_attention"]) * 4) == 6
+        assert _period_from_layer_types(["sliding_attention", "full_attention"] * 12) == 2
+        assert _period_from_layer_types((["sliding_attention"] * 4 + ["full_attention"]) * 7) == 5
+
+    def test_period_from_layer_types_returns_none_for_aperiodic(self):
+        from core.inference.llama_cpp import _period_from_layer_types
+        lt = [
+            "sliding_attention",
+            "full_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "full_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "sliding_attention",
+        ]
+        assert _period_from_layer_types(lt) is None
+
+    def test_hf_repo_from_url(self):
+        from core.inference.llama_cpp import _hf_repo_from_url
+
+        assert (
+            _hf_repo_from_url("https://huggingface.co/google/gemma-3-1b-it")
+            == "google/gemma-3-1b-it"
+        )
+        assert (
+            _hf_repo_from_url("https://huggingface.co/google/gemma-3-1b-it/blob/main/config.json")
+            == "google/gemma-3-1b-it"
+        )
+        for bad in [
+            "https://huggingface.co/google",
+            "https://example.com/foo/bar",
+            None,
+            "",
+        ]:
+            assert _hf_repo_from_url(bad) is None
+
+    def test_bootstrap_tier_used_when_no_cache(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+
+        def boom(*a, **kw):
+            raise AssertionError("HF fetch must not run when bootstrap covers the arch")
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", boom)
+        b = _backend_from_gguf("gemma3", dict(_SWA_FIELDS, block_count = 18))
+        assert b._sliding_window_pattern == [(i + 1) % 6 != 0 for i in range(18)]
+
+    def test_disk_cache_takes_precedence_over_bootstrap(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        with open(tmp_path / "swa_cache.json", "w") as f:
+            json.dump({"gemma3": 3}, f)
+        b = _backend_from_gguf("gemma3", dict(_SWA_FIELDS, block_count = 18))
+        assert b._sliding_window_pattern == [(i + 1) % 3 != 0 for i in range(18)]
+
+    def test_disk_cache_supports_array_entries(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        mask = [True, False, True, True, False, True, False, False]
+        with open(tmp_path / "swa_cache.json", "w") as f:
+            json.dump({"customarch": mask}, f)
+        b = _backend_from_gguf("customarch", dict(_SWA_FIELDS, block_count = 16))
+        assert b._sliding_window_pattern == [bool(mask[i % 8]) for i in range(16)]
+
+    def test_hf_fetch_populates_cache(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+
+        calls = []
+
+        def fake_fetch(repo_id):
+            calls.append(repo_id)
+            return 4 if repo_id == "vendor/newmodel-1b-instruct" else None
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", fake_fetch)
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {"general.source.huggingface.repository": "vendor/newmodel-1b-instruct"},
+        )
+        assert b._sliding_window_pattern == [(i + 1) % 4 != 0 for i in range(12)]
+        assert calls == ["vendor/newmodel-1b-instruct"]
+        with open(tmp_path / "swa_cache.json") as f:
+            assert json.load(f) == {"newmodel": 4}
+
+    def test_hf_fetch_falls_back_to_other_candidates(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+
+        monkeypatch.setattr(
+            lc,
+            "_fetch_swa_entry_from_hf",
+            lambda r: 6 if r == "vendor/newmodel-base" else None,
+        )
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {
+                "general.base_model.0.repo_url": "https://huggingface.co/vendor/newmodel-base"
+            },
+        )
+        assert b._sliding_window_pattern == [(i + 1) % 6 != 0 for i in range(12)]
+
+    def test_offline_env_skips_network(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        monkeypatch.setenv("UNSLOTH_STUDIO_OFFLINE", "1")
+
+        def boom(*a, **kw):
+            raise AssertionError("HF fetch must not run when offline=1")
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", boom)
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {"general.source.huggingface.repository": "vendor/newmodel"},
+        )
+        assert b._sliding_window_pattern is None
+
+    def test_hf_fetch_failure_falls_through_silently(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", lambda repo_id: None)
+        monkeypatch.setattr(lc, "_resolve_swa_entry_from_transformers", lambda arch: None)
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {"general.source.huggingface.repository": "vendor/does-not-exist"},
+        )
+        assert b._sliding_window_pattern is None
+        assert not (tmp_path / "swa_cache.json").exists()
+
+    def test_remembered_miss_skips_hf_refetch(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            lc,
+            "_fetch_swa_entry_from_hf",
+            lambda repo_id: calls.append(repo_id) or lc._SWA_CONFIRMED_MISS,
+        )
+        monkeypatch.setattr(lc, "_resolve_swa_entry_from_transformers", lambda arch: None)
+        general = {"general.source.huggingface.repository": "vendor/does-not-exist"}
+        first = _backend_from_gguf("newmodel", _SWA_FIELDS, general = general)
+        assert first._sliding_window_pattern is None
+        assert calls == ["vendor/does-not-exist"]
+        with open(tmp_path / "swa_cache.json") as f:
+            assert json.load(f) == {"__missed_repos__": ["vendor/does-not-exist"]}
+        monkeypatch.setattr(lc, "_SWA_CACHE", None)
+        second = _backend_from_gguf("newmodel", _SWA_FIELDS, general = general)
+        assert second._sliding_window_pattern is None
+        assert calls == ["vendor/does-not-exist"]
+
+    def test_transient_hf_error_is_retried(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            lc, "_fetch_swa_entry_from_hf", lambda repo_id: calls.append(repo_id) or None
+        )
+        monkeypatch.setattr(lc, "_resolve_swa_entry_from_transformers", lambda arch: None)
+        general = {"general.source.huggingface.repository": "vendor/newmodel-base"}
+        first = _backend_from_gguf("newmodel", _SWA_FIELDS, general = general)
+        assert first._sliding_window_pattern is None
+        assert not (tmp_path / "swa_cache.json").exists()
+        monkeypatch.setattr(lc, "_SWA_CACHE", None)
+        monkeypatch.setattr(
+            lc, "_fetch_swa_entry_from_hf", lambda repo_id: calls.append(repo_id) or 4
+        )
+        second = _backend_from_gguf("newmodel", _SWA_FIELDS, general = general)
+        assert second._sliding_window_pattern == [(i + 1) % 4 != 0 for i in range(12)]
+        assert calls == ["vendor/newmodel-base", "vendor/newmodel-base"]
+
+    def test_repo_miss_does_not_block_another_candidate(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        calls = []
+
+        def fake_fetch(repo_id):
+            calls.append(repo_id)
+            return 4 if repo_id == "vendor/newmodel-base" else lc._SWA_CONFIRMED_MISS
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", fake_fetch)
+        monkeypatch.setattr(lc, "_resolve_swa_entry_from_transformers", lambda arch: None)
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {
+                "general.source.huggingface.repository": "quanter/newmodel-GGUF",
+                "general.base_model.0.repo_url": "https://huggingface.co/vendor/newmodel-base",
+            },
+        )
+        assert b._sliding_window_pattern == [(i + 1) % 4 != 0 for i in range(12)]
+        assert calls == ["quanter/newmodel-GGUF", "vendor/newmodel-base"]
+
+    def test_casefold_duplicate_repos_are_fetched_once(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            lc, "_fetch_swa_entry_from_hf", lambda repo_id: calls.append(repo_id) or None
+        )
+        monkeypatch.setattr(lc, "_resolve_swa_entry_from_transformers", lambda arch: None)
+        b = _backend_from_gguf(
+            "newmodel",
+            _SWA_FIELDS,
+            general = {
+                "general.source.huggingface.repository": "DeepSeek-AI/Flash",
+                "general.organization": "deepseek-ai",
+                "general.basename": "Flash",
+            },
+        )
+        assert b._sliding_window_pattern is None
+        assert calls == ["DeepSeek-AI/Flash"]
+
+    def test_hf_fetch_leaves_no_repo_in_the_model_cache(self, monkeypatch, tmp_path):
+        import huggingface_hub
+        import utils.hf_probe
+
+        active = tmp_path / "hub"
+        active.mkdir()
+        monkeypatch.setattr("utils.hf_cache_settings.active_hf_hub_cache", lambda: str(active))
+        monkeypatch.setattr(utils.hf_probe, "hf_file_definitely_absent", lambda *a, **k: False)
+
+        def fake_download(repo_id, filename, *, cache_dir, **kwargs):
+            path = Path(cache_dir) / f"models--{repo_id.replace('/', '--')}" / filename
+            path.parent.mkdir(parents = True)
+            path.write_text(json.dumps({"sliding_window": 128}))
+            return str(path)
+
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
+        assert (
+            lc._fetch_swa_entry_from_hf("deepseek-ai/DeepSeek-V4-Flash") is lc._SWA_CONFIRMED_MISS
+        )
+        assert list(active.iterdir()) == []
+
+    def test_hf_fetch_reads_an_already_cached_config_offline(self, monkeypatch, tmp_path):
+        import huggingface_hub
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"sliding_window_pattern": 6}))
+        monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(cfg))
+        monkeypatch.setattr(
+            huggingface_hub, "hf_hub_download", lambda *a, **k: pytest.fail("network fetch")
+        )
+        assert lc._fetch_swa_entry_from_hf("org/model") == 6
+
+
+class TestTransformersIntrospection:
+    """Tier 2.5: default-init the matching Config; on failure, parse via inspect."""
+
+    def _isolate_cache(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("UNSLOTH_STUDIO_HOME", str(tmp_path))
+        monkeypatch.setattr(lc, "_SWA_CACHE", None)
+        return tmp_path
+
+    def test_arch_aliases_normalises_hyphen_underscore(self):
+        from core.inference.llama_cpp import _arch_aliases
+
+        aliases = _arch_aliases("falcon-h1")
+        assert aliases[0] == "falcon-h1" and "falcon_h1" in aliases
+        assert _arch_aliases("gemma3") == ("gemma3",)
+        assert _arch_aliases("") == ()
+
+    def test_resolves_real_transformers_arches(self):
+        from core.inference.llama_cpp import _resolve_swa_entry_from_transformers
+
+        assert _resolve_swa_entry_from_transformers("gemma3") == 6
+        assert _resolve_swa_entry_from_transformers("gemma2") == 2
+        assert _resolve_swa_entry_from_transformers("cohere2") == 4
+
+    def test_falls_back_to_inspect_when_default_init_raises(self, monkeypatch):
+        class _FakeBrokenConfig:
+            """Class with sliding_window_pattern: int = 7 in its docstring."""
+
+            def __init__(self, required_arg):
+                raise TypeError("requires an argument")
+
+        class _FakeLazyMapping(dict):
+            def __getitem__(self, k):
+                return _FakeBrokenConfig if k == "brokenarch" else super().__getitem__(k)
+
+        import sys, types as _types
+
+        fake_auto = _types.ModuleType("transformers.models.auto.configuration_auto")
+        fake_auto.CONFIG_MAPPING_NAMES = {"brokenarch": "FakeBroken"}
+        fake_auto.CONFIG_MAPPING = _FakeLazyMapping({"brokenarch": "FakeBroken"})
+        monkeypatch.setitem(sys.modules, "transformers.models.auto.configuration_auto", fake_auto)
+        assert lc._resolve_swa_entry_from_transformers("brokenarch") == 7
+
+    def test_returns_none_when_transformers_unavailable(self, monkeypatch):
+        import sys
+
+        orig_import = (
+            __builtins__["__import__"]
+            if isinstance(__builtins__, dict)
+            else __builtins__.__import__
+        )
+
+        def fake_import(name, *a, **kw):
+            if name.startswith("transformers"):
+                raise ImportError("transformers not installed")
+            return orig_import(name, *a, **kw)
+
+        monkeypatch.setattr("builtins.__import__", fake_import)
+        for k in list(sys.modules):
+            if k.startswith("transformers"):
+                monkeypatch.delitem(sys.modules, k, raising = False)
+        assert lc._resolve_swa_entry_from_transformers("gemma3") is None
+
+    def test_returns_none_for_arch_unknown_to_transformers(self):
+        from core.inference.llama_cpp import _resolve_swa_entry_from_transformers
+        assert _resolve_swa_entry_from_transformers("totally-fake-arch-xyz") is None
+
+    def test_full_resolver_uses_transformers_before_hf_fetch(self, monkeypatch, tmp_path):
+        self._isolate_cache(monkeypatch, tmp_path)
+
+        monkeypatch.setattr(lc, "_BOOTSTRAP_SWA_DEFAULTS", {})
+
+        def boom(repo_id):
+            raise AssertionError("Tier 3 must not run when Tier 2.5 has the answer")
+
+        monkeypatch.setattr(lc, "_fetch_swa_entry_from_hf", boom)
+        b = _backend_from_gguf(
+            "gemma3",
+            dict(_SWA_FIELDS, block_count = 18),
+            general = {"general.source.huggingface.repository": "google/gemma-3-1b-it"},
+        )
+        assert b._sliding_window_pattern == [(i + 1) % 6 != 0 for i in range(18)]
+        with open(tmp_path / "swa_cache.json") as f:
+            assert json.load(f) == {"gemma3": 6}
+
+
+class TestGGUFParserReset:
+    """Fields are reset between parses."""
+
+    def test_reset_between_parses(self):
+        b = _backend_from_gguf(
+            "arch1",
+            {
+                "block_count": 32,
+                "attention.key_length": 128,
+                "attention.kv_lora_rank": 512,
+                "attention.head_count_kv": [8, 2],
+                "attention.sliding_window_pattern": [True, False],
+                "attention.key_length_swa": 64,
+                "attention.value_length_swa": 64,
+                "ssm.inner_size": 4096,
+            },
+        )
+        assert b._kv_key_length == 128
+        assert b._kv_lora_rank == 512
+        assert b._n_kv_heads_by_layer == [8, 2]
+        assert b._sliding_window_pattern == [True, False]
+        assert b._kv_key_length_swa == 64
+        assert b._kv_value_length_swa == 64
+        assert b._ssm_inner_size == 4096
+
+        kv = {"general.architecture": "arch2", "arch2.block_count": 64}
+        import tempfile, os
+
+        data = _make_gguf_bytes("arch2", kv)
+        fd, path = tempfile.mkstemp(suffix = ".gguf")
+        os.write(fd, data)
+        os.close(fd)
+        try:
+            b._read_gguf_metadata(path)
+        finally:
+            os.unlink(path)
+        assert b._kv_key_length is None
+        assert b._kv_lora_rank is None
+        assert b._n_kv_heads_by_layer is None
+        assert b._sliding_window_pattern is None
+        assert b._kv_key_length_swa is None
+        assert b._kv_value_length_swa is None
+        assert b._ssm_inner_size is None
+        assert b._n_layers == 64
+
+
+class TestCanEstimateKV:
+    """Gate logic for all field combinations."""
+
+    def test_no_layers_returns_false(self):
+        b = LlamaCppBackend()
+        b._n_layers = None
+        b._kv_key_length = 128
+        assert not b._can_estimate_kv()
+
+    def test_explicit_both_dims_sufficient(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._kv_key_length = 128
+        b._kv_value_length = 128
+        assert b._can_estimate_kv()
+
+    def test_key_length_alone_insufficient(self):
+        """key_length without value_length is NOT enough."""
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._kv_key_length = 128
+        assert not b._can_estimate_kv()
+
+    def test_kv_lora_rank_sufficient(self):
+        b = LlamaCppBackend()
+        b._n_layers = 61
+        b._kv_lora_rank = 512
+        assert b._can_estimate_kv()
+
+    def test_legacy_embed_plus_heads(self):
+        b = LlamaCppBackend()
+        b._n_layers = 28
+        b._embedding_length = 1024
+        b._n_heads = 16
+        assert b._can_estimate_kv()
+
+    def test_legacy_embed_plus_kv_heads(self):
+        b = LlamaCppBackend()
+        b._n_layers = 28
+        b._embedding_length = 1024
+        b._n_kv_heads = 8
+        assert b._can_estimate_kv()
+
+    def test_legacy_no_embed_returns_false(self):
+        b = LlamaCppBackend()
+        b._n_layers = 28
+        b._n_heads = 16
+        assert not b._can_estimate_kv()
+
+    def test_fresh_backend_returns_false(self):
+        b = LlamaCppBackend()
+        assert not b._can_estimate_kv()
+
+
+class TestMLAEstimation:
+    """MLA: K-only cache using compressed KV latent + RoPE."""
+
+    def _mla_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 61,
+            "_n_kv_heads": 1,
+            "_n_heads": 128,
+            "_embedding_length": 7168,
+            "_kv_key_length": 576,
+            "_kv_value_length": 512,
+            "_kv_lora_rank": 512,
+            "_key_length_mla": 192,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_deepseek_v3_f16(self):
+        b = self._mla_backend()
+        # 61 layers * 163840 ctx * 1 head * 576 key_len * 2 bpe
+        expected = 61 * 163840 * 1 * 576 * 2
+        assert b._estimate_kv_cache_bytes(163840, "f16") == expected
+
+    def test_mla_ignores_value_length(self):
+        """MLA must NOT add value_length -- V is reconstructed from the latent."""
+        b = self._mla_backend()
+        result = b._estimate_kv_cache_bytes(1000, "f16")
+        expected = 61 * _runtime_kv_cells(1000) * 1 * 576 * 2
+        assert result == expected
+
+    def test_mla_fallback_when_no_key_length(self):
+        """No key_length: fall back to kv_lora_rank + key_length_mla."""
+        b = self._mla_backend(_kv_key_length = None)
+        result = b._estimate_kv_cache_bytes(1000, "f16")
+        expected = 61 * _runtime_kv_cells(1000) * 1 * (512 + 192) * 2
+        assert result == expected
+
+    def test_mla_fallback_no_key_length_mla(self):
+        """No key_length and no key_length_mla: fall back to +64."""
+        b = self._mla_backend(_kv_key_length = None, _key_length_mla = None)
+        result = b._estimate_kv_cache_bytes(1000, "f16")
+        expected = 61 * _runtime_kv_cells(1000) * 1 * (512 + 64) * 2
+        assert result == expected
+
+    def test_mla_hybrid_counts_only_attention_layers(self):
+        """Kimi-K3: KDA layers are 0 in head_count_kv and hold no growing cache."""
+        pattern = [1 if (i % 4) == 3 else 0 for i in range(93)]
+        pattern[92] = 1
+        b = self._mla_backend(_n_layers = 93, _n_kv_heads_by_layer = pattern)
+        n_attn = sum(1 for v in pattern if v)
+        assert n_attn == 24
+        expected = n_attn * _runtime_kv_cells(1000) * 1 * 576 * 2
+        assert b._estimate_kv_cache_bytes(1000, "f16") == expected
+
+    def test_mla_uniform_unaffected_by_hybrid_path(self):
+        """An all-attention per-layer array must match the plain layer count."""
+        b = self._mla_backend(_n_kv_heads_by_layer = [1] * 61)
+        expected = 61 * _runtime_kv_cells(1000) * 1 * 576 * 2
+        assert b._estimate_kv_cache_bytes(1000, "f16") == expected
+
+    def test_hybrid_adds_recurrent_state(self):
+        """KDA conv+state is f32, per sequence, and does not scale with context."""
+        pattern = [1 if (i % 4) == 3 else 0 for i in range(93)]
+        pattern[92] = 1
+        b = self._mla_backend(
+            _n_layers = 93,
+            _n_kv_heads_by_layer = pattern,
+            _n_heads = 96,
+            _kda_head_dim = 128,
+            _ssm_conv_kernel = 4,
+        )
+        # 69 recurrent layers * (3*3*96*128 + 128*128*96) * 4 B
+        rs = 69 * (110592 + 1572864) * 4
+        assert b._recurrent_state_bytes() == rs
+        kv = 24 * _runtime_kv_cells(1000) * 1 * 576 * 2
+        assert b._estimate_kv_cache_bytes(1000, "f16") == kv + rs
+        # per sequence, so --parallel multiplies it
+        assert b._recurrent_state_bytes(4) == rs * 4
+
+    def test_recurrent_state_zero_without_kda_dims(self):
+        """Uniform MLA and un-parsed Mamba keep the previous behaviour."""
+        assert self._mla_backend()._recurrent_state_bytes() == 0
+        b = self._mla_backend(_n_layers = 93, _n_kv_heads_by_layer = [1] * 93)
+        assert b._recurrent_state_bytes() == 0
+
+    def test_mla_defaults_n_kv_to_1_when_heads_absent(self):
+        """MLA uses n_kv=1 even if n_kv_heads is None (not n_heads)."""
+        b = self._mla_backend(_n_kv_heads = None)
+        result = b._estimate_kv_cache_bytes(1000, "f16")
+        # Uses n_kv_mla=1, NOT n_heads=128
+        expected = 61 * _runtime_kv_cells(1000) * 1 * 576 * 2
+        assert result == expected
+
+    def test_mla_q4_quantization(self):
+        b = self._mla_backend()
+        result_f16 = b._estimate_kv_cache_bytes(1000, "f16")
+        result_q4 = b._estimate_kv_cache_bytes(1000, "q4_0")
+        assert result_q4 < result_f16
+        # q4_0 bpe = 0.5625, f16 bpe = 2.0
+        assert result_q4 == int(61 * _runtime_kv_cells(1000) * 1 * 576 * 0.5625)
+
+
+class TestHybridMambaEstimation:
+    """Hybrid Mamba: only attention layers (1 in N) need KV cache."""
+
+    def _hybrid_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 64,
+            "_n_kv_heads": 4,
+            "_n_heads": 24,
+            "_embedding_length": 5120,
+            "_kv_key_length": 256,
+            "_kv_value_length": 256,
+            "_full_attention_interval": 4,
+            "_ssm_inner_size": 6144,
+            "_ssm_state_size": 128,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_qwen35_27b(self):
+        b = self._hybrid_backend()
+        expected = 16 * 262144 * 4 * (256 + 256) * 2
+        assert b._estimate_kv_cache_bytes(262144, "f16") == expected
+
+    def test_qwen35_35b_a3b(self):
+        b = self._hybrid_backend(
+            _n_layers = 40,
+            _n_kv_heads = 2,
+            _n_heads = 16,
+            _embedding_length = 2048,
+            _ssm_inner_size = 4096,
+        )
+        expected = 10 * 262144 * 2 * (256 + 256) * 2
+        assert b._estimate_kv_cache_bytes(262144, "f16") == expected
+
+    def test_hybrid_without_explicit_dims(self):
+        """Fall back to head_dim when key_length/value_length are missing."""
+        b = self._hybrid_backend(_kv_key_length = None, _kv_value_length = None)
+        head_dim = 5120 // 24
+        expected = 16 * 4096 * 4 * 2 * head_dim * 2
+        assert b._estimate_kv_cache_bytes(4096, "f16") == expected
+
+    def test_fai_zero_safety(self):
+        """full_attention_interval=0 must not ZeroDivisionError."""
+        b = self._hybrid_backend(_full_attention_interval = 0)
+        result = b._estimate_kv_cache_bytes(4096, "f16")
+        expected = 64 * 4096 * 4 * (256 + 256) * 2
+        assert result == expected
+
+    def test_qwen_recurrent_state_and_mtp_rollback_copies(self):
+        b = self._hybrid_backend(
+            _n_layers = 65,
+            _nextn_predict_layers = 1,
+            _ssm_group_count = 16,
+            _ssm_conv_kernel = 4,
+        )
+        per_slot = 48 * ((4 - 1) * (6144 + 2 * 16 * 128) + 128 * 6144) * 4
+        assert b._mamba_recurrent_state_bytes() == per_slot
+        assert per_slot / (1024 * 1024) == pytest.approx(149.625)
+        assert b._mamba_recurrent_state_bytes(n_parallel = 4) == 4 * per_slot
+        assert b._mamba_recurrent_state_bytes(n_parallel = 4, n_rs_seq = 2) == 12 * per_slot
+
+        kv_only = 16 * _runtime_kv_cells(4096, slots = 4) * 4 * (256 + 256) * 2
+        assert b._estimate_kv_cache_bytes(4096, "f16", n_parallel = 4) == (kv_only + 4 * per_slot)
+
+
+class TestSsmStateWithoutAttentionInterval:
+    """SSM headers with no full_attention_interval, recurrent layers per llama.cpp's is_recr."""
+
+    _SSM = {"ssm.inner_size": 1024, "ssm.state_size": 16, "ssm.conv_kernel": 4}
+
+    @staticmethod
+    def _per_layer(group):
+        return ((4 - 1) * (1024 + 2 * group * 16) + 16 * 1024) * 4
+
+    @pytest.mark.parametrize(
+        "arch, fields, recurrent",
+        [
+            pytest.param(
+                "granitehybrid",
+                {"attention.head_count_kv": [0, 0, 8, 0], "ssm.group_count": 1},
+                3,
+                id = "zero-kv-heads",
+            ),
+            pytest.param(
+                "nemotron_h",
+                {
+                    "attention.head_count_kv": [0, 0, 8, 0],
+                    "feed_forward_length": [0, 21504, 0, 0],
+                    "ssm.group_count": 8,
+                },
+                2,
+                id = "dense-nemotron-mlp-layers-are-not-ssm",
+            ),
+            pytest.param(
+                "nemotron_h_moe",
+                {
+                    "attention.head_count_kv": [0, 0, 2, 0],
+                    "feed_forward_length": [0, 1856, 0, 0],
+                    "ssm.group_count": 8,
+                },
+                2,
+                id = "nemotron-ffn-layers-are-not-ssm",
+            ),
+            pytest.param(
+                "jamba", {"attention.head_count_kv": [0, 8, 0, 0]}, 3, id = "mamba1-no-groups"
+            ),
+            pytest.param(
+                "falcon-h1",
+                {"attention.head_count_kv": 8, "ssm.group_count": 1},
+                4,
+                id = "parallel-every-layer",
+            ),
+            pytest.param(
+                "mamba2", {"attention.head_count": 0, "ssm.group_count": 1}, 4, id = "pure-mamba2"
+            ),
+            pytest.param("mamba", {"attention.head_count": 0}, 4, id = "pure-mamba1"),
+        ],
+    )
+    def test_recurrent_layers_follow_llama_cpp(self, arch, fields, recurrent):
+        b = _backend_from_gguf(
+            arch,
+            {"block_count": 4, "attention.head_count": 32, "embedding_length": 2048}
+            | self._SSM
+            | fields,
+        )
+        group = fields.get("ssm.group_count", 0)
+        assert b._mamba_recurrent_state_bytes() == recurrent * self._per_layer(group)
+        assert b._rollback_state_bytes(1) == b._mamba_recurrent_state_bytes()
+
+    def test_kda_and_non_ssm_headers_are_not_sized_here(self):
+        kda = _backend_from_gguf(
+            "kimi_linear",
+            {"block_count": 4, "attention.head_count_kv": [0, 0, 8, 0], "kda.head_dim": 128}
+            | self._SSM,
+        )
+        assert kda._mamba_recurrent_state_bytes() == 0
+        plain = _backend_from_gguf(
+            "granitehybrid", {"block_count": 4, "attention.head_count_kv": [0, 8, 0, 8]}
+        )
+        assert plain._mamba_recurrent_state_bytes() == 0
+
+    @pytest.mark.parametrize("key_length", [128, None], ids = ["gqa-path", "legacy-path"])
+    def test_the_estimate_charges_live_state_and_snapshots(self, key_length):
+        dims = (
+            {}
+            if key_length is None
+            else {"attention.key_length": 128, "attention.value_length": 128}
+        )
+        fields = {
+            "block_count": 4,
+            "attention.head_count": 32,
+            "embedding_length": 4096,
+            "attention.head_count_kv": [0, 0, 8, 0],
+            "ssm.group_count": 1,
+        } | dims
+        ssm = _backend_from_gguf("granitehybrid", fields | self._SSM)
+        attention_only = _backend_from_gguf("granitehybrid", fields)
+        state = 3 * self._per_layer(1)
+        kv = lambda b, **k: b._estimate_kv_cache_bytes(4096, "f16", n_parallel = 4, **k)  # noqa: E731
+        assert kv(ssm) - kv(attention_only) == 4 * state
+        assert kv(ssm, ctx_checkpoints = 5) - kv(ssm) == 4 * 5 * state
+
+
+class TestSlidingWindowEstimation:
+    """SWA: half global (full ctx) + half sliding window."""
+
+    def _swa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 62,
+            "_n_kv_heads": 16,
+            "_n_heads": 32,
+            "_embedding_length": 5376,
+            "_kv_key_length": 128,
+            "_kv_value_length": 128,
+            "_sliding_window": 1024,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_gemma3(self):
+        b = self._swa_backend()
+        n_global = max(1, 62 // 4)
+        n_swa = 62 - n_global
+        kv_per = 16 * (128 + 128) * 2
+        base_cells, swa_cells = _runtime_swa_cells(131072, 1024)
+        expected = int(n_global * base_cells * kv_per + n_swa * swa_cells * kv_per)
+        assert b._estimate_kv_cache_bytes(131072, "f16") == expected
+
+    def test_gpt_oss(self):
+        b = self._swa_backend(
+            _n_layers = 24,
+            _n_kv_heads = 8,
+            _n_heads = 64,
+            _embedding_length = 2880,
+            _kv_key_length = 64,
+            _kv_value_length = 64,
+            _sliding_window = 128,
+        )
+        n_global = max(1, 24 // 4)
+        n_swa = 24 - n_global
+        kv_per = 8 * (64 + 64) * 2
+        base_cells, swa_cells = _runtime_swa_cells(131072, 128)
+        expected = int(n_global * base_cells * kv_per + n_swa * swa_cells * kv_per)
+        assert b._estimate_kv_cache_bytes(131072, "f16") == expected
+
+    def test_gemma4_per_layer_swa_metadata(self):
+        b = self._swa_backend(
+            _n_layers = 30,
+            _n_kv_heads = None,
+            _n_kv_heads_by_layer = [8, 8, 8, 8, 8, 2] * 5,
+            _n_heads = 16,
+            _embedding_length = 2816,
+            _kv_key_length = 512,
+            _kv_value_length = 512,
+            _sliding_window = 1024,
+            _sliding_window_pattern = [True, True, True, True, True, False] * 5,
+            _kv_key_length_swa = 256,
+            _kv_value_length_swa = 256,
+        )
+
+        full_layers = 5
+        sliding_layers = 25
+
+        def expected(ctx):
+            base_cells, swa_cells = _runtime_swa_cells(ctx, 1024)
+            full = full_layers * base_cells * 2 * (512 + 512) * 2
+            sliding = sliding_layers * swa_cells * 8 * (256 + 256) * 2
+            return int(full + sliding)
+
+        for ctx in (4096, 46500, 262144):
+            assert b._estimate_kv_cache_bytes(ctx, "f16") == expected(ctx)
+
+    def test_gemma4_flash_attn_off_pads_v_to_model_max(self):
+        b = self._swa_backend(
+            _n_layers = 35,
+            _n_kv_heads = 1,
+            _n_heads = 8,
+            _embedding_length = 1536,
+            _kv_key_length = 512,
+            _kv_value_length = 512,
+            _sliding_window = 512,
+            _sliding_window_pattern = [True, True, True, True, False] * 7,
+            _kv_key_length_swa = 256,
+            _kv_value_length_swa = 256,
+            _shared_kv_layers = 20,
+        )
+        ctx = 5000
+        slots = 3
+        base_cells, swa_cells = _runtime_swa_cells(ctx, 512, slots = slots, unified = True)
+        max_v_width = 512
+        expected = (
+            3 * base_cells * (512 + max_v_width) * 2 + 12 * swa_cells * (256 + max_v_width) * 2
+        )
+        actual = b._estimate_kv_cache_bytes(
+            ctx,
+            "f16",
+            n_parallel = slots,
+            flash_attn = False,
+        )
+        assert actual == expected
+        assert actual == 66 * 1024**2
+        assert actual > b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = slots)
+
+    def test_flash_attn_off_prices_quantized_v_retry_as_f16(self):
+        b = self._swa_backend(
+            _n_layers = 2,
+            _n_kv_heads = None,
+            _n_kv_heads_by_layer = [8, 2],
+            _sliding_window_pattern = [True, False],
+            _kv_key_length_swa = 64,
+            _kv_value_length_swa = 64,
+        )
+        off = b._estimate_kv_cache_bytes(4096, "q4_0", flash_attn = False)
+        on = b._estimate_kv_cache_bytes(4096, "q4_0")
+        assert off > on
+
+    def test_ctx_smaller_than_window(self):
+        """When context is smaller than the compact allowance, SWA caps at context."""
+        b = self._swa_backend(_sliding_window = 8192)
+        n_global = max(1, 62 // 4)
+        n_swa = 62 - n_global
+        kv_per = 16 * (128 + 128) * 2
+        ctx = 4096
+        base_cells, swa_cells = _runtime_swa_cells(ctx, 8192)
+        expected = int(n_global * base_cells * kv_per + n_swa * swa_cells * kv_per)
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == expected
+
+    def test_odd_layer_count(self):
+        b = self._swa_backend(_n_layers = 63)
+        n_global = max(1, 63 // 4)
+        n_swa = 63 - n_global
+        kv_per = 16 * (128 + 128) * 2
+        base_cells, swa_cells = _runtime_swa_cells(1000, 1024)
+        expected = int(n_global * base_cells * kv_per + n_swa * swa_cells * kv_per)
+        assert b._estimate_kv_cache_bytes(1000, "f16") == expected
+
+
+class TestStandardGQAEstimation:
+    """Standard GQA with explicit key_length/value_length."""
+
+    def _gqa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 28,
+            "_n_kv_heads": 8,
+            "_n_heads": 16,
+            "_embedding_length": 1024,
+            "_kv_key_length": 128,
+            "_kv_value_length": 128,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_qwen3_06b(self):
+        b = self._gqa_backend()
+        expected = 28 * 40960 * 8 * (128 + 128) * 2
+        assert b._estimate_kv_cache_bytes(40960, "f16") == expected
+
+    def test_asymmetric_kv_dims(self):
+        """key_length != value_length (some architectures have this)."""
+        b = self._gqa_backend(_kv_key_length = 192, _kv_value_length = 64)
+        expected = 28 * 4096 * 8 * (192 + 64) * 2
+        assert b._estimate_kv_cache_bytes(4096, "f16") == expected
+
+    def test_differs_from_legacy(self):
+        """GQA path differs from legacy when key_length != embed//n_heads."""
+        b = self._gqa_backend()
+        head_dim = 1024 // 16
+        gqa_result = b._estimate_kv_cache_bytes(4096, "f16")
+        legacy_result = int(2 * 8 * head_dim * 28 * 4096 * 2)
+        assert gqa_result != legacy_result
+        assert gqa_result > legacy_result
+
+
+class TestLegacyEstimation:
+    """Legacy: embed // n_heads, for old GGUFs without new fields."""
+
+    def _legacy_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 32,
+            "_n_kv_heads": 8,
+            "_n_heads": 32,
+            "_embedding_length": 4096,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_basic_legacy(self):
+        b = self._legacy_backend()
+        head_dim = 4096 // 32
+        expected = int(2 * 8 * 128 * 32 * 4096 * 2)
+        assert b._estimate_kv_cache_bytes(4096, "f16") == expected
+
+    def test_legacy_with_only_n_heads(self):
+        """n_kv_heads is None, falls back to n_heads."""
+        b = self._legacy_backend(_n_kv_heads = None)
+        head_dim = 4096 // 32
+        expected = int(2 * 32 * head_dim * 32 * 4096 * 2)
+        assert b._estimate_kv_cache_bytes(4096, "f16") == expected
+
+    def test_legacy_identical_to_old_formula(self):
+        """Legacy path matches the pre-PR formula."""
+        b = self._legacy_backend()
+        n_layers = 32
+        n_kv_heads = 8
+        head_dim = 4096 // 32
+        n_ctx = 8192
+        bpe = 2.0
+        old_formula = int(2 * n_kv_heads * head_dim * n_layers * n_ctx * bpe)
+        assert b._estimate_kv_cache_bytes(n_ctx, "f16") == old_formula
+
+    @pytest.mark.parametrize(
+        "overrides, flash_attn, k_heads, v_heads",
+        [
+            pytest.param(
+                {"_n_layers": 4, "_n_kv_heads_by_layer": [0, 0, 8, 4]},
+                True,
+                12,
+                12,
+                id = "per-layer-heads",
+            ),
+            pytest.param(
+                {"_n_layers": 4, "_n_kv_heads_by_layer": [0, 0, 8, 4]},
+                False,
+                12,
+                4 * 8,
+                id = "per-layer-heads-padded-v",
+            ),
+            pytest.param({"_n_kv_heads": None, "_n_heads": 0}, False, 0, 0, id = "pure-ssm"),
+        ],
+    )
+    def test_only_kv_bearing_layers_are_charged(self, overrides, flash_attn, k_heads, v_heads):
+        b = self._legacy_backend(**overrides)
+        kv = b._estimate_kv_cache_bytes(4096, "q8_0", flash_attn = flash_attn)
+        q8 = lc._kv_bytes_per_elem("q8_0")
+        # The FA-off retry rewrites a quantized V cache to f16.
+        assert kv == int((k_heads * q8 + v_heads * (q8 if flash_attn else 2)) * 128 * 4096)
+
+
+class TestPathPriority:
+    """Confirm: MLA > Hybrid Mamba > SWA > GQA > Legacy."""
+
+    def test_mla_takes_priority_over_all(self):
+        """If kv_lora_rank is set, MLA path wins even with other fields present."""
+        b = LlamaCppBackend()
+        b._n_layers = 61
+        b._n_kv_heads = 1
+        b._n_heads = 128
+        b._embedding_length = 7168
+        b._kv_key_length = 576
+        b._kv_value_length = 512
+        b._kv_lora_rank = 512
+        b._ssm_inner_size = 4096
+        b._full_attention_interval = 4
+        b._sliding_window = 1024
+
+        expected_mla = int(61 * _runtime_kv_cells(1000) * 1 * 576 * 2)
+        assert b._estimate_kv_cache_bytes(1000, "f16") == expected_mla
+
+    def test_hybrid_over_swa(self):
+        """Hybrid takes priority over SWA when both fields present."""
+        b = LlamaCppBackend()
+        b._n_layers = 64
+        b._n_kv_heads = 4
+        b._n_heads = 24
+        b._embedding_length = 5120
+        b._kv_key_length = 256
+        b._kv_value_length = 256
+        b._ssm_inner_size = 6144
+        b._full_attention_interval = 4
+        b._sliding_window = 1024
+
+        n_attn = 64 // 4
+        expected_hybrid = int(n_attn * _runtime_kv_cells(1000) * 4 * (256 + 256) * 2)
+        assert b._estimate_kv_cache_bytes(1000, "f16") == expected_hybrid
+
+    def test_all_paths_produce_different_values(self):
+        """With chosen params, each path yields a distinct value."""
+        # embedding_length=768 so legacy head_dim (48) != key_length (256) and MLA != legacy K+V.
+        params = {
+            "_n_layers": 40,
+            "_n_kv_heads": 4,
+            "_n_heads": 16,
+            "_embedding_length": 768,
+            "_kv_key_length": 256,
+            "_kv_value_length": 256,
+        }
+        ctx = 4096
+
+        b_gqa = LlamaCppBackend()
+        for k, v in params.items():
+            setattr(b_gqa, k, v)
+        gqa_val = b_gqa._estimate_kv_cache_bytes(ctx, "f16")
+
+        b_mla = LlamaCppBackend()
+        for k, v in params.items():
+            setattr(b_mla, k, v)
+        b_mla._kv_lora_rank = 512
+        mla_val = b_mla._estimate_kv_cache_bytes(ctx, "f16")
+
+        b_hybrid = LlamaCppBackend()
+        for k, v in params.items():
+            setattr(b_hybrid, k, v)
+        b_hybrid._ssm_inner_size = 4096
+        b_hybrid._full_attention_interval = 4
+        hybrid_val = b_hybrid._estimate_kv_cache_bytes(ctx, "f16")
+
+        b_swa = LlamaCppBackend()
+        for k, v in params.items():
+            setattr(b_swa, k, v)
+        b_swa._sliding_window = 512
+        swa_val = b_swa._estimate_kv_cache_bytes(ctx, "f16")
+
+        b_legacy = LlamaCppBackend()
+        b_legacy._n_layers = 40
+        b_legacy._n_kv_heads = 4
+        b_legacy._n_heads = 16
+        b_legacy._embedding_length = 768
+        legacy_val = b_legacy._estimate_kv_cache_bytes(ctx, "f16")
+
+        values = [mla_val, hybrid_val, swa_val, gqa_val, legacy_val]
+        assert len(set(values)) == 5, f"Expected 5 distinct values, got {values}"
+
+
+class TestQuantization:
+    """All supported cache_type_kv values scale correctly."""
+
+    @pytest.mark.parametrize(
+        "cache_type,expected_bpe",
+        [
+            ("f32", 4.0),
+            ("f16", 2.0),
+            ("bf16", 2.0),
+            ("q8_0", 34 / 32),
+            ("q5_1", 0.75),
+            ("q5_0", 0.6875),
+            ("q4_1", 0.625),
+            ("q4_0", 0.5625),
+            ("iq4_nl", 0.5625),
+            (None, 2.0),
+            ("unknown", 2.0),
+        ],
+    )
+    def test_quantization_scaling(self, cache_type, expected_bpe):
+        b = LlamaCppBackend()
+        b._n_layers = 10
+        b._n_kv_heads = 1
+        b._n_heads = 8
+        b._embedding_length = 512
+        b._kv_key_length = 64
+        b._kv_value_length = 64
+        result = b._estimate_kv_cache_bytes(1000, cache_type)
+        expected = int(10 * _runtime_kv_cells(1000) * 1 * (64 + 64) * expected_bpe)
+        assert result == expected
+
+
+class TestEdgeCases:
+    """Boundary conditions and degenerate inputs."""
+
+    def test_zero_context(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._kv_key_length = 128
+        assert b._estimate_kv_cache_bytes(0, "f16") == 0
+
+    def test_negative_context(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._kv_key_length = 128
+        assert b._estimate_kv_cache_bytes(-1, "f16") == 0
+
+    def test_context_of_one(self):
+        b = LlamaCppBackend()
+        b._n_layers = 10
+        b._n_kv_heads = 1
+        b._kv_key_length = 64
+        b._kv_value_length = 64
+        result = b._estimate_kv_cache_bytes(1, "f16")
+        assert result == int(10 * _runtime_kv_cells(1) * 1 * (64 + 64) * 2)
+
+    def test_very_large_context(self):
+        """1M context should not overflow or crash."""
+        b = LlamaCppBackend()
+        b._n_layers = 10
+        b._n_kv_heads = 1
+        b._kv_key_length = 128
+        b._kv_value_length = 128
+        result = b._estimate_kv_cache_bytes(1_000_000, "f16")
+        assert result > 0
+        assert isinstance(result, int)
+
+    def test_n_kv_heads_none_falls_to_n_heads(self):
+        b = LlamaCppBackend()
+        b._n_layers = 10
+        b._n_kv_heads = None
+        b._n_heads = 8
+        b._kv_key_length = 64
+        b._kv_value_length = 64
+        result = b._estimate_kv_cache_bytes(100, "f16")
+        expected = int(10 * _runtime_kv_cells(100) * 8 * (64 + 64) * 2)
+        assert result == expected
+
+    def test_both_heads_none_falls_to_one(self):
+        b = LlamaCppBackend()
+        b._n_layers = 10
+        b._n_kv_heads = None
+        b._n_heads = None
+        b._kv_key_length = 64
+        b._kv_value_length = 64
+        result = b._estimate_kv_cache_bytes(100, "f16")
+        expected = int(10 * _runtime_kv_cells(100) * 1 * (64 + 64) * 2)
+        assert result == expected
+
+
+class TestServerFlags:
+    """Estimator should mirror llama-server CLI flags that change KV size."""
+
+    def _swa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 26,
+            "_n_kv_heads": 4,
+            "_n_heads": 8,
+            "_embedding_length": 1152,
+            "_kv_key_length": 256,
+            "_kv_value_length": 256,
+            "_sliding_window": 512,
+            "_sliding_window_pattern": [True, True, True, True, True, False] * 4 + [True, True],
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def _gqa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 28,
+            "_n_kv_heads": 8,
+            "_n_heads": 16,
+            "_embedding_length": 1024,
+            "_kv_key_length": 128,
+            "_kv_value_length": 128,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_swa_full_collapses_pattern_path_to_full_ctx(self):
+        b = self._swa_backend()
+        ctx = 32_768
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True)
+        kv_per_token = 4 * (256 + 256) * 2
+        expected = 26 * ctx * kv_per_token
+        assert flagged == expected
+        assert flagged > b._estimate_kv_cache_bytes(ctx, "f16")
+
+    def test_swa_full_collapses_legacy_path_to_full_ctx(self):
+        b = self._swa_backend(_sliding_window_pattern = None)
+        ctx = 16_384
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True)
+        n_global = max(1, 26 // 4)
+        n_swa = 26 - n_global
+        kv_per = 4 * (256 + 256) * 2
+        expected = n_global * ctx * kv_per + n_swa * ctx * kv_per
+        assert flagged == expected
+
+    def test_swa_full_no_op_for_non_swa_model(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        flagged = b._estimate_kv_cache_bytes(8192, "f16", swa_full = True)
+        assert flagged == baseline
+
+    def test_swa_full_suppresses_checkpoint_term(self):
+        b = self._swa_backend()
+        with_cp = b._estimate_kv_cache_bytes(8192, "f16", ctx_checkpoints = 8)
+        with_cp_full = b._estimate_kv_cache_bytes(8192, "f16", ctx_checkpoints = 8, swa_full = True)
+        no_cp_full = b._estimate_kv_cache_bytes(8192, "f16", swa_full = True)
+        assert with_cp_full == no_cp_full
+        assert with_cp > b._estimate_kv_cache_bytes(8192, "f16")
+
+    def test_compact_swa_includes_ubatch_headroom_and_padding(self):
+        b = self._swa_backend(_sliding_window = 128)
+        ctx = 8192
+        result = b._estimate_kv_cache_bytes(ctx, "f16", n_ubatch = 512)
+        per_token = 4 * (256 + 256) * 2
+        n_swa = sum(b._sliding_window_pattern)
+        n_global = b._n_layers - n_swa
+        expected = n_global * ctx * per_token + n_swa * 768 * per_token
+        assert result == expected
+
+    # Verified vs llama-server: non-SWA caches partition n_ctx across non-unified streams.
+
+    def test_gqa_kv_constant_for_aligned_stream_divisions(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(4096, "f16")
+        for slots in (1, 2, 4, 8):
+            for unified in (True, False):
+                assert (
+                    b._estimate_kv_cache_bytes(4096, "f16", n_parallel = slots, kv_unified = unified)
+                    == baseline
+                )
+
+    def test_zero_parallel_floors_at_one(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(4096, "f16")
+        for unified in (True, False):
+            assert (
+                b._estimate_kv_cache_bytes(4096, "f16", n_parallel = 0, kv_unified = unified)
+                == baseline
+            )
+
+    def test_swa_path_matches_aligned_stream_layout(self):
+        b = self._swa_backend()
+        ctx = 8192
+        baseline = b._estimate_kv_cache_bytes(ctx, "f16")
+        swa = b._sliding_window
+        per_token_global = 4 * (256 + 256) * 2
+        per_token_swa = 4 * (256 + 256) * 2
+        base_cells, swa_cells = _runtime_swa_cells(ctx, swa)
+        global_bytes = sum(
+            base_cells * per_token_global for f in b._sliding_window_pattern[: b._n_layers] if not f
+        )
+        swa_bytes = sum(
+            swa_cells * per_token_swa for f in b._sliding_window_pattern[: b._n_layers] if f
+        )
+        assert global_bytes + swa_bytes == baseline
+        for slots in (1, 2, 3, 4):
+            scaled = b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = slots, kv_unified = False)
+            base_cells, swa_cells = _runtime_swa_cells(ctx, swa, slots = slots, unified = False)
+            expected_global = sum(
+                base_cells * per_token_global
+                for f in b._sliding_window_pattern[: b._n_layers]
+                if not f
+            )
+            expected_swa = sum(
+                swa_cells * per_token_swa for f in b._sliding_window_pattern[: b._n_layers] if f
+            )
+            assert scaled == expected_global + expected_swa
+
+    def test_mla_kv_constant_across_parallel(self):
+        b = LlamaCppBackend()
+        b._n_layers = 60
+        b._n_kv_heads = 1
+        b._kv_lora_rank = 512
+        b._key_length_mla = 64
+        b._kv_key_length = 576
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        for slots in (1, 2, 4, 8):
+            for unified in (True, False):
+                assert (
+                    b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots, kv_unified = unified)
+                    == baseline
+                )
+
+    def test_ctx_checkpoints_zero_is_no_op(self):
+        b = self._swa_backend()
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        assert b._estimate_kv_cache_bytes(8192, "f16", ctx_checkpoints = 0) == baseline
+
+    def test_ctx_checkpoints_no_op_for_non_swa(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        assert b._estimate_kv_cache_bytes(8192, "f16", ctx_checkpoints = 32) == baseline
+
+    def test_ctx_checkpoints_pattern_path_adds_known_bytes(self):
+        b = self._swa_backend()
+        ctx = 8192
+        baseline = b._estimate_kv_cache_bytes(ctx, "f16")
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", ctx_checkpoints = 4)
+        n_swa_layers = sum(1 for f in [True, True, True, True, True, False] * 4 + [True, True] if f)
+        per_layer = 4 * 512 * 4 * (256 + 256) * 2
+        assert flagged == baseline + n_swa_layers * per_layer
+
+    def test_ctx_checkpoints_legacy_path_adds_known_bytes(self):
+        b = self._swa_backend(_sliding_window_pattern = None)
+        ctx = 8192
+        baseline = b._estimate_kv_cache_bytes(ctx, "f16")
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", ctx_checkpoints = 4)
+        n_global = max(1, 26 // 4)
+        n_swa = 26 - n_global
+        kv_per = 4 * (256 + 256) * 2
+        extra = 4 * n_swa * 512 * kv_per
+        assert flagged == baseline + extra
+
+    def test_ctx_checkpoints_compose_with_n_parallel(self):
+        # Only the SWA + checkpoint portion scales by n_parallel.
+        b = self._swa_backend()
+        ctx = 8192
+        swa = b._sliding_window
+        per_token = 4 * (256 + 256) * 2
+        n_swa_layers = sum(1 for f in b._sliding_window_pattern[: b._n_layers] if f)
+        slots = 3
+        base_cells, swa_cells = _runtime_swa_cells(ctx, swa, slots = slots, unified = False)
+        n_global_layers = b._n_layers - n_swa_layers
+        global_bytes = n_global_layers * base_cells * per_token
+        swa_bytes = n_swa_layers * swa_cells * per_token
+        cp_extra_per_slot = n_swa_layers * 4 * swa * per_token
+        flagged = b._estimate_kv_cache_bytes(
+            ctx, "f16", ctx_checkpoints = 4, n_parallel = slots, kv_unified = False
+        )
+        assert flagged == global_bytes + swa_bytes + slots * cp_extra_per_slot
+
+    def test_fit_returns_requested_when_kv_off_gpu(self):
+        b = self._gqa_backend()
+        fitted = b._fit_context_to_vram(
+            requested_ctx = 32_768,
+            available_mib = 1,
+            model_size_bytes = 100,
+            cache_type_kv = "f16",
+            kv_on_gpu = False,
+        )
+        assert fitted == 32_768
+
+    def test_fit_reduces_when_kv_on_gpu(self):
+        b = self._gqa_backend()
+        fitted = b._fit_context_to_vram(
+            requested_ctx = 32_768,
+            available_mib = 64,
+            model_size_bytes = 1024 * 1024,
+            cache_type_kv = "f16",
+            kv_on_gpu = True,
+        )
+        assert fitted < 32_768
+
+    def test_fit_mtp_engaged_returns_smaller_or_equal_context(self):
+        # MTP fallback budget is _CTX_FIT_VRAM_FRACTION - 0.05, so MTP must yield <= non-MTP.
+        b = self._gqa_backend()
+        common = dict(
+            requested_ctx = 32_768,
+            available_mib = 128,
+            model_size_bytes = 8 * 1024 * 1024,
+            cache_type_kv = "f16",
+        )
+        baseline = b._fit_context_to_vram(**common)
+        mtp = b._fit_context_to_vram(**common, mtp_engaged = True)
+        assert mtp <= baseline
+
+    def test_fit_mtp_engaged_unchanged_when_kv_off_gpu(self):
+        b = self._gqa_backend()
+        fitted = b._fit_context_to_vram(
+            requested_ctx = 32_768,
+            available_mib = 1,
+            model_size_bytes = 100,
+            cache_type_kv = "f16",
+            kv_on_gpu = False,
+            mtp_engaged = True,
+        )
+        assert fitted == 32_768
+
+    def test_fit_threads_swa_full_through_estimator(self):
+        b = self._swa_backend()
+        # Above the fit floor so the search can shrink; at 8192 the swa_full assert was vacuous.
+        ctx = 2 * _FIT_MIN_CTX
+        kv_default = b._estimate_kv_cache_bytes(ctx, "f16")
+        kv_full = b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True)
+        assert kv_full > kv_default
+        budget_mib = (1024 * 1024 + kv_default) / (1024 * 1024) / _CTX_FIT_VRAM_FRACTION + 1
+        fitted_default = b._fit_context_to_vram(
+            requested_ctx = ctx,
+            available_mib = int(budget_mib),
+            model_size_bytes = 1024 * 1024,
+            cache_type_kv = "f16",
+        )
+        fitted_full = b._fit_context_to_vram(
+            requested_ctx = ctx,
+            available_mib = int(budget_mib),
+            model_size_bytes = 1024 * 1024,
+            cache_type_kv = "f16",
+            swa_full = True,
+        )
+        assert fitted_default == ctx
+        assert fitted_full < ctx
+
+    def test_tensor_planner_threads_swa_full_through_estimator(self):
+        b = self._swa_backend()
+        estimate = b._estimate_kv_cache_bytes
+        calls = []
+
+        def record(*args, **kwargs):
+            calls.append(kwargs)
+            return estimate(*args, **kwargs)
+
+        b._estimate_kv_cache_bytes = record
+        b._plan_tensor_parallel(
+            [(0, 32768), (1, 32768)],
+            1024**3,
+            8192,
+            cache_type_kv = "f16",
+            swa_full = True,
+            flash_attn = False,
+        )
+        assert calls
+        assert all(call["swa_full"] is True for call in calls)
+        assert all(call["flash_attn"] is False for call in calls)
+
+
+class TestParallelSWAScaling:
+    """Per-layer scaling: non-SWA layers use padded per-stream context; unified mode uses one stream."""
+
+    def _gqa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 28,
+            "_n_kv_heads": 8,
+            "_n_heads": 16,
+            "_embedding_length": 1024,
+            "_kv_key_length": 128,
+            "_kv_value_length": 128,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def _swa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 18,
+            "_n_kv_heads": 1,
+            "_n_heads": 4,
+            "_embedding_length": 1024,
+            "_kv_key_length": 256,
+            "_kv_value_length": 256,
+            "_sliding_window": 512,
+            "_sliding_window_pattern": [t == "swa" for t in (["swa"] * 5 + ["global"]) * 3],
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_pure_gqa_constant_across_parallel(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        for slots in (1, 2, 4, 8):
+            for unified in (True, False):
+                assert (
+                    b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots, kv_unified = unified)
+                    == baseline
+                )
+
+    def test_mla_constant_across_parallel(self):
+        b = LlamaCppBackend()
+        b._n_layers = 60
+        b._n_kv_heads = 1
+        b._kv_lora_rank = 512
+        b._key_length_mla = 64
+        b._kv_key_length = 576
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        for slots in (1, 2, 4, 8):
+            assert b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots) == baseline
+
+    def test_hybrid_constant_across_parallel(self):
+        b = LlamaCppBackend()
+        b._n_layers = 64
+        b._n_kv_heads = 16
+        b._n_heads = 32
+        b._embedding_length = 4096
+        b._kv_key_length = 128
+        b._kv_value_length = 128
+        b._ssm_inner_size = 4096
+        b._full_attention_interval = 4
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        for slots in (1, 2, 4, 8):
+            assert b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots) == baseline
+
+    def test_legacy_constant_across_parallel(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._n_kv_heads = 8
+        b._n_heads = 8
+        b._embedding_length = 4096
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        for slots in (1, 2, 4, 8):
+            assert b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots) == baseline
+
+    def test_non_swa_paths_follow_unaligned_stream_padding(self):
+        mla = LlamaCppBackend()
+        mla._n_layers = 60
+        mla._n_kv_heads = 1
+        mla._kv_lora_rank = 512
+        mla._key_length_mla = 64
+        mla._kv_key_length = 576
+
+        hybrid = LlamaCppBackend()
+        hybrid._n_layers = 64
+        hybrid._n_kv_heads = 16
+        hybrid._n_heads = 32
+        hybrid._embedding_length = 4096
+        hybrid._kv_key_length = 128
+        hybrid._kv_value_length = 128
+        hybrid._ssm_inner_size = 4096
+        hybrid._full_attention_interval = 4
+
+        legacy = LlamaCppBackend()
+        legacy._n_layers = 32
+        legacy._n_kv_heads = 8
+        legacy._n_heads = 8
+        legacy._embedding_length = 4096
+
+        for backend in (self._gqa_backend(), mla, hybrid, legacy):
+            bytes_per_cell = backend._estimate_kv_cache_bytes(256, "f16") // 256
+            unified = backend._estimate_kv_cache_bytes(5000, "f16", n_parallel = 3, kv_unified = True)
+            separate = backend._estimate_kv_cache_bytes(5000, "f16", n_parallel = 3, kv_unified = False)
+            assert unified == 5120 * bytes_per_cell
+            assert separate == 5376 * bytes_per_cell
+
+    def test_swa_pattern_matches_aligned_stream_layout(self):
+        b = self._swa_backend()
+        ctx = 8192
+        swa = b._sliding_window
+        per_token = 1 * (256 + 256) * 2
+        n_global = sum(1 for f in b._sliding_window_pattern if not f)
+        n_swa = sum(1 for f in b._sliding_window_pattern if f)
+        for slots in (1, 2, 4, 8):
+            for unified in (True, False):
+                base_cells, swa_cells = _runtime_swa_cells(ctx, swa, slots = slots, unified = unified)
+                got = b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = slots, kv_unified = unified)
+                assert got == (n_global * base_cells * per_token + n_swa * swa_cells * per_token)
+
+    def test_swa_fallback_matches_aligned_stream_layout(self):
+        b = self._swa_backend(_sliding_window_pattern = None)
+        ctx = 8192
+        swa = b._sliding_window
+        n_layers = 18
+        n_global = max(1, n_layers // 4)
+        n_swa = n_layers - n_global
+        per_token = 1 * (256 + 256) * 2
+        for slots in (1, 2, 4, 8):
+            for unified in (True, False):
+                base_cells, swa_cells = _runtime_swa_cells(ctx, swa, slots = slots, unified = unified)
+                got = b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = slots, kv_unified = unified)
+                assert got == (n_global * base_cells * per_token + n_swa * swa_cells * per_token)
+
+    def test_swa_per_slot_clamped_when_ctx_lt_slots_x_2window(self):
+        # ctx=4096 / slots=8 gives a 512-cell stream, which caps compact SWA.
+        b = self._swa_backend()
+        ctx = 4096
+        per_slot_ctx_at_8 = ctx // 8
+        n_swa = sum(1 for f in b._sliding_window_pattern if f)
+        n_global = sum(1 for f in b._sliding_window_pattern if not f)
+        per_token = 1 * (256 + 256) * 2
+        base_cells, swa_cells = _runtime_swa_cells(ctx, b._sliding_window, slots = 8, unified = False)
+        assert swa_cells == 8 * per_slot_ctx_at_8
+        expected = n_global * base_cells * per_token + n_swa * swa_cells * per_token
+        assert b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = 8, kv_unified = False) == expected
+
+    def test_swa_full_constant_for_aligned_stream_divisions(self):
+        b = self._swa_backend()
+        ctx = 8192
+        baseline = b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True)
+        for slots in (1, 2, 4, 8):
+            assert (
+                b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True, n_parallel = slots) == baseline
+            )
+
+    def test_kv_unified_changes_only_compact_swa_for_aligned_context(self):
+        gqa = self._gqa_backend()
+        swa = self._swa_backend()
+        for slots in (1, 2, 4, 8):
+            gqa_unified = gqa._estimate_kv_cache_bytes(
+                8192, "f16", n_parallel = slots, kv_unified = True
+            )
+            gqa_separate = gqa._estimate_kv_cache_bytes(
+                8192, "f16", n_parallel = slots, kv_unified = False
+            )
+            assert gqa_unified == gqa_separate
+
+            swa_unified = swa._estimate_kv_cache_bytes(
+                8192, "f16", n_parallel = slots, kv_unified = True
+            )
+            swa_separate = swa._estimate_kv_cache_bytes(
+                8192, "f16", n_parallel = slots, kv_unified = False
+            )
+            assert (swa_unified == swa_separate) is (slots == 1)
+
+    def test_matches_empirical_gemma3_270m_formula(self):
+        """Exact match to the measured non-unified formula: 24 + parallel * 15 MiB at ctx 8192."""
+        b = LlamaCppBackend()
+        b._n_layers = 18
+        b._n_kv_heads = 1
+        b._n_heads = 4
+        b._embedding_length = 1024
+        b._kv_key_length = 256
+        b._kv_value_length = 256
+        b._sliding_window = 512
+        b._sliding_window_pattern = [(i + 1) % 6 != 0 for i in range(18)]
+        n_global = 3
+        n_swa = 15
+        assert sum(b._sliding_window_pattern) == n_swa
+        for slots, expected_mib in [(1, 39), (2, 54), (4, 84)]:
+            got_bytes = b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots, kv_unified = False)
+            got_mib = got_bytes / (1024 * 1024)
+            assert (
+                got_mib == expected_mib
+            ), f"slots={slots}: got {got_mib} MiB, expected {expected_mib} MiB"
+
+        for slots, expected_mib in [(1, 39), (2, 46.5), (4, 61.5)]:
+            got_bytes = b._estimate_kv_cache_bytes(8192, "f16", n_parallel = slots, kv_unified = True)
+            assert got_bytes / (1024 * 1024) == expected_mib
+
+
+class TestSharedKVLayers:
+    """Trailing shared_kv_layers blocks reuse earlier caches and allocate none; unset means no change."""
+
+    def _gemma3n_backend(self, **overrides):
+        # Mirrors google/gemma-3n-E4B-it: 35 layers, 15 shared, SWA window
+        # 1024, period 5 (4 sliding + 1 full repeating).
+        defaults = {
+            "_n_layers": 35,
+            "_n_kv_heads": 4,
+            "_n_heads": 8,
+            "_embedding_length": 2048,
+            "_kv_key_length": 256,
+            "_kv_value_length": 256,
+            "_sliding_window": 1024,
+            "_sliding_window_pattern": [
+                t == "sliding_attention"
+                for t in (["sliding_attention"] * 4 + ["full_attention"]) * 7
+            ],
+            "_shared_kv_layers": 15,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def _gqa_backend(self, **overrides):
+        defaults = {
+            "_n_layers": 28,
+            "_n_kv_heads": 8,
+            "_n_heads": 16,
+            "_embedding_length": 1024,
+            "_kv_key_length": 128,
+            "_kv_value_length": 128,
+        }
+        defaults.update(overrides)
+        b = LlamaCppBackend()
+        for k, v in defaults.items():
+            setattr(b, k, v)
+        return b
+
+    def test_field_initialises_to_none(self):
+        b = LlamaCppBackend()
+        assert b._shared_kv_layers is None
+
+    def test_unset_field_is_noop(self):
+        b = self._gqa_backend()
+        baseline = b._estimate_kv_cache_bytes(8192, "f16")
+        b._shared_kv_layers = None
+        assert b._estimate_kv_cache_bytes(8192, "f16") == baseline
+        b._shared_kv_layers = 0
+        assert b._estimate_kv_cache_bytes(8192, "f16") == baseline
+
+    def test_path4_drops_shared_layers(self):
+        b = self._gqa_backend(_shared_kv_layers = 4)
+        ctx = 4096
+        kv_per = 8 * (128 + 128) * 2
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == 24 * ctx * kv_per
+
+    def test_path5_drops_shared_layers(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._n_kv_heads = 8
+        b._n_heads = 8
+        b._embedding_length = 4096
+        b._shared_kv_layers = 8
+        ctx = 4096
+        head_dim = 4096 // 8
+        expected = 2 * 8 * head_dim * 24 * ctx * 2
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == expected
+
+    def test_path1_mla_drops_shared_layers(self):
+        b = LlamaCppBackend()
+        b._n_layers = 60
+        b._n_kv_heads = 1
+        b._kv_lora_rank = 512
+        b._key_length_mla = 64
+        b._kv_key_length = 576
+        b._shared_kv_layers = 10
+        ctx = 8192
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == 50 * ctx * 1 * 576 * 2
+
+    def test_path3_pattern_loops_only_unshared_layers(self):
+        b = self._gemma3n_backend()
+        ctx = 8192
+        sliding_in_unshared = sum(b._sliding_window_pattern[:20])
+        full_in_unshared = 20 - sliding_in_unshared
+        assert sliding_in_unshared == 16
+        assert full_in_unshared == 4
+        kv_per = 4 * (256 + 256) * 2
+        base_cells, swa_cells = _runtime_swa_cells(ctx, 1024)
+        expected = full_in_unshared * base_cells * kv_per + sliding_in_unshared * swa_cells * kv_per
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == expected
+
+    def test_shared_layers_reduces_estimate(self):
+        b = self._gemma3n_backend()
+        with_shared = b._estimate_kv_cache_bytes(8192, "f16")
+        b._shared_kv_layers = 0
+        without_shared = b._estimate_kv_cache_bytes(8192, "f16")
+        # 20/35 = 0.571 of the work; ~43% reduction.
+        ratio = with_shared / without_shared
+        assert 0.5 < ratio < 0.65
+
+    def test_path3_pattern_with_swa_full_and_shared(self):
+        b = self._gemma3n_backend()
+        ctx = 8192
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", swa_full = True)
+        kv_per = 4 * (256 + 256) * 2
+        assert flagged == 20 * ctx * kv_per
+
+    def test_path3_fallback_uses_unshared_count(self):
+        b = self._gemma3n_backend(_sliding_window_pattern = None)
+        ctx = 8192
+        n_layers_kv = 35 - 15
+        n_global = max(1, n_layers_kv // 4)
+        n_swa = n_layers_kv - n_global
+        kv_per = 4 * (256 + 256) * 2
+        base_cells, swa_cells = _runtime_swa_cells(ctx, 1024)
+        expected = n_global * base_cells * kv_per + n_swa * swa_cells * kv_per
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == expected
+
+    def test_shared_floors_at_one_layer(self):
+        # Pathological: shared >= n_layers must not zero out the cache.
+        b = self._gqa_backend(_shared_kv_layers = 99)
+        ctx = 4096
+        kv_per = 8 * (128 + 128) * 2
+        assert b._estimate_kv_cache_bytes(ctx, "f16") == 1 * ctx * kv_per
+
+    def test_composes_with_n_parallel(self):
+        b = self._gemma3n_backend()
+        ctx = 8192
+        swa = b._sliding_window
+        per_token = 4 * (256 + 256) * 2
+        unshared_pattern = b._sliding_window_pattern[:20]
+        sliding_in_unshared = sum(unshared_pattern)
+        global_in_unshared = len(unshared_pattern) - sliding_in_unshared
+        slots = 3
+        base_cells, swa_cells = _runtime_swa_cells(ctx, swa, slots = slots, unified = False)
+        global_bytes = global_in_unshared * base_cells * per_token
+        swa_bytes = sliding_in_unshared * swa_cells * per_token
+        flagged = b._estimate_kv_cache_bytes(ctx, "f16", n_parallel = slots, kv_unified = False)
+        assert flagged == global_bytes + swa_bytes
+
+    def test_composes_with_ctx_checkpoints(self):
+        b = self._gemma3n_backend()
+        ctx = 8192
+        baseline = b._estimate_kv_cache_bytes(ctx, "f16")
+        with_cp = b._estimate_kv_cache_bytes(ctx, "f16", ctx_checkpoints = 4)
+        sliding_in_unshared = sum(b._sliding_window_pattern[:20])
+        per_cp_layer = 4 * 1024 * 4 * (256 + 256) * 2
+        assert with_cp == baseline + sliding_in_unshared * per_cp_layer
+
+    def test_unload_resets_shared_kv_layers(self):
+        b = LlamaCppBackend()
+        b._shared_kv_layers = 12
+        b.unload_model()
+        assert b._shared_kv_layers is None
+
+
+class TestLifecycle:
+    """Init, unload, and reparse field management."""
+
+    def test_init_fields_none(self):
+        b = LlamaCppBackend()
+        for attr in [
+            "_kv_key_length",
+            "_kv_value_length",
+            "_sliding_window",
+            "_sliding_window_pattern",
+            "_full_attention_interval",
+            "_kv_lora_rank",
+            "_key_length_mla",
+            "_kv_key_length_swa",
+            "_kv_value_length_swa",
+            "_ssm_inner_size",
+            "_ssm_state_size",
+            "_shared_kv_layers",
+        ]:
+            assert getattr(b, attr) is None
+        assert b._n_kv_heads_by_layer is None
+
+    def test_unload_resets_fields(self):
+        b = LlamaCppBackend()
+        b._n_layers = 32
+        b._kv_key_length = 128
+        b._kv_lora_rank = 512
+        b._sliding_window = 1024
+        b._sliding_window_pattern = [True, False]
+        b._n_kv_heads_by_layer = [8, 2]
+        b._kv_key_length_swa = 64
+        b._kv_value_length_swa = 64
+        b._ssm_inner_size = 4096
+        b._full_attention_interval = 4
+        b._shared_kv_layers = 8
+        b.unload_model()
+        for attr in [
+            "_kv_key_length",
+            "_kv_value_length",
+            "_sliding_window",
+            "_sliding_window_pattern",
+            "_full_attention_interval",
+            "_kv_lora_rank",
+            "_key_length_mla",
+            "_kv_key_length_swa",
+            "_kv_value_length_swa",
+            "_ssm_inner_size",
+            "_ssm_state_size",
+            "_shared_kv_layers",
+        ]:
+            assert getattr(b, attr) is None
+        assert b._n_kv_heads_by_layer is None
+
+    def test_end_to_end_synthetic_mla(self):
+        """Round-trip: write GGUF -> parse -> estimate."""
+        b = _backend_from_gguf(
+            "deepseek2",
+            {
+                "context_length": 163840,
+                "block_count": 61,
+                "attention.head_count_kv": 1,
+                "attention.head_count": 128,
+                "embedding_length": 7168,
+                "attention.key_length": 576,
+                "attention.value_length": 512,
+                "attention.kv_lora_rank": 512,
+                "attention.key_length_mla": 192,
+            },
+        )
+        assert b._can_estimate_kv()
+        result = b._estimate_kv_cache_bytes(163840, "f16")
+        expected = 61 * 163840 * 1 * 576 * 2
+        assert result == expected
+
+    def test_end_to_end_synthetic_hybrid(self):
+        b = _backend_from_gguf(
+            "qwen35",
+            {
+                "context_length": 262144,
+                "block_count": 64,
+                "attention.head_count_kv": 4,
+                "attention.head_count": 24,
+                "embedding_length": 5120,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+                "full_attention_interval": 4,
+                "ssm.inner_size": 6144,
+                "ssm.state_size": 128,
+            },
+        )
+        assert b._can_estimate_kv()
+        result = b._estimate_kv_cache_bytes(262144, "f16")
+        n_attn = 64 // 4
+        expected = n_attn * 262144 * 4 * (256 + 256) * 2
+        assert result == expected
+
+    def test_end_to_end_synthetic_swa(self):
+        b = _backend_from_gguf(
+            "gemma3",
+            {
+                "context_length": 131072,
+                "block_count": 62,
+                "attention.head_count_kv": 16,
+                "attention.head_count": 32,
+                "embedding_length": 5376,
+                "attention.key_length": 128,
+                "attention.value_length": 128,
+                "attention.sliding_window": 1024,
+            },
+        )
+        assert b._can_estimate_kv()
+        result = b._estimate_kv_cache_bytes(131072, "f16")
+        period = 6
+        kv_per = 16 * 256 * 2
+        base_cells, swa_cells = _runtime_swa_cells(131072, 1024)
+        expected = 0
+        for i in range(62):
+            is_swa = (i + 1) % period != 0
+            layer_ctx = swa_cells if is_swa else base_cells
+            expected += layer_ctx * kv_per
+        assert result == expected
+
+    def test_end_to_end_synthetic_shared_kv_round_trip(self):
+        b = _backend_from_gguf(
+            "gemma3n_text",
+            {
+                "context_length": 32768,
+                "block_count": 35,
+                "attention.head_count_kv": 4,
+                "attention.head_count": 8,
+                "embedding_length": 2048,
+                "attention.key_length": 256,
+                "attention.value_length": 256,
+                "attention.sliding_window": 1024,
+                "attention.shared_kv_layers": 15,
+            },
+        )
+        assert b._can_estimate_kv()
+        assert b._shared_kv_layers == 15
+        # gemma3n_text bootstrap gives period 5; only the first 20 (n_layers - shared) allocate KV.
+        result = b._estimate_kv_cache_bytes(8192, "f16")
+        assert result > 0
+        b._shared_kv_layers = 0
+        unshared = b._estimate_kv_cache_bytes(8192, "f16")
+        assert unshared > result
+
+    def test_end_to_end_synthetic_gqa(self):
+        b = _backend_from_gguf(
+            "qwen3",
+            {
+                "context_length": 40960,
+                "block_count": 28,
+                "attention.head_count_kv": 8,
+                "attention.head_count": 16,
+                "embedding_length": 1024,
+                "attention.key_length": 128,
+                "attention.value_length": 128,
+            },
+        )
+        assert b._can_estimate_kv()
+        result = b._estimate_kv_cache_bytes(40960, "f16")
+        expected = 28 * 40960 * 8 * 256 * 2
+        assert result == expected
+
+    def test_end_to_end_synthetic_legacy(self):
+        b = _backend_from_gguf(
+            "llama",
+            {
+                "context_length": 4096,
+                "block_count": 32,
+                "attention.head_count_kv": 8,
+                "attention.head_count": 32,
+                "embedding_length": 4096,
+            },
+        )
+        assert b._can_estimate_kv()
+        result = b._estimate_kv_cache_bytes(4096, "f16")
+        head_dim = 4096 // 32
+        expected = int(2 * 8 * head_dim * 32 * 4096 * 2)
+        assert result == expected

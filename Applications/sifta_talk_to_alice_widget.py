@@ -7457,7 +7457,7 @@ def _compose_contextual_search_query_with_cortex(
                 raw = "".join(_lfull)
         elif _MERCURY_AVAILABLE and _mercury_is_mercury(model_name):
             _mfull: list[str] = []
-            for kind, payload in _mercury_stream_chat(messages, model=model_name, effort="low",
+            for kind, payload in _mercury_stream_chat(messages, model=model_name, effort="medium" if model_name == "mercury-3" else "low",
                                                       max_tokens=1024):
                 if kind == "token":
                     _mfull.append(str(payload))
@@ -15235,6 +15235,12 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
         key = None if idx is None else int(idx)
         if key in seen:
             return
+        # A Continuity iPhone input is NEVER opened — the laptop mic is the room
+        # mic. The guard lives inside add() so EVERY path (override, embedded
+        # default, system default, the ranked sweep) obeys one rule.
+        if key is not None and 0 <= key < len(devices):
+            if _is_continuity_mic_name(str(devices[key].get("name") or "")):
+                return
         seen.add(key)
         candidates.append((key, label))
 
@@ -15282,6 +15288,13 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
         and 0 <= default_idx < len(devices)
         and int(devices[default_idx].get("max_input_channels") or 0) > 0
     )
+    # A default that points at a device we REFUSE (a Continuity iPhone) is not
+    # a usable default. The embedded laptop mic then becomes the default, so
+    # the room mic is what we open.
+    if default_is_valid and _is_continuity_mic_name(
+        str(devices[default_idx].get("name") or "")
+    ):
+        default_is_valid = False
     if sys.platform == "darwin" and embedded_idx is not None:
         embedded_name = str(devices[embedded_idx].get("name") or "")
         if not default_is_valid or default_idx == embedded_idx:
@@ -15293,20 +15306,29 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
     preferred: List[Tuple[int, str]] = []
     fallback: List[Tuple[int, str]] = []
     virtual: List[Tuple[int, str]] = []
+    loopback: List[Tuple[int, str]] = []
     for idx, info in enumerate(devices):
         if int(info.get("max_input_channels") or 0) <= 0:
             continue
         name = str(info.get("name") or f"device {idx}")
         low = name.lower()
         item = (idx, name)
-        if "text-to-speech" in low or "transcription" in low or "iphone" in low:
+        if _is_continuity_mic_name(low):
+            # Never a candidate — add() would refuse it anyway; skipping here
+            # keeps the ranking honest.
+            continue
+        if _is_loopback_device_name(low):
+            # A capture bus, not a room mic: silent unless something is routed
+            # into it. Last resort only.
+            loopback.append(item)
+        elif "text-to-speech" in low or "transcription" in low or "iphone" in low:
             virtual.append(item)
         elif any(token in low for token in ("macbook", "microphone", "usb", "sound bar")):
             preferred.append(item)
         else:
             fallback.append(item)
 
-    for idx, name in preferred + fallback + virtual:
+    for idx, name in preferred + fallback + virtual + loopback:
         add(idx, f"input {idx}:{name}")
 
     if sys.platform != "darwin" or not candidates:
@@ -23729,6 +23751,44 @@ _VAD_MIN_UTTER_S      = 0.20    # ignore micro-blips shorter than this
 _VAD_MAX_UTTER_S      = 30.0    # safety cap
 _MIC_ZERO_PEAK_EPS    = 1e-8    # near-exact zero means a stalled CoreAudio stream
 _MIC_ZERO_GRACE_S     = 4.0     # analog room silence remains above this epsilon
+
+# ── The room microphone is the LAPTOP's microphone. Never the iPhone's ──────────────
+# Architect 2026-10-22: "be careful, you tried to enable my iPhone mic or camera,
+# not that, use the laptop camera and audio not iPhone."
+#
+# Continuity exposes the iPhone as a CoreAudio input ("iPhone Microphone"). It is
+# not a room microphone: the phone can sleep, lock, or walk out of range and hand
+# back EXACT zeros while still "opening" successfully. Alice then heard a dead
+# stream forever, because the recovery walk re-picked the SAME first candidate
+# on every retry. That was the "mic open — silent mic stream" loop.
+#
+# Two laws now:
+#   1. A Continuity iPhone input is NEVER opened. It is not a candidate.
+#   2. A device that opened but delivered only zeros is QUARANTINED, so the next
+#      attempt walks to the NEXT candidate instead of re-opening the dead one.
+_CONTINUITY_MIC_TOKENS = (
+    "iphone", "ipad", "continuity",
+)
+# Loopback/virtual-capture devices: they exist to route system audio INTO apps.
+# As a room mic they deliver silence by construction, so they go LAST.
+_LOOPBACK_DEVICE_TOKENS = (
+    "blackhole", "loopback", "soundflower", "multi-output", "aggregate",
+)
+# Devices that opened but delivered only zero samples (index -> label).
+_MIC_SILENT_DEVICES: "set[int]" = set()
+
+
+def _is_continuity_mic_name(low_name: str) -> bool:
+    """True for iPhone/iPad Continuity inputs — never a room microphone."""
+    low = str(low_name or "").lower()
+    return any(token in low for token in _CONTINUITY_MIC_TOKENS)
+
+
+def _is_loopback_device_name(low_name: str) -> bool:
+    """True for virtual capture devices (BlackHole and friends)."""
+    low = str(low_name or "").lower()
+    return any(token in low for token in _LOOPBACK_DEVICE_TOKENS)
+
 _DEFERRED_UTTERANCE_MAX_AGE_S = 20.0  # one in-memory rescue clip; never written to disk
 try:
     _STT_TURN_TIMEOUT_S = float(os.environ.get("SIFTA_STT_TURN_TIMEOUT_S", "45") or "45")
@@ -23816,7 +23876,19 @@ class _ContinuousListener(QObject):
                 blocksize_candidates.append(blocksize)
 
         errors: List[str] = []
-        for device, label in _input_device_candidates(sd):
+        device_candidates = _input_device_candidates(sd)
+        # A device that opened but delivered only zeros is dead. Re-picking it
+        # on every retry is what produced the endless "mic open — silent mic
+        # stream" loop: the recovery walk never ADVANCED. Skip the corpses; if
+        # every candidate is a corpse, the silence was a fluke — wipe the
+        # quarantine and try again from the top.
+        if device_candidates and all(
+            d is not None and int(d) in _MIC_SILENT_DEVICES for d, _ in device_candidates
+        ):
+            _MIC_SILENT_DEVICES.clear()
+        for device, label in device_candidates:
+            if device is not None and int(device) in _MIC_SILENT_DEVICES:
+                continue
             for capture_rate in _capture_rate_candidates(sd, device):
                 for blocksize in blocksize_candidates:
                     block_label = "auto" if blocksize == 0 else str(blocksize)
@@ -23929,6 +24001,9 @@ class _ContinuousListener(QObject):
             self._last_nonzero_at = now
             if not self._has_observed_signal:
                 self._has_observed_signal = True
+                # It is alive after all — a previous silence verdict was wrong.
+                if self._device_index is not None:
+                    _MIC_SILENT_DEVICES.discard(int(self._device_index))
                 self.signalHealthy.emit(self._device_label)
         elif (
             not self._silent_fault_emitted
@@ -23936,6 +24011,10 @@ class _ContinuousListener(QObject):
             and now - self._last_nonzero_at >= _MIC_ZERO_GRACE_S
         ):
             self._silent_fault_emitted = True
+            # Quarantine this device so the recovery walk moves to the NEXT
+            # candidate instead of re-opening the same dead stream forever.
+            if self._device_index is not None:
+                _MIC_SILENT_DEVICES.add(int(self._device_index))
             self.streamSilent.emit(
                 f"{self._device_label or 'microphone'} opened but delivered only zero samples"
             )
@@ -24514,7 +24593,7 @@ class _BrainWorker(QThread):
                         pass
                     full_m: List[str] = []
                     for kind, payload in _mercury_stream_chat(
-                        self._history, model=self._model, effort="low", max_tokens=2048,
+                        self._history, model=self._model, effort="medium" if model_name == "mercury-3" else "low", max_tokens=2048,
                     ):
                         if kind == "token":
                             token = str(payload)

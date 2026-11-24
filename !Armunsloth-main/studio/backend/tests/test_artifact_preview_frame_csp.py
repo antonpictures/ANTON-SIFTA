@@ -1,0 +1,213 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""The preview CSP is picked by allow_network alone, so both directions of that flag are pinned."""
+
+import asyncio
+import pathlib
+
+import routes.inference as inf_mod
+
+
+def _csp(*args) -> str:
+    response = asyncio.run(inf_mod.artifact_preview_frame(*args))
+    return response.headers["content-security-policy"]
+
+
+def test_omitting_the_flag_serves_the_strict_csp():
+    csp = _csp()
+    assert "default-src 'none';" in csp
+    assert "script-src 'unsafe-inline';" in csp
+    assert "connect-src 'none';" in csp
+    assert "http:" not in csp.split("frame-ancestors")[0]
+
+
+def test_allow_network_serves_the_permissive_csp():
+    csp = _csp(True)
+    assert "script-src-elem 'unsafe-inline' http: https:" in csp
+    assert "connect-src http: https: ws: wss:" in csp
+
+
+def test_the_flag_is_what_changes_the_policy():
+    assert _csp(True) != _csp(False)
+
+
+def test_the_sandbox_holds_in_both_variants():
+    for csp in (_csp(False), _csp(True)):
+        assert "sandbox allow-scripts" in csp
+        assert "object-src 'none';" in csp
+        assert "base-uri 'none';" in csp
+        assert "form-action 'none';" in csp
+        assert "frame-ancestors 'self'" in csp
+
+
+def test_the_shell_reports_blocked_resources():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert '"unsloth:artifact-blocked"' in shell
+    # document.close() drops listeners bound before it.
+    write, listen = (
+        shell.index("document.close();"),
+        shell.index('document.addEventListener("securitypolicyviolation"'),
+    )
+    assert write < listen
+
+
+def test_blocked_reports_carry_the_load_they_came_from():
+    # Stamp at load so a report from the outgoing canvas is not misattributed.
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert 'get("v")' in shell
+    assert "v: loadVersion," in shell
+    read, report = (
+        shell.index("const loadVersion"),
+        shell.index("const reportBlocked"),
+    )
+    assert read < report
+
+
+def _directives(csp: str) -> dict:
+    out = {}
+    for part in csp.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, value = part.partition(" ")
+        out[name] = value.strip()
+    return out
+
+
+def test_the_shell_reports_which_directive_was_violated():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert "effectiveDirective: event.effectiveDirective" in shell
+
+
+def test_the_grant_widens_everything_but_the_locked_directives():
+    # Locking another directive fails this, so the banner never prompts for a grant that cannot fix it.
+    strict = _directives(inf_mod._ARTIFACT_PREVIEW_FRAME_STRICT_CSP)
+    network = _directives(inf_mod._ARTIFACT_PREVIEW_FRAME_NETWORK_CSP)
+    unchanged = {
+        name for name, value in strict.items() if name in network and network[name] == value
+    }
+    assert unchanged == {"object-src", "base-uri", "form-action", "frame-ancestors", "sandbox"}
+    for locked in ("object-src", "base-uri", "form-action"):
+        assert network[locked] == "'none'"
+
+
+def test_the_permissive_policy_widens_every_hostless_scheme_but_one():
+    # Non-HTTP(S) violations report a bare scheme, so offer the grant only where that scheme is allowed.
+    network = _directives(inf_mod._ARTIFACT_PREVIEW_FRAME_NETWORK_CSP)
+    skip = {"object-src", "base-uri", "form-action", "frame-ancestors", "sandbox"}
+    gaps = {
+        name: scheme
+        for name, value in network.items()
+        if name not in skip
+        for scheme in ("data:", "blob:")
+        if scheme not in value.split()
+    }
+    assert gaps == {"worker-src": "data:"}
+
+
+def test_the_shell_restores_randomuuid_for_insecure_canvases():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert 'typeof crypto.randomUUID === "function"' in shell
+    assert "crypto.randomUUID = () =>" in shell
+    assert "installRandomUUIDFallback();" in shell
+
+
+def test_the_shell_generator_matches_the_app_one():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    boot = (
+        pathlib.Path(__file__).resolve().parents[2] / "frontend/public/crypto-boot.js"
+    ).read_text(encoding = "utf-8")
+    for expression in (
+        '"10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>',
+        "(+c ^ (randomByte() & (15 >> (+c / 4)))).toString(16)",
+    ):
+        assert expression in boot
+        assert expression in shell
+
+
+def test_the_shell_reports_runtime_errors_and_console_output():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert '"unsloth:artifact-error"' in shell
+    assert '"unsloth:artifact-console"' in shell
+    assert 'window.addEventListener("error", reportError)' in shell
+    assert 'window.addEventListener("unhandledrejection", reportRejection)' in shell
+    assert "captureConsole();" in shell
+
+
+def test_error_listeners_bind_between_open_and_write():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    opened = shell.index("document.open();")
+    wrote = shell.index("document.write(html);")
+    for listener in (
+        'window.addEventListener("error", reportError)',
+        'window.addEventListener("unhandledrejection", reportRejection)',
+        "captureConsole();",
+    ):
+        assert opened < shell.index(listener) < wrote
+
+
+def test_error_and_console_reports_carry_the_load_stamp():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert shell.index("const loadVersion") < shell.index("const report = (fields) =>")
+    assert "{ ...fields, v: loadVersion }" in shell
+
+
+def test_only_the_embedder_can_drive_render():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    listener = shell.index('window.addEventListener("message"')
+    guard = shell.index("if (event.source !== parent) return;", listener)
+    assert guard < shell.index("unslothRenderArtifact(data.html);", listener)
+
+
+def test_the_shell_caps_and_clips_what_it_reports():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    assert (
+        'const REPORTS_MAX = { "unsloth:artifact-error": 100, "unsloth:artifact-console": 1000 };'
+        in shell
+    )
+    assert "if (!(reportsLeft[fields.type] > 0)) return;" in shell
+    assert "const REPORT_MAX_CHARS = 2048;" in shell
+
+
+def test_console_serialization_stops_at_the_report_budget():
+    shell = inf_mod._ARTIFACT_PREVIEW_FRAME_HTML
+    serialize = shell[shell.index("const serialize = (root)") : shell.index("const describe = ")]
+    assert "let left = REPORT_MAX_CHARS;" in serialize
+    assert 'if (left <= 0) return "…";' in serialize
+    assert (
+        "JSON.stringify(value)"
+        not in shell[shell.index("const describe = ") : shell.index("const report = ")]
+    )
+
+
+def test_the_strict_csp_is_exactly_the_reviewed_policy():
+    # React previews run compiled user code under this policy, so it is pinned whole: any
+    # widening (a script host, 'unsafe-eval', connect-src) has to change this literal too.
+    assert inf_mod._ARTIFACT_PREVIEW_FRAME_STRICT_CSP == (
+        "default-src 'none'; "
+        "script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline'; "
+        "img-src data: blob:; "
+        "font-src data:; "
+        "media-src data: blob:; "
+        "connect-src 'none'; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'none'; "
+        "frame-ancestors 'self' tauri://localhost http://tauri.localhost "
+        "http://localhost:* http://127.0.0.1:*; "
+        "sandbox allow-scripts"
+    )
+
+
+def test_annotation_factory_is_served_before_the_document_can_add_a_meta_csp():
+    from routes.browser import _ANNOTATE_JS
+
+    response = asyncio.run(inf_mod.artifact_preview_frame())
+    shell = response.body.decode()
+    assert _ANNOTATE_JS in shell
+    assert "/* ANNOTATE_JS */" not in shell
+    assert shell.index("const annotationFactory") < shell.index("document.write(html)")
+    assert "annotation = annotationFactory(postAnnotation)" in shell
+    assert "__unslothInstallAnnotation" not in shell

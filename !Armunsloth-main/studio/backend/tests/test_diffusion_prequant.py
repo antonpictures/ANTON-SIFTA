@@ -1,0 +1,2886 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Hermetic CPU tests for the pre-quantized transformer load path, with torch and accelerate stubbed."""
+
+from __future__ import annotations
+
+import contextlib
+import dataclasses
+import sys
+import types
+
+import pytest
+
+import core.inference.diffusion_prequant as pq
+from core.inference.diffusion_families import DiffusionFamily
+from core.inference.diffusion_prequant import (
+    PREQUANT_FORMAT,
+    PrequantSource,
+    load_prequantized_transformer,
+    resolve_prequant_source,
+)
+
+
+def _prequant_source(**overrides):
+    """A prequantized checkpoint source, with per-test overrides."""
+    return PrequantSource(
+        **{
+            "kind": "repo",
+            "location": "unsloth/Z-Image-Turbo-FP8",
+            "filename": "Z-Image-Turbo-FP8.pt",
+            "fallback_filenames": ("transformer_fp8.pt",),
+            **overrides,
+        }
+    )
+
+
+@pytest.fixture(autouse = True)
+def _pin_prequant_safe_globals(real_prequant_safe_globals):
+    """Apply the shared stand-in allowlist (see conftest) to every test in this module."""
+    return real_prequant_safe_globals
+
+
+def _fam(prequant_repos = (), prequant_variant_repos = ()):
+    return DiffusionFamily(
+        name = "z-image",
+        pipeline_class = "ZImagePipeline",
+        transformer_class = "ZImageTransformer2DModel",
+        base_repo = "Tongyi-MAI/Z-Image-Turbo",
+        prequant_repos = prequant_repos,
+        prequant_variant_repos = prequant_variant_repos,
+    )
+
+
+def test_resolve_path_override_wins():
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    src = resolve_prequant_source(fam, "fp8", path_override = "/tmp/local.pt")
+    assert src == PrequantSource(kind = "path", location = "/tmp/local.pt", filename = None)
+
+
+def test_resolve_family_repo_by_scheme():
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"), ("int8", "org/hosted-int8")))
+    src = resolve_prequant_source(fam, "int8")
+    assert src.kind == "repo" and src.location == "org/hosted-int8"
+    # Model-name convention first (repo scheme suffix stripped), its ComfyUI-format twin ahead of it,
+    # safetensors ahead of the pickle, legacy name last.
+    assert src.candidate_filenames == (
+        "hosted-INT8-ComfyUI.safetensors",
+        "hosted-INT8.safetensors",
+        "hosted-INT8.pt",
+        "transformer_int8.pt",
+    )
+
+
+def test_prequant_repo_filename_convention():
+    from core.inference.diffusion_prequant import prequant_repo_filename
+
+    assert prequant_repo_filename("unsloth/Z-Image-Turbo-FP8", "int8") == "Z-Image-Turbo-INT8.pt"
+    assert prequant_repo_filename("unsloth/Z-Image-Turbo-FP8", "fp8") == "Z-Image-Turbo-FP8.pt"
+    assert (
+        prequant_repo_filename("unsloth/Qwen-Image-2512-INT8", "int8") == "Qwen-Image-2512-INT8.pt"
+    )
+    assert prequant_repo_filename("org/Some-Model-quantized", "fp8") == "Some-Model-FP8.pt"
+    assert prequant_repo_filename("org/PlainRepo", "int8") == "PlainRepo-INT8.pt"
+    assert (
+        prequant_repo_filename("unsloth/Wan2.2-TI2V-5B-NVFP4", "nvfp4") == "Wan2.2-TI2V-5B-NVFP4.pt"
+    )
+    assert prequant_repo_filename("unsloth/Model-MXFP8", "mxfp8") == "Model-MXFP8.pt"
+    assert (
+        prequant_repo_filename("unsloth/Wan2.2-T2V-A14B-NVFP4", "nvfp4", component = "transformer_2")
+        == "Wan2.2-T2V-A14B-transformer_2-NVFP4.pt"
+    )
+    assert (
+        prequant_repo_filename("unsloth/Wan2.2-T2V-A14B-NVFP4", "nvfp4", component = "transformer")
+        == "Wan2.2-T2V-A14B-NVFP4.pt"
+    )
+
+
+def test_resolve_variant_base_picks_variant_repo():
+    fam = _fam(
+        prequant_repos = (("int8", "org/default-fp8"),),
+        prequant_variant_repos = (("org/model-dev", "int8", "org/dev-fp8"),),
+    )
+    src = resolve_prequant_source(fam, "int8", base_repo = "Org/Model-DEV")
+    assert src.kind == "repo" and src.location == "org/dev-fp8"
+    assert src.filename == "dev-INT8-ComfyUI.safetensors"
+    assert src.fallback_filenames[0] == "dev-INT8.safetensors"
+
+
+def test_resolve_variant_base_falls_back_to_default():
+    # unknown variant keeps the default entry; base_model_id validation then refuses it
+    fam = _fam(
+        prequant_repos = (("int8", "org/default-fp8"),),
+        prequant_variant_repos = (("org/model-dev", "int8", "org/dev-fp8"),),
+    )
+    assert resolve_prequant_source(fam, "int8").location == "org/default-fp8"
+    assert (
+        resolve_prequant_source(fam, "int8", base_repo = "org/other-variant").location
+        == "org/default-fp8"
+    )
+    assert resolve_prequant_source(fam, "int8", base_repo = "org/model-dev").location == "org/dev-fp8"
+
+
+def test_flux1_variant_prequant_wiring():
+    from core.inference.diffusion_families import detect_family, family_prequant_repo
+    fam = detect_family("black-forest-labs/FLUX.1-schnell")
+    for scheme in ("int8", "fp8"):
+        assert family_prequant_repo(fam, scheme) == "unsloth/FLUX.1-schnell-FP8"
+        assert (
+            family_prequant_repo(fam, scheme, base_repo = "black-forest-labs/FLUX.1-dev")
+            == "unsloth/FLUX.1-dev-FP8"
+        )
+        assert (
+            family_prequant_repo(fam, scheme, base_repo = "black-forest-labs/FLUX.1-Krea-dev")
+            == "unsloth/FLUX.1-Krea-dev-FP8"
+        )
+
+
+def test_resolve_prefers_a_family_declared_filename():
+    # a named second artifact becomes primary; the derived name stays as fallback for old builds
+    fam = _fam(prequant_repos = (("int8", "unsloth/Model-FP8"),))
+    fam = dataclasses.replace(fam, prequant_filenames = (("int8", "Model-INT8-ConvRot.pt"),))
+    src = resolve_prequant_source(fam, "int8")
+    assert src.filename == "Model-INT8-ConvRot-ComfyUI.safetensors"
+    assert src.fallback_filenames == (
+        "Model-INT8-ConvRot.pt",
+        "Model-INT8-ComfyUI.safetensors",
+        "Model-INT8.safetensors",
+        "Model-INT8.pt",
+        "transformer_int8.pt",
+    )
+    other = resolve_prequant_source(
+        dataclasses.replace(fam, prequant_repos = (("fp8", "unsloth/Model-FP8"),)), "fp8"
+    )
+    assert other.candidate_filenames == (
+        "Model-FP8.safetensors",
+        "Model-FP8.pt",
+        "Model-FP8-ComfyUI.safetensors",
+        "transformer_fp8.pt",
+    )
+
+
+def test_resolve_wrong_scheme_is_none():
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    assert resolve_prequant_source(fam, "int8") is None
+
+
+def test_resolve_nothing_configured_is_none():
+    assert resolve_prequant_source(_fam(), "fp8") is None
+    assert resolve_prequant_source(_fam(), "fp8", path_override = "") is None
+
+
+def test_local_prequant_path_ready(tmp_path, monkeypatch):
+    # a request path only counts if present and allowlisted, else the loader rebuilds dense
+    import os
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"x")
+    root = os.path.realpath(str(tmp_path))
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [root])
+    assert pq.local_prequant_path_ready(str(ckpt)) is True
+    assert pq.local_prequant_path_ready(str(tmp_path / "missing.pt")) is False
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [])
+    assert pq.local_prequant_path_ready(str(ckpt)) is False
+
+
+@pytest.fixture
+def restricted_load_available(monkeypatch):
+    """Whether this install could open a checkpoint depends on the host's torchao. The resolution
+    tests below are not about that, so pin it on."""
+    monkeypatch.setattr(
+        pq, "restricted_prequant_load_supported", lambda scheme = None, filename = None: True
+    )
+
+
+def test_usable_source_missing_path_is_none(tmp_path, monkeypatch, restricted_load_available):
+    # an absent allowlisted path would make the loader fall back to dense after evicting
+    import os
+
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    missing = str(tmp_path / "missing.pt")
+    assert pq.usable_prequant_source(fam, "fp8", path_override = missing) is None
+
+
+def test_usable_source_disallowed_path_is_none(tmp_path, monkeypatch, restricted_load_available):
+    # paths outside UNSLOTH_ALLOW_LOCAL_PREQUANT_PATH (empty by default) are refused
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"x")
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [])
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    assert pq.usable_prequant_source(fam, "fp8", path_override = str(ckpt)) is None
+
+
+def test_usable_source_allowed_present_path_wins(tmp_path, monkeypatch, restricted_load_available):
+    import os
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"x")
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+    monkeypatch.setattr(pq, "local_prequant_scheme", lambda _p: "fp8")
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    src = pq.usable_prequant_source(fam, "fp8", path_override = str(ckpt))
+    assert src == PrequantSource(kind = "path", location = str(ckpt), filename = None)
+
+
+def test_usable_source_rejects_an_override_baked_for_another_scheme(
+    tmp_path, monkeypatch, restricted_load_available
+):
+    """An int8 checkpoint must not read as an available fp8 pre-quant, or the dense shards are skipped."""
+    import os
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"x")
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+    monkeypatch.setattr(pq, "local_prequant_scheme", lambda _p: "int8")
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    assert pq.usable_prequant_source(fam, "fp8", path_override = str(ckpt)) is None
+    src = pq.usable_prequant_source(fam, "int8", path_override = str(ckpt))
+    assert src == PrequantSource(kind = "path", location = str(ckpt), filename = None)
+
+
+def test_an_unreadable_override_is_not_usable(tmp_path, monkeypatch, restricted_load_available):
+    # an unparsable checkpoint is rejected by the loader too, so plan dense
+    import os
+
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"not a checkpoint")
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    assert pq.local_prequant_scheme(str(ckpt)) is None
+    assert pq.usable_prequant_source(fam, "fp8", path_override = str(ckpt)) is None
+
+
+def test_the_local_scheme_cache_survives_a_same_second_swap(tmp_path):
+    """Scheme cache must key on sub-second mtime, so a same-second swap is not read as the old scheme."""
+    import os
+
+    import torch
+
+    ckpt = tmp_path / "model.pt"
+
+    def _write(scheme, pad):
+        torch.save(
+            {"format": pq.PREQUANT_FORMAT, "metadata": {"scheme": scheme, "pad": "x" * pad}},
+            str(ckpt),
+        )
+
+    _write("int8", 8)
+    stamp = os.stat(str(ckpt)).st_mtime_ns
+    size = os.stat(str(ckpt)).st_size
+    assert pq.local_prequant_scheme(str(ckpt)) == "int8"
+
+    _write("fp8", 9)
+    assert os.stat(str(ckpt)).st_size == size, "the two bakes must be same-size for this to bite"
+    os.utime(str(ckpt), ns = (stamp + 1, stamp + 1))
+    assert int(os.stat(str(ckpt)).st_mtime) == int(stamp / 1e9)
+
+    assert pq.local_prequant_scheme(str(ckpt)) == "fp8"
+
+
+def test_usable_source_repo_unaffected_by_allowlist(monkeypatch, restricted_load_available):
+    # hosted repos are first-party and need no allowlist
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [])
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    src = pq.usable_prequant_source(fam, "fp8")
+    assert src is not None and src.kind == "repo" and src.location == "org/hosted-fp8"
+
+
+_UINT8 = object()  # stub torch uint8, so the fingerprint's dtype view is a no-op
+
+
+class _Bytes:
+    """Enough of a tensor for the fingerprint: it views the payload as uint8 and hashes it."""
+
+    dtype = _UINT8
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def detach(self):
+        return self
+
+    def contiguous(self):
+        return self
+
+    def dim(self):
+        return 1
+
+    def view(self, dtype):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        import numpy as np
+        return np.frombuffer(self._payload, dtype = np.uint8)
+
+
+class Float8Tensor:
+    """A quantized fp8 weight; the class NAME is what the fingerprint and activation-floor checks key on."""
+
+    def __init__(
+        self,
+        qdata = b"",
+        hp_value_lb = 1e-12,
+    ):
+        self.qdata = _Bytes(qdata)
+        self.scale = _Bytes(b"scale")
+        self.act_quant_kwargs = types.SimpleNamespace(hp_value_lb = hp_value_lb)
+
+
+class NVFP4Tensor:
+    """The 4-bit half of a per-layer policy checkpoint."""
+
+    def __init__(self, qdata = b""):
+        self.qdata = _Bytes(qdata)
+        self.scale = _Bytes(b"scale")
+        self.act_quant_kwargs = types.SimpleNamespace(scale_dtype = "float8_e4m3fn")
+
+
+class _Recorder:
+    """A logger that keeps what it was told, so a refusal can be asserted to NAME the weight."""
+
+    def __init__(self):
+        self.lines: list = []
+
+    def _record(self, msg, *args):
+        self.lines.append(msg % args if args else msg)
+
+    debug = info = warning = error = _record
+
+    @property
+    def text(self):
+        return "\n".join(self.lines)
+
+
+def _fingerprinted_ckpt(payloads, *, recorded = None):
+    """A checkpoint whose state dict holds ``payloads`` and whose metadata fingerprints them."""
+    from core.inference.diffusion_prequant import packed_weight_fingerprint
+
+    state_dict = {fqn: Float8Tensor(data) for fqn, data in payloads.items()}
+    ckpt = _good_ckpt()
+    ckpt["state_dict"] = state_dict
+    ckpt["metadata"]["fingerprint"] = recorded or packed_weight_fingerprint(state_dict)
+    return ckpt
+
+
+def test_a_flipped_byte_in_a_packed_weight_is_refused_and_named(monkeypatch, tmp_path):
+    good = _fingerprinted_ckpt(
+        {"blocks.0.attn1.to_q.weight": b"q0", "blocks.1.attn1.to_q.weight": b"q1"}
+    )
+    logger = _Recorder()
+    assert _load(monkeypatch, tmp_path, good, logger = logger) is not None
+    corrupt = _fingerprinted_ckpt(
+        {"blocks.0.attn1.to_q.weight": b"q0", "blocks.1.attn1.to_q.weight": b"q1"}
+    )
+    corrupt["state_dict"]["blocks.1.attn1.to_q.weight"].qdata = _Bytes(b"Q1")
+    logger = _Recorder()
+    assert _load(monkeypatch, tmp_path, corrupt, logger = logger) is None
+    assert "blocks.1.attn1.to_q.weight" in logger.text
+    assert "blocks.0.attn1.to_q.weight" not in logger.text
+
+
+def test_a_checkpoint_without_a_fingerprint_block_still_loads(monkeypatch, tmp_path):
+    ckpt = _good_ckpt()
+    ckpt["state_dict"] = {"blocks.0.attn1.to_q.weight": Float8Tensor(b"q0")}
+    assert _load(monkeypatch, tmp_path, ckpt) is not None
+    ckpt["metadata"]["fingerprint"] = {"algo": "md5-packed-v1", "count": 0, "modules": {}}
+    assert _load(monkeypatch, tmp_path, ckpt) is not None
+
+
+def test_the_fingerprint_mode_env_picks_how_much_is_checked(monkeypatch, tmp_path):
+    from core.inference.diffusion_prequant import (
+        FINGERPRINT_MODE_ENV,
+        _fingerprint_sampled,
+    )
+
+    sampled = [f"blocks.{i}.attn1.to_q.weight" for i in range(64)]
+    checked = [fqn for fqn in sampled if _fingerprint_sampled(fqn)]
+    assert 0 < len(checked) < len(sampled)
+    assert checked == [fqn for fqn in sampled if _fingerprint_sampled(fqn)]
+
+    payloads = {fqn: fqn.encode("utf-8") for fqn in sampled}
+    corrupt = _fingerprinted_ckpt(payloads)
+    missed = next(fqn for fqn in sampled if not _fingerprint_sampled(fqn))
+    corrupt["state_dict"][checked[0]].qdata = _Bytes(b"flipped")
+    monkeypatch.setenv(FINGERPRINT_MODE_ENV, "sample")
+    assert _load(monkeypatch, tmp_path, corrupt) is None
+    only_missed = _fingerprinted_ckpt(payloads)
+    only_missed["state_dict"][missed].qdata = _Bytes(b"flipped")
+    assert _load(monkeypatch, tmp_path, only_missed) is not None
+    monkeypatch.setenv(FINGERPRINT_MODE_ENV, "full")
+    assert _load(monkeypatch, tmp_path, only_missed) is None
+    monkeypatch.setenv(FINGERPRINT_MODE_ENV, "off")
+    assert _load(monkeypatch, tmp_path, only_missed) is not None
+    monkeypatch.setenv(FINGERPRINT_MODE_ENV, "sometimes")
+    assert _load(monkeypatch, tmp_path, only_missed) is None
+
+
+class _CountedBytes(_Bytes):
+    """A payload that records the fqn whose bytes were actually read."""
+
+    def __init__(self, fqn, payload, hashed):
+        super().__init__(payload)
+        self._fqn = fqn
+        self._hashed = hashed
+
+    def numpy(self):
+        self._hashed.append(self._fqn)
+        return super().numpy()
+
+
+def test_a_class_whose_payload_slots_all_read_none_is_not_fingerprinted():
+    from core.inference.diffusion_prequant import packed_weight_fingerprint
+
+    renamed = Float8Tensor(b"q0")
+    renamed.qdata = None
+    renamed.scale = None
+    fingerprint = packed_weight_fingerprint({"blocks.0.attn1.to_q.weight": renamed})
+    assert fingerprint["modules"] == {}
+    assert fingerprint["skipped"] == ["blocks.0.attn1.to_q.weight"]
+    assert fingerprint["count"] == 0
+
+
+class Int8Tensor:
+    """torchao 0.18's int8 weight, as far as the fingerprint is concerned."""
+
+    def __init__(self, qdata):
+        self.qdata = _Bytes(qdata)
+        self.scale = _Bytes(b"scale")
+        self.zero_point = None
+        self.act_quant_scale = None
+        self.act_quant_zero_point = None
+        self.act_pre_scale = None
+
+
+def test_torchao_018_int8_weights_are_fingerprinted():
+    from core.inference.diffusion_prequant import packed_weight_fingerprint
+
+    fqn = "blocks.0.attn1.to_q.weight"
+    good = packed_weight_fingerprint({fqn: Int8Tensor(b"q0")})
+    assert good["count"] == 1 and good["skipped"] == []
+    flipped = packed_weight_fingerprint({fqn: Int8Tensor(b"q1")})
+    assert flipped["modules"][fqn] != good["modules"][fqn]
+
+
+def test_real_torchao_int8_round_trip_fingerprint_catches_corruption():
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("torchao")
+    import io
+
+    from torchao.quantization import quantize_
+
+    from core.inference.diffusion_prequant import (
+        _verify_packed_fingerprint,
+        packed_weight_fingerprint,
+    )
+    from core.inference.diffusion_transformer_quant import _make_quant_config
+
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(torch.nn.Linear(64, 64, bias = False)).to(torch.bfloat16)
+    quantize_(model, _make_quant_config("int8"))
+    fingerprint = packed_weight_fingerprint(model.state_dict())
+    assert fingerprint["count"] == 1, fingerprint
+    assert fingerprint["skipped"] == []
+
+    buf = io.BytesIO()
+    torch.save(model.state_dict(), buf)
+    buf.seek(0)
+    reloaded = torch.load(buf, weights_only = False)
+    assert _verify_packed_fingerprint(reloaded, {"fingerprint": fingerprint})
+
+    weight = reloaded["0.weight"]
+    inner = getattr(weight, "qdata", None)
+    if inner is None:  # torchao <= 0.17: the AffineQuantizedTensor chain
+        inner = weight.original_weight_tensor.tensor_impl.int_data
+    inner.view(-1)[0] ^= 1
+    assert not _verify_packed_fingerprint(reloaded, {"fingerprint": fingerprint})
+
+
+def test_sample_mode_hashes_only_the_weights_it_compares(monkeypatch, tmp_path):
+    from core.inference.diffusion_prequant import FINGERPRINT_MODE_ENV, _fingerprint_sampled
+
+    fqns = [f"blocks.{i}.attn1.to_q.weight" for i in range(64)]
+    ckpt = _fingerprinted_ckpt({fqn: fqn.encode("utf-8") for fqn in fqns})
+    hashed: list = []
+    for fqn, tensor in ckpt["state_dict"].items():
+        tensor.qdata = _CountedBytes(fqn, fqn.encode("utf-8"), hashed)
+        tensor.scale = _CountedBytes(fqn, b"scale", hashed)
+    monkeypatch.setenv(FINGERPRINT_MODE_ENV, "sample")
+    assert _load(monkeypatch, tmp_path, ckpt) is not None
+    assert sorted(set(hashed)) == sorted(fqn for fqn in fqns if _fingerprint_sampled(fqn))
+
+
+def test_a_build_that_recognises_no_quantized_weight_loads_unverified(monkeypatch, tmp_path):
+    ckpt = _fingerprinted_ckpt({"blocks.0.attn1.to_q.weight": b"q0"})
+    ckpt["state_dict"] = {"blocks.0.attn1.to_q.weight": object()}
+    assert _load(monkeypatch, tmp_path, ckpt) is not None
+
+
+class _FakeTransformer:
+    calls: dict = {}
+
+    def __init__(self):
+        self.assigned = None
+        self.moved = None
+        self.eval_called = False
+
+    @classmethod
+    def load_config(cls, base, **kw):
+        cls.calls["load_config"] = {"base": base, **kw}
+        return {"cfg": True}
+
+    @classmethod
+    def from_config(cls, config):
+        cls.calls["from_config"] = config
+        return cls()
+
+    @classmethod
+    def from_pretrained(cls, *a, **k):  # the dense path: must never run here
+        cls.calls["from_pretrained"] = True
+        raise AssertionError("from_pretrained must not be called on the prequant path")
+
+    def load_state_dict(
+        self,
+        sd,
+        strict = True,
+        assign = False,
+    ):
+        _FakeTransformer.calls["load_state_dict"] = {"strict": strict, "assign": assign}
+        self.assigned = sd
+
+    def parameters(self):
+        return []
+
+    def buffers(self):
+        return []
+
+    def named_modules(self):
+        return []
+
+    def to(self, device):
+        self.moved = device
+        return self
+
+    def eval(self):
+        self.eval_called = True
+        return self
+
+
+def _stub_torch_accelerate(
+    monkeypatch,
+    ckpt,
+    *,
+    load_raises = False,
+):
+    torch = types.ModuleType("torch")
+    # registration is gated on torch 2.6+, so the stub needs a version
+    torch.__version__ = "2.9.1+cu128"
+    seen = {"weights_only": None, "safe_globals": None}
+
+    def _load(
+        path,
+        weights_only = False,
+        map_location = None,
+        **kwargs,
+    ):
+        seen["weights_only"] = weights_only
+        if load_raises:
+            raise RuntimeError("corrupt checkpoint")
+        return ckpt
+
+    def _add_safe_globals(entries):
+        seen["safe_globals"] = list(entries)
+
+    torch.load = _load
+    torch.uint8 = _UINT8
+    # without this namespace an unrestricted-load regression would pass silently
+    torch.serialization = types.SimpleNamespace(add_safe_globals = _add_safe_globals)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setitem(sys.modules, "torch.serialization", torch.serialization)
+
+    accelerate = types.ModuleType("accelerate")
+    accelerate.init_empty_weights = lambda: contextlib.nullcontext()
+    monkeypatch.setitem(sys.modules, "accelerate", accelerate)
+    return seen
+
+
+def _good_ckpt(scheme = "fp8", base = "Tongyi-MAI/Z-Image-Turbo"):
+    meta = {"scheme": scheme, "base_model_id": base}
+    # fp8 checkpoints must record per-row granularity or the loader rejects them
+    if scheme == "fp8":
+        meta["fp8_granularity"] = "per_row"
+    return {
+        "format": PREQUANT_FORMAT,
+        "metadata": meta,
+        "state_dict": {"weight": object()},
+    }
+
+
+def _load(
+    monkeypatch,
+    tmp_path,
+    ckpt,
+    *,
+    scheme = "fp8",
+    load_raises = False,
+    exists = True,
+    allow_local = True,
+    fast_accum = None,
+    component = None,
+    logger = None,
+):
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, ckpt, load_raises = load_raises)
+    # the local-path branch is opt-in via a directory allowlist; allow tmp_path by default
+    if allow_local:
+        monkeypatch.setenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, str(tmp_path))
+    else:
+        monkeypatch.delenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, raising = False)
+    path = tmp_path / "ckpt.pt"
+    if exists:
+        path.write_bytes(b"x")
+    source = PrequantSource(kind = "path", location = str(path), filename = None)
+    return load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = scheme,
+        fast_accum = fast_accum,
+        component = component,
+        logger = logger,
+    )
+
+
+def test_load_meta_init_and_assign(monkeypatch, tmp_path):
+    t = _load(monkeypatch, tmp_path, _good_ckpt())
+    assert t is not None
+    assert "from_config" in _FakeTransformer.calls
+    assert "from_pretrained" not in _FakeTransformer.calls
+    # assign=True is required: copying into meta tensors is a no-op
+    assert _FakeTransformer.calls["load_state_dict"] == {"strict": True, "assign": True}
+    assert t.moved == "cuda"
+    assert t._unsloth_runtime_quant == "fp8"
+
+
+def test_load_puts_transformer_in_eval_mode(monkeypatch, tmp_path):
+    # from_config builds in train mode; dropout would make inference nondeterministic
+    t = _load(monkeypatch, tmp_path, _good_ckpt())
+    assert t is not None
+    assert t.eval_called is True
+
+
+def test_load_missing_file_is_none(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(), exists = False) is None
+
+
+def test_load_torch_load_raises_is_none(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(), load_raises = True) is None
+
+
+def test_load_format_mismatch_is_none(monkeypatch, tmp_path):
+    bad = _good_ckpt()
+    bad["format"] = "something_else"
+    assert _load(monkeypatch, tmp_path, bad) is None
+
+
+def test_load_scheme_mismatch_is_none(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(scheme = "int8"), scheme = "fp8") is None
+
+
+def test_load_base_mismatch_is_none(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(base = "other/model")) is None
+
+
+def test_load_fp8_stale_per_tensor_is_rejected(monkeypatch, tmp_path):
+    # old fp8 checkpoints lack fp8_granularity (per-tensor layout) and must be rebuilt
+    stale = _good_ckpt(scheme = "fp8")
+    del stale["metadata"]["fp8_granularity"]
+    assert _load(monkeypatch, tmp_path, stale, scheme = "fp8") is None
+    per_tensor = _good_ckpt(scheme = "fp8")
+    per_tensor["metadata"]["fp8_granularity"] = "per_tensor"
+    assert _load(monkeypatch, tmp_path, per_tensor, scheme = "fp8") is None
+
+
+def test_load_int8_ignores_fp8_granularity(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(scheme = "int8"), scheme = "int8") is not None
+
+
+def test_load_missing_base_metadata_is_none(monkeypatch, tmp_path):
+    # keys may match a different base and load strict from wrong weights, so refuse no-base
+    ckpt = _good_ckpt()
+    del ckpt["metadata"]["base_model_id"]
+    assert _load(monkeypatch, tmp_path, ckpt) is None
+
+
+def test_load_fast_accum_mismatch_is_none(monkeypatch, tmp_path):
+    # fp8 fast-accum is baked into the kernels; a contradicting request goes dense
+    ckpt = _good_ckpt()
+    ckpt["metadata"]["fast_accum"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, fast_accum = False) is None
+
+
+def test_load_fast_accum_match_ok(monkeypatch, tmp_path):
+    ckpt = _good_ckpt()
+    ckpt["metadata"]["fast_accum"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, fast_accum = True) is not None
+
+
+def test_load_fast_accum_auto_ignores_baked(monkeypatch, tmp_path):
+    ckpt = _good_ckpt()
+    ckpt["metadata"]["fast_accum"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, fast_accum = None) is not None
+
+
+def test_load_exclude_tokens_mismatch_is_none(monkeypatch, tmp_path):
+    # a stale int8 exclusion set would quantise M=1 modulation linears and crash
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["exclude_name_tokens"] = ["stale_token"]
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is None
+
+
+def test_load_exclude_tokens_match_ok(monkeypatch, tmp_path):
+    from core.inference.diffusion_transformer_quant import exclude_tokens_for_scheme
+
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["exclude_name_tokens"] = list(exclude_tokens_for_scheme("int8"))
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is not None
+
+
+def test_load_exclude_tokens_superset_ok(monkeypatch, tmp_path):
+    # Excluding MORE than the runtime keeps extra Linears bf16, which load as stored (assign=True) and run at any M. The
+    # hosted Wan2.2 fp8 artifacts record ['condition_embedder'] against the runtime's empty fp8 set.
+    from core.inference.diffusion_transformer_quant import exclude_tokens_for_scheme
+
+    fp8 = _good_ckpt(scheme = "fp8")
+    fp8["metadata"]["exclude_name_tokens"] = ["condition_embedder"]
+    assert _load(monkeypatch, tmp_path, fp8, scheme = "fp8") is not None
+
+    int8 = _good_ckpt(scheme = "int8")
+    int8["metadata"]["exclude_name_tokens"] = list(exclude_tokens_for_scheme("int8")) + [
+        "extra_bf16"
+    ]
+    assert _load(monkeypatch, tmp_path, int8, scheme = "int8") is not None
+
+
+def test_load_exclude_tokens_subset_is_none(monkeypatch, tmp_path):
+    # Missing one runtime token means the artifact quantised a layer the runtime keeps bf16 (the int8 crash case).
+    from core.inference.diffusion_transformer_quant import exclude_tokens_for_scheme
+
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["exclude_name_tokens"] = list(exclude_tokens_for_scheme("int8"))[1:]
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is None
+
+
+@pytest.mark.parametrize("recorded", ["norm", {"norm": 1}, 7])
+def test_load_exclude_tokens_not_a_list_is_none(monkeypatch, tmp_path, recorded):
+    # A bare string would pass a naive subset test character by character.
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["exclude_name_tokens"] = recorded
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is None
+
+
+def test_load_exclude_tokens_need_the_recorded_family(monkeypatch, tmp_path):
+    # int8 exclusions are per-family: Qwen's text stream runs at M = prompt tokens, under _int_mm's 16
+    from core.inference.diffusion_transformer_quant import exclude_tokens_for_scheme
+    for family in ("qwen-image", "qwen-image-edit"):
+        family_less = _good_ckpt(scheme = "int8")
+        family_less["metadata"]["family"] = family
+        family_less["metadata"]["exclude_name_tokens"] = list(exclude_tokens_for_scheme("int8"))
+        assert _load(monkeypatch, tmp_path, family_less, scheme = "int8") is None
+
+        family_aware = _good_ckpt(scheme = "int8")
+        family_aware["metadata"]["family"] = family
+        family_aware["metadata"]["exclude_name_tokens"] = list(
+            exclude_tokens_for_scheme("int8", family)
+        )
+        assert _load(monkeypatch, tmp_path, family_aware, scheme = "int8") is not None
+
+
+def test_load_require_bf16_mismatch_is_none(monkeypatch, tmp_path):
+    # fp8 built without the bf16 gate quantised a different layer set than the runtime filter; reject it
+    ckpt = _good_ckpt(scheme = "fp8")
+    ckpt["metadata"]["require_bf16"] = False
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is None
+
+
+def test_load_require_bf16_match_ok(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "fp8")
+    ckpt["metadata"]["require_bf16"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is not None
+
+
+def test_load_require_bf16_int8_true_is_none(monkeypatch, tmp_path):
+    # torch._int_mm tolerates non-bf16 weights, so int8 never sets the gate
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["require_bf16"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is None
+
+
+def test_load_require_bf16_nvfp4_false_ok(monkeypatch, tmp_path):
+    # nvfp4 quantises fp32 fine, so the bf16 gate stays off
+    ckpt = _good_ckpt(scheme = "nvfp4")
+    ckpt["metadata"]["require_bf16"] = False
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "nvfp4") is not None
+
+
+def test_an_nvfp4_checkpoint_is_prewarmed_by_the_shared_loader(monkeypatch, tmp_path):
+    from core.inference import diffusion_nvfp4_linear as nl
+
+    seen: list = []
+    monkeypatch.setattr(
+        nl, "nvfp4_prewarm", lambda module, shapes, **_k: seen.append(tuple(shapes)) or 0
+    )
+    ckpt = _good_ckpt(scheme = "nvfp4")
+    ckpt["metadata"]["require_bf16"] = False
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "nvfp4") is not None
+    assert seen == [(1,)]
+
+    seen.clear()
+    assert _load(monkeypatch, tmp_path, _good_ckpt(scheme = "fp8"), scheme = "fp8") is not None
+    assert seen == []
+
+
+def test_a_failed_prewarm_keeps_the_loaded_checkpoint(monkeypatch, tmp_path):
+    from core.inference import diffusion_nvfp4_linear as nl
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("autotune failed")
+
+    monkeypatch.setattr(nl, "nvfp4_prewarm", _boom)
+    ckpt = _good_ckpt(scheme = "nvfp4")
+    ckpt["metadata"]["require_bf16"] = False
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "nvfp4") is not None
+
+
+def test_load_require_bf16_nvfp4_true_is_none(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "nvfp4")
+    ckpt["metadata"]["require_bf16"] = True
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "nvfp4") is None
+
+
+def test_load_require_divisible_mismatch_is_none(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "fp8")
+    ckpt["metadata"]["require_divisible"] = 0
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is None
+
+
+def test_load_require_divisible_match_ok(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "fp8")
+    ckpt["metadata"]["require_divisible"] = 16
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is not None
+
+
+def test_load_require_divisible_absent_is_accepted(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "fp8")
+    assert "require_divisible" not in ckpt["metadata"]
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is not None
+
+
+def test_load_component_mismatch_is_none(monkeypatch, tmp_path):
+    ckpt = _good_ckpt()
+    ckpt["metadata"]["component"] = "transformer_2"
+    assert _load(monkeypatch, tmp_path, ckpt, component = "transformer") is None
+    assert _load(monkeypatch, tmp_path, ckpt, component = "transformer_2") is not None
+
+
+def test_load_component_absent_is_accepted(monkeypatch, tmp_path):
+    ckpt = _good_ckpt()
+    assert _load(monkeypatch, tmp_path, ckpt, component = "transformer") is not None
+    ckpt["metadata"]["component"] = "transformer_2"
+    assert _load(monkeypatch, tmp_path, ckpt) is not None
+
+
+def test_resolve_checkpoint_path_expands_user(monkeypatch, tmp_path):
+    # the allowlist gate expands ~, so the existence check must too
+    import os
+
+    real = tmp_path / "transformer_fp8.pt"
+    real.write_bytes(b"x")
+    monkeypatch.setattr(os.path, "expanduser", lambda p: str(real) if p == "~/ckpt.pt" else p)
+    source = PrequantSource(kind = "path", location = "~/ckpt.pt", filename = None)
+    assert pq._resolve_checkpoint_path(source, None) == str(real)
+
+
+def test_the_checkpoint_is_deserialized_under_an_allowlist(monkeypatch):
+    """Pre-quant checkpoints are pickles, so the load must run weights_only under an allowlist."""
+    seen = _stub_torch_accelerate(monkeypatch, _good_ckpt())
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(pq, "_resolve_checkpoint_path", lambda *a, **k: "/cache/x.pt")
+    load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        PrequantSource(kind = "repo", location = "org/hosted-fp8", filename = "x.pt"),
+        device = "cpu",
+        dtype = "bf16",
+        hf_token = None,
+        scheme = "fp8",
+    )
+    assert seen["weights_only"] is True
+    assert seen["safe_globals"], "the allowlist has to be registered before the load"
+
+
+def test_the_allowlist_names_every_constructor_the_hosted_checkpoints_use(
+    monkeypatch, real_prequant_safe_globals
+):
+    """The allowlist names exactly the constructors hosted prequant checkpoints use, from pickletools."""
+    listed = {f"{module}.{name}" for module, name in pq._PREQUANT_SAFE_GLOBALS}
+    required = {
+        # every TQ_SCHEME the builder can bake, not just the hosted ones
+        "torchao.prototype.mx_formats.mx_tensor.MXTensor",
+        "torchao.prototype.mx_formats.nvfp4_tensor.NVFP4Tensor",
+        "torchao.dtypes.affine_quantized_tensor.AffineQuantizedTensor",
+        "torchao.dtypes.uintx.plain_layout.PlainAQTTensorImpl",
+        "torchao.dtypes.utils.PlainLayout",
+        "torchao.quantization.linear_activation_quantized_tensor.LinearActivationQuantizedTensor",
+        "torchao.quantization.quant_api._int8_symm_per_token_reduced_range_quant",
+        "torchao.quantization.quant_primitives.ZeroPointDomain",
+        "torchao.quantization.Float8Tensor",
+        "torchao.quantization.quantize_.workflows.float8.float8_tensor"
+        ".QuantizeTensorToFloat8Kwargs",
+        "torchao.quantization.quantize_.common.kernel_preference.KernelPreference",
+        "torchao.quantization.granularity.PerRow",
+        "torchao.float8.inference.Float8MMConfig",
+        "torch.torch_version.TorchVersion",
+    }
+    assert required <= listed, sorted(required - listed)
+    # nothing outside torch/torchao, so no general-purpose callable is allowed
+    assert all(
+        module.split(".")[0] in ("torch", "torchao") for module, _ in pq._PREQUANT_SAFE_GLOBALS
+    )
+    # names missing from a given torchao release are skipped, not raised
+    monkeypatch.setattr(
+        pq, "_PREQUANT_SAFE_GLOBALS", (("torchao.nowhere", "Nope"), ("collections", "OrderedDict"))
+    )
+    assert [name for _obj, name in real_prequant_safe_globals()] == ["collections.OrderedDict"]
+
+
+def test_the_registration_floor_needs_a_real_torchao(real_prequant_safe_globals):
+    """With real torchao, the resolver must find the allowlisted names; stubs would hide a rename."""
+    pytest.importorskip("torchao")
+    resolved = {name for _obj, name in real_prequant_safe_globals()}
+    assert "torch.torch_version.TorchVersion" in resolved
+    assert [name for name in resolved if name.startswith("torchao.")], (
+        "no torchao constructor resolved, so no pre-quant checkpoint could be opened: "
+        + repr(sorted(resolved))
+    )
+
+
+def test_the_registration_refuses_when_nothing_resolves(monkeypatch):
+    """With torch but no torchao, the load must refuse rather than unpickle without the restriction."""
+    monkeypatch.setattr(pq, "_prequant_safe_globals", list)
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    assert pq._register_prequant_safe_globals() is False
+    assert pq.restricted_prequant_load_supported("fp8") is False
+    with pytest.raises(RuntimeError, match = "allowlist"):
+        pq._torch_load_prequant("/x.pt", map_location = "cpu")
+
+
+def test_a_malicious_checkpoint_is_refused_before_it_executes():
+    """The whole point, against real torch: a checkpoint carrying a ``__reduce__`` payload must
+    fail to load rather than run. The unrestricted load this replaces executes it."""
+    import os
+
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch.serialization, "safe_globals"):
+        pytest.skip("torch < 2.6 has no safe_globals")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        marker = os.path.join(tmp, "executed")
+
+        class _Payload:
+            # mkdir: observable proof of execution, confined to the temp dir
+            def __reduce__(self):
+                return (os.mkdir, (marker,))
+
+        path = os.path.join(tmp, "ckpt.pt")
+        torch.save(
+            {"format": PREQUANT_FORMAT, "metadata": {"scheme": "int8"}, "state_dict": _Payload()},
+            path,
+        )
+        with pytest.raises(Exception):
+            pq._torch_load_prequant(path, map_location = "cpu")
+        assert not os.path.exists(marker)
+
+
+def test_the_scheme_probe_does_not_execute_the_checkpoint_either(tmp_path, monkeypatch):
+    """The scheme probe must not execute the checkpoint, since planning reaches it without a load."""
+    import os
+
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch.serialization, "safe_globals"):
+        pytest.skip("torch < 2.6 has no safe_globals")
+    marker = tmp_path / "executed"
+
+    class _Payload:
+        def __reduce__(self):
+            return (os.mkdir, (str(marker),))
+
+    ckpt = tmp_path / "malicious.pt"
+    torch.save(
+        {"format": PREQUANT_FORMAT, "metadata": {"scheme": "fp8"}, "payload": _Payload()}, ckpt
+    )
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+
+    assert pq.local_prequant_scheme(str(ckpt)) is None
+    assert not marker.exists()
+    fam = _fam(prequant_repos = (("fp8", "org/hosted-fp8"),))
+    assert pq.usable_prequant_source(fam, "fp8", path_override = str(ckpt)) is None
+    assert not marker.exists()
+
+
+class _UnknownConstructor:
+    """A constructor no allowlist entry names. Module level so it pickles by reference."""
+
+
+def test_the_probe_and_the_loader_agree_on_what_is_readable(tmp_path, monkeypatch):
+    """The scheme probe and the loader must read the same set, or planning drops dense shards wrongly."""
+    import os
+
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch.serialization, "safe_globals"):
+        pytest.skip("torch < 2.6 has no safe_globals")
+
+    path = tmp_path / "off-allowlist.pt"
+    torch.save(
+        {
+            "format": PREQUANT_FORMAT,
+            "metadata": {"scheme": "int8", "base_model_id": "Tongyi-MAI/Z-Image-Turbo"},
+            "state_dict": {"weight": _UnknownConstructor()},
+        },
+        path,
+    )
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+
+    assert pq.local_prequant_scheme(str(path)) is None
+    fam = _fam(prequant_repos = (("int8", "org/hosted-int8"),))
+    assert pq.usable_prequant_source(fam, "int8", path_override = str(path)) is None
+    assert (
+        load_prequantized_transformer(
+            _FakeTransformer,
+            "Tongyi-MAI/Z-Image-Turbo",
+            PrequantSource(kind = "path", location = str(path), filename = None),
+            device = "cpu",
+            dtype = "bf16",
+            hf_token = None,
+            scheme = "int8",
+        )
+        is None
+    )
+
+
+def test_a_torch_without_safe_globals_refuses_rather_than_reopening_the_pickle(monkeypatch):
+    """No allowlist support means no load. Falling back to an unrestricted one would put the
+    sink back on exactly the installs least able to defend it."""
+    torch = types.ModuleType("torch")
+    torch.load = lambda *a, **k: pytest.fail("torch.load must not run without add_safe_globals")
+    torch.serialization = types.SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    with pytest.raises(RuntimeError, match = "add_safe_globals"):
+        pq._torch_load_prequant("/nonexistent.pt", map_location = "cpu")
+
+
+def test_an_old_torch_registers_nothing_at_all(monkeypatch):
+    """Below torch 2.6 register nothing: a tuple left in the process-wide list breaks other loads."""
+    torch = types.ModuleType("torch")
+    torch.serialization = types.SimpleNamespace(
+        add_safe_globals = lambda entries: pytest.fail("nothing may be registered below 2.6")
+    )
+    torch.load = lambda *a, **k: pytest.fail("and no load may run")
+    for version in ("2.4.0", "2.5.1+cu124", "2.5.0"):
+        torch.__version__ = version
+        monkeypatch.setitem(sys.modules, "torch", torch)
+        monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+        assert pq._tuple_safe_globals_supported() is False, version
+        assert pq.restricted_prequant_load_supported() is False, version
+    torch.__version__ = "2.6.0"
+    assert pq._tuple_safe_globals_supported() is True
+
+
+def test_a_stubbed_torchao_cannot_open_a_checkpoint(monkeypatch):
+    """A stubbed torchao cannot open a checkpoint, so the allowlist must not register its fake classes."""
+    import core._torchao_stub as stub
+
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(stub, "is_stubbed", lambda package: package == "torchao")
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.9.1"
+    torch.serialization = types.SimpleNamespace(
+        add_safe_globals = lambda entries: pytest.fail("a stub must never be registered")
+    )
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    assert pq.restricted_prequant_load_supported() is False
+
+
+def test_a_torchao_that_resolves_nothing_reports_no_support(monkeypatch):
+    """Registering successfully is not enough: support needs the two entries every artifact requires."""
+    registered = []
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.9.1"
+    torch.serialization = types.SimpleNamespace(add_safe_globals = registered.append)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    def only(names):
+        return [(object(), n) for n in names]
+
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(
+        pq, "_prequant_safe_globals", lambda: only(["torch.torch_version.TorchVersion"])
+    )
+    assert pq.restricted_prequant_load_supported() is False
+    assert registered == [], "and nothing is registered on the way to saying no"
+
+    # every torchao checkpoint carries the version stamp
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(
+        pq, "_prequant_safe_globals", lambda: only(["torchao.quantization.Float8Tensor"])
+    )
+    assert pq.restricted_prequant_load_supported() is False
+
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(
+        pq,
+        "_prequant_safe_globals",
+        lambda: only(["torch.torch_version.TorchVersion", "torchao.quantization.Float8Tensor"]),
+    )
+    assert pq.restricted_prequant_load_supported() is True
+    assert len(registered) == 1
+
+
+def test_support_is_answered_per_scheme(monkeypatch):
+    """Support is answered per scheme, since torchao may retire int8 constructors while keeping fp8."""
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.9.1"
+    torch.serialization = types.SimpleNamespace(add_safe_globals = lambda entries: None)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    fp8_only = set(pq._SCHEME_REQUIRED_GLOBALS["fp8"])
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(pq, "_RESOLVED_SAFE_GLOBALS", set())
+    monkeypatch.setattr(pq, "_prequant_safe_globals", lambda: [(object(), n) for n in fp8_only])
+    import core.inference.prequant_legacy_int8 as legacy_int8
+
+    monkeypatch.setattr(legacy_int8, "legacy_int8_decode_supported", lambda: False)
+
+    assert pq.restricted_prequant_load_supported("fp8") is True
+    assert pq.restricted_prequant_load_supported("int8") is False
+    assert pq.restricted_prequant_load_supported("nvfp4") is False
+    assert pq.restricted_prequant_load_supported() is True
+    assert pq.restricted_prequant_load_supported("something-else") is True
+    fam = _fam(prequant_repos = (("int8", "org/hosted-int8"), ("fp8", "org/hosted-fp8")))
+    assert pq.usable_prequant_source(fam, "int8") is None
+    assert pq.usable_prequant_source(fam, "fp8") is not None
+
+
+def test_the_required_sets_are_a_subset_of_the_allowlist():
+    """A required name the allowlist never registers would refuse its scheme forever."""
+    listed = {f"{module}.{name}" for module, name in pq._PREQUANT_SAFE_GLOBALS}
+    for scheme, required in pq._SCHEME_REQUIRED_GLOBALS.items():
+        assert required <= listed, (scheme, sorted(required - listed))
+
+
+def test_an_install_that_cannot_restrict_the_load_offers_no_prequant_source(monkeypatch, tmp_path):
+    """Planning must ask whether the install can restrict the load before it sizes it, not after."""
+    import os
+
+    fam = _fam(prequant_repos = (("int8", "org/hosted-int8"),))
+    monkeypatch.setattr(
+        pq, "restricted_prequant_load_supported", lambda scheme = None, filename = None: True
+    )
+    assert pq.usable_prequant_source(fam, "int8") is not None
+    monkeypatch.setattr(
+        pq, "restricted_prequant_load_supported", lambda scheme = None, filename = None: False
+    )
+    assert pq.usable_prequant_source(fam, "int8") is None
+    ckpt = tmp_path / "model.pt"
+    ckpt.write_bytes(b"x")
+    monkeypatch.setattr(pq, "_allowed_prequant_roots", lambda: [os.path.realpath(str(tmp_path))])
+    assert pq.usable_prequant_source(fam, "int8", path_override = str(ckpt)) is None
+
+
+def test_the_allowlist_is_registered_once_and_never_withdrawn(monkeypatch):
+    """The allowlist is registered once and never withdrawn, since overlapping loads share it."""
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch.serialization, "add_safe_globals"):
+        pytest.skip("torch without add_safe_globals")
+    calls = []
+    monkeypatch.setattr(pq, "_SAFE_GLOBALS_REGISTERED", None)
+    monkeypatch.setattr(
+        torch.serialization, "add_safe_globals", lambda entries: calls.append(list(entries))
+    )
+    # no remove_safe_globals / safe_globals context: entries are never given back
+    monkeypatch.setattr(
+        torch.serialization,
+        "safe_globals",
+        lambda *a, **k: pytest.fail("the load must not scope the allowlist to itself"),
+    )
+    monkeypatch.setattr(torch, "load", lambda *a, **k: {"ok": True})
+    assert pq._torch_load_prequant("/x.pt", map_location = "cpu") == {"ok": True}
+    assert pq._torch_load_prequant("/x.pt", map_location = "cpu") == {"ok": True}
+    assert len(calls) == 1, "registered once for the process, not per load"
+    assert calls[0], "and with the allowlist, not an empty list"
+
+
+def test_load_local_path_refused_by_default(monkeypatch, tmp_path):
+    # torch.load must never run on a request-supplied path without the operator opt-in
+    called = {"load": False}
+
+    def _explode(*a, **k):
+        called["load"] = True
+        raise AssertionError("torch.load must not run on a refused local path")
+
+    torch = types.ModuleType("torch")
+    torch.load = _explode
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.delenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, raising = False)
+
+    path = tmp_path / "ckpt.pt"
+    path.write_bytes(b"x")
+    source = PrequantSource(kind = "path", location = str(path), filename = None)
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        logger = None,
+    )
+    assert result is None
+    assert called["load"] is False
+
+
+def test_load_local_path_allowed_with_optin(monkeypatch, tmp_path):
+    assert _load(monkeypatch, tmp_path, _good_ckpt(), allow_local = True) is not None
+
+
+def test_load_repo_source_allowed_without_optin(monkeypatch, tmp_path):
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, _good_ckpt())
+    monkeypatch.delenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, raising = False)
+
+    downloaded = tmp_path / "transformer_fp8.pt"
+    downloaded.write_bytes(b"x")
+    roots: list = []
+
+    def _dl(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        roots.append(cache_dir)
+        return str(downloaded)
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = _dl
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+
+    source = PrequantSource(kind = "repo", location = "org/hosted-fp8", filename = "transformer_fp8.pt")
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        cache_dir = "/live-hub",
+        logger = None,
+    )
+    assert result is not None
+    # the loader pins the caller's live root so the fetch cannot split across two
+    assert roots == ["/live-hub"]
+
+
+def test_load_repo_source_falls_back_to_legacy_filename(monkeypatch, tmp_path):
+    # legacy transformer_<scheme>.pt serves the download after the model-name file 404s
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, _good_ckpt())
+    monkeypatch.delenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, raising = False)
+
+    downloaded = tmp_path / "transformer_fp8.pt"
+    downloaded.write_bytes(b"x")
+
+    class _NotFound(Exception):
+        pass
+
+    errors = types.ModuleType("huggingface_hub.errors")
+    errors.EntryNotFoundError = _NotFound
+    requested = []
+
+    def _dl(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        requested.append(filename)
+        if filename != "transformer_fp8.pt":
+            raise _NotFound(filename)
+        return str(downloaded)
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = _dl
+    hub.errors = errors
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", errors)
+
+    source = _prequant_source(location = "org/Z-Image-Turbo-FP8")
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        logger = None,
+    )
+    assert result is not None
+    assert requested == ["Z-Image-Turbo-FP8.pt", "transformer_fp8.pt"]
+
+
+def test_load_local_path_outside_allowlist_refused(monkeypatch, tmp_path):
+    # one trusted dir is not a wildcard: outside paths are never unpickled
+    called = {"load": False}
+
+    def _explode(*a, **k):
+        called["load"] = True
+        raise AssertionError("torch.load must not run on a path outside the allowlist")
+
+    torch = types.ModuleType("torch")
+    torch.load = _explode
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    monkeypatch.setenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, str(allowed))
+
+    outside = tmp_path / "evil.pt"
+    outside.write_bytes(b"x")
+    source = PrequantSource(kind = "path", location = str(outside), filename = None)
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        logger = None,
+    )
+    assert result is None
+    assert called["load"] is False
+
+
+def test_load_min_features_mismatch_is_none(monkeypatch, tmp_path):
+    # a different --min-features quantises a different Linear set
+    ckpt = _good_ckpt()
+    ckpt["metadata"]["min_features"] = 256
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, ckpt)
+    monkeypatch.setenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, str(tmp_path))
+    path = tmp_path / "ckpt.pt"
+    path.write_bytes(b"x")
+    source = PrequantSource(kind = "path", location = str(path), filename = None)
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "Tongyi-MAI/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        min_features = 512,
+        logger = None,
+    )
+    assert result is None
+
+
+def test_load_base_fork_tail_matches(monkeypatch, tmp_path):
+    # a local path or fork id with the canonical base's final segment is accepted
+    ckpt = _good_ckpt(base = "Tongyi-MAI/Z-Image-Turbo")
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, ckpt)
+    monkeypatch.setenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, str(tmp_path))
+    path = tmp_path / "ckpt.pt"
+    path.write_bytes(b"x")
+    source = PrequantSource(kind = "path", location = str(path), filename = None)
+    result = load_prequantized_transformer(
+        _FakeTransformer,
+        "/local/models/Z-Image-Turbo",
+        source,
+        device = "cuda",
+        dtype = "bfloat16",
+        hf_token = None,
+        scheme = "fp8",
+        logger = None,
+    )
+    assert result is not None
+
+
+class _FakeKernelPreference:
+    """Stand-in for torchao's enum: only identity and attribute access matter here."""
+
+    TORCH = "KernelPreference.TORCH"
+    AUTO = "KernelPreference.AUTO"
+
+
+def _stub_kernel_preference(monkeypatch):
+    mod = types.ModuleType("torchao.quantization.quantize_.common.kernel_preference")
+    mod.KernelPreference = _FakeKernelPreference
+    for name in (
+        "torchao",
+        "torchao.quantization",
+        "torchao.quantization.quantize_",
+        "torchao.quantization.quantize_.common",
+    ):
+        monkeypatch.setitem(sys.modules, name, sys.modules.get(name) or types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, "torchao.quantization.quantize_.common.kernel_preference", mod)
+
+
+class _FakeFp8Weight:
+    def __init__(self, pref):
+        self.kernel_preference = pref
+
+
+def test_pin_kernel_preference_rewrites_auto(monkeypatch):
+    # checkpoints serialize KernelPreference.AUTO, re-arming MSLK which has no fake impl for compile
+    _stub_kernel_preference(monkeypatch)
+    sd = {
+        "a.weight": _FakeFp8Weight(_FakeKernelPreference.AUTO),
+        "b.weight": _FakeFp8Weight(_FakeKernelPreference.AUTO),
+        "c.weight": _FakeFp8Weight(_FakeKernelPreference.TORCH),
+        "d.bias": object(),
+    }
+    pinned = pq._pin_kernel_preference(sd, logger = None)
+    assert pinned == 2
+    assert all(
+        getattr(t, "kernel_preference", _FakeKernelPreference.TORCH) == _FakeKernelPreference.TORCH
+        for t in sd.values()
+    )
+
+
+def test_pin_kernel_preference_survives_a_frozen_weight(monkeypatch):
+    # a subclass refusing the assignment must not sink the load; it still works eagerly
+    _stub_kernel_preference(monkeypatch)
+
+    class _Frozen:
+        kernel_preference = _FakeKernelPreference.AUTO
+
+        def __setattr__(self, name, value):
+            raise AttributeError("frozen")
+
+    sd = {"a.weight": _Frozen(), "b.weight": _FakeFp8Weight(_FakeKernelPreference.AUTO)}
+    assert pq._pin_kernel_preference(sd, logger = None) == 1
+
+
+def test_pin_kernel_preference_no_torchao(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules, "torchao.quantization.quantize_.common.kernel_preference", None
+    )
+    sd = {"a.weight": _FakeFp8Weight(_FakeKernelPreference.AUTO)}
+    assert pq._pin_kernel_preference(sd, logger = None) == 0
+    assert sd["a.weight"].kernel_preference == _FakeKernelPreference.AUTO
+
+
+def test_prequant_checkpoint_cached_reads_only_the_cache(monkeypatch, tmp_path):
+    # memory planning calls this, so it must be a pure lookup: no Hub call, no raise
+    from core.inference.diffusion_prequant import prequant_checkpoint_cached
+
+    ckpt = tmp_path / "Z-Image-Turbo-FP8.pt"
+    ckpt.write_bytes(b"weights")
+    legacy = tmp_path / "transformer_fp8.pt"
+    legacy.write_bytes(b"weights")
+    source = _prequant_source()
+    asked: list = []
+    absent: set = set()
+    no_exist = object()  # huggingface_hub's sentinel for a recorded 404
+
+    def _cache(
+        repo_id,
+        filename,
+        cache_dir = None,
+    ):
+        asked.append((repo_id, filename, cache_dir))
+        if filename in absent:
+            return no_exist
+        return str(tmp_path / filename) if (tmp_path / filename).is_file() else None
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", _cache)
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download",
+        lambda *a, **k: pytest.fail("the cache probe must never download"),
+    )
+
+    assert prequant_checkpoint_cached(source, cache_dir = "/models/hub", online = True) is True
+    assert asked == [("unsloth/Z-Image-Turbo-FP8", "Z-Image-Turbo-FP8.pt", "/models/hub")]
+
+    # a cached name further down the chain counts, but only if the names ahead are absent online
+    ckpt.unlink()
+    assert prequant_checkpoint_cached(source, online = True) is False
+    absent.add("Z-Image-Turbo-FP8.pt")
+    assert prequant_checkpoint_cached(source, online = True) is True
+    absent.clear()
+    assert prequant_checkpoint_cached(source, online = False) is True
+    legacy.unlink()
+    assert prequant_checkpoint_cached(source, online = True) is False
+    assert prequant_checkpoint_cached(source, online = False) is False
+
+
+def test_a_live_root_hit_still_goes_through_the_hub_so_it_revalidates(monkeypatch, tmp_path):
+    # hf_hub_download(cache_dir=live) revalidates; returning raw would pin a stale checkpoint
+    live = tmp_path / "live-hub"
+    live.mkdir()
+    ckpt = live / "Z-Image-Turbo-FP8.pt"
+    ckpt.write_bytes(b"weights")
+    source = _prequant_source()
+
+    def _cache(
+        repo_id,
+        filename,
+        cache_dir = None,
+    ):
+        path = live / filename
+        return str(path) if cache_dir == str(live) and path.is_file() else None
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", _cache)
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append((filename, cache_dir))
+        return str(ckpt)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    # still cached for the decline gate: a HEAD, not a multi-GB fetch
+    assert pq.prequant_checkpoint_cached(source, cache_dir = str(live)) is True
+    assert pq._resolve_checkpoint_path(source, None, str(live)) == str(ckpt)
+    assert asked == [("Z-Image-Turbo-FP8.pt", str(live))]
+
+
+def _other_root_source():
+    return _prequant_source()
+
+
+def test_a_hit_only_in_the_other_root_is_revalidated_through_that_root(monkeypatch, tmp_path):
+    # rerun the download through the root holding the copy: one HEAD, no re-fetch, no stale pin
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    ckpt = default_root / "Z-Image-Turbo-FP8.pt"
+    ckpt.write_bytes(b"weights")
+    source = _other_root_source()
+
+    def _cache(
+        repo_id,
+        filename,
+        cache_dir = None,
+    ):
+        path = default_root / filename
+        return str(path) if cache_dir is None and path.is_file() else None
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", _cache)
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append((filename, cache_dir))
+        return str(ckpt)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert pq.prequant_checkpoint_cached(source, cache_dir = "/models/live") is True
+    assert pq._resolve_checkpoint_path(source, None, "/models/live") == str(ckpt)
+    # never pin to the empty live root: that is the multi-GB re-fetch the caller declined
+    assert asked == [("Z-Image-Turbo-FP8.pt", None)]
+
+
+def test_a_republished_checkpoint_in_the_other_root_is_picked_up(monkeypatch, tmp_path):
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    stale = default_root / "Z-Image-Turbo-FP8.pt"
+    stale.write_bytes(b"old weights")
+    fresh = default_root / "snapshots-new" / "Z-Image-Turbo-FP8.pt"
+    fresh.parent.mkdir()
+    fresh.write_bytes(b"corrected weights")
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None, **k: (
+            str(stale) if cache_dir is None and filename == "Z-Image-Turbo-FP8.pt" else None
+        ),
+    )
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", lambda **kwargs: str(fresh))
+
+    assert pq._resolve_checkpoint_path(_other_root_source(), None, "/models/live") == str(fresh)
+
+
+def test_other_root_revalidation_never_breaks_a_load_that_works(monkeypatch, tmp_path):
+    # any other hf_hub_download error must fall back to the copy already located
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    ckpt = default_root / "Z-Image-Turbo-FP8.pt"
+    ckpt.write_bytes(b"weights")
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None, **k: (
+            str(default_root / filename)
+            if cache_dir is None and (default_root / filename).is_file()
+            else None
+        ),
+    )
+    asked: list = []
+
+    def _download(**kwargs):
+        asked.append(kwargs["cache_dir"])
+        raise RuntimeError("hub is unhappy")
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert pq._resolve_checkpoint_path(_other_root_source(), None, "/models/live") == str(ckpt)
+    assert asked == [None]
+
+
+def test_an_uncached_checkpoint_downloads_into_the_live_root(monkeypatch):
+    asked: list = []
+    source = PrequantSource(
+        kind = "repo", location = "unsloth/Z-Image-Turbo-FP8", filename = "Z-Image-Turbo-FP8.pt"
+    )
+
+    def _dl(**kwargs):
+        asked.append(kwargs)
+        return "/live-hub/blobs/abc"
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", lambda *a, **k: None)
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _dl)
+
+    assert pq._resolve_checkpoint_path(source, "tok", "/live-hub") == "/live-hub/blobs/abc"
+    assert asked == [
+        {
+            "repo_id": "unsloth/Z-Image-Turbo-FP8",
+            "filename": "Z-Image-Turbo-FP8.pt",
+            "token": "tok",
+            "cache_dir": "/live-hub",
+            # only API-initiated loads are pinned to the cache, via the caller's flag
+            "local_files_only": False,
+        }
+    ]
+
+
+def test_prequant_checkpoint_cached_never_raises(monkeypatch):
+    # an unanswerable probe is not cached, never an exception into the planner
+    from core.inference.diffusion_prequant import prequant_checkpoint_cached
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("unreadable cache")),
+    )
+    source = PrequantSource(kind = "repo", location = "org/hosted-fp8", filename = "hosted-FP8.pt")
+    assert prequant_checkpoint_cached(source) is False
+    assert prequant_checkpoint_cached(PrequantSource(kind = "path", location = "/tmp/x.pt")) is False
+    assert prequant_checkpoint_cached(None) is False
+
+
+def test_a_cached_legacy_file_does_not_pre_empt_the_canonical_one(monkeypatch, tmp_path):
+    """fallback_filename is primary-first by contract, reached only once the canonical name is
+    absent remotely. Short-circuiting on a cached legacy artifact would pin a stale
+    transformer_<scheme>.pt forever, even after the repo publishes the real name."""
+    from core.inference.diffusion_prequant import _resolve_checkpoint_path
+
+    legacy = tmp_path / "transformer_fp8.pt"
+    legacy.write_bytes(b"stale")
+    source = _prequant_source()
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None: (
+            str(tmp_path / filename) if (tmp_path / filename).is_file() else None
+        ),
+    )
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append(filename)
+        return str(tmp_path / "downloaded-canonical.pt")
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert _resolve_checkpoint_path(source, None) == str(tmp_path / "downloaded-canonical.pt")
+    assert asked == ["Z-Image-Turbo-FP8.pt"]
+
+
+def test_the_legacy_name_is_still_used_once_the_canonical_one_is_absent(monkeypatch, tmp_path):
+    """The other direction, which is what fallback_filename exists for: a repo that only ever
+    shipped the legacy artifact must still load."""
+    from huggingface_hub.errors import EntryNotFoundError
+
+    from core.inference.diffusion_prequant import _resolve_checkpoint_path
+
+    source = _prequant_source()
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", lambda *a, **k: None)
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append(filename)
+        if filename == "Z-Image-Turbo-FP8.pt":
+            raise EntryNotFoundError("404")
+        return str(tmp_path / filename)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert _resolve_checkpoint_path(source, None) == str(tmp_path / "transformer_fp8.pt")
+    assert asked == ["Z-Image-Turbo-FP8.pt", "transformer_fp8.pt"]
+
+
+def test_a_legacy_copy_in_the_other_root_is_reused_after_the_primary_404s(monkeypatch, tmp_path):
+    """Once the primary is absent remotely the legacy name IS the artifact, so it needs the same
+    other-root treatment: revalidate through the root holding the copy rather than re-fetch multiple
+    GB into the live one, or pin a stale file by returning it raw."""
+    from huggingface_hub.errors import EntryNotFoundError
+
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    legacy = default_root / "transformer_fp8.pt"
+    legacy.write_bytes(b"weights")
+    source = _prequant_source()
+
+    def _cache(
+        repo_id,
+        filename,
+        cache_dir = None,
+    ):
+        path = default_root / filename
+        return str(path) if cache_dir is None and path.is_file() else None
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", _cache)
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append((filename, cache_dir))
+        if filename == "Z-Image-Turbo-FP8.pt":
+            raise EntryNotFoundError("404")
+        return str(legacy)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert pq._resolve_checkpoint_path(source, None, "/models/live") == str(legacy)
+    # legacy is revalidated through the root holding it, never re-fetched into the live one
+    assert asked == [("Z-Image-Turbo-FP8.pt", "/models/live"), ("transformer_fp8.pt", None)]
+
+
+def test_a_primary_404_during_revalidation_still_reaches_the_legacy_fallback(monkeypatch, tmp_path):
+    """The other-root revalidation must not swallow the primary's 404: when the live root misses
+    but the import-time root still holds an OLD canonical checkpoint, a blanket catch returns that
+    stale file and the fallback-name branch is never reached."""
+    from huggingface_hub.errors import EntryNotFoundError
+
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    stale = default_root / "Z-Image-Turbo-FP8.pt"
+    stale.write_bytes(b"obsolete")
+    live = str(tmp_path / "live")
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None, **k: (
+            str(default_root / filename)
+            if cache_dir is None and (default_root / filename).is_file()
+            else None
+        ),
+    )
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append((filename, cache_dir))
+        if filename == "Z-Image-Turbo-FP8.pt":
+            raise EntryNotFoundError("404: the repo no longer publishes this name")
+        return str(tmp_path / "fresh-legacy.pt")
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert pq._resolve_checkpoint_path(_other_root_source(), None, live) == str(
+        tmp_path / "fresh-legacy.pt"
+    )
+    assert asked == [("Z-Image-Turbo-FP8.pt", None), ("transformer_fp8.pt", live)]
+
+
+def test_offline_revalidation_still_returns_the_other_root_copy(monkeypatch, tmp_path):
+    """A LOCAL cache miss is not "absent remotely": huggingface_hub raises LocalEntryNotFoundError
+    (a subclass of EntryNotFoundError on both majors) when it cannot reach the Hub, so telling it
+    apart from a real 404 is what keeps an offline load from dropping the prequant."""
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    ckpt = default_root / "Z-Image-Turbo-FP8.pt"
+    ckpt.write_bytes(b"weights")
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None, **k: (
+            str(default_root / filename)
+            if cache_dir is None and (default_root / filename).is_file()
+            else None
+        ),
+    )
+    asked: list = []
+
+    def _download(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append((filename, cache_dir))
+        raise LocalEntryNotFoundError("offline and not in this root")
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _download)
+
+    assert pq._resolve_checkpoint_path(_other_root_source(), None, "/models/live") == str(ckpt)
+    assert asked == [("Z-Image-Turbo-FP8.pt", None)]
+
+
+def test_with_no_fallback_name_a_404_keeps_the_other_root_copy(monkeypatch, tmp_path):
+    """Propagating the 404 only makes sense while another filename is left to try. With none, the
+    copy already located is still the best answer, so revalidation stays a bonus."""
+    from huggingface_hub.errors import EntryNotFoundError
+
+    default_root = tmp_path / "default-hub"
+    default_root.mkdir()
+    ckpt = default_root / "X-FP8.pt"
+    ckpt.write_bytes(b"weights")
+    source = PrequantSource(kind = "repo", location = "unsloth/X-FP8", filename = "X-FP8.pt")
+
+    monkeypatch.setattr(
+        "huggingface_hub.try_to_load_from_cache",
+        lambda repo_id, filename, cache_dir = None, **k: (
+            str(default_root / filename)
+            if cache_dir is None and (default_root / filename).is_file()
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download",
+        lambda **k: (_ for _ in ()).throw(EntryNotFoundError("404")),
+    )
+
+    assert pq._resolve_checkpoint_path(source, None, "/models/live") == str(ckpt)
+
+
+def test_load_config_reads_the_same_cache_root_as_the_checkpoint(monkeypatch, tmp_path):
+    """load_config forwards cache_dir to hf_hub_download, so unpinned it reads huggingface_hub's
+    import-time constant. After a mid-session cache change that root may be gone or read-only, and
+    the raise is swallowed into a None return: the prequant is silently dropped."""
+    import torch
+
+    from core.inference import diffusion_prequant as P
+
+    seen: list = []
+    live_root = tmp_path / "live"
+    live_root.mkdir()
+    live = str(live_root)
+    ckpt = live_root / "ck.pt"
+    ckpt.write_bytes(b"x")
+
+    monkeypatch.setattr(P, "_resolve_checkpoint_path", lambda s, t, c = None, **_: str(ckpt))
+    monkeypatch.setattr(P, "_validate_checkpoint", lambda *a, **k: True)
+    monkeypatch.setattr(P, "_pin_kernel_preference", lambda *a, **k: 0)
+    monkeypatch.setattr(torch, "load", lambda *a, **k: {"state_dict": {}, "scheme": "int8"})
+
+    class _Cls:
+        @staticmethod
+        def load_config(
+            base,
+            subfolder = None,
+            token = None,
+            cache_dir = None,
+            local_files_only = False,
+        ):
+            seen.append(cache_dir)
+            raise RuntimeError("stop right after the config fetch")
+
+    src = P.PrequantSource(kind = "repo", location = "unsloth/X-FP8", filename = "X-FP8.pt")
+    assert (
+        P.load_prequantized_transformer(
+            _Cls,
+            "org/base",
+            src,
+            device = "cpu",
+            dtype = torch.bfloat16,
+            scheme = "int8",
+            cache_dir = live,
+        )
+        is None
+    )
+
+    assert seen[0] == live
+
+
+def test_the_config_follows_the_checkpoint_into_the_other_cache_root(monkeypatch, tmp_path):
+    """``_resolve_checkpoint_path`` can answer from huggingface_hub's import-time root while Unsloth
+    pins its live one, so a config pinned to the live root misses in exactly the cache-moved case
+    the checkpoint lookup just accepted -- silently, as the raise becomes a None return."""
+    import torch
+
+    from core.inference import diffusion_prequant as P
+
+    seen: list = []
+    live = str(tmp_path / "live")
+    other_root = tmp_path / "default-hub"
+    other_root.mkdir()
+    ckpt = other_root / "ck.pt"
+    ckpt.write_bytes(b"x")
+
+    monkeypatch.setattr(P, "_resolve_checkpoint_path", lambda s, t, c = None, **_: str(ckpt))
+    monkeypatch.setattr(P, "_validate_checkpoint", lambda *a, **k: True)
+    monkeypatch.setattr(P, "_pin_kernel_preference", lambda *a, **k: 0)
+    monkeypatch.setattr(torch, "load", lambda *a, **k: {"state_dict": {}, "scheme": "int8"})
+    monkeypatch.setattr(P, "_has_meta_tensors", lambda *a, **k: False)
+    accelerate = types.ModuleType("accelerate")
+    accelerate.init_empty_weights = lambda: contextlib.nullcontext()
+    monkeypatch.setitem(sys.modules, "accelerate", accelerate)
+
+    class _Transformer:
+        def load_state_dict(self, *a, **k):
+            return None
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    class _Cls:
+        @staticmethod
+        def load_config(
+            base,
+            subfolder = None,
+            token = None,
+            cache_dir = None,
+            local_files_only = False,
+        ):
+            seen.append(cache_dir)
+            if cache_dir is not None:
+                raise OSError("the live root has no cached config for this base")
+            return {"ok": True}
+
+        @staticmethod
+        def from_config(config):
+            return _Transformer()
+
+    src = P.PrequantSource(kind = "repo", location = "unsloth/X-FP8", filename = "X-FP8.pt")
+    out = P.load_prequantized_transformer(
+        _Cls,
+        "org/base",
+        src,
+        device = "cpu",
+        dtype = torch.bfloat16,
+        scheme = "int8",
+        cache_dir = live,
+    )
+
+    assert isinstance(out, _Transformer)
+    assert seen == [None]
+
+
+def test_load_pads_the_small_m_linears_with_the_recorded_family(monkeypatch, tmp_path):
+    """Pre-quant load must pad the small-M linears using the family recorded in the checkpoint metadata."""
+    from core.inference.diffusion_transformer_quant import exclude_tokens_for_scheme
+
+    seen = {}
+
+    def _spy(
+        transformer,
+        scheme,
+        family = None,
+        logger = None,
+    ):
+        seen["args"] = (scheme, family)
+        return ("context_embedder",)
+
+    monkeypatch.setattr("core.inference.diffusion_transformer_quant.apply_small_m_padding", _spy)
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["family"] = "minimax-h3"
+    ckpt["metadata"]["exclude_name_tokens"] = list(exclude_tokens_for_scheme("int8", "minimax-h3"))
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is not None
+    assert seen["args"] == ("int8", "minimax-h3")
+
+
+def test_load_is_dropped_when_the_padding_cannot_be_proven(monkeypatch, tmp_path):
+    """If padding cannot be proven, drop the prequant and dense-quantise; never half-pad the model."""
+
+    def _boom(
+        transformer,
+        scheme,
+        family = None,
+        logger = None,
+    ):
+        raise RuntimeError("cannot prove per-row granularity")
+
+    monkeypatch.setattr("core.inference.diffusion_transformer_quant.apply_small_m_padding", _boom)
+    ckpt = _good_ckpt(scheme = "int8")
+    ckpt["metadata"]["family"] = "minimax-h3"
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "int8") is None
+
+
+def test_an_fp8_checkpoint_without_the_activation_floor_is_detected():
+    # pre-floor builds bake hp_value_lb=None (zero row -> scale 0 -> NaN); read the tensors
+    floored = {"blocks.0.attn.to_q.weight": Float8Tensor(hp_value_lb = 1e-12)}
+    unfloored = {"blocks.0.attn.to_q.weight": Float8Tensor(hp_value_lb = None)}
+    assert pq._fp8_activation_floor_present(floored, None) is True
+    assert pq._fp8_activation_floor_present(unfloored, None) is False
+    # zero is not a floor: it is what an unclamped amax divide produces
+    assert pq._fp8_activation_floor_present({"w": Float8Tensor(hp_value_lb = 0.0)}, None) is False
+
+
+def test_an_fp8_checkpoint_without_the_floor_loads_with_the_runtime_floor(monkeypatch, tmp_path):
+    # the floor is not weight data, so a pre-floor artifact holds the exact runtime weights
+    from core.inference.diffusion_transformer_quant import FP8_ACTIVATION_VALUE_LB
+
+    ckpt = _good_ckpt(scheme = "fp8")
+    shared = types.SimpleNamespace(hp_value_lb = None, hp_value_ub = None)
+    first, second, floored = Float8Tensor(), Float8Tensor(), Float8Tensor(hp_value_lb = 1e-9)
+    first.act_quant_kwargs = shared
+    second.act_quant_kwargs = shared  # a pickle may share one kwargs object between tensors
+    ckpt["state_dict"] = {
+        "a.weight": first,
+        "b.weight": second,
+        "c.weight": floored,
+        "d.bias": object(),
+    }
+    out = _load(monkeypatch, tmp_path, ckpt, scheme = "fp8")
+    assert out is not None
+    assert pq.last_prequant_failure() is None
+    assert first.act_quant_kwargs.hp_value_lb == FP8_ACTIVATION_VALUE_LB
+    assert second.act_quant_kwargs.hp_value_lb == FP8_ACTIVATION_VALUE_LB
+    assert first.act_quant_kwargs is not second.act_quant_kwargs
+    assert shared.hp_value_lb is None
+    assert floored.act_quant_kwargs.hp_value_lb == 1e-9
+
+
+def test_an_fp8_checkpoint_differing_in_more_than_the_floor_stays_refused(monkeypatch, tmp_path):
+    ckpt = _good_ckpt(scheme = "fp8")
+    capped = Float8Tensor(hp_value_lb = None)
+    capped.act_quant_kwargs.hp_value_ub = 1e4
+    ckpt["state_dict"] = {"a.weight": capped}
+    assert _load(monkeypatch, tmp_path, ckpt, scheme = "fp8") is None
+    assert "no activation scale floor" in (pq.last_prequant_failure() or "")
+    no_field = Float8Tensor()
+    no_field.act_quant_kwargs = types.SimpleNamespace()
+    assert pq._fp8_activation_floor_restorable({"a.weight": no_field}) is False
+
+
+def test_the_floor_check_ignores_dense_and_unreadable_state_dicts():
+    # dense tensors carry no act_quant_kwargs; failing closed would reject every int8 checkpoint
+    assert pq._fp8_activation_floor_present({"w": object()}, None) is True
+    assert pq._fp8_activation_floor_present(None, None) is True
+    assert pq._fp8_activation_floor_present({}, None) is True
+
+
+def _policy_meta(
+    policy = None,
+    *,
+    base = "Tongyi-MAI/Z-Image-Turbo",
+    family = "z-image",
+    **overrides,
+):
+    from core.inference.diffusion_nvfp4_policy import (
+        NVFP4_POLICY_KEY,
+        ZIMG_RG76,
+        policy_metadata,
+    )
+
+    policy = policy or ZIMG_RG76
+    assignment = {f"layers.{i}.attention.to_q": "nvfp4" for i in range(76)}
+    assignment.update({f"layers.{i}.feed_forward.w1": "fp8" for i in range(195)})
+    assignment.update({f"t_embedder.mlp.{i}": "bf16" for i in range(5)})
+    block = dict(policy_metadata(policy, assignment)[NVFP4_POLICY_KEY])
+    block.update(overrides)
+    return {
+        "scheme": "nvfp4",
+        "base_model_id": base,
+        "family": family,
+        "fp8_granularity": "per_row",
+        NVFP4_POLICY_KEY: block,
+    }
+
+
+def test_the_format_tag_follows_the_policy_and_refuses_to_carry_two_claims():
+    from core.inference.diffusion_convrot import rotation_metadata
+
+    assert pq.prequant_format_for({"scheme": "nvfp4"}) == pq.PREQUANT_FORMAT
+    assert pq.prequant_format_for(_policy_meta()) == pq.PREQUANT_FORMAT_POLICY
+    assert pq.PREQUANT_FORMAT_POLICY not in (pq.PREQUANT_FORMAT, pq.PREQUANT_FORMAT_ROTATED)
+    both = {**_policy_meta(), **rotation_metadata(128, ["layers.0.attention.to_q"])}
+    with pytest.raises(ValueError, match = "both"):
+        pq.prequant_format_for(both)
+
+
+@pytest.mark.parametrize(
+    ("fmt", "declared", "ok"),
+    [
+        (pq.PREQUANT_FORMAT_POLICY, True, True),
+        (pq.PREQUANT_FORMAT, False, True),
+        (pq.PREQUANT_FORMAT, True, False),
+        (pq.PREQUANT_FORMAT_ROTATED, True, False),
+        (pq.PREQUANT_FORMAT_POLICY, False, False),
+    ],
+)
+def test_the_validator_enforces_the_format_policy_biconditional(fmt, declared, ok):
+    meta = _policy_meta() if declared else {"scheme": "nvfp4"}
+    assert pq._validate_policy(fmt, meta, "nvfp4", None) is ok
+
+
+def test_a_policy_declaration_this_build_cannot_reproduce_is_refused():
+    from core.inference.diffusion_nvfp4_policy import NVFP4_POLICY_KEY
+
+    fmt = pq.PREQUANT_FORMAT_POLICY
+    assert pq._validate_policy(fmt, _policy_meta(), "nvfp4", None) is True
+    assert pq._validate_policy(fmt, _policy_meta(kind = "v2"), "nvfp4", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(nvfp4_fqns = []), "nvfp4", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(), "fp8", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(base = "some/other-dit"), "nvfp4", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(family = "flux.1"), "nvfp4", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(policy_version = 2), "nvfp4", None) is False
+    assert pq._validate_policy(fmt, _policy_meta(policy_id = "qwen_p02_v1"), "nvfp4", None) is False
+    drifted = _policy_meta()
+    drifted[NVFP4_POLICY_KEY]["counts"] = {"nvfp4": 34, "fp8": 236, "bf16": 6}
+    assert pq._validate_policy(fmt, drifted, "nvfp4", None) is False
+
+
+def test_a_policy_checkpoint_is_validated_end_to_end():
+    logger = _Recorder()
+    ckpt = {
+        "format": pq.PREQUANT_FORMAT_POLICY,
+        "metadata": _policy_meta(),
+        "state_dict": {"weight": object()},
+    }
+    assert pq._validate_checkpoint(ckpt, "nvfp4", "Tongyi-MAI/Z-Image-Turbo", logger) is True
+    ckpt["format"] = pq.PREQUANT_FORMAT
+    assert pq._validate_checkpoint(ckpt, "nvfp4", "Tongyi-MAI/Z-Image-Turbo", logger) is False
+    assert "v3" in logger.text
+
+
+def test_the_fp8_invariants_cover_the_fp8_half_of_a_policy_checkpoint():
+    # policy artifacts are declared nvfp4 but mostly Float8Tensor, so do not gate on scheme
+    logger = _Recorder()
+    ckpt = {
+        "format": pq.PREQUANT_FORMAT_POLICY,
+        "metadata": _policy_meta(),
+        "state_dict": {
+            "layers.0.attention.to_q.weight": NVFP4Tensor(b"q4"),
+            "layers.0.feed_forward.w1.weight": Float8Tensor(hp_value_lb = 1e-12),
+        },
+    }
+    base = "Tongyi-MAI/Z-Image-Turbo"
+    assert pq._validate_checkpoint(ckpt, "nvfp4", base, logger) is True
+    unfloored = dict(ckpt)
+    unfloored["state_dict"] = dict(ckpt["state_dict"])
+    unfloored["state_dict"]["layers.0.feed_forward.w1.weight"] = Float8Tensor(hp_value_lb = None)
+    # an unfloored fp8 half is restorable: the load writes the runtime floor in, so it validates
+    assert pq._validate_checkpoint(unfloored, "nvfp4", base, logger) is True
+    capped = Float8Tensor(hp_value_lb = None)
+    capped.act_quant_kwargs.hp_value_ub = 1.0
+    unfloored["state_dict"]["layers.0.feed_forward.w1.weight"] = capped
+    assert pq._validate_checkpoint(unfloored, "nvfp4", base, logger) is False
+    per_tensor = dict(ckpt)
+    per_tensor["metadata"] = _policy_meta()
+    per_tensor["metadata"]["fp8_granularity"] = "per_tensor"
+    assert pq._validate_checkpoint(per_tensor, "nvfp4", base, logger) is False
+
+
+def test_the_floor_check_skips_the_4_bit_weights_beside_the_fp8_ones():
+    mixed = {
+        "layers.0.attention.to_q.weight": NVFP4Tensor(b"q4"),
+        "layers.0.feed_forward.w1.weight": Float8Tensor(hp_value_lb = 1e-12),
+    }
+    assert pq._fp8_activation_floor_present(mixed, None) is True
+    mixed["layers.0.feed_forward.w1.weight"] = Float8Tensor(hp_value_lb = None)
+    assert pq._fp8_activation_floor_present(mixed, None) is False
+    assert pq._fp8_activation_floor_present({"w": NVFP4Tensor()}, None) is True
+
+
+def test_pinning_the_fp8_kernel_leaves_the_4_bit_weights_alone(monkeypatch):
+    _stub_kernel_preference(monkeypatch)
+    sd = {
+        "layers.0.attention.to_q.weight": NVFP4Tensor(b"q4"),
+        "layers.0.feed_forward.w1.weight": _FakeFp8Weight(_FakeKernelPreference.AUTO),
+    }
+    assert pq._pin_kernel_preference(sd, logger = None) == 1
+    assert not hasattr(sd["layers.0.attention.to_q.weight"], "kernel_preference")
+
+
+def test_an_nvfp4_install_must_be_able_to_open_the_fp8_weights_too():
+    required = pq._SCHEME_REQUIRED_GLOBALS["nvfp4"]
+    assert pq._SCHEME_REQUIRED_GLOBALS["fp8"] <= required
+    assert "torchao.prototype.mx_formats.nvfp4_tensor.NVFP4Tensor" in required
+
+
+def test_the_checkpoint_is_released_before_the_device_copy(monkeypatch, tmp_path):
+    """The CPU checkpoint must be unreferenced by the time ``.to(device)`` allocates (unified memory peak)."""
+    import weakref
+
+    seen: dict = {}
+
+    class _StateDict(dict):
+        """A weak-referenceable state dict: plain dicts cannot be weakly referenced."""
+
+    class _ReleaseProbe(_FakeTransformer):
+        def load_state_dict(
+            self,
+            sd,
+            strict = True,
+            assign = False,
+        ):
+            _FakeTransformer.calls["load_state_dict"] = {"strict": strict, "assign": assign}
+            seen["state_dict"] = weakref.ref(sd)
+
+        def to(self, device):
+            seen["alive_at_move"] = seen["state_dict"]() is not None
+            return super().to(device)
+
+    _FakeTransformer.calls = {}
+    _stub_torch_accelerate(monkeypatch, None)
+    monkeypatch.setattr(
+        pq,
+        "_torch_load_prequant",
+        lambda path, **kwargs: {
+            "format": PREQUANT_FORMAT,
+            "metadata": {"scheme": "int8", "base_model_id": "Tongyi-MAI/Z-Image-Turbo"},
+            "state_dict": _StateDict(weight = object()),
+        },
+    )
+    monkeypatch.setenv(pq.ALLOW_LOCAL_PREQUANT_PATH_ENV, str(tmp_path))
+    path = tmp_path / "ckpt.pt"
+    path.write_bytes(b"x")
+
+    out = load_prequantized_transformer(
+        _ReleaseProbe,
+        "Tongyi-MAI/Z-Image-Turbo",
+        PrequantSource(kind = "path", location = str(path), filename = None),
+        device = "cuda",
+        dtype = "bfloat16",
+        scheme = "int8",
+    )
+
+    assert out is not None
+    assert seen["alive_at_move"] is False
+
+
+def test_the_plan_only_commits_to_a_hosted_name_this_install_can_open(monkeypatch):
+    """The plan may commit to a hosted name only if this install can open it, not merely if it exists."""
+    from core.inference.diffusion import DiffusionBackend
+
+    class _Sibling:
+        def __init__(self, name, size):
+            self.rfilename, self.size = name, size
+
+    class _Info:
+        siblings = [_Sibling("Model-FP8.pt", 4096)]
+
+    class _Api:
+        def __init__(self, *a, **k):
+            pass
+
+        def model_info(self, *a, **k):
+            return _Info()
+
+    import huggingface_hub
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", _Api)
+    source = pq.PrequantSource(
+        kind = "repo",
+        location = "unsloth/Model-FP8",
+        filename = "Model-FP8.safetensors",
+        fallback_filenames = ("Model-FP8.pt",),
+    )
+
+    monkeypatch.setattr(pq, "restricted_prequant_load_supported", lambda *a, **k: True)
+    assert DiffusionBackend._prequant_source_hub_entry(source, None, scheme = "fp8") == (
+        "unsloth/Model-FP8",
+        "Model-FP8.pt",
+        4096,
+    )
+
+    monkeypatch.setattr(
+        pq,
+        "restricted_prequant_load_supported",
+        lambda scheme = None, filename = None: bool(filename) and filename.endswith(".safetensors"),
+    )
+    failures: list = []
+    assert DiffusionBackend._prequant_source_hub_entry(source, None, failures, scheme = "fp8") is None
+    assert failures, "an unopenable artifact has to leave the plan marked partial"
+
+
+def test_the_runtime_resolver_applies_the_same_capability_filter_as_the_plan(monkeypatch):
+    """Plan and runtime must select the same artifact, or a second multi-GB download fails on it."""
+    asked: list = []
+
+    def _download(
+        source,
+        name,
+        hf_token,
+        cache_dir,
+        *,
+        propagate_missing,
+        local_files_only = False,
+    ):
+        asked.append(name)
+        return "/tmp/" + name
+
+    monkeypatch.setattr(pq, "_download_checkpoint_name", _download)
+    monkeypatch.setattr(
+        pq,
+        "restricted_prequant_load_supported",
+        lambda scheme = None, filename = None: not str(filename or "").endswith(".safetensors"),
+    )
+    source = pq.PrequantSource(
+        kind = "repo",
+        location = "unsloth/Model-FP8",
+        filename = "Model-FP8.safetensors",
+        fallback_filenames = ("Model-FP8.pt",),
+    )
+    assert pq._resolve_checkpoint_path(source, None, scheme = "fp8") == "/tmp/Model-FP8.pt"
+    assert asked == ["Model-FP8.pt"], f"the unreadable container was fetched anyway: {asked}"
+
+    asked.clear()
+    assert pq._resolve_checkpoint_path(source, None) == "/tmp/Model-FP8.safetensors"
+    assert asked == ["Model-FP8.safetensors"], asked
+
+
+def test_a_cached_pickle_is_not_evidence_for_a_safetensors_artifact(monkeypatch):
+    """The derived safetensors name is a guess, and the cache probe walks every candidate, so a
+    cached legacy ``.pt`` would satisfy the evidence gate for an install that cannot open one.
+    Planning would then drop the dense shards and resolve neither file."""
+    fam = DiffusionFamily(
+        name = "probe-fam",
+        pipeline_class = "ProbePipeline",
+        transformer_class = "ProbeTransformer",
+        base_repo = "probe/Probe",
+        prequant_repos = (("fp8", "unsloth/Probe-FP8"),),
+    )
+    monkeypatch.setattr(
+        pq,
+        "restricted_prequant_load_supported",
+        lambda scheme = None, filename = None: str(filename or "").endswith(".safetensors"),
+    )
+    cached: dict = {}
+    monkeypatch.setattr(
+        pq,
+        "cached_checkpoint_path",
+        lambda source, cache_dir = None, names = None, **kw: next(
+            (v for k, v in cached.items() if names is None or k in names), None
+        ),
+    )
+    # a cached .pt is no evidence for the derived safetensors name
+    cached["Probe-FP8.pt"] = "/cache/Probe-FP8.pt"
+    assert pq.usable_prequant_source(fam, "fp8", base_repo = "probe/Probe") is None
+    cached["Probe-FP8.safetensors"] = "/cache/Probe-FP8.safetensors"
+    assert pq.usable_prequant_source(fam, "fp8", base_repo = "probe/Probe") is not None
+
+
+def test_an_unreachable_hub_is_reported_as_itself_not_blamed_on_the_last_candidate(monkeypatch):
+    """An unreachable Hub must be reported as itself, not blamed on the last candidate name."""
+    from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
+
+    asked: list = []
+
+    def _dl(
+        repo_id,
+        filename,
+        token = None,
+        cache_dir = None,
+        local_files_only = False,
+    ):
+        asked.append(filename)
+        raise LocalEntryNotFoundError("connection error")
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = _dl
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+
+    source = PrequantSource(
+        kind = "repo",
+        location = "org/hosted-fp8",
+        filename = "Hosted-FP8.safetensors",
+        fallback_filenames = ("Hosted-FP8.pt", "transformer_fp8.pt"),
+    )
+    with pytest.raises(LocalEntryNotFoundError):
+        pq._resolve_checkpoint_path(source, None, None)
+    assert asked == ["Hosted-FP8.safetensors"], asked
+
+    # offline, that exception is the only verdict, so the chain must be walked
+    asked.clear()
+    with pytest.raises(EntryNotFoundError):
+        pq._resolve_checkpoint_path(source, None, None, local_files_only = True)
+    assert asked == ["Hosted-FP8.safetensors", "Hosted-FP8.pt", "transformer_fp8.pt"], asked
+
+
+def test_a_cached_name_this_install_cannot_open_is_not_a_cache_hit(monkeypatch, tmp_path):
+    """A cached file this install cannot open is not a hit, or the dense shards are dropped for nothing."""
+    source = PrequantSource(
+        kind = "repo",
+        location = "org/hosted-fp8",
+        filename = "Hosted-FP8.safetensors",
+        fallback_filenames = ("Hosted-FP8.pt",),
+    )
+    cached = {"Hosted-FP8.safetensors": str(tmp_path / "st"), "Hosted-FP8.pt": None}
+    monkeypatch.setattr(pq, "_cached_in_root", lambda src, root, name = None: cached.get(name))
+
+    monkeypatch.setattr(
+        pq, "restricted_prequant_load_supported", lambda scheme = None, name = None: True
+    )
+    assert pq.cached_checkpoint_path(source) == str(tmp_path / "st")
+
+    # the only cached name is unreadable by this install: a miss, so dense shards stay planned
+    monkeypatch.setattr(
+        pq,
+        "restricted_prequant_load_supported",
+        lambda scheme = None, name = None: not str(name).endswith(".safetensors"),
+    )
+    assert pq.cached_checkpoint_path(source) is None
+
+    def _boom(scheme = None, name = None):
+        raise RuntimeError("torchao exploded")
+
+    monkeypatch.setattr(pq, "restricted_prequant_load_supported", _boom)
+    assert pq.cached_checkpoint_path(source) == str(tmp_path / "st")
+
+
+def _refused(cls, status):
+    message = f"{status} Client Error: unsloth/Z-Image-Turbo-NVFP4"
+    try:
+        return cls(message, response = None)
+    except (TypeError, AttributeError):  # huggingface_hub >= 1.0 reads an httpx response
+        import httpx
+        request = httpx.Request(
+            "GET", "https://huggingface.co/api/models/unsloth/Z-Image-Turbo-NVFP4"
+        )
+        return cls(message, response = httpx.Response(status, request = request))
+
+
+def _nvfp4_repo_source():
+    return PrequantSource(
+        kind = "repo",
+        location = "unsloth/Z-Image-Turbo-NVFP4",
+        filename = "Z-Image-Turbo-NVFP4.pt",
+    )
+
+
+@pytest.mark.parametrize(
+    "error_name,status",
+    [("RepositoryNotFoundError", 401), ("RepositoryNotFoundError", 404), ("GatedRepoError", 403)],
+)
+def test_a_refused_prequant_repo_is_no_checkpoint_not_a_plan_failure(
+    monkeypatch, error_name, status
+):
+    import huggingface_hub
+    from huggingface_hub import errors as hub_errors
+
+    from core.inference.diffusion import DiffusionBackend
+
+    def _refuse(self, *a, **k):
+        raise _refused(getattr(hub_errors, error_name), status)
+
+    monkeypatch.setattr(huggingface_hub.HfApi, "model_info", _refuse)
+    failures: list = []
+    entry = DiffusionBackend._prequant_source_hub_entry(
+        _nvfp4_repo_source(), None, failures, scheme = "nvfp4"
+    )
+    assert entry is None
+    assert failures == [], "a repo this user cannot see must not mark the download plan failed"
+
+
+def test_a_transient_hub_error_still_fails_the_plan(monkeypatch):
+    """Only the repo-level refusal is "no checkpoint". A network error says nothing about the repo,
+    so it still propagates and the planner records it."""
+    import huggingface_hub
+
+    from core.inference.diffusion import DiffusionBackend
+
+    def _boom(self, *a, **k):
+        raise ConnectionError("no route to host")
+
+    monkeypatch.setattr(huggingface_hub.HfApi, "model_info", _boom)
+    with pytest.raises(ConnectionError):
+        DiffusionBackend._prequant_source_hub_entry(_nvfp4_repo_source(), None, [], scheme = "nvfp4")
+
+
+def _prefetch_backend(monkeypatch, *, cached, model_info):
+    """A backend whose dense-quant candidate is the hosted NVFP4 prequant, with the Hub answering
+    ``model_info``. Explicit nvfp4, so the auto-only cache gates do not decide it first."""
+    import types
+
+    import huggingface_hub
+
+    from core.inference import diffusion as dmod
+    from core.inference import diffusion_memory as dmem
+    from core.inference.diffusion import DiffusionBackend
+
+    tokens: list = []
+
+    class _Api:
+        def __init__(
+            self,
+            token = None,
+            **k,
+        ):
+            tokens.append(token)
+
+        def model_info(self, repo_id, **k):
+            return model_info(repo_id)
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", _Api)
+    monkeypatch.setattr(
+        dmod,
+        "resolve_dense_quant_candidate",
+        lambda **kw: types.SimpleNamespace(prequant = True, scheme = "nvfp4", steady_total_mib = 1),
+    )
+    monkeypatch.setattr(
+        dmod, "usable_prequant_source", lambda fam, scheme, **kw: _nvfp4_repo_source()
+    )
+    monkeypatch.setattr(dmod, "prequant_checkpoint_cached", lambda source, **kw: cached)
+    monkeypatch.setattr(
+        dmem,
+        "snapshot_device_memory",
+        lambda target: types.SimpleNamespace(total_mib = None, memory_kind = "discrete_vram"),
+    )
+    monkeypatch.setattr(
+        pq, "restricted_prequant_load_supported", lambda scheme = None, filename = None: True
+    )
+    backend = DiffusionBackend()
+    monkeypatch.setattr(backend, "_target_for_ordinal", lambda fam, ordinal: object())
+    return backend, tokens
+
+
+_NVFP4_PREFETCH_KWARGS = {"transformer_quant": "nvfp4", "hf_token": "hf_user_token"}
+
+
+def test_an_unreachable_prequant_does_not_suppress_the_dense_shards(monkeypatch):
+    """The candidate is PREQUANT because the family table names a checkpoint, whether or not this user
+    can read it. Private, the load falls back to the dense build, so the plan must stage the dense
+    shards rather than let the load pull ~25 GB inline after the phase switched to finalizing."""
+    from huggingface_hub import errors as hub_errors
+
+    def _refuse(repo_id):
+        raise _refused(hub_errors.RepositoryNotFoundError, 401)
+
+    backend, tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _refuse)
+    fam = _fam()
+    assert backend._dense_quant_prefetch_needed(fam, dict(_NVFP4_PREFETCH_KWARGS)) is True
+    assert tokens == [
+        "hf_user_token"
+    ], "the probe must ask as the user, else a granted token reads as refused"
+
+
+def test_an_unreachable_prequant_is_carried_into_the_load(monkeypatch):
+    """begin_load hands these kwargs to load_pipeline, so the load sizes the scheme as the dense build
+    it will fall back to rather than as a checkpoint that will never arrive."""
+    from huggingface_hub import errors as hub_errors
+
+    def _refuse(repo_id):
+        raise _refused(hub_errors.RepositoryNotFoundError, 401)
+
+    backend, _tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _refuse)
+    kwargs = dict(_NVFP4_PREFETCH_KWARGS)
+    assert backend._dense_quant_prefetch_needed(_fam(), kwargs) is True
+    assert kwargs["_prequant_unreachable"] == ("nvfp4",)
+    backend._dense_quant_prefetch_needed(_fam(), kwargs)
+    assert kwargs["_prequant_unreachable"] == ("nvfp4",)
+
+
+def test_a_readable_prequant_is_not_marked_unreachable(monkeypatch):
+    import types
+
+    def _listing(repo_id):
+        return types.SimpleNamespace(
+            siblings = [types.SimpleNamespace(rfilename = "Z-Image-Turbo-NVFP4.pt", size = 4096)]
+        )
+
+    backend, _tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _listing)
+    kwargs = dict(_NVFP4_PREFETCH_KWARGS)
+    assert backend._dense_quant_prefetch_needed(_fam(), kwargs) is False
+    assert "_prequant_unreachable" not in kwargs
+
+
+def test_local_only_treats_an_uncached_prequant_as_unreachable(monkeypatch):
+    """local_files_only forbids the loader from fetching the checkpoint, so a Hub listing that
+    names it must not keep the load sizing a packed artifact that will never arrive."""
+    import types
+
+    def _listing(repo_id):
+        return types.SimpleNamespace(
+            siblings = [types.SimpleNamespace(rfilename = "Z-Image-Turbo-NVFP4.pt", size = 4096)]
+        )
+
+    backend, tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _listing)
+    kwargs = {**_NVFP4_PREFETCH_KWARGS, "local_files_only": True}
+    assert backend._dense_quant_prefetch_needed(_fam(), kwargs) is True
+    assert kwargs["_prequant_unreachable"] == ("nvfp4",)
+    assert tokens == [], "local-only mode must not ask the Hub"
+    backend, _tokens = _prefetch_backend(monkeypatch, cached = True, model_info = _listing)
+    kwargs = {**_NVFP4_PREFETCH_KWARGS, "local_files_only": True}
+    assert backend._dense_quant_prefetch_needed(_fam(), kwargs) is False
+    assert "_prequant_unreachable" not in kwargs
+
+
+def test_a_readable_prequant_still_drops_the_dense_shards(monkeypatch):
+    """Positive control: a repo that lists the checkpoint keeps the small download."""
+    import types
+
+    def _listing(repo_id):
+        return types.SimpleNamespace(
+            siblings = [types.SimpleNamespace(rfilename = "Z-Image-Turbo-NVFP4.pt", size = 4096)]
+        )
+
+    backend, _tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _listing)
+    assert backend._dense_quant_prefetch_needed(_fam(), dict(_NVFP4_PREFETCH_KWARGS)) is False
+
+
+def test_a_cached_prequant_drops_the_dense_shards_without_asking_the_hub(monkeypatch):
+    def _no_hub(repo_id):
+        raise AssertionError("a cached checkpoint must not cost a Hub round trip")
+
+    backend, tokens = _prefetch_backend(monkeypatch, cached = True, model_info = _no_hub)
+    assert backend._dense_quant_prefetch_needed(_fam(), dict(_NVFP4_PREFETCH_KWARGS)) is False
+    assert tokens == []
+
+
+def test_an_unanswerable_reachability_probe_keeps_the_prequant_verdict(monkeypatch):
+    """Offline or a Hub hiccup says nothing about access, so it must not widen a multi-GB pull."""
+
+    def _offline(repo_id):
+        raise ConnectionError("offline")
+
+    backend, _tokens = _prefetch_backend(monkeypatch, cached = False, model_info = _offline)
+    assert backend._dense_quant_prefetch_needed(_fam(), dict(_NVFP4_PREFETCH_KWARGS)) is False
+
+
+def test_the_download_plan_probes_with_the_user_token():
+    """download_plan builds its own kwargs for the prefetch decision; without the token threaded in,
+    a user granted access to a private prequant reads as refused and stages the dense shards."""
+    import inspect
+
+    from core.inference.diffusion import DiffusionBackend
+
+    src = inspect.getsource(DiffusionBackend.download_plan)
+    assert '"base_repo": base,' in src and '"hf_token": hf_token,' in src
+
+
+def test_a_full_fingerprint_pass_is_remembered_per_unchanged_file(monkeypatch, tmp_path):
+    import os
+
+    import core.inference.diffusion_compile_cache as cc
+    import core.inference.diffusion_prequant as pq
+
+    monkeypatch.setenv(cc._ENV_DIR, str(tmp_path / "cache"))
+    monkeypatch.delenv(pq.FINGERPRINT_MODE_ENV, raising = False)
+    ckpt_file = tmp_path / "w.safetensors"
+    ckpt_file.write_bytes(b"weights")
+    expected = {"a.weight": "x", "b.weight": "y"}
+    meta = {"fingerprint": {"modules": expected}}
+    calls: list = []
+
+    def fingerprint(state_dict, *, select = None):
+        calls.append(select)
+        return {"modules": dict(state_dict)}
+
+    monkeypatch.setattr(pq, "packed_weight_fingerprint", fingerprint)
+    assert pq._verify_packed_fingerprint(expected, meta, path = ckpt_file)
+    assert pq._verify_packed_fingerprint(expected, meta, path = ckpt_file)
+    assert len(calls) == 1
+    ckpt_file.write_bytes(b"weights, rebuilt")
+    os.utime(ckpt_file, ns = (1, 1))
+    assert not pq._verify_packed_fingerprint(
+        {"a.weight": "x", "b.weight": "z"}, meta, path = ckpt_file
+    )
+    assert not pq._verify_packed_fingerprint(
+        {"a.weight": "x", "b.weight": "z"}, meta, path = ckpt_file
+    )
+    assert len(calls) == 3
+    assert pq._verify_packed_fingerprint(expected, meta)
+    assert pq._verify_packed_fingerprint(expected, meta)
+    assert len(calls) == 5
+
+
+# ---- ComfyUI-format twins in the hosted chain ----
+
+
+def _own_names(names):
+    from core.inference.diffusion_prequant import is_comfy_prequant_filename
+    return tuple(n for n in names if not is_comfy_prequant_filename(n))
+
+
+@pytest.mark.parametrize(
+    "repo, family, scheme, env, own",
+    [
+        ("Tongyi-MAI/Z-Image-Turbo", None, "int8", {}, "Z-Image-Turbo-INT8-ConvRot.safetensors"),
+        ("Tongyi-MAI/Z-Image-Turbo", None, "fp8", {}, "Z-Image-Turbo-FP8.safetensors"),
+        (
+            "Qwen/Qwen-Image-2.1",
+            "qwen-image-2.1",
+            "int8",
+            {"UNSLOTH_DIFFUSION_INT8_CONVROT": "1"},
+            "Qwen-Image-2.1-INT8-ConvRot.safetensors",
+        ),
+        (
+            "Qwen/Qwen-Image-2.1",
+            "qwen-image-2.1",
+            "int8",
+            {},
+            "Qwen-Image-2.1-INT8-ConvRot.safetensors",
+        ),
+        (
+            "Qwen/Qwen-Image-2.1",
+            "qwen-image-2.1",
+            "int8",
+            {"UNSLOTH_DIFFUSION_INT8_CONVROT": "0"},
+            "Qwen-Image-2.1-INT8.safetensors",
+        ),
+        ("Qwen/Qwen-Image-2.1", "qwen-image-2.1", "fp8", {}, "Qwen-Image-2.1-FP8.safetensors"),
+        ("black-forest-labs/FLUX.2-klein-4B", None, "fp8", {}, "FLUX.2-klein-4B-FP8.safetensors"),
+    ],
+)
+def test_image_families_resolve_the_comfy_twin_and_keep_every_old_name(
+    monkeypatch, repo, family, scheme, env, own
+):
+    """New builds also ask for ``<stem>-ComfyUI.safetensors``: AHEAD of the artifact for int8 (the twin holds the
+    same codes and scales), BEHIND it for fp8 (ComfyUI's per-tensor fp8 is a coarser rounding). Older builds never
+    ask for it, and the chain without it is exactly what the kill switch (and an older build) resolves."""
+    from core.inference.diffusion_families import detect_family
+    from core.inference.diffusion_prequant import COMFY_PREQUANT_ENV, comfy_prequant_filename
+
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    fam = detect_family(repo, override = family) if family else detect_family(repo)
+    names = resolve_prequant_source(fam, scheme).candidate_filenames
+    twin = comfy_prequant_filename(own)
+    monkeypatch.setenv(COMFY_PREQUANT_ENV, "0")
+    old = resolve_prequant_source(fam, scheme).candidate_filenames
+    assert _own_names(names) == old
+    assert old[0] == own
+    if scheme == "int8":
+        assert names[0] == twin
+        # every artifact gets its twin right ahead of its first container
+        for name in old:
+            other = comfy_prequant_filename(name)
+            if other is not None and not name.endswith(".pt"):
+                assert names.index(other) == names.index(name) - 1
+    else:
+        stems = [n for n in names if n.startswith(own[: -len(".safetensors")] + ".")]
+        assert names.index(twin) == names.index(stems[-1]) + 1
+
+
+def test_comfy_twin_names():
+    from core.inference.diffusion_prequant import (
+        comfy_prequant_filename,
+        is_comfy_prequant_filename,
+        with_comfy_twins,
+    )
+
+    assert (
+        comfy_prequant_filename("Z-Image-Turbo-FP8.safetensors")
+        == "Z-Image-Turbo-FP8-ComfyUI.safetensors"
+    )
+    assert (
+        comfy_prequant_filename("Z-Image-Turbo-INT8.pt") == "Z-Image-Turbo-INT8-ComfyUI.safetensors"
+    )
+    # the legacy names, nested paths and the twin itself have none
+    assert comfy_prequant_filename("transformer_int8.pt") is None
+    assert comfy_prequant_filename("text_encoders/x.safetensors") is None
+    assert comfy_prequant_filename("A-FP8-ComfyUI.safetensors") is None
+    assert is_comfy_prequant_filename("A-FP8-ComfyUI.safetensors")
+    assert not is_comfy_prequant_filename("A-FP8.safetensors")
+    assert with_comfy_twins(["A-INT8.safetensors", "A-INT8.pt", "transformer_int8.pt"]) == [
+        "A-INT8-ComfyUI.safetensors",
+        "A-INT8.safetensors",
+        "A-INT8.pt",
+        "transformer_int8.pt",
+    ]
+    assert with_comfy_twins(
+        ["A-FP8.safetensors", "A-FP8.pt", "transformer_fp8.pt"], lead = False
+    ) == [
+        "A-FP8.safetensors",
+        "A-FP8.pt",
+        "A-FP8-ComfyUI.safetensors",
+        "transformer_fp8.pt",
+    ]
+    # a pickle-only chain still gets the twin ahead of it; a declared twin is not duplicated
+    assert with_comfy_twins(["A-INT8.pt"]) == ["A-INT8-ComfyUI.safetensors", "A-INT8.pt"]
+    assert with_comfy_twins(["A-INT8-ComfyUI.safetensors", "A-INT8.safetensors"]) == [
+        "A-INT8-ComfyUI.safetensors",
+        "A-INT8.safetensors",
+    ]
+
+
+def test_video_families_get_no_comfy_twin():
+    """Only the image denoiser loader reads the ComfyUI layout; video chains are unchanged."""
+    from core.inference.diffusion_prequant import is_comfy_prequant_filename
+    from core.inference.video_families import _FAMILIES as VIDEO_FAMILIES
+
+    checked = 0
+    for fam in VIDEO_FAMILIES:
+        for scheme, _repo in getattr(fam, "prequant_repos", ()) or ():
+            src = resolve_prequant_source(fam, scheme)
+            if src is None:
+                continue
+            checked += 1
+            assert not any(is_comfy_prequant_filename(n) for n in src.candidate_filenames)
+    assert checked
+
+
+def test_task_specific_artifacts_get_no_twin():
+    fam = dataclasses.replace(
+        _fam(prequant_repos = (("int8", "unsloth/Model-FP8"),)),
+        prequant_filenames = (("int8", "keyframe", "Model-KF-INT8.safetensors"),),
+    )
+    src = resolve_prequant_source(fam, "int8", task = "keyframe")
+    assert src.candidate_filenames == ("Model-KF-INT8.safetensors",)

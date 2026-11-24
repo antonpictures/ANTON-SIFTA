@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { computeStats } from "../src/features/api-monitor/stats.ts";
+import type { ApiMonitorEntry } from "../src/features/chat/types/api.ts";
+
+function queuedEntry(overrides: Partial<ApiMonitorEntry> = {}): ApiMonitorEntry {
+  return {
+    id: "apireq_1",
+    endpoint: "/v1/chat/completions",
+    method: "POST",
+    model: "local-model",
+    prompt_preview: "hello",
+    reply_preview: "hi",
+    prompt_truncated: false,
+    reply_truncated: false,
+    status: "completed",
+    started_at: 1_000_000,
+    updated_at: 1_000_010,
+    finished_at: 1_000_010,
+    duration_ms: 10_000,
+    ttft_ms: 9_000,
+    decode_ms: 1_000,
+    completion_tokens: 50,
+    ...overrides,
+  } as ApiMonitorEntry;
+}
+
+test("throughput rates the decode window, not the queue wait", () => {
+  const stats = computeStats([queuedEntry()]);
+  assert.equal(stats.tokensPerSecond, 50);
+  assert.equal(stats.avgDurationMs, 10_000);
+});
+
+test("a reply with no decode window is left out of the rate", () => {
+  const stats = computeStats([
+    queuedEntry({ ttft_ms: null, decode_ms: null }),
+  ]);
+  assert.equal(stats.tokensPerSecond, null);
+  assert.equal(stats.totalTokens, 50);
+});
+
+test("rating is total tokens over total decode time, not a mean of rates", () => {
+  const stats = computeStats([
+    queuedEntry({ id: "a", completion_tokens: 1, decode_ms: 1_000 }),
+    queuedEntry({ id: "b", completion_tokens: 99, decode_ms: 1_000 }),
+  ]);
+  assert.equal(stats.tokensPerSecond, 50);
+});
+
+test("tokens split into what requests sent in and what the model sent back", () => {
+  const stats = computeStats([
+    queuedEntry({ id: "a", prompt_tokens: 30, completion_tokens: 10 }),
+    queuedEntry({
+      id: "b",
+      prompt_tokens: 20,
+      completion_tokens: null,
+      total_tokens: 25,
+    }),
+    queuedEntry({ id: "l", kind: "lifecycle", prompt_tokens: 999 }),
+  ]);
+  assert.equal(stats.inputTokens, 50);
+  assert.equal(stats.outputTokens, 15);
+  assert.equal(stats.totalTokens, 65);
+});

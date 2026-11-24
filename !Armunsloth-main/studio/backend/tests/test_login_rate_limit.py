@@ -1,0 +1,445 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+"""Login rate-limit buckets key on (client IP, lowercased username); a 429 body must not leak the IP."""
+
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
+
+@pytest.fixture(autouse = True)
+def _reset_buckets():
+    """Clear the in-memory bucket dicts between tests."""
+    from routes import auth as auth_routes
+
+    auth_routes._LOGIN_BUCKETS.clear()
+    auth_routes._LOGIN_IP_BUCKETS.clear()
+    for _shard in auth_routes._LOGIN_IP_OVERFLOW:
+        _shard.clear()
+    auth_routes._LAST_IP_PRUNE = 0.0
+    yield
+    auth_routes._LOGIN_BUCKETS.clear()
+    auth_routes._LOGIN_IP_BUCKETS.clear()
+    for _shard in auth_routes._LOGIN_IP_OVERFLOW:
+        _shard.clear()
+    auth_routes._LAST_IP_PRUNE = 0.0
+
+
+@pytest.fixture
+def env_no_proxy(monkeypatch):
+    monkeypatch.delenv("UNSLOTH_STUDIO_TRUST_FORWARDED", raising = False)
+
+
+@pytest.fixture
+def env_trust_proxy(monkeypatch):
+    monkeypatch.setenv("UNSLOTH_STUDIO_TRUST_FORWARDED", "1")
+
+
+class _FakeRequest:
+    def __init__(
+        self,
+        client_host = "127.0.0.1",
+        headers = None,
+    ):
+        from starlette.datastructures import Headers
+        self.client = type("Client", (), {"host": client_host})()
+        self.headers = Headers(headers or {})
+
+
+class TestClientIp:
+    def test_uses_request_client_host_by_default(self, env_no_proxy):
+        from routes.auth import _client_ip
+        assert _client_ip(_FakeRequest("203.0.113.5")) == "203.0.113.5"
+
+    def test_ignores_xff_when_trust_off(self, env_no_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest(
+            "127.0.0.1",
+            {"x-forwarded-for": "198.51.100.7, 10.0.0.1"},
+        )
+        # Proxy headers are spoofable; trust them only with the opt-in.
+        assert _client_ip(req) == "127.0.0.1"
+
+    def test_honours_rightmost_xff_when_trust_on(self, env_trust_proxy):
+        # The trusted proxy appends the real client; the entries left of it are the client's own.
+        from routes.auth import _client_ip
+        req = _FakeRequest(
+            "127.0.0.1",
+            {"x-forwarded-for": "10.0.0.1, 198.51.100.7"},
+        )
+        assert _client_ip(req) == "198.51.100.7"
+
+    def test_falls_back_to_client_host_when_xff_missing(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        assert _client_ip(_FakeRequest("203.0.113.9")) == "203.0.113.9"
+
+    def test_honours_forwarded_header_when_trust_on(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest(
+            "127.0.0.1",
+            {"forwarded": 'for="198.51.100.42";proto=https'},
+        )
+        assert _client_ip(req) == "198.51.100.42"
+
+    def test_unknown_when_no_client(self, env_no_proxy):
+        from routes.auth import _client_ip
+
+        req = _FakeRequest()
+        req.client = None
+        assert _client_ip(req) == "_unknown"
+
+    def test_xff_strips_ipv4_port(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest("127.0.0.1", {"x-forwarded-for": "10.0.0.1, 198.51.100.7:50001"})
+        assert _client_ip(req) == "198.51.100.7"
+
+    def test_xff_strips_bracketed_ipv6_port(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest("127.0.0.1", {"x-forwarded-for": "10.0.0.1, [2001:db8::1]:50001"})
+        assert _client_ip(req) == "2001:db8::1"
+
+    def test_forwarded_strips_ipv4_port(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest("127.0.0.1", {"forwarded": 'for="198.51.100.7:50001";proto=https'})
+        assert _client_ip(req) == "198.51.100.7"
+
+    def test_forwarded_strips_bracketed_ipv6_port(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest("127.0.0.1", {"forwarded": 'for="[2001:db8::1]:50001";proto=https'})
+        assert _client_ip(req) == "2001:db8::1"
+
+    def test_forwarded_isolates_last_element(self, env_trust_proxy):
+        # The last Forwarded element is the trusted proxy's; earlier ones are client-controlled
+        # and would let a caller pick a fresh bucket per guess.
+        from routes.auth import _client_ip
+        req = _FakeRequest(
+            "127.0.0.1",
+            {"forwarded": "for=10.0.0.1, for=198.51.100.42;proto=https"},
+        )
+        assert _client_ip(req) == "198.51.100.42"
+
+    def test_xff_invalid_ip_falls_back_to_client_host(self, env_trust_proxy):
+        from routes.auth import _client_ip
+        req = _FakeRequest("127.0.0.1", {"x-forwarded-for": "not-an-ip"})
+        assert _client_ip(req) == "127.0.0.1"
+
+
+class TestBucketKeyAndBlocking:
+    def test_record_per_user_isolates_other_users(self, env_no_proxy):
+        from routes.auth import (
+            _bucket_key,
+            _record_login_failure,
+            _login_blocked,
+            _LOGIN_MAX_FAILS,
+        )
+
+        req = _FakeRequest("203.0.113.1")
+        for _ in range(_LOGIN_MAX_FAILS):
+            _record_login_failure(_bucket_key(req, "alice"))
+        assert _login_blocked(_bucket_key(req, "alice")) > 0
+        assert _login_blocked(_bucket_key(req, "bob")) == 0
+
+    def test_record_per_ip_isolates_other_ips(self, env_no_proxy):
+        from routes.auth import (
+            _bucket_key,
+            _record_login_failure,
+            _login_blocked,
+            _LOGIN_MAX_FAILS,
+        )
+
+        req_a = _FakeRequest("203.0.113.1")
+        req_b = _FakeRequest("203.0.113.2")
+        for _ in range(_LOGIN_MAX_FAILS):
+            _record_login_failure(_bucket_key(req_a, "alice"))
+        assert _login_blocked(_bucket_key(req_a, "alice")) > 0
+        assert _login_blocked(_bucket_key(req_b, "alice")) == 0
+
+    def test_username_lowercased_in_key(self, env_no_proxy):
+        from routes.auth import _bucket_key
+
+        req = _FakeRequest("203.0.113.1")
+        assert _bucket_key(req, "Alice") == _bucket_key(req, "alice")
+        assert _bucket_key(req, "ALICE") == _bucket_key(req, "alice")
+
+    def test_rotating_usernames_hit_ip_aggregate_cap(self, env_no_proxy, monkeypatch):
+        """Spraying nonexistent usernames from one IP must still be throttled."""
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        req = _FakeRequest("203.0.113.10")
+        for idx in range(5):
+            auth_routes._record_login_failure(auth_routes._unknown_user_key(req))
+        assert auth_routes._login_blocked(auth_routes._unknown_user_key(req)) > 0
+
+    def test_unknown_user_bucket_is_single_sentinel(self, env_no_proxy):
+        """Random unknown usernames from one IP collapse to one bucket."""
+        from routes import auth as auth_routes
+
+        req = _FakeRequest("203.0.113.11")
+        unknown_key = auth_routes._unknown_user_key(req)
+        for _ in range(20):
+            auth_routes._record_login_failure(unknown_key)
+        ip_keys = [k for k in auth_routes._LOGIN_BUCKETS if k[0] == "203.0.113.11"]
+        assert len(ip_keys) == 1
+        assert ip_keys[0][1].startswith("\x00")
+
+    def test_account_bucket_cap_bounded(self, env_no_proxy, monkeypatch):
+        """The per-account bucket dict cannot grow without bound."""
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        req = _FakeRequest("203.0.113.12")
+        for idx in range(50):
+            auth_routes._record_login_failure((req.client.host, f"user-{idx}"))
+        assert len(auth_routes._LOGIN_BUCKETS) <= 10
+
+    def test_ip_bucket_cap_bounds_without_disabling_throttling(self, env_no_proxy, monkeypatch):
+        """The per-IP dict is bounded, but saturating it must NOT disable
+        throttling: a new IP that keeps failing after the cap is hit is still
+        blocked (now via the shared overflow counter)."""
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        for idx in range(50):
+            auth_routes._record_login_failure((f"198.51.100.{idx}", "admin"))
+        assert len(auth_routes._LOGIN_IP_BUCKETS) <= 10
+
+        victim = ("203.0.113.99", "admin")
+        for _ in range(5):
+            auth_routes._record_login_failure(victim)
+        assert auth_routes._login_blocked(victim) > 0
+
+    def test_saturating_spray_cannot_reset_a_hot_ip_bucket(self, env_no_proxy, monkeypatch):
+        """Eviction must not pop a blocked IP's bucket under a spray of fresh IPs, or the attacker
+        resets it."""
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+
+        attacker = ("203.0.113.7", "admin")
+        for _ in range(5):
+            auth_routes._record_login_failure(attacker)
+        assert auth_routes._login_blocked(attacker) > 0
+
+        for idx in range(100):
+            auth_routes._record_login_failure((f"198.51.100.{idx}", "admin"))
+
+        assert auth_routes._login_blocked(attacker) > 0
+
+    def test_overflow_is_sharded_so_a_hot_ip_does_not_block_unrelated_ips(
+        self, env_no_proxy, monkeypatch
+    ):
+        """A saturating spray must not globally deny login: a hot overflow shard
+        throttles only the IPs that hash to it, not every new unbucketed client.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+
+        attacker_ip = "198.51.100.7"
+        for _ in range(5):
+            auth_routes._record_login_failure((attacker_ip, "admin"))
+        assert auth_routes._login_blocked((attacker_ip, "admin")) > 0
+
+        # Sharded overflow keeps per-source isolation; a global counter would block it.
+        attacker_shard = auth_routes._overflow_shard(attacker_ip)
+        victim_ip = next(
+            f"203.0.113.{i}"
+            for i in range(256)
+            if auth_routes._overflow_shard(f"203.0.113.{i}") is not attacker_shard
+        )
+        assert auth_routes._login_blocked((victim_ip, "admin")) == 0
+
+    def test_overflow_throttle_survives_capacity_freeing(self, env_no_proxy, monkeypatch):
+        """A source throttled via overflow must stay throttled even if a bucket
+        frees up before the window expires; otherwise a fresh bucket resets it.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        attacker = ("198.51.100.7", "admin")
+        for _ in range(5):
+            auth_routes._record_login_failure(attacker)
+        assert auth_routes._login_blocked(attacker) > 0
+
+        auth_routes._clear_login_bucket(("10.0.0.0", "admin"))
+        assert len(auth_routes._LOGIN_IP_BUCKETS) < auth_routes._LOGIN_MAX_BUCKETS
+
+        assert auth_routes._login_blocked(attacker) > 0
+        auth_routes._record_login_failure(attacker)
+        assert auth_routes._login_blocked(attacker) > 0
+
+    def test_overflow_shard_is_memory_bounded_under_cardinality_spray(
+        self, env_no_proxy, monkeypatch
+    ):
+        """A high-cardinality spray must not grow overflow memory without bound:
+        each shard tracks at most _LOGIN_IP_OVERFLOW_MAX distinct IPs.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_OVERFLOW_MAX", 8)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        for idx in range(5000):
+            auth_routes._record_login_failure((f"198.51.{idx // 256}.{idx % 256}", "admin"))
+
+        assert all(len(shard) <= 8 for shard in auth_routes._LOGIN_IP_OVERFLOW)
+
+    def test_overflow_eviction_does_not_inherit_count_onto_new_ip(self, env_no_proxy, monkeypatch):
+        """Evicting a hot entry to make room must not hand its failure count to the
+        new source; one attempt from an unrelated IP must not 429 it.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_OVERFLOW_MAX", 2)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+        shard0 = auth_routes._LOGIN_IP_OVERFLOW[0]
+        monkeypatch.setattr(auth_routes, "_overflow_shard", lambda _ip: shard0)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        for _ in range(5):
+            auth_routes._record_login_failure(("198.51.100.1", "admin"))
+        for _ in range(5):
+            auth_routes._record_login_failure(("198.51.100.2", "admin"))
+        assert len(shard0) == 2
+
+        new_ip = ("203.0.113.50", "admin")
+        auth_routes._record_login_failure(new_ip)
+        assert auth_routes._login_blocked(new_ip) == 0
+
+    def test_overflow_count_migrates_into_new_bucket(self, env_no_proxy, monkeypatch):
+        """Straddling the overflow -> bucket transition must not double the per-IP
+        limit: the overflow count carries into the freshly created bucket.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        attacker = ("198.51.100.7", "admin")
+        for _ in range(4):
+            auth_routes._record_login_failure(attacker)
+        assert auth_routes._login_blocked(attacker) == 0
+
+        auth_routes._clear_login_bucket(("10.0.0.0", "admin"))
+        auth_routes._record_login_failure(attacker)
+        assert auth_routes._login_blocked(attacker) > 0
+
+    def test_overflow_migration_is_bounded_not_one_entry_per_failure(
+        self, env_no_proxy, monkeypatch
+    ):
+        """Overflow migration allocates at most the per-IP threshold of entries, not one per
+        recorded failure."""
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100000)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        attacker_ip = "198.51.100.7"
+        attacker = (attacker_ip, "admin")
+        for _ in range(5000):
+            auth_routes._record_login_failure(attacker)
+        entry = auth_routes._overflow_shard(attacker_ip).get(attacker_ip)
+        assert entry is not None and entry[0] <= auth_routes._LOGIN_IP_MAX_FAILS
+
+        auth_routes._clear_login_bucket(("10.0.0.0", "admin"))
+        auth_routes._record_login_failure(attacker)
+        bucket = auth_routes._LOGIN_IP_BUCKETS[attacker_ip]
+        assert len(bucket) <= auth_routes._LOGIN_IP_MAX_FAILS + 1
+        assert auth_routes._login_blocked(attacker) > 0
+
+    def test_successful_login_clears_overflow_throttle(self, env_no_proxy, monkeypatch):
+        """A successful login resets the IP's throttle, including overflow, so a
+        single later typo is not immediately blocked.
+        """
+        from routes import auth as auth_routes
+
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_BUCKETS", 10)
+        monkeypatch.setattr(auth_routes, "_LOGIN_IP_MAX_FAILS", 5)
+        monkeypatch.setattr(auth_routes, "_LOGIN_MAX_FAILS", 100)
+
+        for idx in range(10):
+            auth_routes._record_login_failure((f"10.0.0.{idx}", "admin"))
+        ip = ("198.51.100.7", "admin")
+        for _ in range(5):
+            auth_routes._record_login_failure(ip)
+        assert auth_routes._login_blocked(ip) > 0
+
+        auth_routes._clear_login_bucket(ip)
+        assert auth_routes._login_blocked(ip) == 0
+        auth_routes._record_login_failure(ip)
+        assert auth_routes._login_blocked(ip) == 0
+
+
+class TestLogin429Body:
+    @pytest.fixture
+    def login_client(self, tmp_path, monkeypatch):
+        from auth import storage
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from routes.auth import router as auth_router
+        import secrets as _secrets
+
+        monkeypatch.setattr(storage, "DB_PATH", tmp_path / "auth.db")
+        monkeypatch.setattr(storage, "_BOOTSTRAP_PW_PATH", tmp_path / ".bootstrap_password")
+        monkeypatch.setattr(storage, "_bootstrap_password", None)
+        storage.create_initial_user(
+            username = storage.DEFAULT_ADMIN_USERNAME,
+            password = "human-password-123",
+            jwt_secret = _secrets.token_urlsafe(64),
+            must_change_password = False,
+        )
+
+        app = FastAPI()
+        app.include_router(auth_router, prefix = "/api/auth")
+        return TestClient(app)
+
+    def test_429_detail_does_not_leak_ip(self, env_no_proxy, login_client):
+        from routes.auth import _LOGIN_MAX_FAILS
+
+        for _ in range(_LOGIN_MAX_FAILS):
+            r = login_client.post(
+                "/api/auth/login",
+                json = {"username": "unsloth", "password": "wrong"},
+            )
+            assert r.status_code == 401
+        r = login_client.post(
+            "/api/auth/login",
+            json = {"username": "unsloth", "password": "wrong"},
+        )
+        assert r.status_code == 429
+        detail = r.json()["detail"]
+        assert "127.0.0.1" not in detail
+        assert "Too many" in detail
+        assert "Retry-After" in r.headers

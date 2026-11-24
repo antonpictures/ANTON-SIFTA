@@ -7,6 +7,11 @@
       "port": 3080
     },
     {
+      "name": "coin-site",
+      "url": "http://localhost:3002",
+      "port": 3002
+    },
+    {
       "name": "sifta-ui-scratch",
       "runtimeExecutable": "/opt/homebrew/bin/dsh",
       "runtimeArgs": ["web", "--no-open", "--port", "3180"],

@@ -379,7 +379,7 @@ def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> 
         source="canonical",
         note="Uses signed-in Codex CLI/OAuth as a teacher cortex.",
     )
-    # Mercury 2.5 — Inception Labs cloud cortex. She is Alice's fast public voice on
+    # Mercury 2.5/3 — Inception Labs cloud cortex. She is Alice's fast public voice on
     # the other lane and a candidate cortex for the desk, but she is not an ollama
     # model, so the local inventory never listed her. The key file is the tell.
     if _inception_key_present():
@@ -389,6 +389,13 @@ def list_cortex_models(*, include_grok: bool = True, timeout_s: float = 3.0) -> 
             available=True,
             source="canonical",
             note="Inception Labs diffusion cortex (~1000 tok/s). Key present on this Mac.",
+        )
+        specs["mercury-3"] = CortexModelSpec(
+            model_id="mercury-3",
+            provider="inception",
+            available=True,
+            source="canonical",
+            note="Inception Labs diffusion cortex v3 (improved reasoning). Key present on this Mac.",
         )
 
     for model in (CANONICAL_OLLAMA_DAILY, CANONICAL_OLLAMA_GEMMA4_SMALL):

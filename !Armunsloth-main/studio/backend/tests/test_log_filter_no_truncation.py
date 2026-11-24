@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Long strings with commas or slashes pass through unmodified, while lease redaction still fires."""
+
+from loggers.handlers import filter_sensitive_data
+
+
+def _run(event_dict):
+    return filter_sensitive_data(logger = None, method_name = "info", event_dict = event_dict)
+
+
+class TestNoTruncation:
+    def test_gguf_size_summary_survives(self):
+        event = (
+            "GGUF size: 232.9 GB, est. KV cache: 87.0 GB, context: 259072, "
+            "GPUs free: [(0, 80000), (1, 80000)], selected: [0, 1], --fit: off"
+        )
+        out = _run({"event": event})
+        assert out["event"] == event
+        assert "..." not in out["event"]
+
+    def test_mmproj_path_survives(self):
+        event = (
+            "Using mmproj for vision: "
+            "/home/user/.cache/unsloth/models/some-vision-model-uncensored-r1-distill/mmproj-F16.gguf"
+        )
+        out = _run({"event": event})
+        assert out["event"] == event
+
+    def test_llama_server_command_survives(self):
+        event = (
+            "Starting llama-server: /home/user/.unsloth/studio/llama.cpp/build/bin/llama-server "
+            "-m /home/user/.cache/unsloth/models/foo.gguf --port 8090 -c 259072 --parallel 1 "
+            "--flash-attn on --mmproj /home/user/.cache/unsloth/models/mmproj-F16.gguf"
+        )
+        out = _run({"event": event})
+        assert out["event"] == event
+
+    def test_traceback_with_paths_survives(self):
+        traceback_str = (
+            "Traceback (most recent call last):\n"
+            '  File "/home/user/.unsloth/studio/unsloth_studio/lib/python3.11/site-packages/'
+            'studio/backend/core/inference/llama_cpp.py", line 2312, in start\n'
+            '    raise RuntimeError("llama-server crashed: bad alloc, /dev/shm full")\n'
+            "RuntimeError: llama-server crashed: bad alloc, /dev/shm full"
+        )
+        out = _run({"event": "llama-server crashed", "exception": traceback_str})
+        assert out["exception"] == traceback_str
+        assert "..." not in out["exception"]
+
+    def test_nested_long_string_in_dict_survives(self):
+        long_value = (
+            "/very/long/path/with,many,commas,and/slashes/that/used/to/get/"
+            "chopped/to/twenty/chars/file.gguf"
+        )
+        out = _run({"event": "load", "details": {"path": long_value}})
+        assert out["details"]["path"] == long_value
+
+
+class TestNativePathLeaseRedactionStillWorks:
+    """Guards PR #5246's redaction from being lost alongside the truncation block."""
+
+    def test_inline_native_path_lease_value_redacted(self):
+        event = (
+            "rejected request: native_path_lease=AAAAAA.BBBBBB extra context "
+            "with /some/path,values"
+        )
+        out = _run({"event": event})
+        assert "AAAAAA.BBBBBB" not in out["event"]
+        assert "<redacted native path lease>" in out["event"]
+
+    def test_camelcase_native_path_lease_dict_key_redacted(self):
+        out = _run({"event": "load", "nativePathLease": "AAAAAA.BBBBBB"})
+        assert out["nativePathLease"] == "<redacted native path lease>"
+
+    def test_snakecase_native_path_lease_dict_key_redacted(self):
+        out = _run({"event": "load", "native_path_lease": "AAAAAA.BBBBBB"})
+        assert out["native_path_lease"] == "<redacted native path lease>"
+
+    def test_nested_native_path_lease_key_redacted(self):
+        out = _run({"event": "load", "payload": {"nativePathLease": "AAAAAA.BBBBBB"}})
+        assert out["payload"]["nativePathLease"] == "<redacted native path lease>"
+
+    def test_url_credentials_redacted_in_strings_args_and_exceptions(self):
+        url = "http://bob:hunter2@127.0.0.1:9/v1/models"
+        out = _run(
+            {
+                "event": f"Failed to list models: {url}",
+                "positional_args": ("custom", url),
+                "exc": ValueError(f"Client error for url '{url}'"),
+            }
+        )
+        assert "hunter2" not in repr(out)
+        assert "http://<redacted>@127.0.0.1:9/v1/models" in out["event"]
+
+    def test_url_credential_scan_stays_linear_on_long_unbroken_text(self):
+        import time
+
+        start = time.perf_counter()
+        out = _run({"event": "a." * 50000 + " s3://key:secret@bucket/k"})
+        assert time.perf_counter() - start < 1.0
+        assert out["event"].endswith(" s3://<redacted>@bucket/k")

@@ -1,0 +1,32 @@
+#!/bin/bash
+# Alice speak — turn text into live voice using the fast local TTS (Kokoro, ~200ms),
+# then play it through the Mac speakers. Use from OpenCode or any terminal.
+#
+#   alice-say "Hello George, this is Alice."
+#   echo "the article says..." | alice-say
+#
+# Env: FAST_TTS_URL (default http://127.0.0.1:8101/api/tts-fast)
+
+set -euo pipefail
+URL="${FAST_TTS_URL:-http://127.0.0.1:8101/api/tts-fast}"
+
+if [ "$#" -gt 0 ]; then
+  TEXT="$*"
+else
+  TEXT="$(cat)"
+fi
+
+# JSON-escape the text with python so quotes/newlines are safe.
+PAYLOAD="$(/usr/local/bin/python3 -c 'import json,sys; print(json.dumps({"text":sys.argv[1]}))' "$TEXT")"
+TMP="$(mktemp /private/var/folders/gv/83jpzrx56z7153vpzrv43vr80000gn/T/opencode/alice-say.XXXXXX.wav)"
+trap 'rm -f "$TMP"' EXIT
+
+curl -s --max-time 20 -X POST "$URL" \
+  -H 'Content-Type: application/json' \
+  -d "$PAYLOAD" -o "$TMP"
+
+if [ ! -s "$TMP" ]; then
+  echo "alice-say: no audio from $URL" >&2
+  exit 1
+fi
+afplay "$TMP"

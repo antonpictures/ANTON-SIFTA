@@ -1,0 +1,278 @@
+================================================================================
+ SIFTA: PYTHON -> RUST CONVERSION PLAN
+================================================================================
+ Date:        2026-10-25
+ Owner:       Alice (coding arm)  / ioanganton
+ Source path: /Users/ioanganton/Music/ANTON_SIFTA
+ Status:      PLANNING (design + phased execution guide)
+ Tooling:     cargo, clippy, miri, serde, tokio, pyo3, uv, pytest
+
+--------------------------------------------------------------------------------
+ 0. EXECUTIVE SUMMARY  (READ FIRST)
+--------------------------------------------------------------------------------
+ Scope reality (measured from the repo):
+   - Python LOC:      ~11,500,000
+   - Python files:    ~28,492  (.py, excluding .venv/Archive/distro_build)
+   - System/ dir:     ~149 MB, ~1,500 "alice_*" organ modules
+   - Top-level apps:  sifta_os_desktop.py (~305 KB), sifta_mcp_server.py (~53 KB)
+   - Heavy deps:      PyQt6/PyQt6-WebEngine (GUI), faster-whisper + Piper +
+                       CosyVoice2 (speech), MLX VLM (Apple-Silicon vision),
+                       FastAPI/uvicorn, cryptography (ecdsa), matplotlib, numpy,
+                       sounddevice, websockets, QR pairing, psutil telemetry.
+
+ Conclusion:
+   A wholesale 1:1 port of all ~11.5M lines to Rust is NOT a single project.
+   It is a multi-quarter engineering program, and doing it naively (rewriting
+   the GUI, the speech models, the MLX VLM, and the browser bridge in Rust)
+   would throw away the hardest-working parts of the system and burn years.
+
+   RECOMMENDED TARGET MODEL: HYBRID + INCREMENTAL.
+     - PORT TO RUST: the core runtime, typed streams, transport, blueprints,
+       replay/sim, receipt ledger, scheduling, cryptography, state store.
+     - KEEP IN PYTHON (as sidecars): PyQt6 GUI, speech (whisper/Piper/CosyVoice),
+       MLX VLM vision, browser bridge, any GPU/ML model code.
+     - BRIDGE: Python sidecars talk to the Rust core over IPC / WebSockets /
+       HTTP-MCP, exactly the pattern sifta.core.transport ALREADY defines.
+
+   This keeps every high-value, hard-to-port subsystem untouched while still
+   getting Rust's safety, concurrency, and speed where it matters.
+
+   Minimum-viable slice (Week 1): port sifta/core (8 small, clean modules) to a
+   Rust crate. It is pure stdlib, has clear types, and is directly unit-
+   testable. This validates the whole approach with a real, testable win.
+
+--------------------------------------------------------------------------------
+ 1. WHAT SIFTA ACTUALLY IS  (from inspection, not assumption)
+--------------------------------------------------------------------------------
+ sifta/core  = a "stigmergic" body-pipe framework (DimOS-inspired):
+   - stream.py          typed In/Out channels over a shared "pheromone field"
+   - blueprint.py       ModuleSpec / PortSpec / autoconnect (wire matching
+                         Out->In ports on a StreamBus, no central orchestrator)
+   - transport.py       InProcessTransport / LocalhostIPCTransport / remote;
+                         publish/subscribe of dict envelopes
+   - replay.py         ReplayMode / SimulationMode / assert_sim_before_real
+   - maturity.py       EMBODIMENT_MATURITY (green/yellow/orange/red per organ)
+   - spy.py           StreamSpy (observe the field)
+   => This is the cleanest, most self-contained, most portable part of SIFTA.
+
+ System/  = the "alice" organ ecosystem (1,500 modules, ~149 MB).
+   Hardware body, camera/speech, consciousness, continuity, memory, finance,
+   stigmergic robotics, trading, web search, etc. Much of this is opinionated,
+   self-referential, and some is experimental (maturity: yellow/orange).
+   => This is where 90% of the effort would live, and where 1:1 porting is
+      riskiest. Strategy: port the LOAD-BEARING, well-tested subgraphs only.
+
+ Top-level apps = desktop app (PyQt6) + MCP/HTTP server + many CLI helpers.
+   => GUI and model integration are explicitly NOT Rust goals.
+
+--------------------------------------------------------------------------------
+ 2. DEFINITIONS & GOALS
+--------------------------------------------------------------------------------
+ Migration tiers (label every module with exactly one):
+   TIER-A  FULL RUST  : port the logic into a Rust crate; Python deleted.
+   TIER-B  FFI/SIDECAR: logic stays in Python; called from Rust via pyo3/
+                         subprocess/IPC. (Default for GUI, speech, vision,
+                         browser, GPU/ML.)
+   TIER-C  UNCHANGED : stays Python; not a migration target. (Throwaway scripts,
+                         old_alice.py, orig_widget.py, patch_*.py, etc.)
+
+ GOALS:
+   G1  Rust core that replaces sifta/core semantics 1:1 (streams, blueprints,
+        transport, replay, maturity, spy) with provable parity.
+   G2  Rust scheduler / receipt ledger / state store for the load-bearing
+        System/ agent runtime.
+   G3  Faster, safer, memory-bounded hot paths (concurrency, pub/sub, IPC).
+   G4  Zero regression: Python behavior is the gold standard; Rust must match.
+   G5  Python sidecar model preserves GUI/speech/vlm features unchanged.
+
+ NON-GOALS:
+   - Rewriting the PyQt6 GUI in Rust.
+   - Rewriting whisper/Piper/CosyVoice2/MLX-VLM models in Rust.
+   - Reimplementing the browser bridge.
+   - Porting the 28k throwaway/helper scripts.
+
+--------------------------------------------------------------------------------
+ 3. TARGET ARCHITECTURE
+--------------------------------------------------------------------------------
+ (This is the shape the system converges to. Keep it a goal, not a law.)
+
+  +-------------------+        +---------------------------+
+  |  RUST CORE        |        |  PYTHON SIDECAR (untouched)  |
+  |  - crate: core    |<==IPC==>|  - PyQt6 desktop app          |
+  |  - streams       |  (named  |  - faster-whisper / Piper /   |
+  |  - blueprints    |   topics) |    CosyVoice2 (speech)       |
+  |  - transport     |         |  - MLX VLM (vision)             |
+  |  - replay/sim    |         |  - browser bridge               |
+  |  - receipt ledger|         |  - any GPU/ML model code        |
+  |  - state store   |         |                                   |
+  +-------------------+        +---------------------------+
+       |
+       |   scheduler + receipt ledger (RUST)
+       |   agent runtime for LOAD-BEARING System/ subgraphs (RUST)
+       |
+  +---------------------------+
+  |  "alice" organs = RUST where portable,
+  |  PYTHON sidecars where not, sharing the
+  |  same typed-stream field contract.
+  +---------------------------+
+
+  KEY DECISIONS (flagged below for you to answer):
+   D1  Where does the "body/state" live: in-process Rust (current design),
+        or split across processes? (Affects transport layer heavily.)
+   D2  Do you want the GUI on macOS only, or also Linux/Android/Windows?
+        (Rust cannot host PyQt6; hybrid needs the GUI sidecar per-OS.)
+   D3  Is there a performance target? (e.g. "X ms end-to-end," "10x faster"?)
+        Without one, scope is guessed; with one, Phase ordering is exact.
+   D4  Which System/ "organs" are LOAD-BEARING vs experimental? (Drives
+        the port map in Section 5.)
+
+--------------------------------------------------------------------------------
+ 4. MIGRATION PHASES
+--------------------------------------------------------------------------------
+ PHASE 0  RECON & HARNESS  (Week 0-2)
+   0.1  Freeze a baseline commit tag of the Python tree.
+   0.2  Write a golden-test harness: capture outputs/receipts of key flows
+         (sifta.core flows first) as fixtures. This is the parity net.
+   0.3  Produce a Module Inventory (CSV/markdown): file, LOC, purpose,
+         tier (A/B/C), port-priority, reason. (This is the single most
+         valuable artifact of Phase 0.)
+   0.4  Set up the Rust workspace + CI (cargo fmt/clippy/miri, pytest in
+         parallel). Add a `Makefile` that runs both suites.
+   0.5  Agree the TIER map (A/B/C) with me before any porting.
+   Deliverable: plan of action, inventory CSV, harness, CI, zero code change.
+
+ PHASE 1  PORT sifta/core  ->  Rust crate  (Week 1-3)
+   1.1  `cargo new sifta-core` (+ crates: serde, uuid, tokio, chrono).
+   1.2  Port stream.py -> types.rs, channels.rs (typed In/Out, StreamBus).
+   1.3  Port blueprint.py -> blueprint.rs (ModuleSpec/PortSpec/autoconnect).
+   1.4  Port transport.rs -> transport.rs (InProcess, LocalhostIPC, remote).
+   1.5  Port replay.py -> replay.rs, maturity.py -> maturity.rs,
+        spy.py -> spy.rs.
+   1.6  Golden tests: Python fixtures -> Rust asserts, run in CI.
+   1.7  Dual-run verification: same inputs, assert identical outputs.
+   Gate: 100% test parity for sifta/core, Rust binary runs standalone.
+
+ PHASE 2  SYSTEM AGENT RUNTIME  (Week 4-8)  [gate: inventory + parity]
+   2.1  From inventory, extract the LOAD-BEARING agent runtime: scheduler,
+         receipt ledger, continuity, memory hooks, "apoptosis" lifecycle,
+         and the message bus that stitches "organs" together.
+   2.2  Port that subgraph to Rust, keeping every external IO (GUI, speech,
+         vision, browser) as TIER-B Python sidecars behind named-topic IPC.
+   2.3  For each ported module: golden tests + differential vs Python.
+   Gate: Rust runtime drives the SAME flows as Python with parity.
+
+ PHASE 3  SERVICES + PERFORMANCE  (Week 9-12)
+   3.1  Move cryptography (ecdsa sign), local network discovery, telemetry,
+         and any CPU-hot path to Rust.
+   3.2  Replace FastAPI/uvicorn HTTP-MCP with a Rust async HTTP server
+         (axum/hyper) EXPOSING THE SAME ENDPOINTS (byte-identical schemas).
+   3.3  Keep speech/vision/browser in Python; expose them to the Rust core
+         via pyo3 subprocess + structured envelopes.
+   Gate: end-to-end performance target (D3) met; zero behavior drift.
+
+ PHASE 4  GUI STRATEGY  (Week 13-16)  [decision D2]
+   Option A (recommended): KEEP PyQt6 as a TIER-B sidecar; the Rust core
+       renders state/events into the PyQt6 app via IPC. GUI features unchanged.
+   Option B (only if cross-OS GUI is a hard requirement): build a native
+       Tauri/webview shell (a pattern already present in the repo at
+       `!Armunsloth-main/studio/src-tauri`) and port the GUI STATE MODEL to
+       Rust. This is a multi-month effort, not a port, and is the most
+       expensive risk.
+   Decide A vs B from D2.  Default = A.
+
+ PHASE 5  CLI + TOOLS  (Week 17-19)
+   5.1  Replace top-level `siftactl.py` and heavy CLI helpers with Rust
+         `clap` commands that shell out to Python sidecars where needed.
+   5.2  Keep throwaway scripts (patch_*, scratch_*, old_*, orig_*) as
+         TIER-C; do not port them.
+
+ PHASE 6  DECOMMISSION & PARITY LOCK  (Week 20+)
+   6.1  Run full differential suite across all ported modules.
+   6.2  Freeze the Python "golden" binary; retire it only after Rust passes
+         the parity lock across 3 consecutive green CI runs.
+   6.3  Archive Python into Archive/ (already present) but do NOT delete
+         the receipt ledger until verified.
+
+ Total rough estimate (part-time): 20-26 weeks to full core parity; 6-12 more
+ to retire Python where safe. (These are planning figures, not commitments.)
+
+--------------------------------------------------------------------------------
+ 5. MODULE PORT MAP  (TEMPLATE — fill in during Phase 0)
+--------------------------------------------------------------------------------
+ Format: one row per module. TIER = A/B/C. PRI = 1 (first) ... 5 (last).
+
+ | Module                          | Tier | Pri | Reason               |
+ |---------------------------------|------|-----|----------------------|
+ | sifta/core/stream.py            | A    | 1   | portable, pure, tested|
+ | sifta/core/blueprint.py         | A    | 1   | portable, pure, tested|
+ | sifta/core/transport.py         | A    | 1   | portable, core of design|
+ | sifta/core/replay.py            | A    | 1   | portable, pure, tested|
+ | sifta/core/maturity.py          | A    | 1   | trivial data, tested |
+ | sifta/core/spy.py               | A    | 1   | portable, pure, tested|
+ | System/scheduler (if any)       | A    | 2   | load-bearing runtime |
+ | System/receipt-ledger           | A    | 2   | load-bearing, auditable|
+ | System/continuity-memory        | A    | 3   | portable, well-defined |
+ | System/trading (M1/M5 scalp)    | A    | 3   | performance-sensitive|
+ | System/consciousness-sim        | A    | 3   | CPU-bound, portable    |
+ | PyQt6 desktop                   | B    | -   | GUI: keep in Python    |
+ | faster-whisper / Piper / CV     | B    | -   | speech: keep in Python |
+ | MLX VLM vision                  | B    | -   | GPU/ML: keep in Python |
+ | browser bridge                   | B    | -   | keep in Python         |
+ | cryptography/ecdsa (if moved)   | A    | 3   | Rust crypto is fast    |
+ | throwaway scripts (patch_*, ...) | C    | -   | do not port           |
+
+ NOTE: "System/scheduler" and "receipt-ledger" are placeholders until Phase
+ 0 produces the real inventory. Do NOT start Phase 2 without them named.
+
+--------------------------------------------------------------------------------
+ 6. TESTING & PARITY (NON-NEGOTIABLE)
+--------------------------------------------------------------------------------
+ - GOLDEN FIXTURES: before each port, capture Python outputs as fixtures.
+ - DIFFERENTIAL TESTS: for the same input, assert Rust == Python output
+   (within declared tolerance). This is the safety net for a 11.5M-LOC port.
+ - PROPERTY TESTS: for streams/transport, property-test invariants
+   (no lost messages, no duplicate deliveries, ordering where required).
+ - MIRI + SANITIZERS: run Rust memory-safety checks in CI.
+ - NO SILENT DRIFT: any test that fails on parity halts the port; it is
+   investigated before the next module starts.
+
+--------------------------------------------------------------------------------
+ 7. RISKS & MITIGATIONS
+--------------------------------------------------------------------------------
+ R1  Massive scope.  -> Phase 0 inventory first; only Tier-A modules port.
+ R2  Behavior drift. -> golden + differential tests; parity gate per module.
+ R3  GPU/ML can't move. -> they never enter Tier-A; they stay Python sidecars.
+ R4  Security (crypto, IPC). -> Rust + serde; keep env-secret gates in Python.
+ R5  Time/effort. -> 20-26 weeks to core parity; re-baseline after Phase 0.
+ R6  Unknown System/ coupling. -> Phase 0 inventory is the de-risking step;
+      do not start Phase 2 until every load-bearing module is named.
+
+--------------------------------------------------------------------------------
+ 8. OPEN QUESTIONS  (ANSWER THESE BEFORE PHASE 1)
+--------------------------------------------------------------------------------
+ Q1  Which System/ modules are LOAD-BEARING (must not break) vs experimental?
+ Q2  Do you need the GUI on Linux/Android/Windows, or macOS only?
+ Q3  What is the performance target (ms / "Nx faster")?
+ Q4  How do you currently deploy SIFTA (single Mac node, multi-node, cloud)?
+ Q5  Are you willing to keep a long-lived Python "golden" binary during migration?
+ Q6  Is the receipt ledger required to survive for audit, or is a snapshot OK?
+
+--------------------------------------------------------------------------------
+ 9. IMMEDIATE NEXT STEPS  (do in this order)
+--------------------------------------------------------------------------------
+ 1.  I produce the full Phase-0 Module Inventory (CSV) from the real repo.
+ 2.  You answer Q1-Q6 above.
+ 3.  We lock the TIER map (A/B/C) + Phase-1 module list.
+ 4.  I scaffold the Rust workspace + CI + golden harness (no code change to
+      Python yet).
+ 5.  I port sifta/core -> Rust crate with 100% golden parity.
+ 6.  Only then do Phase 2 begin on named load-bearing modules.
+
+--------------------------------------------------------------------------------
+ 10. FIRST-PORT SPOT (Week 1, highest ROI)
+--------------------------------------------------------------------------------
+ Target: sifta/core (stream, blueprint, transport, replay, maturity, spy).
+ Why: pure, typed, small, testable, and it is the spine of the design.
+   Deliverable: Rust crate `sifta-core` + golden tests + Rust binary.
+   Success: parity 100%, runnable standalone, zero Python change.
+================================================================================

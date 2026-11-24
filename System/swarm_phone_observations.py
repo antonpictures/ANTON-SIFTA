@@ -41,7 +41,10 @@ class PhoneStore:
 
     @contextmanager
     def db(self):
-        db = sqlite3.connect(self.path, timeout=5)
+        # 2026-11-19: the web answer worker died at boot with exit=78 because a
+        # sibling worker held this DB a moment longer than 5s. A transient lock
+        # is not a reason to lose a public turn — wait long enough to share it.
+        db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
         try:
             db.execute("BEGIN IMMEDIATE")

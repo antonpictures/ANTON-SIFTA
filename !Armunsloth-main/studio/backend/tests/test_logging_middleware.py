@@ -1,0 +1,744 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+import asyncio
+import os
+import re
+from pathlib import Path
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from starlette.staticfiles import StaticFiles
+
+from loggers import handlers as hmod
+from loggers.handlers import LoggingMiddleware
+
+
+async def app(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+async def send(message):
+    pass
+
+
+class _LogCapture:
+    def __init__(self):
+        self.events = []
+
+    def info(self, event, **kw):
+        self.events.append(("info", event, kw))
+
+    def error(self, event, **kw):
+        self.events.append(("error", event, kw))
+
+
+@pytest.fixture
+def logs(monkeypatch):
+    capture = _LogCapture()
+    monkeypatch.setattr(hmod, "logger", capture)
+    return capture
+
+
+def _http_scope(path, method = "GET"):
+    return {"type": "http", "path": path, "method": method}
+
+
+async def _noop_receive():
+    return {"type": "http.disconnect"}
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def test_success_logs_status_and_forwards_chunks(logs):
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 206, "headers": []})
+        await send({"type": "http.response.body", "body": b"a", "more_body": True})
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+    seen = []
+
+    async def send(message):
+        seen.append(message)
+
+    _run(LoggingMiddleware(app)(_http_scope("/api/health"), _noop_receive, send))
+
+    assert [m["type"] for m in seen] == [
+        "http.response.start",
+        "http.response.body",
+        "http.response.body",
+    ]
+    assert logs.events[0][1] == "request_completed"
+    assert logs.events[0][2]["status_code"] == 206
+
+
+def test_excluded_asset_success_skips_log(logs):
+    for path in ("/assets/index.css", "/icon.svg", "/font.woff2"):
+        _run(LoggingMiddleware(app)(_http_scope(path), _noop_receive, send))
+
+    assert logs.events == []
+
+
+def test_exception_logs_real_status_and_reraises(logs):
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 418, "headers": []})
+        raise RuntimeError("stream failed")
+
+    with pytest.raises(RuntimeError, match = "stream failed"):
+        _run(LoggingMiddleware(app)(_http_scope("/api/health"), _noop_receive, send))
+
+    assert logs.events[0][1] == "request_failed"
+    assert logs.events[0][2]["status_code"] == 418
+    assert logs.events[0][2]["error"] == "stream failed"
+    assert "process_time_ms" in logs.events[0][2]
+
+
+def test_cancelled_error_propagates_without_error_log(logs):
+    async def app(scope, receive, send):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        _run(LoggingMiddleware(app)(_http_scope("/api/health"), _noop_receive, send))
+
+    assert logs.events == []
+
+
+def test_non_http_scope_passes_through(logs):
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(scope["type"])
+
+    _run(LoggingMiddleware(app)({"type": "websocket", "path": "/ws"}, _noop_receive, send))
+
+    assert seen == ["websocket"]
+    assert logs.events == []
+
+
+def test_duplicate_get_within_window_deduped(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(app)
+    for _ in range(3):
+        _run(mw(_http_scope("/api/models/browse-folders"), _noop_receive, send))
+
+    assert len(logs.events) == 1
+    assert logs.events[0][1] == "request_completed"
+
+
+def test_mutations_and_errors_are_never_deduped(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 1000)
+
+    async def post_ok(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def get_404(scope, receive, send):
+        await send({"type": "http.response.start", "status": 404, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = LoggingMiddleware(post_ok)
+    for _ in range(2):
+        _run(mw(_http_scope("/api/chat/threads", method = "POST"), _noop_receive, send))
+    mw_404 = LoggingMiddleware(get_404)
+    for _ in range(2):
+        _run(mw_404(_http_scope("/api/models"), _noop_receive, send))
+
+    assert len(logs.events) == 4
+
+
+def test_quiet_poll_paths_use_longer_heartbeat_window(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(app)
+    for _ in range(3):
+        _run(mw(_http_scope("/api/inference/monitor"), _noop_receive, send))
+    for _ in range(3):
+        _run(mw(_http_scope("/api/models/browse-folders"), _noop_receive, send))
+
+    paths = [e[2]["path"] for e in logs.events]
+    assert paths.count("/api/inference/monitor") == 1
+    assert paths.count("/api/models/browse-folders") == 3
+
+
+def test_liveness_probe_heartbeats(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    monkeypatch.setattr(hmod, "_WATCHDOG_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(app)
+    for _ in range(4):
+        _run(mw(_http_scope("/api/liveness"), _noop_receive, send))
+
+    paths = [e[2]["path"] for e in logs.events]
+    assert paths.count("/api/liveness") == 1
+
+
+def test_watchdog_window_outlasts_the_probe_interval():
+    """The dedup window must outlast a full watchdog round, or the heartbeat probe is never suppressed."""
+    commands_rs = (
+        Path(__file__).resolve().parents[2] / "src-tauri" / "src" / "commands.rs"
+    ).read_text(encoding = "utf-8")
+
+    def _secs(name):
+        match = re.search(rf"{name}: Duration = Duration::from_secs\((\d+)\)", commands_rs)
+        assert match is not None, (
+            f"{name} is no longer a Duration::from_secs literal in commands.rs; this test "
+            f"reads it to pin the heartbeat window and needs updating alongside it"
+        )
+        return int(match.group(1))
+
+    interval_s = _secs("HEALTH_WATCHDOG_INTERVAL")
+    probe_s = _secs("HEALTH_PROBE_TIMEOUT")
+
+    # Use the default, not the module global, which an exported override changes.
+    window_ms = hmod._env_int("UNSLOTH_STUDIO_ACCESS_LOG_WATCHDOG_DEDUP_MS", 60000)
+    if os.environ.get("UNSLOTH_STUDIO_ACCESS_LOG_WATCHDOG_DEDUP_MS"):
+        window_ms = 60000
+    assert window_ms > (interval_s + probe_s) * 1000, (
+        f"the watchdog heartbeat window ({window_ms}ms) is not wider "
+        f"than one probe round ({interval_s}s + {probe_s}s), so it would collapse nothing"
+    )
+
+
+def test_liveness_probe_errors_still_log(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    monkeypatch.setattr(hmod, "_WATCHDOG_POLL_DEDUP_MS", 1000)
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 503, "headers": []})
+        await send({"type": "http.response.body", "body": b"down"})
+
+    mw = LoggingMiddleware(app)
+    for _ in range(3):
+        _run(mw(_http_scope("/api/liveness"), _noop_receive, send))
+
+    paths = [e[2]["path"] for e in logs.events]
+    assert paths.count("/api/liveness") == 3
+
+
+def test_verbose_keeps_every_watchdog_probe(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_WATCHDOG_POLL_DEDUP_MS", 60000)
+
+    mw = LoggingMiddleware(app)
+    for _ in range(3):
+        _run(mw(_http_scope("/api/liveness"), _noop_receive, send))
+
+    paths = [e[2]["path"] for e in logs.events]
+    assert paths.count("/api/liveness") == 3
+
+
+def test_distinct_query_strings_are_not_deduped(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 1000)
+
+    def scope(query):
+        return {
+            "type": "http",
+            "path": "/api/models/browse-folders",
+            "method": "GET",
+            "query_string": query,
+        }
+
+    mw = LoggingMiddleware(app)
+    _run(mw(scope(b"path=/tmp/a"), _noop_receive, send))
+    _run(mw(scope(b"path=/tmp/b"), _noop_receive, send))
+    _run(mw(scope(b"path=/tmp/a"), _noop_receive, send))
+
+    assert len(logs.events) == 2
+
+
+def test_fastapi_static_asset_success_skips_log(tmp_path, logs):
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "app.css").write_text("body { color: black; }", encoding = "utf-8")
+
+    app = FastAPI()
+    app.add_middleware(LoggingMiddleware)
+
+    @app.get("/api/health")
+    async def health():
+        return {"ok": True}
+
+    app.mount("/assets", StaticFiles(directory = assets_dir), name = "assets")
+    client = TestClient(app)
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert logs.events[0][1] == "request_completed"
+    assert logs.events[0][2]["path"] == "/api/health"
+
+    log_count = len(logs.events)
+    response = client.get("/assets/app.css")
+    assert response.status_code == 200
+    assert response.text == "body { color: black; }"
+    assert len(logs.events) == log_count
+
+
+def _status_app(status):
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": status, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    return app
+
+
+async def _drop(message):
+    pass
+
+
+def _paths_logged(logs):
+    return [e[2]["path"] for e in logs.events]
+
+
+def test_quiet_success_get_2xx_suppressed(logs):
+    for path in ("/api/chat/threads", "/api/export/status", "/api/hub/download-status"):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert logs.events == []
+
+
+def test_chat_detail_and_message_reads_still_log(logs):
+    for path in (
+        "/api/chat/threads/abc123",
+        "/api/chat/threads/abc123/messages",
+        "/api/chat/threads/abc123/messages/m1",
+        "/api/chat/projects/p1",
+    ):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert _paths_logged(logs) == [
+        "/api/chat/threads/abc123",
+        "/api/chat/threads/abc123/messages",
+        "/api/chat/threads/abc123/messages/m1",
+        "/api/chat/projects/p1",
+    ]
+
+
+def test_quiet_success_is_get_only(logs):
+    for method in ("POST", "PUT", "DELETE"):
+        _run(
+            LoggingMiddleware(_status_app(200))(
+                _http_scope("/api/chat/threads", method = method), _noop_receive, _drop
+            )
+        )
+    assert len(logs.events) == 3
+
+
+def test_chat_pre_auth_401_suppressed_other_errors_logged(logs):
+    _run(
+        LoggingMiddleware(_status_app(401))(_http_scope("/api/chat/projects"), _noop_receive, _drop)
+    )
+    assert logs.events == []
+    _run(
+        LoggingMiddleware(_status_app(500))(_http_scope("/api/chat/projects"), _noop_receive, _drop)
+    )
+    assert _paths_logged(logs) == ["/api/chat/projects"]
+
+
+def test_chat_401_logged_after_first_auth_refresh(logs):
+    responses: dict[tuple[str, str], int] = {}
+
+    async def app(scope, receive, send):
+        status = responses.get((scope["method"], scope["path"]), 200)
+        await send({"type": "http.response.start", "status": status, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = LoggingMiddleware(app)
+
+    responses[("GET", "/api/chat/threads")] = 401
+    _run(mw(_http_scope("/api/chat/threads"), _noop_receive, _drop))
+    assert logs.events == []
+
+    responses[("POST", "/api/auth/refresh")] = 200
+    _run(mw(_http_scope("/api/auth/refresh", method = "POST"), _noop_receive, _drop))
+    assert _paths_logged(logs) == ["/api/auth/refresh"]
+
+    _run(mw(_http_scope("/api/chat/threads"), _noop_receive, _drop))
+    assert _paths_logged(logs) == ["/api/auth/refresh", "/api/chat/threads"]
+
+
+def test_export_status_error_still_logs(logs):
+    _run(
+        LoggingMiddleware(_status_app(200))(_http_scope("/api/export/status"), _noop_receive, _drop)
+    )
+    assert logs.events == []
+    _run(
+        LoggingMiddleware(_status_app(500))(_http_scope("/api/export/status"), _noop_receive, _drop)
+    )
+    assert _paths_logged(logs) == ["/api/export/status"]
+
+
+def test_legacy_download_progress_heartbeats_not_suppressed(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(3):
+        _run(mw(_http_scope("/api/models/download-progress"), _noop_receive, _drop))
+    assert _paths_logged(logs) == ["/api/models/download-progress"]
+
+
+def test_media_progress_success_polls_are_suppressed(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    for path in (
+        "/api/inference/images/load-progress",
+        "/api/inference/video/load-progress",
+        "/api/inference/images/generate-progress",
+        "/api/inference/video/generate-progress",
+    ):
+        mw = LoggingMiddleware(_status_app(200))
+        for _ in range(5):
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+        assert _paths_logged(logs) == []
+        logs.events.clear()
+
+
+def test_diffusion_training_progress_still_heartbeats(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    path = "/api/train/diffusion/status"
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(5):
+        _run(mw(_http_scope(path), _noop_receive, _drop))
+    assert _paths_logged(logs) == [path]
+
+
+def test_media_progress_errors_still_log(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+    for path in (
+        "/api/inference/images/load-progress",
+        "/api/inference/video/load-progress",
+        "/api/inference/images/generate-progress",
+        "/api/inference/video/generate-progress",
+    ):
+        mw = LoggingMiddleware(_status_app(500))
+        for _ in range(3):
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+        assert _paths_logged(logs) == [path] * 3
+        logs.events.clear()
+
+
+def test_unrelated_image_routes_still_log(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    for path in (
+        "/api/inference/images/status",
+        "/api/inference/images/info",
+        "/api/inference/video/status",
+    ):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert _paths_logged(logs) == [
+        "/api/inference/images/status",
+        "/api/inference/images/info",
+        "/api/inference/video/status",
+    ]
+
+
+def test_indicator_status_polls_collapse_to_one_shared_heartbeat(logs, monkeypatch):
+    # Three cheap status polls share one heartbeat; inference/status is excluded as it can be slow.
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    polled = (
+        "/api/inference/images/status",
+        "/api/inference/video/status",
+        "/api/inference/audio/stt/status",
+    )
+    for _ in range(4):
+        for path in polled:
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+
+    paths = _paths_logged(logs)
+    assert len(paths) == 1, paths
+    assert paths[0] in polled
+
+
+def test_the_runtime_status_polls_share_the_liveness_bucket(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for path in ("/api/auth/status", "/api/inference/monitor", "/api/inference/images/status"):
+        _run(mw(_http_scope(path), _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 1, _paths_logged(logs)
+
+
+def test_health_keeps_its_own_heartbeat(logs, monkeypatch):
+    # Health keeps its own heartbeat; a slow successful /api/health must not be suppressed by a poll.
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    _run(mw(_http_scope("/api/inference/monitor"), _noop_receive, _drop))
+    _run(mw(_http_scope("/api/health"), _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 2, _paths_logged(logs)
+
+
+def test_the_slow_inference_probe_keeps_its_own_heartbeat(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    _run(mw(_http_scope("/api/inference/images/status"), _noop_receive, _drop))
+    _run(mw(_http_scope("/api/inference/status"), _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 2, _paths_logged(logs)
+
+
+def test_a_parameterized_stt_status_keeps_its_own_line(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    _run(mw(_http_scope("/api/health"), _noop_receive, _drop))
+    scope = _http_scope("/api/inference/audio/stt/status")
+    scope["query_string"] = b"model=acme%2Fwhisper-custom"
+    _run(mw(scope, _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 2, _paths_logged(logs)
+
+
+def test_two_different_stt_models_do_not_collapse(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for repo in (b"model=a%2Fone", b"model=b%2Ftwo"):
+        scope = _http_scope("/api/inference/audio/stt/status")
+        scope["query_string"] = repo
+        _run(mw(scope, _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 2, _paths_logged(logs)
+
+
+def test_non_liveness_quiet_polls_keep_their_own_heartbeat(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    others = (
+        "/api/train/runs",
+        "/api/models/checkpoints",
+        "/api/models/local",
+        "/api/rag/knowledge-bases",
+    )
+    for _ in range(3):
+        for path in others:
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+
+    paths = _paths_logged(logs)
+    for path in others:
+        assert paths.count(path) == 1, f"{path} logged {paths.count(path)} times"
+
+
+def test_a_failing_liveness_poll_always_logs(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 1000)
+
+    ok = LoggingMiddleware(_status_app(200))
+    bad = LoggingMiddleware(_status_app(503))
+    bad._last_log = ok._last_log
+    for _ in range(3):
+        _run(ok(_http_scope("/api/health"), _noop_receive, _drop))
+        _run(bad(_http_scope("/api/inference/status"), _noop_receive, _drop))
+
+    statuses = [e[2]["status_code"] for e in logs.events]
+    assert statuses.count(503) == 3, statuses
+    assert statuses.count(200) == 1, statuses
+
+
+def test_verbose_restores_every_liveness_line(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 0)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(3):
+        for path in ("/api/health", "/api/inference/status"):
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+
+    assert len(_paths_logged(logs)) == 6, _paths_logged(logs)
+
+
+def test_verbose_restores_the_dropped_success_polls(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_VERBOSE_ACCESS_LOG", True)
+    for path in (
+        "/api/inference/load-progress",
+        "/api/inference/images/load-progress",
+        "/api/inference/video/load-progress",
+        "/api/inference/images/generate-progress",
+        "/api/inference/video/generate-progress",
+        "/api/hub/download-progress",
+        "/api/export/status",
+        "/api/chat/threads",
+    ):
+        mw = LoggingMiddleware(_status_app(200))
+        for _ in range(3):
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+        assert _paths_logged(logs) == [path] * 3
+        logs.events.clear()
+
+
+def test_boot_burst_catalog_reads_suppressed(logs):
+    for path in (
+        "/api/providers/registry",
+        "/api/providers/",
+        "/api/models/loras",
+        "/api/settings/personalization",
+    ):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert logs.events == []
+
+
+def test_boot_burst_catalog_errors_still_log(logs):
+    for path, status in (
+        ("/api/providers/registry", 500),
+        ("/api/providers/", 502),
+        ("/api/models/loras", 404),
+        ("/api/settings/personalization", 401),
+    ):
+        _run(LoggingMiddleware(_status_app(status))(_http_scope(path), _noop_receive, _drop))
+    assert _paths_logged(logs) == [
+        "/api/providers/registry",
+        "/api/providers/",
+        "/api/models/loras",
+        "/api/settings/personalization",
+    ]
+
+
+def test_boot_burst_catalog_mutations_still_log(logs):
+    for path, method in (
+        ("/api/providers/", "POST"),
+        ("/api/settings/personalization", "PUT"),
+    ):
+        _run(
+            LoggingMiddleware(_status_app(200))(
+                _http_scope(path, method = method), _noop_receive, _drop
+            )
+        )
+    assert _paths_logged(logs) == ["/api/providers/", "/api/settings/personalization"]
+
+
+def test_provider_detail_routes_still_log(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    for path in ("/api/providers/abc123", "/api/providers/registry/openai"):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert _paths_logged(logs) == ["/api/providers/abc123", "/api/providers/registry/openai"]
+
+
+def test_verbose_off_by_default_keeps_the_polls_quiet(logs):
+    assert hmod._VERBOSE_ACCESS_LOG is False
+    for path in ("/api/inference/load-progress", "/api/hub/download-progress"):
+        _run(LoggingMiddleware(_status_app(200))(_http_scope(path), _noop_receive, _drop))
+    assert logs.events == []
+
+
+def test_chat_thread_detail_polls_heartbeat_instead_of_one_line_each(logs, monkeypatch):
+    """Streaming drives these on a loop: 25 thread and 21 fork reads in 20s over one
+    four-tab session, 34% of the access log."""
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 60000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(12):
+        _run(mw(_http_scope("/api/chat/threads/abc123"), _noop_receive, _drop))
+        _run(mw(_http_scope("/api/chat/threads/abc123/forks"), _noop_receive, _drop))
+
+    paths = _paths_logged(logs)
+    assert paths == ["/api/chat/threads/abc123", "/api/chat/threads/abc123/forks"], paths
+
+
+def test_four_tabs_share_one_bucket_per_template(logs, monkeypatch):
+    """Four tabs polling four different threads ask one question. Keying the bucket on the
+    real path would emit four lines per window."""
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 60000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for tab in ("t1", "t2", "t3", "t4"):
+        for _ in range(5):
+            _run(mw(_http_scope(f"/api/chat/threads/{tab}"), _noop_receive, _drop))
+
+    assert _paths_logged(logs) == ["/api/chat/threads/t1"], _paths_logged(logs)
+
+
+def test_message_reads_are_not_collapsed_into_the_detail_bucket(logs, monkeypatch):
+    """A message read is a different question from "is it still streaming", so the
+    normaliser must not reach it (#7087)."""
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 60000)
+
+    deeper = (
+        "/api/chat/threads/abc/messages",
+        "/api/chat/threads/abc/messages/m1",
+        "/api/chat/threads/abc/messages/m1/forks",
+    )
+    mw = LoggingMiddleware(_status_app(200))
+    for path in deeper:
+        for _ in range(3):
+            _run(mw(_http_scope(path), _noop_receive, _drop))
+
+    for path in deeper:
+        assert hmod.normalize_poll_path(path) == path
+        assert _paths_logged(logs).count(path) == 3, _paths_logged(logs)
+
+
+def test_the_thread_list_is_untouched_by_the_normaliser():
+    """The list path is handled by _CHAT_LIST_PATHS and must not be dragged into the
+    heartbeat class by a trailing-segment rule."""
+    assert hmod.normalize_poll_path("/api/chat/threads") == "/api/chat/threads"
+    assert hmod.normalize_poll_path("/api/chat/threads/") == "/api/chat/threads/"
+
+
+def test_a_failing_thread_poll_still_logs(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 60000)
+
+    bad = LoggingMiddleware(_status_app(404))
+    for _ in range(3):
+        _run(bad(_http_scope("/api/chat/threads/gone"), _noop_receive, _drop))
+    assert len(_paths_logged(logs)) == 3
+
+
+def test_thread_mutations_still_log(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 60000)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(3):
+        _run(mw(_http_scope("/api/chat/threads/abc", method = "PATCH"), _noop_receive, _drop))
+    assert len(_paths_logged(logs)) == 3
+
+
+def test_verbose_restores_every_thread_poll_line(logs, monkeypatch):
+    monkeypatch.setattr(hmod, "_ACCESS_LOG_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_QUIET_POLL_DEDUP_MS", 0)
+    monkeypatch.setattr(hmod, "_VERBOSE_ACCESS_LOG", True)
+
+    mw = LoggingMiddleware(_status_app(200))
+    for _ in range(3):
+        _run(mw(_http_scope("/api/chat/threads/abc"), _noop_receive, _drop))
+    assert len(_paths_logged(logs)) == 3
+
+
+def test_sidebar_rows_post_read_is_quiet_but_errors_and_other_posts_log(logs):
+    rows = "/api/chat/sidebar/rows"
+    _run(LoggingMiddleware(_status_app(200))(_http_scope(rows, "POST"), _noop_receive, _drop))
+    assert logs.events == []
+    _run(LoggingMiddleware(_status_app(500))(_http_scope(rows, "POST"), _noop_receive, _drop))
+    _run(
+        LoggingMiddleware(_status_app(200))(
+            _http_scope("/api/chat/threads", "POST"), _noop_receive, _drop
+        )
+    )
+    assert _paths_logged(logs) == [rows, "/api/chat/threads"]

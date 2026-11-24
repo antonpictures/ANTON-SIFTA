@@ -1,0 +1,577 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""CPU tests for DiT LoRA family resolution, the QLoRA prequant heuristic and the gated-repo check."""
+
+from __future__ import annotations
+
+import sys
+import types
+
+import pytest
+
+from core.training.diffusion_dit_trainer import (
+    _FLUX2_DEV_TARGETS,
+    _FLUX2_KLEIN_TARGETS,
+    _FLUX_TARGETS,
+    _GATED_TRAIN_REPOS,
+    _QWEN_TARGETS,
+    _SPECS,
+    _ZIMAGE_TARGETS,
+    _apply_mxfp8_training,
+    _assert_gated_access,
+    _mx_module_filter,
+    _repo_is_prequantized,
+    _resolve_base_precision,
+    _select_lora_targets,
+    _should_compile,
+    run_dit_lora_training,
+)
+from core.training.diffusion_train_common import (
+    DEFAULT_LORA_TARGETS,
+    DiffusionLoraConfig,
+    family_train_infos,
+    train_precision_modes,
+)
+
+
+@pytest.fixture(autouse = True)
+def _not_rocm(monkeypatch):
+    """Pin the ROCm gate off: it reads the installed torch, so an AMD host would leak into NVIDIA cases."""
+    import core.training.diffusion_dit_trainer as _dit
+    import core.training.diffusion_train_common as _dtc
+
+    for _mod in (_dtc, _dit):
+        monkeypatch.setattr(_mod, "torch_is_rocm", lambda: False)
+
+
+def test_specs_cover_the_dit_families():
+    assert set(_SPECS) == {
+        "flux.1",
+        "qwen-image",
+        "z-image",
+        "krea-2",
+        "flux.2-klein",
+        "flux.2-dev",
+        "ltx-2",
+        "wan2.2-ti2v-5b",
+    }
+    assert "add_q_proj" in _SPECS["flux.1"].lora_targets
+    assert "add_q_proj" in _SPECS["qwen-image"].lora_targets
+    assert "add_q_proj" not in _SPECS["z-image"].lora_targets
+    assert "add_q_proj" not in _SPECS["krea-2"].lora_targets
+    assert _SPECS["z-image"].force_bf16 is True
+    assert _SPECS["qwen-image"].force_bf16 is True
+    assert _SPECS["krea-2"].force_bf16 is True
+    assert _SPECS["flux.2-klein"].force_bf16 is True
+    assert _SPECS["flux.2-dev"].force_bf16 is True
+
+
+def test_flux2_specs_share_targets_and_split_conditioners():
+    klein, dev = _SPECS["flux.2-klein"], _SPECS["flux.2-dev"]
+    assert klein.lora_targets == _FLUX2_KLEIN_TARGETS
+    assert dev.lora_targets == _FLUX2_DEV_TARGETS
+    assert "to_qkv_mlp_proj" in _FLUX2_KLEIN_TARGETS
+    assert "to_out.0" in _FLUX2_KLEIN_TARGETS
+    assert "single_transformer_blocks.23.attn.to_out" in _FLUX2_KLEIN_TARGETS
+    assert "single_transformer_blocks.24.attn.to_out" not in _FLUX2_KLEIN_TARGETS
+    assert "single_transformer_blocks.47.attn.to_out" in _FLUX2_DEV_TARGETS
+    assert klein.load_conditioners is not dev.load_conditioners
+    assert klein.save is not dev.save
+    assert klein.load_transformer is dev.load_transformer
+    assert dev.dense_bf16_gb > klein.dense_bf16_gb
+
+
+def test_select_lora_targets_uses_family_default_for_generic_config():
+    # normalized() fills lora_target_modules with DEFAULT_LORA_TARGETS, so that value must resolve to the family's targets, not stay on the SDXL list.
+    assert _select_lora_targets(DEFAULT_LORA_TARGETS, _FLUX_TARGETS) == _FLUX_TARGETS
+    assert _select_lora_targets(DEFAULT_LORA_TARGETS, _QWEN_TARGETS) == _QWEN_TARGETS
+    assert _select_lora_targets(DEFAULT_LORA_TARGETS, _ZIMAGE_TARGETS) == _ZIMAGE_TARGETS
+
+
+def test_select_lora_targets_explicit_override_wins():
+    override = ("to_q", "to_k")
+    assert _select_lora_targets(override, _FLUX_TARGETS) == override
+    cfg = DiffusionLoraConfig(
+        base_model = "black-forest-labs/FLUX.1-dev", data_dir = "d", output_dir = "o"
+    ).normalized()
+    assert cfg.lora_target_modules == DEFAULT_LORA_TARGETS
+    assert (
+        _select_lora_targets(cfg.lora_target_modules, _SPECS["flux.1"].lora_targets)
+        == _FLUX_TARGETS
+    )
+
+
+@pytest.mark.parametrize(
+    "repo, expected",
+    [
+        ("unsloth/Qwen-Image-2512-unsloth-bnb-4bit", True),
+        ("unsloth/Z-Image-Turbo-unsloth-bnb-4bit", True),
+        ("some/model-int4", True),
+        ("black-forest-labs/FLUX.1-dev", False),
+        ("Tongyi-MAI/Z-Image-Turbo", False),
+    ],
+)
+def test_prequant_heuristic(repo, expected):
+    assert _repo_is_prequantized(repo) is expected
+
+
+def test_zimage_rejects_fp16_before_loading():
+    cfg = DiffusionLoraConfig(
+        base_model = "Tongyi-MAI/Z-Image-Turbo",
+        data_dir = "does-not-exist",
+        output_dir = "o",
+        mixed_precision = "fp16",
+    )
+    with pytest.raises(ValueError, match = "bf16"):
+        run_dit_lora_training(cfg)
+
+
+def test_flux2_rejects_fp16_before_loading():
+    ok = DiffusionLoraConfig(
+        base_model = "black-forest-labs/FLUX.2-klein-4B", data_dir = "d", output_dir = "o"
+    ).normalized()
+    assert ok.resolved_family == "flux.2-klein"
+    assert (
+        DiffusionLoraConfig(base_model = "black-forest-labs/FLUX.2-dev", data_dir = "d", output_dir = "o")
+        .normalized()
+        .resolved_family
+        == "flux.2-dev"
+    )
+    cfg = DiffusionLoraConfig(
+        base_model = "black-forest-labs/FLUX.2-klein-4B",
+        data_dir = "does-not-exist",
+        output_dir = "o",
+        mixed_precision = "fp16",
+    )
+    with pytest.raises(ValueError, match = "bf16"):
+        run_dit_lora_training(cfg)
+
+
+def test_flux2_bases_pass_the_trusted_base_gate():
+    from core.training.diffusion_train_common import _assert_trusted_base_model
+
+    _assert_trusted_base_model("black-forest-labs/FLUX.2-klein-base-4B")
+    _assert_trusted_base_model("black-forest-labs/FLUX.2-klein-base-9B")
+    _assert_trusted_base_model("black-forest-labs/FLUX.2-klein-4B")
+    _assert_trusted_base_model("black-forest-labs/FLUX.2-dev")
+    with pytest.raises(ValueError, match = "untrusted"):
+        _assert_trusted_base_model("someone/random-flux2-finetune")
+
+
+def test_zimage_offers_the_undistilled_base_the_upstream_recipe_trains_on():
+    # Upstream's Z-Image dreambooth trains on Tongyi-MAI/Z-Image; the nf4 Turbo stays first (default).
+    from core.inference.diffusion_families import detect_family
+    from core.training.diffusion_train_common import _assert_trusted_base_model
+
+    fam = detect_family("Tongyi-MAI/Z-Image")
+    assert fam is not None and fam.name == "z-image"
+    assert fam.train_base_repos == (
+        "unsloth/Z-Image-Turbo-unsloth-bnb-4bit",
+        "Tongyi-MAI/Z-Image-Turbo",
+        "Tongyi-MAI/Z-Image",
+    )
+    _assert_trusted_base_model("Tongyi-MAI/Z-Image")
+    with pytest.raises(ValueError, match = "untrusted"):
+        _assert_trusted_base_model("someone/random-z-image-finetune")
+    assert _SPECS["z-image"].lora_targets == ("to_q", "to_k", "to_v", "to_out.0", "w1", "w2", "w3")
+    # No deploy pairing: an adapter previews on whichever checkpoint it trained on. A family-wide
+    # one would also rewrite the nf4 Turbo base, sending a QLoRA run's preview to a dense fp32 load.
+    assert fam.deploy_base_repo is None
+
+
+def test_every_train_base_is_deployable_as_an_inference_pipeline():
+    # Deploy reloads the base via /images/load gated on _is_trusted_diffusion_repo, so it must pass.
+    from core.inference.diffusion import _is_trusted_diffusion_repo
+    from core.inference.diffusion_families import _FAMILIES
+    for fam in _FAMILIES:
+        if not fam.trainable:
+            continue
+        for base in fam.train_base_repos:
+            deploy_base = fam.deploy_base_for(base)
+            assert _is_trusted_diffusion_repo(
+                deploy_base
+            ), f"{fam.name}: deploy base {deploy_base!r} is not loadable for inference"
+
+
+def test_gated_access_requires_token():
+    assert "black-forest-labs/flux.1-dev" in _GATED_TRAIN_REPOS
+    assert "black-forest-labs/flux.2-dev" in _GATED_TRAIN_REPOS
+    with pytest.raises(ValueError, match = "gated"):
+        _assert_gated_access("black-forest-labs/FLUX.1-dev", None)
+    with pytest.raises(ValueError, match = "gated"):
+        _assert_gated_access("black-forest-labs/FLUX.1-dev", "   ")
+    with pytest.raises(ValueError, match = "gated"):
+        _assert_gated_access("black-forest-labs/FLUX.2-dev", None)
+    _assert_gated_access("black-forest-labs/FLUX.1-dev", "hf_realtoken")
+    _assert_gated_access("black-forest-labs/FLUX.2-dev", "hf_realtoken")
+    _assert_gated_access("Tongyi-MAI/Z-Image-Turbo", None)
+    _assert_gated_access("black-forest-labs/FLUX.2-klein-4B", None)
+
+
+def test_the_gate_lets_a_local_clone_named_like_a_gated_repo_through(monkeypatch, tmp_path):
+    """A local clone named like a gated repo must pass the gate, since loaders resolve it on disk."""
+    local = "black-forest-labs/FLUX.1-dev"
+    assert local.lower() in _GATED_TRAIN_REPOS, "precondition: the name is gated"
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / local).mkdir(parents = True)
+
+    _assert_gated_access(local, None)
+
+
+def test_the_gate_reads_the_repo_the_run_will_fetch(monkeypatch, tmp_path):
+    """The gate must read the repo the run will fetch, a mirror redirect included, not the canonical id."""
+    from core.inference import diffusion_families
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        "core.training.diffusion_dit_trainer._assert_gated_access",
+        lambda base, token: seen.append(base),
+    )
+    monkeypatch.setattr(
+        diffusion_families,
+        "prefer_ungated_mirror",
+        lambda base, token = None: "unsloth/FLUX.1-dev"
+        if base.lower() == "black-forest-labs/flux.1-dev"
+        else base,
+    )
+    cfg = DiffusionLoraConfig(
+        base_model = "black-forest-labs/FLUX.1-dev",
+        data_dir = str(tmp_path / "empty"),  # the next step after the gate, so it stops here
+        output_dir = str(tmp_path / "out"),
+    )
+    with pytest.raises(Exception):  # noqa: B017, PT011 -- the dataset, not the gate
+        run_dit_lora_training(cfg)
+    assert seen == ["unsloth/FLUX.1-dev"]
+
+    # mirror_repo must go too: a token-less run overrides the cache preference on mirrored repos.
+    seen.clear()
+    monkeypatch.setattr(diffusion_families, "prefer_ungated_mirror", lambda base, token = None: base)
+    monkeypatch.setattr(diffusion_families, "mirror_repo", lambda base: None)
+    with pytest.raises(Exception):  # noqa: B017, PT011
+        run_dit_lora_training(cfg)
+    assert seen == ["black-forest-labs/FLUX.1-dev"]
+
+
+def test_family_train_infos_lists_dit_families(dit_train_host):
+    infos = {i["name"]: i for i in family_train_infos()}
+    for fam in ("sdxl", "flux.1", "qwen-image", "z-image", "flux.2-klein", "flux.2-dev"):
+        assert fam in infos, f"{fam} missing from family_train_infos"
+        assert infos[fam]["default_base"]
+        assert infos[fam]["base_repos"]
+        assert "resolution" in infos[fam]["defaults"]
+    assert infos["flux.1"]["default_base"] == "black-forest-labs/FLUX.1-dev"
+    assert "gated" in infos["flux.1"]["vram_note"].lower()
+    assert infos["flux.2-dev"]["default_base"] == "black-forest-labs/FLUX.2-dev"
+    assert "gated" in infos["flux.2-dev"]["vram_note"].lower()
+    klein = infos["flux.2-klein"]
+    assert klein["default_base"] == "black-forest-labs/FLUX.2-klein-base-4B"
+    assert klein["base_repos"] == [
+        "black-forest-labs/FLUX.2-klein-base-4B",
+        "black-forest-labs/FLUX.2-klein-base-9B",
+    ]
+    assert klein["deploy_bases"]["black-forest-labs/FLUX.2-klein-base-4B"] == (
+        "black-forest-labs/FLUX.2-klein-4B"
+    )
+    assert klein["deploy_bases"]["black-forest-labs/FLUX.2-klein-base-9B"] == (
+        "black-forest-labs/FLUX.2-klein-9B"
+    )
+    assert klein["deploy_bases"]["unsloth/FLUX.2-klein-base-9B"] == ("unsloth/FLUX.2-klein-9B")
+    assert klein["base_specs"]["black-forest-labs/FLUX.2-klein-base-9B"] == {
+        "params": "9B",
+        "qlora_vram_gb": 18,
+    }
+    assert klein["base_specs"]["unsloth/FLUX.2-klein-base-9B"] == {
+        "params": "9B",
+        "qlora_vram_gb": 18,
+    }
+    assert "black-forest-labs/FLUX.2-klein-base-4B" not in klein["base_specs"]
+    assert "gated" not in infos["flux.2-klein"]["vram_note"].lower()
+    assert "4bit" in infos["z-image"]["default_base"].lower()
+
+
+def test_family_train_infos_sdxl_supports_compile_without_precision_modes(
+    monkeypatch, dit_train_host
+):
+    # Pin the precision list so the assertion holds on any host GPU.
+    import core.training.diffusion_train_common as dtc
+
+    monkeypatch.setattr(dtc, "train_precision_modes", lambda: (["nf4", "bf16", "auto"], "auto"))
+    infos = {i["name"]: i for i in family_train_infos()}
+    assert infos["sdxl"]["supports_compile"] is True
+    assert infos["sdxl"]["precision_modes"] == []
+    assert infos["z-image"]["supports_compile"] is True
+    assert infos["z-image"]["precision_modes"] == ["nf4", "bf16", "auto"]
+
+
+def _linear(
+    in_features,
+    out_features,
+    bias = False,
+):
+    import torch.nn as nn
+    return nn.Linear(in_features, out_features, bias = bias)
+
+
+def test_mx_module_filter_accepts_dense_block_linear():
+    # A bf16 3072x3072 attention/FFN linear at a normal block fqn is a valid mxfp8 target.
+    assert _mx_module_filter(_linear(3072, 3072).bfloat16(), "blocks.0.ff.up") is True
+
+
+def test_mx_module_filter_keeps_biased_linear():
+    # MXFP8Linear adds the bias; only torchao 0.17's quantize_ wrapper drops it (biased skipped there alone).
+    assert _mx_module_filter(_linear(3072, 3072, bias = True).bfloat16(), "blocks.0.ff.up") is True
+
+
+def test_mx_module_filter_rejects_non_bf16_weight():
+    # The MX casts assert a bf16 weight.
+    assert _mx_module_filter(_linear(3072, 3072), "blocks.0.ff.up") is False
+
+
+def test_resolve_base_precision_explicit_mxfp8_requires_blackwell(monkeypatch):
+    # An explicit mxfp8 on a non-Blackwell CUDA GPU must fail fast: the MX GEMM has no kernel below sm100 and would crash at the first step, after a full dense load.
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (8, 9))
+    cfg = types.SimpleNamespace(base_precision = "mxfp8", mixed_precision = "bf16", base_model = "x")
+    with pytest.raises(ValueError, match = "Blackwell"):
+        _resolve_base_precision(cfg, None, "cuda")
+
+
+def test_resolve_base_precision_explicit_mxfp8_ok_on_blackwell(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (10, 0))
+    cfg = types.SimpleNamespace(base_precision = "mxfp8", mixed_precision = "bf16", base_model = "x")
+    assert _resolve_base_precision(cfg, None, "cuda") == "mxfp8"
+
+
+def test_mx_module_filter_skips_lora_and_proj_out():
+    lin = _linear(3072, 3072)
+    assert _mx_module_filter(lin, "blocks.0.attn.to_q.lora_A.default") is False
+    assert _mx_module_filter(lin, "proj_out") is False
+    assert _mx_module_filter(lin, "x.proj_out.y") is False
+
+
+def test_mx_module_filter_rejects_non_block_aligned_dims():
+    # MX block scaling tiles 32-wide, so a dim not divisible by 32 is rejected.
+    assert _mx_module_filter(_linear(3000, 3072), "blocks.0.ff.up") is False
+
+
+def test_mx_module_filter_rejects_non_linear():
+    import torch.nn as nn
+    assert _mx_module_filter(nn.LayerNorm(3072), "blocks.0.norm") is False
+
+
+def test_should_compile_auto_mxfp8_on_cuda():
+    cfg = DiffusionLoraConfig(base_model = "b", data_dir = "d", output_dir = "o")
+    assert _should_compile(cfg, False, "cuda", base_precision = "mxfp8") is True
+    assert _should_compile(cfg, False, "cuda", base_precision = "int8") is False
+    off = DiffusionLoraConfig(
+        base_model = "b", data_dir = "d", output_dir = "o", compile_transformer = "off"
+    )
+    assert _should_compile(off, False, "cuda", base_precision = "mxfp8") is False
+
+
+def test_apply_mxfp8_training_failure_falls_back_with_warning(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torchao.prototype.mx_formats", None)
+    monkeypatch.setitem(sys.modules, "torchao.prototype.moe_training.config", None)
+    events = []
+    ok = _apply_mxfp8_training(object(), lambda e: events.append(e))
+    assert ok is False
+    warnings = [e for e in events if e["type"] == "warning"]
+    assert len(warnings) == 1
+    assert "mxfp8" in warnings[0]["message"]
+
+
+def test_mxfp8_training_config_falls_back_to_the_torchao_0_17_api(monkeypatch):
+    # torchao 0.17 replaced prototype.mx_formats.MXLinearConfig with the MXFP8TrainingOpConfig recipe API, so the config helper must fall back or mxfp8 silently trains dense bf16.
+    from types import SimpleNamespace
+
+    from core.training.diffusion_dit_trainer import _mxfp8_training_config
+
+    calls = {}
+
+    class _Recipe:
+        MXFP8_RCEIL = "mxfp8_rceil"
+        MXFP8_RCEIL_WGRAD_WITH_HP = "mxfp8_rceil_wgrad_with_hp"
+
+    class _OpConfig:
+        @staticmethod
+        def from_recipe(recipe):
+            calls["recipe"] = recipe
+            return "cfg-0.17"
+
+    fake_config = SimpleNamespace(MXFP8TrainingOpConfig = _OpConfig, MXFP8TrainingRecipe = _Recipe)
+    monkeypatch.setitem(sys.modules, "torchao.prototype.mx_formats", None)
+    monkeypatch.setitem(
+        sys.modules, "torchao.prototype.moe_training", SimpleNamespace(config = fake_config)
+    )
+    monkeypatch.setitem(sys.modules, "torchao.prototype.moe_training.config", fake_config)
+    assert _mxfp8_training_config() == "cfg-0.17"
+    # High-precision wgrad: the MX dim1 cast of the frozen weight's discarded gradient asserts tokens % 32 == 0.
+    assert calls["recipe"] == _Recipe.MXFP8_RCEIL_WGRAD_WITH_HP
+
+
+def test_mxfp8_training_config_legacy_api_uses_rceil(monkeypatch):
+    # torchao 0.14-0.16: "mxfp8_cublas" is FLOOR scaling; RCEIL matches the 0.17+ recipe's numerics.
+    from types import SimpleNamespace
+
+    from core.training.diffusion_dit_trainer import _mxfp8_training_config
+
+    class _Cfg:
+        @staticmethod
+        def from_recipe_name(name):
+            return name
+
+    monkeypatch.setitem(
+        sys.modules, "torchao.prototype.mx_formats", SimpleNamespace(MXLinearConfig = _Cfg)
+    )
+    assert _mxfp8_training_config() == "mxfp8_cublas_rceil"
+
+
+def _patch_capability(monkeypatch, capability):
+    # Pretend CUDA at a capability (fp8 sm89+, mxfp8 sm100+); torchao and bf16 are stubbed True.
+    import torch
+
+    import core.training.diffusion_train_common as dtc
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda *a, **k: True)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: capability)
+    monkeypatch.setattr(dtc, "has_functional_torchao", lambda: True)
+
+
+def test_train_precision_modes_blackwell_lists_mxfp8(monkeypatch):
+    _patch_capability(monkeypatch, (10, 0))
+    modes, recommended = train_precision_modes()
+    assert "mxfp8" in modes and "fp8" in modes
+    assert modes.index("mxfp8") < modes.index("auto")
+    assert modes.index("fp8") < modes.index("auto")
+    assert recommended == "auto"
+
+
+def test_train_precision_modes_ada_has_fp8_without_mxfp8(monkeypatch):
+    _patch_capability(monkeypatch, (8, 9))
+    modes, _ = train_precision_modes()
+    assert "fp8" in modes
+    assert "mxfp8" not in modes
+
+
+def test_train_precision_modes_newer_blackwell_has_mxfp8(monkeypatch):
+    _patch_capability(monkeypatch, (12, 0))
+    modes, _ = train_precision_modes()
+    assert "mxfp8" in modes
+
+
+def test_train_precision_modes_pre_ampere_is_nf4_only(monkeypatch):
+    # Pre-Ampere GPUs EMULATE bf16; the DiT trainer needs native bf16, so offer nf4 only.
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        torch.cuda, "is_bf16_supported", lambda *a, **k: True
+    )  # emulation reports True
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (7, 5))  # Turing
+    modes, recommended = train_precision_modes()
+    assert modes == ["nf4"]
+    assert recommended == "nf4"
+
+
+@pytest.mark.parametrize(
+    "capability, lowp",
+    [
+        ((7, 5), set()),
+        ((8, 0), set()),
+        ((8, 6), set()),
+        ((8, 9), {"fp8"}),
+        ((9, 0), {"fp8"}),
+        ((10, 0), {"fp8", "mxfp8"}),
+        ((12, 0), {"fp8", "mxfp8"}),
+    ],
+)
+def test_lowp_routing_per_nvidia_arch(monkeypatch, capability, lowp):
+    # fp8 only on sm89+, mxfp8 only on sm100+, refused by the child and the pre-eviction preflight alike.
+    import core.training.diffusion_train_common as dtc
+    from core.training.diffusion_train_common import training_precision_preflight_error
+
+    _patch_capability(monkeypatch, capability)
+    monkeypatch.setattr(dtc, "bf16_unsupported_reason", lambda _f: None)
+    monkeypatch.setattr(dtc, "dit_accelerator_missing_reason", lambda _f: None)
+    modes, _ = train_precision_modes()
+    assert {m for m in modes if m in ("fp8", "mxfp8")} == (lowp if capability >= (8, 0) else set())
+    for mode, floor in (("fp8", "sm89"), ("mxfp8", "Blackwell")):
+        cfg = types.SimpleNamespace(base_precision = mode, mixed_precision = "bf16", base_model = "x")
+        reason = training_precision_preflight_error("flux.1", mode)
+        if mode in lowp:
+            assert _resolve_base_precision(cfg, None, "cuda") == mode
+            assert reason is None
+        else:
+            with pytest.raises(ValueError, match = floor):
+                _resolve_base_precision(cfg, None, "cuda")
+            assert reason and floor in reason
+
+
+@pytest.mark.parametrize("device", ["cpu", "mps", "xpu"])
+@pytest.mark.parametrize("mode", ["fp8", "mxfp8"])
+def test_lowp_refused_off_cuda(device, mode):
+    # The float8 / MX conversions are reachable only from a CUDA run: every other device is refused up front.
+    cfg = types.SimpleNamespace(base_precision = mode, mixed_precision = "bf16", base_model = "x")
+    with pytest.raises(ValueError, match = "CUDA"):
+        _resolve_base_precision(cfg, None, device)
+
+
+@pytest.mark.parametrize("mode", ["fp8", "mxfp8"])
+def test_lowp_refused_on_rocm(monkeypatch, mode):
+    import core.training.diffusion_dit_trainer as dit
+    import core.training.diffusion_train_common as dtc
+
+    _patch_capability(monkeypatch, (10, 0))
+    monkeypatch.setattr(dit, "torch_is_rocm", lambda: True)
+    monkeypatch.setattr(dtc, "torch_is_rocm", lambda: True)
+    assert not {"fp8", "mxfp8"} & set(train_precision_modes()[0])
+    cfg = types.SimpleNamespace(base_precision = mode, mixed_precision = "bf16", base_model = "x")
+    with pytest.raises(ValueError, match = "ROCm"):
+        _resolve_base_precision(cfg, None, "cuda")
+
+
+def test_compile_engagement_warning():
+    from core.training.diffusion_dit_trainer import _compile_engagement_warning
+
+    assert _compile_engagement_warning(None, (0, 0, 3)) is None
+    assert _compile_engagement_warning((0, 0, 0), (0, 0, 3)) is None
+    assert "no graphs" in _compile_engagement_warning((0, 0, 0), (0, 0, 0))
+    assert "1 graph break" in _compile_engagement_warning((0, 0, 0), (1, 0, 3))
+    assert "2 frame(s)" in _compile_engagement_warning((4, 1, 5), (4, 3, 9))
+
+
+def test_compile_engagement_reads_real_dynamo_counters():
+    # suppress_errors hides failed compiles and nf4 splits on graph breaks; both must surface.
+    import torch
+
+    from core.training.diffusion_dit_trainer import (
+        _compile_engagement_warning,
+        _dynamo_compile_counters,
+    )
+
+    def body(x):
+        x = x + 1
+        torch._dynamo.graph_break()
+        return x * 2
+
+    def broken_backend(gm, example_inputs):
+        raise RuntimeError("backend failed")
+
+    torch._dynamo.reset()
+    before = _dynamo_compile_counters()
+    torch.compile(lambda x: x * 3, backend = "eager", fullgraph = True)(torch.ones(2))
+    assert _compile_engagement_warning(before, _dynamo_compile_counters()) is None
+    before = _dynamo_compile_counters()
+    assert torch.compile(body, backend = "eager")(torch.ones(2)).tolist() == [4.0, 4.0]
+    assert "graph break" in _compile_engagement_warning(before, _dynamo_compile_counters())
+    before = _dynamo_compile_counters()
+    with torch._dynamo.config.patch(suppress_errors = True):
+        out = torch.compile(lambda x: x * 5, backend = broken_backend)(torch.ones(2))
+    assert out.tolist() == [5.0, 5.0]
+    assert "fell back to eager" in _compile_engagement_warning(before, _dynamo_compile_counters())
+    torch._dynamo.reset()

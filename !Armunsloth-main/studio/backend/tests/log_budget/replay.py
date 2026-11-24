@@ -1,0 +1,169 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Replay a session through the real middleware on a fake clock; no sleep sits near a window edge."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+class FakeClock:
+    """Stands in for the time module in loggers.handlers; any call other than perf_counter raises."""
+
+    def __init__(self, start: float = 1000.0) -> None:
+        self.now = start
+
+    def perf_counter(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    def __getattr__(self, name: str):
+        raise AttributeError(
+            f"loggers.handlers called time.{name}(), which the log-budget replay does not "
+            f"model. Add it to FakeClock deliberately rather than letting the guard fall "
+            f"back to the wall clock."
+        )
+
+
+class LogCapture:
+    """Collects what the middleware logged, in order."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict]] = []
+
+    def info(self, event, **kw):
+        self.events.append(("info", event, kw))
+
+    def error(self, event, **kw):
+        self.events.append(("error", event, kw))
+
+    def warning(self, event, **kw):
+        self.events.append(("warning", event, kw))
+
+    def paths(self) -> list[str]:
+        return [kw["path"] for _lvl, ev, kw in self.events if "path" in kw]
+
+    def records_for(self, path: str) -> list[dict]:
+        return [kw for _lvl, _ev, kw in self.events if kw.get("path") == path]
+
+
+@dataclass
+class Request:
+    method: str
+    path: str
+    status: int = 200
+    query: bytes = b""
+    # Suppressors key on status, not duration, so this lets scenarios express slow 200s.
+    duration_ms: float = 0.0
+
+
+@dataclass
+class ReplayResult:
+    capture: LogCapture
+    sent: list[Request] = field(default_factory = list)
+
+    @property
+    def emitted(self) -> int:
+        return len(self.capture.events)
+
+
+def _app_returning(
+    status: int,
+    duration_ms: float = 0.0,
+    clock: "FakeClock | None" = None,
+):
+    async def app(scope, receive, send):
+        # Advance BEFORE responding: the middleware stamps its window on the end time.
+        if duration_ms and clock is not None:
+            clock.advance(duration_ms / 1000.0)
+        await send({"type": "http.response.start", "status": status, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    return app
+
+
+async def _noop_receive():
+    return {"type": "http.disconnect"}
+
+
+async def _noop_send(message):
+    return None
+
+
+def install(
+    handlers,
+    monkeypatch,
+    clock: Optional[FakeClock] = None,
+) -> FakeClock:
+    """Point the middleware at a virtual clock. Returns the clock."""
+    clock = clock or FakeClock()
+    monkeypatch.setattr(handlers, "time", clock)
+    return clock
+
+
+def replay(
+    handlers,
+    monkeypatch,
+    polled: dict,
+    duration_s: float,
+    boot: tuple = (),
+    clock: Optional[FakeClock] = None,
+    durations: Optional[dict] = None,
+) -> ReplayResult:
+    """One middleware instance per run: dedup state lives on it, and a fresh one suppresses nothing."""
+    from loggers.handlers import LoggingMiddleware
+
+    clock = install(handlers, monkeypatch, clock)
+    capture = LogCapture()
+    monkeypatch.setattr(handlers, "logger", capture)
+
+    middleware_by_status: dict[tuple[int, float], object] = {}
+    result = ReplayResult(capture = capture)
+
+    shared_state = LoggingMiddleware(_app_returning(200))
+
+    def send_request(request: Request) -> None:
+        key = (request.status, request.duration_ms)
+        app = middleware_by_status.get(key)
+        if app is None:
+            app = _app_returning(request.status, request.duration_ms, clock)
+            middleware_by_status[key] = app
+        shared_state.app = app
+        scope = {
+            "type": "http",
+            "path": request.path,
+            "method": request.method,
+            "query_string": request.query,
+        }
+        asyncio.run(shared_state(scope, _noop_receive, _noop_send))
+        result.sent.append(request)
+
+    for method, path, status in boot:
+        send_request(Request(method = method, path = path, status = status))
+        clock.advance(0.05)
+
+    # Each registry period lands on an exact tick, so expectation and replay agree by construction.
+    tick = 0.5
+    started_at = clock.now
+    next_due = {path: 0.0 for path in polled}
+    while clock.now - started_at < duration_s:
+        elapsed = clock.now - started_at
+        for path, (period, _provenance) in polled.items():
+            if elapsed + 1e-9 >= next_due[path]:
+                send_request(
+                    Request(
+                        method = "GET",
+                        path = path,
+                        status = 200,
+                        duration_ms = durations.get(path, 0.0) if durations else 0.0,
+                    )
+                )
+                next_due[path] = elapsed + period
+        clock.advance(tick)
+
+    return result

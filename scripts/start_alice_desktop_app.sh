@@ -4,12 +4,6 @@
 # The guard matters: two copies of the Qt app would both poll the WhatsApp inbox and both answer,
 # so a second instance is refused rather than tolerated.
 REPO="/Users/ioanganton/Music/ANTON_SIFTA"
-if pgrep -f 'sifta_os_desktop' >/dev/null 2>&1; then
-  echo "alice desktop already running — nothing to start"
-  exit 0
-fi
-cd "$REPO" || exit 1
-
 # George 2026-10-16 — stigmergic shutdown.
 # A dying GUI cannot reliably kill its own body, and launchd KeepAlive just
 # resurrects this job. So the GUI leaves a note (.sifta_state/shutdown_requested)
@@ -34,6 +28,13 @@ if [ -f "$_NOTE" ]; then
   fi
   rm -f "$_NOTE"
 fi
+
+if pgrep -f 'sifta_os_desktop' >/dev/null 2>&1; then
+  echo "alice desktop already running — nothing to start"
+  exit 0
+fi
+cd "$REPO" || exit 1
+
 export SIFTA_DESKTOP_ENABLE_AUTOSTART=1
 export SIFTA_WHATSAPP_BACKGROUND=1
 exec /bin/bash "$REPO/SIFTA OS.command"

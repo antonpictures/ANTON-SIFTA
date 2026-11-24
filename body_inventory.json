@@ -1,0 +1,452 @@
+{
+  "root": "/Users/ioanganton/Music/ANTON_SIFTA",
+  "top_files": [
+    "!RunPhysarumContradictionLab.command",
+    ".DS_Store",
+    ".clinerules",
+    ".coverage",
+    ".coverage.claude.pid9.X2EMIOGx.HN11Ze8wzgHh",
+    ".cursor_identity",
+    ".cursorrules",
+    ".env",
+    ".gitattributes",
+    ".gitignore",
+    ".gitmodules",
+    ".sifta_tmp_small_test.jpg",
+    "AG31VANGUARD.jpg",
+    "AGENTS.md",
+    "CONTRIBUTOR_LICENSE_AGREEMENT.md",
+    "INSTALL_COIN_SITE.md",
+    "LICENSE",
+    "LICENSE_v1.1.md",
+    "Modelfile",
+    "Modelfile-qwen-wasserstein",
+    "PATENT 1 N417.PYMT-merged.pdf",
+    "PHILIPPE_SIFTA_COMMERCIAL_RESPONSE_2026-06-20.pdf",
+    "PINNED_MODULES.md",
+    "README.md",
+    "README.ro.md",
+    "RELEASE_MANIFEST.json",
+    "RELEASE_NOTES_v9.0.md",
+    "Resume_IoanAnton_AI_Native_Frontend.pdf",
+    "Resume_IoanGeorgeAnton_ML_Engineer.docx",
+    "SIFTA OS.command",
+    "SIFTA_Lawyer_Real_Product_Stack_Consequence.pdf",
+    "SIFTA_PYTHON_TO_RUST_PLAN.txt",
+    "SIFTA_Response_to_Phillipe.pdf",
+    "VERSION",
+    "alice_eye.py",
+    "append_ecology.py",
+    "append_v2_clean.py",
+    "architect_approval.txt",
+    "basal_ganglia_selections.jsonl",
+    "bishop_identity_response.txt",
+    "broadcast.py",
+    "broadcast_sleep.py",
+    "c47h_evolution_handoff.md",
+    "c47h_johnny_mnemonic_load.md",
+    "cartography_dashboard.html",
+    "check_balances.py",
+    "clean_ast.py",
+    "clear_grok_sessions.sh",
+    "config.example.json",
+    "config.json",
+    "config.opt",
+    "config.opt.in",
+    "config.redo.in",
+    "crash_log.txt",
+    "cron_backup.txt",
+    "dsh_attachment_pixels.py",
+    "finish_cut.py",
+    "finish_residue.py",
+    "fix.py",
+    "fix_backchannel.py",
+    "fix_contract.py",
+    "fix_import.py",
+    "fix_m1_finance.py",
+    "fix_m5_finance.py",
+    "fix_noop.py",
+    "fix_reward_loop.py",
+    "fix_test.py",
+    "full_reconstruct.py",
+    "grok_chat.py",
+    "hermes_stdout.log",
+    "ide_stigmergic_trace.jsonl",
+    "implementation_plan.md",
+    "integrity_manifest.json",
+    "lana_kernel_pic.PNG",
+    "lefthook.yml",
+    "list_all_stgm.py",
+    "list_balances.py",
+    "log_alice.patch",
+    "log_desktop.patch",
+    "lora_samples.jsonl",
+    "m1queen_dead_drop.jsonl",
+    "m5queen_dead_drop.jsonl",
+    "make_noop.py",
+    "move_qwen_to_ollama.sh",
+    "node_registry.example.json",
+    "node_registry.json",
+    "notes_to_be_coded.md",
+    "nppl_gate_log.jsonl",
+    "old_alice.py",
+    "orig_test.py",
+    "orig_widget.py",
+    "os.log",
+    "patch2.py",
+    "patch_attach.py",
+    "patch_contacts.py",
+    "patch_critic.py",
+    "patch_critic_debug.py",
+    "patch_critic_write_back.py",
+    "patch_critic_write_back2.py",
+    "patch_critic_write_back3.py",
+    "patch_e46.py",
+    "patch_ecology.py",
+    "patch_ecology_v2.py",
+    "patch_last_boundary.py",
+    "patch_os.py",
+    "patch_passport.py",
+    "patch_renderer.py",
+    "patch_revert.py",
+    "patch_reward_loop.py",
+    "patch_rlhs.py",
+    "patch_rlhs2.py",
+    "patch_root_final.py",
+    "patch_sifta_os.py",
+    "patch_sifta_os_root.py",
+    "patch_stigmergic_vision.py",
+    "patch_stigtime.py",
+    "patch_test.py",
+    "patch_tool_router.py",
+    "patch_widget.py",
+    "print_vaults.py",
+    "probe_ace_black.py",
+    "profile_finance.py",
+    "pytest.ini",
+    "pytest_out.txt",
+    "reconcile_all.py",
+    "refactor.py",
+    "repair_log.jsonl",
+    "repair_log_epoch2.jsonl",
+    "requirements.txt",
+    "run_cursor_jobs.py",
+    "scan_blobs.py",
+    "scratch.py",
+    "scratch_check_pred.py",
+    "scratch_goodnight.py",
+    "scratch_mutate_identity.py",
+    "scratch_patch.py",
+    "scratch_patch_bridge.py",
+    "scratch_ping.py",
+    "scratch_register.py",
+    "scratch_register_out.py",
+    "send_delayed_msg.py",
+    "send_swarm_msg.py",
+    "send_wormhole_msg.py",
+    "server_stdout.log",
+    "sifta-skills.sh",
+    "sifta_mcp_server.py",
+    "sifta_os_desktop.py",
+    "siftactl.py",
+    "signin.py",
+    "skills-lock.json",
+    "stigauth.txt",
+    "swarm_brain_m1.log",
+    "swarm_integrity_report.txt",
+    "test_alice.py",
+    "test_critic.py",
+    "test_debug.py",
+    "test_lora.py",
+    "test_structured_feedback.py",
+    "update_manifesto.py",
+    "update_readme.py",
+    "v2_evaluator.py"
+  ],
+  "dirs": {
+    ".sifta_state": {
+      "files": 16224,
+      "size": 24140008598
+    },
+    "demo": {
+      "files": 5,
+      "size": 24746
+    },
+    "!Armunsloth-main": {
+      "files": 9270,
+      "size": 172316779
+    },
+    ".cursor": {
+      "files": 2,
+      "size": 3890
+    },
+    ".sifta_votes": {
+      "files": 46,
+      "size": 50995
+    },
+    "Documentation": {
+      "files": 16,
+      "size": 4187490
+    },
+    "tools": {
+      "files": 67,
+      "size": 2747347
+    },
+    "Stigmergic_Games": {
+      "files": 21,
+      "size": 62392
+    },
+    "gallery-main": {
+      "files": 480,
+      "size": 12709644
+    },
+    "Archive": {
+      "files": 16871,
+      "size": 62558832302
+    },
+    ".pytest_cache": {
+      "files": 5,
+      "size": 1254842
+    },
+    "bin": {
+      "files": 8,
+      "size": 224598
+    },
+    "bureau_of_identity": {
+      "files": 1,
+      "size": 501
+    },
+    "Security": {
+      "files": 14,
+      "size": 51546
+    },
+    "sifta_exoskeleton": {
+      "files": 13,
+      "size": 44014
+    },
+    "distro": {
+      "files": 2,
+      "size": 7837
+    },
+    ".sifta": {
+      "files": 96,
+      "size": 6180701
+    },
+    "Projects": {
+      "files": 7,
+      "size": 163696
+    },
+    "Network": {
+      "files": 1826,
+      "size": 2347330
+    },
+    "stigauth": {
+      "files": 759,
+      "size": 267993002
+    },
+    "tests": {
+      "files": 1364,
+      "size": 8043093
+    },
+    ".agents": {
+      "files": 2,
+      "size": 11108
+    },
+    "surgery": {
+      "files": 21,
+      "size": 82831680
+    },
+    "output": {
+      "files": 3,
+      "size": 147535603
+    },
+    "SwarmEntityWatchingYouTube": {
+      "files": 38,
+      "size": 31441538
+    },
+    ".claude": {
+      "files": 13054,
+      "size": 127983263
+    },
+    "!Alice Coding Arm": {
+      "files": 14504,
+      "size": 113407668
+    },
+    ".distro_build": {
+      "files": 3344,
+      "size": 167521061
+    },
+    "Library": {
+      "files": 4613,
+      "size": 239530933
+    },
+    "Organs": {
+      "files": 2,
+      "size": 7760
+    },
+    "models": {
+      "files": 2,
+      "size": 20488
+    },
+    "docs": {
+      "files": 8,
+      "size": 116922
+    },
+    "State": {
+      "files": 3,
+      "size": 14766
+    },
+    "schemas": {
+      "files": 1,
+      "size": 1462
+    },
+    "exports": {
+      "files": 17,
+      "size": 29006
+    },
+    "sifta": {
+      "files": 9,
+      "size": 33645
+    },
+    ".sifta_documents": {
+      "files": 129,
+      "size": 204929
+    },
+    "Utilities": {
+      "files": 28,
+      "size": 384339
+    },
+    "System": {
+      "files": 3548,
+      "size": 145107918
+    },
+    "scratch": {
+      "files": 30,
+      "size": 195896
+    },
+    "ARCHITECTURE": {
+      "files": 4,
+      "size": 20134
+    },
+    "memory-bank": {
+      "files": 6,
+      "size": 6466
+    },
+    "logs": {
+      "files": 12,
+      "size": 2021106
+    },
+    "Voices": {
+      "files": 9,
+      "size": 1968112
+    },
+    ".matplotlib_cache": {
+      "files": 1,
+      "size": 125096
+    },
+    ".personal": {
+      "files": 8,
+      "size": 31857310
+    },
+    "static": {
+      "files": 2,
+      "size": 2277347
+    },
+    ".sifta_reputation": {
+      "files": 32,
+      "size": 8063
+    },
+    "Simulations": {
+      "files": 7,
+      "size": 80659
+    },
+    "scripts": {
+      "files": 91,
+      "size": 377200
+    },
+    "swarmrl": {
+      "files": 10,
+      "size": 61461
+    },
+    "Applications": {
+      "files": 198,
+      "size": 10244794
+    },
+    "launchd": {
+      "files": 23,
+      "size": 34944
+    },
+    ".cline": {
+      "files": 2,
+      "size": 1690
+    },
+    "skills": {
+      "files": 20,
+      "size": 84052
+    },
+    "Documents": {
+      "files": 723,
+      "size": 22716454
+    },
+    ".vscode": {
+      "files": 1,
+      "size": 68
+    },
+    "data": {
+      "files": 38,
+      "size": 3051008
+    },
+    ".sifta_quarantine": {
+      "files": 591,
+      "size": 106331878514
+    },
+    "assets": {
+      "files": 23,
+      "size": 46977877
+    },
+    "dsh-session-manager": {
+      "files": 46,
+      "size": 829809
+    },
+    "tmp": {
+      "files": 17,
+      "size": 2020867
+    },
+    "Job_Applications": {
+      "files": 4,
+      "size": 143751
+    },
+    "outputs": {
+      "files": 163,
+      "size": 891036
+    },
+    "apps": {
+      "files": 1,
+      "size": 21361
+    },
+    "sifta_effectors": {
+      "files": 2,
+      "size": 7147
+    },
+    "pheromone_archive": {
+      "files": 12,
+      "size": 36227
+    },
+    "Kernel": {
+      "files": 71,
+      "size": 508020
+    },
+    "proposals": {
+      "files": 2,
+      "size": 550411
+    },
+    ".sifta_directives": {
+      "files": 1106,
+      "size": 206014
+    },
+    "Vendor": {
+      "files": 4437,
+      "size": 1059698655
+    }
+  }
+}

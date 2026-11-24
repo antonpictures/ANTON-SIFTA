@@ -33,7 +33,7 @@ URL = "https://api.inceptionlabs.ai/v1/chat/completions"
 TRUTH_LABEL = "SIFTA_MERCURY_LANE_V1"
 
 DEFAULT_MODEL = "mercury-2.5"
-CLOUD_TAGS = ("mercury-2.5", "mercury-2", "mercury-voice")     # served without local weights
+CLOUD_TAGS = ("mercury-2.5", "mercury-3", "mercury-2", "mercury-voice")     # served without local weights
 
 # Measured 2026-10-06: three of eight identical calls came back unparseable. Three attempts with
 # a growing pause take that from ~37% to a few percent, and this lane is on the critical path of
@@ -64,6 +64,11 @@ def is_mercury(model: str) -> bool:
     return str(model or "").strip().lower() in CLOUD_TAGS
 
 
+def _is_mercury_3(model: str) -> bool:
+    """True when model is mercury-3, which requires medium effort instead of low."""
+    return str(model or "").strip().lower() == "mercury-3"
+
+
 def chat(messages: List[Dict[str, Any]], *, model: str = DEFAULT_MODEL,
          effort: str = "low", max_tokens: int = 1024, timeout: int = 90,
          write: bool = True) -> Dict[str, Any]:
@@ -71,6 +76,9 @@ def chat(messages: List[Dict[str, Any]], *, model: str = DEFAULT_MODEL,
     key = api_key()
     if not key:
         return {"ok": False, "error": "no Inception API key in the body"}
+    # mercury-3 requires medium effort; use low for all other Mercury models
+    if _is_mercury_3(model):
+        effort = "medium"
     payload = {"model": model, "messages": messages, "max_completion_tokens": max_tokens,
                "reasoning_effort": effort}
     t0 = time.time()

@@ -118,9 +118,10 @@ def test_input_device_candidates_default_embedded_macbook_first(monkeypatch):
     labels = [label for _, label in candidates]
 
     assert labels[0].startswith("default embedded 1:MacBook Pro Microphone")
-    assert any("iPhone Microphone" in label for label in labels)
     assert any("DELL" in label for label in labels)
-    assert labels[-1] == "input 0:iPhone Microphone"
+    # Architect 2026-10-22: the room mic is the LAPTOP's. A Continuity iPhone
+    # input is never opened — it is not a candidate at all.
+    assert not any("iPhone" in label for label in labels)
     assert "system default" not in labels
 
 

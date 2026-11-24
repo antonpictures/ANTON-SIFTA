@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -40,6 +41,9 @@ _STATE = _REPO / ".sifta_state"
 
 NEWS_SHOWN = "news_shown.jsonl"
 NEWS_CACHE = "news_cache.json"
+LAST30DAYS_RESEARCH = "last30days_research.jsonl"
+LAST30DAYS_SCRIPT = _REPO / "skills" / "last30days" / "scripts" / "last30days.py"
+LAST30DAYS_CACHE_TTL_S = 86400   # research briefs are fresh for a day
 TRUTH_LABEL = "SIFTA_NEWS_DESK_V1"
 
 CACHE_TTL_S = 900           # refetch headlines every 15 minutes
@@ -419,6 +423,150 @@ def selftest() -> dict[str, Any]:
             "headlines": len(heads), "truth_label": TRUTH_LABEL}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Last30Days research arm — community-grounded briefs for the news desk.
+#
+# Owner request: pull real engagement (Reddit, X, YouTube, HN, Polymarket,
+# GitHub) behind a headline instead of RSS titles alone. Runs the installed
+# SIFTA skill `last30days` as a subprocess so the desk stays decoupled from
+# its Python environment, and caches briefs for a day so we never pay the
+# research cost twice for the same topic.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _research_ledger(state_dir: Path | str | None = None) -> Path:
+    return _state_dir(state_dir) / LAST30DAYS_RESEARCH
+
+
+def _cached_research(topic: str, *, state_dir: Path | str | None = None) -> Optional[dict[str, Any]]:
+    """Return a still-fresh research brief for ``topic`` if one exists."""
+    p = _research_ledger(state_dir)
+    if not p.exists():
+        return None
+    needle = (topic or "").strip().casefold()
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if str(row.get("topic", "")).casefold() != needle:
+            continue
+        if time.time() - float(row.get("ts") or 0) > LAST30DAYS_CACHE_TTL_S:
+            continue
+        brief = row.get("brief")
+        if isinstance(brief, dict):
+            return brief
+    return None
+
+
+def research_topic(topic: str, *, state_dir: Path | str | None = None,
+                  timeout: float = 300.0) -> dict[str, Any]:
+    """Run last30days for ``topic`` and return a grounded brief + receipt.
+
+    Never raises: failures are recorded in the ledger and returned as
+    ``{"ok": False, "error": ...}`` so callers can degrade to RSS-only.
+    """
+    sd = _state_dir(state_dir)
+    sd.mkdir(parents=True, exist_ok=True)
+    topic = (topic or "").strip()
+    if not topic:
+        return {"ok": False, "error": "empty_topic", "truth_label": TRUTH_LABEL}
+
+    cached = _cached_research(topic, state_dir=sd)
+    if cached is not None:
+        return {"ok": True, "topic": topic, "cached": True, "brief": cached,
+                "truth_label": TRUTH_LABEL}
+
+    if not LAST30DAYS_SCRIPT.exists():
+        row = {"ts": time.time(), "topic": topic, "status": "UNAVAILABLE",
+               "error": "script_missing", "truth_label": TRUTH_LABEL}
+        with _research_ledger(sd).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"ok": False, "topic": topic, "error": "script_missing",
+                "truth_label": TRUTH_LABEL}
+
+    cmd = ["python3", str(LAST30DAYS_SCRIPT), topic, "--emit=json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              cwd=str(_REPO))
+    except subprocess.TimeoutExpired:
+        row = {"ts": time.time(), "topic": topic, "status": "TIMEOUT",
+               "error": f"exceeded {timeout}s", "truth_label": TRUTH_LABEL}
+        with _research_ledger(sd).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"ok": False, "topic": topic, "error": "timeout",
+                "truth_label": TRUTH_LABEL}
+    except OSError as e:
+        row = {"ts": time.time(), "topic": topic, "status": "ERROR",
+               "error": f"{type(e).__name__}: {e}", "truth_label": TRUTH_LABEL}
+        with _research_ledger(sd).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"ok": False, "topic": topic, "error": str(e),
+                "truth_label": TRUTH_LABEL}
+
+    brief: Optional[dict[str, Any]] = None
+    stdout = (proc.stdout or "").strip()
+    if stdout:
+        try:
+            parsed = json.loads(stdout)
+            if isinstance(parsed, dict):
+                brief = parsed
+        except json.JSONDecodeError:
+            # last30days may print progress lines; take the last JSON object.
+            for line in reversed(stdout.splitlines()):
+                line = line.strip()
+                if line.startswith("{") and line.endswith("}"):
+                    try:
+                        brief = json.loads(line)
+                        break
+                    except json.JSONDecodeError:
+                        continue
+
+    if brief is None:
+        row = {"ts": time.time(), "topic": topic, "status": "PARSE_ERROR",
+               "returncode": proc.returncode, "stderr": (proc.stderr or "")[:500],
+               "truth_label": TRUTH_LABEL}
+        with _research_ledger(sd).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"ok": False, "topic": topic, "error": "parse_error",
+                "stderr": (proc.stderr or "")[:500], "truth_label": TRUTH_LABEL}
+
+    row = {"ts": time.time(), "topic": topic, "status": "OK",
+           "brief": brief, "truth_label": TRUTH_LABEL}
+    with _research_ledger(sd).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return {"ok": True, "topic": topic, "cached": False, "brief": brief,
+            "truth_label": TRUTH_LABEL}
+
+
+def enriched_opener(
+    *,
+    visitor_id: str = "",
+    prefer: str = "",
+    research_topic: str = "",
+    state_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """A greeting plus, optionally, a 30-day community research brief.
+
+    The research is additive and never blocks the RSS opener: if the research
+    fails or times out, the opener is returned unchanged with ``research=None``.
+    """
+    opener = pick_opener(visitor_id=visitor_id, prefer=prefer, state_dir=state_dir)
+    research = None
+    if research_topic:
+        r = research_topic(research_topic, state_dir=state_dir)
+        if r.get("ok"):
+            research = r.get("brief")
+    opener["research"] = research
+    opener["truth_label"] = TRUTH_LABEL
+    return opener
+
+
 if __name__ == "__main__":  # pragma: no cover
     import sys
     cmd = sys.argv[1] if len(sys.argv) > 1 else "selftest"
@@ -429,5 +577,11 @@ if __name__ == "__main__":  # pragma: no cover
     elif cmd == "heads":
         for h in headlines()[:15]:
             print(f"  [{h['source']}] {h['title'][:90]}")
+    elif cmd == "research":
+        topic = " ".join(sys.argv[2:]).strip()
+        if not topic:
+            print("usage: research <topic>", file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(research_topic(topic), indent=2, ensure_ascii=False))
     else:
         print(json.dumps(selftest(), indent=2))

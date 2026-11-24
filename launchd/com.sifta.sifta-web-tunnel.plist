@@ -27,9 +27,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/sifta-web-tunnel.launchd.err.log</string>
+	<string>/Users/ioanganton/.sifta-logs/sifta-web-tunnel.launchd.err.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/sifta-web-tunnel.launchd.log</string>
+	<string>/Users/ioanganton/.sifta-logs/sifta-web-tunnel.launchd.log</string>
 	<key>ThrottleInterval</key>
 	<integer>5</integer>
 	<key>WorkingDirectory</key>

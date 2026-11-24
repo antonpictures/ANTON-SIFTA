@@ -1,0 +1,468 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""/api/health must answer inside the launcher's probe timeout, because a timeout is never retried."""
+
+from __future__ import annotations
+
+import ast
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Detection cost under the stubs; the regression returns after exactly this long.
+_SLOW_DETECT_S = 10.0
+# Warm-call ceiling (cold call is bounded separately); fix flakes by warming, not widening.
+# Post-warm overhead is ~45ms; 0.5s leaves the ceiling at 1.5s, inside the 2s probe timeout.
+_POST_WARM_OVERHEAD_ALLOWANCE_S = 0.5
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_MAIN_SRC = _BACKEND_DIR / "main.py"
+_PROBE_RS = _BACKEND_DIR.parent / "src-tauri" / "src" / "preflight" / "backend.rs"
+
+
+def _run(snippet: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", snippet],
+        cwd = str(_BACKEND_DIR),
+        capture_output = True,
+        text = True,
+        timeout = 900,
+    )
+
+
+def _desktop_probe_timeout_s() -> float:
+    """Reads the probe's whole-client timeout from the Rust source as a seconds Duration."""
+    assert _PROBE_RS.is_file(), f"{_PROBE_RS} moved; update this guard"
+    rust = _PROBE_RS.read_text(encoding = "utf-8")
+    probe = rust[rust.index("fn probe_ownerless_spawned_backend") :]
+    end = probe.find("\n}\n")
+    if end != -1:
+        probe = probe[: end + 3]
+    match = re.search(r"Duration::from_secs\((\d+)\)", probe)
+    assert match, (
+        "probe_ownerless_spawned_backend no longer sets a whole-seconds client "
+        "timeout; re-derive the health budget from whatever replaced it"
+    )
+    return float(match.group(1))
+
+
+def _main_constant(name: str) -> float:
+    """Read a module-level float from main.py without importing it."""
+    tree = ast.parse(_MAIN_SRC.read_text(encoding = "utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            return float(ast.literal_eval(node.value))
+    raise AssertionError(f"main.py no longer defines {name}")
+
+
+def test_the_budget_stays_under_the_desktop_probe_timeout():
+    """Cross-language guard: the budget is only correct relative to the Rust one, and
+    either side can be changed without the other."""
+    probe_timeout = _desktop_probe_timeout_s()
+    budget = _main_constant("_HEALTH_DETECT_BUDGET_S")
+    assert budget < probe_timeout, (
+        f"/api/health waits up to {budget}s for detection but the desktop probe "
+        f"gives up at {probe_timeout}s"
+    )
+    # A C-extension import holding the GIL can overrun the budget (0.24s measured), so keep slack.
+    assert probe_timeout - budget >= 0.9, (
+        f"only {probe_timeout - budget}s of headroom between the health budget "
+        f"and the {probe_timeout}s probe timeout"
+    )
+
+
+_SNIPPET = r"""
+import asyncio, contextlib, json, os, sys, threading, time
+
+# UNSLOTH_STUDIO_DISABLE_TORCH_WARM is deliberately NOT set here. It used to be,
+# to keep a real warm out of the way, but nothing below runs the lifespan -- the
+# app is built by hand with one route -- so no warm ever starts anyway. Setting
+# it now would suppress the very kick these tests measure: health does not start
+# detection when the switch is on, which is what makes the switch mean anything.
+os.environ.pop("UNSLOTH_STUDIO_DISABLE_TORCH_WARM", None)
+
+import main
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+hw = main._hw_module
+DETECT_SECONDS = %(detect_seconds)s
+
+hw.DEVICE = None
+hw.CHAT_ONLY = True
+hw.CHAT_ONLY_REASON = None
+# This stub stands in for ensure_hardware_detected, so it owns the same
+# completion protocol. DEVICE alone no longer means "finished": the branches
+# assign it partway through and keep probing, so the health wait polls
+# DETECTION_COMPLETE instead. Start it clear to model "detection has not run".
+hw.DETECTION_COMPLETE.clear()
+
+def slow_detect(*_):  # start_background_detection binds the spawn-time epoch
+    # Stands in for the torch import the warm thread is running.
+    time.sleep(DETECT_SECONDS)
+    hw.DEVICE = hw.DeviceType.CUDA
+    hw.CHAT_ONLY = False
+    hw.CHAT_ONLY_REASON = None
+    hw.DETECTION_COMPLETE.set()
+    return hw.DEVICE
+
+hw.ensure_hardware_detected = slow_detect
+
+app = FastAPI()
+app.add_api_route("/api/health", main.health_check, methods = ["GET"])
+
+# Entered, not just constructed. A TestClient used outside its context manager has
+# self.portal unset, and _portal_factory then starts and tears down a fresh blocking
+# portal for EVERY request, so warming one request does not warm the next one's portal.
+# Entering it once sets self.portal and both requests share it. ExitStack rather than a
+# with-block only to keep this snippet flat; it is held open for the whole process.
+_stack = contextlib.ExitStack()
+client = _stack.enter_context(TestClient(app))
+
+# Two measurements of the same request, because two different things need bounding.
+#
+# COLD is the first call this process ever serves, with detection unset and slow. That
+# is what probe_ownerless_spawned_backend gets: it calls /api/health right after startup
+# with no warm-up, so the lazy imports inside health_check and the anyio threadpool the
+# auth dependency hops onto are on its critical path. Its bound is the launcher's own
+# 2s client timeout, because setup legitimately counts against that deadline.
+#
+# WARM is the same call again with that setup already paid. Its bound is tight, because
+# the only thing left in it is the budget wait, which does not move.
+#
+# Timing only the cold one charges setup to the endpoint and flakes, which is what this
+# file used to do. Timing only the warm one leaves the launcher's actual experience
+# unguarded, so a regression that added a second of first-call import would pass.
+hw.DEVICE = None
+hw.CHAT_ONLY = True
+hw.CHAT_ONLY_REASON = None
+hw.DETECTION_COMPLETE.clear()
+
+cold_started = time.perf_counter()
+cold_body = client.get("/api/health").json()
+cold_elapsed = time.perf_counter() - cold_started
+
+# Same starting state again, now that the machinery around it is warm.
+hw.DEVICE = None
+hw.CHAT_ONLY = True
+hw.CHAT_ONLY_REASON = None
+hw.DETECTION_COMPLETE.clear()
+
+started = time.perf_counter()
+response = client.get("/api/health")
+elapsed = time.perf_counter() - started
+body = response.json()
+
+# Same request with a bearer, which is the one config/env.ts caches on.
+# health_check imports get_current_subject inside the function, so patching the
+# module attribute is enough and keeps this test off the real JWT/storage path.
+import auth.authentication as _authmod
+
+async def _subject(_creds):
+    return "tester"
+
+_authmod.get_current_subject = _subject
+authed = client.get("/api/health", headers = {"Authorization": "Bearer probe"}).json()
+
+print("RESULT" + json.dumps({
+    "status": response.status_code,
+    "elapsed": elapsed,
+    "cold_elapsed": cold_elapsed,
+    # State, not duration: the cold call has to have modelled the real case, which is
+    # detection still running. A settled reply would mean it measured nothing useful.
+    "cold_hardware_detecting": cold_body.get("hardware_detecting"),
+    # TestClient.portal is None until the client is entered, and _portal_factory then
+    # builds a throwaway portal per request. Non-None means both calls shared one, which
+    # is the only thing that makes the warm call warm the portal as well.
+    "portal_shared": client.portal is not None,
+    "chat_only": body.get("chat_only"),
+    "hardware_detecting": body.get("hardware_detecting"),
+    "authed_has_device_type": "device_type" in authed,
+    "authed_has_chat_only_reason": "chat_only_reason" in authed,
+    "authed_hardware_detecting": authed.get("hardware_detecting"),
+    "authed_has_version": "version" in authed,
+}))
+"""
+
+
+def _probe(detect_seconds: float) -> dict:
+    proc = _run(_SNIPPET % {"detect_seconds": detect_seconds})
+    assert (
+        proc.returncode == 0
+    ), f"probe failed\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr[-4000:]}"
+    line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT"))
+    return json.loads(line[len("RESULT") :])
+
+
+# Sets CHAT_ONLY False then degrades; detect_hardware() restores the previous verdict.
+_MID_PASS_SNIPPET = r"""
+import json, os, threading, time
+
+os.environ.pop("UNSLOTH_STUDIO_DISABLE_TORCH_WARM", None)
+
+import main
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+hw = main._hw_module
+hw.DEVICE = None
+hw.CHAT_ONLY = True
+hw.CHAT_ONLY_REASON = None
+hw.DETECTION_COMPLETE.clear()
+
+def degrading_detect(*_):
+    # The XPU branch verbatim: DEVICE and CHAT_ONLY assigned, then a probe that hangs
+    # and would raise. DETECTION_COMPLETE is never set, so the verdict is not settled.
+    hw.DEVICE = hw.DeviceType.XPU
+    hw.CHAT_ONLY = False
+    time.sleep(30.0)
+    return hw.DEVICE
+
+hw.ensure_hardware_detected = degrading_detect
+
+app = FastAPI()
+app.add_api_route("/api/health", main.health_check, methods = ["GET"])
+client = TestClient(app)
+
+# start_background_detection() runs the stub, which flips the global well inside the
+# budget; the reply lands while the pass is still in flight.
+body = client.get("/api/health").json()
+
+print("RESULT" + json.dumps({
+    "chat_only": body.get("chat_only"),
+    "hardware_detecting": body.get("hardware_detecting"),
+    "global_chat_only": hw.CHAT_ONLY,
+    "complete": hw.DETECTION_COMPLETE.is_set(),
+}))
+"""
+
+
+def test_an_unsettled_pass_is_never_published_as_training_capable():
+    """An unsettled pass must publish chat_only True, not the live global, or Train and Export flash on."""
+    proc = _run(_MID_PASS_SNIPPET)
+    assert (
+        proc.returncode == 0
+    ), f"probe failed\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr[-4000:]}"
+    line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT"))
+    result = json.loads(line[len("RESULT") :])
+
+    assert not result["complete"], "the stub settled detection; the window is not modelled"
+    assert result["global_chat_only"] is False, "the mid-pass flip did not happen"
+    assert result["hardware_detecting"] is True, "expected a provisional reply"
+    assert result["chat_only"] is True, (
+        "health published chat_only=False from a detection pass still in flight; the "
+        "frontend enables Train and Export until the real verdict lands"
+    )
+
+
+def test_health_answers_within_the_budget_while_detection_is_slow():
+    """The regression: detection outlasts the probe, health must not. Against an unbounded
+    `await asyncio.to_thread(ensure_hardware_detected)` this returns in ~10s and the desktop
+    launch dead-ends."""
+    budget = _main_constant("_HEALTH_DETECT_BUDGET_S")
+    probe_timeout = _desktop_probe_timeout_s()
+    ceiling = budget + _POST_WARM_OVERHEAD_ALLOWANCE_S
+    assert ceiling < probe_timeout, (
+        f"a {ceiling}s ceiling is at or past the {probe_timeout}s the desktop probe "
+        "allows, so this assertion would pass responses that dead-end the launch"
+    )
+    # Fails if the allowance grows enough to stop separating bounded from unbounded waits.
+    assert ceiling < _SLOW_DETECT_S / 2, (
+        f"a {ceiling}s ceiling no longer separates the budget from a {_SLOW_DETECT_S}s "
+        "unbounded wait; this assertion would pass against the regression it guards"
+    )
+    result = _probe(_SLOW_DETECT_S)
+
+    assert result["status"] == 200
+    assert result["portal_shared"], (
+        "the TestClient was not entered, so _portal_factory built a separate blocking "
+        "portal for each request and the cold call did not warm the timed one's portal"
+    )
+    # Asserted on state, not duration, to avoid a flaky wall-clock ceiling.
+    assert result["cold_hardware_detecting"] is True, (
+        "the cold call got a settled reply, so it did not exercise the wait and the "
+        "timed request below is measuring one-time setup again"
+    )
+    assert result["elapsed"] < ceiling, (
+        f"/api/health took {result['elapsed']:.2f}s with detection still running; the "
+        f"budget is {budget}s and the desktop probe gives up at {probe_timeout}s"
+    )
+    assert result["hardware_detecting"] is True, (
+        "health returned a provisional chat_only without saying so; a client "
+        "cannot tell it apart from a measured one"
+    )
+    assert result["chat_only"] is True
+
+
+_UNBOUNDED_SNIPPET = r"""
+import asyncio, json, os, time
+
+os.environ.pop("UNSLOTH_STUDIO_DISABLE_TORCH_WARM", None)
+
+import main
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+hw = main._hw_module
+hw.DEVICE = None
+hw.CHAT_ONLY = True
+hw.CHAT_ONLY_REASON = None
+hw.DETECTION_COMPLETE.clear()
+
+DETECT_SECONDS = %(detect_seconds)s
+
+def slow_detect(*_):
+    time.sleep(DETECT_SECONDS)
+    hw.DEVICE = hw.DeviceType.CUDA
+    hw.CHAT_ONLY = False
+    hw.DETECTION_COMPLETE.set()
+    return hw.DEVICE
+
+hw.ensure_hardware_detected = slow_detect
+
+# The regression shape named in test_health_does_not_await_detection_unbounded, written
+# out here so the ceiling can be calibrated against what it is supposed to catch rather
+# than against a number someone picked.
+async def unbounded_health():
+    await asyncio.to_thread(hw.ensure_hardware_detected)
+    return {"status": "ok"}
+
+app = FastAPI()
+app.add_api_route("/api/health", unbounded_health, methods = ["GET"])
+client = TestClient(app)
+
+started = time.perf_counter()
+client.get("/api/health")
+print("RESULT" + json.dumps({"elapsed": time.perf_counter() - started}))
+"""
+
+
+def test_the_ceiling_still_catches_an_unbounded_wait():
+    """The ceiling must still catch an unbounded wait, so the post-warm allowance stays discriminating."""
+    detect_s = 6.0
+    ceiling = _main_constant("_HEALTH_DETECT_BUDGET_S") + _POST_WARM_OVERHEAD_ALLOWANCE_S
+    proc = _run(_UNBOUNDED_SNIPPET % {"detect_seconds": detect_s})
+    assert (
+        proc.returncode == 0
+    ), f"probe failed\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr[-4000:]}"
+    line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT"))
+    elapsed = json.loads(line[len("RESULT") :])["elapsed"]
+
+    assert elapsed >= detect_s * 0.9, (
+        f"the unbounded handler returned in {elapsed:.2f}s against a {detect_s}s "
+        "detection, so this is no longer modelling an unbounded wait"
+    )
+    assert elapsed > ceiling, (
+        f"an unbounded wait measured {elapsed:.2f}s but the budget test's ceiling is "
+        f"{ceiling}s, so that assertion would pass against the regression it guards"
+    )
+
+
+def test_health_still_waits_when_detection_finishes_inside_the_budget():
+    """The budget is a ceiling, not a floor. The wait exists so a GPU host is not
+    published as chat-only for a second; bounding it must not make every early health
+    call provisional."""
+    result = _probe(0.3)
+
+    assert result["status"] == 200
+    assert (
+        result["chat_only"] is False
+    ), "health published chat_only=True on a host whose detection completed well inside the budget"
+    assert "hardware_detecting" not in result or result["hardware_detecting"] is None
+
+
+def test_health_does_not_await_detection_unbounded():
+    """Static guard: health_check must go through the bounded helper. `await
+    asyncio.to_thread(ensure_hardware_detected)` reads like the obvious fix and passes every
+    test that pins DEVICE first; it only fails on a cold desktop launch."""
+    tree = ast.parse(_MAIN_SRC.read_text(encoding = "utf-8"))
+    health = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "health_check"
+    )
+    called = {
+        node.func.id
+        for node in ast.walk(health)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "_await_hardware_detection" in called, (
+        "health_check no longer waits for detection through "
+        "_await_hardware_detection; whatever replaced it must still answer "
+        "inside the desktop probe timeout"
+    )
+    assert "ensure_hardware_detected" not in called, (
+        "health_check calls ensure_hardware_detected directly again; that wait "
+        "is unbounded and the desktop probe gives up at 2s"
+    )
+
+
+def test_a_provisional_reply_is_not_cacheable_by_the_frontend():
+    """A provisional reply must not carry device_type, or config/env.ts caches chat_only for the session."""
+    result = _probe(_SLOW_DETECT_S)
+
+    assert result["authed_hardware_detecting"] is True, "expected a provisional reply"
+    assert not result["authed_has_device_type"], (
+        "the provisional authed reply carries device_type, so the frontend caches "
+        "it as authoritative and never re-reads the measured chat_only"
+    )
+    assert not result[
+        "authed_has_chat_only_reason"
+    ], "chat_only_reason is meaningless before detection has run"
+    assert result["authed_has_version"]
+
+
+def test_a_measured_reply_still_carries_the_authoritative_fields():
+    """The omission is scoped to the provisional case."""
+    result = _probe(0.3)
+
+    assert not result["hardware_detecting"]
+    assert result["authed_has_device_type"]
+    assert result["authed_has_chat_only_reason"]
+
+
+def test_a_mid_detection_assignment_is_not_treated_as_finished():
+    """DEVICE is set before detection settles, so waiters must not key on it or report false training."""
+    import importlib
+    import threading
+
+    hw = importlib.import_module("utils.hardware.hardware")
+
+    assert hasattr(
+        hw, "DETECTION_COMPLETE"
+    ), "detection needs a completion signal distinct from the DEVICE assignment"
+    assert isinstance(hw.DETECTION_COMPLETE, threading.Event)
+
+    src = _MAIN_SRC.read_text(encoding = "utf-8")
+    start = src.index("async def _await_hardware_detection")
+    body = src[start : start + 1800]
+    assert (
+        "DETECTION_COMPLETE" in body
+    ), "the health wait must poll the completion signal, not the DEVICE assignment"
+    assert (
+        "while _hw_module.DEVICE is None" not in body
+    ), "the health wait is keyed on the mid-detection assignment again"
+
+
+def test_a_cold_health_call_answers_inside_the_launcher_deadline():
+    """The first health call after startup has no warm-up and must answer inside the launcher's deadline."""
+    probe_timeout = _desktop_probe_timeout_s()
+    result = _probe(_SLOW_DETECT_S)
+    if result["cold_elapsed"] >= probe_timeout:
+        # A one-off runner stall (2.06s vs ~1.03s) passes a retry; a cold-path regression misses both.
+        retry = _probe(_SLOW_DETECT_S)
+        result = min(result, retry, key = lambda r: r["cold_elapsed"])
+
+    assert (
+        result["cold_hardware_detecting"] is True
+    ), "the cold call got a settled reply, so it never exercised the wait this bound is about"
+    assert result["cold_elapsed"] < probe_timeout, (
+        f"the first /api/health call took {result['cold_elapsed']:.2f}s, past the "
+        f"{probe_timeout}s the desktop probe allows before it gives up and dead-ends "
+        "the launch at desktop_owned_backend_starting"
+    )

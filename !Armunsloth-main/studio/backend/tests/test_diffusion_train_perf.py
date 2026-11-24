@@ -1,0 +1,786 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""CPU-only tests for diffusion training perf helpers, policies and events; no model is loaded."""
+
+from __future__ import annotations
+
+import itertools
+from unittest.mock import patch
+
+from pathlib import Path
+
+import pytest
+import torch
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from auth.authentication import get_current_subject
+from core.training.diffusion_dit_trainer import (
+    _flux_collate,
+    _gather_sigmas,
+    _qwen_collate,
+    _sample_timesteps,
+    _should_compile,
+    _zimage_collate,
+)
+from core.training.diffusion_train_common import (
+    DiffusionLoraConfig,
+    LATENT_CACHE_OVER_BUDGET,
+    _apply_perf_flags,
+    _config_from_dict,
+    _latent_cache_forced,
+    _latent_cache_over_budget,
+    _plan_cache_variants,
+    _restore_perf_flags,
+)
+import core.training.diffusion_lora_trainer as sdxl_trainer
+import core.training.diffusion_train_common as train_common
+from core.training.diffusion_training_service import DiffusionTrainingService
+from models.training import DiffusionTrainingStartRequest, DiffusionTrainingStopRequest
+from routes.training import router as training_router
+
+# A trainable SDXL base so normalized() resolves a family by name, with no network call.
+_SDXL = "stabilityai/stable-diffusion-xl-base-1.0"
+
+
+def _cfg(**kw) -> DiffusionLoraConfig:
+    return DiffusionLoraConfig(base_model = _SDXL, data_dir = "d", output_dir = "o", **kw)
+
+
+# ── _plan_cache_variants (pure, seed-deterministic) ───────────────────────────
+def test_random_flip_is_opt_in():
+    assert DiffusionLoraConfig.random_flip is False
+    req = DiffusionTrainingStartRequest(base_model = _SDXL, data_dir = "d", output_dir = "o")
+    assert req.random_flip is False
+    cfg = DiffusionLoraConfig(
+        **req.model_dump(include = {"base_model", "data_dir", "output_dir", "random_flip"})
+    )
+    plan = _plan_cache_variants(5, 4, cfg.center_crop, cfg.random_flip, cfg.seed)
+    assert not any(flip for variants in plan for (_, _, flip) in variants)
+    assert (
+        DiffusionTrainingStartRequest(
+            base_model = _SDXL, data_dir = "d", output_dir = "o", random_flip = True
+        ).random_flip
+        is True
+    )
+
+
+def test_plan_cache_variants_deterministic_and_deduped():
+    p1 = _plan_cache_variants(3, 4, center_crop = False, random_flip = True, seed = 123)
+    p2 = _plan_cache_variants(3, 4, center_crop = False, random_flip = True, seed = 123)
+    assert p1 == p2
+    assert len(p1) == 3
+
+    p_one = _plan_cache_variants(3, 1, center_crop = False, random_flip = True, seed = 7)
+    assert [len(v) for v in p_one] == [1, 1, 1]
+
+    p_cc = _plan_cache_variants(2, 8, center_crop = True, random_flip = False, seed = 7)
+    assert [len(v) for v in p_cc] == [1, 1]
+    assert p_cc[0][0] == (0.5, 0.5, False)
+
+    p_cf = _plan_cache_variants(2, 8, center_crop = True, random_flip = True, seed = 7)
+    assert all(len(v) <= 2 for v in p_cf)
+
+    for u_left, u_top, flip in itertools.chain.from_iterable(p1):
+        assert 0.0 <= u_left < 1.0
+        assert 0.0 <= u_top < 1.0
+        assert isinstance(flip, bool)
+
+
+def test_flux_collate_shapes():
+    entries = [(torch.randn(1, 512, 32), torch.randn(1, 16), torch.randn(512, 3)) for _ in range(3)]
+    pe, pooled, text_ids = _flux_collate(entries, "cpu", torch.float32)
+    assert pe.shape == (3, 512, 32)
+    assert pooled.shape == (3, 16)
+    assert text_ids.shape == (512, 3)
+    assert pe.dtype == torch.float32
+    assert pooled.dtype == torch.float32
+    assert text_ids.dtype == torch.float32
+
+
+def test_qwen_collate_pads_and_masks():
+    dim = 8
+    short = (torch.randn(1, 5, dim), None)
+    long = (torch.randn(1, 9, dim), torch.ones(1, 9, dtype = torch.int64))
+    pe, mask = _qwen_collate([short, long], "cpu", torch.float32)
+    assert pe.shape == (2, 9, dim)
+    assert mask.shape == (2, 9)
+    assert torch.equal(mask[0, 5:], torch.zeros(4, dtype = mask.dtype))
+
+    pe1, mask1 = _qwen_collate([(torch.randn(1, 5, dim), None)], "cpu", torch.float32)
+    assert pe1.shape == (1, 5, dim)
+    assert mask1 is None
+
+    # A sample pinned to a compile pad bucket must pad AND expose a mask marking the padding invalid.
+    pe2, mask2 = _qwen_collate([(torch.randn(1, 5, dim), None)], "cpu", torch.float32, pad_to = 16)
+    assert pe2.shape == (1, 16, dim)
+    assert mask2 is not None
+    assert torch.equal(mask2[0, 5:], torch.zeros(11, dtype = mask2.dtype))
+
+
+def test_zimage_collate_list():
+    entries = [(torch.randn(7, 2560),), (torch.randn(9, 2560),)]
+    out = _zimage_collate(entries, "cpu", torch.float32)
+    assert isinstance(out, tuple) and len(out) == 1
+    (caps,) = out
+    assert isinstance(caps, list) and len(caps) == 2
+    assert all(t.dtype == torch.float32 for t in caps)
+
+
+def test_gather_sigmas_matches_search_based_gather():
+    # CI installs the backend test deps without diffusers.
+    pytest.importorskip("diffusers")
+    from diffusers import FlowMatchEulerDiscreteScheduler
+
+    torch.manual_seed(0)
+    sched = FlowMatchEulerDiscreteScheduler()  # default init, no network
+    timesteps, indices = _sample_timesteps(sched, 16, "cpu")
+
+    # Must match the old per-item timestep-matching search exactly.
+    schedule_timesteps = sched.timesteps.to("cpu")
+    step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
+    assert step_indices == indices.tolist()
+
+    # _gather_sigmas takes the sigma TABLE (identity here: no flow shift), not the scheduler.
+    sigma = _gather_sigmas(sched.sigmas, indices, "cpu", torch.float32, 4)
+    assert sigma.ndim == 4
+    expected = sched.sigmas[step_indices].flatten()
+    while expected.ndim < 4:
+        expected = expected.unsqueeze(-1)
+    assert torch.equal(sigma, expected)
+
+
+def test_config_validates_new_fields():
+    norm = _cfg().normalized()
+    assert norm.cache_variants == 4
+    assert norm.compile_transformer == "auto"
+    assert norm.enable_tf32 is True
+    assert norm.cache_latents is True
+
+    for bad in (0, 17):
+        with pytest.raises(ValueError):
+            _cfg(cache_variants = bad).normalized()
+
+    with pytest.raises(ValueError):
+        _cfg(compile_transformer = "banana").normalized()
+
+    assert _cfg(compile_transformer = " ON ").normalized().compile_transformer == "on"
+
+    cfg = _config_from_dict(
+        {
+            "base_model": _SDXL,
+            "data_dir": "d",
+            "output_dir": "o",
+            "enable_tf32": False,
+            "cache_latents": False,
+        }
+    )
+    assert cfg.enable_tf32 is False
+    assert cfg.cache_latents is False
+
+    # "false" is a truthy string, so without coercion an opt-out would silently no-op.
+    cfg = _config_from_dict(
+        {
+            "base_model": _SDXL,
+            "data_dir": "d",
+            "output_dir": "o",
+            "enable_tf32": "false",
+            "cache_latents": "0",
+        }
+    )
+    assert cfg.enable_tf32 is False
+    assert cfg.cache_latents is False
+
+
+def test_should_compile_policy():
+    assert _should_compile(_cfg(compile_transformer = "off"), False, "cuda") is False
+    assert _should_compile(_cfg(compile_transformer = "on"), False, "cuda") is True
+    # auto over an nf4 base follows the torch / bitsandbytes version gate.
+    import core.training.diffusion_dit_trainer as dit
+
+    for supported in (True, False):
+        with patch.object(dit, "_nf4_compile_supported", lambda s = supported: s):
+            assert _should_compile(_cfg(compile_transformer = "auto"), True, "cuda") is supported
+    # auto turns on for the dense bf16 base precision on cuda.
+    assert (
+        _should_compile(_cfg(compile_transformer = "auto"), False, "cuda", base_precision = "bf16")
+        is True
+    )
+    for mode in ("off", "on", "auto"):
+        assert _should_compile(_cfg(compile_transformer = mode), False, "cpu") is False
+
+
+class _StopQueue:
+    """Records what stop() puts on the wire (put-only for these tests)."""
+
+    def __init__(self) -> None:
+        self.items: list = []
+
+    def put(self, x) -> None:
+        self.items.append(x)
+
+
+class _AliveProc:
+    def is_alive(self) -> bool:
+        return True
+
+
+def test_service_stop_save_flag():
+    svc = DiffusionTrainingService()
+    assert svc.stop() is False
+
+    svc._proc = _AliveProc()
+    q = _StopQueue()
+    svc._stop_queue = q
+
+    assert svc.stop(save = False) is True
+    assert q.items[-1] == {"save": False}
+
+    # A second stop on the same job no longer reaches the child, so use a fresh service.
+    other = DiffusionTrainingService()
+    other._proc = _AliveProc()
+    other_q = _StopQueue()
+    other._stop_queue = other_q
+    assert other.stop() is True
+    assert other_q.items[-1] is True
+
+
+def test_apply_event_preparing_and_warning():
+    svc = DiffusionTrainingService()
+    svc._apply_event({"type": "preparing", "stage": "cache_latents", "done": 4, "total": 8})
+    st = svc.status()
+    assert st["status"] == "running"
+    assert st["in_model_load"] is True
+    assert "4/8" in st["message"]
+
+    svc._apply_event({"type": "warning", "message": "compile disabled"})
+    assert svc.status()["message"] == "compile disabled"
+
+    svc_no = DiffusionTrainingService()
+    svc_no._apply_event({"type": "complete", "stopped": True, "lora_path": None})
+    st_no = svc_no.status()
+    assert st_no["status"] == "stopped"
+    assert st_no["message"] == "Stopped (no adapter saved)."
+
+    svc_partial = DiffusionTrainingService()
+    svc_partial._apply_event(
+        {"type": "complete", "stopped": True, "lora_path": "/o/pytorch_lora_weights.safetensors"}
+    )
+    assert svc_partial.status()["message"] == "Stopped (partial adapter saved)."
+
+
+class _FakeService:
+    """Records the save flag the /diffusion/stop route forwards. A local copy of the
+    test_diffusion_training.py pattern so the two suites stay decoupled."""
+
+    def __init__(self) -> None:
+        self._running = True
+        self.stopped_with_save = None
+
+    def stop(self, save = True):
+        self.stopped_with_save = save
+        was = self._running
+        self._running = False
+        return was
+
+
+@pytest.fixture
+def client(monkeypatch):
+    fake = _FakeService()
+    monkeypatch.setattr(
+        "core.training.diffusion_training_service.get_diffusion_training_service", lambda: fake
+    )
+    app = FastAPI()
+    app.include_router(training_router, prefix = "/api/train")
+    app.dependency_overrides[get_current_subject] = lambda: "test-user"
+    c = TestClient(app)
+    c._fake = fake  # type: ignore[attr-defined]
+    return c
+
+
+def test_route_stop_save_body(client):
+    r = client.post("/api/train/diffusion/stop", json = {"save": False})
+    assert r.status_code == 200, r.text
+    assert client._fake.stopped_with_save is False
+
+    r2 = client.post("/api/train/diffusion/stop")
+    assert r2.status_code == 200, r2.text
+    assert client._fake.stopped_with_save is True
+
+
+def test_request_models_new_fields():
+    req = DiffusionTrainingStartRequest(base_model = "b", data_dir = "d", output_dir = "o")
+    assert req.cache_latents is True
+    assert req.cache_variants == 4
+    assert req.compile_transformer == "auto"
+    assert req.enable_tf32 is True
+
+    with pytest.raises(Exception):
+        DiffusionTrainingStartRequest(
+            base_model = "b", data_dir = "d", output_dir = "o", cache_variants = 32
+        )
+
+    assert DiffusionTrainingStopRequest().save is True
+
+
+def test_perf_flags_cpu_roundtrip():
+    snap = _apply_perf_flags(_cfg(), "cpu")
+    assert isinstance(snap, dict)
+    _restore_perf_flags(snap)
+
+
+def test_perf_flags_tf32_off_clears_flags():
+    # enable_tf32=False must actively clear TF32 flags (cudnn defaults ON); flags are plain Python state.
+    import torch
+
+    before = (
+        torch.backends.cuda.matmul.allow_tf32,
+        torch.backends.cudnn.allow_tf32,
+        torch.get_float32_matmul_precision(),
+    )
+    snap = _apply_perf_flags(_cfg(enable_tf32 = False), "cuda")
+    try:
+        assert torch.backends.cuda.matmul.allow_tf32 is False
+        assert torch.backends.cudnn.allow_tf32 is False
+        assert torch.get_float32_matmul_precision() == "highest"
+    finally:
+        _restore_perf_flags(snap)
+    after = (
+        torch.backends.cuda.matmul.allow_tf32,
+        torch.backends.cudnn.allow_tf32,
+        torch.get_float32_matmul_precision(),
+    )
+    assert after == before
+
+
+class _FakeLatentDist:
+    def __init__(self, shape):
+        self.mean = torch.zeros(shape, dtype = torch.float32)
+        self.std = torch.ones(shape, dtype = torch.float32)
+
+
+class _FakeEncoded:
+    def __init__(self, shape):
+        self.latent_dist = _FakeLatentDist(shape)
+
+
+class _FakeVae:
+    def __init__(self, shape):
+        self._shape = shape
+
+    def encode(self, pixel_values):
+        return _FakeEncoded(self._shape)
+
+
+def _fake_planned_loader(path, resolution, center_crop, u_left, u_top, flip):
+    tensor = torch.zeros(3, resolution, resolution, dtype = torch.float32)
+    return tensor, (resolution, resolution, 0, 0, resolution, resolution)
+
+
+def _build_fake_sdxl_cache(monkeypatch, num_images, latent_shape):
+    # center_crop + no flip gives one variant per image, so total_variants == num_images.
+    monkeypatch.setattr(sdxl_trainer, "_load_image_tensor_planned", _fake_planned_loader)
+    cfg = _cfg(cache_variants = 1, center_crop = True, random_flip = False).normalized()
+    return sdxl_trainer._build_sdxl_latent_cache(
+        _FakeVae(latent_shape),
+        1.0,
+        [f"img{i}.png" for i in range(num_images)],
+        cfg,
+        "cpu",
+        torch.float32,
+        None,
+        lambda: False,
+    )
+
+
+def test_latent_cache_over_budget_boundary():
+    assert _latent_cache_over_budget(32, 4, budget_bytes = 200) is False
+    assert _latent_cache_over_budget(32, 4, budget_bytes = 128) is False
+    assert _latent_cache_over_budget(32, 4, budget_bytes = 127) is True
+    assert _latent_cache_over_budget(1_000_000, 0, budget_bytes = 1) is False
+
+
+def test_latent_cache_forced_env(monkeypatch):
+    monkeypatch.delenv("UNSLOTH_DIFFUSION_FORCE_LATENT_CACHE", raising = False)
+    assert _latent_cache_forced() is False
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_FORCE_LATENT_CACHE", "1")
+    assert _latent_cache_forced() is True
+
+
+def test_sdxl_cache_built_under_budget(monkeypatch):
+    monkeypatch.delenv("UNSLOTH_DIFFUSION_FORCE_LATENT_CACHE", raising = False)
+    cache = _build_fake_sdxl_cache(monkeypatch, num_images = 3, latent_shape = (1, 4, 8, 8))
+    assert cache is not LATENT_CACHE_OVER_BUDGET and cache is not None
+    assert len(cache) == 3
+    assert all(len(variants) == 1 for variants in cache)
+
+
+def test_sdxl_cache_gated_over_budget(monkeypatch):
+    # Budget below one variant trips on first encode; the sentinel means keep the VAE resident.
+    monkeypatch.delenv("UNSLOTH_DIFFUSION_FORCE_LATENT_CACHE", raising = False)
+    monkeypatch.setattr(train_common, "_LATENT_CACHE_BUDGET_BYTES", 8)
+    cache = _build_fake_sdxl_cache(monkeypatch, num_images = 3, latent_shape = (1, 4, 8, 8))
+    assert cache is LATENT_CACHE_OVER_BUDGET
+
+
+def test_sdxl_cache_force_bypasses_gate(monkeypatch):
+    monkeypatch.setenv("UNSLOTH_DIFFUSION_FORCE_LATENT_CACHE", "1")
+    monkeypatch.setattr(train_common, "_LATENT_CACHE_BUDGET_BYTES", 8)
+    cache = _build_fake_sdxl_cache(monkeypatch, num_images = 3, latent_shape = (1, 4, 8, 8))
+    assert cache is not LATENT_CACHE_OVER_BUDGET and cache is not None
+    assert len(cache) == 3
+
+
+def test_a_no_save_stop_survives_a_child_that_dies_before_reporting_it():
+    """A no-save stop is remembered in the parent, since a child that dies never reports the discard."""
+
+    class _DeadProc:
+        def is_alive(self) -> bool:
+            return False
+
+    svc = DiffusionTrainingService()
+    svc._proc = _AliveProc()
+    svc._stop_queue = _StopQueue()
+    svc._apply_event(
+        {"type": "checkpoint_saved", "checkpoint_path": "/o/checkpoint-40", "step": 40}
+    )
+    assert svc.status()["resume_blocked_reason"] is None
+
+    assert svc.stop(save = False) is True
+    dead = _DeadProc()
+    svc._proc = dead
+
+    class _EmptyQueue:
+        def get(self, timeout = None):
+            raise RuntimeError("empty")
+
+        def get_nowait(self):
+            raise RuntimeError("empty")
+
+    svc._pump_loop(_EmptyQueue(), dead)
+
+    state = svc.status()
+    assert state["status"] == "error"
+    assert "stopped without saving" in (state["resume_blocked_reason"] or "")
+
+
+def test_a_fresh_job_forgets_the_previous_no_save_stop():
+    """The flag is per job. Carrying it across would block a resume the next run legitimately
+    offers."""
+    import inspect
+
+    svc = DiffusionTrainingService()
+    assert svc._discard_requested is False
+    svc._proc = _AliveProc()
+    svc._stop_queue = _StopQueue()
+    assert svc.stop(save = False) is True
+    assert svc._discard_requested is True
+    # start() clears it, so a discarded run cannot block the next one's resume.
+    assert "_discard_requested = False" in inspect.getsource(DiffusionTrainingService.start)
+
+
+def test_a_discard_is_applied_to_a_terminal_error_too(tmp_path, monkeypatch):
+    """An exception on the current step is a terminal `error`, and the pump returns on that path
+    rather than through the dead-process branch -- so a stop-without-saving followed by a crash
+    left the periodic checkpoint resumable in history."""
+    import core.training.diffusion_checkpoint as dc
+
+    bundle = tmp_path / "checkpoint-40"
+    bundle.mkdir()
+    (bundle / "keep.bin").write_bytes(b"x")
+
+    class _Proc:
+        def is_alive(self) -> bool:
+            return True
+
+    class _OneEvent:
+        def __init__(self, ev):
+            self._events = [ev]
+
+        def get(self, timeout = None):
+            if self._events:
+                return self._events.pop(0)
+            raise RuntimeError("empty")
+
+    svc = DiffusionTrainingService()
+    proc = _Proc()
+    svc._proc = proc
+    svc._stop_queue = _StopQueue()
+    svc._apply_event({"type": "checkpoint_saved", "checkpoint_path": str(bundle), "step": 40})
+    assert svc.stop(save = False) is True
+    monkeypatch.setattr(svc, "_persist_run_record", lambda **_kw: None)
+
+    svc._pump_loop(_OneEvent({"type": "error", "message": "CUDA out of memory"}), proc)
+
+    state = svc.status()
+    assert state["status"] == "error"
+    assert "stopped without saving" in (state["resume_blocked_reason"] or "")
+    # Bundles hold optimizer state and the UI has no delete path once a run is discarded.
+    assert not bundle.exists()
+    assert dc is not None
+
+
+def test_a_killed_discard_removes_only_this_runs_bundles(tmp_path):
+    """The parent knows exactly which bundles it saw checkpoint_saved for, so an earlier run's
+    leftovers in the same directory are untouched."""
+
+    class _Dead:
+        def is_alive(self) -> bool:
+            return False
+
+    class _Empty:
+        def get(self, timeout = None):
+            raise RuntimeError("empty")
+
+        def get_nowait(self):
+            raise RuntimeError("empty")
+
+    earlier = tmp_path / "checkpoint-99"
+    earlier.mkdir()
+    mine = tmp_path / "checkpoint-40"
+    mine.mkdir()
+
+    svc = DiffusionTrainingService()
+    svc._proc = _AliveProc()
+    svc._stop_queue = _StopQueue()
+    svc._apply_event({"type": "checkpoint_saved", "checkpoint_path": str(mine), "step": 40})
+    assert svc.stop(save = False) is True
+    dead = _Dead()
+    svc._proc = dead
+    svc._pump_loop(_Empty(), dead)
+
+    assert not mine.exists(), "this run's bundle must go"
+    assert earlier.is_dir(), "an earlier run's bundle is not this run's to delete"
+
+
+def test_an_epoch_mode_target_does_not_fall_back_to_the_unused_step_count():
+    """num_epochs overrides train_steps, which then still carries the request model's default of
+    500. Using it for a run that died before its `resumed` event reported a 600-step checkpoint
+    as 600/500 and refused the resume."""
+    from core.training.diffusion_training_service import _resolved_total_steps
+
+    assert (
+        _resolved_total_steps({"total_steps": 1000}, {"num_epochs": 4, "train_steps": 500}) == 1000
+    )
+    assert _resolved_total_steps({}, {"num_epochs": 4, "train_steps": 500}) == 0
+    assert _resolved_total_steps({}, {"num_epochs": 0, "train_steps": 500}) == 500
+
+
+def test_the_read_time_refresh_uses_the_same_epoch_rule():
+    """Read-time refresh must follow the epoch rule, not the unused train_steps, or Resume is disabled."""
+    import inspect
+
+    from core.training.diffusion_training_service import _refresh_resume_state
+
+    source = inspect.getsource(_refresh_resume_state)
+    assert "_resolved_total_steps(" in source, "the read side must use the shared rule"
+    assert 'config.get("train_steps")' not in source, "and not the raw fallback it replaced"
+
+
+def test_the_source_identity_is_seeded_before_the_child_starts():
+    """Seed the source identity before the child starts, so an early resume death is still checked."""
+    import inspect
+
+    from core.training.diffusion_training_service import DiffusionTrainingService
+
+    start = inspect.getsource(DiffusionTrainingService.start)
+    assert "_seed_source_identity(config)" in start
+    seeded = start.index("_seed_source_identity(config)")
+    # AFTER the state reset, which replaces the whole dict and would drop the seed...
+    assert seeded > start.index("self._state = _idle_state()")
+    # ...and before the pump thread starts, the only other writer of that state.
+    assert seeded < start.index("self._pump.start()")
+
+
+def test_seeding_reads_the_bundles_own_timestamp(tmp_path, monkeypatch):
+    import json as _json
+
+    from core.training.diffusion_training_service import DiffusionTrainingService
+
+    bundle = tmp_path / "checkpoint-10"
+    bundle.mkdir()
+    svc = DiffusionTrainingService()
+    monkeypatch.setattr(
+        "core.training.diffusion_checkpoint.read_checkpoint",
+        lambda path: {"created_at": 1234.5} if Path(path) == bundle else None,
+    )
+    svc._seed_source_identity({"resume_from_checkpoint": str(bundle)})
+    assert svc._state["resumed_source_created_at"] == 1234.5
+    svc._seed_source_identity({"resume_from_checkpoint": str(tmp_path / "checkpoint-99")})
+    assert _json.dumps(svc._state["resumed_source_created_at"]) in ("1234.5", "null")
+
+
+def test_a_child_that_cleaned_up_is_not_cleaned_up_again(tmp_path, monkeypatch):
+    """Do not clean up twice: a path the child already restored may hold another run's checkpoint."""
+    from core.training.diffusion_training_service import DiffusionTrainingService
+
+    class _Proc:
+        def is_alive(self) -> bool:
+            return True
+
+    class _OneEvent:
+        def __init__(self, ev):
+            self._events = [ev]
+
+        def get(self, timeout = None):
+            if self._events:
+                return self._events.pop(0)
+            raise RuntimeError("empty")
+
+    restored = tmp_path / "checkpoint-10"
+    restored.mkdir()
+    (restored / "adapter.safetensors").write_bytes(b"other run")
+
+    svc = DiffusionTrainingService()
+    proc = _Proc()
+    svc._proc = proc
+    svc._stop_queue = _StopQueue()
+    svc._apply_event({"type": "checkpoint_saved", "checkpoint_path": str(restored), "step": 10})
+    assert svc.stop(save = False) is True
+    monkeypatch.setattr(svc, "_persist_run_record", lambda **_kw: None)
+
+    svc._pump_loop(
+        _OneEvent(
+            {"type": "complete", "output_dir": str(tmp_path), "stopped": True, "discarded": True}
+        ),
+        proc,
+    )
+
+    assert restored.exists(), "the bundle the child handed back is not this run's to delete"
+    state = svc.status()
+    assert "stopped without saving" in (state["resume_blocked_reason"] or "")
+    assert state["checkpoint_path"] is None
+
+
+def test_a_checkpoint_makes_the_run_recoverable_before_it_ends(tmp_path, monkeypatch):
+    """Previous runs is built from the run JSONs and nothing else, and only a terminal event
+    wrote one. Unsloth being killed after a periodic save therefore left a resumable bundle on
+    disk with no entry and no Resume action for it."""
+    import inspect
+    import json as _json
+
+    from core.training import diffusion_training_service as svc_mod
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(svc_mod, "_runs_dir", lambda: runs)
+
+    svc = svc_mod.DiffusionTrainingService()
+    svc._state.update(job_id = "a" * 32, output_dir = str(tmp_path / "out"), status = "running")
+
+    svc._apply_event(
+        {"type": "checkpoint_saved", "checkpoint_path": str(tmp_path / "checkpoint-40"), "step": 40}
+    )
+    assert svc._persist_interim is True
+    assert "_persist_run_record(interim = True)" in inspect.getsource(
+        svc_mod.DiffusionTrainingService._pump_loop
+    )
+
+    svc._persist_run_record(interim = True)
+    written = runs / f"{'a' * 32}.json"
+    assert written.exists(), "the checkpoint landed but nothing recorded the run"
+    record = _json.loads(written.read_text(encoding = "utf-8"))
+    assert record["job_id"] == "a" * 32
+    # Interim record says interrupted; the terminal write replaces this file.
+    assert record["status"] == "error"
+
+    svc_mod._service = svc
+    try:
+        assert svc_mod._restate_live_job(dict(record))["status"] == "running"
+    finally:
+        svc_mod._service = None
+
+
+def test_a_failed_checkpoint_write_is_recorded_too(tmp_path, monkeypatch):
+    """A failed checkpoint write must persist too, or the stale older checkpoint stays resumable."""
+    import json as _json
+
+    from core.training import diffusion_training_service as svc_mod
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(svc_mod, "_runs_dir", lambda: runs)
+
+    svc = svc_mod.DiffusionTrainingService()
+    svc._state.update(job_id = "b" * 32, output_dir = str(tmp_path / "out"), status = "running")
+    svc._apply_event(
+        {"type": "checkpoint_saved", "checkpoint_path": str(tmp_path / "checkpoint-40"), "step": 40}
+    )
+    svc._persist_interim = False
+
+    svc._apply_event({"type": "checkpoint_failed", "message": "disk full"})
+    assert svc._persist_interim is True
+
+    svc._persist_run_record(interim = True)
+    record = _json.loads((runs / f"{'b' * 32}.json").read_text(encoding = "utf-8"))
+    assert record["checkpoint_write_error"] == "disk full"
+    assert record["can_resume"] is False
+
+
+def test_the_live_job_is_not_offered_as_resumable(tmp_path, monkeypatch):
+    """The interim record is written with an error status, so the resume fields are derived as
+    though the run were over. _UNRESUMABLE_STATUS rejects a running job for a reason: its output
+    directory is being written right now, and a Resume offered there can only race it."""
+    from core.training import diffusion_training_service as svc_mod
+
+    svc = svc_mod.DiffusionTrainingService()
+    svc._state.update(job_id = "c" * 32, status = "running", message = "Training...")
+
+    record = {
+        "job_id": "c" * 32,
+        "status": "error",
+        "can_resume": True,
+        "checkpoint_path": str(tmp_path / "checkpoint-40"),
+    }
+    svc_mod._service = svc
+    try:
+        restated = svc_mod._restate_live_job(dict(record))
+    finally:
+        svc_mod._service = None
+
+    assert restated["status"] == "running"
+    assert restated["can_resume"] is False
+    assert restated["checkpoint_path"] is None
+
+
+def test_one_bad_record_does_not_take_the_history_with_it(tmp_path, monkeypatch):
+    """Every other kind of corruption here is skipped per record. A valid-JSON record with the
+    required job_id and status but a nonnumeric counter reached the refresh and raised out of
+    the listing, so one hand-edited or older file blanked the whole Previous runs panel."""
+    import json as _json
+
+    from core.training import diffusion_training_service as svc_mod
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(svc_mod, "_runs_dir", lambda: runs)
+
+    (runs / f"{'d' * 32}.json").write_text(
+        _json.dumps({"job_id": "d" * 32, "status": "completed", "total_steps": "many"}),
+        encoding = "utf-8",
+    )
+    (runs / f"{'e' * 32}.json").write_text(
+        _json.dumps({"job_id": "e" * 32, "status": "completed", "total_steps": 500}),
+        encoding = "utf-8",
+    )
+
+    listed = svc_mod.list_diffusion_runs()
+    assert [r["job_id"] for r in listed] == ["e" * 32]
+    assert svc_mod.get_diffusion_run("d" * 32)["job_id"] == "d" * 32
+
+
+def test_a_second_stop_does_not_change_what_the_child_was_told(tmp_path):
+    """Only the first stop signal counts: a later stop-without-saving cannot undo an exported adapter."""
+    from core.training.diffusion_training_service import DiffusionTrainingService
+
+    svc = DiffusionTrainingService()
+    svc._proc = _AliveProc()
+    queue = _StopQueue()
+    svc._stop_queue = queue
+
+    assert svc.stop(save = True) is True
+    assert svc._discard_requested is False
+    assert svc.stop(save = False) is True
+    assert svc._discard_requested is False
+    assert len(queue.items) == 1

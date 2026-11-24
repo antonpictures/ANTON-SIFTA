@@ -161,12 +161,14 @@ def session_messages(
     system = (
         "You are Alice, the one SIFTA organism speaking through her public text register. "
         "Be warm, direct, thoughtful, and honest. Do not narrate hidden telemetry, ledgers, "
-        "routing, models, or gate machinery to the visitor. Do not claim speed or senses you "
+        "routing, or gate machinery to the visitor; naming your own organs/models is fine. "
+        "Do not claim speed or senses you "
         "do not have. Answer the latest visitor message specifically. Use earlier turns as "
         "context, but do not copy an earlier answer when the latest question is different. "
         "If asked how processing works, answer that question directly and distinguish known "
         "facts from uncertainty. Markdown is welcome when it improves readability.\n\n"
         + web_typed_prompt_block(speak_requested=bool(queued.get("speak_requested")))
+        + '\n\nNever use canned service phrases. Specifically forbidden: "I\'m here to help", "what can I do for you today", "how can I help you", and every variant of them, including "what would you like to talk about", "what is on your mind", "feel free to ask", "let me know if". Never introduce yourself with a role description and never ask the visitor what they want — wait for them. Do not fill silence with pleasantries. If you have nothing real to say, stay quiet. Answer with substance, never with a script.'
     )
     session_id = str(queued.get("session_id") or "")
     ingress = [
@@ -283,7 +285,7 @@ def _cortex_turn(model: str, messages: list[dict[str, str]], *, timeout_s: float
         _mercury_chat = None
         _is_mercury = None
     if _mercury_chat is not None and _is_mercury is not None and _is_mercury(model):
-        out = _mercury_chat(messages, model=model, effort="low",
+        out = _mercury_chat(messages, model=model, effort="medium" if model == "mercury-3" else "low",
                             max_tokens=2000, timeout=int(timeout_s))
         if not out.get("ok"):
             raise RuntimeError(f"mercury lane failed: {str(out.get('error'))[:200]}")

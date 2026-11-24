@@ -1,0 +1,1428 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Tests the Unsloth seam only; the Xet to HTTP policy matrix is tested once in unsloth_zoo."""
+
+from __future__ import annotations
+
+import sys
+import types as _types
+from pathlib import Path
+
+import pytest
+
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+# Use real structlog when present; a bare stub breaks modules that log at import time.
+_loggers_stub = _types.ModuleType("loggers")
+_loggers_stub.get_logger = lambda name: __import__("logging").getLogger(name)
+sys.modules.setdefault("loggers", _loggers_stub)
+try:
+    import structlog  # noqa: F401
+except ImportError:
+    sys.modules["structlog"] = _types.ModuleType("structlog")
+
+import huggingface_hub
+
+try:
+    import unsloth_zoo.hf_xet_fallback as _shared_mod
+    shared = _shared_mod
+except Exception:  # noqa: BLE001 - still collect degraded-path tests when unsloth_zoo is unavailable
+    shared = None
+
+import utils.hf_xet_fallback as xf
+import importlib
+import os
+import threading
+import types
+import utils.hf_xet_fallback as shim
+
+
+DL_REPO, FILE = "ztest/xet-dl", "model-Q4_K_XL.gguf"
+
+
+@pytest.fixture(autouse = True)
+def _restore_shim_module_identity():
+    """Restore sys.modules and the utils package attribute together, or later patches silently miss."""
+    import utils as _utils_pkg
+
+    original = sys.modules.get("utils.hf_xet_fallback")
+    original_attr = getattr(_utils_pkg, "hf_xet_fallback", None)
+    try:
+        yield
+    finally:
+        if original is not None:
+            sys.modules["utils.hf_xet_fallback"] = original
+        if original_attr is not None:
+            _utils_pkg.hf_xet_fallback = original_attr
+
+
+def _requires_shared():
+    if shared is None:
+        pytest.skip("unsloth_zoo.hf_xet_fallback is not installed in this environment")
+
+
+def test_shim_reexports_shared_api():
+    _requires_shared()
+    assert xf.DownloadStallError is shared.DownloadStallError
+    for name in (
+        "start_watchdog",
+        "get_hf_download_state",
+        "child_should_disable_xet",
+        "hf_hub_download_with_xet_fallback",
+        "snapshot_download_with_xet_fallback",
+    ):
+        assert hasattr(xf, name), f"shim missing {name}"
+
+
+def test_child_should_disable_xet_truth_table():
+    assert xf.child_should_disable_xet({"disable_xet": True}) is True
+    assert xf.child_should_disable_xet({"disable_xet": False}) is False
+    assert xf.child_should_disable_xet({}) is False
+
+
+def test_shim_injects_studio_prepare_on_http_retry(monkeypatch):
+    """A Xet stall retries over HTTP and the shim runs Unsloth's marker-aware
+    ``prepare_cache_for_transport(..., 'http')`` before the retry."""
+    _requires_shared()
+    for var in ("UNSLOTH_DISABLE_XET", "UNSLOTH_STABLE_DOWNLOADS", "HF_HUB_DISABLE_XET"):
+        monkeypatch.delenv(var, raising = False)
+    # Isolate the Xet->HTTP transition from the configurable Xet retry count.
+    monkeypatch.setenv("UNSLOTH_XET_ATTEMPTS", "1")
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda *a, **k: None)
+
+    seen_disable_xet = []
+
+    def fake_attempt(
+        repo_id,
+        *,
+        kind,
+        params,
+        token,
+        repo_type,
+        disable_xet,
+        cancel_event,
+        stall_timeout,
+        interval,
+        grace_period,
+        on_status,
+        force_download = False,
+    ):
+        seen_disable_xet.append(disable_xet)
+        return ("ok", "/cache/model.gguf") if disable_xet else ("stall", None)
+
+    monkeypatch.setattr(shared, "_run_download_attempt", fake_attempt)
+
+    prepared = []
+    monkeypatch.setattr(
+        "hub.utils.download_registry.prepare_cache_for_transport",
+        lambda repo_type, repo_id, mode, *a, **k: prepared.append(
+            (repo_type, repo_id, mode, k.get("root"))
+        ),
+    )
+
+    selected_cache = "/captured/hub"
+    out = xf.hf_hub_download_with_xet_fallback(
+        DL_REPO,
+        FILE,
+        None,
+        cache_dir = selected_cache,
+    )
+    assert out == "/cache/model.gguf"
+    assert seen_disable_xet == [False, True]
+    assert prepared == [
+        ("model", DL_REPO, "http", Path(selected_cache))
+    ], "shim must prepare the cache captured by the download"
+
+
+def test_shim_snapshot_injects_studio_prepare(monkeypatch):
+    """The snapshot wrapper forwards Unsloth's marker-aware prep, like the file wrapper."""
+    captured = {}
+
+    def fake_snapshot(repo_id, **kwargs):
+        captured["repo_id"] = repo_id
+        captured["prepare_for_http_fn"] = kwargs.get("prepare_for_http_fn")
+        return "/tmp/snap-dir"
+
+    monkeypatch.setattr(xf, "_shared_snapshot_download_with_xet_fallback", fake_snapshot)
+    selected_cache = "/captured/hub"
+    out = xf.snapshot_download_with_xet_fallback(
+        "org/model",
+        cache_dir = selected_cache,
+    )
+    assert out == "/tmp/snap-dir"
+    assert captured["repo_id"] == "org/model"
+    prepared = []
+    monkeypatch.setattr(
+        "hub.utils.download_registry.prepare_cache_for_transport",
+        lambda repo_type, repo_id, mode, *a, **k: prepared.append(
+            (repo_type, repo_id, mode, k.get("root"))
+        ),
+    )
+    captured["prepare_for_http_fn"]("model", "org/model")
+    assert prepared == [("model", "org/model", "http", Path(selected_cache))]
+
+
+def test_degrades_gracefully_without_shared_helper(monkeypatch):
+    """On an older unsloth_zoo lacking the shared helper, the shim still imports (Unsloth
+    boots) and exposes stub API doing plain HF downloads with the watchdog disabled."""
+
+    class _BlockShared:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            if (
+                name == "unsloth_zoo.hf_xet_fallback"
+                or name.split(".")[0] == "unsloth_zoo_downloads"
+            ):
+                raise ModuleNotFoundError(f"No module named '{name}'", name = name)
+            return None
+
+    finder = _BlockShared()
+    saved_shared = sys.modules.pop("unsloth_zoo.hf_xet_fallback", None)
+    saved_light = {
+        k: sys.modules.pop(k)
+        for k in list(sys.modules)
+        if k.split(".")[0] == "unsloth_zoo_downloads"
+    }
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        degraded = importlib.import_module("utils.hf_xet_fallback")
+
+        assert issubclass(degraded.DownloadStallError, RuntimeError)
+        assert degraded.child_should_disable_xet({"disable_xet": True}) is True
+        assert degraded.get_hf_download_state(["x"]) is None
+        event = degraded.start_watchdog(repo_ids = ["x"], on_stall = lambda m: None)
+        assert hasattr(event, "set") and not event.is_set()
+
+        import time as _time
+
+        beats = []
+        hb_stop = degraded.start_watchdog(
+            repo_ids = ["x"],
+            on_stall = lambda m: None,
+            on_heartbeat = beats.append,
+            interval = 0.02,
+        )
+        try:
+            deadline = _time.monotonic() + 2.0
+            while not beats and _time.monotonic() < deadline:
+                _time.sleep(0.02)
+            assert beats, "degraded watchdog emitted no heartbeat"
+        finally:
+            hb_stop.set()
+
+        called = {}
+
+        def _fake_snapshot(repo_id, **kwargs):
+            called["repo_id"] = repo_id
+            return "/snap-dir"
+
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", _fake_snapshot)
+        assert degraded.snapshot_download_with_xet_fallback("org/model") == "/snap-dir"
+        assert called["repo_id"] == "org/model"
+
+        import threading as _threading
+
+        cancelled = _threading.Event()
+        cancelled.set()
+        called.clear()
+        with pytest.raises(RuntimeError, match = "Cancelled"):
+            degraded.snapshot_download_with_xet_fallback("org/model", cancel_event = cancelled)
+        assert "repo_id" not in called, "degraded download ran despite cancellation"
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        if saved_shared is not None:
+            sys.modules["unsloth_zoo.hf_xet_fallback"] = saved_shared
+        sys.modules.update(saved_light)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+def test_degrades_when_unsloth_zoo_entirely_absent():
+    """When unsloth_zoo is absent entirely, the import raises
+    ModuleNotFoundError(name='unsloth_zoo') (top-level package). Guard that the shim still
+    degrades and does not re-raise, breaking every Unsloth import that pulls it in."""
+
+    class _BlockZoo:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            # Whole package absent, so ModuleNotFoundError.name is the top-level 'unsloth_zoo'.
+            if name.split(".")[0] in ("unsloth_zoo", "unsloth_zoo_downloads"):
+                top = name.split(".")[0]
+                raise ModuleNotFoundError(f"No module named '{top}'", name = top)
+            return None
+
+    finder = _BlockZoo()
+    saved = {
+        k: v
+        for k, v in list(sys.modules.items())
+        if k.split(".")[0] in ("unsloth_zoo", "unsloth_zoo_downloads")
+    }
+    for k in saved:
+        del sys.modules[k]
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        degraded = importlib.import_module("utils.hf_xet_fallback")
+        assert issubclass(degraded.DownloadStallError, RuntimeError)
+        assert degraded.get_hf_download_state(["x"]) is None
+        event = degraded.start_watchdog(repo_ids = ["x"], on_stall = lambda m: None)
+        assert hasattr(event, "set") and not event.is_set()
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        sys.modules.update(saved)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+def test_degrades_when_shared_helper_import_raises_importerror():
+    """unsloth_zoo can be installed yet fail to import when torch is missing (llama.cpp/GGUF-only
+    Unsloth), raising ImportError not ModuleNotFoundError. The shim must degrade for that too."""
+
+    class _BlockWithImportError:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            if name == "unsloth_zoo.hf_xet_fallback":
+                raise ImportError("Unsloth: Pytorch is not installed.")
+            if name == "unsloth_zoo_downloads":
+                # A zoo predating the init-free package.
+                raise ModuleNotFoundError(f"No module named '{name}'", name = name)
+            return None
+
+    finder = _BlockWithImportError()
+    saved_light = {
+        k: sys.modules.pop(k)
+        for k in list(sys.modules)
+        if k.split(".")[0] == "unsloth_zoo_downloads"
+    }
+    saved_shared = sys.modules.pop("unsloth_zoo.hf_xet_fallback", None)
+    saved_zoo = sys.modules.pop("unsloth_zoo", None)
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        degraded = importlib.import_module("utils.hf_xet_fallback")
+        assert issubclass(degraded.DownloadStallError, RuntimeError)
+        assert degraded.get_hf_download_state(["x"]) is None
+        event = degraded.start_watchdog(repo_ids = ["x"], on_stall = lambda m: None)
+        assert hasattr(event, "set") and not event.is_set()
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        if saved_shared is not None:
+            sys.modules["unsloth_zoo.hf_xet_fallback"] = saved_shared
+        if saved_zoo is not None:
+            sys.modules["unsloth_zoo"] = saved_zoo
+        sys.modules.update(saved_light)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+def test_no_light_gpu_init_retry_on_an_accelerator_host(monkeypatch):
+    """The GPU-init retry stubs triton and bitsandbytes process-wide, so accelerator hosts must degrade."""
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    attempts = []
+
+    class _Blocker:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            if name == "unsloth_zoo":
+                attempts.append(os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT"))
+                raise RuntimeError("CUDA Setup failed despite GPU being available")
+            return None
+
+    finder = _Blocker()
+    saved = {
+        k: v
+        for k, v in list(sys.modules.items())
+        if k == "unsloth_zoo" or k.startswith("unsloth_zoo.")
+    }
+    for k in saved:
+        del sys.modules[k]
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        shim = importlib.import_module("utils.hf_xet_fallback")
+        monkeypatch.setattr(shim, "_gpu_present", lambda: True)
+        monkeypatch.setattr(shim, "_import_light", lambda name: None)
+        assert shim._load_shared() is False
+        assert attempts == [None], attempts
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        sys.modules.update(saved)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+@pytest.mark.parametrize("backend, expected", [("cuda", True), ("xpu", True), ("mps", False)])
+def test_gpu_present_ignores_mps(monkeypatch, backend, expected):
+    """An MPS-only Mac without MLX has no real triton to shadow and needs the light-init retry."""
+    probe = lambda name: _types.SimpleNamespace(is_available = lambda: name == backend)
+    fake_torch = _types.ModuleType("torch")
+    fake_torch.cuda, fake_torch.xpu = probe("cuda"), probe("xpu")
+    fake_torch.backends = _types.SimpleNamespace(mps = probe("mps"))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    assert shim._gpu_present() is expected
+
+
+def test_optional_loader_does_not_retry_under_light_gpu_init_on_an_accelerator_host(monkeypatch):
+    """xet_health()'s retry under UNSLOTH_ZOO_DISABLE_GPU_INIT=1 leaves zoo's pass-through triton stub in sys.modules,
+    breaking xformers ("'function' object has no attribute 'fn'"); like _load_shared it must not retry on a GPU host."""
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    real_triton = _types.ModuleType("triton")
+    monkeypatch.setitem(sys.modules, "triton", real_triton)
+    monkeypatch.setattr(shim, "_gpu_present", lambda: True)
+    monkeypatch.delitem(sys.modules, "unsloth_zoo.hf_xet_health", raising = False)
+    monkeypatch.setattr(shim, "_import_light", lambda name: None)
+    shim._reset_optional_module_cache()
+    attempts = []
+
+    def _fake_import(name):
+        attempts.append(os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT"))
+        if os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") == "1":
+            sys.modules["triton"] = _types.ModuleType("unsloth_zoo_triton_stub")
+            return _types.ModuleType(name)
+        raise NotImplementedError("Unsloth cannot find any torch accelerator")
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import)
+    try:
+        assert shim.xet_health() is None
+        assert shim.xet_health() is None
+        assert attempts == [None], attempts
+        assert sys.modules["triton"] is real_triton
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+    finally:
+        shim._reset_optional_module_cache()
+
+
+def test_optional_loader_keeps_a_submodule_a_late_zoo_init_failure_left_loaded(monkeypatch):
+    """A late zoo __init__ failure leaves hf_xet_tuning loaded: reuse it; a submodule it never reached stays None."""
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    monkeypatch.setattr(shim, "_gpu_present", lambda: True)
+    monkeypatch.delitem(sys.modules, "unsloth_zoo.hf_xet_health", raising = False)
+    survivor = _types.ModuleType("unsloth_zoo.hf_xet_tuning")
+    monkeypatch.setattr(shim, "_import_light", lambda name: None)
+    shim._reset_optional_module_cache()
+    attempts = []
+
+    def _late_failure(name):
+        attempts.append((name, os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT")))
+        sys.modules["unsloth_zoo.hf_xet_tuning"] = survivor
+        raise RuntimeError("unsloth_zoo GPU init failed after importing hf_xet_tuning")
+
+    # setitem + delitem: start absent; teardown restores the original (or nothing) over the survivor.
+    monkeypatch.setitem(sys.modules, "unsloth_zoo.hf_xet_tuning", None)
+    monkeypatch.delitem(sys.modules, "unsloth_zoo.hf_xet_tuning")
+    monkeypatch.setattr(importlib, "import_module", _late_failure)
+    try:
+        assert shim._load_optional("unsloth_zoo.hf_xet_tuning") is survivor
+        assert shim._load_optional("unsloth_zoo.hf_xet_tuning") is survivor
+        assert shim._load_optional("unsloth_zoo.hf_xet_health") is None
+        assert attempts == [
+            ("unsloth_zoo.hf_xet_tuning", None),
+            ("unsloth_zoo.hf_xet_health", None),
+        ], attempts
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+        shim._reset_optional_module_cache()
+        survivor.__spec__ = importlib.machinery.ModuleSpec("unsloth_zoo.hf_xet_tuning", None)
+        survivor.__spec__._initializing = True
+        assert shim._load_optional("unsloth_zoo.hf_xet_tuning") is None
+    finally:
+        shim._reset_optional_module_cache()
+
+
+_XET_ENV_SWITCHES = (
+    "UNSLOTH_DISABLE_XET",
+    "UNSLOTH_STABLE_DOWNLOADS",
+    "HF_HUB_DISABLE_XET",
+    "UNSLOTH_FORCE_XET",
+)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"HF_HUB_DISABLE_XET": "1"},
+        {"UNSLOTH_DISABLE_XET": "true"},
+        {"UNSLOTH_STABLE_DOWNLOADS": "on"},
+        {"UNSLOTH_FORCE_XET": "1"},
+        {"UNSLOTH_FORCE_XET": "1", "HF_HUB_DISABLE_XET": "yes"},
+        {"HF_HUB_DISABLE_XET": "0"},
+    ],
+)
+def test_operator_xet_switches_survive_a_missing_health_module(monkeypatch, env):
+    """With hf_xet_health unloadable, the operator's env switches still decide (else the worker gets HF_HUB_DISABLE_XET=0)."""
+    for name in _XET_ENV_SWITCHES:
+        monkeypatch.delenv(name, raising = False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(shim, "_load_optional", lambda name: None)
+    monkeypatch.setitem(shim._optional_modules, "unsloth_zoo.hf_xet_health", None)
+    got, cached = shim.xet_health(), shim.cached_xet_health()
+    switched = any(value.lower() in ("1", "true", "yes", "on") for value in env.values())
+    assert (got is not None) is switched and (cached is not None) is switched
+
+    # Expected verdicts come from the installed zoo, not restated here.
+    real = pytest.importorskip("unsloth_zoo.hf_xet_health")
+    if not hasattr(real, "XetHealth"):
+        pytest.skip("installed unsloth_zoo predates XetHealth")
+    expected = real.xet_health(probe = False)
+    if expected.source != "forced":
+        assert got is None and cached is None
+        return
+    for verdict in (got, cached):
+        assert (verdict.use_xet, verdict.reason, verdict.source) == (
+            expected.use_xet,
+            expected.reason,
+            expected.source,
+        )
+        assert bool(verdict) is bool(expected)
+        assert shim.xet_health_is_forced(verdict)
+
+
+def test_retries_under_light_gpu_init_when_import_fails(monkeypatch):
+    """A GPU-less import failure retries once under UNSLOTH_ZOO_DISABLE_GPU_INIT=1 and restores the env."""
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    seen_env = []
+
+    class _GpuGatedBlocker:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            if name == "unsloth_zoo":
+                seen_env.append(os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT"))
+                raise NotImplementedError("Unsloth cannot find any torch accelerator")
+            return None
+
+    finder = _GpuGatedBlocker()
+    saved = {
+        k: v
+        for k, v in list(sys.modules.items())
+        if k == "unsloth_zoo" or k.startswith("unsloth_zoo.")
+    }
+    for k in saved:
+        del sys.modules[k]
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        degraded = importlib.import_module("utils.hf_xet_fallback")
+        # The retry only applies with no accelerator; pin that.
+        monkeypatch.setattr(degraded, "_gpu_present", lambda: False)
+        monkeypatch.setattr(degraded, "_import_light", lambda name: None)
+        # Import is light (lazy backend); unsloth_zoo not loaded yet.
+        assert seen_env == [], seen_env
+        stall_error = degraded.DownloadStallError
+        assert seen_env == [None, "1"], seen_env
+        assert issubclass(stall_error, RuntimeError)
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        sys.modules.update(saved)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+def test_a_worker_spawned_during_the_gpu_init_retry_does_not_inherit_the_override(monkeypatch):
+    """The shim sets UNSLOTH_ZOO_DISABLE_GPU_INIT=1 process-wide while it retries an optional
+    import, and unsloth_zoo answers that flag with STUB triton and bitsandbytes, so a child that
+    inherited it would run for life against no-ops and never clear it."""
+    from utils.child_stdio import utf8_child_env
+
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    child_envs = []
+
+    class _SpawnsAWorkerMidImport:
+        def find_spec(
+            self,
+            name,
+            path = None,
+            target = None,
+        ):
+            if name == "unsloth_zoo":
+                child_envs.append(utf8_child_env())
+                raise NotImplementedError("Unsloth cannot find any torch accelerator")
+            return None
+
+    finder = _SpawnsAWorkerMidImport()
+    saved = {
+        k: v
+        for k, v in list(sys.modules.items())
+        if k == "unsloth_zoo" or k.startswith("unsloth_zoo.")
+    }
+    for k in saved:
+        del sys.modules[k]
+    saved_shim = sys.modules.pop("utils.hf_xet_fallback", None)
+    sys.meta_path.insert(0, finder)
+    try:
+        shim = importlib.import_module("utils.hf_xet_fallback")
+        monkeypatch.setattr(shim, "_gpu_present", lambda: False)
+        monkeypatch.setattr(shim, "_import_light", lambda name: None)
+        shim.DownloadStallError  # drives the load: plain attempt, then the retry
+        assert len(child_envs) == 2, child_envs
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+        for env in child_envs:
+            assert "UNSLOTH_ZOO_DISABLE_GPU_INIT" not in env, env
+            assert env["PYTHONIOENCODING"] == "utf-8"
+    finally:
+        sys.meta_path.remove(finder)
+        sys.modules.pop("utils.hf_xet_fallback", None)
+        sys.modules.update(saved)
+        if saved_shim is not None:
+            sys.modules["utils.hf_xet_fallback"] = saved_shim
+
+
+def test_a_spawn_cannot_overlap_the_loader_env_override_window():
+    """Spawn copies live os.environ, so it must wait on the same lock as the transient GPU-init override."""
+    from utils.hf_cache_settings import child_environment_for_spawn
+
+    loader_holds = threading.Event()
+    release_loader = threading.Event()
+    spawn_started = threading.Event()
+    spawn_entered = threading.Event()
+
+    def _loader():
+        with xf.env_override_barrier():
+            loader_holds.set()
+            release_loader.wait(5.0)
+
+    def _spawner():
+        spawn_started.set()
+        with child_environment_for_spawn({}):
+            spawn_entered.set()
+
+    t_loader = threading.Thread(target = _loader, daemon = True)
+    t_loader.start()
+    assert loader_holds.wait(5.0), "loader never took the barrier"
+
+    t_spawn = threading.Thread(target = _spawner, daemon = True)
+    t_spawn.start()
+    assert spawn_started.wait(5.0)
+    try:
+        assert not spawn_entered.wait(0.5), "a spawn started inside the loader override window"
+    finally:
+        release_loader.set()
+    assert spawn_entered.wait(5.0), "the spawn never proceeded after the loader let go"
+    t_loader.join(5.0)
+    t_spawn.join(5.0)
+
+
+def test_the_spawn_barrier_is_reentrant():
+    """child_environment_for_spawn nests (an inference respawn inside a training start), which its
+    RLock _spawn_env_lock allows, so the barrier it now takes alongside must be reentrant too or the
+    inner enter deadlocks. Bounded on purpose: a plain Lock hangs the suite rather than failing."""
+    from utils.hf_cache_settings import child_environment_for_spawn
+
+    done = threading.Event()
+
+    def _nest():
+        with child_environment_for_spawn({"HF_HUB_CACHE": "outer"}):
+            with child_environment_for_spawn({"HF_HUB_CACHE": "inner"}):
+                pass
+        done.set()
+
+    worker = threading.Thread(target = _nest, daemon = True)
+    worker.start()
+    assert done.wait(10.0), "a nested spawn deadlocked on the loader barrier"
+    worker.join(5.0)
+
+
+def test_an_operator_set_gpu_init_override_still_reaches_the_child(monkeypatch):
+    """Only the loader's own transient value is dropped. Someone who exported the flag themselves
+    on a GPU-less box meant it, and their children must keep it."""
+    from utils.child_stdio import utf8_child_env
+
+    monkeypatch.setenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", "1")
+    monkeypatch.setattr(xf, "_gpu_init_override_depth", 0, raising = False)
+    assert utf8_child_env()["UNSLOTH_ZOO_DISABLE_GPU_INIT"] == "1"
+
+
+def test_importing_child_should_disable_xet_stays_light(monkeypatch):
+    """Importing the shim must not pull in transformers or unsloth_zoo, or the sidecar is defeated."""
+    for name in [
+        m
+        for m in list(sys.modules)
+        if m == "transformers"
+        or m.startswith("transformers.")
+        or m == "unsloth_zoo"
+        or m.startswith("unsloth_zoo.")
+        or m == "utils.hf_xet_fallback"
+    ]:
+        monkeypatch.delitem(sys.modules, name, raising = False)
+
+    mod = importlib.import_module("utils.hf_xet_fallback")
+    assert mod.child_should_disable_xet({"disable_xet": True}) is True
+    assert mod.child_should_disable_xet({}) is False
+    assert "transformers" not in sys.modules, "importing the shim must not import transformers"
+    assert "unsloth_zoo" not in sys.modules, "importing the shim must not import unsloth_zoo"
+
+
+def test_first_download_dispatch_loads_zoo_once(monkeypatch):
+    """Import stays light, but a real download dispatch activates the shared Zoo helper."""
+    calls: list[str] = []
+
+    class _FakeShared:
+        @staticmethod
+        def hf_hub_download_with_xet_fallback(*args, **kwargs):
+            calls.append("download")
+            return "/cache/model.bin"
+
+    monkeypatch.setattr(shim, "_shared", _FakeShared, raising = False)
+    monkeypatch.setattr(shim, "_load_shared", lambda: calls.append("load") or True, raising = True)
+
+    assert (
+        shim.hf_hub_download_with_xet_fallback("org/model", "model.bin", None, cache_dir = "/cache")
+        == "/cache/model.bin"
+    )
+    assert calls == ["load", "download"]
+
+
+def test_start_watchdog_drops_kwargs_the_installed_zoo_cannot_take(monkeypatch):
+    """Unknown kwargs to an older start_watchdog raise TypeError, which silently disables the watchdog."""
+    seen = {}
+
+    def _old_signature_watchdog(
+        *,
+        repo_ids,
+        on_stall,
+        repo_type = "model",
+        cache_dir = None,
+        interval = 30.0,
+        stall_timeout = 180.0,
+        xet_disabled = False,
+        on_heartbeat = None,
+        watch_new_partials_only = False,
+        baseline_incomplete_blobs = None,
+        child_pid = None,
+    ):
+        seen.update(locals())
+        return threading.Event()
+
+    class _FakeShared:
+        start_watchdog = staticmethod(_old_signature_watchdog)
+
+    monkeypatch.setattr(shim, "_shared", _FakeShared, raising = False)
+    monkeypatch.setattr(shim, "_shared_available", True, raising = False)
+
+    stop = shim.start_watchdog(
+        repo_ids = ["a/b"],
+        on_stall = lambda _m: None,
+        watch_new_partials_only = True,
+        child_pid = 1234,
+        connect_timeout = 600.0,  # only on the unreleased zoo
+    )
+    assert stop is not None, "the watchdog did not start"
+    assert seen["watch_new_partials_only"] is True, "a SUPPORTED kwarg was dropped"
+    assert seen["child_pid"] == 1234
+
+
+def test_start_watchdog_passes_everything_to_a_zoo_that_accepts_it(monkeypatch):
+    """A newer zoo must still receive the newer knobs."""
+    seen = {}
+
+    def _new_signature_watchdog(**kwargs):
+        seen.update(kwargs)
+        return threading.Event()
+
+    class _FakeShared:
+        start_watchdog = staticmethod(_new_signature_watchdog)
+
+    monkeypatch.setattr(shim, "_shared", _FakeShared, raising = False)
+    monkeypatch.setattr(shim, "_shared_available", True, raising = False)
+
+    shim.start_watchdog(repo_ids = ["a/b"], on_stall = lambda _m: None, connect_timeout = 600.0)
+    assert seen["connect_timeout"] == 600.0, "a newer zoo lost the kwarg it supports"
+
+
+def test_apply_xet_env_delegates_to_the_zoo(monkeypatch):
+    """One rule, in one place: Unsloth asks the zoo to size the worker rather than sizing it too."""
+    seen = {}
+
+    def _apply(env, **kwargs):
+        seen["env"] = env
+        seen["kwargs"] = kwargs
+        env["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE"] = "123"
+        return {"HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE": "123"}
+
+    monkeypatch.setattr(
+        shim, "_load_optional", lambda _name: types.SimpleNamespace(apply_xet_env = _apply)
+    )
+    env = {"HF_HUB_DISABLE_XET": "0"}
+    assert shim.apply_xet_env(env) == {"HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE": "123"}
+    assert env["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE"] == "123"
+    assert seen["env"] is env, "the worker's own env has to be the one that gets sized"
+    # Short Xet timeouts suit a child our ladder supervises; process-wide they would not.
+    assert seen["kwargs"]["fail_fast"] is True
+
+
+def test_apply_xet_env_returns_none_when_the_zoo_cannot_size(monkeypatch):
+    """None, not {}: an empty write is a legitimate result, so the caller needs the two apart to
+    know whether to fall back to clearing the high-performance flag itself."""
+    monkeypatch.setattr(shim, "_load_optional", lambda _name: None)
+    assert shim.apply_xet_env({}) is None
+
+    monkeypatch.setattr(shim, "_load_optional", lambda _name: types.SimpleNamespace())
+    assert shim.apply_xet_env({}) is None, "an older zoo without apply_xet_env must read as absent"
+
+    def _boom(env, **kwargs):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(
+        shim, "_load_optional", lambda _name: types.SimpleNamespace(apply_xet_env = _boom)
+    )
+    assert shim.apply_xet_env({}) is None, "a raising zoo must degrade, not crash the download"
+
+
+def test_a_zoo_that_can_resize_is_asked_for_the_workers_own_cache(monkeypatch):
+    """A resizable zoo gets the worker cache dir, so a moved cache does not size for its old volume."""
+    seen = {}
+
+    def _resize(env, cache_dir, **kwargs):
+        seen["cache_dir"] = cache_dir
+        env["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT"] = "1000000000"
+        return {"HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT": "1000000000"}
+
+    def _apply(env, **kwargs):
+        seen["applied"] = True
+        return {}
+
+    monkeypatch.setattr(
+        shim,
+        "_load_optional",
+        lambda _name: types.SimpleNamespace(
+            apply_xet_env = _apply,
+            resize_for_cache_dir = _resize,
+        ),
+    )
+    env = {
+        "HF_HUB_CACHE": "/new/volume/hub",
+        "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT": "64000000000",
+    }
+    written = shim.apply_xet_env(env, env["HF_HUB_CACHE"])
+    assert seen["cache_dir"] == "/new/volume/hub"
+    assert "applied" not in seen, "resizing and applying both would size the worker twice"
+    assert written["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT"] == "1000000000"
+    assert env["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT"] == "1000000000"
+
+    monkeypatch.setattr(
+        shim, "_load_optional", lambda _name: types.SimpleNamespace(apply_xet_env = _apply)
+    )
+    assert shim.apply_xet_env({}, "/new/volume/hub") == {}
+    assert seen["applied"] is True
+
+
+# Zoo sizes Xet buffers from TOTAL RAM; Unsloth clamps to free RAM.
+
+_GB = 1_000_000_000
+_LIMIT = "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_LIMIT"
+
+
+def _fake_profile_cls():
+    import dataclasses
+
+    @dataclasses.dataclass(frozen = True)
+    class _Profile:
+        total_ram_bytes: int
+        available_ram_bytes: int
+        cpu_count: int = 16
+        ram_source: str = "psutil"
+        cpu_source: str = "affinity"
+        free_disk_bytes: int = 500 * _GB
+        disk_source: str = "statvfs"
+
+    return _Profile
+
+
+def _fake_tuning(
+    total,
+    available,
+    *,
+    calls = None,
+):
+    """Stand-in zoo sized like the real one (an eighth of total RAM), recording the profile it was
+    asked about so a test can prove the clamp re-asks rather than editing numbers itself."""
+    profile_cls = _fake_profile_cls()
+
+    def _overrides(profile, **kwargs):
+        if calls is not None:
+            calls.append(profile)
+        limit = max(1 * _GB, profile.total_ram_bytes // 8)
+        return {
+            _LIMIT: str(limit),
+            "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE": str(limit // 2),
+            "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_PERFILE_SIZE": str(limit // 32),
+            "HF_XET_DATA_MAX_CONCURRENT_FILE_DOWNLOADS": "8",
+            "HF_XET_CLIENT_AC_MAX_DOWNLOAD_CONCURRENCY": "32",
+            "HF_XET_CLIENT_READ_TIMEOUT": "60s",
+        }
+
+    return types.SimpleNamespace(
+        xet_env_overrides = _overrides,
+        system_profile = lambda cache_dir = None: profile_cls(total, available),
+        _MIN_BUFFER_LIMIT = 1 * _GB,
+        _RAM_FRACTION = 8,
+    )
+
+
+def test_clamp_is_a_no_op_when_the_machine_has_room(monkeypatch):
+    """The design rests on this: an eighth of TOTAL cannot exceed a quarter of AVAILABLE unless RAM
+    is already held, so an idle machine keeps the zoo's numbers and no download gets slower."""
+    calls = []
+    module = _fake_tuning(32 * _GB, 30 * _GB, calls = calls)
+    sized = module.xet_env_overrides(module.system_profile())
+    calls.clear()
+
+    env = dict(sized)
+    written = shim.clamp_to_available_ram(env, dict(sized), module = module)
+
+    assert written == sized, "an affordable budget must come back untouched"
+    assert env == sized
+    assert calls == [], "re-sizing a machine that fits would burn the zero-cost guarantee"
+
+
+def test_clamp_shrinks_a_budget_free_ram_cannot_afford(monkeypatch):
+    """Issue #9032: 32GB box, 27B GGUF resident, 8GB free. The zoo still hands out a 4GB buffer
+    because total RAM has not changed, and that on top of the loaded weights is the swap."""
+    calls = []
+    module = _fake_tuning(32 * _GB, 8 * _GB, calls = calls)
+    unclamped = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+    calls.clear()
+
+    env = dict(unclamped)
+    written = shim.clamp_to_available_ram(env, dict(unclamped), module = module)
+
+    budget = 8 * _GB // 4
+    assert int(unclamped[_LIMIT]) > budget, "precondition: the unclamped budget overshoots"
+    assert int(written[_LIMIT]) <= budget, "the clamp has to bring it inside what is free"
+    assert env[_LIMIT] == written[_LIMIT], "the worker's env is what actually ships"
+    assert calls, "the zoo must be the one re-sizing, so its formulas stay the single source"
+    assert calls[0].total_ram_bytes < 32 * _GB, "it should be asked about a smaller machine"
+    assert int(written["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE"]) < int(
+        unclamped["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE"]
+    )
+
+
+def test_clamp_bottoms_out_at_the_zoos_own_floor(monkeypatch):
+    """Below the floor the answer is a different transport, not a tinier buffer: Xet has a minimum
+    it can work in, and ``_memory_pressure_reason`` routes a machine this tight to HTTP."""
+    module = _fake_tuning(32 * _GB, 1 * _GB)
+    unclamped = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 1 * _GB))
+
+    written = shim.clamp_to_available_ram({}, dict(unclamped), module = module)
+    assert int(written[_LIMIT]) == module._MIN_BUFFER_LIMIT
+    assert int(written[_LIMIT]) < int(unclamped[_LIMIT])
+
+
+def test_clamp_never_writes_a_key_the_user_set(monkeypatch):
+    """The zoo's apply is setdefault, so a user-set variable never reaches ``sized`` and must not be
+    reintroduced here. Same mechanism covers HF_XET_HIGH_PERFORMANCE: the zoo drops its caps, no
+    budget key arrives, and the clamp stands down with it."""
+    calls = []
+    module = _fake_tuning(32 * _GB, 1 * _GB, calls = calls)
+
+    env = {"HF_XET_HIGH_PERFORMANCE": "1"}
+    assert shim.clamp_to_available_ram(env, {}, module = module) == {}
+    assert env == {"HF_XET_HIGH_PERFORMANCE": "1"}
+    assert calls == [], "with no caps to clamp there is nothing to re-size"
+
+    sized = {_LIMIT: str(8 * _GB)}
+    env = {_LIMIT: str(8 * _GB), "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_PERFILE_SIZE": "999"}
+    written = shim.clamp_to_available_ram(env, sized, module = module)
+    assert set(written) == {_LIMIT}, "only keys the zoo wrote are ours to rewrite"
+    assert env["HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_PERFILE_SIZE"] == "999"
+
+
+def test_clamp_stands_down_when_ram_cannot_be_measured(monkeypatch):
+    """No psutil, no cgroup, or a zoo too old to expose a profile: absence of evidence is not
+    evidence of pressure, so the download runs as before."""
+    sized = {_LIMIT: str(8 * _GB)}
+
+    unmeasurable = _fake_tuning(0, 0)
+    assert shim.clamp_to_available_ram({}, dict(sized), module = unmeasurable) == sized
+
+    old_zoo = types.SimpleNamespace(apply_xet_env = lambda *a, **k: {})
+    assert shim.clamp_to_available_ram({}, dict(sized), module = old_zoo) == sized
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("no")
+
+    raising = types.SimpleNamespace(xet_env_overrides = _boom, system_profile = _boom)
+    assert (
+        shim.clamp_to_available_ram({}, dict(sized), module = raising) == sized
+    ), "a clamp must never be the thing that breaks a download"
+
+
+def test_clamp_holds_against_the_real_zoo_formulas():
+    """The fakes above pin the seam; this pins the arithmetic, so a zoo that changes how it sizes
+    cannot quietly reintroduce a budget bigger than free RAM."""
+    tuning = pytest.importorskip("unsloth_zoo.hf_xet_tuning")
+
+    idle = tuning.SystemProfile(
+        total_ram_bytes = 32 * 1024**3,
+        available_ram_bytes = 30 * _GB,
+        cpu_count = 24,
+        ram_source = "psutil",
+        cpu_source = "affinity",
+        free_disk_bytes = 500 * _GB,
+        disk_source = "statvfs",
+    )
+    import dataclasses
+
+    loaded = dataclasses.replace(idle, available_ram_bytes = 8 * _GB)
+
+    sized = dict(tuning.xet_env_overrides(idle, fail_fast = True))
+
+    def _module_for(profile):
+        return types.SimpleNamespace(
+            xet_env_overrides = tuning.xet_env_overrides,
+            system_profile = lambda cache_dir = None: profile,
+            _MIN_BUFFER_LIMIT = tuning._MIN_BUFFER_LIMIT,
+            _RAM_FRACTION = tuning._RAM_FRACTION,
+        )
+
+    assert (
+        shim.clamp_to_available_ram({}, dict(sized), module = _module_for(idle)) == sized
+    ), "30GB free must still buy the zoo's own 32GB-machine budget"
+
+    clamped = shim.clamp_to_available_ram({}, dict(sized), module = _module_for(loaded))
+    assert int(clamped[_LIMIT]) <= 8 * _GB // 4, "a 27B model resident must shrink the budget"
+    assert int(clamped[_LIMIT]) < int(sized[_LIMIT])
+
+
+def test_clamp_never_raises_a_value_the_zoo_had_lowered():
+    """The recompute runs without the throttled flag that a 429 backoff sets, so the clamp must take
+    the smaller of the two per key. Otherwise shrinking buffers would restore the stream ceiling."""
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    unclamped = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+    throttled = dict(unclamped, HF_XET_CLIENT_AC_MAX_DOWNLOAD_CONCURRENCY = "4")
+
+    written = shim.clamp_to_available_ram({}, dict(throttled), module = module)
+    assert int(written[_LIMIT]) < int(throttled[_LIMIT]), "the budget still has to shrink"
+    assert (
+        written["HF_XET_CLIENT_AC_MAX_DOWNLOAD_CONCURRENCY"] == "4"
+    ), "a clamp that raises anything is not a clamp"
+
+
+def test_free_ram_pressure_reason_applies_the_zoos_own_floor(monkeypatch):
+    """The threshold logic itself, now that both transport callers share this one helper."""
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (2 * _GB, 4 * _GB))
+    reason = shim.free_ram_pressure_reason()
+    assert reason is not None and "2.0GB RAM free" in reason
+
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (4 * _GB, 4 * _GB))
+    assert shim.free_ram_pressure_reason() is None, "at the floor is not below it"
+
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (30 * _GB, 4 * _GB))
+    assert shim.free_ram_pressure_reason() is None
+
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (None, 4 * _GB))
+    assert shim.free_ram_pressure_reason() is None, "unmeasurable is not pressure"
+
+    def _boom():
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(shim, "available_ram_bytes", _boom)
+    assert shim.free_ram_pressure_reason() is None
+
+
+# Workers allocate after Popen returns, so concurrent sizings would read the same free RAM.
+
+
+@pytest.fixture(autouse = True)
+def clean_ledger():
+    """Autouse: sizing reserves RAM, so any clamp test leaves a reservation that would otherwise
+    follow the process into the next test and shrink its budget."""
+    shim._budget_reservations.clear()
+    shim._pending_reservation.token = None
+    yield shim
+    shim._budget_reservations.clear()
+    shim._pending_reservation.token = None
+
+
+def test_workers_starting_together_do_not_promise_the_same_ram_twice(clean_ledger, monkeypatch):
+    """Four downloads queued at once each used to take a quarter of the same snapshot, promising the
+    whole machine before any of them had allocated a byte."""
+    shim = clean_ledger
+    # Pytest's RSS stands in for the worker; zero it or every credit clamps to 0.
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: 0)
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+
+    promised, budgets = 0, []
+    for _ in range(4):
+        written = shim.clamp_to_available_ram({}, dict(sized), module = module)
+        shim.bind_worker_budget(os.getpid())
+        budgets.append(int(written[_LIMIT]))
+        promised += budgets[-1]
+
+    # Without the ledger these four land on exactly 8GB.
+    assert promised < 8 * _GB, f"four workers promised {promised / _GB:.2f}GB of 8GB free"
+    assert budgets[1] < budgets[0], "the second worker ignored what the first was already promised"
+
+
+def test_a_reservation_frees_when_its_worker_exits(clean_ledger):
+    """Held forever, one finished download would shrink every later one on the machine."""
+    import subprocess
+    import sys
+
+    shim = clean_ledger
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+
+    dead = subprocess.Popen([sys.executable, "-c", ""])
+    dead.wait()
+    shim.clamp_to_available_ram({}, dict(sized), module = module)
+    shim.bind_worker_budget(dead.pid)
+
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == 0, "a finished worker still held RAM"
+
+
+def test_a_spawn_that_never_happened_does_not_leak(clean_ledger):
+    """Popen raising must not strand the reservation its sizing took."""
+    shim = clean_ledger
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+
+    shim.clamp_to_available_ram({}, dict(sized), module = module)
+    shim.bind_worker_budget(None)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == 0
+
+    shim.clamp_to_available_ram({}, dict(sized), module = module)
+    for entry in shim._budget_reservations.values():
+        entry[2] -= shim._UNBOUND_RESERVATION_TTL + 1
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == 0
+
+
+def test_one_download_on_an_idle_machine_is_still_untouched(clean_ledger):
+    """The ledger must not cost the common case: nothing is reserved yet, so sizing is the zoo's."""
+    shim = clean_ledger
+    module = _fake_tuning(32 * _GB, 30 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 30 * _GB))
+
+    assert shim.clamp_to_available_ram({}, dict(sized), module = module) == sized
+
+
+def test_the_transport_gate_counts_ram_promised_to_running_downloads(clean_ledger, monkeypatch):
+    """Promised RAM of running downloads is subtracted from free RAM, so the next one falls back to HTTP."""
+    shim = clean_ledger
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (8 * _GB, 4 * _GB))
+    assert shim.free_ram_pressure_reason() is None, "8GB free is not pressure on its own"
+
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: 0)
+    promised = 0
+    for _ in range(3):
+        written = shim.clamp_to_available_ram({}, dict(sized), module = module)
+        shim.bind_worker_budget(os.getpid())
+        promised += int(written[_LIMIT])
+
+    reason = shim.free_ram_pressure_reason()
+    assert reason is not None, "three running downloads left too little RAM for a fourth on Xet"
+    assert "RAM free" in reason
+
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: promised)
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (8 * _GB - promised, 4 * _GB))
+    assert (
+        shim.free_ram_pressure_reason() is not None
+    ), "three allocated downloads left too little RAM for a fourth on Xet"
+
+
+def test_a_resident_promise_is_not_charged_against_free_ram_twice(clean_ledger, monkeypatch):
+    """Resident buffers already lower available RAM, so charging their promise again counts them twice."""
+    shim = clean_ledger
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+
+    written = shim.clamp_to_available_ram({}, dict(sized), module = module)
+    promise = int(written[_LIMIT])
+    shim.bind_worker_budget(os.getpid())
+
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: 0)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == promise
+
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: promise)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == 0, "a resident promise was subtracted a second time"
+
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: promise // 2)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == promise - promise // 2
+
+    monkeypatch.setattr(shim, "available_ram_bytes", lambda: (8 * _GB - promise, 4 * _GB))
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: promise)
+    assert (
+        shim.free_ram_pressure_reason() is None
+    ), "the next Auto download was demoted to HTTP over RAM its sibling never took"
+
+
+def test_the_ledger_reads_a_real_workers_rss(clean_ledger):
+    """The credit above is only correct if the psutil read actually works on a live child."""
+    import subprocess
+    import sys
+
+    shim = clean_ledger
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.read()"],
+        stdin = subprocess.PIPE,
+    )
+    try:
+        rss = shim._worker_rss(child.pid)
+        assert rss > 0, "a running interpreter reported no resident memory"
+    finally:
+        child.stdin.close()
+        child.wait(timeout = 30)
+
+    assert shim._worker_rss(child.pid) == 0 or not shim._pid_alive(child.pid)
+
+
+def test_concurrent_sizings_cannot_all_claim_the_same_free_ram(clean_ledger, monkeypatch):
+    """Threads meet at a barrier inside the read-to-reserve gap, so a split lock would overbook free RAM."""
+    import time
+
+    shim = clean_ledger
+    # Pytest's RSS stands in for the worker; zero it or every credit clamps to 0.
+    monkeypatch.setattr(shim, "_worker_rss", lambda pid: 0)
+    workers = 4
+    barrier = threading.Barrier(workers)
+    profile_cls = _fake_profile_cls()
+    profile = profile_cls(32 * _GB, 8 * _GB)
+
+    def _overrides(prof, **kwargs):
+        time.sleep(0.02)
+        limit = max(1 * _GB, prof.total_ram_bytes // 8)
+        return {
+            _LIMIT: str(limit),
+            "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_SIZE": str(limit // 2),
+            "HF_XET_RECONSTRUCTION_DOWNLOAD_BUFFER_PERFILE_SIZE": str(limit // 32),
+            "HF_XET_DATA_MAX_CONCURRENT_FILE_DOWNLOADS": "8",
+        }
+
+    def _profile_of(cache_dir = None):
+        barrier.wait(timeout = 10)
+        return profile
+
+    module = _types.SimpleNamespace(
+        xet_env_overrides = _overrides,
+        system_profile = _profile_of,
+        _MIN_BUFFER_LIMIT = 1 * _GB,
+        _RAM_FRACTION = 8,
+    )
+    sized = _overrides(profile)
+
+    granted: list[int] = []
+    lock = threading.Lock()
+
+    def _size():
+        written = shim.clamp_to_available_ram({}, dict(sized), module = module)
+        shim.bind_worker_budget(os.getpid())
+        with lock:
+            granted.append(int(written[_LIMIT]))
+
+    threads = [threading.Thread(target = _size) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout = 30)
+
+    assert len(granted) == workers, "a sizing thread never finished"
+    total = sum(granted)
+    assert total < 8 * _GB, (
+        f"{workers} concurrent sizings promised {total / _GB:.2f}GB of 8GB free; "
+        "the ledger read and the reservation are not one decision"
+    )
+    assert len(set(granted)) > 1, "identical budgets means they all read the same snapshot"
+
+
+def test_the_ledgers_liveness_probe_never_signals_on_windows(clean_ledger, monkeypatch):
+    """os.kill(pid, 0) terminates the target on Windows, so the liveness probe must not use it there."""
+    import os as _os
+
+    import utils.process_lifetime as pl
+
+    shim = clean_ledger
+    monkeypatch.setattr(pl, "_is_windows", lambda: True)
+
+    signalled: list[tuple] = []
+
+    def _forbidden(pid, sig):
+        signalled.append((pid, sig))
+        raise AssertionError("os.kill must never be reached on Windows")
+
+    monkeypatch.setattr(_os, "kill", _forbidden)
+
+    shim._pid_alive(_os.getpid())
+    assert signalled == [], "the liveness probe signalled the worker it was asking about"
+
+
+def test_a_running_worker_keeps_its_reservation_on_windows(clean_ledger, monkeypatch):
+    """The Windows probe must also answer correctly, or every reservation is pruned on sight and
+    concurrent workers go back to promising the same free RAM."""
+    import ctypes
+    import os as _os
+
+    import utils.process_lifetime as pl
+
+    shim = clean_ledger
+    monkeypatch.setattr(pl, "_is_windows", lambda: True)
+    monkeypatch.setattr(_os, "kill", _fail_on_kill)
+
+    WAIT_TIMEOUT = 0x102
+
+    class _FakeKernel32:
+        def __init__(self, *_args, **_kwargs):
+            self.OpenProcess = _FakeFn(0xBEEF)
+            self.WaitForSingleObject = _FakeFn(WAIT_TIMEOUT)
+            self.CloseHandle = _FakeFn(1)
+
+    monkeypatch.setattr(ctypes, "WinDLL", _FakeKernel32, raising = False)
+
+    assert shim._pid_alive(4321) is True
+
+    module = _fake_tuning(32 * _GB, 8 * _GB)
+    sized = module.xet_env_overrides(_fake_profile_cls()(32 * _GB, 8 * _GB))
+    shim.clamp_to_available_ram({}, dict(sized), module = module)
+    shim.bind_worker_budget(4321)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() > 0, "a live Windows worker's reservation was pruned"
+
+    class _FakeKernel32Dead(_FakeKernel32):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.WaitForSingleObject = _FakeFn(0)
+
+    monkeypatch.setattr(ctypes, "WinDLL", _FakeKernel32Dead, raising = False)
+    with shim._budget_lock:
+        assert shim._live_reserved_locked() == 0, "an exited Windows worker still held RAM"
+
+
+class _FakeFn:
+    """A stand-in for a ctypes function pointer: assignable argtypes/restype, fixed return."""
+
+    def __init__(self, result):
+        self._result = result
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, *_args, **_kwargs):
+        return self._result
+
+
+def _fail_on_kill(pid, sig):
+    raise AssertionError("os.kill must never be reached on Windows")
+
+
+@pytest.fixture
+def fake_light_package(tmp_path, monkeypatch):
+    """A stand-in ``unsloth_zoo_downloads``, independent of the installed zoo."""
+    pkg = tmp_path / "light" / "unsloth_zoo_downloads"
+    pkg.mkdir(parents = True)
+    (pkg / "__init__.py").write_text("")
+    for name in ("hf_xet_fallback", "hf_xet_health", "hf_xet_tuning"):
+        (pkg / f"{name}.py").write_text(f"MARKER = 'light {name}'\n")
+    _is_light = lambda k: k.split(".")[0] == "unsloth_zoo_downloads"
+    saved = {k: v for k, v in sys.modules.items() if _is_light(k)}
+    for k in saved:
+        del sys.modules[k]
+    monkeypatch.syspath_prepend(str(pkg.parent))
+    yield
+    for k in [k for k in sys.modules if _is_light(k)]:
+        del sys.modules[k]
+    sys.modules.update(saved)
+
+
+class _ZooInitExplodes:
+    """``import unsloth_zoo`` raising, as on a GPU-less host; records every attempt."""
+
+    def __init__(self):
+        self.attempts = []
+
+    def find_spec(
+        self,
+        name,
+        path = None,
+        target = None,
+    ):
+        if name == "unsloth_zoo":
+            self.attempts.append(os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT"))
+            raise NotImplementedError("Unsloth cannot find any torch accelerator")
+        return None
+
+
+def test_shared_backend_comes_from_the_light_package_without_zoo_init(
+    monkeypatch, fake_light_package
+):
+    for k in [k for k in sys.modules if k == "unsloth_zoo" or k.startswith("unsloth_zoo.")]:
+        monkeypatch.delitem(sys.modules, k)
+    monkeypatch.delenv("UNSLOTH_ZOO_DISABLE_GPU_INIT", raising = False)
+    monkeypatch.setattr(shim, "_shared", None)
+    monkeypatch.setattr(shim, "_shared_available", None)
+    gated = []
+    monkeypatch.setattr(shim, "_gate_torch_stack", gated.append)
+    finder = _ZooInitExplodes()
+    sys.meta_path.insert(0, finder)
+    try:
+        assert shim._load_shared() is True
+        assert shim._shared.MARKER == "light hf_xet_fallback"
+        assert finder.attempts == [] and gated == []
+        assert "unsloth_zoo" not in sys.modules
+        assert os.environ.get("UNSLOTH_ZOO_DISABLE_GPU_INIT") is None
+    finally:
+        sys.meta_path.remove(finder)
+
+
+def test_optional_module_comes_from_the_light_package_without_zoo_init(
+    monkeypatch, fake_light_package
+):
+    monkeypatch.delitem(sys.modules, "unsloth_zoo.hf_xet_health", raising = False)
+    monkeypatch.setattr(shim, "_optional_modules", {})
+    gated = []
+    monkeypatch.setattr(shim, "_gate_torch_stack", gated.append)
+    finder = _ZooInitExplodes()
+    sys.meta_path.insert(0, finder)
+    try:
+        module = shim._load_optional("unsloth_zoo.hf_xet_health")
+        assert module.MARKER == "light hf_xet_health"
+        assert finder.attempts == [] and gated == []
+        # Memoised under the name callers use, so cached_xet_health sees it.
+        assert shim._optional_modules["unsloth_zoo.hf_xet_health"] is module
+    finally:
+        sys.meta_path.remove(finder)
+
+
+def test_an_already_loaded_zoo_module_wins_over_the_light_package(monkeypatch, fake_light_package):
+    """Keeps the object identity of an earlier full import (and of test doubles)."""
+    loaded = _types.ModuleType("unsloth_zoo.hf_xet_health")
+    monkeypatch.setitem(sys.modules, "unsloth_zoo.hf_xet_health", loaded)
+    monkeypatch.setattr(shim, "_optional_modules", {})
+    assert shim._load_optional("unsloth_zoo.hf_xet_health") is loaded

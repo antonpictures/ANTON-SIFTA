@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { readSrcAsync } from "./helpers/kit.ts";
+
+const PANEL_WIDTH_KEYS = ["sidebar_width", "chat_settings_width"];
+
+// The store reads window at import time, so stub it before importing.
+const stubWindow = {
+  innerWidth: 1440,
+  location: { protocol: "http:" },
+  localStorage: {
+    getItem: () => null,
+    setItem: () => {},
+  },
+  addEventListener: () => {},
+  removeEventListener: () => {},
+};
+(globalThis as { window?: unknown }).window = stubWindow;
+
+const {
+  clampSidebarWidth,
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+  SIDEBAR_WIDTH_MIN_DESKTOP,
+  SIDEBAR_WIDTH_MIN_WEB,
+} = await import("../src/hooks/use-sidebar-width.ts");
+
+test("the web keeps room for the collapse button beside search; desktop does not need it", async () => {
+  assert.equal(SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MIN_WEB);
+  assert.ok(SIDEBAR_WIDTH_MIN_DESKTOP < SIDEBAR_WIDTH_MIN_WEB);
+  const source = await readSrcAsync("hooks/use-sidebar-width.ts");
+  assert.match(
+    source,
+    /SIDEBAR_WIDTH_MIN = isTauri\s*\?\s*SIDEBAR_WIDTH_MIN_DESKTOP\s*:\s*SIDEBAR_WIDTH_MIN_WEB;/,
+  );
+  const sidebar = await readSrcAsync("components/app-sidebar.tsx");
+  assert.match(sidebar, /\{\(isMobile \|\| !usesDesktopTitlebar\) && \(/);
+});
+
+test("clamps to the absolute range on a roomy window", () => {
+  stubWindow.innerWidth = 1440;
+  assert.equal(clampSidebarWidth(320), 320);
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX + 200), SIDEBAR_WIDTH_MAX);
+  assert.equal(clampSidebarWidth(10), SIDEBAR_WIDTH_MIN);
+  assert.equal(clampSidebarWidth(Number.NaN), SIDEBAR_WIDTH_DEFAULT);
+});
+
+test("caps at 40% of a narrow window", () => {
+  stubWindow.innerWidth = 800;
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), 320);
+  assert.equal(clampSidebarWidth(300), 300);
+});
+
+test("the floor still wins when 40% falls below it", () => {
+  stubWindow.innerWidth = 500;
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), SIDEBAR_WIDTH_MIN);
+});
+
+test("re-evaluates the cap per call, so a resize can re-clamp", () => {
+  stubWindow.innerWidth = 1440;
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), SIDEBAR_WIDTH_MAX);
+  stubWindow.innerWidth = 900;
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), 360);
+  stubWindow.innerWidth = 1440;
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), SIDEBAR_WIDTH_MAX);
+});
+
+test("a scaled browser caps against the window in layout px", async () => {
+  // The panel renders at width * scale, so its share uses the window at that scale.
+  const { setLayoutScale } = await import("../src/lib/layout-scale.ts");
+  stubWindow.innerWidth = 1440;
+  setLayoutScale(2);
+  try {
+    assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), 288);
+    assert.equal(clampSidebarWidth(270), 270);
+  } finally {
+    setLayoutScale(1);
+  }
+  assert.equal(clampSidebarWidth(SIDEBAR_WIDTH_MAX), SIDEBAR_WIDTH_MAX);
+});
+
+// Reset only clears keys it lists.
+test("persisted panel widths are cleared by the preference reset", async () => {
+  const source = await readSrcAsync("features/settings/tabs/general-tab.tsx");
+  const keys = source.slice(
+    source.indexOf("const PREFS_KEYS"),
+    source.indexOf("];", source.indexOf("const PREFS_KEYS")),
+  );
+  for (const key of PANEL_WIDTH_KEYS) {
+    assert.ok(keys.includes(`"${key}"`), `${key} missing from PREFS_KEYS`);
+  }
+});

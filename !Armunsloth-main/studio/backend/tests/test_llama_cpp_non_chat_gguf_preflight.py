@@ -1,0 +1,432 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Zero-KV video GGUFs declare no architecture, which must be told apart from an unreadable header."""
+
+from __future__ import annotations
+
+import struct
+from pathlib import Path
+
+import pytest
+
+from core.inference.llama_cpp import LlamaCppBackend
+
+GGUF_MAGIC = 0x46554747
+
+
+def _write_gguf(
+    path: Path,
+    *,
+    arch: str | None,
+    tensor_count: int = 1,
+) -> Path:
+    """Minimal GGUF header: magic, version, counts, then one optional
+    ``general.architecture`` string KV. The parser never reads the tensor data."""
+    body = b""
+    kv_count = 0
+    if arch is not None:
+        key = b"general.architecture"
+        val = arch.encode()
+        body += struct.pack("<Q", len(key)) + key
+        body += struct.pack("<I", 8)
+        body += struct.pack("<Q", len(val)) + val
+        kv_count = 1
+    header = struct.pack("<II", GGUF_MAGIC, 3) + struct.pack("<QQ", tensor_count, kv_count)
+    path.write_bytes(header + body)
+    return path
+
+
+def _refusal(
+    tmp_path: Path,
+    *,
+    arch: str | None,
+    name: str,
+    identifier: str | None = None,
+):
+    gguf = _write_gguf(tmp_path / name, arch = arch)
+    backend = LlamaCppBackend()
+    backend._model_identifier = identifier
+    backend._read_gguf_metadata(str(gguf))
+    return backend, backend._non_chat_gguf_refusal(str(gguf))
+
+
+def test_chat_arch_is_not_refused(tmp_path):
+    backend, message = _refusal(tmp_path, arch = "llama", name = "chat.gguf")
+    assert backend._architecture == "llama"
+    assert backend._gguf_header_parsed is True
+    assert message is None
+
+
+def test_image_arch_names_the_images_page(tmp_path):
+    _, message = _refusal(tmp_path, arch = "flux", name = "flux.gguf")
+    assert message is not None
+    assert "Images page" in message
+    assert "Video page" not in message
+
+
+def test_video_arch_names_the_video_page(tmp_path):
+    _, message = _refusal(tmp_path, arch = "ltxv", name = "ltx.gguf")
+    assert message is not None
+    assert "Video page" in message
+    assert "Images page" not in message
+
+
+def test_diffusiongemma_arch_is_left_to_the_diffusion_runner(tmp_path):
+    backend, message = _refusal(tmp_path, arch = "diffusiongemma", name = "dg.gguf")
+    assert backend._is_diffusion is True
+    assert message is None
+
+
+def test_metadata_less_video_gguf_is_refused_and_named(tmp_path):
+    backend, message = _refusal(
+        tmp_path,
+        arch = None,
+        name = "minimax_h3_fl2va_pruned-Q2_K.gguf",
+        identifier = "unsloth/MiniMax-H3-GGUF",
+    )
+    assert backend._architecture is None
+    assert backend._gguf_header_parsed is True
+    assert message is not None
+    assert "Video page" in message
+
+
+def test_metadata_less_gguf_of_unknown_family_still_refuses(tmp_path):
+    _, message = _refusal(tmp_path, arch = None, name = "mystery.gguf", identifier = "x/mystery")
+    assert message is not None
+    assert "general.architecture" in message
+
+
+def test_unreadable_header_yields_no_verdict(tmp_path):
+    not_gguf = tmp_path / "notes.txt"
+    not_gguf.write_bytes(b"this is not a gguf file at all")
+    backend = LlamaCppBackend()
+    backend._read_gguf_metadata(str(not_gguf))
+    assert backend._gguf_header_parsed is False
+    assert backend._non_chat_gguf_refusal(str(not_gguf)) is None
+
+    full = _write_gguf(tmp_path / "chat.gguf", arch = "llama")
+    truncated = tmp_path / "truncated.gguf"
+    # Keep the 24-byte header (whose counts promise a KV pair) but cut the KV itself away.
+    truncated.write_bytes(full.read_bytes()[:24])
+    backend2 = LlamaCppBackend()
+    backend2._read_gguf_metadata(str(truncated))
+    assert backend2._architecture is None
+    assert backend2._gguf_header_parsed is False
+    assert backend2._non_chat_gguf_refusal(str(truncated)) is None
+
+
+def test_verdict_requires_a_parsed_header_even_if_called_directly(tmp_path):
+    backend = LlamaCppBackend()
+    assert backend._non_chat_gguf_refusal(str(tmp_path / "unread.gguf")) is None
+
+
+@pytest.mark.parametrize("arch", sorted(LlamaCppBackend._DIFFUSION_ARCHES))
+def test_every_media_arch_is_refused_before_launch(tmp_path, arch):
+    _, message = _refusal(tmp_path, arch = arch, name = f"{arch}.gguf")
+    assert message is not None
+    assert "cannot run as a chat model" in message
+
+
+def test_the_path_probe_does_not_touch_the_live_backend(tmp_path):
+    # The refusal runs before the resident model is killed; must not touch self.
+    live = LlamaCppBackend()
+    live._model_identifier = "unsloth/Qwen3-0.6B-GGUF"
+    live._architecture = "qwen3"
+    live._context_length = 40960
+    live._gguf_header_parsed = True
+
+    video = _write_gguf(tmp_path / "minimax_h3-Q2_K.gguf", arch = None)
+    message = LlamaCppBackend._non_chat_gguf_refusal_for_path(str(video), "unsloth/MiniMax-H3-GGUF")
+    assert message is not None and "Video page" in message
+    assert live._architecture == "qwen3"
+    assert live._context_length == 40960
+    assert live._model_identifier == "unsloth/Qwen3-0.6B-GGUF"
+
+
+def test_the_path_probe_agrees_with_the_instance_check(tmp_path):
+    for arch, name in (("llama", "chat.gguf"), ("flux", "flux.gguf"), ("ltxv", "ltx.gguf")):
+        gguf = _write_gguf(tmp_path / name, arch = arch)
+        backend = LlamaCppBackend()
+        backend._model_identifier = None
+        backend._read_gguf_metadata(str(gguf))
+        assert backend._non_chat_gguf_refusal(str(gguf)) == (
+            LlamaCppBackend._non_chat_gguf_refusal_for_path(str(gguf), None)
+        )
+
+
+@pytest.mark.parametrize(
+    "identifier,name",
+    [
+        ("unsloth/Z-Image-Turbo-GGUF", "z-image-turbo-Q2_K.gguf"),
+        ("Immac/NetaYume-Lumina-Image-2.0-GGUF", "NetaYumev2plus_unet_q2_k.gguf"),
+        (None, "lumina2-q4_k_m.gguf"),
+    ],
+)
+def test_a_resolvable_shared_arch_still_names_the_images_page(tmp_path, identifier, name):
+    _, message = _refusal(tmp_path, arch = "lumina2", name = name, identifier = identifier)
+    assert message is not None
+    assert "Open it from the Images page" in message
+
+
+def test_an_unresolvable_shared_arch_promises_no_page(tmp_path):
+    # 'lumina2' is shared with Z-Image, so the header alone does not give the family.
+    _, message = _refusal(
+        tmp_path,
+        arch = "lumina2",
+        name = "checkpoint-e3_s9658-Q2_K.gguf",
+        identifier = "neta-art/neta-lumina-gguf",
+    )
+    assert message is not None
+    assert "cannot run as a chat model" in message
+    assert "Open it from the" not in message
+
+
+def test_the_shared_arch_verdict_matches_the_pickers(tmp_path):
+    from routes.models import _arch_to_task
+
+    from routes.models import _AMBIGUOUS_DIFFUSION_GGUF_ARCHS, _arch_to_task
+
+    assert LlamaCppBackend._AMBIGUOUS_IMAGE_ARCHES == _AMBIGUOUS_DIFFUSION_GGUF_ARCHS
+    for identifier, name in (
+        ("unsloth/Z-Image-Turbo-GGUF", "z-image-turbo-Q2_K.gguf"),
+        ("neta-art/neta-lumina-gguf", "checkpoint-e3_s9658-Q2_K.gguf"),
+        ("Immac/NetaYume-Lumina-Image-2.0-GGUF", "NetaYumev2plus_unet_q2_k.gguf"),
+        (None, "some-random-denoiser.gguf"),
+    ):
+        for arch in sorted(LlamaCppBackend._AMBIGUOUS_IMAGE_ARCHES):
+            _, message = _refusal(tmp_path, arch = arch, name = name, identifier = identifier)
+            task = _arch_to_task(arch, name_hints = (identifier, name))
+            picker_lists_it = task == "text-to-image"
+            assert ("Open it from the Images page" in message) is picker_lists_it, (
+                identifier,
+                name,
+                message,
+            )
+
+
+def test_the_unrunnable_set_mirrors_the_canonical_one():
+    from routes.models import _UNSUPPORTED_DIFFUSION_GGUF_ARCHS
+
+    assert LlamaCppBackend._UNRUNNABLE_MEDIA_ARCHES == _UNSUPPORTED_DIFFUSION_GGUF_ARCHS
+    assert not (LlamaCppBackend._IMAGE_ARCHES & _UNSUPPORTED_DIFFUSION_GGUF_ARCHS)
+    assert not (LlamaCppBackend._VIDEO_ARCHES & _UNSUPPORTED_DIFFUSION_GGUF_ARCHS)
+
+
+@pytest.mark.parametrize("arch", sorted(LlamaCppBackend._UNRUNNABLE_MEDIA_ARCHES))
+def test_an_unrunnable_media_arch_promises_no_page(tmp_path, arch):
+    _, message = _refusal(tmp_path, arch = arch, name = f"{arch}.gguf")
+    assert message is not None
+    assert "neither the Images page nor the Video page" in message
+    assert "Open it from the" not in message
+
+
+@pytest.mark.parametrize("repo", ["gguf-org/flux2-dev-gguf", "calcuis/cosmos-predict2-gguf"])
+def test_a_placeholder_architecture_still_refuses(tmp_path, repo):
+    # gguf-connector writes 'pig' as the architecture placeholder.
+    _, message = _refusal(tmp_path, arch = "pig", name = "flux2-dev-iq4_nl.gguf", identifier = repo)
+    assert message is not None
+    assert "cannot" in message
+
+
+def test_a_placeholder_architecture_matches_the_picker_verdict(tmp_path):
+    from routes.models import _arch_to_task
+    for identifier, name, page_named in (
+        ("gguf-org/flux2-dev-gguf", "flux2-dev-iq4_nl.gguf", True),
+        ("calcuis/cosmos-predict2-gguf", "cosmos-predict2-q4_0.gguf", False),
+        ("someone/mystery-gguf", "mystery-q4_0.gguf", False),
+    ):
+        for arch in sorted(LlamaCppBackend._PLACEHOLDER_ARCHES):
+            _, message = _refusal(tmp_path, arch = arch, name = name, identifier = identifier)
+            assert message is not None
+            task = _arch_to_task(arch, name_hints = (identifier, name))
+            assert (task == "text-to-image") is page_named, (identifier, arch, task)
+            assert ("Open it from the Images page" in message) is page_named, message
+
+
+def test_an_unassemblable_video_arch_promises_no_page(tmp_path):
+    # The header says "wan" for an unpaired A14B expert and Wan 2.1 I2V alike: the refusal must consult
+    # family resolution, not the arch.
+    from routes.models import _arch_to_task
+    for identifier, name, page_named in (
+        ("QuantStack/Wan2.2-TI2V-5B-GGUF", "Wan2.2-TI2V-5B-Q4_K_M.gguf", True),
+        ("QuantStack/Wan2.2-T2V-A14B-GGUF", "Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf", True),
+        ("QuantStack/Wan2.2-T2V-A14B-GGUF", "Wan2.2-T2V-A14B-Q4_K_M.gguf", False),
+        ("QuantStack/Wan2.1-T2V-14B-GGUF", "Wan2.1-T2V-14B-Q4_K_M.gguf", True),
+        ("city96/Wan2.1-I2V-14B-480P-gguf", "wan2.1-i2v-14b-480p-Q4_K_M.gguf", False),
+    ):
+        _, message = _refusal(tmp_path, arch = "wan", name = name, identifier = identifier)
+        assert message is not None
+        task = _arch_to_task("wan", name_hints = (identifier, name))
+        assert (task == "text-to-video") is page_named, (identifier, task)
+        assert ("Open it from the Video page" in message) is page_named, message
+
+
+def test_an_arch_that_names_its_own_family_still_gets_the_video_page(tmp_path):
+    # _arch_to_task tries detect_video_family("", override = arch) first; "ltxv" resolves alone.
+    from routes.models import _arch_to_task
+    for identifier, name in (
+        ("someone/generic-gguf", "model-Q4_K_M.gguf"),
+        (None, "checkpoint-q4_0.gguf"),
+        ("Lightricks/LTX-Video-gguf", "ltxv-2b-Q4_K_M.gguf"),
+    ):
+        _, message = _refusal(tmp_path, arch = "ltxv", name = name, identifier = identifier)
+        assert message is not None
+        assert _arch_to_task("ltxv", name_hints = (identifier, name)) == "text-to-video"
+        assert "Open it from the Video page" in message, (identifier, name, message)
+
+
+def _write_split_shard(path: Path) -> Path:
+    """A gguf-split shard past the first: split.no / split.count / split.tensors.count and no
+    general.architecture, as measured on unsloth/DeepSeek-R1-GGUF shard 2."""
+    body = b""
+    for key, value in ((b"split.no", 1), (b"split.count", 30), (b"split.tensors.count", 34)):
+        body += struct.pack("<Q", len(key)) + key
+        body += struct.pack("<I", 4)
+        body += struct.pack("<I", value)
+    path.write_bytes(struct.pack("<II", GGUF_MAGIC, 3) + struct.pack("<QQ", 34, 3) + body)
+    return path
+
+
+def test_a_trailing_split_shard_gets_no_verdict(tmp_path):
+    # Shard 1 carries the architecture for the whole set, so a later shard declares none.
+    gguf = _write_split_shard(tmp_path / "DeepSeek-R1.BF16-00002-of-00030.gguf")
+    backend = LlamaCppBackend()
+    backend._model_identifier = "unsloth/DeepSeek-R1-GGUF"
+    backend._read_gguf_metadata(str(gguf))
+    assert backend._gguf_header_parsed is True
+    assert backend._architecture is None
+    assert backend._non_chat_gguf_refusal(str(gguf)) is None
+
+
+def test_a_metadata_less_gguf_that_is_not_a_shard_is_still_refused(tmp_path):
+    _, message = _refusal(tmp_path, arch = None, name = "video-dit-Q4_K_M.gguf")
+    assert message is not None
+
+
+def test_the_first_shard_is_the_one_a_variant_resolves_to():
+    from core.inference.llama_cpp import _gguf_extra_shards, _gguf_files_for_variant
+    files = [f"BF16/model-BF16-{i:05d}-of-00010.gguf" for i in range(1, 11)]
+    for variant in ("BF16", "BF16/model-BF16"):
+        picked = _gguf_files_for_variant(files, variant)
+        assert picked and picked[0].endswith("-00001-of-00010.gguf"), variant
+        assert len(_gguf_extra_shards(picked, picked[0])) == 9
+
+
+def test_a_split_placeholder_media_gguf_is_still_refused(tmp_path):
+    # Exemption needs split.no > 0 AND no arch: shard 1 of a placeholder file has split keys too.
+    body = b""
+    key, val = b"general.architecture", b"pig"
+    body += struct.pack("<Q", len(key)) + key + struct.pack("<I", 8)
+    body += struct.pack("<Q", len(val)) + val
+    for k, v in ((b"split.no", 0), (b"split.count", 2)):
+        body += struct.pack("<Q", len(k)) + k + struct.pack("<I", 4) + struct.pack("<I", v)
+    gguf = tmp_path / "flux2-dev-iq4_nl-00001-of-00002.gguf"
+    gguf.write_bytes(struct.pack("<II", GGUF_MAGIC, 3) + struct.pack("<QQ", 1, 3) + body)
+    backend = LlamaCppBackend()
+    backend._model_identifier = "gguf-org/flux2-dev-gguf"
+    backend._read_gguf_metadata(str(gguf))
+    assert backend._gguf_split_index == 0
+    message = backend._non_chat_gguf_refusal(str(gguf))
+    assert message is not None
+    assert "Open it from the Images page" in message
+
+
+def test_the_metadata_less_branch_asks_what_the_pickers_ask(tmp_path):
+    # A family that resolves is not enough for the arch branches, nor here: routes.models
+    # drops an MoE the loader cannot assemble, so the Video page lists a Wan 2.2 A14B GGUF only
+    # when its name pairs the other expert.
+    from routes.models import _arch_to_task
+    for identifier, name, page_named in (
+        ("QuantStack/Wan2.2-TI2V-5B-GGUF", "Wan2.2-TI2V-5B-Q4_K_M.gguf", True),
+        ("QuantStack/Wan2.2-T2V-A14B-GGUF", "Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf", True),
+        ("QuantStack/Wan2.2-T2V-A14B-GGUF", "Wan2.2-T2V-A14B-Q4_K_M.gguf", False),
+    ):
+        _, message = _refusal(tmp_path, arch = None, name = name, identifier = identifier)
+        assert message is not None
+        assert (
+            _arch_to_task("wan", name_hints = (identifier, name)) == "text-to-video"
+        ) is page_named
+        assert ("Open it from the Video page" in message) is page_named, message
+
+
+def test_speech_arch_names_the_audio_page(tmp_path):
+    _, message = _refusal(tmp_path, arch = "llama-csm", name = "sesame-csm-backbone.gguf")
+    assert message is not None
+    assert "Audio page" in message
+    assert "Images page" not in message
+
+
+def test_every_name_the_video_preflight_imports_from_routes_still_resolves():
+    """Names the preflight imports from routes.models must resolve, or its broad except hides it."""
+    import ast
+    import pathlib
+
+    import routes.models as models_route
+
+    source = pathlib.Path(__file__).resolve().parents[1] / "core" / "inference" / "llama_cpp.py"
+    wanted: set[str] = set()
+    for node in ast.walk(ast.parse(source.read_text(encoding = "utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.module == "routes.models":
+            wanted.update(alias.name for alias in node.names)
+
+    assert wanted, "llama_cpp.py no longer imports from routes.models; drop this test"
+    missing = sorted(name for name in wanted if not hasattr(models_route, name))
+    assert not missing, (
+        f"core/inference/llama_cpp.py imports {missing} from routes.models, but routes.models "
+        f"does not bind them. The probe's broad except turns that into a silent fail-open."
+    )
+
+
+def test_an_image_arch_this_host_cannot_build_promises_no_page(tmp_path, monkeypatch):
+    # The catalog hides an unbuildable family, so the refusal must not name the Images page.
+    import core.inference.diffusion_engine_router as router
+
+    monkeypatch.setattr(router, "family_buildable_here", lambda fam, *, model_kind: False)
+    _, message = _refusal(
+        tmp_path,
+        arch = "qwen_image21",
+        name = "qwen-image-2.1-Q4_K_M.gguf",
+        identifier = "unsloth/Qwen-Image-2.1-GGUF",
+    )
+    assert message is not None
+    assert "cannot run as a chat model" in message
+    assert "Open it from the Images page" not in message
+
+    monkeypatch.setattr(router, "family_buildable_here", lambda fam, *, model_kind: True)
+    _, message = _refusal(
+        tmp_path,
+        arch = "qwen_image21",
+        name = "qwen-image-2.1-Q4_K_M.gguf",
+        identifier = "unsloth/Qwen-Image-2.1-GGUF",
+    )
+    assert "Open it from the Images page" in message
+
+
+@pytest.mark.parametrize("name", ["krea2_turbo-Q4_0.gguf", "my-custom-mix-Q8_0.gguf"])
+def test_a_krea2_gguf_names_the_images_page(tmp_path, name):
+    # Was "does not recognise this GGUF's model architecture ('krea2')" from llama-server (#14474).
+    _, message = _refusal(tmp_path, arch = "krea2", name = name)
+    assert message is not None
+    assert "Open it from the Images page" in message
+    assert "Video page" not in message
+
+
+def test_a_krea2_gguf_this_host_cannot_build_promises_no_page(tmp_path, monkeypatch):
+    import core.inference.diffusion_engine_router as router
+
+    monkeypatch.setattr(
+        router, "family_buildable_here", lambda fam, *, model_kind: fam.name != "krea-2"
+    )
+    _, message = _refusal(tmp_path, arch = "krea2", name = "my-custom-mix-Q8_0.gguf")
+    assert message is not None
+    assert "cannot run as a chat model" in message
+    assert "Open it from the Images page" not in message
+    text = LlamaCppBackend._classify_start_failure_text(
+        "error loading model: unknown model architecture: 'krea2'",
+        str(tmp_path / "my-custom-mix-Q8_0.gguf"),
+        None,
+    )
+    assert "krea2" in text
+    assert "Use Unsloth's Images page to generate" not in text
+    assert "does not list it either" in text

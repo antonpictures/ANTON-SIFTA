@@ -11,6 +11,8 @@ import socket
 import time
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 MAX_QUERY_CHARS = 240
 MAX_RESULTS = 5
@@ -165,6 +167,36 @@ def _fetch_search_results(query: str, *, opener, retrieved_at: float) -> list[Se
             for result in parser.rows[:MAX_RESULTS]]
 
 
+NEWS_RSS = ("https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en")
+
+
+def _fetch_news_rss(query: str, *, opener, retrieved_at: float) -> list[SearchResult]:
+    """Real, dated headlines from a public RSS feed — no key, no scraping."""
+    url = NEWS_RSS.format(q=urllib.parse.quote_plus(query))
+    request = urllib.request.Request(url, headers={"User-Agent": "SIFTA-public-search/1.0"})
+    with opener(request, timeout=20) as response:
+        body = response.read(512 * 1024)
+    root = ET.fromstring(body)
+    out: list[SearchResult] = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        url_value = (item.findtext("link") or "").strip()
+        if not title or not url_value.startswith("http"):
+            continue
+        desc = item.findtext("description") or ""
+        excerpt = re.sub(r"<[^>]+>", "", desc).strip()[:300]
+        published = None
+        try:
+            published = parsedate_to_datetime(item.findtext("pubDate") or "").timestamp()
+        except Exception:
+            pass
+        out.append(SearchResult(title, url_value, excerpt, "google-news",
+                                retrieved_at, published))
+        if len(out) >= MAX_RESULTS:
+            break
+    return out
+
+
 def search_web_outcome(query: str, *, opener=urllib.request.urlopen,
                        clock=time.time) -> SearchOutcome:
     """Fetch bounded public evidence and preserve empty versus failed retrieval."""
@@ -172,12 +204,26 @@ def search_web_outcome(query: str, *, opener=urllib.request.urlopen,
     clean = re.sub(r"\s+", " ", str(query or "")).strip()[:MAX_QUERY_CHARS]
     if not clean:
         return SearchOutcome("empty", retrieved_at=retrieved_at)
+    error = ""
     try:
         results = _fetch_search_results(clean, opener=opener, retrieved_at=retrieved_at)
     except Exception as exc:
-        return SearchOutcome("failure", retrieved_at=retrieved_at,
-                             error=f"{type(exc).__name__}: {exc}"[:240])
-    return SearchOutcome("ok" if results else "empty", tuple(results), retrieved_at)
+        error = f"{type(exc).__name__}: {exc}"[:240]
+        results = []
+    if not results:
+        # 2026-11-19: the DDG HTML endpoint often yields nothing at all for
+        # "latest news" queries. A public news RSS feed gives real, dated
+        # headlines with no key. Failure stays distinct from an empty feed.
+        try:
+            results = _fetch_news_rss(clean, opener=opener, retrieved_at=retrieved_at)
+        except Exception as exc:
+            if not error:
+                error = f"{type(exc).__name__}: {exc}"[:240]
+    if results:
+        return SearchOutcome("ok", tuple(results), retrieved_at)
+    if error:
+        return SearchOutcome("failure", retrieved_at=retrieved_at, error=error)
+    return SearchOutcome("empty", retrieved_at=retrieved_at)
 
 
 def search_web(query: str, *, opener=urllib.request.urlopen) -> list[SearchResult]:

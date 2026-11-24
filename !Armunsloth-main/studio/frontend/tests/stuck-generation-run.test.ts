@@ -1,0 +1,810 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+// Nothing may derive "still generating" from storage alone, and no loop may run unbounded;
+// otherwise a non-terminal run wedges the tab across reloads.
+
+import assert from "node:assert/strict";
+import { register } from "node:module";
+import test, { afterEach } from "node:test";
+
+import type { ChatGenerationRun } from "../src/features/chat/api/chat-generation-api.ts";
+import {
+  installLocalStorageFake,
+  readText,
+  registerBundlerResolver,
+} from "./helpers/kit.ts";
+
+register("./helpers/settings-api-resolver.mjs", import.meta.url);
+registerBundlerResolver();
+installLocalStorageFake();
+
+const originalFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+const {
+  generationIsCorroboratedLive,
+  isServerActiveGenerationRun,
+  loadGenerationOverlaySnapshot,
+  resetServerActiveGenerationRuns,
+  markServerActiveGenerationRunsUnknown,
+  forgetServerActiveGenerationRun,
+  threadHasDurableGenerationRun,
+  claimLiveGenerationRun,
+  releaseLiveGenerationRun,
+  generationNeedsRecovery,
+  serverHasAnsweredActiveRuns,
+  syncServerActiveGenerationRuns,
+} = await import("../src/features/chat/utils/chat-generation-recovery.ts");
+
+const { CHAT_GENERATION_STALL_TIMEOUT_MS, followChatGenerationRun } =
+  await import("../src/features/chat/api/chat-generation-api.ts");
+
+const run = (
+  status: ChatGenerationRun["status"],
+  seq: number,
+): ChatGenerationRun => ({
+  id: "run-1",
+  threadId: "thread-1",
+  userMessageId: "user-1",
+  assistantMessageId: "assistant-1",
+  requestHash: "hash",
+  requestPayload: { model: "local", messages: [], stream: true, max_tokens: 8 },
+  status,
+  cancelRequested: false,
+  lastEventSeq: seq,
+  finishReason: null,
+  error: null,
+  createdAt: 1,
+  updatedAt: seq + 1,
+  startedAt: 1,
+  completedAt: null,
+});
+
+test("before the server has answered, a live reply is not demoted", () => {
+  // With no previous answer, an empty map means "never asked", not "nothing is running".
+  resetServerActiveGenerationRuns();
+  assert.equal(serverHasAnsweredActiveRuns("thread-1"), false);
+  assert.equal(
+    generationIsCorroboratedLive(
+      { generationRunId: "run-unknown", generationStatus: "running" },
+      "thread-1",
+    ),
+    true,
+    "silence from the server is not a report that the run is dead",
+  );
+  syncServerActiveGenerationRuns("thread-1", []);
+  assert.equal(serverHasAnsweredActiveRuns("thread-1"), true);
+  assert.equal(
+    generationIsCorroboratedLive(
+      { generationRunId: "run-unknown", generationStatus: "running" },
+      "thread-1",
+    ),
+    false,
+  );
+});
+
+test("one thread's successful read does not make another thread's failed read authoritative", () => {
+  resetServerActiveGenerationRuns();
+  syncServerActiveGenerationRuns("thread-A", []);
+  assert.equal(serverHasAnsweredActiveRuns("thread-A"), true);
+  assert.equal(serverHasAnsweredActiveRuns("thread-B"), false);
+  assert.equal(
+    generationIsCorroboratedLive(
+      { generationRunId: "run-B", generationStatus: "running" },
+      "thread-B",
+    ),
+    true,
+    "B has no answer of its own yet, so its reply must not be demoted",
+  );
+});
+
+test("persisted running metadata is not on its own evidence of a live run", () => {
+  syncServerActiveGenerationRuns("thread-1", []);
+  assert.equal(
+    generationIsCorroboratedLive(
+      {
+        generationRunId: "run-1",
+        generationStatus: "running",
+        generationSettled: false,
+      },
+      "thread-1",
+    ),
+    false,
+    "a stuck run says 'running' in storage for good; only the server may confirm it",
+  );
+});
+
+test("the server's active list corroborates a run, and a later list retracts it", () => {
+  syncServerActiveGenerationRuns("thread-1", ["run-1"]);
+  assert.equal(isServerActiveGenerationRun("run-1"), true);
+  assert.equal(
+    generationIsCorroboratedLive({ generationRunId: "run-1" }),
+    true,
+  );
+
+  syncServerActiveGenerationRuns("thread-1", []);
+  assert.equal(
+    isServerActiveGenerationRun("run-1"),
+    false,
+    "the thread's next load is the whole truth about that thread's runs",
+  );
+});
+
+test("one thread's active list does not retract another thread's runs", () => {
+  syncServerActiveGenerationRuns("thread-1", ["run-1"]);
+  syncServerActiveGenerationRuns("thread-2", ["run-2"]);
+  syncServerActiveGenerationRuns("thread-2", []);
+  assert.equal(isServerActiveGenerationRun("run-1"), true);
+  assert.equal(isServerActiveGenerationRun("run-2"), false);
+  syncServerActiveGenerationRuns("thread-1", []);
+});
+
+test("a message with no run id is never corroborated", () => {
+  assert.equal(generationIsCorroboratedLive({}), false);
+  assert.equal(generationIsCorroboratedLive({ generationRunId: 7 }), false);
+});
+
+test("a failed active-run read is reported as unknown, not as an empty list", async () => {
+  const failed = await loadGenerationOverlaySnapshot(
+    "thread-1",
+    () => Promise.reject(new Error("offline")),
+    () => Promise.resolve([{ id: "assistant-1" }]),
+  );
+  assert.deepEqual(failed.activeRuns, []);
+  assert.equal(
+    failed.activeRunsLoaded,
+    false,
+    "an unreachable backend must not be read as 'nothing is running'",
+  );
+
+  const loaded = await loadGenerationOverlaySnapshot(
+    "thread-1",
+    () => Promise.resolve([{ id: "run-1" }]),
+    () => Promise.resolve([{ id: "assistant-1" }]),
+  );
+  assert.equal(loaded.activeRunsLoaded, true);
+});
+
+test("the reload path gates the running status on corroboration", () => {
+  // Source-pinned: toThreadMessage cannot be imported here, and behavioural tests miss its loss.
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  const gate = provider.indexOf("generationIsCorroboratedLive(custom, m.threadId)");
+  assert.ok(gate > 0, "toThreadMessage no longer asks whether the run is live");
+  assert.match(
+    provider,
+    /needsGenerationRecovery\s*=\s*generationUnsettled \|\|\s*\(generationUnfinished &&\s*generationIsCorroboratedLive\(custom, m\.threadId\)\)/,
+    "an unfinished run needs corroboration; a completed-but-unsettled one must not, "
+      + "because /chat-runs/active never lists a terminal run and its tail would be lost",
+  );
+  assert.match(
+    provider,
+    /incomplete: \{ reason: "interrupted" as const \}/,
+    "an uncorroborated partial must be restored as interrupted, not as complete",
+  );
+  assert.match(
+    provider,
+    /activeGenerationRuns\.filter\(\s*\(run\) => !isTerminalChatGenerationRun\(run\),\s*\)/,
+    "history.load must stamp generationSettled:false only for still-live runs",
+  );
+});
+
+test("the interrupted restore keeps the partial body untouched", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  const start = provider.indexOf("function toThreadMessage(");
+  const body = provider.slice(start, provider.indexOf("\n}\n", start));
+  assert.ok(start > 0);
+  assert.match(body, /content: content as Extract</);
+  assert.equal(
+    /content:\s*\[\]/.test(body),
+    false,
+    "restoring an interrupted reply must never empty its content",
+  );
+});
+
+const stalledStreamFetch = (): typeof fetch =>
+  (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/events")) {
+      const body = new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new Error("aborted"));
+          });
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    return new Response(JSON.stringify(run("running", 0)), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+test("the follower throws on its own deadline instead of returning silently", async () => {
+  // A silent return on our own deadline would finalize a still-running run as complete.
+  globalThis.fetch = stalledStreamFetch();
+  await assert.rejects(
+    async () => {
+      for await (const _update of followChatGenerationRun("run-1", {
+        initialRun: run("running", 0),
+        replayFrom: 0,
+        stallTimeoutMs: 40,
+      })) {
+        // drain
+      }
+    },
+    (error: unknown) =>
+      error instanceof Error && error.name === "ChatGenerationStalledError",
+    "a deadline must surface as a stall, not as a clean end of stream",
+  );
+});
+
+test("a caller Stop still ends the follow cleanly", async () => {
+  // Only OUR deadline is a failure; a user Stop stays a clean return.
+  globalThis.fetch = stalledStreamFetch();
+  const controller = new AbortController();
+  globalThis.setTimeout(() => controller.abort(), 30);
+  for await (const _update of followChatGenerationRun("run-1", {
+    initialRun: run("running", 0),
+    replayFrom: 0,
+    signal: controller.signal,
+    stallTimeoutMs: 60_000,
+  })) {
+    // drain
+  }
+});
+
+test("the follower gives up on a run that makes no progress", async () => {
+  let opened = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/events")) {
+      opened += 1;
+      const body = new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new Error("aborted"));
+          });
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    return new Response(JSON.stringify(run("running", 0)), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  const updates: string[] = [];
+  const started = Date.now();
+  await assert.rejects(async () => {
+    for await (const update of followChatGenerationRun("run-1", {
+      initialRun: run("running", 0),
+      replayFrom: 0,
+      stallTimeoutMs: 40,
+    })) {
+      updates.push(update.source);
+    }
+  }, /made no progress/);
+  assert.ok(
+    Date.now() - started < 5_000,
+    "the follow must end on its own rather than reconnect forever",
+  );
+  assert.deepEqual(updates, ["snapshot"], "no progress was ever made");
+  assert.ok(opened >= 1, "the follower did open the event stream");
+});
+
+test("progress rearms the deadline instead of ending the follow", async () => {
+  const frames = [1, 2, 3];
+  let follows = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/events")) {
+      const seq = frames[follows] ?? 0;
+      follows += 1;
+      const terminal = follows >= frames.length;
+      const encoder = new TextEncoder();
+      const snapshot = terminal ? run("completed", seq) : undefined;
+      const body = new ReadableStream({
+        async start(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                seq,
+                type: terminal ? "run.completed" : "chunk",
+                payload: { choices: [{ delta: { content: "x" } }] },
+                createdAt: seq,
+                ...(snapshot ? { run: snapshot } : {}),
+              })}\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    return new Response(
+      JSON.stringify(
+        follows >= frames.length
+          ? run("completed", 3)
+          : run("running", follows),
+      ),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  const seen: number[] = [];
+  for await (const update of followChatGenerationRun("run-1", {
+    initialRun: run("running", 0),
+    replayFrom: 0,
+    stallTimeoutMs: 1_500,
+  })) {
+    if (update.event) seen.push(update.event.seq);
+  }
+  assert.deepEqual(
+    seen,
+    [1, 2, 3],
+    "a run that keeps producing must not be cut off by the deadline",
+  );
+});
+
+test("the default deadline outlasts any reasonable generation", () => {
+  // Prefill emits no events and the backend allows 1200s for a first token plus a sweep
+  // interval, so the client deadline must exceed ~21 minutes.
+  assert.equal(CHAT_GENERATION_STALL_TIMEOUT_MS, 30 * 60_000);
+  assert.ok(
+    CHAT_GENERATION_STALL_TIMEOUT_MS > 1_200_000 + 60_000,
+    "the follow deadline must outlast the backend first-token budget plus a sweep",
+  );
+});
+
+test("stopChatThread falls back to the server when the registries are empty", () => {
+  const api = readText("../src/features/chat/utils/stop-chat-thread.ts");
+  assert.match(
+    api,
+    /getActiveChatGenerationRuns/,
+    "a reloaded tab has no local handle; the server's list is the only one left",
+  );
+  assert.match(api, /cancelChatGenerationRun\(run\.id\)/);
+  const earlyReturn = api.indexOf("return false");
+  const fallback = api.indexOf("stopServerRunsForThread(threadId);");
+  assert.ok(fallback > 0, "the fallback is gone");
+  assert.ok(
+    earlyReturn < 0 || earlyReturn > 0,
+    "the only `return false` left is the missing-thread-id guard",
+  );
+  assert.equal(
+    api.split("return false").length - 1,
+    1,
+    "an empty registry must no longer be a reason to give up",
+  );
+});
+
+test("a failed second active-run read leaves the thread unanswered", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  assert.match(provider, /let answered = true;/);
+  assert.match(
+    provider,
+    /catch \{[^}]*answered = false;/s,
+    "a failed retry must not be promoted into an authoritative empty list",
+  );
+  assert.match(
+    provider,
+    /if \(answered\) \{\s*syncServerActiveGenerationRuns\(/,
+    "the sync must be gated on the read having actually answered",
+  );
+});
+
+test("the recovery follower settles when the follow throws a stall", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  assert.match(
+    provider,
+    /catch \(error\) \{\s*if \(!\(error instanceof ChatGenerationStalledError\)\) throw error;\s*followStalled = true;\s*\}/,
+    "the deadline throw must reach the settlement block, not the outer no-op catch",
+  );
+  assert.match(
+    provider,
+    /if \(followStalled \|\| generationNeedsRecovery\(currentMetadata\)\) \{/,
+    "a stall settles the reply even when the metadata already looks settled",
+  );
+  const start = provider.indexOf("for await (const update of followChatGenerationRun(");
+  const settle = provider.indexOf("generationNeedsRecovery(currentMetadata)", start);
+  const caught = provider.indexOf("instanceof ChatGenerationStalledError", start);
+  assert.ok(start > 0 && caught > start && settle > caught, "the catch must precede the settle");
+});
+
+test("a failed refresh retracts this thread's earlier answer", () => {
+  resetServerActiveGenerationRuns();
+  syncServerActiveGenerationRuns("t-1", ["run-a"]);
+  assert.equal(serverHasAnsweredActiveRuns("t-1"), true);
+  markServerActiveGenerationRunsUnknown("t-1");
+  assert.equal(
+    serverHasAnsweredActiveRuns("t-1"),
+    false,
+    "an answer is a point in time; a failed refresh must retract it",
+  );
+  assert.equal(
+    generationIsCorroboratedLive({ generationRunId: "run-b" }, "t-1"),
+    true,
+  );
+});
+
+test("a terminal run stops making its thread durable", () => {
+  resetServerActiveGenerationRuns();
+  syncServerActiveGenerationRuns("t-2", ["run-c"]);
+  assert.equal(threadHasDurableGenerationRun("t-2"), true);
+  forgetServerActiveGenerationRun("run-c");
+  assert.equal(
+    threadHasDurableGenerationRun("t-2"),
+    false,
+    "a subscriber-owned stream started next must not inherit the durable cap",
+  );
+});
+
+test("a locally interrupted follower is not revived by the benefit of the doubt", () => {
+  resetServerActiveGenerationRuns();
+  const stalled = {
+    generationRunId: "run-d",
+    generationLocallyInterrupted: true,
+  };
+  assert.equal(generationIsCorroboratedLive(stalled, "t-3"), false);
+  assert.equal(generationNeedsRecovery(stalled), false);
+  syncServerActiveGenerationRuns("t-3", ["run-d"]);
+  assert.equal(generationIsCorroboratedLive(stalled, "t-3"), true);
+});
+
+test("the marker is cleared when the server corroborates the run", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  assert.match(
+    provider,
+    /generationLocallyInterrupted: false,/,
+    "history.load must let the server overrule a follower that gave up locally",
+  );
+  assert.match(
+    provider,
+    /generationLocallyInterrupted: true,/,
+    "the stall settlement must stamp the marker",
+  );
+  assert.match(
+    provider,
+    /markServerActiveGenerationRunsUnknown\(remoteId\)/,
+    "a failed second read must retract this thread's answer",
+  );
+  assert.match(
+    provider,
+    /if \(isTerminalChatGenerationRun\(update\.run\)\) \{\s*\/\/[^]*?forgetServerActiveGenerationRun\(runId\)/,
+    "a terminal run must leave the server-active map",
+  );
+});
+
+test("a legacy fallback releases the durable claim at once", () => {
+  const adapter = readText("../src/features/chat/api/chat-adapter.ts");
+  const fallback = adapter.indexOf('generationDecision = "legacy";\n                    //');
+  assert.ok(fallback > 0, "the legacy-fallback branch moved");
+  const release = adapter.indexOf("releaseLiveGenerationRun(cancelId);", fallback);
+  const nextClaim = adapter.indexOf("claimLiveGenerationRun(", fallback);
+  assert.ok(
+    release > 0 && (nextClaim === -1 || release < nextClaim),
+    "the pre-admission claim must go before the subscriber-owned stream starts",
+  );
+});
+
+test("the initial durable stream marks itself interrupted when it stalls", () => {
+  // The adapter's own follower also gives up; without the marker the next reload re-follows.
+  const adapter = readText("../src/features/chat/api/chat-adapter.ts");
+  const stream = adapter.indexOf("const durableStream = async function* () {");
+  assert.ok(stream > 0, "the durable stream moved");
+  const caught = adapter.indexOf("instanceof ChatGenerationStalledError", stream);
+  assert.ok(caught > 0, "the adapter's own follower must catch the stall");
+  const marked = adapter.indexOf("generationStalled = true;", caught);
+  assert.ok(marked > 0, "catching the stall without recording it changes nothing");
+  const custom = adapter.indexOf("const generationCustom = ()");
+  assert.ok(custom > 0 && custom < stream, "the metadata builder moved");
+  const persisted = adapter.indexOf(
+    "generationLocallyInterrupted: generationStalled,",
+    custom,
+  );
+  assert.ok(
+    persisted > custom && persisted < stream,
+    "the stall marker must be persisted alongside generationSettled",
+  );
+  // Without an incomplete reason assistant-ui reads the partial reply as finished.
+  const reason = adapter.indexOf('incompleteReason = "interrupted";', caught);
+  assert.ok(
+    reason > caught && reason < adapter.indexOf("if (generationStatus ===", caught),
+    "a stalled initial stream must settle as interrupted, not as completed",
+  );
+});
+
+test("a completed run overrides the local interruption marker", () => {
+  resetServerActiveGenerationRuns();
+  // /chat-runs/active excludes completed runs, so it can never clear the marker here.
+  const finished = {
+    generationRunId: "run-e",
+    generationStatus: "completed",
+    generationSettled: false,
+    generationLocallyInterrupted: true,
+  };
+  assert.equal(generationNeedsRecovery(finished), true);
+  assert.equal(generationIsCorroboratedLive(finished, "t-4"), true);
+  assert.equal(
+    generationNeedsRecovery({ ...finished, generationStatus: "running" }),
+    false,
+  );
+});
+
+test("a failed initial active-run read retracts the earlier answer too", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  assert.match(
+    provider,
+    /if \(!activeGenerationRunsLoaded\) \{[^]*?markServerActiveGenerationRunsUnknown\(remoteId\)/,
+    "the initial-read failure path must retract the stale answer, not only the retry",
+  );
+});
+
+test("the lease is renewed while the model is being prepared", () => {
+  const runs = readText("../../backend/core/inference/chat_generation_runs.py");
+  assert.match(runs, /_renew_lease_while_preparing/);
+  assert.match(
+    runs,
+    /_PREPARE_RENEW_MAX_SECONDS = /,
+    "the renewal must be bounded, or a load that never returns is kept alive forever",
+  );
+  assert.match(
+    runs,
+    /def _renew_interval_seconds\(\)/,
+    "the cadence must derive from the configured lease, not a constant that can exceed it",
+  );
+  // A run waiting on the lifecycle gate ages from created_at with nothing renewing it.
+  const guard = runs.indexOf("async with self._lease_heartbeat(run_id):");
+  const gate = runs.indexOf("await activity.start(cancel_event)", guard);
+  const produce = runs.indexOf("await produce_openai_chat_completions(", guard);
+  assert.ok(
+    guard > 0 && gate > guard && produce > gate,
+    "the heartbeat must open before the gate wait and still cover preparation",
+  );
+});
+test("retracting an answer also drops that thread's stale run mappings", () => {
+  resetServerActiveGenerationRuns();
+  syncServerActiveGenerationRuns("t-5", ["run-f"]);
+  const stalled = {
+    generationRunId: "run-f",
+    generationStatus: "running",
+    generationLocallyInterrupted: true,
+  };
+  assert.equal(generationIsCorroboratedLive(stalled, "t-5"), true);
+  markServerActiveGenerationRunsUnknown("t-5");
+  // A leftover mapping must not keep winning, or nothing ever settles the message.
+  assert.equal(generationIsCorroboratedLive(stalled, "t-5"), false);
+  assert.equal(generationNeedsRecovery(stalled), false);
+  assert.equal(threadHasDurableGenerationRun("t-5"), false);
+});
+
+test("advancing keep-alive stamps hold the follower open through a long preparation", async () => {
+  // Comment keep-alives count as progress only via the stamp; the server sends bare ones
+  // every 15s forever, so rearming on arrival could never settle a wedged run.
+  const api = await import("../src/features/chat/api/chat-generation-api");
+  let push: ((chunk: Uint8Array) => void) | undefined;
+  let close: (() => void) | undefined;
+  const encoder = new TextEncoder();
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (chunk) => controller.enqueue(chunk);
+        close = () => controller.close();
+        init?.signal?.addEventListener("abort", () =>
+          controller.error(new DOMException("aborted", "AbortError")),
+        );
+      },
+    });
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const seen: string[] = [];
+    const run = { id: "r", status: "running", lastEventSeq: 0, updatedAt: 1 };
+    const follow = (async () => {
+      for await (const update of api.followChatGenerationRun("r", {
+        initialRun: run as never,
+        stallTimeoutMs: 200,
+      })) {
+        seen.push(update.source);
+        if (update.run.status !== "running") break;
+      }
+    })();
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((r) => setTimeout(r, 120));
+      push?.(encoder.encode(`: keep-alive ${1000 + i}\n\n`));
+    }
+    push?.(
+      encoder.encode(
+        `data: ${JSON.stringify({ seq: 1, type: "chunk", payload: {}, run: { ...run, status: "completed", lastEventSeq: 1 } })}\n\n`,
+      ),
+    );
+    close?.();
+    await follow;
+    assert.ok(seen.length > 0, "the follower must have survived to see the event");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a run finished between the two reads never reaches the durable registry", () => {
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  const filter = provider.indexOf("terminalMessageRuns");
+  const sync = provider.indexOf("syncServerActiveGenerationRuns(", filter);
+  assert.ok(filter > 0, "the terminal-message filter is missing");
+  assert.ok(sync > filter, "the filter must run before the registry sync");
+  assert.match(
+    provider,
+    /activeGenerationRuns = activeGenerationRuns\.filter\(\s*\(run\) => !terminalMessageRuns\.has\(run\.assistantMessageId\),\s*\);/,
+    "the list itself must be filtered, so sync and overlay both see it",
+  );
+});
+
+test("a pre-admission claim does not make the thread bounded yet", () => {
+  resetServerActiveGenerationRuns();
+  // The provisional claim blocks a second follower but must not cap checkpoints: until the
+  // POST lands they are the only persistence, and the await can outlast the cap.
+  claimLiveGenerationRun("run-1", "thread-1", { provisional: true });
+  assert.equal(threadHasDurableGenerationRun("thread-1"), false);
+
+  claimLiveGenerationRun("run-1", "thread-1");
+  assert.equal(threadHasDurableGenerationRun("thread-1"), true);
+  releaseLiveGenerationRun("run-1");
+  assert.equal(threadHasDurableGenerationRun("thread-1"), false);
+});
+
+test("releasing a provisional claim clears it rather than leaving it bounded", () => {
+  resetServerActiveGenerationRuns();
+  claimLiveGenerationRun("run-2", "thread-2", { provisional: true });
+  releaseLiveGenerationRun("run-2");
+  claimLiveGenerationRun("run-2", "thread-2");
+  assert.equal(threadHasDurableGenerationRun("thread-2"), true);
+  releaseLiveGenerationRun("run-2");
+});
+
+test("a repeated keep-alive stamp does NOT hold the follower open", async () => {
+  const api = await import("../src/features/chat/api/chat-generation-api");
+  let push: ((chunk: Uint8Array) => void) | undefined;
+  const encoder = new TextEncoder();
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (chunk) => controller.enqueue(chunk);
+        init?.signal?.addEventListener("abort", () =>
+          controller.error(new DOMException("aborted", "AbortError")),
+        );
+      },
+    });
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const run = { id: "r", status: "running", lastEventSeq: 0, updatedAt: 1 };
+    let stalled = false;
+    const follow = (async () => {
+      try {
+        for await (const _u of api.followChatGenerationRun("r", {
+          initialRun: run as never,
+          stallTimeoutMs: 200,
+        })) {
+          // The run never progresses; only the deadline can end this.
+        }
+      } catch (error) {
+        stalled = error instanceof api.ChatGenerationStalledError;
+      }
+    })();
+    // Keep pushing: if the stream went quiet a rearm-on-keep-alive version would pass too.
+    const pump = setInterval(() => {
+      try {
+        push?.(encoder.encode(": keep-alive 1\n\n"));
+      } catch {
+        clearInterval(pump);
+      }
+    }, 40);
+    const timedOut = Symbol("timed out");
+    const outcome = await Promise.race([
+      follow.then(() => "settled"),
+      new Promise((r) => setTimeout(() => r(timedOut), 3_000)),
+    ]);
+    clearInterval(pump);
+    assert.notEqual(
+      outcome,
+      timedOut,
+      "the follower never gave up while keep-alives kept arriving",
+    );
+    assert.equal(stalled, true, "a frozen stamp must not keep the follower alive");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a frozen stamp does not rearm across SSE reconnects", async () => {
+  // The stream generator restarts per reconnect, so the last-stamp memory lives in the follower.
+  const api = await import("../src/features/chat/api/chat-generation-api");
+  const encoder = new TextEncoder();
+  const original = globalThis.fetch;
+  let connections = 0;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).includes("/events")) {
+      connections += 1;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(": keep-alive 7\n\n"));
+          controller.close();
+        },
+      });
+      init?.signal?.addEventListener("abort", () => {});
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    return new Response(
+      JSON.stringify({ id: "r", status: "running", lastEventSeq: 0, updatedAt: 7 }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    let stalled = false;
+    const follow = (async () => {
+      try {
+        for await (const _u of api.followChatGenerationRun("r", {
+          initialRun: { id: "r", status: "running", lastEventSeq: 0, updatedAt: 7 } as never,
+          stallTimeoutMs: 2_500,
+        })) {
+          // Never terminal; only the deadline can end this.
+        }
+      } catch (error) {
+        stalled = error instanceof api.ChatGenerationStalledError;
+      }
+    })();
+    const timedOut = Symbol("timed out");
+    const outcome = await Promise.race([
+      follow.then(() => "settled"),
+      new Promise((r) => setTimeout(() => r(timedOut), 20_000)),
+    ]);
+    assert.notEqual(outcome, timedOut, "reconnects kept the follower alive indefinitely");
+    assert.equal(stalled, true, "a frozen stamp must not rearm on reconnect");
+    assert.ok(connections > 1, `expected several reconnects, saw ${connections}`);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a stalled follower fences the server run before offering Continue", () => {
+  // create_run refuses a thread with an active generation, so the server row must settle too.
+  const provider = readText("../src/features/chat/runtime-provider.tsx");
+  const settle = provider.indexOf("followStalled || generationNeedsRecovery(currentMetadata)");
+  assert.ok(settle > 0, "the stall settle branch moved");
+  const commit = provider.indexOf("incomplete: { reason: \"interrupted\" as const }", settle);
+  assert.ok(commit > settle, "the interrupted commit moved");
+  const cancel = provider.indexOf("serverCancel();", settle);
+  assert.ok(
+    cancel > settle && cancel < commit,
+    "the run must be fenced server-side BEFORE the reply is presented as resumable",
+  );
+});

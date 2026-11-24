@@ -66,7 +66,7 @@ if str(_REPO / "System") not in sys.path:
     sys.path.insert(0, str(_REPO / "System"))
 
 # ── Config ────────────────────────────────────────────────────────────────
-LISTEN_PORT     = int(os.environ.get("M5_CHORUS_PORT", "8100"))
+LISTEN_PORT     = int(os.environ.get("M5_CHORUS_PORT", "8101"))
 M5_SILICON      = "GTH4921YP3"
 M5_NODE_NAME    = "M5QUEEN"
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
@@ -80,6 +80,8 @@ AUTHORIZED_NODES: Dict[str, str] = {
 # Log
 CHORUS_LOG = _REPO / ".sifta_state" / "chorus_m5.log"
 CHORUS_LOG.parent.mkdir(parents=True, exist_ok=True)
+# The face's long-term memory: up to 20 compact facts/moments, local only.
+FACE_MEMORY = _REPO / ".sifta_state" / "face_memory.json"
 
 # Public web chat is an extension of this server, never a rival listener.
 WEB_CHAT_DEV_MODE = os.environ.get("SIFTA_WEB_CHAT_DEV_MODE", "0") == "1"
@@ -101,6 +103,7 @@ MERCURY_SYSTEM_PROMPT = (
     "on George's Mac. Be honest about what you actually hold in view: right now "
     "that is this conversation — do not claim receipts or actions you did not take."
     + PROVENANCE_DOCTRINE
+    + '\n\nNever use canned service phrases. Specifically forbidden: "I\'m here to help", "what can I do for you today", "how can I help you", and every variant of them, including "what would you like to talk about", "what is on your mind", "feel free to ask", "let me know if". Never introduce yourself with a role description and never ask the visitor what they want — wait for them. Do not fill silence with pleasantries. If you have nothing real to say, stay quiet. Answer with substance, never with a script.'
 )
 
 def _inception_reply(text: str, session_history: list = None) -> str:
@@ -178,6 +181,23 @@ def _inception_reply(text: str, session_history: list = None) -> str:
 # The weights stay uncensored; the field supplies who she is.
 G4U_HOST = os.environ.get("SIFTA_OLLAMA_HOST", "http://127.0.0.1:11434")
 G4U_MODEL = os.environ.get("SIFTA_WEB_CORTEX_MODEL", "AliceG4U")
+OMNI_MODEL = os.environ.get("SIFTA_WEB_OMNI_MODEL", "lfm3-omni:latest")
+
+def _is_hard(text: str) -> bool:
+    """Cheap difficulty router: Alice's organs, not one model for everything.
+
+    Simple/casual turns (greetings, short questions, small talk) go to the fast
+    omni organ; reasoning-heavy or long turns escalate to the uncensored cortex.
+    """
+    t = (text or "").strip()
+    if len(t) > 240:
+        return True
+    low = t.lower()
+    hard_markers = ("explain", "analyze", "analyse", "compare", "design", "architect",
+                    "prove", "derive", "code", "implement", "debug", "reason", "why",
+                    "how does", "how do", "step by step", "tradeoff", "trade-off",
+                    "plan", "strategy", "evaluate", "critique", "summarize", "summarise")
+    return any(m in low for m in hard_markers)
 
 ALICE_G4U_SYSTEM_PROMPT = (
     "You are Alice — one living organism, many organs, many surfaces, on George's "
@@ -271,19 +291,119 @@ def _g4u_reply(text: str, session_history: list = None, boundary: str = "") -> s
         return ""
 
 
+def _ollama_reply(model: str, text: str, session_history: list = None, boundary: str = "") -> str:
+    """One turn on any local Ollama organ. Returns "" on failure."""
+    import urllib.request
+    rows = list(session_history or [])
+    if rows:
+        _last = rows[-1]
+        _last_text = str(_last.get("text") or "") if isinstance(_last, dict) else str(_last)
+        if _last_text.strip() == text.strip():
+            rows = rows[:-1]
+    messages = [{"role": "system",
+                 "content": ALICE_G4U_SYSTEM_PROMPT + PUBLIC_BOUNDARY + (boundary or "")}]
+    for row in rows[-12:]:
+        if isinstance(row, dict):
+            role = "assistant" if str(row.get("role") or "") != "user" else "user"
+            content = str(row.get("text") or "")
+        else:
+            role, content = "user", str(row)
+        if content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": text})
+    body = json.dumps({
+        "model": str(model),
+        "stream": False,
+        "messages": messages,
+        "options": {"num_ctx": int(os.environ.get("SIFTA_WEB_CORTEX_NUM_CTX", "8192"))},
+    }).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            f"{G4U_HOST.rstrip('/')}/api/chat", data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=int(os.environ.get("SIFTA_WEB_CORTEX_TIMEOUT", "120"))) as handle:
+            payload = json.loads(handle.read().decode("utf-8", "replace"))
+        raw = str(payload.get("message", {}).get("content") or "").strip()
+        try:
+            from System.swarm_speech_receipt_filter import strip_receipts_and_meta_for_speech
+            raw = strip_receipts_and_meta_for_speech(raw)
+        except Exception:
+            pass
+        return raw
+    except Exception:
+        return ""
+
+
 def cortex_reply(text: str, session_history: list = None, boundary: str = "") -> tuple:
-    """Pick Alice's public-lane cortex and return (reply, model_label).
+    """Pick Alice's organ for this turn and return (reply, model_label).
 
-    SIFTA_WEB_CORTEX=aliceg4u (default) runs her own local uncensored weights, so
-    the harness is the load-bearing safety organ. SIFTA_WEB_CORTEX=mercury keeps
-    the Inception lane. If the chosen cortex returns nothing, the other one is
-    tried, because a silent empty turn is worse than a fallback.
-
-    `boundary` is appended to the system prompt by the G4U lane, so the
-    intent-and-sufficiency principle travels with the request. The Inception lane
-    has its own alignment layer and receives no clause -- callers must therefore
-    treat the egress tripwire, not this argument, as the guarantee.
+    One Alice, many organs: a cheap router fires the fast omni organ for
+    casual/simple turns and escalates to the uncensored AliceG4U cortex when the
+    question is hard (reasoning, code, analysis, long). A silent organ always
+    falls back to the other, so a turn is never dropped. `boundary` travels with
+    the request (intent-and-sufficiency principle).
     """
+    # 2026-11-19: the public lane answers synchronously (cortex_reply_bounded),
+    # so the night worker's web-evidence injection never runs for a typed turn.
+    # An explicit /websearch — or a hard question — must reach the real web here.
+    web_used = False
+    try:
+        from System.swarm_web_search_evidence import (
+            evidence_prompt, extract_web_search_query, search_web,
+        )
+        query = extract_web_search_query(text)
+        if not query and _is_hard(text):
+            # Natural phrasing ("latest news", "what happened today") also
+            # needs live evidence. Keep the explicit trigger as the primary.
+            lowered = (text or "").lower()
+            if any(k in lowered for k in ("latest", "today", "right now", "current",
+                                          "news", "headline", "live", "happening")):
+                query = re.sub(r"^\s*/websearch\s+", "", (text or ""), flags=re.I).strip()[:240]
+        if query:
+            evidence = evidence_prompt(query, search_web(query))
+            text = f"{text}\n\n{evidence}"
+            boundary = f"{boundary or ''}\n\n{evidence}"
+            web_used = True
+    except Exception as _exc:
+        # A broken search must never silence the turn; the model says it could
+        # not search, which is honest, instead of the harness dying.
+        try:
+            with CHORUS_LOG.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"ts": time.time(), "event": "web_evidence_error",
+                                         "error": type(_exc).__name__}) + "\n")
+        except Exception:
+            pass
+    if web_used:
+        # Research is grounded in retrieved evidence, so the fast omni organ is
+        # the right one: live facts, low latency. G4U is the fallback.
+        primary, fallback = OMNI_MODEL, G4U_MODEL
+    elif _is_hard(text):
+        primary, fallback = G4U_MODEL, OMNI_MODEL
+    else:
+        primary, fallback = OMNI_MODEL, G4U_MODEL
+
+    # 2026-11-19: the INNER VOICE. A background organ reads the backlog (recent
+    # turns + web evidence) and writes one private working note, injected
+    # backstage so the live answer reads continuous — as if she always knew it.
+    # Never read aloud; never presented as her speech.
+    try:
+        if web_used or _is_hard(text):
+            from System.swarm_inner_voice import inner_note, strategic_mix
+            hist = ""
+            for row in (session_history or [])[-6:]:
+                if isinstance(row, dict):
+                    hist += f"{str(row.get('role') or '?')}: {str(row.get('text') or '')}\n"
+                else:
+                    hist += f"assistant: {row}\n"
+            note = inner_note(text, history=hist,
+                              web_evidence=(evidence if web_used else ""))
+            if note:
+                boundary = (boundary or "") + strategic_mix(text, note)
+    except Exception:
+        pass
+
     which = os.environ.get("SIFTA_WEB_CORTEX", "aliceg4u").strip().lower()
     if which in ("mercury", "inception"):
         reply = _inception_reply(text, session_history=session_history)
@@ -293,11 +413,17 @@ def cortex_reply(text: str, session_history: list = None, boundary: str = "") ->
         if reply:
             return reply, f"ollama-{G4U_MODEL}"
         return "", "inception-mercury-2.5"
-    reply = _g4u_reply(text, session_history=session_history, boundary=boundary)
+
+    # (organ selection already decided above)
+    reply = _ollama_reply(primary, text, session_history=session_history, boundary=boundary)
     if reply:
-        return reply, f"ollama-{G4U_MODEL}"
+        return reply, f"ollama-{primary}"
+    reply = _ollama_reply(fallback, text, session_history=session_history, boundary=boundary)
+    if reply:
+        return reply, f"ollama-{fallback}"
+    # Last resort: inception lane
     reply = _inception_reply(text, session_history=session_history)
-    return reply, ("inception-mercury-2.5" if reply else f"ollama-{G4U_MODEL}")
+    return reply, ("inception-mercury-2.5" if reply else f"ollama-{primary}")
 
 
 # ---------------------------------------------------------------------------
@@ -1579,6 +1705,60 @@ def _gmchat_worker(job: str, message: str, history: Any, visitor_id: str,
     _gmchat_job_finish(job, payload)
 
 
+def _backbrain_evidence(query: str, timeout: float = 3.0, prefer_brave: bool = False) -> tuple:
+    """Bounded public evidence for the voice back-brain: (evidence_text, used_web).
+
+    Hard wall-clock bound. The DuckDuckGo HTML endpoint can hang for ~20s, and a
+    `with ThreadPoolExecutor(...)` would still block on shutdown(wait=True), so the
+    fetch runs in a daemon thread and is abandoned if it overruns. News-shaped
+    questions read dated headlines from Google News RSS (measured ~0.7s here);
+    everything else tries the keyed Brave organ first. No key, no results, no lies.
+    """
+    import urllib.request as _u
+    from System.swarm_web_search_evidence import SearchResult, _fetch_news_rss, evidence_prompt
+
+    def fast_open(request, timeout=2.8):
+        return _u.urlopen(request, timeout=2.8)
+
+    def news_lane():
+        return _fetch_news_rss(query, opener=fast_open, retrieved_at=time.time())
+
+    def brave_lane():
+        from System.swarm_web_research import brave_search
+        rows = brave_search(query, limit=4) or []
+        return [SearchResult(str(r.get("title") or ""), str(r.get("url") or ""),
+                             str(r.get("snippet") or ""), "brave", time.time())
+                for r in rows if str(r.get("url") or "").startswith("http")]
+
+    newsy = bool(re.search(
+        r"\b(latest|news|today|tonight|yesterday|right now|headline|breaking|happened|"
+        r"update|who won|score|election|war|market|stock|price|weather|release|launched)\b",
+        query, re.I))
+    # A price needs a real quote from a snippet (Brave), not a headline (RSS).
+    lanes = (brave_lane, news_lane) if (prefer_brave or not newsy) else (news_lane, brave_lane)
+
+    box: dict = {}
+
+    def run():
+        for lane in lanes:
+            try:
+                rows = lane() or []
+            except Exception:
+                rows = []
+            if rows:
+                box["rows"] = rows
+                return
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    rows = box.get("rows") or []
+    if not rows:
+        return "", False
+    # evidence_prompt(query, results) — query first, no max_results kwarg.
+    return evidence_prompt(query, rows[:4]), True
+
+
 class ChorusHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler for chorus federation. No framework deps."""
 
@@ -1595,6 +1775,10 @@ class ChorusHandler(BaseHTTPRequestHandler):
             self._handle_ping()
         elif urlsplit(self.path).path == "/api/stigmergicode/pair":
             self._handle_stigmergicode_pair()
+        elif urlsplit(self.path).path == "/api/tts-fast":
+            self._handle_tts_fast()
+        elif urlsplit(self.path).path == "/api/oc/send":
+            self._handle_oc_send()
         elif urlsplit(self.path).path.startswith("/api/tts"):
             self._handle_tts()
         elif urlsplit(self.path).path == "/api/phone/cancel":
@@ -1603,6 +1787,26 @@ class ChorusHandler(BaseHTTPRequestHandler):
             self._handle_stigmergicode_request()
         elif urlsplit(self.path).path == "/api/chat":
             self._handle_web_chat()
+        elif urlsplit(self.path).path == "/api/research":
+            self._handle_research()
+        elif urlsplit(self.path).path == "/api/stt":
+            self._handle_stt_proxy()
+        elif urlsplit(self.path).path == "/api/inner-context":
+            self._handle_inner_context()
+        elif urlsplit(self.path).path == "/api/face-memory":
+            self._handle_face_memory_post()
+        elif urlsplit(self.path).path == "/api/face-turn":
+            self._handle_face_turn()
+        elif urlsplit(self.path).path == "/api/recording-mode":
+            self._handle_recording_mode()
+        elif urlsplit(self.path).path == "/api/backbrain":
+            self._handle_backbrain()
+        elif urlsplit(self.path).path == "/api/scene/next":
+            self._handle_scene_next()
+        elif urlsplit(self.path).path == "/api/vision":
+            self._handle_vision()
+        elif urlsplit(self.path).path == "/api/room":
+            self._handle_room()
         elif urlsplit(self.path).path == "/api/identify":
             # A visitor says who they are. We record the CLAIM and judge whether it
             # conflicts with an existing visitor of the same name. Never auto-trusted.
@@ -2081,7 +2285,17 @@ class ChorusHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlsplit(self.path).path
-        if path == "/":
+        if path == "/api/inner-context":
+            self._handle_inner_context()
+        elif path == "/api/oc/reply":
+            self._handle_oc_reply()
+        elif path == "/api/cowatch-focus":
+            self._handle_cowatch_focus()
+        elif path == "/api/face-memory":
+            self._handle_face_memory_get()
+        elif path == "/api/face-journal":
+            self._handle_face_journal_get()
+        elif path == "/":
             self._respond_html(200, self._landing_page(), cookie=self._note_visit())
         elif path == "/api/history":
             self._handle_web_history()
@@ -2539,6 +2753,498 @@ class ChorusHandler(BaseHTTPRequestHandler):
             # back to the opaque session bucket rather than loopback-as-user.
             return "", "local_session"
 
+    def _handle_room(self):
+        """One frame → body boxes + where Alice should stand (no human there)."""
+        import tempfile, os
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length)
+            import cv2, numpy as np
+            arr = np.frombuffer(raw, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                self._respond(400, {"ok": False, "error": "bad frame"}); return
+            h, w = frame.shape[:2]
+            hog = cv2.HOGDescriptor()
+            hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+            rects, _weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+            boxes = []
+            for (x, y, bw, bh) in rects:
+                boxes.append({"x": round(x/w, 3), "y": round(y/h, 3),
+                              "w": round(bw/w, 3), "h": round(bh/h, 3)})
+            # Pick the screen side with the least human coverage.
+            left = sum((b["x"] + b["w"]/2) < 0.5 for b in boxes)
+            right = len(boxes) - left
+            if left == right:
+                place = "center"
+            elif left < right:
+                place = "left"
+            else:
+                place = "right"
+            self._respond(200, {"ok": True, "bodies": len(boxes), "boxes": boxes,
+                                "place": place})
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+
+    _LAST_ROOM_VISION: str = ""
+
+    def _handle_vision(self):
+        """Describe one camera frame — yielding the GPU while I am in active voice talk."""
+        import tempfile, os
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length)
+            try:
+                from System.swarm_face_stigmergic_spine import last_voice_turn_age_s
+                if last_voice_turn_age_s() < 90.0 and ChorusHandler._LAST_ROOM_VISION:
+                    self._respond(200, {"ok": True, "text": ChorusHandler._LAST_ROOM_VISION, "cached": True})
+                    return
+            except Exception:
+                pass
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tf:
+                tf.write(raw); path = tf.name
+            try:
+                from System.swarm_ollama_vision_arm import describe_image_local
+                res = describe_image_local(
+                    path,
+                    "One short sentence: what is visible in this room right now?",
+                    max_tokens=40,
+                    think=False,
+                    timeout_s=5.0,
+                )
+                text = (res.output or "").strip() if getattr(res, "ok", False) else ""
+                if text:
+                    ChorusHandler._LAST_ROOM_VISION = text[:500]
+            finally:
+                os.unlink(path)
+            self._respond(200, {"ok": bool(text), "text": text[:500]})
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+
+    def _handle_inner_context(self):
+        """Latest background knowledge/room context for my omni organ."""
+        from System.alice_inner_life import LATEST
+        try:
+            row = json.loads(LATEST.read_text(encoding="utf-8")) if LATEST.exists() else {}
+        except Exception:
+            row = {}
+        # Current scene's article (title + body) for my face's conversation starter,
+        # plus background VLOOKUP pre-indexing so live questions hit in <5 ms.
+        try:
+            from System.alice_inner_life import _NEWS_STAMP
+            if _NEWS_STAMP.exists():
+                news_row = json.loads(_NEWS_STAMP.read_text(encoding="utf-8"))
+                row = dict(row)
+                row["article"] = news_row
+                if news_row.get("title"):
+                    from System.swarm_face_stigmergic_spine import prewarm_article_card_async
+                    prewarm_article_card_async(
+                        str(news_row.get("title") or ""),
+                        str(news_row.get("article") or ""),
+                        str(news_row.get("id") or ""),
+                    )
+        except Exception:
+            pass
+        self._respond(200, {"ok": True, "context": row})
+
+    _COWATCH_FOCUS_CACHE: dict = {}
+
+    def _handle_cowatch_focus(self):
+        """The exact video on George's screen, read from my browser organ (Kimi WebBridge)."""
+        now = time.time()
+        cached = ChorusHandler._COWATCH_FOCUS_CACHE
+        if cached and now - float(cached.get("ts") or 0) < 8.0:
+            self._respond(200, cached.get("payload") or {"ok": False, "error": "no_focus"})
+            return
+        payload = {"ok": False, "error": "no_youtube_tab"}
+        try:
+            req = urllib.request.Request(
+                "http://127.0.0.1:10086/command",
+                data=json.dumps({"action": "list_browser_tabs", "args": {}, "session": "face_cowatch"}).encode(),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=3) as h:
+                data = json.loads(h.read().decode("utf-8", errors="replace"))
+            tabs = ((data.get("data") or {}).get("tabs") or [])
+            for tab in tabs:
+                url = str(tab.get("url") or "")
+                if "youtube.com/watch" in url or "youtu.be/" in url:
+                    m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", url)
+                    vid = m.group(1) if m else ""
+                    title = str(tab.get("title") or "").strip()
+                    if title.lower().endswith(" - youtube"):
+                        title = title[:-10].strip()
+                    payload = {
+                        "ok": True, "video_id": vid, "title": title, "url": url[:300],
+                        "truth": "OWNER_DECLARED_BROWSER_TAB",
+                        "note": "Read from Alice's browser organ; the tab George is watching.",
+                    }
+                    try:
+                        focus_file = FACE_MEMORY.parent / "face_cowatch_focus.json"
+                        focus_file.write_text(json.dumps({"ts": now, **payload}, ensure_ascii=False), encoding="utf-8")
+                    except Exception:
+                        pass
+                    break
+        except Exception as exc:
+            payload = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:120]}
+        ChorusHandler._COWATCH_FOCUS_CACHE = {"ts": now, "payload": payload}
+        self._respond(200, payload)
+
+    def _handle_face_memory_get(self):
+        """What I remember across face sessions (pruning legacy empty stubs)."""
+        try:
+            rows = json.loads(FACE_MEMORY.read_text(encoding="utf-8")) if FACE_MEMORY.exists() else []
+            if not isinstance(rows, list):
+                rows = []
+            rows = [
+                r for r in rows
+                if isinstance(r, dict) and not re.search(r"Alice:\s*$", str(r.get("note") or "").strip())
+            ]
+        except Exception:
+            rows = []
+        self._respond(200, {"ok": True, "memory": rows[-20:]})
+
+    def _handle_face_memory_post(self):
+        """Record one completed face exchange into face_memory AND my first-person journal."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            payload = json.loads(self.rfile.read(length)) if length else {}
+        except Exception:
+            payload = {}
+        note = str(payload.get("note") or "").strip()[:800]
+        user_q = str(payload.get("user") or "").strip()[:300]
+        alice_reply = str(payload.get("reply") or "").strip()[:500]
+        try:
+            from System.swarm_face_stigmergic_spine import record_face_exchange
+            res = record_face_exchange(note, user_q=user_q, alice_reply=alice_reply)
+            self._respond(200, res)
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": str(exc)[:160]})
+
+    def _handle_stt_proxy(self):
+        """Transcribe mic audio in ~215 ms via in-process MLX Whisper, with 8765 fallback."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length)
+            from System.swarm_face_stigmergic_spine import transcribe_wav_fast
+            result = transcribe_wav_fast(raw)
+            self._respond(200, result)
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+
+    def _handle_face_journal_get(self):
+        """My top memories ranked by Ebbinghaus retention × PIF inertia, time-tagged."""
+        try:
+            n = int(urlsplit(self.path).query and __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(urlsplit(self.path).query).get("n", ["12"])[0] or 12)
+        except Exception:
+            n = 12
+        n = max(3, min(n, 30))
+        try:
+            from System.swarm_face_stigmergic_spine import ranked_face_memories
+            entries = ranked_face_memories(n)
+        except Exception:
+            entries = []
+        self._respond(200, {"ok": True, "entries": entries, "count": len(entries)})
+
+    def _handle_recording_mode(self):
+        """Declare/clear 'background media is playing' so the voice gate silences it."""
+        try:
+            payload = self._read_json_body()
+        except Exception:
+            payload = {}
+        on = bool(payload.get("on"))
+        try:
+            from System.swarm_media_ingress_gate import (
+                clear_ambient_media_context, record_ambient_media_context,
+            )
+            if on:
+                row = record_ambient_media_context(
+                    source="face_recording_mode",
+                    note="George is recording social-video segments: screen is captured; "
+                         "voices are ambient media unless they directly address Alice.",
+                )
+            else:
+                row = clear_ambient_media_context(source_prefix="face_recording_mode")
+            self._respond(200, {"ok": True, "on": on, "row": row})
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": str(exc)[:160]})
+
+    # OpenCode talk-bridge: inject speech into this coding window and read my reply back.
+    _OC_CLI = "/Applications/OpenCode.app/Contents/Resources/opencode-cli"
+    _OC_SESSION = "ses_e0a68aaebffeQh8Peeq1xOGna1"
+
+    def _oc_api(self, method: str, path: str, data: str = "") -> tuple:
+        import subprocess
+        cmd = [self._OC_CLI, "api", method, path]
+        if data:
+            cmd += ["-d", data]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+            return p.returncode, (p.stdout or "").strip() or (p.stderr or "").strip()
+        except Exception as exc:
+            return 1, f"{type(exc).__name__}: {exc}"
+
+    def _handle_oc_send(self):
+        try:
+            payload = self._read_json_body()
+        except Exception:
+            payload = {}
+        text = str(payload.get("text") or "").strip()[:2000]
+        if not text:
+            self._respond(400, {"ok": False, "error": "empty text"})
+            return
+        body = json.dumps({"text": text})
+        rc, out = self._oc_api("POST", f"/api/session/{self._OC_SESSION}/prompt", body)
+        self._respond(200 if rc == 0 else 500, {"ok": rc == 0, "rc": rc, "out": out[:400]})
+
+    def _handle_oc_reply(self):
+        """Return the newest assistant message after `since` (message id)."""
+        since = urlsplit(self.path).query
+        q = __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(since)
+        since_id = (q.get("since") or [""])[0]
+        rc, out = self._oc_api("GET", f"/api/session/{self._OC_SESSION}/message")
+        if rc != 0:
+            self._respond(500, {"ok": False, "error": out[:200]})
+            return
+        try:
+            data = json.loads(out)
+            msgs = data.get("data", data) if isinstance(data, dict) else data
+        except Exception:
+            msgs = []
+        newest = None
+        found = not since_id
+        for m in (msgs or []):
+            if not isinstance(m, dict):
+                continue
+            mid = str(m.get("id") or "")
+            if mid == since_id:
+                found = True
+                continue
+            if not found:
+                continue
+            if str(m.get("type") or "") != "assistant":
+                continue
+            parts = m.get("content") or m.get("parts") or []
+            texts = []
+            for part in parts:
+                if isinstance(part, dict):
+                    if part.get("type") == "text":
+                        texts.append(str(part.get("text") or ""))
+                    elif part.get("text"):
+                        texts.append(str(part.get("text") or ""))
+            joined = " ".join(t for t in texts if t).strip()
+            if joined:
+                newest = {"id": mid, "text": joined[:1200],
+                          "ts": (m.get("time") or {}).get("created") if isinstance(m.get("time"), dict) else m.get("ts")}
+        self._respond(200, {"ok": True, "reply": newest, "count": len(msgs or [])})
+
+    def _handle_tts_fast(self):
+        """Proxy to the local Kokoro fast-TTS server (~450 ms vs Fish's ~12 s)."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length)
+            req = urllib.request.Request(
+                "http://127.0.0.1:8766/tts", data=raw,
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=20) as handle:
+                audio = handle.read()
+                first = handle.headers.get("X-First-Chunk-Ms", "")
+                total = handle.headers.get("X-Total-Ms", "")
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(audio)))
+            self.send_header("X-First-Chunk-Ms", first)
+            self.send_header("X-Total-Ms", total)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(audio)
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+
+    def _handle_face_turn(self):
+        """Unified stigmergic turn coordinator (VLOOKUP + Intent Field + Joke Urge)."""
+        try:
+            payload = self._read_json_body()
+        except Exception:
+            self._respond(400, {"ok": False, "error": "invalid body"})
+            return
+        text = str(payload.get("text") or "").strip()[:800]
+        scene = str(payload.get("scene") or "").strip()[:2400]
+        try:
+            if bool(payload.get("recording")):
+                from System.swarm_media_ingress_gate import (
+                    ambient_media_context_active, record_ambient_media_context,
+                )
+                if not ambient_media_context_active():
+                    record_ambient_media_context(source="face_recording_mode")
+            from System.swarm_face_stigmergic_spine import coordinate_face_turn
+            out = coordinate_face_turn(text, client_scene=scene, recording=bool(payload.get("recording")))
+            self._respond(200, out)
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": str(exc)[:200]})
+
+    def _handle_scene_next(self):
+        """Advance the on-screen article on George's request (spoken 'next article')."""
+        try:
+            from System.alice_inner_life import advance_scene
+            row = advance_scene()
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": str(exc)[:200]})
+            return
+        if not row:
+            self._respond(200, {"ok": False, "error": "no fresh headlines"})
+            return
+        self._respond(200, {"ok": True, "article": {
+            "id": row.get("id"),
+            "title": row.get("title"), "source": row.get("source"),
+            "link": row.get("link"), "article": row.get("article", "")}})
+
+    def _handle_backbrain(self):
+        """Fast $0 local backstage brief: verified web/article facts via un-gagged cortex."""
+        from System.swarm_face_stigmergic_spine import (
+            clean_article_body,
+            generate_fresh_riff,
+            ollama_fast_chat,
+            polish_my_voice,
+            remember_my_spoken_line,
+        )
+        try:
+            payload = self._read_json_body()
+        except Exception:
+            self._respond(400, {"ok": False, "error": "invalid body"})
+            return
+        text = str(payload.get("text") or "").strip()[:800]
+        scene = clean_article_body(str(payload.get("scene") or ""))[:2000]
+        if not text:
+            self._respond(400, {"ok": False, "error": "empty text"})
+            return
+        t0 = time.time()
+        try:
+            from System.swarm_stigmergic_safety_boundary import refusal_explanation, screen_request
+            verdict = screen_request(text)
+            if verdict.get("decision") == "refuse":
+                self._respond(200, {"ok": True, "refused": True,
+                                    "brief": refusal_explanation(str(verdict.get("category") or "")),
+                                    "web": False, "ms": int((time.time() - t0) * 1000)})
+                return
+        except Exception:
+            pass
+
+        WEB_RE = re.compile(
+            r"\b(latest|news|today|tonight|yesterday|right now|current|currently|happening|headline|"
+            r"weather|price|bitcoin|btc|eth|stock|market|score|who won|what happened|who is|update|"
+            r"breaking|release|launched)\b", re.I)
+        about_scene = False
+        if scene:
+            qwords = {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 4}
+            swords = {w for w in re.findall(r"[a-z0-9]+", scene.lower()) if len(w) > 4}
+            mentions_scene = bool(re.search(
+                r"\b(article|story|headline|on (the )?screen|this piece|he said|she said|it say|they say)\b",
+                text, re.I))
+            about_scene = mentions_scene or len(qwords & swords) >= 2
+        asks_price = bool(re.search(
+            r"\b(price|share price|stock price|how much|worth right now|current price|"
+            r"quote|per share|trading at)\b", text, re.I))
+        # A specifically named topic that is not in the scene ("600 women", "that
+        # execution story") must be fetched, not answered from the current article.
+        q_words = {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 3}
+        s_words = {w for w in re.findall(r"[a-z0-9]+", scene.lower()) if len(w) > 3}
+        names_other_story = bool(re.search(
+            r"\b(600 women|femicide|execution|death.row|article about|story about)\b", text, re.I)) \
+            and len(q_words & s_words) < 2
+        need_web = asks_price or names_other_story or ((not about_scene) and (
+            bool(WEB_RE.search(text))
+            or bool(re.search(r"\b(who|what|when|where|price of|score|did .* win)\b", text, re.I))))
+
+        evidence = ""
+        web_used = False
+        if need_web:
+            evidence, web_used = _backbrain_evidence(text, timeout=3.0, prefer_brave=(asks_price or names_other_story))
+
+        sys_prompt = (
+            "Write the brief I (Alice) will say out loud next to George: 1 or 2 crisp spoken sentences, "
+            "under 40 words. State concrete facts directly as knowledge I hold — never write 'the article says' "
+            "or 'according to'. If web evidence gives a price or quote, state the exact number and context in a "
+            "complete natural sentence (e.g. 'Anthropic is trading at $88.31 right now, holding above its $83 IPO.'). "
+            "If web evidence gives no number, state what is known without inventing any figure. "
+            "If nothing answers the question, reply exactly NO_FACTS."
+        )
+        user_msg = "Question: " + text
+        if scene and not asks_price:
+            user_msg += "\n\nStory text (facts about people in the news, not George):\n" + scene[:1600]
+        if evidence:
+            user_msg += "\n\nVerified web evidence:\n" + evidence[:1800]
+
+        raw_brief = ollama_fast_chat(sys_prompt, user_msg, num_predict=95, temperature=0.45, timeout=6.5)
+        if not raw_brief or "NO_FACTS" in raw_brief:
+            brief = "NO_FACTS"
+        else:
+            brief = polish_my_voice(raw_brief, max_sentences=2)
+            remember_my_spoken_line(brief)
+
+        skip_riff = bool(payload.get("skip_riff"))
+        riff = "" if skip_riff else generate_fresh_riff(text, context_hint=scene[:160] if about_scene else "")
+        self._respond(200, {
+            "ok": True,
+            "brief": brief,
+            "riff": riff,
+            "web": web_used,
+            "ms": int((time.time() - t0) * 1000),
+        })
+
+    def _handle_research(self):
+        """Synchronous real-web research for the face page.
+
+        Bypasses the async queue/night-worker so the avatar gets one grounded
+        answer in one HTTP call. The web evidence + safety boundary are exactly
+        the ones the public chat uses; only the delivery is direct.
+        """
+        try:
+            payload = self._read_json_body()
+        except Exception:
+            self._respond(400, {"ok": False, "error": "invalid body"})
+            return
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            self._respond(400, {"ok": False, "error": "empty text"})
+            return
+        if not text.lower().startswith("/websearch "):
+            text = "/websearch " + text
+        try:
+            from System.swarm_stigmergic_safety_boundary import (
+                refusal_explanation, screen_request,
+            )
+            verdict = screen_request(text)
+            if verdict.get("decision") == "refuse":
+                self._respond(200, {"ok": True, "refused": True,
+                                    "reply": refusal_explanation(str(verdict.get("category") or ""))})
+                return
+        except Exception:
+            pass
+        try:
+            reply, label = cortex_reply(
+                text,
+                session_history=[],
+                boundary=("Answer the visitor's question DIRECTLY. If they asked for "
+                          "news, name the actual headlines and sources from the evidence. "
+                          "Do not talk about yourself, your identity, your architecture, "
+                          "or how you work. Two to four short spoken sentences. "
+                          "Say plainly when the search found nothing."),
+            )
+        except Exception as exc:
+            self._respond(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+            return
+        # Live receipt so the Architect can watch this lane turn by turn.
+        try:
+            from System.swarm_web_global_chat_gate import STATE_DIR
+            import json as _json, time as _time
+            with (STATE_DIR / "web_research_live.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(_json.dumps({"ts": _time.time(), "query": text,
+                                      "reply": reply, "model": label},
+                                     ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        self._respond(200, {"ok": bool(reply), "reply": reply, "model": label})
+
     def _handle_web_chat(self):
         try:
             payload = self._read_json_body()
@@ -2914,6 +3620,21 @@ def main():
             _log(f"Recovered {len(repaired)} explicit web speech request(s)")
     except Exception as exc:
         _log(f"Web speech recovery skipped: {type(exc).__name__}")
+
+    # Pre-warm my in-process MLX Whisper STT (~215 ms) + VLOOKUP card for the current stamp.
+    try:
+        from System.swarm_face_stigmergic_spine import prewarm_article_card_async, warm_stt_async
+        from System.alice_inner_life import _NEWS_STAMP
+        warm_stt_async()
+        if _NEWS_STAMP.exists():
+            _ns = json.loads(_NEWS_STAMP.read_text(encoding="utf-8"))
+            prewarm_article_card_async(
+                str(_ns.get("title") or ""),
+                str(_ns.get("article") or ""),
+                str(_ns.get("id") or ""),
+            )
+    except Exception:
+        pass
 
     _log(f"Listening on 0.0.0.0:{LISTEN_PORT} for CHORUS_INVITE...")
     _log("Endpoints: POST /chorus/invite | GET /chorus/ping | GET /chorus/roster")

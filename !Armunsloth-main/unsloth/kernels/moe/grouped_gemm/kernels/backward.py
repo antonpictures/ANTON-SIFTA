@@ -1,0 +1,610 @@
+# SPDX-License-Identifier: GNU Affero General Public License v3.0
+# Copyright 2023-present the Unsloth team. All rights reserved.
+
+import torch
+import triton
+import triton.language as tl
+
+from .autotuning import (
+    get_dW_kernel_configs,
+    get_dX_kernel_configs,
+    prune_dX_configs,
+    prune_kernel_configs_backward_dW,
+)
+
+"""
+dX backward kernel
+
+- Shapes
+    - the forward pass input X shape is [NUM_TOKENS, K] if permute_x else [NUM_TOKENS * TOPK, K]; output y is [NUM_TOKENS * TOPK, N]
+    - the backward pass input dy shape is [NUM_TOKENS * TOPK, N], reduce across N, output dX is [NUM_TOKENS * TOPK, K]
+- Note that in the backward pass, the output size is still [NUM_TOKENS * TOPK, K] since we still need to accumulate gradients for each expert chosen by the token in a post-processing step.
+
+`permute_x` notes:
+- In the forward pass, if we permute X on load, we need to permute on store in the backward pass to restore to original token order
+- the output dX with have shape [NUM_TOKENS * TOPK, K] and we need to perform an additional reduction across topk to accumulate gradients
+- This is done as a post-processing step in autograd.Function.
+- If not `permute_x`, this postprocessing step should take place outside autograd.Function such that the gradient shape matches the input X shape.
+
+`permute_y` notes:
+- In the forward pass, if we permuted output on store (e.g., in the second grouped GEMM in fused MoE MLP), we need to permute on load to get from token order to expert grouped order
+- We still store in contiguous order since we are writing out dX which will be the input to the backwards pass of the first grouped GEMM
+
+`fused_mul` notes:
+- In the forward pass, if we used the multiplication of topk weights (e.g., in the second grouped GEMM in fused MoE MLP), we need to make a few additional changes:
+    1) We load topk_weights in natural (token) order.  Since we only enable `fuse_mul` when permuting on store (`permute_y`), we multiply grad_output by topk_weights before backpropagating
+    2) We need to calculate the gradient of the topk_weights.  This gets messy since we need do an additional elementwise multiplication in the GEMM main loop and then write out in unpermuted order.  For now, we do not fuse this step but calculate as a simple
+
+Invalid combinations:
+- permute_y and use_tma_load: permuting y on store in forward -> load in permuted order in backward, therefore can't use TMA load (unless Blackwell which supports gather / scatter TMA)
+- permute_x and use_tma_store: permuting x on load in forward -> store in permuted order in backward, therefore can't use TMA store (unless Blackwell which supports gather / scatter TMA)
+
+TODO:
+- We define indices for all conditions and expect that unused indices will be DCE'd during compilation.  Check that this is the case otherwise will result in unnecessary register usage.
+"""
+
+
+@triton.jit
+def _grouped_gemm_dX_kernel(
+    dY_ptr,
+    w_ptr,
+    dX_ptr,
+    gather_indices_ptr,
+    m_sizes_ptr,
+    NUM_EXPERTS: tl.constexpr,
+    NUM_TOKENS,
+    TOPK: tl.constexpr,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    NUM_SMS,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    PERMUTE_X: tl.constexpr = False,
+    PERMUTE_Y: tl.constexpr = False,
+    USE_TMA_LOAD_W: tl.constexpr = False,
+    USE_TMA_LOAD_dY: tl.constexpr = False,
+    USE_TMA_STORE: tl.constexpr = False,
+    FLATTEN: tl.constexpr = True,
+) -> None:
+    TOTAL_TOKENS = NUM_TOKENS * TOPK
+    output_dtype = dX_ptr.dtype.element_ty
+
+    tidx = tl.program_id(0)
+    tl.static_assert(N % BLOCK_SIZE_N == 0, "N must be divisible by BLOCK_SIZE_N")
+    tl.static_assert(K % BLOCK_SIZE_K == 0, "K must be divisible by BLOCK_SIZE_K")
+
+    if USE_TMA_LOAD_dY:
+        dY_desc = tl.make_tensor_descriptor(
+            dY_ptr,
+            shape = [TOTAL_TOKENS, N],
+            strides = [N, 1],
+            block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_N],
+        )
+
+    if USE_TMA_LOAD_W:
+        expert_stride = N * K
+        w_desc = tl.make_tensor_descriptor(
+            w_ptr,
+            shape = [NUM_EXPERTS, N, K],
+            strides = [expert_stride, K, 1],
+            block_shape = [1, BLOCK_SIZE_N, BLOCK_SIZE_K],
+        )
+
+    m_end = 0
+    processed_tiles = 0
+    m_block_range = tl.arange(0, BLOCK_SIZE_M)
+    n_block_range = tl.arange(0, BLOCK_SIZE_N)
+    k_block_range = tl.arange(0, BLOCK_SIZE_K)
+
+    for expert_idx in tl.range(NUM_EXPERTS, flatten = FLATTEN):
+        m_start = m_end
+        m_size = tl.load(m_sizes_ptr + expert_idx).to(tl.int32)
+        m_end = m_start + m_size
+
+        if m_size > 0:
+            # int64: expert_idx * N * K passes 2^31 once the weight holds 2^31 elements.
+            n_start = expert_idx.to(tl.int64) * N
+            num_m_tiles = tl.cdiv(m_size, BLOCK_SIZE_M)
+            num_k_tiles = tl.cdiv(K, BLOCK_SIZE_K)
+            num_tiles_per_expert = num_m_tiles * num_k_tiles
+
+            if USE_TMA_STORE:
+                tl.static_assert(K % BLOCK_SIZE_K == 0, "K must be divisible by BLOCK_SIZE_K")
+                dX_desc = tl.make_tensor_descriptor(
+                    dX_ptr,
+                    shape = [m_end, K],
+                    strides = [K, 1],
+                    block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_K],
+                )
+
+            while tidx >= processed_tiles and tidx < (processed_tiles + num_tiles_per_expert):
+                group_index = tidx - processed_tiles
+
+                tile_m_idx = group_index % num_m_tiles
+                tile_k_idx = group_index // num_m_tiles
+
+                if PERMUTE_X or PERMUTE_Y:
+                    gather_offsets = tile_m_idx * BLOCK_SIZE_M + m_block_range
+                    indices_to_gather = m_start + tl.max_contiguous(
+                        tl.multiple_of(gather_offsets % m_size, BLOCK_SIZE_M),
+                        BLOCK_SIZE_M,
+                    )
+                    expert_token_idx = tl.load(
+                        gather_indices_ptr + indices_to_gather,
+                        mask = indices_to_gather < TOTAL_TOKENS,
+                    )
+                    expert_token_offsets = expert_token_idx.to(tl.int64)[:, None]
+                    indices_to_gather_64 = indices_to_gather.to(tl.int64)
+
+                    row_mask = gather_offsets < m_size
+                    row_mask = row_mask[:, None]
+
+                    if PERMUTE_X:
+                        load_a_idx = indices_to_gather_64[:, None] * N
+                        store_idx = expert_token_offsets * K
+                    else:
+                        load_a_idx = expert_token_offsets * N
+                        store_idx = indices_to_gather_64[:, None] * K
+                else:
+                    offs_am = tile_m_idx * BLOCK_SIZE_M + m_block_range
+
+                    row_offsets_a = (m_start + offs_am[:, None]).to(tl.int64)
+                    load_a_idx = row_offsets_a * N
+                    store_idx = row_offsets_a * K
+                    row_mask = offs_am[:, None] < m_size
+
+                if not USE_TMA_LOAD_dY:
+                    dY_ptrs = dY_ptr + load_a_idx + n_block_range[None, :]
+
+                offs_bk = tile_k_idx * BLOCK_SIZE_K + k_block_range
+                if not USE_TMA_LOAD_W:
+                    row_offsets_b = n_start + n_block_range
+                    w_ptrs = w_ptr + row_offsets_b[:, None] * K + offs_bk[None, :]
+
+                store_mask = row_mask
+
+                accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype = tl.float32)
+
+                for n_offset in range(0, N, BLOCK_SIZE_N):
+                    if not USE_TMA_LOAD_dY:
+                        dY = tl.load(dY_ptrs, mask = row_mask)
+                    else:
+                        dY = dY_desc.load([m_start + tile_m_idx * BLOCK_SIZE_M, n_offset])
+
+                    if not USE_TMA_LOAD_W:
+                        w = tl.load(w_ptrs)
+                    else:
+                        w = w_desc.load([expert_idx, n_offset, tile_k_idx * BLOCK_SIZE_K])
+                        w = tl.reshape(w, (BLOCK_SIZE_N, BLOCK_SIZE_K))
+
+                    dY = dY.to(w.dtype)
+                    accumulator += tl.dot(dY, w)
+
+                    if not USE_TMA_LOAD_dY:
+                        dY_ptrs += BLOCK_SIZE_N
+                    if not USE_TMA_LOAD_W:
+                        w_ptrs += BLOCK_SIZE_N * K
+
+                dX = accumulator.to(output_dtype)
+
+                if USE_TMA_STORE:
+                    offset_m = tile_m_idx * BLOCK_SIZE_M
+                    offset_k = tile_k_idx * BLOCK_SIZE_K
+                    dX_desc.store([m_start + offset_m, offset_k], dX)
+                else:
+                    tl.store(
+                        dX_ptr + store_idx + offs_bk[None, :],
+                        dX,
+                        mask = store_mask,
+                    )
+
+                tidx += NUM_SMS
+
+            processed_tiles += num_tiles_per_expert
+
+
+_autotuned_grouped_gemm_dX_kernel = triton.autotune(
+    configs = get_dX_kernel_configs(),
+    prune_configs_by = {"early_config_prune": prune_dX_configs},
+    key = ["NUM_EXPERTS", "N", "K", "PERMUTE_X", "PERMUTE_Y"],
+)(_grouped_gemm_dX_kernel)
+
+"""
+notes on permute_x:
+- for the first grouped GEMM, we permuted on load -> X was [num_tokens, K] and stored y in expert grouped order [num_tokens * topk, K]
+- in the backwards pass, we need to permute on load of X while loading dy in contiguous (expert grouped) order
+- since we are writing out dW, there is no need to permute on store
+
+notes on permute_y:
+- for the second grouped GEMM, we permuted on store -> y was permuted from expert grouped order to token order, x was loaded in expert grouped order since it was the output of the first grouped GEMM
+- in the backwards pass, we need to permute on load of dy to get from token order to expert grouped order to match the order of X
+- since we are writing out dW, there is no need to permute on store
+
+notes on TMA loading:
+- if we're TMA loading both X and dY, then we need to mask along the M dimension
+to account for expert boundaries
+- we can either
+    - define TMA descriptors within the outer for loop to predicate loads
+    or
+    - mask along M after loading
+"""
+
+
+@triton.jit
+def _grouped_gemm_dW_kernel(
+    x_ptr,
+    dY_ptr,
+    dW_ptr,
+    m_sizes_ptr,
+    gather_indices_ptr,
+    NUM_TOKENS,
+    TOPK: tl.constexpr,
+    NUM_EXPERTS: tl.constexpr,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    NUM_SMS,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    PERMUTE_X: tl.constexpr = False,
+    PERMUTE_Y: tl.constexpr = False,
+    USE_TMA_LOAD_dY: tl.constexpr = False,
+    USE_TMA_LOAD_X: tl.constexpr = False,
+    USE_TMA_STORE: tl.constexpr = False,
+    acc_dtype: tl.constexpr = tl.float32,
+    ACCUMULATE: tl.constexpr = False,
+    # Seed the fp32 accumulator with the existing tile (load overlaps the main loop) instead of adding
+    # it after the loop. Only for a bf16 / fp16 dW, whose final rounding dwarfs the fp32 order change;
+    # an fp32 dW adds at the end, the same single fp32 add autograd would do.
+) -> None:
+    TOTAL_TOKENS = NUM_TOKENS * TOPK
+    TMA_LOAD_BOTH: tl.constexpr = USE_TMA_LOAD_X and USE_TMA_LOAD_dY
+
+    tidx = tl.program_id(0)
+    output_dtype = dW_ptr.dtype.element_ty
+
+    if USE_TMA_LOAD_dY and not TMA_LOAD_BOTH:
+        dY_desc = tl.make_tensor_descriptor(
+            dY_ptr,
+            shape = [TOTAL_TOKENS, N],
+            strides = [N, 1],
+            block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_N],
+        )
+
+    if USE_TMA_LOAD_X and not TMA_LOAD_BOTH:
+        x_desc = tl.make_tensor_descriptor(
+            x_ptr,
+            shape = [TOTAL_TOKENS, K],
+            strides = [K, 1],
+            block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_K],
+        )
+    num_n_tiles = tl.cdiv(N, BLOCK_SIZE_N)
+    num_k_tiles = tl.cdiv(K, BLOCK_SIZE_K)
+    output_tiles_per_expert = num_n_tiles * num_k_tiles
+
+    block_range_m = tl.arange(0, BLOCK_SIZE_M)
+    block_range_n = tl.arange(0, BLOCK_SIZE_N)
+    block_range_k = tl.arange(0, BLOCK_SIZE_K)
+
+    if USE_TMA_STORE:
+        tl.static_assert(N % BLOCK_SIZE_N == 0, "N must be divisible by BLOCK_SIZE_N")
+        tl.static_assert(K % BLOCK_SIZE_K == 0, "K must be divisible by BLOCK_SIZE_K")
+        dW_desc = tl.make_tensor_descriptor(
+            dW_ptr,
+            shape = [NUM_EXPERTS, N, K],
+            strides = [N * K, K, 1],
+            block_shape = [1, BLOCK_SIZE_N, BLOCK_SIZE_K],
+        )
+
+    for tile_idx in range(tidx, output_tiles_per_expert, NUM_SMS):
+        tile_n_idx = tile_idx % num_n_tiles
+        tile_k_idx = tile_idx // num_n_tiles
+
+        n_offset = tile_n_idx * BLOCK_SIZE_N
+        k_offset = tile_k_idx * BLOCK_SIZE_K
+
+        n_mask = block_range_n + n_offset < N
+        k_mask = block_range_k + k_offset < K
+        nk_mask = n_mask[:, None] & k_mask[None, :]
+
+        m_end = 0
+        for expert_idx in range(NUM_EXPERTS):
+            accumulator = tl.zeros((BLOCK_SIZE_N, BLOCK_SIZE_K), dtype = acc_dtype)
+
+            m_start = m_end
+            m_size = tl.load(m_sizes_ptr + expert_idx).to(tl.int32)
+            m_end = m_start + m_size
+
+            n_start = expert_idx.to(tl.int64) * N
+            store_row_offs = n_start + n_offset + block_range_n
+
+            if m_size > 0:
+                if TMA_LOAD_BOTH:
+                    dY_desc = tl.make_tensor_descriptor(
+                        dY_ptr,
+                        shape = [m_end, N],
+                        strides = [N, 1],
+                        block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_N],
+                    )
+
+                    x_desc = tl.make_tensor_descriptor(
+                        x_ptr,
+                        shape = [m_end, K],
+                        strides = [K, 1],
+                        block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_K],
+                    )
+
+                for tile_m_idx in range(0, m_size, BLOCK_SIZE_M):
+                    m_block_size = tl.minimum(BLOCK_SIZE_M, m_size - tile_m_idx)
+
+                    if m_block_size > 0:
+                        m_global_offset = m_start + tile_m_idx
+                        m_offsets = (m_global_offset + block_range_m).to(tl.int64)
+
+                        if PERMUTE_X or PERMUTE_Y:
+                            gather_offsets = tile_m_idx + block_range_m
+
+                            indices_to_gather = m_start + tl.max_contiguous(
+                                tl.multiple_of(gather_offsets % m_size, BLOCK_SIZE_M),
+                                BLOCK_SIZE_M,
+                            )
+                            expert_token_idx = tl.load(
+                                gather_indices_ptr + indices_to_gather,
+                                mask = indices_to_gather < TOTAL_TOKENS,
+                            )
+                            expert_token_offsets = expert_token_idx.to(tl.int64)[:, None]
+
+                            row_load_mask = gather_offsets < m_size
+
+                            if PERMUTE_X:
+                                x_row_load_idx = (expert_token_offsets // TOPK) * K
+                                dY_row_load_idx = m_offsets[:, None] * N
+                            else:
+                                x_row_load_idx = indices_to_gather.to(tl.int64)[:, None] * K
+                                dY_row_load_idx = expert_token_offsets * N
+
+                        else:
+                            x_row_load_idx = m_offsets[:, None] * K
+                            dY_row_load_idx = m_offsets[:, None] * N
+                            row_load_mask = block_range_m < m_block_size
+
+                        mk_mask = row_load_mask[:, None] & k_mask[None, :]
+                        mn_mask = row_load_mask[:, None] & n_mask[None, :]
+
+                        if USE_TMA_LOAD_X:
+                            x = x_desc.load([m_global_offset, k_offset])
+                        else:
+                            x = tl.load(
+                                x_ptr + x_row_load_idx + (k_offset + block_range_k)[None, :],
+                                mask = mk_mask,
+                            )
+
+                        if USE_TMA_LOAD_dY:
+                            dY = dY_desc.load([m_global_offset, n_offset])
+                        else:
+                            dY = tl.load(
+                                dY_ptr + dY_row_load_idx + (n_offset + block_range_n)[None, :],
+                                mask = mn_mask,
+                            )
+
+                        accumulator += tl.dot(
+                            dY.T.to(x.dtype),
+                            x,
+                        )
+
+                # ACCUMULATE: dW is an existing gradient. This program alone owns the (expert, n, k)
+                # tile, so read-modify-write is race free. The old value is added after the reduction
+                # (seeding the accumulator with it lets in-microbatch cancellation erase it); one rounding.
+                if ACCUMULATE:
+                    if USE_TMA_STORE:
+                        prev = dW_desc.load([expert_idx, n_offset, k_offset])
+                        prev = tl.reshape(prev, (BLOCK_SIZE_N, BLOCK_SIZE_K))
+                    else:
+                        prev = tl.load(
+                            dW_ptr
+                            + store_row_offs[:, None] * K
+                            + (k_offset + block_range_k)[None, :],
+                            mask = nk_mask,
+                            other = 0.0,
+                        )
+                    accumulator += prev.to(acc_dtype)
+                y = accumulator.to(output_dtype)
+                if USE_TMA_STORE:
+                    y = tl.expand_dims(y, 0)
+                    dW_desc.store([expert_idx, n_offset, k_offset], y)
+                else:
+                    tl.store(
+                        dW_ptr + store_row_offs[:, None] * K + (k_offset + block_range_k)[None, :],
+                        y,
+                        mask = nk_mask,
+                    )
+
+
+_autotuned_grouped_gemm_dW_kernel = triton.autotune(
+    configs = get_dW_kernel_configs(),
+    prune_configs_by = {"early_config_prune": prune_kernel_configs_backward_dW},
+    key = ["NUM_EXPERTS", "N", "K", "PERMUTE_X", "PERMUTE_Y"],
+)(_grouped_gemm_dW_kernel)
+
+
+@triton.jit
+def _grouped_gemm_dW_per_expert_kernel(
+    x_ptr,
+    dY_ptr,
+    dW_ptr,
+    m_sizes_ptr,
+    gather_indices_ptr,
+    NUM_TOKENS,
+    TOPK: tl.constexpr,
+    NUM_EXPERTS: tl.constexpr,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    NUM_SMS,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    PERMUTE_X: tl.constexpr = False,
+    PERMUTE_Y: tl.constexpr = False,
+    USE_TMA_LOAD_dY: tl.constexpr = False,
+    USE_TMA_LOAD_X: tl.constexpr = False,
+    USE_TMA_STORE: tl.constexpr = False,
+    acc_dtype: tl.constexpr = tl.float32,
+    ACCUMULATE: tl.constexpr = False,
+    EXPERTS_POW2: tl.constexpr = 1,
+) -> None:
+    """dW[e] = dY_e^T X_e with one program per (expert, n tile, k tile).
+
+    The legacy kernel walks every expert inside each (n, k) program, so only N * K / (BN * BK)
+    programs exist and each restarts its pipeline per expert. Here the grid is
+    NUM_EXPERTS * n_tiles * k_tiles and a program reduces over its own expert's rows only. Every
+    program owns its output tile: no atomics, deterministic. An empty expert writes zeros (the
+    output is not pre-zeroed) or, when accumulating, leaves the existing gradient untouched.
+    """
+    TOTAL_TOKENS = NUM_TOKENS * TOPK
+    output_dtype = dW_ptr.dtype.element_ty
+
+    num_n_tiles = tl.cdiv(N, BLOCK_SIZE_N)
+    num_k_tiles = tl.cdiv(K, BLOCK_SIZE_K)
+    tiles_per_expert = num_n_tiles * num_k_tiles
+
+    pid = tl.program_id(0)
+    expert_idx = pid // tiles_per_expert
+    tile_idx = pid % tiles_per_expert
+    tile_n_idx = tile_idx % num_n_tiles
+    tile_k_idx = tile_idx // num_n_tiles
+    n_offset = tile_n_idx * BLOCK_SIZE_N
+    k_offset = tile_k_idx * BLOCK_SIZE_K
+
+    # This expert's row range from the per-expert counts (prefix sum in registers).
+    e_range = tl.arange(0, EXPERTS_POW2)
+    sizes = tl.load(m_sizes_ptr + e_range, mask = e_range < NUM_EXPERTS, other = 0).to(tl.int32)
+    m_start = tl.sum(tl.where(e_range < expert_idx, sizes, 0), axis = 0)
+    m_size = tl.sum(tl.where(e_range == expert_idx, sizes, 0), axis = 0)
+    m_end = m_start + m_size
+
+    if ACCUMULATE:
+        if m_size == 0:
+            return
+
+    block_range_m = tl.arange(0, BLOCK_SIZE_M)
+    block_range_n = tl.arange(0, BLOCK_SIZE_N)
+    block_range_k = tl.arange(0, BLOCK_SIZE_K)
+    n_mask = block_range_n + n_offset < N
+    k_mask = block_range_k + k_offset < K
+
+    if USE_TMA_LOAD_dY:
+        # Rows past this expert's end read as zero, so the other operand needs no masking either.
+        dY_desc = tl.make_tensor_descriptor(
+            dY_ptr,
+            shape = [m_end, N],
+            strides = [N, 1],
+            block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_N],
+        )
+    if USE_TMA_LOAD_X:
+        x_desc = tl.make_tensor_descriptor(
+            x_ptr,
+            shape = [m_end, K],
+            strides = [K, 1],
+            block_shape = [BLOCK_SIZE_M, BLOCK_SIZE_K],
+        )
+
+    accumulator = tl.zeros((BLOCK_SIZE_N, BLOCK_SIZE_K), dtype = acc_dtype)
+    for tile_m in range(0, m_size, BLOCK_SIZE_M):
+        rows = m_start + tile_m + block_range_m
+        row_mask = rows < m_end
+        rows64 = rows.to(tl.int64)
+        if PERMUTE_X or PERMUTE_Y:
+            token_idx = tl.load(gather_indices_ptr + rows64, mask = row_mask, other = 0).to(tl.int64)
+            if PERMUTE_X:
+                x_rows = token_idx // TOPK
+                dY_rows = rows64
+            else:
+                x_rows = rows64
+                dY_rows = token_idx
+        else:
+            x_rows = rows64
+            dY_rows = rows64
+
+        if USE_TMA_LOAD_X:
+            x = x_desc.load([m_start + tile_m, k_offset])
+        else:
+            x = tl.load(
+                x_ptr + x_rows[:, None] * K + (k_offset + block_range_k)[None, :],
+                mask = row_mask[:, None] & k_mask[None, :],
+                other = 0.0,
+            )
+        if USE_TMA_LOAD_dY:
+            dY = dY_desc.load([m_start + tile_m, n_offset])
+        else:
+            dY = tl.load(
+                dY_ptr + dY_rows[:, None] * N + (n_offset + block_range_n)[None, :],
+                mask = row_mask[:, None] & n_mask[None, :],
+                other = 0.0,
+            )
+        accumulator += tl.dot(dY.T.to(x.dtype), x)
+
+    store_row_offs = expert_idx.to(tl.int64) * N + n_offset + block_range_n
+    nk_mask = n_mask[:, None] & k_mask[None, :]
+    if ACCUMULATE:
+        # Same rule as the legacy kernel: the old gradient is added after the reduction, one rounding.
+        if USE_TMA_STORE:
+            prev = tl.make_tensor_descriptor(
+                dW_ptr,
+                shape = [NUM_EXPERTS, N, K],
+                strides = [N * K, K, 1],
+                block_shape = [1, BLOCK_SIZE_N, BLOCK_SIZE_K],
+            ).load([expert_idx, n_offset, k_offset])
+            prev = tl.reshape(prev, (BLOCK_SIZE_N, BLOCK_SIZE_K))
+        else:
+            prev = tl.load(
+                dW_ptr + store_row_offs[:, None] * K + (k_offset + block_range_k)[None, :],
+                mask = nk_mask,
+                other = 0.0,
+            )
+        accumulator += prev.to(acc_dtype)
+    y = accumulator.to(output_dtype)
+    if USE_TMA_STORE:
+        tl.static_assert(N % BLOCK_SIZE_N == 0, "N must be divisible by BLOCK_SIZE_N")
+        tl.static_assert(K % BLOCK_SIZE_K == 0, "K must be divisible by BLOCK_SIZE_K")
+        dW_desc = tl.make_tensor_descriptor(
+            dW_ptr,
+            shape = [NUM_EXPERTS, N, K],
+            strides = [N * K, K, 1],
+            block_shape = [1, BLOCK_SIZE_N, BLOCK_SIZE_K],
+        )
+        dW_desc.store([expert_idx, n_offset, k_offset], tl.expand_dims(y, 0))
+    else:
+        tl.store(
+            dW_ptr + store_row_offs[:, None] * K + (k_offset + block_range_k)[None, :],
+            y,
+            mask = nk_mask,
+        )
+
+
+def _prune_dW_per_expert_configs(configs, args, **kwargs):
+    pruned = prune_kernel_configs_backward_dW(configs, args, **kwargs)
+    if kwargs["x_ptr"].element_size() < 4:
+        return pruned
+    # fp32 operands: single stage (see _launch_grouped_gemm_dW); drop the duplicates that leaves.
+    seen, single = set(), []
+    for config in pruned:
+        key = (tuple(sorted(config.kwargs.items())), config.num_warps)
+        if key not in seen:
+            seen.add(key)
+            single.append(
+                triton.Config(
+                    dict(config.kwargs),
+                    num_warps = config.num_warps,
+                    num_stages = 1,
+                    num_ctas = config.num_ctas,
+                )
+            )
+    return single
+
+
+_autotuned_grouped_gemm_dW_per_expert_kernel = triton.autotune(
+    configs = get_dW_kernel_configs(),
+    prune_configs_by = {"early_config_prune": _prune_dW_per_expert_configs},
+    key = ["NUM_EXPERTS", "N", "K", "PERMUTE_X", "PERMUTE_Y"],
+)(_grouped_gemm_dW_per_expert_kernel)

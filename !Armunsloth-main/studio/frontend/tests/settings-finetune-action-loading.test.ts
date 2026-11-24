@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import ts from "@typescript/typescript6";
+
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const DATA_TAB = path.join(SRC, "features/settings/tabs/data-tab.tsx");
+const RECIPE_MODULE = /finetune-recipe/;
+const ACTION_FINE_TUNE_IMPORT =
+  /await import\(\s*"\.\.\/components\/finetune-recipe"\s*\)/g;
+
+test("both Data tab fine-tuning actions defer their workflow import", async () => {
+  const source = await readFile(DATA_TAB, "utf8");
+  assert.equal(source.match(ACTION_FINE_TUNE_IMPORT)?.length, 2);
+});
+
+async function* walk(dir: string): AsyncGenerator<string> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) yield* walk(full);
+    else if (/\.tsx?$/.test(entry.name)) yield full;
+  }
+}
+
+/** Static import/export specifiers; dynamic import() is a call and is not collected. */
+const staticSpecifiers = (file: string, text: string): string[] => {
+  const parsed = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.ESNext,
+    false,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const specifiers: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const specifier = node.moduleSpecifier;
+      if (specifier && ts.isStringLiteral(specifier))
+        specifiers.push(specifier.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(parsed, visit);
+  return specifiers;
+};
+
+test("no module statically imports the fine-tuning workflow", async () => {
+  // Parsed, not line-scanned: a multi-line import hides its specifier on the closing line.
+  const offenders: string[] = [];
+  for await (const file of walk(SRC)) {
+    const text = await readFile(file, "utf8");
+    for (const specifier of staticSpecifiers(file, text)) {
+      if (RECIPE_MODULE.test(specifier))
+        offenders.push(`${path.relative(SRC, file)}: ${specifier}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `fine-tuning workflow reachable from startup via:\n${offenders.join("\n")}`,
+  );
+});

@@ -331,6 +331,7 @@ CORTEX_CHOICES = {
     "gemini:gemini-3.5-flash-lite":    "CLOUD · Gemini 3.5 Flash-Lite · cheapest · multimodal",
     "gemini:gemini-3.8-flash":         "CLOUD · Gemini 3.8 Flash · best · multimodal",
     "mercury-2.5":                     "paid · Inception · ~1.3s · the one you selected in the app",
+    "mercury-3":                       "paid · Inception · v3 (improved reasoning) · ~1.5s",
     "qwen/qwen3.8-27b:free":           "FREE · OpenRouter · ~2s · answers cheerfully",
     "nvidia/nemotron-3-super-120b-a12b:free": "FREE · OpenRouter · ~0.9s · the fastest measured tonight",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": "FREE · multimodal · 256k ctx",
@@ -437,7 +438,7 @@ def answer(row: Dict[str, Any], *, write: bool = True, dry: bool = False) -> Dic
             else:
                 from System.swarm_mercury_lane import chat as _m_chat
                 t0 = time.time()
-                r = _m_chat(build_prompt(row, cortex=pinned), effort="low", max_tokens=700,
+                r = _m_chat(build_prompt(row, cortex=pinned), effort="medium" if pinned == "mercury-3" else "low", max_tokens=700,
                             write=True)
                 receipt["seconds"] = round(time.time() - t0, 2)
                 receipt["free"] = False

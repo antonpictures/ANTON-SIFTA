@@ -1,0 +1,71 @@
+# eval_matrix_v2 structural summary
+3590 lines total
+module: Generate the live Matrix v2 companion page from SIFTA ledgers.
+
+import: annotations
+import: html
+import: json
+import: os
+import: subprocess
+import: sys
+import: time
+import: Counter
+import: Path
+import: Any, Iterable
+_live_tournament_carrier [FunctionDef] # Newest date-stamped CONSCIOUSNESS_TOURNAMENT_*.md (date beats mtime).
+_jsonl [FunctionDef] # 
+_jsonl_tail [FunctionDef] # Read only the newest JSONL rows, bounded for live matrix rendering.
+_json [FunctionDef] # 
+_fable_context_packet_path [FunctionDef] # 
+_fable_all_files_manifest_path [FunctionDef] # 
+_turn_rows [FunctionDef] # 
+_latest [FunctionDef] # 
+_latest_run [FunctionDef] # 
+_source_line_count [FunctionDef] # Physical line count for body-source census; binary-ish failures count as 0.
+_jsonl_physical_line_count [FunctionDef] # 
+_file_stat_row [FunctionDef] # 
+_git_output_lines [FunctionDef] # 
+_source_like_path [FunctionDef] # 
+_fable_git_status_row [FunctionDef] # 
+_fable_next_repair_queue [FunctionDef] # Machine-readable next-fix queue for Fable and short-context doctors.
+_all_workspace_inventory [FunctionDef] # Count every non-git workspace file; write a JSONL manifest for Fable.
+_source_body_census [FunctionDef] # Count Alice's source/document body without ingesting ledgers, caches, or venvs.
+_source_body_census_from_snapshot [FunctionDef] # Cheap boot-time source summary from the canonical code inventory.
+_body_source_census_panel [FunctionDef] # Matrix panel: Alice can admire body mass through measured source counts.
+_fable_repo_context_packet [FunctionDef] # Whole-repo handoff packet for Fable / limited-context reviewers.
+_fable_repo_context_panel [FunctionDef] # 
+_hardcoded_census_snapshot [FunctionDef] # Static-time-constant census, freshest path wins.
+_hardcoded_census_trend [FunctionDef] # Append-only, deduped trend of the suspect count (must go down, r957).
+_owner_vision_body_panel [FunctionDef] # r1057–r1059: owner-frame describe, iPhone guard, image→VLM, predator scan.
+_diffusion_endurance_panel [FunctionDef] # CUR-F7.3: read diffusion_endurance.jsonl — never hardcode bench numbers.
+_hardcoded_census_panel [FunctionDef] # Matrix panel: Alice sees her own hardcoded-time debt and whether it falls.
+_fmt_rate [FunctionDef] # 
+_status_class [FunctionDef] # 
+_verify_status [FunctionDef] # H6: Truth over green. If a row claims a real signature is expected but
+_fmt_age_s [FunctionDef] # 
+_organ_function_summary [FunctionDef] # 
+_attention_rows [FunctionDef] # 
+_coverage_hole_reason [FunctionDef] # 
+_golden_inventory [FunctionDef] # 
+_label_progress [FunctionDef] # 
+_queue_rows [FunctionDef] # 
+_campaign_cards [FunctionDef] # 
+_table [FunctionDef] # 
+_residue_receipts [FunctionDef] # Latest tail rows from each immune-organ ledger, flattened + sorted by ts desc.
+_residue_summary [FunctionDef] # Compact human-readable summary of one residue receipt row.
+_all_organs_rows [FunctionDef] # Render rows for the all-883 organs census table.
+_marketing_commercial_inventory_section [FunctionDef] # BD lane: Philippe report status + sellable marketing doc census (r1160).
+_package_stack_matrix_section [FunctionDef] # Render the r551 package/consciousness stack inside Alice's body matrix.
+_source_index_for_novelty [FunctionDef] # Small source snapshot for r568 novelty/missing-body map.
+_novelty_hits [FunctionDef] # 
+_present_paths [FunctionDef] # 
+_sifta_novelty_missing_section [FunctionDef] # Render r570 owner-corrected novelty map and missing-work lane.
+_organ_directory_visibility_section [FunctionDef] # Cross-check the living organ directory against the canonical snapshot.
+_quantum_stigmergy_boundary_section [FunctionDef] # Render George's quantum+stigmergy intuition as a useful boundary, not proof.
+_codec_limb_traffic_light_panel [FunctionDef] # TASK 1 proprietary codec limbs — GREEN/YELLOW/RED for swimmers (r796).
+_alice_creature_wiring_panel [FunctionDef] # r1331 — AGI-critical unwired lanes + fiction/reality hot-path status.
+_world_to_field_audit_panel [FunctionDef] # Render the single SUFL/WCT crosswalk and its truth boundary.
+build_html [FunctionDef] # 
+_newest_registry_source_mtime [FunctionDef] # Best-effort freshness marker for sources that shape the organ registry.
+refresh_body_matrix [FunctionDef] # Keep the persisted body map current so it never drifts behind the live body.
+main [FunctionDef] # 

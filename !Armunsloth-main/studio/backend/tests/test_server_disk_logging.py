@@ -1,0 +1,201 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Teed console and faulthandler share one log file, so native crashes leave evidence."""
+
+from __future__ import annotations
+
+import io
+import sys
+from pathlib import Path
+
+import pytest
+
+_BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+import run as run_mod  # noqa: E402
+
+
+class TestTeeStream:
+    def test_writes_reach_both_and_return_original(self):
+        console, log = io.StringIO(), io.StringIO()
+        tee = run_mod._TeeStream(console, log)
+        n = tee.write("hello")
+        assert console.getvalue() == "hello" == log.getvalue()
+        assert n == 5
+
+    def test_log_failure_never_breaks_console(self):
+        class Broken:
+            def write(self, data):
+                raise OSError("disk full")
+
+            def flush(self):
+                raise OSError("disk full")
+
+        console = io.StringIO()
+        tee = run_mod._TeeStream(console, Broken())
+        assert tee.write("still works") == len("still works")
+        tee.flush()
+        assert console.getvalue() == "still works"
+
+    def test_attribute_proxy(self):
+        console, log = io.StringIO(), io.StringIO()
+        tee = run_mod._TeeStream(console, log)
+        assert tee.isatty() == console.isatty()
+
+    def test_missing_console_is_a_null_sink(self):
+        log = io.StringIO()
+        tee = run_mod._TeeStream(None, log)
+        assert tee.write("hello") == len("hello")
+        tee.flush()
+        tee.close()
+        assert log.getvalue() == "hello"
+        assert not log.closed
+        run_mod._harden_console_close(None)
+
+
+class TestNormalizeStandardStreams:
+    """A Windows process with no valid std handles starts with them all None."""
+
+    def test_missing_streams_become_usable_text_streams(self, monkeypatch):
+        for name in ("stdin", "stdout", "stderr"):
+            monkeypatch.setattr(sys, name, None)
+            monkeypatch.setattr(sys, f"__{name}__", None)
+        run_mod._normalize_standard_streams()
+        try:
+            for name in ("stdin", "stdout", "stderr"):
+                stream = getattr(sys, name)
+                assert stream is not None
+                assert getattr(sys, f"__{name}__") is not None
+                assert stream.isatty() is False
+                assert stream.encoding
+                assert stream.fileno() >= 0
+            sys.stdout.write("discarded")
+            sys.stdout.flush()
+            print("also discarded")
+        finally:
+            for name in ("stdin", "stdout", "stderr"):
+                stream = getattr(sys, name)
+                if stream is not None:
+                    stream.close()
+
+    def test_existing_streams_are_left_alone(self, monkeypatch):
+        console = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", console)
+        monkeypatch.setattr(sys, "stderr", console)
+        run_mod._normalize_standard_streams()
+        # Identity, not truthiness: replacing a live console breaks Colab OutStream, Tauri stdout and pytest capture.
+        assert sys.stdout is console
+        assert sys.stderr is console
+
+    def test_runs_before_the_logger_import(self):
+        # structlog binds `from sys import stdout` at import, so normalizing must happen before loggers import.
+        src = (Path(_BACKEND_DIR) / "run.py").read_text(encoding = "utf-8")
+        call = "\n_normalize_standard_streams()"
+        assert call in src, "run.py never calls _normalize_standard_streams()"
+        assert src.index(call) < src.index("\nfrom loggers import get_logger")
+
+
+class TestSetupServerDiskLogging:
+    def test_opt_out_env(self, monkeypatch):
+        monkeypatch.setenv("UNSLOTH_STUDIO_NO_FILE_LOG", "1")
+        assert run_mod._setup_server_disk_logging() is None
+
+    def test_creates_log_and_enables_faulthandler(self, monkeypatch, tmp_path):
+        import faulthandler
+
+        monkeypatch.delenv("UNSLOTH_STUDIO_NO_FILE_LOG", raising = False)
+        monkeypatch.delenv("PYTHONFAULTHANDLER", raising = False)
+        monkeypatch.setenv("UNSLOTH_STUDIO_HOME", str(tmp_path))
+        orig_out, orig_err = sys.stdout, sys.stderr
+        was_enabled = faulthandler.is_enabled()
+        try:
+            log_path = run_mod._setup_server_disk_logging()
+            assert log_path is not None
+            assert Path(log_path).is_file()
+            assert "logs" in str(log_path)
+            assert faulthandler.is_enabled()
+            import os
+
+            assert os.environ.get("PYTHONFAULTHANDLER") == "1"
+            print("tee-capture-marker")
+            sys.stdout.flush()
+            assert "tee-capture-marker" in Path(log_path).read_text(
+                encoding = "utf-8", errors = "replace"
+            )
+        finally:
+            sys.stdout, sys.stderr = orig_out, orig_err
+            if not was_enabled:
+                faulthandler.disable()
+
+    def test_run_server_wires_logging_before_main_import(self):
+        src = (Path(_BACKEND_DIR) / "run.py").read_text(encoding = "utf-8")
+        call_idx = src.index("_setup_server_disk_logging()", src.index("def run_server"))
+        main_import_idx = src.index("from main import app", src.index("def run_server"))
+        assert call_idx < main_import_idx, (
+            "disk logging must be armed before importing main so import-time "
+            "failures leave evidence on disk"
+        )
+
+    def test_structlog_is_configured_after_the_tee_and_before_the_first_line(self):
+        """Configure structlog after the tee, or cache_logger_on_first_use freezes the console stream in."""
+        src = (Path(_BACKEND_DIR) / "run.py").read_text(encoding = "utf-8")
+        body = src.index("def run_server")
+        tee_idx = src.index("_setup_server_disk_logging()", body)
+        setup_idx = src.index("LogConfig.setup_logging(", body)
+        first_log_idx = src.index("logger.info(", body)
+        assert tee_idx < setup_idx < first_log_idx, (
+            "run_server must install the tee, then configure structlog, then log; "
+            f"got tee@{tee_idx} setup@{setup_idx} first-log@{first_log_idx}"
+        )
+        assert (
+            "LogConfig.setup_logging(" not in src[:body]
+        ), "configuring structlog at import time pins it to the pre-tee sys.stdout"
+
+    def test_run_py_does_not_import_a_loggers_submodule_at_module_scope(self):
+        """Import loggers.config where it is used: a bare ModuleType stand-in for run.py has no __path__."""
+        import ast
+
+        tree = ast.parse((Path(_BACKEND_DIR) / "run.py").read_text(encoding = "utf-8"))
+        offenders = []
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("loggers."):
+                offenders.append(f"line {node.lineno}: from {node.module} import ...")
+            elif isinstance(node, ast.Import):
+                offenders += [
+                    f"line {node.lineno}: import {a.name}"
+                    for a in node.names
+                    if a.name.startswith("loggers.")
+                ]
+        assert not offenders, "; ".join(offenders)
+
+    def test_conflicting_flags_are_rejected_before_the_tee_is_installed(self):
+        """A deterministic preflight failure must not leave the process streams swapped.
+
+        ``_setup_server_disk_logging()`` replaces ``sys.stdout``/``sys.stderr`` and opens a
+        log handle. An embedder that catches this ``SystemExit`` keeps all of it, and its
+        next ``run_server()`` call nests a second tee, writing every line twice.
+        """
+        src = (Path(_BACKEND_DIR) / "run.py").read_text(encoding = "utf-8")
+        body = src.index("def run_server")
+        reject_idx = src.index("--secure requires the Cloudflare tunnel", body)
+        # Anchor on the assignment, not the bare name: a comment mentioning the call
+        # would otherwise satisfy this.
+        tee_idx = src.index("_session_log = _setup_server_disk_logging()", body)
+        assert reject_idx < tee_idx, (
+            "the --secure/--no-cloudflare rejection must run before the tee is installed; "
+            f"got reject@{reject_idx} tee@{tee_idx}"
+        )
+
+    def test_a_rejected_flag_combination_leaves_the_streams_alone(self):
+        import run as run_mod
+        orig_out, orig_err = sys.stdout, sys.stderr
+        try:
+            with pytest.raises(SystemExit):
+                run_mod.run_server(secure = True, cloudflare = False, silent = True)
+            assert sys.stdout is orig_out
+            assert sys.stderr is orig_err
+        finally:
+            sys.stdout, sys.stderr = orig_out, orig_err

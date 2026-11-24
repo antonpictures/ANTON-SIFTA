@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""Each decision is resolved right after tool_start, since the slot already exists by then."""
+
+import pytest
+
+from core.inference.safetensors_agentic import run_safetensors_tool_loop
+from state import tool_approvals
+from state.tool_approvals import TOOL_REJECTED_MESSAGE, resolve_tool_decision
+
+_SESSION = "loop-session"
+
+
+@pytest.fixture(autouse = True)
+def _clear_pending():
+    with tool_approvals._lock:
+        tool_approvals._pending.clear()
+    yield
+    with tool_approvals._lock:
+        tool_approvals._pending.clear()
+
+
+class _FakeExecuteTool:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(
+        self,
+        name,
+        arguments,
+        *,
+        cancel_event = None,
+        timeout = None,
+        session_id = None,
+        thread_id = None,
+        rag_scope = None,
+        disable_sandbox = False,
+    ):
+        self.calls.append((name, arguments))
+        return f"RESULT[{name}]"
+
+
+def _tool_call(name, args_json):
+    return f'<tool_call>{{"name": "{name}", "arguments": {args_json}}}</tool_call>'
+
+
+def _multi_turn(turns):
+    """A single_turn generator that yields one full snapshot per turn."""
+    turn_iter = iter(turns)
+
+    def _gen(_messages):
+        try:
+            yield next(turn_iter)
+        except StopIteration:
+            return
+
+    return _gen
+
+
+_DEFAULT_TOOLS = [
+    {"type": "function", "function": {"name": "python"}},
+    {"type": "function", "function": {"name": "web_search"}},
+]
+
+
+def _drive(
+    turns,
+    decisions,
+    *,
+    tools = None,
+):
+    """Omitting a tool from the advertised tools list makes calls to it disabled, so no prompt."""
+    decision_iter = iter(decisions)
+    exec_fn = _FakeExecuteTool()
+    gen = run_safetensors_tool_loop(
+        single_turn = _multi_turn(turns),
+        messages = [{"role": "user", "content": "hi"}],
+        tools = _DEFAULT_TOOLS if tools is None else tools,
+        execute_tool = exec_fn,
+        session_id = _SESSION,
+        confirm_tool_calls = True,
+        # Confirm-gate mechanics need every call to prompt; "auto" only gates high-risk calls.
+        permission_mode = "ask",
+    )
+    events = []
+    for ev in gen:
+        events.append(ev)
+        if ev["type"] == "tool_start" and ev.get("awaiting_confirmation"):
+            # The slot is registered before this yield, so the decision lands before the wait.
+            resolve_tool_decision(ev["approval_id"], next(decision_iter), session_id = _SESSION)
+    return events, exec_fn.calls
+
+
+def _tool_starts(events):
+    return [e for e in events if e["type"] == "tool_start"]
+
+
+def _tool_ends(events):
+    return [e for e in events if e["type"] == "tool_end"]
+
+
+def test_allow_executes_the_tool_once():
+    events, calls = _drive(
+        [_tool_call("python", '{"code": "print(1)"}'), "final answer"],
+        ["allow"],
+    )
+    starts = _tool_starts(events)
+    assert len(starts) == 1
+    assert starts[0]["awaiting_confirmation"] is True
+    assert starts[0]["approval_id"]
+    assert calls == [("python", {"code": "print(1)"})]
+    assert _tool_ends(events)[0]["result"] == "RESULT[python]"
+
+
+def test_deny_skips_execution_and_feeds_rejection():
+    events, calls = _drive(
+        [_tool_call("python", '{"code": "print(1)"}'), "final answer"],
+        ["deny"],
+    )
+    assert calls == []
+    assert _tool_ends(events)[0]["result"] == TOOL_REJECTED_MESSAGE
+
+
+def test_disabled_tool_is_not_prompted():
+    events, calls = _drive(
+        [_tool_call("python", '{"code": "print(1)"}'), "final answer"],
+        [],
+        tools = [{"type": "function", "function": {"name": "web_search"}}],
+    )
+    assert _tool_starts(events) == []
+    assert _tool_ends(events) == []
+    assert calls == []
+
+
+def test_duplicate_call_is_not_prompted():
+    same = _tool_call("python", '{"code": "print(1)"}')
+    events, calls = _drive([same, same, "final answer"], ["allow"])
+    starts = _tool_starts(events)
+    assert len(starts) == 1
+    assert starts[0]["awaiting_confirmation"] is True
+    assert calls == [("python", {"code": "print(1)"})]
+    assert len(_tool_ends(events)) == 1
+
+
+def test_denied_call_can_be_reissued_and_approved():
+    # Denied calls are not in duplicate history, so a re-issued identical call must run.
+    same = _tool_call("python", '{"code": "print(1)"}')
+    events, calls = _drive([same, same, "final answer"], ["deny", "allow"])
+    starts = _tool_starts(events)
+    assert len(starts) == 2
+    assert starts[0]["awaiting_confirmation"] is True
+    assert starts[1]["awaiting_confirmation"] is True
+    assert calls == [("python", {"code": "print(1)"})]
+    ends = _tool_ends(events)
+    assert ends[0]["result"] == TOOL_REJECTED_MESSAGE
+    assert ends[1]["result"] == "RESULT[python]"

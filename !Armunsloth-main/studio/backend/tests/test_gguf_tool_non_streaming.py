@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+"""With stream:false, the GGUF tool path returns one JSON chat.completion, not an SSE body."""
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from auth.authentication import get_current_subject
+import routes.inference as inference_route
+from .llama_backend_double import FakeLlamaCppBackend
+
+
+class _ToolGgufBackend(FakeLlamaCppBackend):
+    supports_tools = True
+    context_length = 8192
+
+    def generate_chat_completion_with_tools(self, **kwargs):
+        yield {
+            "type": "tool_start",
+            "tool_name": "python",
+            "tool_call_id": "call_1",
+            "arguments": {"code": "print(6 * 7)"},
+        }
+        yield {
+            "type": "tool_end",
+            "tool_name": "python",
+            "tool_call_id": "call_1",
+            "result": "42\n",
+        }
+        yield {"type": "content", "text": "The answer is 42."}
+        yield {
+            "type": "metadata",
+            "usage": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16},
+            "timings": {"prompt_n": 11, "predicted_n": 5},
+            "finish_reason": "stop",
+        }
+
+
+def _client(monkeypatch, backend = None):
+    monkeypatch.setattr(
+        inference_route, "get_llama_cpp_backend", lambda: backend or _ToolGgufBackend()
+    )
+    monkeypatch.setattr(inference_route, "_effective_enable_tools", lambda payload: True)
+
+    async def _fake_select(payload, **_kwargs):
+        return [{"type": "function", "function": {"name": "python"}}]
+
+    monkeypatch.setattr(inference_route, "_select_request_tools", _fake_select)
+
+    app = FastAPI()
+    app.include_router(inference_route.router)
+    app.dependency_overrides[get_current_subject] = lambda: "test-user"
+    return TestClient(app)
+
+
+def _payload(stream: bool):
+    return {
+        "messages": [{"role": "user", "content": "What is 6 * 7? Use python."}],
+        "stream": stream,
+        "enable_tools": True,
+    }
+
+
+def test_non_streaming_tool_call_returns_single_json(monkeypatch):
+    response = _client(monkeypatch).post("/chat/completions", json = _payload(stream = False))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+
+    body = response.json()
+    assert body["object"] == "chat.completion"
+    choice = body["choices"][0]
+    assert choice["message"]["content"] == "The answer is 42."
+    assert choice["finish_reason"] == "stop"
+    assert body["usage"]["prompt_tokens"] == 11
+    assert body["usage"]["completion_tokens"] == 5
+    assert body["usage"]["total_tokens"] == 16
+
+
+def test_streaming_tool_call_still_streams(monkeypatch):
+    # Unrestricted enable_tools arms the confirm gate, which needs the SSE control frames.
+    response = _client(monkeypatch).post(
+        "/chat/completions",
+        json = _payload(stream = True),
+        headers = {"X-Unsloth-Events": "1"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "The answer is 42." in response.text
+    assert "data: [DONE]" in response.text
+
+
+class _EventsBackend(_ToolGgufBackend):
+    """Tool backend that yields a caller-supplied event list."""
+
+    def __init__(self, events):
+        self._events = events
+
+    def generate_chat_completion_with_tools(self, **kwargs):
+        yield from self._events
+
+
+def test_non_streaming_missing_usage_defaults_to_zero(monkeypatch):
+    events = [{"type": "content", "text": "hi"}]
+    response = _client(monkeypatch, _EventsBackend(events)).post(
+        "/chat/completions", json = _payload(stream = False)
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["choices"][0]["message"]["content"] == "hi"
+    assert body["choices"][0]["finish_reason"] == "stop"
+    assert body["usage"]["prompt_tokens"] == 0
+    assert body["usage"]["completion_tokens"] == 0
+    assert body["usage"]["total_tokens"] == 0
+
+
+def test_non_streaming_preserves_length_finish_reason(monkeypatch):
+    events = [
+        {"type": "content", "text": "truncated"},
+        {
+            "type": "metadata",
+            "usage": {"prompt_tokens": 3, "completion_tokens": 9},
+            "finish_reason": "length",
+        },
+    ]
+    response = _client(monkeypatch, _EventsBackend(events)).post(
+        "/chat/completions", json = _payload(stream = False)
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["choices"][0]["finish_reason"] == "length"
+    assert body["usage"]["total_tokens"] == 12
+
+
+def test_non_streaming_preserves_cached_tokens(monkeypatch):
+    events = [
+        {"type": "content", "text": "hi"},
+        {
+            "type": "metadata",
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 4,
+                "prompt_tokens_details": {"cached_tokens": 16},
+            },
+            "finish_reason": "stop",
+        },
+    ]
+    response = _client(monkeypatch, _EventsBackend(events)).post(
+        "/chat/completions", json = _payload(stream = False)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["usage"]["prompt_tokens_details"]["cached_tokens"] == 16
+
+
+def test_non_streaming_preserves_accumulated_context_truncation(monkeypatch):
+    events = [
+        {
+            "type": "context_truncated",
+            "dropped_messages": 2,
+            "prompt_tokens_before": 9000,
+            "prompt_tokens_after": 7000,
+            "context_length": 8192,
+            "fits": True,
+        },
+        {
+            "type": "context_truncated",
+            "dropped_messages": 3,
+            "prompt_tokens_before": 8100,
+            "prompt_tokens_after": 6500,
+            "context_length": 8192,
+            "fits": True,
+        },
+        {"type": "content", "text": "hi"},
+    ]
+    response = _client(monkeypatch, _EventsBackend(events)).post(
+        "/chat/completions", json = _payload(stream = False)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["context_truncated"] == {
+        "dropped_messages": 5,
+        "prompt_tokens_before": 9000,
+        "prompt_tokens_after": 6500,
+        "context_length": 8192,
+        "fits": True,
+    }

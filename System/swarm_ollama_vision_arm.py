@@ -180,6 +180,8 @@ def describe_image_local(
     host: str = _DEFAULT_HOST,
     timeout_s: float = 300.0,
     tags_timeout: float = 2.0,
+    max_tokens: int = 0,
+    think: bool = False,
     state_dir=None,
 ) -> LocalVisionResult:
     """Let a LOCAL Ollama vision model look at the screenshot and describe it.
@@ -202,12 +204,17 @@ def describe_image_local(
         b64 = base64.b64encode(normalized.data).decode("ascii")
     except Exception as exc:
         return LocalVisionResult(ok=False, status="image_read_failed", stderr=str(exc), model=chosen)
+    opts: dict = {"temperature": 0.2}
+    if max_tokens > 0:
+        opts["num_predict"] = int(max_tokens)
     body = json.dumps({
         "model": chosen,
         "prompt": prompt,
         "images": [b64],
         "stream": False,
-        "options": {"temperature": 0.2},
+        "think": bool(think),
+        "keep_alive": "60m",
+        "options": opts,
     }).encode("utf-8")
     try:
         req = urllib.request.Request(

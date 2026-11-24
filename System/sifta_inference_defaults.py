@@ -537,7 +537,7 @@ def _canonical_model_tag(name: str) -> str:
 # the default ladder). Whitelist rather than guess: only tags Ollama itself lists as cloud.
 _OLLAMA_CLOUD_TAG_SUFFIXES = (":cloud",)
 _OLLAMA_CLOUD_TAG_EXACT = {
-    "mercury-2.5", "mercury-2", "mercury-edit-2", "mercury-voice",
+    "mercury-2.5", "mercury-3", "mercury-2", "mercury-edit-2", "mercury-voice",
 }
 
 def _is_served_without_local_weights(tag: str) -> bool:
