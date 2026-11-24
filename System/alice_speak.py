@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 AVATAR = REPO / ".sifta_state" / "video_avatars"
-ALICE_PHOTO = Path("/Users/ioanganton/Downloads/Alice_portrait.png")
+ALICE_PHOTO = REPO / ".sifta_state" / "face" / "alice.jpg"
 VOICE = "en-US-AvaNeural"  # Microsoft Edge neural — natural female voice
 
 
