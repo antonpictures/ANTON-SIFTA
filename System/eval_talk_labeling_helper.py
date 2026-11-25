@@ -59,16 +59,30 @@ def _row_text(row: Dict[str, Any]) -> str:
     return text if isinstance(text, str) else ""
 
 
+_CONVO_ROWS_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
+
+
 def _load_conversation_rows(convo_path: Optional[Path] = None) -> List[Dict[str, Any]]:
     path = convo_path or _CONVO
     if not path.exists():
         return []
+    try:
+        st = path.stat()
+        cache_key = (str(path.resolve()), st.st_mtime_ns, st.st_size)
+        if cache_key in _CONVO_ROWS_CACHE:
+            return _CONVO_ROWS_CACHE[cache_key]
+    except OSError:
+        cache_key = None
     rows: List[Dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             rows.append(json.loads(line))
         except Exception:
             continue
+    if cache_key is not None:
+        if len(_CONVO_ROWS_CACHE) >= 8:
+            _CONVO_ROWS_CACHE.clear()
+        _CONVO_ROWS_CACHE[cache_key] = rows
     return rows
 
 
@@ -89,7 +103,11 @@ def resolve_conversation_ref(
     conversation_ref: str,
     convo_path: Optional[Path] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Find the local conversation row addressed by a golden turn reference."""
+    """Find the local conversation row addressed by a golden turn reference.
+
+    When convo_path is None and the live alice_conversation.jsonl was rotated,
+    also searches .sifta_state/archive_*/alice_conversation.jsonl.
+    """
     event_id = ""
     row_hash = ""
     for part in conversation_ref.split("#")[1:]:
@@ -98,12 +116,17 @@ def resolve_conversation_ref(
         elif part.startswith("hash:"):
             row_hash = part.split(":", 1)[1]
 
-    for row in _load_conversation_rows(convo_path):
-        if event_id and row.get("event_id") == event_id:
-            return row
-        candidate_hash = str(row.get("this_hash") or "")[:12]
-        if row_hash and candidate_hash == row_hash:
-            return row
+    paths: List[Path] = [convo_path] if convo_path is not None else [
+        _CONVO,
+        *sorted(_STATE.glob("archive_*/alice_conversation.jsonl"), reverse=True),
+    ]
+    for path in paths:
+        for row in _load_conversation_rows(path):
+            if event_id and row.get("event_id") == event_id:
+                return row
+            candidate_hash = str(row.get("this_hash") or "")[:12]
+            if row_hash and candidate_hash == row_hash:
+                return row
     return None
 
 

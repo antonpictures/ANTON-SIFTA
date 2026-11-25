@@ -346,7 +346,7 @@ class TestLocalCortexDispatch:
         assert result.success is True
         assert result.new_content == "print('local')"
         assert seen["url"].startswith("http://127.0.0.1:")
-        assert seen["payload"]["model"] == "krishairnd/Gemma-4-Uncensored:latest"
+        assert seen["payload"]["model"] == sc.LOCAL_CODING_CORTEX
         assert seen["payload"]["stream"] is False
 
     def test_dispatch_refuses_non_loopback_endpoint(self, tmp_path, monkeypatch):

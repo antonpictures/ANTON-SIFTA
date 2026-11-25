@@ -26,6 +26,7 @@ Incremental — no-op when nothing is new.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import time
@@ -55,6 +56,13 @@ VIEWS: dict[str, dict[str, Any]] = {
         "id_key": "journal_id",
         "text_key": "text",
         "extra": ("source", "ts"),
+    },
+    "narrative": {
+        "source": STATE / "alice_narrative_diary.jsonl",
+        "dir": SUBSTRATE / "narrative_index",
+        "id_key": "narrative_id",
+        "text_key": "entry",
+        "extra": ("event_type", "ts"),
     },
 }
 
@@ -105,21 +113,30 @@ def sync(view: str, force: bool = False) -> dict:
     known, texts, mat = _existing(view)
     if force or mat is None:
         known, texts, mat = set(), [], None
+    prev_ids: list[str] = (
+        [str(i) for i in json.loads(_meta_path(view).read_text()).get("ids") or []]
+        if known and _meta_path(view).exists()
+        else []
+    )
 
     pending: list[tuple[str, str, dict]] = []
     for r in rows:
-        tid = str(r.get(cfg["id_key"]) or "") or f"row_{abs(hash(json.dumps(r, sort_keys=True))) % 10**12}"
+        tid = str(r.get(cfg["id_key"]) or "")
+        if not tid:
+            raw_sig = json.dumps(r, sort_keys=True, ensure_ascii=False).encode("utf-8", errors="replace")
+            tid = f"row_{hashlib.sha256(raw_sig).hexdigest()[:12]}"
         if tid in known:
             continue
         text = str(r.get(cfg["text_key"]) or "").strip()
         if not text:
             continue
+        known.add(tid)
         pending.append((tid, text, r))
         if len(pending) >= MAX_APPEND:
             break
 
     if not pending:
-        return {"view": view, "ok": True, "added": 0, "index_rows": len(known),
+        return {"view": view, "ok": True, "added": 0, "index_rows": len(prev_ids),
                 "reason": "already current"}
 
     from System.swarm_substrate_bridge import _load_encoder, _embed_batch
@@ -133,9 +150,6 @@ def sync(view: str, force: bool = False) -> dict:
                 "error": f"dim drift {mat.shape[1]} -> {native.shape[1]}; rerun with force"}
 
     mat = native if mat is None else np.vstack([mat, native])
-    prev_ids: list[str] = []
-    if known:
-        prev_ids = [str(i) for i in json.loads(_meta_path(view).read_text()).get("ids") or []]
     ids = prev_ids + [i for i, _, _ in pending]
     texts_out = texts + [t for _, t, _ in pending]
 
@@ -238,8 +252,8 @@ if __name__ == "__main__":
     if "--status" in sys.argv or cmd == "status":
         print(json.dumps(status(), indent=2))
     elif cmd == "all":
-        print(json.dumps([sync("ledger"), sync("journal")], indent=2))
+        print(json.dumps([sync(v) for v in VIEWS], indent=2))
     elif cmd in VIEWS:
         print(json.dumps(sync(cmd), indent=2))
     else:
-        print("usage: all | ledger | journal | --status")
+        print("usage: all | ledger | journal | narrative | --status")

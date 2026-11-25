@@ -21,9 +21,9 @@ Subspace Hypothesis (arXiv:2512.05117), Growing Transformers (arXiv:2507.07129).
 | Adapters (Stage 1) | `System/swarm_substrate_adapters.py` | per-organ encoder/decoder autoencoders |
 | Alignment (Stage 1.5) | `System/swarm_substrate_align.py` | joint training so the same sentence lands at the same point across organs |
 | Semantic views | `System/swarm_substrate_bridge.py` | ledger → vectors, nearest-neighbour recall |
-| Incremental ingest (Stage 4) | `System/swarm_substrate_ingest.py` | append-only sync of ledger + Journal views |
-| Awareness (Stage 3) | `System/swarm_substrate_awareness.py` | prompt-ready recall block, write-through remember, snapshot, receipts |
-| Corrections (Stage 5) | `System/swarm_substrate_corrections.py` | corrections of record, ranked against the corrections themselves and injected first |
+| Incremental ingest (Stage 4) | `System/swarm_substrate_ingest.py` | append-only sync of ledger + Journal + narrative diary views |
+| Awareness (Stage 3+6) | `System/swarm_substrate_awareness.py` | prompt-ready recall block (weighted by `memory_fitness_overlay`, excluding `superseded_trace_id_set`), write-through `remember` via r725 `swarm_memory_consciousness_bridge`, snapshot, receipts |
+| Corrections (Stage 5+6) | `System/swarm_substrate_corrections.py` | corrections of record + `sync_eval_verdicts()` from George's `eval_verdicts.jsonl`, ranked against each other and injected first into awareness + `swarm_spinal_cord` |
 
 State lives in `.sifta_state/substrate/` (`gitignored`): `organs.json`, `adapters/*.pt`,
 `ledger_index/`, `journal_index/`, `receipts.jsonl`.

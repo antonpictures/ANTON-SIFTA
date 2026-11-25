@@ -417,17 +417,25 @@ def run_nightly_audit(
         sections["arxiv_sweep"] = {"status": "SKIPPED"}
 
     print(f"\n  {_SECTION_SEP}")
-    print("  § 6/7  Alice Space Ingest (semantic views over the ledgers)")
+    print("  § 6/7  Alice Space Ingest (semantic views + eval verdicts -> corrections)")
     try:
+        from System.swarm_substrate_corrections import sync_eval_verdicts as _sync_eval
         from System.swarm_substrate_ingest import sync as _substrate_sync
 
+        eval_sync = _sync_eval()
         ledger_sync = _substrate_sync("ledger")
         journal_sync = _substrate_sync("journal")
-        sections["alice_space"] = {"ledger": ledger_sync, "journal": journal_sync}
-        _log(f"ledger +{ledger_sync.get('added', 0)} rows "
-             f"(now {ledger_sync.get('index_rows', '?')})  "
-             f"journal +{journal_sync.get('added', 0)} rows "
-             f"(now {journal_sync.get('index_rows', '?')})")
+        narrative_sync = _substrate_sync("narrative")
+        sections["alice_space"] = {
+            "eval_corrections": eval_sync,
+            "ledger": ledger_sync,
+            "journal": journal_sync,
+            "narrative": narrative_sync,
+        }
+        _log(f"eval_corrections +{eval_sync.get('added', 0)}  "
+             f"ledger +{ledger_sync.get('added', 0)} ({ledger_sync.get('index_rows', '?')})  "
+             f"journal +{journal_sync.get('added', 0)} ({journal_sync.get('index_rows', '?')})  "
+             f"narrative +{narrative_sync.get('added', 0)} ({narrative_sync.get('index_rows', '?')})")
     except Exception as exc:
         sections["alice_space"] = {"status": "FAILED", "error": str(exc)[:200]}
         _log(f"❌ alice space ingest: {type(exc).__name__}: {str(exc)[:120]}")

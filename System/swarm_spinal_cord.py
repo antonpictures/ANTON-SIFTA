@@ -295,6 +295,7 @@ def compute_field_interconnect_score(
         "meta_monitor_receipts.jsonl",
         "bias_correction_receipts.jsonl",
         "spinal_cord_cycles.jsonl",
+        "memory_consciousness_bridge.jsonl",
     )
     for name in ledgers:
         path = sd / name
@@ -478,7 +479,17 @@ def dispatch_to_local_cortex(
             error=f"Refused non-loopback Ollama endpoint: {endpoint}",
         )
 
-    field_context = f"\n\nCURRENT ALICE BODY FIELD SNAPSHOT:\n{field_snapshot}\n\n"
+    corrections_context = ""
+    try:
+        from System.swarm_substrate_corrections import corrections_block
+
+        corr = corrections_block(top_k=3)
+        if corr:
+            corrections_context = f"{corr}\n\n"
+    except Exception:
+        pass
+
+    field_context = f"\n\nCURRENT ALICE BODY FIELD SNAPSHOT:\n{field_snapshot}\n\n{corrections_context}"
     augmented_prompt = field_context + task.task_prompt
     payload = json.dumps(
         {

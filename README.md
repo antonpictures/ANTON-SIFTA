@@ -20,8 +20,9 @@ hold memory; Alice Space feeds them rather than replacing them.)
 | 1.5 | Joint alignment training: same sentence → same point in the shared space | `System/swarm_substrate_align.py` |
 | 2 | Semantic recall over the 9,990-row memory ledger | `System/swarm_substrate_bridge.py` |
 | 3 | Prompt-ready awareness block + write-through `remember` + receipts | `System/swarm_substrate_awareness.py` |
-| 4 | Incremental, append-only ingest of ledger **and** first-person Journal views | `System/swarm_substrate_ingest.py` |
+| 4 | Incremental, append-only ingest of ledger, first-person Journal, **and** narrative diary views | `System/swarm_substrate_ingest.py` |
 | 5 | Corrections of record: written through the bus, ranked against each other, injected first | `System/swarm_substrate_corrections.py` |
+| 6 | Connected to existing consciousness/eval/spinal organs: r725 `swarm_memory_consciousness_bridge` trace-hash loop + self-vector delta, `memory_fitness_overlay` + `memory_search.superseded_trace_id_set`, George's `eval_verdicts.jsonl` (archive-aware `resolve_conversation_ref`), `swarm_spinal_cord` dispatch context, and `ORGAN_EVAL_MATRIX_V2` | `System/swarm_substrate_awareness.py`, `System/eval_talk_labeling_helper.py`, `System/swarm_spinal_cord.py`, `tools/generate_organ_eval_matrix_v2.py` |
 
 Wired in: `build_body_diary_prompt_block(query=...)` appends a recall block when a query
 is passed (opt-in, hot path unchanged), `swarm_nightly_health_audit.py` runs the ingest

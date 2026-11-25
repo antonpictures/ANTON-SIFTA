@@ -133,27 +133,114 @@ def substrate_awareness_snapshot() -> dict:
     except Exception:
         snap["ledger_rows"] = None
 
+    # r725 STIGMERGIC_CONSCIOUSNESS trace-hash loop + self-vector delta
+    try:
+        from System.swarm_memory_consciousness_bridge import verify_latest_bridge
+
+        cb = verify_latest_bridge()
+        snap["consciousness_bridge"] = {
+            "ok": cb.get("ok"),
+            "bridge_trace_id": cb.get("bridge_trace_id"),
+            "memory_trace_id": cb.get("memory_trace_id"),
+            "self_vector_changed": cb.get("self_vector_changed"),
+            "observed_hash": str(cb.get("observed_hash") or "")[:16],
+        }
+    except Exception as e:
+        snap["consciousness_bridge"] = {"error": str(e)[:120]}
+
+    # Restart continuity capsule + AGI eval matrix organ/connection census
+    try:
+        from System.swarm_memory_archive_capsules import latest_capsule
+
+        cap = latest_capsule()
+        snap["restart_capsule"] = {
+            "capsule_id": cap.get("capsule_id"),
+            "source": cap.get("source"),
+            "ts": cap.get("ts"),
+        } if cap else None
+    except Exception:
+        snap["restart_capsule"] = None
+
+    try:
+        from System.swarm_agi_eval_matrix import organ_facts
+
+        snap["body_organs"] = organ_facts()
+    except Exception:
+        snap["body_organs"] = None
+
     return snap
 
 
 # ── Read: context block ───────────────────────────────────────────────────────
 
-def semantic_recall_safe(query: str, top_k: int = 3) -> list[dict]:
-    """Merge semantic hits from every Alice Space view (ledger + identity journal)."""
+def _superseded_ledger_ids() -> set[str]:
+    """Trace IDs in memory_ledger.jsonl that have been superseded by a newer trace."""
+    try:
+        from System.memory_search import load_jsonl_rows, superseded_trace_id_set
+
+        ledger = STATE / "memory_ledger.jsonl"
+        if not ledger.exists():
+            return set()
+        return superseded_trace_id_set(load_jsonl_rows([ledger]))
+    except Exception:
+        return set()
+
+
+def semantic_recall_safe(query: str, top_k: int = 3, *, reinforce_fitness: bool = True) -> list[dict]:
+    """Merge semantic hits from every Alice Space view (ledger + journal + narrative).
+
+    Connected to:
+      * memory_search.superseded_trace_id_set — excludes superseded traces
+      * memory_fitness_overlay.strength_for / bump_after_recall — stigmergic fitness
+        weighting and post-recall reinforcement
+    """
     if not query.strip():
         return []
     merged: list[dict] = []
     try:
+        import math
         from System.swarm_substrate_bridge import _load_encoder, _native_vector
         from System.swarm_substrate_ingest import VIEWS, recall, hydrate
 
         tok, model = _load_encoder()
         q = _native_vector(query, tok, model)
+        superseded = _superseded_ledger_ids()
         for view in VIEWS:
-            merged.extend(hydrate(recall(view, q, top_k=top_k)))
-        merged.sort(key=lambda h: h.get("similarity", 0.0), reverse=True)
-        if merged:
-            return merged[:top_k]
+            raw_hits = hydrate(recall(view, q, top_k=max(top_k * 2, 6)))
+            if view == "ledger" and superseded:
+                raw_hits = [h for h in raw_hits if str(h.get("id") or "") not in superseded]
+            merged.extend(raw_hits)
+
+        # Stigmergic fitness overlay weighting for ledger traces
+        try:
+            from System.memory_fitness_overlay import strength_for
+
+            ledger_ids = [str(h.get("id") or "") for h in merged if h.get("view") == "ledger" and h.get("id")]
+            strengths = strength_for(ledger_ids) if ledger_ids else {}
+        except Exception:
+            strengths = {}
+
+        for h in merged:
+            sim = float(h.get("similarity", 0.0))
+            tid = str(h.get("id") or "")
+            strength = float(strengths.get(tid, 1.0)) if h.get("view") == "ledger" else 1.0
+            mult = max(0.75, min(1.35, 0.85 + 0.15 * math.sqrt(max(0.01, strength))))
+            h["fitness_strength"] = round(strength, 3)
+            h["score"] = sim * mult
+
+        merged.sort(key=lambda h: h.get("score", h.get("similarity", 0.0)), reverse=True)
+        top = merged[:top_k]
+        if reinforce_fitness:
+            try:
+                from System.memory_fitness_overlay import bump_after_recall
+
+                for h in top:
+                    if h.get("view") == "ledger" and h.get("id"):
+                        bump_after_recall(str(h["id"]), recall_delta=0.02)
+            except Exception:
+                pass
+        if top:
+            return top
     except Exception:
         pass
     # Fallback: the original single-view bridge (kept for a damaged ingest index).
@@ -241,34 +328,60 @@ def _append_to_index(text: str, trace_id: str) -> Optional[int]:
 
 def remember_in_alice_space(text: str, organ: str = "AliceG4U",
                             app_context: str = "alice_space",
-                            architect_id: str = "IOAN_M5") -> dict:
-    """Write through the canonical bus, then append the vector to the live index.
+                            architect_id: str = "IOAN_M5",
+                            evidence_links: Optional[list[str]] = None) -> dict:
+    """Write through the canonical bus + r725 consciousness bridge, then append to the live index.
 
-    Returns {ok, trace_id, index_rows, receipt}. Raises only on empty text.
+    Returns {ok, trace_id, bridge_trace_id, self_vector_changed, index_rows, receipt_ts}.
+    Raises only on empty text.
     """
     text = (text or "").strip()
     if not text:
         raise ValueError("remember_in_alice_space needs non-empty text")
 
     trace_id = None
+    bridge_trace_id = None
+    self_vector_changed = None
     try:
-        from System.stigmergic_memory_bus import StigmergicMemoryBus
-        bus = StigmergicMemoryBus(architect_id=architect_id)
-        trace = bus.remember(text, app_context)
-        trace_id = getattr(trace, "trace_id", None)
-    except Exception as e:
-        _receipt("canonical_write_failed", {"text": text[:120], "error": str(e)[:160]})
+        from System.swarm_memory_consciousness_bridge import bridge_observed_memory_to_consciousness
+
+        cb = bridge_observed_memory_to_consciousness(
+            text,
+            observer=organ or "Alice",
+            architect_id=architect_id,
+            app_context=app_context,
+            evidence_links=evidence_links,
+        )
+        trace_id = cb.get("memory_trace_id")
+        bridge_trace_id = cb.get("trace_id")
+        self_vector_changed = cb.get("self_vector_changed")
+    except Exception:
+        try:
+            from System.stigmergic_memory_bus import StigmergicMemoryBus
+            bus = StigmergicMemoryBus(architect_id=architect_id)
+            trace = bus.remember(text, app_context, links=evidence_links)
+            trace_id = getattr(trace, "trace_id", None)
+        except Exception as e:
+            _receipt("canonical_write_failed", {"text": text[:120], "error": str(e)[:160]})
 
     rows = _append_to_index(text, trace_id or f"substrate_{int(time.time())}")
     receipt = _receipt("remember", {
         "organ": organ,
         "app_context": app_context,
         "trace_id": trace_id,
+        "bridge_trace_id": bridge_trace_id,
+        "self_vector_changed": self_vector_changed,
         "index_rows": rows,
         "text": text[:160],
     })
-    return {"ok": bool(trace_id), "trace_id": trace_id,
-            "index_rows": rows, "receipt_ts": receipt["ts"]}
+    return {
+        "ok": bool(trace_id),
+        "trace_id": trace_id,
+        "bridge_trace_id": bridge_trace_id,
+        "self_vector_changed": self_vector_changed,
+        "index_rows": rows,
+        "receipt_ts": receipt["ts"],
+    }
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

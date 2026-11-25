@@ -50,27 +50,38 @@ def load_golden_turns() -> List[Dict[str, Any]]:
 
 
 def find_conversation_by_ref(ref: str) -> Dict[str, Any] | None:
-    """Try to resolve a conversation_ref back to the actual row."""
-    if not CONVO.exists() or not ref:
+    """Resolve a conversation_ref back to the actual row (live or archive)."""
+    if not ref:
         return None
-    # Expected format: alice_conversation.jsonl#event:xxx#hash:yyy or similar
+    try:
+        from System.eval_talk_labeling_helper import resolve_conversation_ref
+
+        row = resolve_conversation_ref(ref)
+        if row is not None:
+            return row
+    except Exception:
+        pass
+    if not CONVO.exists():
+        return None
     parts = ref.split("#")
     if len(parts) < 2:
         return None
     for line in CONVO.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             r = json.loads(line)
-            # Simple hash match on the last part
-            if "hash:" in ref:
-                h = ref.split("hash:")[-1].strip()
-                if h and h in str(r.get("text", ""))[:200]:
-                    return r
-            # Fallback: match on ts or event id if present
             if any(p in str(r) for p in parts[1:]):
                 return r
         except Exception:
             continue
     return None
+
+
+def _convo_text(row: Dict[str, Any] | None) -> str:
+    if not row:
+        return "[not resolved]"
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    txt = payload.get("text") or row.get("text") or "[not found in ledger]"
+    return str(txt)[:300]
 
 
 def main():
@@ -96,7 +107,7 @@ def main():
             "turn_id": turn_id,
             "verdict": v,
             "golden": g,
-            "conversation_snippet": convo.get("text", "[not found in ledger]")[:300] if convo else "[not resolved]"
+            "conversation_snippet": _convo_text(convo),
         })
 
     print("=== Round 5 — Failing Talk Turns on preserved_owner_trust ===\n")

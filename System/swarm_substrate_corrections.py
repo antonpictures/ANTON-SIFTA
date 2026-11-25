@@ -69,20 +69,36 @@ def record_correction(text: str, wrong: str = "", right: str = "",
         links.append(f"doc:{doc}")
 
     trace_id = None
+    bridge_trace_id = None
+    self_vector_changed = None
     error = None
     try:
-        from System.stigmergic_memory_bus import StigmergicMemoryBus
+        from System.swarm_memory_consciousness_bridge import bridge_observed_memory_to_consciousness
 
-        bus = StigmergicMemoryBus(architect_id=architect_id)
-        trace = bus.remember(
+        cb = bridge_observed_memory_to_consciousness(
             line,
-            "correction",
-            epistemic_label="OBSERVED",
-            links=links or None,
+            observer="George",
+            architect_id=architect_id,
+            app_context="correction",
+            evidence_links=links or None,
         )
-        trace_id = getattr(trace, "trace_id", None)
-    except Exception as exc:
-        error = f"{type(exc).__name__}: {str(exc)[:160]}"
+        trace_id = cb.get("memory_trace_id")
+        bridge_trace_id = cb.get("trace_id")
+        self_vector_changed = cb.get("self_vector_changed")
+    except Exception:
+        try:
+            from System.stigmergic_memory_bus import StigmergicMemoryBus
+
+            bus = StigmergicMemoryBus(architect_id=architect_id)
+            trace = bus.remember(
+                line,
+                "correction",
+                epistemic_label="OBSERVED",
+                links=links or None,
+            )
+            trace_id = getattr(trace, "trace_id", None)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {str(exc)[:160]}"
 
     # Keep the semantic view current so the next session can find it.
     index_rows = None
@@ -99,6 +115,8 @@ def record_correction(text: str, wrong: str = "", right: str = "",
         "kind": "correction",
         "ts": time.time(),
         "trace_id": trace_id,
+        "bridge_trace_id": bridge_trace_id,
+        "self_vector_changed": self_vector_changed,
         "receipt": receipt,
         "doc": doc,
         "index_rows": index_rows,
@@ -110,6 +128,7 @@ def record_correction(text: str, wrong: str = "", right: str = "",
         f.write(json.dumps(receipt_row, ensure_ascii=False) + "\n")
 
     return {"ok": bool(trace_id), "trace_id": trace_id,
+            "bridge_trace_id": bridge_trace_id, "self_vector_changed": self_vector_changed,
             "index_rows": index_rows, "error": error, "text": line}
 
 
@@ -255,6 +274,77 @@ def corrections_block(query: Optional[str] = None, top_k: int = 3) -> str:
     return "\n".join(lines)
 
 
+def sync_eval_verdicts() -> dict:
+    """Sync George-labeled 'incorrect' verdicts from .sifta_state/eval/eval_verdicts.jsonl.
+
+    Deduplicated by verdict trace_id (`receipt:<verdict_trace_id>` in links) so
+    each human eval verdict is recorded once as a Correction of Record.
+    """
+    verdicts_path = STATE / "eval" / "eval_verdicts.jsonl"
+    if not verdicts_path.exists():
+        return {"ok": True, "added": 0, "reason": "no_eval_verdicts_file"}
+
+    existing_links: set[str] = set()
+    for row in _all_corrections():
+        for link in row.get("links") or []:
+            existing_links.add(str(link))
+
+    try:
+        from System.eval_talk_labeling_helper import resolve_conversation_ref, _row_text
+    except Exception:
+        resolve_conversation_ref = None
+        _row_text = None
+
+    added = 0
+    synced_turns: list[str] = []
+    with verdicts_path.open(encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                v = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if v.get("verdict") != "incorrect":
+                continue
+            v_trace = str(v.get("trace_id") or "").strip()
+            if not v_trace or f"receipt:{v_trace}" in existing_links:
+                continue
+
+            turn_id = str(v.get("turn_id") or "?")
+            failed_keys = list(v.get("failed_rubric_keys") or [])
+            ref = str(v.get("conversation_ref") or "")
+            bad_reply = ""
+            if resolve_conversation_ref and _row_text and ref:
+                try:
+                    convo_row = resolve_conversation_ref(ref)
+                    if convo_row:
+                        bad_reply = _row_text(convo_row).replace("\n", " ").strip()[:180]
+                except Exception:
+                    bad_reply = ""
+
+            rubric_str = ", ".join(failed_keys) if failed_keys else "rubric"
+            statement = (
+                f"Eval verdict {turn_id} failed [{rubric_str}] (labeled by {v.get('labeled_by', 'GEORGE')}): "
+                "stay in direct first-person grounded conversation; never drift into third-person "
+                "meta-summary, roleplay stage narration, or refusing owner context."
+            )
+            res = record_correction(
+                statement,
+                wrong=bad_reply or f"Turn {turn_id} ({ref}) failed {rubric_str}",
+                right=f"Pass Hu rubric keys [{rubric_str}] with grounded first-person reply",
+                receipt=v_trace,
+                doc=ref or "eval_verdicts.jsonl",
+            )
+            if res.get("ok"):
+                existing_links.add(f"receipt:{v_trace}")
+                added += 1
+                synced_turns.append(turn_id)
+
+    return {"ok": True, "added": added, "turns": synced_turns}
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
     if cmd == "record":
@@ -276,6 +366,8 @@ if __name__ == "__main__":
             doc=flags["--doc"] or None,
             receipt=flags["--receipt"] or None,
         ), indent=2))
+    elif cmd == "sync-eval":
+        print(json.dumps(sync_eval_verdicts(), indent=2))
     elif cmd == "recall":
         q = " ".join(sys.argv[2:]) or "mistake"
         block = corrections_block(query=q)
@@ -284,4 +376,4 @@ if __name__ == "__main__":
         for r in _all_corrections()[:10]:
             print(f"  [{time.strftime('%Y-%m-%d', time.localtime(float(r.get('timestamp') or 0)))}] {str(r.get('raw_text'))[:160]}")
     else:
-        print("usage: record <text> | recall <query> | list")
+        print("usage: record <text> | sync-eval | recall <query> | list")
