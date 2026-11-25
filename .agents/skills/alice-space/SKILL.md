@@ -23,6 +23,7 @@ Subspace Hypothesis (arXiv:2512.05117), Growing Transformers (arXiv:2507.07129).
 | Semantic views | `System/swarm_substrate_bridge.py` | ledger → vectors, nearest-neighbour recall |
 | Incremental ingest (Stage 4) | `System/swarm_substrate_ingest.py` | append-only sync of ledger + Journal views |
 | Awareness (Stage 3) | `System/swarm_substrate_awareness.py` | prompt-ready recall block, write-through remember, snapshot, receipts |
+| Corrections (Stage 5) | `System/swarm_substrate_corrections.py` | corrections of record, ranked against the corrections themselves and injected first |
 
 State lives in `.sifta_state/substrate/` (`gitignored`): `organs.json`, `adapters/*.pt`,
 `ledger_index/`, `journal_index/`, `receipts.jsonl`.
@@ -41,10 +42,31 @@ State lives in `.sifta_state/substrate/` (`gitignored`): `organs.json`, `adapter
 python3 System/swarm_substrate_awareness.py snapshot                  # what the substrate knows
 python3 System/swarm_substrate_awareness.py context "your question"   # recall block for a prompt
 python3 System/swarm_substrate_awareness.py remember "..." --organ AliceG4U
+python3 System/swarm_substrate_corrections.py record "..." --wrong "..." --right "..." --doc "AGENTS.md#..."
+python3 System/swarm_substrate_corrections.py recall "what am I about to get wrong"
+python3 System/swarm_substrate_corrections.py list
 python3 System/swarm_substrate_ingest.py all                          # incremental sync
 python3 System/swarm_substrate_ingest.py --status
 python3 System/swarm_universal_substrate.py stats | organs | corpus
 ```
+
+## Corrections of record (Stage 5)
+
+A correction that lives only in a chat turn dies with the context. `record_correction`
+writes it through the canonical bus as `app_context="correction"`,
+`epistemic_label="OBSERVED"`, links to `receipt:`/`doc:`, and indexes it. Recall ranks
+a query **against the corrections themselves** (not the 10k ordinary traces), so one
+cannot be crowded out, and `corrections_block` is injected BEFORE facts in the
+awareness block:
+
+```
+[CORRECTIONS OF RECORD — nearest to this turn]
+- (sim 0.39) CORRECTION (2026-11-24): New or demo builds start under scratch/ ...
+[Do not repeat a corrected mistake. If a correction conflicts with this turn's plan, say so.]
+```
+
+`build_body_diary_prompt_block()` always shows the 2 most recent corrections; with a
+`query=` it shows the nearest ones plus the semantic recall block.
 
 ## Python
 

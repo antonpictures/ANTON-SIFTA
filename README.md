@@ -21,6 +21,7 @@ hold memory; Alice Space feeds them rather than replacing them.)
 | 2 | Semantic recall over the 9,990-row memory ledger | `System/swarm_substrate_bridge.py` |
 | 3 | Prompt-ready awareness block + write-through `remember` + receipts | `System/swarm_substrate_awareness.py` |
 | 4 | Incremental, append-only ingest of ledger **and** first-person Journal views | `System/swarm_substrate_ingest.py` |
+| 5 | Corrections of record: written through the bus, ranked against each other, injected first | `System/swarm_substrate_corrections.py` |
 
 Wired in: `build_body_diary_prompt_block(query=...)` appends a recall block when a query
 is passed (opt-in, hot path unchanged), `swarm_nightly_health_audit.py` runs the ingest

@@ -171,6 +171,17 @@ def alice_space_context_block(query: str, top_k: int = 3,
     if not hits and not include_snapshot:
         return ""
 
+    # Corrections first: a repeated mistake is more expensive than a missing fact.
+    blocks: list[str] = []
+    try:
+        from System.swarm_substrate_corrections import corrections_block
+
+        corr = corrections_block(query=query, top_k=2)
+        if corr:
+            blocks.append(corr)
+    except Exception:
+        pass
+
     lines = ["[ALICE SPACE — semantic recall from my own memory ledger + Journal]"]
     for h in hits:
         ts = h.get("timestamp")
@@ -197,6 +208,8 @@ def alice_space_context_block(query: str, top_k: int = 3,
         pass
 
     lines.append("[END ALICE SPACE]")
+    if blocks:
+        return "\n".join([*blocks, "\n".join(lines)])
     return "\n".join(lines)
 
 

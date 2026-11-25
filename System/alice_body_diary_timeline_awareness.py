@@ -362,17 +362,22 @@ def build_body_diary_prompt_block(
     except Exception:
         pass
 
-    # Alice Space (Stage 3): semantic recall over the same ledger + identity
-    # Journal. Opt-in by query so the hot path stays cheap; never fabricates.
-    if query:
-        try:
-            from System.swarm_substrate_awareness import alice_space_context_block
+    # Alice Space (Stage 3+5): semantic recall over the same ledger + identity
+    # Journal, and the corrections of record — most recent when no query is
+    # given, nearest when one is. Never fabricates; empty block = nothing said.
+    try:
+        from System.swarm_substrate_awareness import alice_space_context_block
+        from System.swarm_substrate_corrections import corrections_block
 
+        corr = corrections_block(query=query or None, top_k=2)
+        if corr:
+            lines.append(corr)
+        if query:
             block = alice_space_context_block(query, top_k=3)
             if block:
                 lines.append(block)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     return "\n".join(lines)
 
