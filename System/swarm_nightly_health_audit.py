@@ -369,7 +369,7 @@ def run_nightly_audit(
     sections: Dict[str, Any] = {}
 
     print(f"  {_SECTION_SEP}")
-    print("  § 1/6  Stigmergic Observability")
+    print("  § 1/7  Stigmergic Observability")
     sections["observability"] = _run_observability_health()
     obs = sections["observability"]
     _log(f"coverage={obs.get('n_obs_rows_24h',0)} rows  "
@@ -379,13 +379,13 @@ def run_nightly_audit(
         _log(f"CUSUM: {obs['cusum_conclusion'][:70]}")
 
     print(f"\n  {_SECTION_SEP}")
-    print("  § 2/6  Allostatic Load Trend")
+    print("  § 2/7  Allostatic Load Trend")
     sections["allostatic"] = _run_allostatic_trend()
     al = sections["allostatic"]
     _log(f"load={al.get('allostatic_load',0):.3f}  policy={al.get('policy','?')}")
 
     print(f"\n  {_SECTION_SEP}")
-    print("  § 3/6  Motor Policy Regime Bias")
+    print("  § 3/7  Motor Policy Regime Bias")
     sections["motor_policy"] = _run_motor_policy_health()
     mp = sections["motor_policy"]
     _log(f"last_action={mp.get('last_selected','?')}  "
@@ -393,7 +393,7 @@ def run_nightly_audit(
          f"gate={mp.get('last_gate','?')}")
 
     print(f"\n  {_SECTION_SEP}")
-    print("  § 4/6  BioSIFTA Corpus")
+    print("  § 4/7  BioSIFTA Corpus")
     sections["bio_corpus"] = _run_bio_corpus_health()
     bc = sections["bio_corpus"]
     _log(f"papers={bc.get('n_paper_chunks',0)}  "
@@ -405,7 +405,7 @@ def run_nightly_audit(
 
     if run_arxiv:
         print(f"\n  {_SECTION_SEP}")
-        print("  § 5/6  arXiv Sweep (4 organ queries × 2 papers)")
+        print("  § 5/7  arXiv Sweep (4 organ queries × 2 papers)")
         sections["arxiv_sweep"] = _run_arxiv_sweep(
             max_per_query=2, run_claims=run_claims, model=arxiv_model
         )
@@ -417,7 +417,23 @@ def run_nightly_audit(
         sections["arxiv_sweep"] = {"status": "SKIPPED"}
 
     print(f"\n  {_SECTION_SEP}")
-    print("  § 6/6  Test Suite Gate")
+    print("  § 6/7  Alice Space Ingest (semantic views over the ledgers)")
+    try:
+        from System.swarm_substrate_ingest import sync as _substrate_sync
+
+        ledger_sync = _substrate_sync("ledger")
+        journal_sync = _substrate_sync("journal")
+        sections["alice_space"] = {"ledger": ledger_sync, "journal": journal_sync}
+        _log(f"ledger +{ledger_sync.get('added', 0)} rows "
+             f"(now {ledger_sync.get('index_rows', '?')})  "
+             f"journal +{journal_sync.get('added', 0)} rows "
+             f"(now {journal_sync.get('index_rows', '?')})")
+    except Exception as exc:
+        sections["alice_space"] = {"status": "FAILED", "error": str(exc)[:200]}
+        _log(f"❌ alice space ingest: {type(exc).__name__}: {str(exc)[:120]}")
+
+    print(f"\n  {_SECTION_SEP}")
+    print("  § 7/7  Test Suite Gate")
     sections["tests"] = _run_test_gate(fast=fast_tests)
     tg = sections["tests"]
     status_icon = "✅" if tg.get("status") == "PASS" else "❌"

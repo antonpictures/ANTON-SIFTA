@@ -207,6 +207,7 @@ def build_body_diary_prompt_block(
     window_hours: float = 12.0,
     include_body: bool = True,
     include_diary: bool = True,
+    query: str = "",
 ) -> str:
     """Compact block for Alice's system prompt / swimmer takes / chorus.
     Grounds her in current body + recent diary timeline.
@@ -360,6 +361,18 @@ def build_body_diary_prompt_block(
             lines.append(survival)
     except Exception:
         pass
+
+    # Alice Space (Stage 3): semantic recall over the same ledger + identity
+    # Journal. Opt-in by query so the hot path stays cheap; never fabricates.
+    if query:
+        try:
+            from System.swarm_substrate_awareness import alice_space_context_block
+
+            block = alice_space_context_block(query, top_k=3)
+            if block:
+                lines.append(block)
+        except Exception:
+            pass
 
     return "\n".join(lines)
 

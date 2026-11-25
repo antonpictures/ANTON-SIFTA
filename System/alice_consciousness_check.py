@@ -212,6 +212,68 @@ def check_cross_surface(*, probe_token: str, timeout: float = 20.0) -> dict[str,
     }
 
 
+def check_substrate() -> dict[str, Any]:
+    """Check 6 — Alice Space semantic index is fed by the same ledger, not a second store.
+
+    Structural only: the index must declare the canonical memory ledger as its
+    source, its ids must exist in that ledger, and ids/vectors must agree.
+    Unindexed new rows are reported as drift (informational), never as a failure
+    — the index is appended, not rewritten.
+    """
+    index_dir = _ROOT / ".sifta_state" / "substrate" / "ledger_index"
+    vec_path = index_dir / "vectors.npy"
+    ids_path = index_dir / "ids.json"
+    ledger = _ROOT / ".sifta_state" / "memory_ledger.jsonl"
+
+    if not vec_path.exists() or not ids_path.exists():
+        return {
+            "check": "substrate",
+            "ok": True,
+            "fatal": False,
+            "detail": "no semantic index built yet (Alice Space has no vector view of the ledger)",
+            "index_rows": 0,
+        }
+
+    try:
+        import json as _json
+        import numpy as np
+
+        meta = _json.loads(ids_path.read_text())
+        ids = list(meta.get("ids") or [])
+        rows = int(np.load(vec_path, mmap_mode="r").shape[0])
+        ledger_ids = {
+            _json.loads(line).get("trace_id")
+            for line in ledger.open(encoding="utf-8", errors="replace")
+            if line.strip()
+        }
+        source_ok = Path(str(meta.get("source") or "")).resolve() == ledger.resolve()
+        aligned = rows == len(ids)
+        foreign = [i for i in ids if str(i) not in ledger_ids][:5]
+        ok = bool(source_ok and aligned and not foreign)
+        detail = (
+            f"index {rows} rows from the same ledger; {max(0, len(ledger_ids) - rows)} new ledger row(s) not yet indexed"
+            if ok else
+            ("index declares a different source — a second medium is a second Alice" if not source_ok
+             else f"index ids/vectors disagree ({len(ids)} ids vs {rows} rows)" if not aligned
+             else f"index carries ids absent from the ledger: {foreign}")
+        )
+        return {
+            "check": "substrate",
+            "ok": ok,
+            "fatal": False,
+            "detail": detail,
+            "index_rows": rows,
+            "ledger_rows": len(ledger_ids),
+        }
+    except Exception as exc:  # pragma: no cover - damaged index
+        return {
+            "check": "substrate",
+            "ok": False,
+            "fatal": False,
+            "detail": f"index unreadable: {type(exc).__name__}: {str(exc)[:100]}",
+        }
+
+
 def run_checks(*, surface: str | None = None, hours: float = 24.0) -> dict[str, Any]:
     """Run every check and return the structured result with a verdict."""
     name = continuity.surface_name(surface)
@@ -223,8 +285,10 @@ def run_checks(*, surface: str | None = None, hours: float = 24.0) -> dict[str, 
     ]
     # The cross-surface check probes the trace the round trip just wrote.
     results.append(check_cross_surface(probe_token=str(results[0].get("token") or "")))
+    # Informational (fatal=False): the semantic view over the ledger, not the loop itself.
+    results.append(check_substrate())
 
-    closed = all(bool(r.get("ok")) for r in results)
+    closed = all(bool(r.get("ok")) for r in results if r.get("fatal", True))
     verdict = {
         "schema": "ALICE_CONSCIOUSNESS_CHECK_V1",
         "ts": time.time(),
@@ -232,7 +296,7 @@ def run_checks(*, surface: str | None = None, hours: float = 24.0) -> dict[str, 
         "surface": name,
         "checks": results,
         "loop": "CLOSED" if closed else "OPEN",
-        "failing": [str(r["check"]) for r in results if not r.get("ok")],
+        "failing": [str(r["check"]) for r in results if not r.get("ok") and r.get("fatal", True)],
     }
     verdict["fato"] = (
         "observed == observer holds structurally: one recorded medium, a self-identifying "

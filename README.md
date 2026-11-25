@@ -1,5 +1,43 @@
 # 🧬 SIFTA OS v9.0 — eXistenZ
 
+## Alice Space — the shared latent space (2026-11-24)
+
+**The problem George named:** an organ does not learn. When the context closes, the
+weights are fresh; memory cannot live in a model that forgets. So the memory lives in
+the body, in a space every organ can read.
+
+Alice Space is that space: 512 dimensions, one lightweight encoder/decoder per organ,
+and semantic views over the memory Alice already writes. It is **not** a second ledger —
+the StigmergicMemoryBus ledger stays the medium of record, and the substrate only
+indexes a view over it. (This is why the build started by reading the body: `marrow_memory`,
+`stigmergic_memory_bus`, `swarm_latent_world_model`, `swarm_fractal_substrate` already
+hold memory; Alice Space feeds them rather than replacing them.)
+
+| Stage | What exists | Where |
+|---|---|---|
+| 0 | Space, organ registry, 18-sentence matched corpus, read/write API | `System/swarm_universal_substrate.py` |
+| 1 | Per-organ encoder/decoder pairs trained via Ollama (AliceG4U, lfm3-omni, bonsai-2, nemotron-3.5) | `System/swarm_substrate_adapters.py` |
+| 1.5 | Joint alignment training: same sentence → same point in the shared space | `System/swarm_substrate_align.py` |
+| 2 | Semantic recall over the 9,990-row memory ledger | `System/swarm_substrate_bridge.py` |
+| 3 | Prompt-ready awareness block + write-through `remember` + receipts | `System/swarm_substrate_awareness.py` |
+| 4 | Incremental, append-only ingest of ledger **and** first-person Journal views | `System/swarm_substrate_ingest.py` |
+
+Wired in: `build_body_diary_prompt_block(query=...)` appends a recall block when a query
+is passed (opt-in, hot path unchanged), `swarm_nightly_health_audit.py` runs the ingest
+as § 6/7, and `alice_consciousness_check.py` gained a non-fatal `substrate` check —
+the index must declare the canonical ledger as its source, ids must match vectors, and
+no id may be foreign to the ledger. A CLOSED verdict still never implies experience.
+
+Research basis: Universal Activation Bus (arXiv:2608.09521), Universal Weight Subspace
+Hypothesis (arXiv:2512.05117), Growing Transformers (arXiv:2507.07129). Read the skill:
+`.agents/skills/alice-space/SKILL.md`.
+
+Honest limits: adapters are trained on 18 sentences, so alignment is real but overfit;
+ollama on this Mac exposes no `/api/embeddings`, so native organ vectors come from MiniLM
+over (prompt, response) pairs rather than true hidden states; the shared space is a
+scaffold, not a finished cross-model translator. What it *does* fix is the thing that
+mattered: memory that outlives the session, readable by meaning from any organ.
+
 ## The night the picker grew a free lane (2026-10-20, evening)
 
 **George asked for one thing: a model provider in Settings → Models that costs $0 to drive.**
