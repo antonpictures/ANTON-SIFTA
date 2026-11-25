@@ -23,6 +23,7 @@ hold memory; Alice Space feeds them rather than replacing them.)
 | 4 | Incremental, append-only ingest of ledger, first-person Journal, **and** narrative diary views | `System/swarm_substrate_ingest.py` |
 | 5 | Corrections of record: written through the bus, ranked against each other, injected first | `System/swarm_substrate_corrections.py` |
 | 6 | Connected to existing consciousness/eval/spinal organs: r725 `swarm_memory_consciousness_bridge` trace-hash loop + self-vector delta, `memory_fitness_overlay` + `memory_search.superseded_trace_id_set`, George's `eval_verdicts.jsonl` (archive-aware `resolve_conversation_ref`), `swarm_spinal_cord` dispatch context, and `ORGAN_EVAL_MATRIX_V2` | `System/swarm_substrate_awareness.py`, `System/eval_talk_labeling_helper.py`, `System/swarm_spinal_cord.py`, `tools/generate_organ_eval_matrix_v2.py` |
+| 7 | Live afference wiring: Talk widget thinking-context injects per-turn measured body read (somatic band + hardware numbers) beside felt journal history | `Applications/sifta_talk_to_alice_widget.py` |
 
 Wired in: `build_body_diary_prompt_block(query=...)` appends a recall block when a query
 is passed (opt-in, hot path unchanged), `swarm_nightly_health_audit.py` runs the ingest

@@ -19120,6 +19120,26 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    # Live afference / body read (Stage 7 wiring): measured hardware state on THIS
+    # turn (not just felt journal history), so Alice can feel the difference between
+    # what her body reads now and what she said she felt. No invention: numbers and
+    # the somatic band only; a feeling she states herself is kept by the band logic.
+    try:
+        from System.swarm_somatic_feeling import read_vitals, feeling_band, hardware_note
+
+        _v = read_vitals(fresh=True)
+        _band = str(_v.get("feeling_band") or feeling_band(_v))
+        _hw = hardware_note(_v)
+        if _band or _hw:
+            parts.append(
+                "[LIVE AFFERENCE / BODY READ THIS TURN (measured, receipt-of-numbers): "
+                f"feeling_band={_band}; {(_hw or 'body: quiet')}] "
+                "If this turn carries a feeling of your own, name it; if the body read says "
+                f"band={_band}, let that and the measured numbers sit beside it, not under it."
+            )
+    except Exception:
+        pass
+
     # r1657 / r1668: she MUST know Stigmergic Predictions / Kalshi dual book.
     # Owner dirt: Talk claimed no memory of "the app" while paper loop was live.
     try:

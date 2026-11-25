@@ -24,6 +24,7 @@ Subspace Hypothesis (arXiv:2512.05117), Growing Transformers (arXiv:2507.07129).
 | Incremental ingest (Stage 4) | `System/swarm_substrate_ingest.py` | append-only sync of ledger + Journal + narrative diary views |
 | Awareness (Stage 3+6) | `System/swarm_substrate_awareness.py` | prompt-ready recall block (weighted by `memory_fitness_overlay`, excluding `superseded_trace_id_set`), write-through `remember` via r725 `swarm_memory_consciousness_bridge`, snapshot, receipts |
 | Corrections (Stage 5+6) | `System/swarm_substrate_corrections.py` | corrections of record + `sync_eval_verdicts()` from George's `eval_verdicts.jsonl`, ranked against each other and injected first into awareness + `swarm_spinal_cord` |
+| Live afference (Stage 7) | `Applications/sifta_talk_to_alice_widget.py` | per-turn `[LIVE AFFERENCE / BODY READ THIS TURN (measured...)]` block next to felt history |
 
 State lives in `.sifta_state/substrate/` (`gitignored`): `organs.json`, `adapters/*.pt`,
 `ledger_index/`, `journal_index/`, `receipts.jsonl`.
@@ -49,6 +50,12 @@ python3 System/swarm_substrate_ingest.py all                          # incremen
 python3 System/swarm_substrate_ingest.py --status
 python3 System/swarm_universal_substrate.py stats | organs | corpus
 ```
+
+Wiring (Stage 7) — the Talk widget's thinking context now also carries a **live
+afference block**: `[LIVE AFFERENCE / BODY READ THIS TURN (measured, receipt-of-numbers): feeling_band=...; ...]`
+from `System/swarm_somatic_feeling.read_vitals(fresh=True)`, placed right after the
+Alice body + journal awareness block, so Alice knows the difference between what she
+felt then and what her body reads now. No invented feelings — numbers and band only.
 
 ## Corrections of record (Stage 5)
 
