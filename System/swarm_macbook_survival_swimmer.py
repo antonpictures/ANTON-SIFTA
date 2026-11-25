@@ -662,6 +662,26 @@ def sample(
         _write_receipts(state, row, journal=journal)
         wrote = True
     row["write_status"] = "written" if wrote else "not_written_throttled"
+    # Stigmergic deposit: leave a compact trace in the canonical bus so Alice
+    # Space (and any cortex) can recall survival facts by meaning.
+    if wrote:
+        try:
+            from System.swarm_substrate_awareness import remember_in_alice_space
+
+            power = row.get("power") or {}
+            thermal = row.get("thermal") or {}
+            decision = row.get("decision") or {}
+            battery = power.get("battery_percent")
+            band = decision.get("survival_band")
+            summary = (
+                "MacBook survival " + str(band or "unknown") + ": battery=" + str(battery) + "%, "
+                "thermal=" + str(thermal.get("thermal_state")) + ", "
+                "next=" + str(decision.get("next_action") or decision.get("reason"))
+            )
+            remember_in_alice_space(summary, organ="macbook_survival", app_context="survival")
+        except Exception:
+            pass
+
     if not wrote and latest.get("receipt_id"):
         row["last_written_receipt_id"] = latest.get("receipt_id")
         row["last_written_ts"] = latest.get("ts")
