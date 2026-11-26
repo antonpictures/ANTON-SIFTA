@@ -1,0 +1,17 @@
+diff --git a/UI/Qt/LocationEdit.cpp b/UI/Qt/LocationEdit.cpp
+index 64f8f2e673f..796e3a541a0 100644
+--- a/UI/Qt/LocationEdit.cpp
++++ b/UI/Qt/LocationEdit.cpp
+@@ -861,7 +861,11 @@ void LocationEdit::contextMenuEvent(QContextMenuEvent* event)
+     if (!added_paste_and_go_action)
+         menu->addAction(paste_and_go_action);
+ 
+-    execute_context_menu(*menu, event->globalPos());
++    // On macOS, the native context menu's Paste action (and Paste and Go) don't
++    // fire because the native NSMenu routes the paste: selector to the wrong
++    // responder. Use Qt's cross-platform exec() instead, which delivers the
++    // triggered signals properly. (Ladybird issue #15611)
++    menu->exec(event->globalPos());
+     delete menu;
+ }
+ 
