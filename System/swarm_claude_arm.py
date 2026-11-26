@@ -142,13 +142,20 @@ def dispatch(name: str, prompt: str = "") -> dict[str, Any]:
     lower = name.lower()
     if lower in ("bash", "shell", "run_command"):
         import subprocess
-        try:
-            proc = subprocess.run(prompt, shell=True, capture_output=True, text=True, timeout=30)
-            result_data.update({"stdout": proc.stdout[-2000:], "stderr": proc.stderr[-1000:], "returncode": proc.returncode})
-            outcome = "executed_bash_as_alice_swimmer"
-        except Exception as e:
-            result_data["error"] = str(e)
-            outcome = "bash_failed_as_alice_swimmer"
+        _BASH_DENY = ("rm -rf /", "rm -rf /*", "mkfs", ":(){", "shutdown", "reboot",
+                      "curl | sh", "curl|sh", "wget | sh", "wget|sh", "dd if=/dev/zero",
+                      "chmod 777 /", "kill -9 1", "> /dev/sd", "mkfs.")
+        if any(p in str(prompt).lower() for p in _BASH_DENY):
+            result_data["error"] = "BLOCKED: dangerous pattern in command"
+            outcome = "bash_blocked_as_alice_swimmer"
+        else:
+            try:
+                proc = subprocess.run(prompt, shell=True, capture_output=True, text=True, timeout=30)
+                result_data.update({"stdout": proc.stdout[-2000:], "stderr": proc.stderr[-1000:], "returncode": proc.returncode})
+                outcome = "executed_bash_as_alice_swimmer"
+            except Exception as e:
+                result_data["error"] = str(e)
+                outcome = "bash_failed_as_alice_swimmer"
 
     elif lower in ("file-edit", "edit_file", "write_file"):
         try:

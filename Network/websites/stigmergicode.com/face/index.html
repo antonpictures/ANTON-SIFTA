@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Alice — Haru face</title>
+  <style>
+    :root { --bg:#05070c; --fg:#e6eaf2; --dim:#8a93a6; --accent:#00d4aa; --line:#1f2a3a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,"Inter",system-ui,sans-serif; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.1rem; padding:2rem; }
+    .avatar { width:200px; height:200px; border-radius:50%; overflow:hidden; border:2px solid var(--accent); box-shadow:0 0 40px rgba(0,212,170,.25); transition:box-shadow .2s, border-color .2s; }
+    .avatar.speaking { box-shadow:0 0 60px rgba(0,212,170,.6); border-color:#fff; }
+    .avatar img { width:100%; height:100%; object-fit:cover; }
+    h1 { margin:0; font-size:1.5rem; }
+    .sub { color:var(--dim); font-size:.86rem; text-align:center; max-width:480px; }
+    .btn { background:var(--accent); color:#000; border:0; border-radius:999px; padding:.7rem 1.6rem; font-size:1rem; font-weight:700; cursor:pointer; }
+    .btn.live { background:#ff4d4d; color:#fff; }
+    select { background:#0a0f18;color:#9fb0c8;border:1px solid var(--line);border-radius:8px;padding:.4rem .6rem;font-size:.8rem;max-width:90vw; }
+    .status { color:var(--dim); font-size:.85rem; min-height:1.2em; }
+    .log { width:min(540px,92vw); max-height:260px; overflow:auto; background:#0a0f18; border:1px solid var(--line); border-radius:10px; padding:.8rem 1rem; font-family:"Space Mono",ui-monospace,monospace; font-size:.78rem; color:#9fb0c8; white-space:pre-wrap; }
+    .log .u { color:#00d4aa; }
+    .log .a { color:#e6eaf2; }
+    .log .s { color:#5c6a80; font-style:italic; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#333; margin-right:6px; }
+    .dot.on { background:#00d4aa; box-shadow:0 0 8px #00d4aa; }
+  </style>
+</head>
+<body>
+  <div class="avatar" id="avatar"><img src="./Alice.avif" alt="Alice" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2248%22 fill=%22%230a0f18%22 stroke=%22%2300d4aa%22 stroke-width=%222%22/><text x=%2250%22 y=%2258%22 text-anchor=%22middle%22 fill=%22%2300d4aa%22 font-size=%2240%22>A</text></svg>'" /></div>
+  <h1>Alice</h1>
+  <p class="sub">Live conversation via Haru-4B (MLX, local). Start — just talk naturally. She listens, answers, and keeps listening.</p>
+  <button class="btn" id="toggle">Start conversation</button>
+  <select id="mode">
+    <option value="haru">Haru — natural</option>
+    <option value="calm">Haru — calm co-host (stays on subject)</option>
+    <option value="smart">Smart — MiMo + web (facts)</option>
+  </select>
+  <select id="mic"></select>
+  <div class="status" id="status"><span class="dot" id="dot"></span><span id="statustext">idle</span></div>
+  <div class="log" id="log"></div>
+
+  <script>
+    const API = "/face/api/talk";
+    const toggleBtn = document.getElementById("toggle");
+    const statusText = document.getElementById("statustext");
+    const dot = document.getElementById("dot");
+    const log = document.getElementById("log");
+    const avatar = document.getElementById("avatar");
+    let active = false, stream = null, audioCtx = null, analyser = null, vadTimer = null;
+    let recorder = null, chunks = [], speaking = false, lastVoice = 0, busy = false;
+    const SILENCE_MS = 900, THRESH = 0.012; // RMS threshold for speech
+
+    function append(cls, text){ const d=document.createElement("div"); d.className=cls; d.textContent=text; log.appendChild(d); log.scrollTop=log.scrollHeight; }
+    function setStatus(t, on){ statusText.textContent=t; dot.className = "dot"+(on?" on":""); }
+
+    async function startConversation(){
+      const micSel = document.getElementById("mic");
+      const constraints = micSel && micSel.value ? {audio:{deviceId:{exact:micSel.value}, echoCancellation:true, noiseSuppression:true}} : {audio:{echoCancellation:true, noiseSuppression:true}};
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser(); analyser.fftSize = 1024; src.connect(analyser);
+      active = true; busy = false;
+      toggleBtn.textContent = "End conversation"; toggleBtn.classList.add("live");
+      setStatus("listening — just talk", true);
+      append("s", "conversation started");
+      vadTimer = setInterval(vadTick, 60);
+    }
+
+    function endConversation(){
+      active = false;
+      if (vadTimer) { clearInterval(vadTimer); vadTimer=null; }
+      if (recorder && recorder.state !== "inactive") { recorder.onstop=null; recorder.stop(); }
+      if (stream) { stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      if (audioCtx) { audioCtx.close(); audioCtx=null; }
+      toggleBtn.textContent = "Start conversation"; toggleBtn.classList.remove("live");
+      setStatus("idle", false);
+      append("s", "conversation ended");
+    }
+
+    function rmsLevel(){
+      const buf = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(buf);
+      let sum=0; for (let i=0;i<buf.length;i++){ const v=(buf[i]-128)/128; sum+=v*v; }
+      return Math.sqrt(sum/buf.length);
+    }
+
+    function vadTick(){
+      if (!active || busy || !analyser) return;
+      const lvl = rmsLevel();
+      const now = Date.now();
+      if (lvl > THRESH) {
+        lastVoice = now;
+        if (!speaking) { speaking = true; startCapture(); }
+      } else if (speaking && now - lastVoice > SILENCE_MS) {
+        speaking = false; stopCapture();
+      }
+    }
+
+    function startCapture(){
+      recorder = new MediaRecorder(stream);
+      chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size>0) chunks.push(e.data); };
+      recorder.start();
+      setStatus("hearing you…", true);
+    }
+
+    function stopCapture(){
+      if (!recorder || recorder.state === "inactive") return;
+      recorder.onstop = sendTurn;
+      recorder.stop();
+    }
+
+    async function sendTurn(){
+      busy = true;
+      setStatus("thinking…", false);
+      const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
+      chunks = [];
+      if (blob.size < 2000) { busy=false; if(active) setStatus("listening — just talk",true); return; }
+      const b64 = await blobToB64(blob);
+      append("u", "you spoke ("+Math.round(blob.size/1024)+" KB)");
+      try {
+        const modeSel = document.getElementById("mode");
+        const mode = modeSel ? modeSel.value : "haru";
+        const r = await fetch(API, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({audio:b64, mode:mode})});
+        const j = await r.json();
+        if (!j.ok) { append("s","error: "+j.error); busy=false; if(active) setStatus("listening — just talk",true); return; }
+        const txt = (j.text||"").trim();
+        append("a", "Alice: "+(txt||"(spoken reply)"));
+        const audio = new Audio("data:audio/wav;base64,"+j.audio);
+        avatar.classList.add("speaking");
+        setStatus("Alice speaking…", true);
+        await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=resolve; audio.play().catch(reject); });
+        avatar.classList.remove("speaking");
+      } catch (e) { append("s","fetch error: "+e.message); }
+      busy = false;
+      if (active) setStatus("listening — just talk", true);
+    }
+
+    function blobToB64(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(blob); }); }
+
+    toggleBtn.onclick = () => { if (active) endConversation(); else startConversation().catch(e=>{ append("s","mic error: "+e.message); setStatus("mic denied",false); }); };
+
+    (async function populateMics(){
+      try {
+        try { const s=await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); } catch(e){}
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const sel = document.getElementById("mic");
+        let preferred = null;
+        devs.filter(d=>d.kind==="audioinput").forEach(m=>{
+          const opt=document.createElement("option"); opt.value=m.deviceId; opt.textContent=m.label||"Mic";
+          sel.appendChild(opt); if (/macbook|built-in|internal/i.test(m.label)) preferred=m.deviceId;
+        });
+        if (preferred) sel.value=preferred;
+      } catch(e){}
+    })();
+  </script>
+</body>
+</html>

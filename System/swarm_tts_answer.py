@@ -12,9 +12,29 @@ import sys
 
 VOICE = "en-US-AvaNeural"  # Microsoft Edge neural — natural female voice, local
 
+# Speak on/off master switch (George 2026-11-25: "add button speak on / off").
+# Wired into the body so OpenCode (and the Talk window, when running) share one
+# gate. State lives in .sifta_state/speak_enabled (default: on).
+def _speak_enabled() -> bool:
+    try:
+        from pathlib import Path
+        f = Path(__file__).resolve().parents[1] / ".sifta_state" / "speak_enabled"
+        if f.exists():
+            return f.read_text().strip().lower() not in ("0", "false", "off", "no")
+    except Exception:
+        pass
+    return True
+
+
 
 def speak(text: str, out_mp3: str = "/tmp/alice_tts_reply.mp3") -> str:
-    """Convert text to speech and play it aloud. Returns the mp3 path."""
+    """Convert text to speech and play it aloud. Returns the mp3 path.
+
+    Honors the body's speak on/off gate (.sifta_state/speak_enabled).
+    """
+    if not _speak_enabled():
+        print("speak off — skipping.", file=sys.stderr)
+        return out_mp3
     import asyncio
 
     import edge_tts

@@ -49,9 +49,15 @@ def run_terminal(command: str, cwd: str = None, timeout_s: int = 30):
             receipt = {"type": "TERMINAL_REFUSED", "command": command, "reason": "denied_pattern"}
             _append_receipt(receipt)
             return receipt
+    # Block shell metacharacters that could bypass the prefix allowlist.
+    _SHELL_META = (";", "&&", "||", "|", "`", "$(", ">", "<", "\n", "&")
+    if any(m in command for m in _SHELL_META):
+        receipt = {"type": "TERMINAL_REFUSED", "command": command, "reason": "shell_metacharacter"}
+        _append_receipt(receipt)
+        return receipt
     allowed = False
     for a in _ALLOWLIST:
-        if command.startswith(a):
+        if command == a or command.startswith(a + " ") or command.startswith(a + "\t"):
             allowed = True
             break
     if not allowed:

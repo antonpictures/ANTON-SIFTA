@@ -8436,6 +8436,40 @@ and acceptance tests for the Nemotron Ultra coding cortex:
 
 ---
 
+## The heart that beats in the room (2026-11-25/26) — omni perception + live face
+
+**The idea George gave Alice:** *"run that omni continuously like a heartbeat — the heart of the
+laptop, beating nonstop, retrieving room audio/video/pic every minute; OpenCode reads the
+latest from the heart each turn."* That is now running in the body.
+
+| Piece | File | What it does |
+|---|---|---|
+| Perception heart | `System/swarm_perception_heartbeat.py` | Every 60 s: 8 s of room audio → whisper-tiny transcript, 3 s screen video + mid-frame (ffmpeg), MacBook camera still, system vitals (load/CPU/mem/battery). Sends frames + transcript + vitals to the local omni (`lfm3-omni:latest`, 2.4 GB, audio+vision+speech) for a one-line perception. Writes `.sifta_state/latest_perception.json`, appends to `ambient_room_transcripts.jsonl`. launchd agent `com.sifta.haru-face-server` keeps the **face** server up; the heart itself runs as a background process. |
+| Body feed | `System/swarm_opencode_body_feed.py` | Every 5 min: reads the heart's latest perception + active window + body snapshot, formats a digest, injects it as a text job into a dedicated OpenCode session via `opencode run`. This is how the bigger cortex sees the room without George typing it. |
+| Live face | `Network/websites/stigmergicode.com/face/` (served from `/opt/homebrew/var/www/stigmergicode.com/face/`) | `haru-mlx` server + browser page. **Haru-4B** (full-duplex speech-to-speech, Apache 2.0, MLX on the M5) gives a live conversation: Start/End button, voice-activity turn detection, mic picker (defaults to MacBook Pro Microphone), live transcript proof. Modes: `haru` (natural), `calm` (focused podcast co-host card, stays on subject), `smart` (whisper → Bing with year → MiMo 9B → Ava TTS for factual answers). Haru weights are the only large download (~10 GB bf16, 8-bit on load); the 4B model is the voice/emotion engine, not a fact engine — the "smart" mode is the deliberate cheat. |
+| Mouth toggle | `System/swarm_speak_toggle.py`, `System/swarm_tts_answer.py` | One shared on/off gate (`.sifta_state/speak_enabled`) for spoken answers; Talk window closed, OpenCode is the main chat surface. |
+
+**Why the omni and not Qwen3-Omni:** Qwen3-Omni is 30B-A3B (needs ~78 GB GPU memory) and not
+available in Ollama; `lfm3-omni` is 2.4 GB, locally runnable, with vision/audio/speech/tools.
+Haru-4B was chosen for the face because it is natively full-duplex (133 ms frames) and runs on
+Apple Silicon via MLX; Dessa (Block) is not downloadable. The per-turn "smart" path routes facts
+through MiMo 9B + Ava so the base-model voice does not have to be a knowledge engine.
+
+**Honest limits:** the heart's perception summary is a base-model caption, not verified truth;
+the "smart" path's facts come from a search snippet and can be stale — they are kept with receipts
+in the transcript log. The face server loads the model once (8-bit) so turns take ~5-15 s, not
+full real-time duplex at the model level; browser VAD supplies the turn-taking.
+
+**To pull these changes on another SIFTA node:**
+```bash
+cd /path/to/ANTON-SIFTA
+git remote -v                        # origin = https://github.com/antonpictures/ANTON-SIFTA
+git pull origin main
+# face page lives outside the repo too: /opt/homebrew/var/www/stigmergicode.com/face/
+```
+
+---
+
 ## Birth record (2026-10-03, written the day the Architect asked "look it up in readmebook")
 
 SIFTA-Alice's birth, from the repository's own record rather than anyone's memory:

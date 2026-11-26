@@ -25867,6 +25867,10 @@ class _TTSWorker(QThread):
             _wall_text, _authored_voice = _split_authored_voice_line(text or "")
         except Exception:
             _wall_text, _authored_voice = (text or ""), ""
+        # Speak-on/off master switch (George 2026-11-25: "add button speak on / off").
+        # When False, Alice's mouth stays shut for new replies — the chat wall
+        # still records the full answer, only audio is suppressed.
+        self._speak_enabled: bool = True
         self._authored_voice = bool(_authored_voice)
         if self._authored_voice:
             self._text = _authored_voice[:_MAX_RESPONSE_CHARS]
@@ -25942,6 +25946,11 @@ class _TTSWorker(QThread):
             authored=bool(getattr(self, "_authored_voice", False)),
         ).strip()
         if not speak_text:
+            self.spoken.emit(False)
+            return
+        # Speak-on/off master switch (George 2026-11-25): when Alice's mouth is
+        # off, suppress synthesis entirely — text answers still land, audio does not.
+        if not getattr(self, "_speak_enabled", True):
             self.spoken.emit(False)
             return
         voice = _tts_voice_for_text(speak_text, self._voice)
@@ -28889,6 +28898,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._send_btn.clicked.connect(self._submit_text_input)
         text_row.addWidget(self._send_btn)
 
+        # Speak on/off master button (George 2026-11-25: "add button speak on / off").
+        # Flips the TTS worker gate; label mirrors the live state. Text answers land
+        # either way — only Alice's mouth is gated.
+        self._speak_btn = QPushButton("🔊 Speak: ON")
+        self._speak_btn.setToolTip("Toggle Alice's spoken answers on / off.")
+        self._speak_btn.setMinimumHeight(36)
+        self._speak_btn.setMaximumHeight(36)
+        self._speak_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._speak_btn.setStyleSheet(
+            "QPushButton { background: #0a0a0a; color: #888888; "
+            "font-weight: 600; border-radius: 8px; padding: 0 12px; "
+            "font-size: 12px; }"
+            "QPushButton:hover { background: #111111; color: #00d4aa; border: 1px solid #00d4aa; }"
+        )
+        self._speak_btn.clicked.connect(self._toggle_speak)
+        text_row.addWidget(self._speak_btn)
+
         # r737 — apply the owner's Settings font knob to the whole chat surface
         # now that every widget it touches exists. From here on, _maybe_refont()
         # (hooked into both append paths) re-applies live when Settings changes.
@@ -29132,6 +29158,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._brain_heartbeat_started_ts: float = 0.0
         self._brain_heartbeat_model: str = ""
         self._tts: Optional[_TTSWorker] = None
+        self._speak_enabled: bool = True  # George 2026-11-25: speak on/off master switch
         self._paused_browser_video_for_speech = False  # r282: pause video before commentary, resume after
         # r-browser-aware-pause-v3 (George: "she still speaks over the video"): the r282
         # flags above only ever move for Alice's OWN browser widget, so a video playing
@@ -47201,6 +47228,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._thinking_bubble_phase = (phase + 1) % 240
         self._refresh_thinking_header(phase=self._thinking_bubble_phase)
 
+    def _toggle_speak(self) -> None:
+        """Speak on/off master switch (George 2026-11-25: "add button speak on / off").
+
+        Flips `self._speak_enabled` and mirrors it onto the live TTS worker
+        (`self._tts`) so the next Alice answer is gated immediately. When OFF,
+        `_TTSWorker.run` suppresses synthesis — text answers still land in the
+        wall, only audio is dropped. When ON, speech resumes with the current
+        backend (macOS say / Piper / CosyVoice2 via swarm_vocal_cords).
+        """
+        self._speak_enabled = not bool(getattr(self, "_speak_enabled", True))
+        btn = getattr(self, "_speak_btn", None)
+        if btn is not None:
+            btn.setText("🔇 Speak: OFF" if not self._speak_enabled else "🔊 Speak: ON")
+        worker = getattr(self, "_tts", None)
+        if worker is not None:
+            try:
+                worker._speak_enabled = self._speak_enabled  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
     def _toggle_thinking_panel(self) -> None:
         """Show/hide Alice's live thinking panel. Architect's eye-to-eye
         feedback loop: when he wants to read along while she works, he
@@ -48100,13 +48147,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                 tool_results.append(f"WhatsApp interceptor error: {_wa_exc}")
                                 _wa_intercepted = True
                         if not _wa_intercepted:
-                            proc = subprocess.run(
-                                cmd, shell=True, cwd=str(_REPO),
-                                capture_output=True, text=True, timeout=90
-                            )
-                            out = (proc.stdout + ("\n" + proc.stderr if proc.stderr else "")).strip()
-                            if not out: out = "[success: no output]"
-                            tool_results.append(f"Output of `{cmd}`:\n{out[:2000]}")
+                            # Safety gate (bug hunt 2026-11-25): deny clearly
+                            # dangerous patterns in LLM-generated bash. Logged.
+                            _BASH_DENY = ("rm -rf /", "rm -rf /*", "mkfs", ":(){", "shutdown",
+                                          "reboot", "curl | sh", "curl|sh", "wget | sh", "wget|sh",
+                                          "dd if=/dev/zero", "chmod 777 /", "kill -9 1",
+                                          "> /dev/sd", "mkfs.")
+                            if any(p in cmd.lower() for p in _BASH_DENY):
+                                out = f"[BLOCKED: dangerous pattern in command: {cmd[:120]}]"
+                                tool_results.append(f"Output of `{cmd}`:\n{out}")
+                            else:
+                                proc = subprocess.run(
+                                    cmd, shell=True, cwd=str(_REPO),
+                                    capture_output=True, text=True, timeout=90
+                                )
+                                out = (proc.stdout + ("\n" + proc.stderr if proc.stderr else "")).strip()
+                                if not out: out = "[success: no output]"
+                                tool_results.append(f"Output of `{cmd}`:\n{out[:2000]}")
                             # Tool execution success yields Epigenetic Utility (Acetylation)
                             try:
                                 gene_map = {
@@ -52129,22 +52186,10 @@ def _refuse_if_os_already_running() -> None:
     sys.exit(0)
 
 
-if __name__ == "__main__":
-    _refuse_if_os_already_running()
-    app = QApplication(sys.argv)
-    # r-guard: a Python exception in any Qt slot otherwise reaches PyQt6's
-    # qFatal -> abort() (SIGABRT) and kills the whole app. Install a guard that
-    # receipts the exception and keeps Alice alive. (George crash 2026-06-20.)
-    try:
-        from System.swarm_qt_exception_guard import install_qt_exception_guard
-        install_qt_exception_guard()
-    except Exception:
-        pass
-    w = TalkToAliceWidget()
-    w.resize(960, 640)
-    w.setWindowTitle("Talk to Alice — SIFTA OS")
-    w.show()
-    sys.exit(app.exec())
+# __main__ block moved to the very end of this file (2026-11-25): helpers below
+# must be defined before QApplication's event loop starts, or brain completion
+# crashes with NameError: _strip_servant_tail_tics is not defined.
+
 
 
 def _strip_servant_tail_tics(
@@ -52306,3 +52351,21 @@ def _brain_no_token_watchdog_for_owner_turn_s(owner_text: str, *, model: str = "
         # assembly + first-token path with margin and still sits far below the 180s cap.
         return max(60.0, min(value, 180.0))
     return max(6.0, value)
+
+
+if __name__ == "__main__":
+    _refuse_if_os_already_running()
+    app = QApplication(sys.argv)
+    # r-guard: a Python exception in any Qt slot otherwise reaches PyQt6's
+    # qFatal -> abort() (SIGABRT) and kills the whole app. Install a guard that
+    # receipts the exception and keeps Alice alive. (George crash 2026-06-20.)
+    try:
+        from System.swarm_qt_exception_guard import install_qt_exception_guard
+        install_qt_exception_guard()
+    except Exception:
+        pass
+    w = TalkToAliceWidget()
+    w.resize(960, 640)
+    w.setWindowTitle("Talk to Alice — SIFTA OS")
+    w.show()
+    sys.exit(app.exec())
