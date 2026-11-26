@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Alice — Heartbeat</title>
+<style>
+:root{--bg:#04060a;--fg:#e6eaf2;--dim:#8792a6;--accent:#00d4aa;--line:#16202e;--hot:#ff5c5c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Inter",system-ui,sans-serif;min-height:100vh;padding:2rem 1rem}
+.wrap{max-width:1080px;margin:0 auto}
+header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+h1{font-size:1.5rem;margin:0}
+.tag{font:11px "Space Mono",monospace;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:3px 10px}
+.sub{color:var(--dim);font-size:.86rem;margin:0 0 22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:#080d15;border:1px solid var(--line);border-radius:12px;padding:16px;overflow:hidden}
+.card h2{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.big{font-size:1.9rem;font-weight:700;line-height:1}
+.metric{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid #101826;font-size:.86rem}
+.metric:last-child{border:0}
+.metric b{font-weight:600}
+.mono{font-family:"Space Mono",monospace;font-size:.8rem}
+.perception{font-size:.95rem;line-height:1.5;color:#c8d3e4}
+.transcript{font-size:.88rem;color:var(--accent);font-style:italic}
+.bar{height:5px;background:#111b27;border-radius:3px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.frames{display:flex;gap:14px;flex-wrap:wrap}
+.frames figure{margin:0;flex:1 1 240px}
+.frames img{width:100%;border-radius:8px;border:1px solid var(--line);display:block;background:#0b1220;aspect-ratio:16/9;object-fit:cover}
+.frames figcaption{color:var(--dim);font-size:.72rem;margin-top:6px;font-family:"Space Mono",monospace}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#333;margin-right:6px}
+.dot.on{background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.pulse{width:14px;height:14px;border-radius:50%;background:var(--hot);display:inline-block;animation:pulse 1s infinite}
+@keyframes pulse{0%{transform:scale(.8);opacity:1}50%{transform:scale(1.25);opacity:.35}100%{transform:scale(.8);opacity:1}}
+pre{white-space:pre-wrap;word-break:break-word;font-size:.75rem;color:#7f8da3;margin:0}
+footer{color:#4f5c6e;font-size:.74rem;margin-top:26px;font-family:"Space Mono",monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>Alice · Heartbeat</h1><span class="tag"><span class="pulse"></span> LIVE</span><span class="mono" id="age">—</span></header>
+<p class="sub">The laptop organism's room sense. Sampled every 60 seconds by <span class="mono">lfm3-omni</span> on the M5. One Alice, many surfaces — this is her pulse.</p>
+<div class="grid">
+  <div class="card"><h2>Body</h2><div class="big" id="cpu">—</div><div class="sub">CPU</div>
+    <div class="metric"><span>Memory</span><b id="mem">—</b></div>
+    <div class="metric"><span>Load 1/5/15</span><b id="load">—</b></div>
+    <div class="metric"><span>Power</span><b id="power">—</b></div>
+    <div class="metric"><span>Battery</span><b id="bat">—</b></div>
+  </div>
+  <div class="card"><h2>Perception (last beat)</h2><p class="perception" id="perception">Waiting for the first beat…</p>
+    <p class="transcript" id="transcript"></p>
+    <div class="metric"><span>Active window</span><b id="window">—</b></div>
+    <div class="metric"><span>Model</span><b id="model">—</b></div>
+  </div>
+  <div class="card"><h2>Where am I</h2>
+    <div class="metric"><span>Surface</span><b id="surface">—</b></div>
+    <div class="metric"><span>iPhone proximity</span><b id="phone">—</b></div>
+    <div class="metric"><span>Nearby devices</span><b id="nearby">—</b></div>
+    <div class="metric"><span>GPS fix</span><b id="gps">—</b></div>
+    <div class="sub" style="margin-top:10px;font-size:.74rem" id="locnote">Room presence from camera/screen + window. GPS is the last iPhone fix and may be stale.</div>
+  </div>
+  <div class="card"><h2>Organs</h2><div id="organs"></div>
+    <h2 style="margin-top:16px">Latest raw</h2><pre id="raw">—</pre>
+  </div>
+</div>
+<div class="card" style="margin-top:14px"><h2>Eyes (sampled)</h2>
+  <div class="frames">
+    <figure><img id="cam" src="/heartbeat/frame?kind=cam"><figcaption>webcam — room</figcaption></figure>
+    <figure><img id="screen" src="/heartbeat/frame?kind=screen"><figcaption>screen — surface</figcaption></figure>
+  </div>
+</div>
+<footer>engineered by Ioan George Anton · fabricated locally on the M5 · 🐜⚡ for the swarm</footer>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+async function tick(){
+  try{
+    const r=await fetch('/heartbeat/api/state',{cache:'no-store'});
+    const d=await r.json();
+    const v=d.system_vitals||{};
+    $('cpu').textContent=(v.cpu_pct??'—')+'%';
+    $('mem').textContent=v.mem_used_pct!=null?v.mem_used_pct+'% ('+v.mem_used_gb+'/'+v.mem_total_gb+' GB)':'—';
+    $('load').textContent=[v.load1,v.load5,v.load15].join(' / ');
+    $('power').textContent=v.power||'—';
+    $('bat').textContent=(v.battery_pct??'—')+'%';
+    $('perception').textContent=d.perception_summary||'—';
+    $('transcript').textContent=d.audio_transcript?'“'+d.audio_transcript+'”':'';
+    $('window').textContent=(d.active_window?.app)||'—';
+    $('model').textContent=d.model||'—';
+    $('organs').innerHTML=Object.entries(d.organs||{}).map(([k,on])=>'<div class="metric"><span>'+k+'</span><b><span class="dot '+(on?'on':'')+'"></span>'+(on?'alive':'down')+'</b></div>').join('');
+    if(d.iso){const s=Math.max(0,Math.round((Date.now()/1000-d.ts)));$('age').textContent='beat '+d.iso+' · '+s+'s ago';}
+    const L=d.location||{};
+    $('surface').textContent=L.surface||'—';
+    const near=L.nearby||[];
+    const phone=near.find(x=>/iphone/i.test(x.name||''));
+    $('phone').textContent=phone?(phone.band||'?'):'—';
+    $('nearby').textContent=near.filter(x=>x.connected).map(x=>(x.name||'?').split(' ')[0]).join(', ')||'—';
+    if(L.gps){$('gps').textContent=L.gps.fresh?(L.gps.lat+', '+L.gps.lon+' (±'+L.gps.accuracy_m+'m)'):('stale '+L.gps.age_days+'d — '+L.gps.lat+', '+L.gps.lon);}
+    $('locnote').textContent=L.note||'';
+    $('raw').textContent=JSON.stringify({audio_seconds:d.audio_seconds,model:d.model,writer:d.writer,served_at:Math.round(d.served_at)},null,1);
+    $('cam').src='/heartbeat/frame?kind=cam&t='+Date.now();
+    $('screen').src='/heartbeat/frame?kind=screen&t='+Date.now();
+  }catch(e){$('perception').textContent='heartbeat unreachable: '+e.message;}
+}
+tick();setInterval(tick,5000);
+</script>
+</body>
+</html>

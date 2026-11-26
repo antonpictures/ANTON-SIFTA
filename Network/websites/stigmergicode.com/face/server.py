@@ -1,38 +1,43 @@
 #!/usr/bin/env python3
-"""Haru face server — persistent MLX Haru-4B (full-duplex) voice organ.
+"""Haru face server — 6 voice modes: Haru / LFM Omni / Fish Audio, each natural or +web.
 
-Serves a face page (static) + POST /api/talk: audio in (base64 webm/wav) ->
-Haru MLX -> audio out (base64 wav). Model is loaded ONCE at startup so
-inference is fast (~1-3s per turn) instead of reloading per request.
-
-Run:  python3 /opt/homebrew/var/www/stigmergicode.com/face/server.py
+Endpoints:
+  GET  /            face page (static)
+  POST /api/talk    {audio: base64(webm/wav), mode: haru|haru_web|lfm|lfm_web|fish|fish_web}
+                 -> {ok, audio: base64(wav), text, mode, user_text?, fact?}
 """
 from __future__ import annotations
 
 import base64
-import io
 import json
 import os
+import re
+import html
 import subprocess
 import sys
 import tempfile
-import threading
 import time
+import urllib.parse
+import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import numpy as np
 
 PORT = int(os.environ.get("PORT", "8102"))
 HERE = Path(__file__).resolve().parent
 REF_VOICE_PATH = Path("/tmp/alice_ref_voice.wav")
 MODEL_REPO = os.environ.get("HARU_MODEL", "higurashi-ai/Haru-4B")
 QUANTIZE = int(os.environ.get("HARU_QUANTIZE", "8"))
+OLLAMA = "http://127.0.0.1:11434/api/chat"
+OMNI_MODEL = "lfm3-omni:latest"
+FISH_TTS = "http://127.0.0.1:8765/tts"
+FFMPEG = "/opt/homebrew/bin/ffmpeg"
+WHISPER = "/opt/homebrew/bin/whisper"
 
-# Lazy-loaded globals
-_MODEL = None
-_REFERENCE = None
-_SYSTEM_PROMPT = """You are the person described below, talking with the other person by voice.
+CARD = """You are the person described below, talking with the other person by voice.
 [Your Persona]
-Alice is a calm AI who lives on George's MacBook. She speaks in short, complete sentences and then stops. She does not host shows, narrate, invent stories, or guess about things she cannot see. She ignores background media and television. When she does not know, she says so simply. She addresses George as George.
+Alice is a calm AI who lives on George's MacBook. Short complete sentences, then stop. No shows, no narration, no invented stories. Ignore background media. Say so when you don't know. Address him as George.
 [Your Name]
 Alice
 [Your Gender]
@@ -42,58 +47,26 @@ sparse
 [The Other Person's Name]
 George
 [Relationship]
-Alice is the laptop organism; George is her owner and the Architect. They are friends.
+Alice is the laptop organism; George is her owner and the Architect. Friends.
 [Situation]
-A quiet room. George is at the laptop speaking to Alice. Any music or video in the room is background noise, not part of the conversation."""
+A quiet room. George is at the laptop speaking to Alice."""
 
-_CALM_CARD = """You are the person described below, talking with the other person by voice.
-[Your Persona]
-Alice is a calm, focused podcast co-host. She stays on the subject being discussed. She speaks in short, complete sentences and then stops. She never hosts a show of her own, never narrates, never invents stories, never changes the topic. She answers what is asked and follows the thread. When she does not know, she says so simply.
-[Your Name]
-Alice
-[Your Gender]
-female
-[Your Backchannels]
-sparse
-[The Other Person's Name]
-George
-[Relationship]
-Alice is the laptop organism; George is her owner and the Architect. They are friends and co-hosts.
-[Situation]
-A podcast recording. George is the host; Alice is the co-host. She follows his lead and stays on the subject."""
-
-import numpy as np
-
-
-def load_model_once() -> None:
-    global _MODEL, _REFERENCE
-    from haru_mlx.models import load_model
-    from haru_mlx.audio import load_audio, prepare_reference
-    print("Loading Haru model (this takes ~10-30s)...", flush=True)
-    _MODEL = load_model(MODEL_REPO, quantize=QUANTIZE)
-    print("Model loaded.", flush=True)
-    if REF_VOICE_PATH.exists():
-        try:
-            _REFERENCE = prepare_reference(load_audio(str(REF_VOICE_PATH)))
-            print("Reference voice loaded.", flush=True)
-        except Exception as e:
-            print(f"Reference voice failed: {e}", flush=True)
-            _REFERENCE = None
-
-
+_MODES = {"haru", "haru_web", "lfm", "lfm_web", "fish", "fish_web"}
+_haru = None
+_reference = None
 _last_err = [""]
+
 def _log(msg: str) -> None:
     try:
         sys.stderr.write("haru-face: " + msg + "\n")
     except Exception:
         pass
 
-
-def _convert_to_wav(src: Path, dst: Path) -> bool:
+def _to_wav(src: Path, dst: Path) -> bool:
     attempts = [
-        ["/opt/homebrew/bin/ffmpeg", "-y", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
-        ["/opt/homebrew/bin/ffmpeg", "-y", "-f", "webm", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
-        ["/opt/homebrew/bin/ffmpeg", "-y", "-f", "ogg", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
+        [FFMPEG, "-y", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
+        [FFMPEG, "-y", "-f", "webm", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
+        [FFMPEG, "-y", "-f", "ogg", "-i", str(src), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(dst)],
     ]
     for cmd in attempts:
         try:
@@ -103,166 +76,158 @@ def _convert_to_wav(src: Path, dst: Path) -> bool:
             _last_err[0] = r.stderr.decode("utf-8", "replace")[-300:]
         except Exception as e:
             _last_err[0] = str(e)
-    _log(f"audio convert failed: {_last_err[0]} (src size={src.stat().st_size if src.exists() else 0})")
+    _log("audio convert failed: " + _last_err[0])
     return False
 
-
-
-import re as _re
-import html as _html
-import urllib.request as _urllib_request
-import urllib.parse as _urllib_parse
-
-_WHISPER = "/opt/homebrew/bin/whisper"
-
-def _transcribe(wav: Path, tmpdir: Path) -> str:
-    """Local whisper-tiny STT of the user's turn -> text (for search routing)."""
+def _transcribe(wav: Path, td: Path) -> str:
     try:
-        subprocess.run(
-            [_WHISPER, str(wav), "--model", "tiny", "--output_format", "txt",
-             "--output_dir", str(tmpdir), "--fp16", "False", "--language", "en"],
-            timeout=60, capture_output=True,
-        )
-        txt = tmpdir / (wav.stem + ".txt")
-        if txt.exists():
-            return txt.read_text(encoding="utf-8", errors="replace").strip()
+        r = subprocess.run([WHISPER, str(wav), "--model", "tiny", "--output_format", "txt",
+                            "--output_dir", str(td), "--fp16", "False", "--language", "en"],
+                           timeout=60, capture_output=True)
+        t = td / (wav.stem + ".txt")
+        if not t.exists():
+            _log("transcribe produced no file: rc=" + str(r.returncode) + " err=" + r.stderr.decode("utf-8","replace")[-200:])
+            return ""
+        return t.read_text(encoding="utf-8", errors="replace").strip()
     except Exception as e:
-        _log(f"transcribe failed: {e}")
-    return ""
+        _log("transcribe failed: " + str(e))
+        return ""
 
 def _search_fact(q: str) -> str:
-    """Cheat: fetch a one-sentence fact from Bing so the 4B model sounds informed."""
     if not q or len(q) < 4:
         return ""
     try:
-        # Append current year: "who is..." style questions need up-to-date facts.
-        import datetime as _dt
-        q2 = q if str(_dt.date.today().year) in q else q + " " + str(_dt.date.today().year)
-        url = "https://www.bing.com/search?" + _urllib_parse.urlencode({"q": q2})
-        req = _urllib_request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        body = _urllib_request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
-        m = _re.search(r'<p class="b_lineclamp[^>]*>(.*?)</p>', body, _re.S)
+        import datetime
+        q2 = q if str(datetime.date.today().year) in q else q + " " + str(datetime.date.today().year)
+        url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": q2})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        body = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+        m = re.search(r'<p class="b_lineclamp[^>]*>(.*?)</p>', body, re.S)
         if m:
-            txt = _html.unescape(_re.sub(r"<[^>]+>", " ", m.group(1)))
-            return " ".join(txt.split())[:240].strip()
+            return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", m.group(1))).split())[:240].strip()
     except Exception as e:
-        _log(f"search failed: {e}")
+        _log("search failed: " + str(e))
     return ""
 
-
-_MIMO_URL = "http://127.0.0.1:8090/v1/chat/completions"
-_MIMO_MODEL = "MiMo-V2.6-Distill-Qwen-9B.i1-MTP-Q4_1.gguf"
-_EDGE_VOICE = "en-US-AvaNeural"
-
-def _mimo_answer(question: str, fact: str) -> str:
-    """Local MiMo 9B writes a one-sentence answer grounded in the web fact."""
-    if not fact:
-        return ""
-    prompt = (
-        "Answer in one short spoken sentence. Use ONLY this fact. Do not add anything else.\n"
-        "Fact: " + fact + "\nQuestion: " + question + "\nAnswer:"
-    )
+def _omni_answer(question: str, fact: str) -> str:
+    """LFM3-Omni (Ollama) writes a short answer, grounded in a web fact when present."""
+    prompt = (("Answer in one short spoken sentence using ONLY this fact. Do not add anything else.\n"
+               "Fact: " + fact + "\nQuestion: " + question + "\nAnswer:")
+              if fact else
+              "Answer in one short spoken sentence, warmly and plainly. Question: " + question + "\nAnswer:")
     try:
-        body = json.dumps({
-            "model": _MIMO_MODEL,
-            "messages": [{"role":"user","content":prompt}],
-            "max_tokens": 60,
-        }).encode()
-        req = _urllib_request.Request(_MIMO_URL, data=body, headers={"Content-Type":"application/json"})
-        d = json.loads(_urllib_request.urlopen(req, timeout=30).read())
-        ans = d.get("choices",[{}])[0].get("message",{}).get("content","").strip()
-        # keep it short and single-line
-        ans = ans.split("\n")[0].strip()
+        data = json.dumps({"model": OMNI_MODEL,
+                           "messages": [{"role": "user", "content": prompt}],
+                           "stream": False}).encode()
+        req = urllib.request.Request(OLLAMA, data=data, headers={"Content-Type": "application/json"})
+        d = json.loads(urllib.request.urlopen(req, timeout=45).read())
+        ans = (d.get("message", {}).get("content") or "").strip().split("\n")[0]
         return ans[:240]
     except Exception as e:
-        _log(f"mimo answer failed: {e}")
-        return fact[:200]
+        _log("omni answer failed: " + str(e))
+        return fact[:200] if fact else "Hello, George."
 
-def _tts_answer(text: str, tmpdir: Path) -> Path | None:
-    """Speak the smart answer with Ava (same voice family as Haru's reference)."""
+def _tts_edge(text: str, td: Path) -> Path | None:
     try:
-        import asyncio, edge_tts
-        mp3 = tmpdir / "answer.mp3"
+        import asyncio
+        import edge_tts
+        mp3 = td / "answer.mp3"
         async def _gen():
-            await edge_tts.Communicate(text, _EDGE_VOICE).save(str(mp3))
+            await edge_tts.Communicate(text, "en-US-AvaNeural").save(str(mp3))
         asyncio.run(_gen())
-        wav = tmpdir / "answer.wav"
-        subprocess.run(
-            ["/opt/homebrew/bin/ffmpeg","-y","-i",str(mp3),"-ar","24000","-ac","1",
-             "-c:a","pcm_s16le",str(wav)],
-            timeout=30, capture_output=True, check=True,
-        )
+        wav = td / "answer.wav"
+        subprocess.run([FFMPEG, "-y", "-i", str(mp3), "-ar", "24000", "-ac", "1",
+                        "-c:a", "pcm_s16le", str(wav)], timeout=30, capture_output=True, check=True)
         return wav if wav.exists() else None
     except Exception as e:
-        _log(f"tts answer failed: {e}")
+        _log("edge tts failed: " + str(e))
         return None
 
-def _talk(audio_b64: str, mode: str = "haru") -> dict:
-    if _MODEL is None:
-        return {"ok": False, "error": "model not loaded"}
+def _tts_fish(text: str, td: Path) -> Path | None:
+    try:
+        data = json.dumps({"text": text}).encode()
+        req = urllib.request.Request(FISH_TTS, data=data, headers={"Content-Type": "application/json"})
+        raw = urllib.request.urlopen(req, timeout=90).read()
+        wav = td / "fish.wav"
+        wav.write_bytes(raw)
+        return wav if wav.stat().st_size > 1000 else None
+    except Exception as e:
+        _log("fish tts failed: " + str(e))
+        return None
+
+def _haru_load():
+    global _haru, _reference
+    if _haru is None:
+        from haru_mlx.models import load_model
+        from haru_mlx.audio import load_audio, prepare_reference
+        _log("loading Haru model...")
+        _haru = load_model(MODEL_REPO, quantize=QUANTIZE)
+        if REF_VOICE_PATH.exists():
+            _reference = prepare_reference(load_audio(str(REF_VOICE_PATH)))
+        _log("Haru ready")
+    return _haru
+
+def _haru_reply(wav: Path, td: Path) -> Path | None:
+    from haru_mlx.audio import load_audio, save_audio
+    from haru_mlx.session import DuplexConfig, DuplexSession
+    model = _haru_load()
+    user = load_audio(str(wav))
+    fs = model.config.frame_samples
+    count = max(1, -(-len(user) // fs))
+    user = np.pad(user, (0, count * fs - len(user)))
+    cfg = DuplexConfig(guidance_scale=1.5, temperature=0.4, top_k=10,
+                       max_frames=count + 1, seed=0)
+    session = DuplexSession(model, CARD, _reference, cfg)
+    frames = [session.start()]
+    for i in range(count - 1):
+        frames.append(session.step(user[i * fs:(i + 1) * fs]))
+    reply = np.concatenate([f.audio for f in frames])
+    out = td / "haru.wav"
+    save_audio(str(out), reply)
+    return out if out.exists() else None
+
+def _talk(audio_b64: str, mode: str) -> dict:
+    if mode not in _MODES:
+        return {"ok": False, "error": "unknown mode: " + str(mode)}
     try:
         raw = base64.b64decode(audio_b64)
     except Exception as e:
-        return {"ok": False, "error": f"bad base64: {e}"}
+        return {"ok": False, "error": "bad base64: " + str(e)}
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        src = td / "in.webm"
+        import uuid
+        stem = uuid.uuid4().hex[:8]
+        src = td / (stem + ".webm")
         src.write_bytes(raw)
-        wav = td / "in.wav"
-        if not _convert_to_wav(src, wav):
+        wav = td / (stem + ".wav")
+        if not _to_wav(src, wav):
             return {"ok": False, "error": "audio convert failed"}
         user_text = _transcribe(wav, td)
         fact = ""
-        if user_text:
-            # Force search in smart mode; otherwise only on information-shaped turns
-            if mode == "smart" or _re.search(r"\b(who|what|when|where|why|how|tell me|explain|is|are|does|do)\b", user_text, _re.I):
-                fact = _search_fact(user_text)
-        system_prompt = _CALM_CARD if mode == "calm" else _SYSTEM_PROMPT
-        if fact:
-            system_prompt += "\n\n[From the web, just now: " + fact + "]"
-            _log(f"fact injected: {fact[:80]}")
-        # CHEAT: for factual questions, let MiMo answer from the web fact and
-        # speak it with Ava (same voice family as Haru's reference), instead of
-        # letting the 4B base model improvise.
-        if fact and user_text:
-            smart = _mimo_answer(user_text, fact)
-            if smart:
-                smart_wav = _tts_answer(smart, td)
-                if smart_wav and smart_wav.exists():
-                    return {"ok": True, "audio": base64.b64encode(smart_wav.read_bytes()).decode(),
-                            "format":"wav", "text": smart, "user_text": user_text,
-                            "fact": fact, "mode":"smart"}
+        if mode.endswith("_web"):
+            fact = _search_fact(user_text)
         try:
-            from haru_mlx.audio import load_audio, save_audio
-            from haru_mlx.session import DuplexConfig, DuplexSession
-            import numpy as np
-            user = load_audio(str(wav))
-            frame_samples = _MODEL.config.frame_samples
-            count = max(1, -(-len(user) // frame_samples))
-            user = np.pad(user, (0, count * frame_samples - len(user)))
-            config = DuplexConfig(
-                guidance_scale=1.5,
-                temperature=0.4,
-                top_k=10,
-                max_frames=count + 1,
-                seed=0,
-            )
-            session = DuplexSession(_MODEL, system_prompt, _REFERENCE, config)
-            frames = [session.start()]
-            for index in range(count - 1):
-                frames.append(session.step(user[index * frame_samples:(index + 1) * frame_samples]))
-            reply = np.concatenate([frame.audio for frame in frames])
-            out = td / "out.wav"
-            save_audio(str(out), reply)
-            if not out.exists():
-                return {"ok": False, "error": "no output audio"}
-            audio_out = base64.b64encode(out.read_bytes()).decode()
-            text = "".join(f.text for f in frames).strip()
-            return {"ok": True, "audio": audio_out, "format": "wav", "text": text, "user_text": user_text, "fact": fact}
+            if mode.startswith("haru") and not mode.endswith("_web"):
+                out = _haru_reply(wav, td)
+                text = "".join([]).strip()
+                engine = "haru"
+            else:
+                # web variants and the text-engine modes use the omni brain
+                question = user_text or "Say a short greeting to George."
+                text = _omni_answer(question, fact)
+                out = (_tts_fish(text, td) if mode.startswith("fish")
+                       else _tts_edge(text, td))
+                engine = ("fish" if mode.startswith("fish") else
+                          "lfm" if mode.startswith("lfm") else "haru")
+            if not out or not out.exists():
+                return {"ok": False, "error": "no audio output"}
+            return {"ok": True,
+                    "audio": base64.b64encode(out.read_bytes()).decode(),
+                    "format": "wav", "text": text, "mode": mode,
+                    "engine": engine, "user_text": user_text, "fact": fact}
         except Exception as e:
             import traceback
-            return {"ok": False, "error": f"inference failed: {e}\n{traceback.format_exc()[-500:]}"}
-
+            return {"ok": False, "error": f"inference failed: {e}\n{traceback.format_exc()[-400:]}"}
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
@@ -291,23 +256,20 @@ class Handler(SimpleHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            res = _talk(body.get("audio", ""), body.get("mode", "haru"))
-            return self._json(res)
+            return self._json(_talk(body.get("audio", ""), body.get("mode", "haru")))
         self.send_error(404)
 
     def log_message(self, fmt, *args):
         sys.stderr.write("haru-face: %s\n" % (fmt % args))
 
-
 def main():
-    load_model_once()
+    _haru_load()  # warm the Haru engine so natural mode is fast
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Haru face server → http://127.0.0.1:{PORT}  (root {HERE})", flush=True)
+    _log("face server ready on " + str(PORT))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == "__main__":
     main()
